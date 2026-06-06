@@ -50,6 +50,7 @@ from augur.sim.compiler.tax import (
 from augur.sim.compiler.tlh_harvest import HarvestPolicyCompileOutput, compile_harvest_policies
 from augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer_slots
 from augur.sim.external_series import ExternalSeriesContext
+from augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, usd_to_cents
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
 from augur.sim.scenario import PropertySaleEvent, Scenario
@@ -105,7 +106,7 @@ class CompiledSimulation:
     agent_codes: NDArray[np.int64]
     cash_agent_codes: NDArray[np.int64]
     cash_account_codes: NDArray[np.int64]
-    cash_initial_balance: NDArray[np.float64]
+    cash_initial_balance: NDArray[np.int64]
     lot_id_codes: NDArray[np.int64]
     lot_agent_codes: NDArray[np.int64]
     lot_account_codes: NDArray[np.int64]
@@ -115,8 +116,9 @@ class CompiledSimulation:
     # for holdings, but the sentinel keeps lookups safe).
     lot_asset_series_index: NDArray[np.int64]
     lot_purchase_month: NDArray[np.int64]
-    lot_cost_basis_per_unit: NDArray[np.float64]
-    lot_initial_quantity: NDArray[np.float64]
+    lot_cost_basis_per_unit: NDArray[np.int64]
+    lot_initial_quantity: NDArray[np.int64]
+    lot_quantity_scale: NDArray[np.int64]
     tax: TaxCompileOutput
     capital_gain_agent_codes: NDArray[np.int64]
     tax_profile_capital_gain_index: NDArray[np.int64]
@@ -132,7 +134,7 @@ class CompiledSimulation:
     # Per-property depreciable building basis = purchase_price × (1 - land_value_fraction) +
     # buyer_closing_cost. Land is non-depreciable; the 27.5-year SL clock applies only to the
     # building portion. Capitalized closing costs add to the depreciable basis.
-    property_building_basis: NDArray[np.float64]
+    property_building_basis: NDArray[np.int64]
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
     property_owner_profile_index: NDArray[np.int64]
@@ -183,7 +185,7 @@ def compile_simulation(
     account_slot_by_key: dict[tuple[str, str], int] = {}
     cash_agent_codes: list[int] = []
     cash_account_codes: list[int] = []
-    cash_initial_balance: list[float] = []
+    cash_initial_balance: list[np.int64] = []
     for entry in scenario.initial_cash:
         key = (entry.agent_id, entry.account_id)
         if key in account_slot_by_key:
@@ -191,7 +193,7 @@ def compile_simulation(
         account_slot_by_key[key] = len(cash_initial_balance)
         cash_agent_codes.append(strings.require(entry.agent_id))
         cash_account_codes.append(strings.require(entry.account_id))
-        cash_initial_balance.append(float(entry.balance_usd))
+        cash_initial_balance.append(usd_to_cents(entry.balance_usd))
 
     agent_slot_by_id: dict[str, int] = {}
     agent_codes: list[int] = []
@@ -234,10 +236,12 @@ def compile_simulation(
     # Building basis = (purchase price × (1 - land_fraction)) + capitalized closing costs.
     property_building_basis = np.array(
         [
-            float(p.purchase_price_usd) * (1.0 - float(p.land_value_fraction)) + float(p.buyer_closing_cost_usd)
+            usd_to_cents(
+                float(p.purchase_price_usd) * (1.0 - float(p.land_value_fraction)) + float(p.buyer_closing_cost_usd)
+            )
             for p in scenario.scheduled_property_purchases
         ],
-        dtype=np.float64,
+        dtype=np.int64,
     )
     property_owner_profile_index = np.array(
         [profile_index_by_agent.get(p.buyer_agent_id, NO_CODE) for p in scenario.scheduled_property_purchases],
@@ -260,7 +264,7 @@ def compile_simulation(
     # `property_building_basis[max(1, property_count)]` without special-casing.
     if property_count == 0:
         property_rented_fraction = np.zeros(1, dtype=np.float64)
-        property_building_basis = np.zeros(1, dtype=np.float64)
+        property_building_basis = np.zeros(1, dtype=np.int64)
         property_owner_profile_index = np.full(1, NO_CODE, dtype=np.int64)
         property_owner_agent_index = np.full(1, NO_CODE, dtype=np.int64)
         property_home_value_series_index = np.full(1, NO_CODE, dtype=np.int64)
@@ -291,16 +295,19 @@ def compile_simulation(
     lot_account_codes: list[int] = []
     lot_asset_codes: list[int] = []
     lot_purchase_month: list[int] = []
-    lot_cost_basis_per_unit: list[float] = []
-    lot_initial_quantity: list[float] = []
+    lot_cost_basis_per_unit: list[np.int64] = []
+    lot_initial_quantity: list[np.int64] = []
+    lot_quantity_scale: list[int] = []
     for lot in scenario.initial_lots:
+        scale = quantity_scale_for_asset(lot.asset)
         lot_id_codes.append(strings.require(lot.lot_id))
         lot_agent_codes.append(strings.require(lot.agent_id))
         lot_account_codes.append(strings.require(lot.account_id))
         lot_asset_codes.append(assets.require(lot.asset))
         lot_purchase_month.append(int(lot.purchase_month_index))
-        lot_cost_basis_per_unit.append(float(lot.cost_basis_per_unit_usd))
-        lot_initial_quantity.append(float(lot.quantity))
+        lot_cost_basis_per_unit.append(usd_to_cents(lot.cost_basis_per_unit_usd))
+        lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
+        lot_quantity_scale.append(scale)
 
     lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
     lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
@@ -378,15 +385,16 @@ def compile_simulation(
         agent_codes=np.asarray(agent_codes, dtype=np.int64),
         cash_agent_codes=np.asarray(cash_agent_codes, dtype=np.int64),
         cash_account_codes=np.asarray(cash_account_codes, dtype=np.int64),
-        cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.float64),
+        cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.int64),
         lot_id_codes=np.asarray(lot_id_codes, dtype=np.int64),
         lot_agent_codes=np.asarray(lot_agent_codes, dtype=np.int64),
         lot_account_codes=np.asarray(lot_account_codes, dtype=np.int64),
         lot_asset_codes=np.asarray(lot_asset_codes, dtype=np.int64),
         lot_asset_series_index=lot_asset_series_index,
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
-        lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.float64),
-        lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.float64),
+        lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.int64),
+        lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.int64),
+        lot_quantity_scale=np.asarray(lot_quantity_scale, dtype=np.int64),
         tax=tax,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,

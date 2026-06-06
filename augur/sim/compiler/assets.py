@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from augur.model.series import LevelSeriesKey
 from augur.product.asset_key import asset_price_key
 from augur.sim.compiler.helpers import NO_CODE, AssetTable, StringTable, slot
+from augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, usd_to_cents
 from augur.sim.scenario import Scenario
 
 
@@ -24,10 +25,11 @@ class SaleCompileOutput:
     agent: NDArray[np.int64]
     source_account: NDArray[np.int64]
     asset: NDArray[np.int64]
-    quantity: NDArray[np.float64]
+    quantity: NDArray[np.int64]
+    quantity_scale: NDArray[np.int64]
     proceeds_account: NDArray[np.int64]
     proceeds_slot: NDArray[np.int64]
-    price_fixed: NDArray[np.float64]
+    price_fixed: NDArray[np.int64]
     price_series: NDArray[np.int64]
 
 
@@ -44,10 +46,11 @@ def compile_sales(
     agent = np.zeros(max(1, count), dtype=np.int64)
     source_account = np.zeros(max(1, count), dtype=np.int64)
     asset = np.zeros(max(1, count), dtype=np.int64)
-    quantity = np.zeros(max(1, count), dtype=np.float64)
+    quantity = np.zeros(max(1, count), dtype=np.int64)
+    quantity_scale = np.ones(max(1, count), dtype=np.int64)
     proceeds_account = np.zeros(max(1, count), dtype=np.int64)
     proceeds_slot = np.full(max(1, count), NO_CODE, dtype=np.int64)
-    price_fixed = np.full(max(1, count), np.nan, dtype=np.float64)
+    price_fixed = np.zeros(max(1, count), dtype=np.int64)
     price_series = np.full(max(1, count), NO_CODE, dtype=np.int64)
     for idx, sale in enumerate(scenario.scheduled_asset_sales):
         cause[sale.month, idx] = strings.require(sale.cause_id)
@@ -55,11 +58,12 @@ def compile_sales(
         agent[idx] = strings.require(sale.agent_id)
         source_account[idx] = strings.require(sale.source_account_id)
         asset[idx] = assets.require(sale.asset)
-        quantity[idx] = float(sale.quantity)
+        quantity_scale[idx] = quantity_scale_for_asset(sale.asset)
+        quantity[idx] = quantity_to_quanta(sale.quantity, scale=int(quantity_scale[idx]))
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
         proceeds_slot[idx] = slot(account_slot_by_key, sale.agent_id, sale.proceeds_account_id)
         if sale.price_per_unit_usd is not None:
-            price_fixed[idx] = float(sale.price_per_unit_usd)
+            price_fixed[idx] = usd_to_cents(sale.price_per_unit_usd)
         else:
             price_series[idx] = series_index_by_id[asset_price_key(sale.asset)]
     return SaleCompileOutput(
@@ -69,6 +73,7 @@ def compile_sales(
         source_account=source_account,
         asset=asset,
         quantity=quantity,
+        quantity_scale=quantity_scale,
         proceeds_account=proceeds_account,
         proceeds_slot=proceeds_slot,
         price_fixed=price_fixed,

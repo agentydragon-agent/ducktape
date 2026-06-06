@@ -15,6 +15,7 @@ from augur.sim.codec.helpers import (
     r_first_view,
     state_axes,
     state_history_frame_from_columns,
+    usd_column,
 )
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.enums import CapitalGainClassification
@@ -31,7 +32,7 @@ def decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers)
             "rollout_index": rollouts,
             "month_index": months,
             "agent_id": codes_to_strings(plan, plan.tax.profile_agent)[profiles],
-            "ordinary_income_usd": state.reshape(-1),
+            "ordinary_income_usd": usd_column(state.reshape(-1)),
         },
         ORDINARY_INCOME_YTD_FRAME,
     )
@@ -62,7 +63,7 @@ def decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) -
             "month_index": months.reshape(-1)[mask],
             "agent_id": agent_ids[profiles.reshape(-1)[mask]],
             "classification": cls_labels.reshape(-1)[mask],
-            "gain_usd": state_o.reshape(-1)[mask],
+            "gain_usd": usd_column(state_o.reshape(-1)[mask]),
         },
         CAPITAL_GAINS_YTD_FRAME,
     )
@@ -98,7 +99,7 @@ def decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers)
     months = np.concatenate(month_blocks) if month_blocks else empty
     rollouts = np.concatenate(rollout_blocks) if rollout_blocks else empty
     slots = np.concatenate(slot_blocks) if slot_blocks else empty
-    amounts = np.concatenate(amount_blocks) if amount_blocks else np.array([], dtype=np.float64)
+    amounts = np.concatenate(amount_blocks) if amount_blocks else np.array([], dtype=np.int64)
     return state_history_frame_from_columns(
         {
             "rollout_index": rollouts,
@@ -106,7 +107,7 @@ def decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers)
             "agent_id": agent_per_profile[profile_per_slot[slots]],
             "jurisdiction_id": juris_per_link[link_per_slot[slots]],
             "tax_year_end_month": year_end_per_slot[slots],
-            "amount_owed_usd": amounts,
+            "amount_owed_usd": usd_column(amounts),
         },
         TAX_LIABILITIES_FRAME,
     )
@@ -137,7 +138,7 @@ def decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) ->
         agent_id=agent_ids,
         jurisdiction_id=jurisdiction_ids,
         tax_year_end_month=months,
-        amount_usd=totals,
+        amount_usd=usd_column(totals),
     )
     breakdowns = frame_from_columns(
         EVENT_FRAMES.tax_breakdowns,
@@ -147,18 +148,20 @@ def decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) ->
         agent_id=agent_ids,
         jurisdiction_id=jurisdiction_ids,
         tax_year_end_month=months,
-        ordinary_income_usd=buffers.taxes.breakdown_ordinary[months, links, rollouts],
-        ltcg_usd=buffers.taxes.breakdown_ltcg[months, links, rollouts],
-        stcg_usd=buffers.taxes.breakdown_stcg[months, links, rollouts],
-        standard_deduction_usd=plan.tax.link_standard_deduction.astype(np.float64)[links],
-        mortgage_interest_deduction_usd=buffers.taxes.breakdown_mortgage_interest_deduction[months, links, rollouts],
-        salt_deduction_usd=buffers.taxes.breakdown_salt_deduction[months, links, rollouts],
-        itemized_deduction_usd=buffers.taxes.breakdown_itemized_deduction[months, links, rollouts],
-        ordinary_taxable_usd=buffers.taxes.breakdown_ordinary_taxable[months, links, rollouts],
-        capital_gain_taxable_usd=buffers.taxes.breakdown_capital_taxable[months, links, rollouts],
-        ordinary_tax_usd=buffers.taxes.breakdown_ordinary_tax[months, links, rollouts],
-        capital_gain_tax_usd=buffers.taxes.breakdown_capital_tax[months, links, rollouts],
-        total_tax_usd=totals,
+        ordinary_income_usd=usd_column(buffers.taxes.breakdown_ordinary[months, links, rollouts]),
+        ltcg_usd=usd_column(buffers.taxes.breakdown_ltcg[months, links, rollouts]),
+        stcg_usd=usd_column(buffers.taxes.breakdown_stcg[months, links, rollouts]),
+        standard_deduction_usd=usd_column(plan.tax.link_standard_deduction[links]),
+        mortgage_interest_deduction_usd=usd_column(
+            buffers.taxes.breakdown_mortgage_interest_deduction[months, links, rollouts]
+        ),
+        salt_deduction_usd=usd_column(buffers.taxes.breakdown_salt_deduction[months, links, rollouts]),
+        itemized_deduction_usd=usd_column(buffers.taxes.breakdown_itemized_deduction[months, links, rollouts]),
+        ordinary_taxable_usd=usd_column(buffers.taxes.breakdown_ordinary_taxable[months, links, rollouts]),
+        capital_gain_taxable_usd=usd_column(buffers.taxes.breakdown_capital_taxable[months, links, rollouts]),
+        ordinary_tax_usd=usd_column(buffers.taxes.breakdown_ordinary_tax[months, links, rollouts]),
+        capital_gain_tax_usd=usd_column(buffers.taxes.breakdown_capital_tax[months, links, rollouts]),
+        total_tax_usd=usd_column(totals),
     )
     return accruals, breakdowns
 
@@ -180,5 +183,5 @@ def decode_tax_settlements(plan: CompiledSimulation, buffers: SimulationBuffers)
         cause_id=cause_ids,
         agent_id=agent_ids,
         tax_year_end_month=year_end,
-        amount_usd=buffers.taxes.settlement_amount[months, profiles, rollouts],
+        amount_usd=usd_column(buffers.taxes.settlement_amount[months, profiles, rollouts]),
     )

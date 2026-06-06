@@ -136,7 +136,7 @@ def _run_jax(plan: CompiledSimulation) -> SimulationBuffers:
 def _assert_value_sweep_takes_effect(
     scenario: Scenario,
     perturb: Callable[[CompiledSimulation], CompiledSimulation],
-    extract: Callable[[SimulationBuffers], NDArray[np.float64]],
+    extract: Callable[[SimulationBuffers], NDArray[np.int64]],
     *,
     locations: dict[str, Location] | None = None,
 ) -> None:
@@ -160,12 +160,9 @@ def test_tax_rate_sweep_takes_effect() -> None:
 
 
 def test_transfer_amount_sweep_takes_effect() -> None:
-    # Bump the (fixed) paycheck amount; NaN entries (non-fixed slots) are left untouched.
+    # Bump the fixed paycheck amount by $1,000 in integer cents.
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
-        fixed = p.transfers.amount_fixed
-        return replace(
-            p, transfers=replace(p.transfers, amount_fixed=np.where(np.isnan(fixed), fixed, fixed + 1_000.0))
-        )
+        return replace(p, transfers=replace(p.transfers, amount_fixed=p.transfers.amount_fixed + np.int64(100_000)))
 
     _assert_value_sweep_takes_effect(_tax_scenario(), perturb, lambda b: b.taxes.accrual_amount)
 
@@ -173,7 +170,7 @@ def test_transfer_amount_sweep_takes_effect() -> None:
 def test_cost_basis_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _sale_scenario(),
-        lambda p: replace(p, lot_cost_basis_per_unit=p.lot_cost_basis_per_unit * 0.5),
+        lambda p: replace(p, lot_cost_basis_per_unit=p.lot_cost_basis_per_unit // np.int64(2)),
         lambda b: b.state.capital_gain_state,
     )
 
@@ -181,7 +178,7 @@ def test_cost_basis_sweep_takes_effect() -> None:
 def test_initial_balance_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _tax_scenario(),
-        lambda p: replace(p, cash_initial_balance=p.cash_initial_balance + 50_000.0),
+        lambda p: replace(p, cash_initial_balance=p.cash_initial_balance + np.int64(5_000_000)),
         lambda b: b.state.cash_state,
     )
 
@@ -226,7 +223,9 @@ def _financed_purchase_scenario() -> Scenario:
 def test_property_basis_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _financed_purchase_scenario(),
-        lambda p: replace(p, properties=replace(p.properties, adjusted_basis=p.properties.adjusted_basis * 1.2)),
+        lambda p: replace(
+            p, properties=replace(p.properties, adjusted_basis=p.properties.adjusted_basis * np.int64(6) // np.int64(5))
+        ),
         lambda b: b.state.property_basis_state,
         locations=_SF,
     )
@@ -235,7 +234,9 @@ def test_property_basis_sweep_takes_effect() -> None:
 def test_mortgage_principal_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _financed_purchase_scenario(),
-        lambda p: replace(p, liabilities=replace(p.liabilities, principal=p.liabilities.principal * 1.1)),
+        lambda p: replace(
+            p, liabilities=replace(p.liabilities, principal=p.liabilities.principal * np.int64(11) // np.int64(10))
+        ),
         lambda b: b.state.liability_principal_state,
         locations=_SF,
     )

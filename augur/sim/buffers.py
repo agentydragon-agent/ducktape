@@ -33,26 +33,26 @@ def _expect_array(name: str, array: np.ndarray, *, shape: tuple[int, ...], dtype
 
 @dataclass
 class StateHistoryBuffers:
-    cash_state: NDArray[np.float64]
-    lot_state: NDArray[np.float64]
-    ordinary_state: NDArray[np.float64]
+    cash_state: NDArray[np.int64]
+    lot_state: NDArray[np.int64]
+    ordinary_state: NDArray[np.int64]
     capital_gain_active_state: NDArray[np.bool_]
-    capital_gain_state: NDArray[np.float64]
+    capital_gain_state: NDArray[np.int64]
     property_active_state: NDArray[np.bool_]
-    property_basis_state: NDArray[np.float64]
-    property_contribution_state: NDArray[np.float64]
-    property_equity_state: NDArray[np.float64]
+    property_basis_state: NDArray[np.int64]
+    property_contribution_state: NDArray[np.int64]
+    property_equity_state: NDArray[np.int64]
     liability_active_state: NDArray[np.bool_]
-    liability_principal_state: NDArray[np.float64]
-    liability_monthly_payment_state: NDArray[np.float64]
-    liability_interest_ytd_state: NDArray[np.float64]
-    liability_principal_ytd_state: NDArray[np.float64]
+    liability_principal_state: NDArray[np.int64]
+    liability_monthly_payment_state: NDArray[np.int64]
+    liability_interest_ytd_state: NDArray[np.int64]
+    liability_principal_ytd_state: NDArray[np.int64]
     # Cumulative §168 depreciation USD per (snapshot_month, rollout, property). Monotone
     # non-decreasing; accrues monthly while a property has rented_fraction > 0. Used at sale
     # time for §1250 unrecaptured-depreciation recapture (phase 4) and at year-end for the
     # Schedule E depreciation deduction (the YTD slice is computed from the delta between
     # consecutive snapshots).
-    property_cumulative_depreciation_state: NDArray[np.float64]
+    property_cumulative_depreciation_state: NDArray[np.int64]
     # Cumulative count of owner-occupied months per (snapshot_month, rollout, property). Used
     # at sale time to compute the §121 24-of-last-60-months test by subtracting the 60-mo-ago
     # snapshot from the current cumulative count.
@@ -63,9 +63,9 @@ class StateHistoryBuffers:
     def validate(self, plan: SlotPlan) -> None:
         s = plan.snapshot_months
         r = plan.rollout_count
-        _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.float64)
-        _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.float64)
-        _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.tax_profile_count, r), dtype=np.float64)
+        _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.int64)
+        _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.int64)
+        _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.tax_profile_count, r), dtype=np.int64)
         _expect_array(
             "capital_gain_active_state",
             self.capital_gain_active_state,
@@ -76,22 +76,22 @@ class StateHistoryBuffers:
             "capital_gain_state",
             self.capital_gain_state,
             shape=(s, plan.capital_gain_agent_count, 2, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
             "property_active_state", self.property_active_state, shape=(s, plan.property_count, r), dtype=np.bool_
         )
         _expect_array(
-            "property_basis_state", self.property_basis_state, shape=(s, plan.property_count, r), dtype=np.float64
+            "property_basis_state", self.property_basis_state, shape=(s, plan.property_count, r), dtype=np.int64
         )
         _expect_array(
             "property_contribution_state",
             self.property_contribution_state,
             shape=(s, plan.property_count, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
-            "property_equity_state", self.property_equity_state, shape=(s, plan.property_count, r), dtype=np.float64
+            "property_equity_state", self.property_equity_state, shape=(s, plan.property_count, r), dtype=np.int64
         )
         _expect_array(
             "liability_active_state", self.liability_active_state, shape=(s, plan.liability_count, r), dtype=np.bool_
@@ -100,31 +100,31 @@ class StateHistoryBuffers:
             "liability_principal_state",
             self.liability_principal_state,
             shape=(s, plan.liability_count, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
             "liability_monthly_payment_state",
             self.liability_monthly_payment_state,
             shape=(s, plan.liability_count, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
             "liability_interest_ytd_state",
             self.liability_interest_ytd_state,
             shape=(s, plan.liability_count, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
             "liability_principal_ytd_state",
             self.liability_principal_ytd_state,
             shape=(s, plan.liability_count, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
             "property_cumulative_depreciation_state",
             self.property_cumulative_depreciation_state,
             shape=(s, plan.property_count, r),
-            dtype=np.float64,
+            dtype=np.int64,
         )
         _expect_array(
             "property_owner_occupied_months_state",
@@ -146,13 +146,13 @@ class LifecycleEventBuffers:
     """
 
     fired: NDArray[np.bool_]
-    sale_gross_proceeds: NDArray[np.float64]
-    sale_mortgage_payoff: NDArray[np.float64]
-    sale_net_cash: NDArray[np.float64]
-    sale_realized_gain: NDArray[np.float64]
-    sale_recapture: NDArray[np.float64]
-    sale_section_121_exclusion: NDArray[np.float64]
-    sale_long_term_gain: NDArray[np.float64]
+    sale_gross_proceeds: NDArray[np.int64]
+    sale_mortgage_payoff: NDArray[np.int64]
+    sale_net_cash: NDArray[np.int64]
+    sale_realized_gain: NDArray[np.int64]
+    sale_recapture: NDArray[np.int64]
+    sale_section_121_exclusion: NDArray[np.int64]
+    sale_long_term_gain: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan, event_count: int) -> None:
         shape = (max(1, event_count), plan.rollout_count)
@@ -166,7 +166,7 @@ class LifecycleEventBuffers:
             ("sale_section_121_exclusion", self.sale_section_121_exclusion),
             ("sale_long_term_gain", self.sale_long_term_gain),
         ]:
-            _expect_array(name, arr, shape=shape, dtype=np.float64)
+            _expect_array(name, arr, shape=shape, dtype=np.int64)
 
 
 @dataclass
@@ -184,23 +184,23 @@ class PrimaryResidenceEventBuffers:
 @dataclass
 class TransferEventBuffers:
     active: NDArray[np.bool_]
-    amount: NDArray[np.float64]
+    amount: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         shape = (plan.event_months, plan.max_transfer_slots, plan.rollout_count)
         _expect_array("active", self.active, shape=shape, dtype=np.bool_)
-        _expect_array("amount", self.amount, shape=shape, dtype=np.float64)
+        _expect_array("amount", self.amount, shape=shape, dtype=np.int64)
 
 
 @dataclass
 class PropertyCashflowEventBuffers:
     active: NDArray[np.bool_]
-    amount: NDArray[np.float64]
+    amount: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         shape = (plan.event_months, plan.max_property_cashflow_slots, plan.rollout_count)
         _expect_array("property_cashflows.active", self.active, shape=shape, dtype=np.bool_)
-        _expect_array("property_cashflows.amount", self.amount, shape=shape, dtype=np.float64)
+        _expect_array("property_cashflows.amount", self.amount, shape=shape, dtype=np.int64)
 
 
 @dataclass
@@ -209,9 +209,9 @@ class PropertyEventBuffers:
     purchase_active: NDArray[np.bool_]
     mortgage_origination_active: NDArray[np.bool_]
     mortgage_payment_active: NDArray[np.bool_]
-    mortgage_payment_interest: NDArray[np.float64]
-    mortgage_payment_principal: NDArray[np.float64]
-    mortgage_payment_total: NDArray[np.float64]
+    mortgage_payment_interest: NDArray[np.int64]
+    mortgage_payment_principal: NDArray[np.int64]
+    mortgage_payment_total: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         h = plan.event_months
@@ -227,28 +227,28 @@ class PropertyEventBuffers:
             "mortgage_payment_active", self.mortgage_payment_active, shape=liability_event_shape, dtype=np.bool_
         )
         _expect_array(
-            "mortgage_payment_interest", self.mortgage_payment_interest, shape=liability_event_shape, dtype=np.float64
+            "mortgage_payment_interest", self.mortgage_payment_interest, shape=liability_event_shape, dtype=np.int64
         )
         _expect_array(
-            "mortgage_payment_principal", self.mortgage_payment_principal, shape=liability_event_shape, dtype=np.float64
+            "mortgage_payment_principal", self.mortgage_payment_principal, shape=liability_event_shape, dtype=np.int64
         )
         _expect_array(
-            "mortgage_payment_total", self.mortgage_payment_total, shape=liability_event_shape, dtype=np.float64
+            "mortgage_payment_total", self.mortgage_payment_total, shape=liability_event_shape, dtype=np.int64
         )
 
 
 @dataclass(frozen=True)
 class DispositionGroup:
     active: NDArray[np.bool_]
-    units: NDArray[np.float64]
-    basis: NDArray[np.float64]
-    proceeds: NDArray[np.float64]
+    units: NDArray[np.int64]
+    basis: NDArray[np.int64]
+    proceeds: NDArray[np.int64]
 
     def validate(self, name: str, shape: tuple[int, ...]) -> None:
         _expect_array(f"{name}.active", self.active, shape=shape, dtype=np.bool_)
-        _expect_array(f"{name}.units", self.units, shape=shape, dtype=np.float64)
-        _expect_array(f"{name}.basis", self.basis, shape=shape, dtype=np.float64)
-        _expect_array(f"{name}.proceeds", self.proceeds, shape=shape, dtype=np.float64)
+        _expect_array(f"{name}.units", self.units, shape=shape, dtype=np.int64)
+        _expect_array(f"{name}.basis", self.basis, shape=shape, dtype=np.int64)
+        _expect_array(f"{name}.proceeds", self.proceeds, shape=shape, dtype=np.int64)
 
 
 @dataclass
@@ -272,44 +272,44 @@ class LotDispositionEventBuffers:
 class PrivateEquityOpportunityEventBuffers:
     active: NDArray[np.bool_]
     outcome: NDArray[np.int64]
-    floor: NDArray[np.float64]
-    liquid_net_worth: NDArray[np.float64]
-    shortfall: NDArray[np.float64]
-    units_held: NDArray[np.float64]
-    sellable_units: NDArray[np.float64]
-    target_units: NDArray[np.float64]
-    proceeds: NDArray[np.float64]
+    floor: NDArray[np.int64]
+    liquid_net_worth: NDArray[np.int64]
+    shortfall: NDArray[np.int64]
+    units_held: NDArray[np.int64]
+    sellable_units: NDArray[np.int64]
+    target_units: NDArray[np.int64]
+    proceeds: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         shape = (plan.event_months, plan.pe_issuer_count, plan.rollout_count)
         _expect_array("pe_opportunity.active", self.active, shape=shape, dtype=np.bool_)
         _expect_array("pe_opportunity.outcome", self.outcome, shape=shape, dtype=np.int64)
-        _expect_array("pe_opportunity.floor", self.floor, shape=shape, dtype=np.float64)
-        _expect_array("pe_opportunity.liquid_net_worth", self.liquid_net_worth, shape=shape, dtype=np.float64)
-        _expect_array("pe_opportunity.shortfall", self.shortfall, shape=shape, dtype=np.float64)
-        _expect_array("pe_opportunity.units_held", self.units_held, shape=shape, dtype=np.float64)
-        _expect_array("pe_opportunity.sellable_units", self.sellable_units, shape=shape, dtype=np.float64)
-        _expect_array("pe_opportunity.target_units", self.target_units, shape=shape, dtype=np.float64)
-        _expect_array("pe_opportunity.proceeds", self.proceeds, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.floor", self.floor, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.liquid_net_worth", self.liquid_net_worth, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.shortfall", self.shortfall, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.units_held", self.units_held, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.sellable_units", self.sellable_units, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.target_units", self.target_units, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.proceeds", self.proceeds, shape=shape, dtype=np.int64)
 
 
 @dataclass
 class TaxEventBuffers:
     accrual_active: NDArray[np.bool_]
-    accrual_amount: NDArray[np.float64]
-    breakdown_ordinary: NDArray[np.float64]
-    breakdown_ltcg: NDArray[np.float64]
-    breakdown_stcg: NDArray[np.float64]
-    breakdown_standard_deduction: NDArray[np.float64]
-    breakdown_mortgage_interest_deduction: NDArray[np.float64]
-    breakdown_salt_deduction: NDArray[np.float64]
-    breakdown_itemized_deduction: NDArray[np.float64]
-    breakdown_ordinary_taxable: NDArray[np.float64]
-    breakdown_capital_taxable: NDArray[np.float64]
-    breakdown_ordinary_tax: NDArray[np.float64]
-    breakdown_capital_tax: NDArray[np.float64]
+    accrual_amount: NDArray[np.int64]
+    breakdown_ordinary: NDArray[np.int64]
+    breakdown_ltcg: NDArray[np.int64]
+    breakdown_stcg: NDArray[np.int64]
+    breakdown_standard_deduction: NDArray[np.int64]
+    breakdown_mortgage_interest_deduction: NDArray[np.int64]
+    breakdown_salt_deduction: NDArray[np.int64]
+    breakdown_itemized_deduction: NDArray[np.int64]
+    breakdown_ordinary_taxable: NDArray[np.int64]
+    breakdown_capital_taxable: NDArray[np.int64]
+    breakdown_ordinary_tax: NDArray[np.int64]
+    breakdown_capital_tax: NDArray[np.int64]
     settlement_active: NDArray[np.bool_]
-    settlement_amount: NDArray[np.float64]
+    settlement_amount: NDArray[np.int64]
     settlement_year_end_month: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
@@ -318,29 +318,29 @@ class TaxEventBuffers:
         link_shape = (h, plan.tax_link_count, r)
         settlement_shape = (h, plan.max_tax_settlement_slots, r)
         _expect_array("accrual_active", self.accrual_active, shape=link_shape, dtype=np.bool_)
-        _expect_array("accrual_amount", self.accrual_amount, shape=link_shape, dtype=np.float64)
-        _expect_array("breakdown_ordinary", self.breakdown_ordinary, shape=link_shape, dtype=np.float64)
-        _expect_array("breakdown_ltcg", self.breakdown_ltcg, shape=link_shape, dtype=np.float64)
-        _expect_array("breakdown_stcg", self.breakdown_stcg, shape=link_shape, dtype=np.float64)
+        _expect_array("accrual_amount", self.accrual_amount, shape=link_shape, dtype=np.int64)
+        _expect_array("breakdown_ordinary", self.breakdown_ordinary, shape=link_shape, dtype=np.int64)
+        _expect_array("breakdown_ltcg", self.breakdown_ltcg, shape=link_shape, dtype=np.int64)
+        _expect_array("breakdown_stcg", self.breakdown_stcg, shape=link_shape, dtype=np.int64)
         _expect_array(
-            "breakdown_standard_deduction", self.breakdown_standard_deduction, shape=link_shape, dtype=np.float64
+            "breakdown_standard_deduction", self.breakdown_standard_deduction, shape=link_shape, dtype=np.int64
         )
         _expect_array(
             "breakdown_mortgage_interest_deduction",
             self.breakdown_mortgage_interest_deduction,
             shape=link_shape,
-            dtype=np.float64,
+            dtype=np.int64,
         )
-        _expect_array("breakdown_salt_deduction", self.breakdown_salt_deduction, shape=link_shape, dtype=np.float64)
+        _expect_array("breakdown_salt_deduction", self.breakdown_salt_deduction, shape=link_shape, dtype=np.int64)
         _expect_array(
-            "breakdown_itemized_deduction", self.breakdown_itemized_deduction, shape=link_shape, dtype=np.float64
+            "breakdown_itemized_deduction", self.breakdown_itemized_deduction, shape=link_shape, dtype=np.int64
         )
-        _expect_array("breakdown_ordinary_taxable", self.breakdown_ordinary_taxable, shape=link_shape, dtype=np.float64)
-        _expect_array("breakdown_capital_taxable", self.breakdown_capital_taxable, shape=link_shape, dtype=np.float64)
-        _expect_array("breakdown_ordinary_tax", self.breakdown_ordinary_tax, shape=link_shape, dtype=np.float64)
-        _expect_array("breakdown_capital_tax", self.breakdown_capital_tax, shape=link_shape, dtype=np.float64)
+        _expect_array("breakdown_ordinary_taxable", self.breakdown_ordinary_taxable, shape=link_shape, dtype=np.int64)
+        _expect_array("breakdown_capital_taxable", self.breakdown_capital_taxable, shape=link_shape, dtype=np.int64)
+        _expect_array("breakdown_ordinary_tax", self.breakdown_ordinary_tax, shape=link_shape, dtype=np.int64)
+        _expect_array("breakdown_capital_tax", self.breakdown_capital_tax, shape=link_shape, dtype=np.int64)
         _expect_array("settlement_active", self.settlement_active, shape=settlement_shape, dtype=np.bool_)
-        _expect_array("settlement_amount", self.settlement_amount, shape=settlement_shape, dtype=np.float64)
+        _expect_array("settlement_amount", self.settlement_amount, shape=settlement_shape, dtype=np.int64)
         _expect_array(
             "settlement_year_end_month", self.settlement_year_end_month, shape=settlement_shape, dtype=np.int64
         )
@@ -349,18 +349,18 @@ class TaxEventBuffers:
 @dataclass
 class ObligationEventBuffers:
     active: NDArray[np.bool_]
-    due: NDArray[np.float64]
-    paid: NDArray[np.float64]
-    shortfall: NDArray[np.float64]
+    due: NDArray[np.int64]
+    paid: NDArray[np.int64]
+    shortfall: NDArray[np.int64]
     attempt_policy: NDArray[np.int64]
     failure_active: NDArray[np.bool_]
 
     def validate(self, plan: SlotPlan) -> None:
         shape = (plan.event_months, plan.max_obligation_slots, plan.rollout_count)
         _expect_array("active", self.active, shape=shape, dtype=np.bool_)
-        _expect_array("due", self.due, shape=shape, dtype=np.float64)
-        _expect_array("paid", self.paid, shape=shape, dtype=np.float64)
-        _expect_array("shortfall", self.shortfall, shape=shape, dtype=np.float64)
+        _expect_array("due", self.due, shape=shape, dtype=np.int64)
+        _expect_array("paid", self.paid, shape=shape, dtype=np.int64)
+        _expect_array("shortfall", self.shortfall, shape=shape, dtype=np.int64)
         _expect_array("attempt_policy", self.attempt_policy, shape=shape, dtype=np.int64)
         _expect_array("failure_active", self.failure_active, shape=shape, dtype=np.bool_)
 
@@ -376,7 +376,7 @@ class TaxLiabilityChange:
 
     snapshot_month: int
     slots: NDArray[np.int64]
-    amount: NDArray[np.float64]
+    amount: NDArray[np.int64]
     active: NDArray[np.bool_]
 
 

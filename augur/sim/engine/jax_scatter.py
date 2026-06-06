@@ -131,7 +131,7 @@ def scatter_ys_to_buffers(
     disp.units[:] = np.asarray(disp_units_h)
     disp.basis[:] = np.asarray(disp_basis_h)
     disp.proceeds[:] = np.asarray(disp_proceeds_h)
-    disp.active[:] = disp.units > 0.0
+    disp.active[:] = disp.units > 0
 
     if folded_purchases:
         # Stacks are `(horizon, num_real_purchases, R)`; scatter each to its property column.
@@ -154,7 +154,7 @@ def scatter_ys_to_buffers(
             np.asarray(a) for a in tax_h
         )
         taxes = buffers.taxes
-        taxes.accrual_active[:] = breakdown_h[0] > 0.0
+        taxes.accrual_active[:] = breakdown_h[0] > 0
         for buf, slab in zip(
             (
                 taxes.accrual_amount,

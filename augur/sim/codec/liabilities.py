@@ -15,6 +15,7 @@ from augur.sim.codec.helpers import (
     r_first_view,
     state_axes,
     state_history_frame_from_columns,
+    usd_column,
 )
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.events import EVENT_FRAMES
@@ -41,13 +42,19 @@ def decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> 
             "counterparty_agent_id": code_column(plan, plan.liabilities.counterparty_agent[liab_idx]),
             "counterparty_account_id": code_column(plan, plan.liabilities.counterparty_account[liab_idx]),
             "property_id": code_column(plan, property_id_codes[liab_idx]),
-            "principal_usd": principal.reshape(-1)[mask],
+            "principal_usd": usd_column(principal.reshape(-1)[mask]),
             "annual_interest_rate": plan.liabilities.annual_rate.astype(np.float64)[liab_idx],
             "term_months": plan.liabilities.term_months.astype(np.int64)[liab_idx],
             "origination_month_index": origination_per_liab[liab_idx],
-            "monthly_payment_usd": buffers.state.liability_monthly_payment_state.reshape(-1)[mask],
-            "interest_paid_ytd_usd": buffers.state.liability_interest_ytd_state.reshape(-1)[mask],
-            "principal_paid_ytd_usd": buffers.state.liability_principal_ytd_state.reshape(-1)[mask],
+            "monthly_payment_usd": usd_column(
+                r_first_view(buffers.state.liability_monthly_payment_state).reshape(-1)[mask]
+            ),
+            "interest_paid_ytd_usd": usd_column(
+                r_first_view(buffers.state.liability_interest_ytd_state).reshape(-1)[mask]
+            ),
+            "principal_paid_ytd_usd": usd_column(
+                r_first_view(buffers.state.liability_principal_ytd_state).reshape(-1)[mask]
+            ),
         },
         LIABILITY_FRAME,
     )
@@ -74,10 +81,10 @@ def decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationBu
         counterparty_agent_id=codes_to_strings(plan, plan.liabilities.counterparty_agent)[liabs],
         counterparty_account_id=codes_to_strings(plan, plan.liabilities.counterparty_account)[liabs],
         property_id=codes_to_strings(plan, plan.properties.id)[props],
-        principal_usd=plan.liabilities.principal.astype(np.float64)[liabs],
+        principal_usd=usd_column(plan.liabilities.principal[liabs]),
         annual_interest_rate=plan.liabilities.annual_rate.astype(np.float64)[liabs],
         term_months=plan.liabilities.term_months.astype(np.int64)[liabs],
-        monthly_payment_usd=plan.liabilities.monthly_payment.astype(np.float64)[liabs],
+        monthly_payment_usd=usd_column(plan.liabilities.monthly_payment[liabs]),
     )
 
 
@@ -101,7 +108,7 @@ def decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffer
         property_id=codes_to_strings(plan, plan.properties.id)[props],
         from_account_id=codes_to_strings(plan, plan.liabilities.payment_account)[liabs],
         to_account_id=codes_to_strings(plan, plan.liabilities.counterparty_account)[liabs],
-        interest_usd=buffers.properties.mortgage_payment_interest[months, liabs, rollouts],
-        principal_usd=buffers.properties.mortgage_payment_principal[months, liabs, rollouts],
-        total_payment_usd=buffers.properties.mortgage_payment_total[months, liabs, rollouts],
+        interest_usd=usd_column(buffers.properties.mortgage_payment_interest[months, liabs, rollouts]),
+        principal_usd=usd_column(buffers.properties.mortgage_payment_principal[months, liabs, rollouts]),
+        total_payment_usd=usd_column(buffers.properties.mortgage_payment_total[months, liabs, rollouts]),
     )

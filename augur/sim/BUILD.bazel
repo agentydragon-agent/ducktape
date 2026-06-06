@@ -100,6 +100,27 @@ py_library(
     ],
 )
 
+py_library(
+    name = "fixed_point",
+    srcs = ["fixed_point.py"],
+    deps = [
+        "//augur/product:asset_key",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "fixed_point_test",
+    size = "small",
+    srcs = ["fixed_point_test.py"],
+    deps = [
+        ":fixed_point",
+        "//augur/product:asset_key",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "tlh_harvest_test",
     srcs = ["tlh_harvest_test.py"],
@@ -227,6 +248,7 @@ py_library(
     deps = [
         ":enums",
         ":external_series",
+        ":fixed_point",
         ":jurisdictions",
         ":locations",
         ":runtime",
@@ -246,6 +268,7 @@ py_library(
     deps = [
         ":compiler",
         ":enums",
+        ":fixed_point",
         "@pypi//numpy",
     ],
 )
@@ -271,6 +294,7 @@ py_library(
         ":enums",
         ":events",
         ":external_series",
+        ":fixed_point",
         ":state",
         "//augur/model:series",
         "//augur/product:asset_key",
@@ -294,6 +318,7 @@ py_library(
         ":compiler",
         ":enums",
         ":external_series",
+        ":fixed_point",
         ":runtime",
         ":scenario",
         ":tensor_fifo",
@@ -418,6 +443,7 @@ py_test(
     deps = [
         ":conftest",
         ":external_series",
+        ":fixed_point",
         ":locations",
         ":scenario",
         ":simulate",

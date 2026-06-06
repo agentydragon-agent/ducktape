@@ -13,6 +13,7 @@ from augur.sim.codec.helpers import (
     r_first_view,
     state_axes,
     state_history_frame_from_columns,
+    usd_column,
 )
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.events import EVENT_FRAMES
@@ -34,7 +35,7 @@ def decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) 
             "property_id": property_ids[props[mask]],
             "location_id": location_ids[props[mask]],
             "purchase_month_index": plan.properties.month.astype(np.int64)[props[mask]],
-            "adjusted_basis_usd": basis.reshape(-1)[mask],
+            "adjusted_basis_usd": usd_column(basis.reshape(-1)[mask]),
         },
         PROPERTY_STATE_FRAME,
     )
@@ -59,8 +60,8 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
             "month_index": months[mask],
             "property_id": property_ids[props[mask]],
             "agent_id": buyer_ids[props[mask]],
-            "contribution_used_usd": contribution.reshape(-1)[mask],
-            "equity_ledger_usd": equity.reshape(-1)[mask],
+            "contribution_used_usd": usd_column(contribution.reshape(-1)[mask]),
+            "equity_ledger_usd": usd_column(equity.reshape(-1)[mask]),
         },
         PROPERTY_STAKE_FRAME,
     )
@@ -95,11 +96,11 @@ def decode_property_purchases(
         property_id=property_ids,
         location_id=location_ids,
         buyer_agent_id=buyer_agents,
-        purchase_price_usd=plan.properties.purchase_price.astype(np.float64)[props],
-        closing_cost_usd=plan.properties.closing_cost.astype(np.float64)[props],
-        adjusted_basis_usd=plan.properties.adjusted_basis.astype(np.float64)[props],
-        stake_contribution_usd=plan.properties.stake_contribution.astype(np.float64)[props],
-        equity_ledger_usd=plan.properties.equity_ledger.astype(np.float64)[props],
+        purchase_price_usd=usd_column(plan.properties.purchase_price[props]),
+        closing_cost_usd=usd_column(plan.properties.closing_cost[props]),
+        adjusted_basis_usd=usd_column(plan.properties.adjusted_basis[props]),
+        stake_contribution_usd=usd_column(plan.properties.stake_contribution[props]),
+        equity_ledger_usd=usd_column(plan.properties.equity_ledger[props]),
     )
     # Derived buyer-cash transfers: subset where `property_transfer_active` also holds.
     transfer_mask = buffers.properties.transfer_active[months, props, rollouts]
@@ -117,7 +118,7 @@ def decode_property_purchases(
             from_account_id=buyer_accounts[transfer_mask],
             to_agent_id=seller_agents[transfer_mask],
             to_account_id=seller_accounts[transfer_mask],
-            amount_usd=plan.properties.stake_contribution.astype(np.float64)[p_t],
+            amount_usd=usd_column(plan.properties.stake_contribution[p_t]),
             income_category=np.full(p_t.size, None, dtype=object),
         )
     else:

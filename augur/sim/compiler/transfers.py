@@ -14,7 +14,7 @@ from augur.sim.compiler.helpers import (
     ORDINARY_DEDUCTION_CATEGORY,
     ORDINARY_INCOME_CATEGORY,
     StringTable,
-    amount_arrays,
+    amount_arrays_cents,
     empty_month_matrix,
     slot,
 )
@@ -40,8 +40,8 @@ class TransferCompileOutput:
     income_profile: NDArray[np.int64]
     deduction_profile: NDArray[np.int64]
     amount_kind: NDArray[np.int64]
-    amount_fixed: NDArray[np.float64]
-    amount_base: NDArray[np.float64]
+    amount_fixed: NDArray[np.int64]
+    amount_base: NDArray[np.int64]
     amount_series: NDArray[np.int64]
     amount_base_month: NDArray[np.int64]
     amount_period: NDArray[np.int64]
@@ -73,8 +73,8 @@ def compile_transfer_slots(
     income_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     deduction_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     amount_kind = empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
-    amount_fixed = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_base = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    amount_fixed = empty_month_matrix(horizon, max_slots, np.int64, 0)
+    amount_base = empty_month_matrix(horizon, max_slots, np.int64, 0)
     amount_series = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     amount_base_month = empty_month_matrix(horizon, max_slots, np.int64, 0)
     amount_period = empty_month_matrix(horizon, max_slots, np.int64, 1)
@@ -92,7 +92,7 @@ def compile_transfer_slots(
                 income_profile[month, idx] = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
             if transfer.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
                 deduction_profile[month, idx] = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
-            kind, fixed, base, series, base_month, period = amount_arrays(transfer.amount_usd, series_index_by_id)
+            kind, fixed, base, series, base_month, period = amount_arrays_cents(transfer.amount_usd, series_index_by_id)
             amount_kind[month, idx] = kind
             amount_fixed[month, idx] = fixed
             amount_base[month, idx] = base

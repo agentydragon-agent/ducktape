@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.sim.enums import LifecycleKind
+from augur.sim.fixed_point import usd_to_cents
 from augur.sim.scenario import CapitalImprovementEvent, PropertySaleEvent, Scenario, SetRentedFractionEvent
 
 
@@ -33,6 +34,7 @@ class LifecycleEventCompileOutput:
     kind: NDArray[np.int64]
     rented_fraction: NDArray[np.float64]
     amount: NDArray[np.float64]
+    amount_cents: NDArray[np.int64]
     month_starts: NDArray[np.int64]
 
 
@@ -44,6 +46,7 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
     kind = np.empty(count, dtype=np.int64)
     rented_fraction = np.zeros(count, dtype=np.float64)
     amount = np.zeros(count, dtype=np.float64)
+    amount_cents = np.zeros(count, dtype=np.int64)
     for i, event in enumerate(events_sorted):
         if event.property_id not in property_slot_by_id:
             raise ValueError(
@@ -66,6 +69,7 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
         elif isinstance(event, CapitalImprovementEvent):
             kind[i] = LifecycleKind.CAPITAL_IMPROVEMENT
             amount[i] = float(event.amount_usd)
+            amount_cents[i] = usd_to_cents(event.amount_usd)
         elif isinstance(event, PropertySaleEvent):
             kind[i] = LifecycleKind.SALE
             # Reuse `amount` as closing_cost_pct for sale events (different semantic per kind,
@@ -81,5 +85,6 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
         kind=kind,
         rented_fraction=rented_fraction,
         amount=amount,
+        amount_cents=amount_cents,
         month_starts=month_starts,
     )

@@ -14,6 +14,7 @@ import numpy as np
 
 from augur.model.series import LevelSeriesKey
 from augur.product.asset_key import AssetKey
+from augur.sim.fixed_point import usd_to_cents
 from augur.sim.scenario import FixedAmount, SeriesIndexedAmount
 
 NO_CODE = -1
@@ -84,6 +85,25 @@ def amount_arrays(
             AMOUNT_SERIES_INDEXED,
             0.0,
             float(amount.base_amount_usd),
+            series_index_by_id[amount.series],
+            int(amount.base_month_index),
+            int(amount.adjustment_period_months),
+        )
+    raise TypeError(f"unsupported amount spec: {amount!r}")
+
+
+def amount_arrays_cents(
+    amount: Any, series_index_by_id: dict[LevelSeriesKey, int]
+) -> tuple[int, np.int64, np.int64, int, int, int]:
+    if isinstance(amount, int | float):
+        return AMOUNT_FIXED, usd_to_cents(amount), np.int64(0), NO_CODE, 0, 1
+    if isinstance(amount, FixedAmount):
+        return AMOUNT_FIXED, usd_to_cents(amount.amount_usd), np.int64(0), NO_CODE, 0, 1
+    if isinstance(amount, SeriesIndexedAmount):
+        return (
+            AMOUNT_SERIES_INDEXED,
+            np.int64(0),
+            usd_to_cents(amount.base_amount_usd),
             series_index_by_id[amount.series],
             int(amount.base_month_index),
             int(amount.adjustment_period_months),

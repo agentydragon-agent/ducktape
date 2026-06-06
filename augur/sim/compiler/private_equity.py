@@ -12,7 +12,8 @@ from numpy.typing import NDArray
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from augur.product.asset_key import PrivateEquityAssetKey
-from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays
+from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_cents
+from augur.sim.fixed_point import usd_array_to_cents
 from augur.sim.scenario import Scenario
 
 
@@ -46,7 +47,7 @@ class PEChannels:
     eligible_fractions: NDArray[np.float64]
     forced_sale_fractions: NDArray[np.float64]
     liquidity_blocked: NDArray[np.bool_]
-    forced_recovery_cashout_usd: NDArray[np.float64]
+    forced_recovery_cashout_cents: NDArray[np.int64]
 
 
 @dataclass(frozen=True)
@@ -59,8 +60,8 @@ class PEPolicyCompileOutput:
     owner_agent: NDArray[np.int64]
     proceeds_cash_slot: NDArray[np.int64]
     floor_kind: NDArray[np.int64]
-    floor_fixed: NDArray[np.float64]
-    floor_base: NDArray[np.float64]
+    floor_fixed: NDArray[np.int64]
+    floor_base: NDArray[np.int64]
     floor_series: NDArray[np.int64]
     floor_base_month: NDArray[np.int64]
     floor_period: NDArray[np.int64]
@@ -105,8 +106,8 @@ def compile_private_equity_tenders(
     pe_policy_owner_agent_codes = np.full(policy_count, NO_CODE, dtype=np.int64)
     pe_policy_proceeds_cash_slot = np.full(policy_count, NO_CODE, dtype=np.int64)
     pe_policy_floor_kind = np.full(policy_count, AMOUNT_FIXED, dtype=np.int64)
-    pe_policy_floor_fixed = np.zeros(policy_count, dtype=np.float64)
-    pe_policy_floor_base = np.zeros(policy_count, dtype=np.float64)
+    pe_policy_floor_fixed = np.zeros(policy_count, dtype=np.int64)
+    pe_policy_floor_base = np.zeros(policy_count, dtype=np.int64)
     pe_policy_floor_series_index = np.full(policy_count, NO_CODE, dtype=np.int64)
     pe_policy_floor_base_month = np.zeros(policy_count, dtype=np.int64)
     pe_policy_floor_adjustment_period = np.ones(policy_count, dtype=np.int64)
@@ -141,7 +142,9 @@ def compile_private_equity_tenders(
         owner_cash_slots = np.flatnonzero(cash_agent_codes == owner_code)
         if owner_cash_slots.size > 0:
             pe_policy_proceeds_cash_slot[policy_idx] = int(owner_cash_slots[0])
-        kind, fixed, base, series, base_month, period = amount_arrays(policy.liquid_net_worth_floor, series_index_by_id)
+        kind, fixed, base, series, base_month, period = amount_arrays_cents(
+            policy.liquid_net_worth_floor, series_index_by_id
+        )
         pe_policy_floor_kind[policy_idx] = kind
         pe_policy_floor_fixed[policy_idx] = fixed
         pe_policy_floor_base[policy_idx] = base
@@ -198,7 +201,7 @@ def compile_pe_channels(
     eligible_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     forced_sale_fractions = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     liquidity_blocked = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
-    forced_recovery_cashout_usd = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    forced_recovery_cashout_cents = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
     for issuer_idx, issuer_code in enumerate(issuers.codes):
         if int(issuer_code) < 0:
             continue
@@ -229,8 +232,10 @@ def compile_pe_channels(
         liquidity_blocked[issuer_idx] = private_equity.issuer_bool_matrix(
             issuer_id, "liquidity_blocked", rollout_count=rollout_count, horizon_months=horizon_months
         )
-        forced_recovery_cashout_usd[issuer_idx] = private_equity.issuer_float_matrix(
-            issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
+        forced_recovery_cashout_cents[issuer_idx] = usd_array_to_cents(
+            private_equity.issuer_float_matrix(
+                issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
+            )
         )
     return PEChannels(
         marks=marks,
@@ -241,5 +246,5 @@ def compile_pe_channels(
         eligible_fractions=eligible_fractions,
         forced_sale_fractions=forced_sale_fractions,
         liquidity_blocked=liquidity_blocked,
-        forced_recovery_cashout_usd=forced_recovery_cashout_usd,
+        forced_recovery_cashout_cents=forced_recovery_cashout_cents,
     )

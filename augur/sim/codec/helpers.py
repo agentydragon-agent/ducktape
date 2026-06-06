@@ -16,6 +16,7 @@ import numpy as np
 import polars as pl
 
 from augur.sim.compiler import CompiledSimulation
+from augur.sim.fixed_point import cents_array_to_usd
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,18 @@ def r_first_view(state: np.ndarray) -> np.ndarray:
     (h1, r, count[, ...]) row-major iteration order over the resulting flat buffer."""
 
     return np.moveaxis(state, -1, 1)
+
+
+def usd_column(cents: Any) -> np.ndarray:
+    return cents_array_to_usd(cents)
+
+
+def quantity_column(quanta: Any, scales: Any) -> np.ndarray:
+    return np.asarray(quanta, dtype=np.float64) / np.asarray(scales, dtype=np.float64)
+
+
+def lot_quantity_column(plan: CompiledSimulation, lots: np.ndarray, quanta: Any) -> np.ndarray:
+    return quantity_column(quanta, plan.lot_quantity_scale[np.asarray(lots, dtype=np.int64)])
 
 
 def state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

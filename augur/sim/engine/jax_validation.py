@@ -23,8 +23,8 @@ def validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:
                 f"private-equity mark series for issuer {plan.strings[int(issuer_code)]!r} "
                 "produced a negative or non-finite value"
             )
-        forced_recovery = pe_channels.forced_recovery_cashout_usd[issuer_idx, :, : plan.horizon_months]
-        if forced_recovery.size and (forced_recovery < 0.0).any():
+        forced_recovery = pe_channels.forced_recovery_cashout_cents[issuer_idx, :, : plan.horizon_months]
+        if forced_recovery.size and (forced_recovery < 0).any():
             raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
     harvest = plan.harvest_policies

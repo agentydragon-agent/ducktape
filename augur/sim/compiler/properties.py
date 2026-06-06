@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.sim.compiler.helpers import NO_CODE, StringTable, slot
+from augur.sim.fixed_point import usd_to_cents
 from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import Scenario
@@ -31,8 +32,8 @@ class PropertyCompileOutput:
     id: NDArray[np.int64]
     location_id: NDArray[np.int64]
     location_tax_rate: NDArray[np.float64]
-    special_assessment_annual_usd: NDArray[np.float64]
-    initial_assessed_value: NDArray[np.float64]
+    special_assessment_annual_usd: NDArray[np.int64]
+    initial_assessed_value: NDArray[np.int64]
     month: NDArray[np.int64]
     buyer_agent: NDArray[np.int64]
     buyer_account: NDArray[np.int64]
@@ -40,12 +41,12 @@ class PropertyCompileOutput:
     seller_agent: NDArray[np.int64]
     seller_account: NDArray[np.int64]
     seller_slot: NDArray[np.int64]
-    purchase_price: NDArray[np.float64]
-    closing_cost: NDArray[np.float64]
-    down_payment: NDArray[np.float64]
-    adjusted_basis: NDArray[np.float64]
-    stake_contribution: NDArray[np.float64]
-    equity_ledger: NDArray[np.float64]
+    purchase_price: NDArray[np.int64]
+    closing_cost: NDArray[np.int64]
+    down_payment: NDArray[np.int64]
+    adjusted_basis: NDArray[np.int64]
+    stake_contribution: NDArray[np.int64]
+    equity_ledger: NDArray[np.int64]
     mortgage_slot: NDArray[np.int64]
 
 
@@ -63,10 +64,10 @@ class LiabilityCompileOutput:
     counterparty_agent: NDArray[np.int64]
     counterparty_account: NDArray[np.int64]
     counterparty_slot: NDArray[np.int64]
-    principal: NDArray[np.float64]
+    principal: NDArray[np.int64]
     annual_rate: NDArray[np.float64]
     term_months: NDArray[np.int64]
-    monthly_payment: NDArray[np.float64]
+    monthly_payment: NDArray[np.int64]
 
 
 def compile_properties_and_liabilities(
@@ -80,8 +81,8 @@ def compile_properties_and_liabilities(
     prop_id = np.zeros(max(1, prop_count), dtype=np.int64)
     location_id = np.zeros(max(1, prop_count), dtype=np.int64)
     location_tax_rate = np.zeros(max(1, prop_count), dtype=np.float64)
-    special_assessment_annual_usd = np.zeros(max(1, prop_count), dtype=np.float64)
-    initial_assessed_value = np.zeros(max(1, prop_count), dtype=np.float64)
+    special_assessment_annual_usd = np.zeros(max(1, prop_count), dtype=np.int64)
+    initial_assessed_value = np.zeros(max(1, prop_count), dtype=np.int64)
     month_array = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
     buyer_agent = np.zeros(max(1, prop_count), dtype=np.int64)
     buyer_account = np.zeros(max(1, prop_count), dtype=np.int64)
@@ -89,12 +90,12 @@ def compile_properties_and_liabilities(
     seller_agent = np.zeros(max(1, prop_count), dtype=np.int64)
     seller_account = np.zeros(max(1, prop_count), dtype=np.int64)
     seller_slot = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
-    purchase_price = np.zeros(max(1, prop_count), dtype=np.float64)
-    closing_cost = np.zeros(max(1, prop_count), dtype=np.float64)
-    down_payment = np.zeros(max(1, prop_count), dtype=np.float64)
-    adjusted_basis = np.zeros(max(1, prop_count), dtype=np.float64)
-    stake_contribution = np.zeros(max(1, prop_count), dtype=np.float64)
-    equity_ledger = np.zeros(max(1, prop_count), dtype=np.float64)
+    purchase_price = np.zeros(max(1, prop_count), dtype=np.int64)
+    closing_cost = np.zeros(max(1, prop_count), dtype=np.int64)
+    down_payment = np.zeros(max(1, prop_count), dtype=np.int64)
+    adjusted_basis = np.zeros(max(1, prop_count), dtype=np.int64)
+    stake_contribution = np.zeros(max(1, prop_count), dtype=np.int64)
+    equity_ledger = np.zeros(max(1, prop_count), dtype=np.int64)
     mortgage_slot = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
 
     liability_codes: list[int] = []
@@ -105,10 +106,10 @@ def compile_properties_and_liabilities(
     liability_counterparty_agent: list[int] = []
     liability_counterparty_account: list[int] = []
     liability_counterparty_slot: list[int] = []
-    liability_principal: list[float] = []
+    liability_principal: list[np.int64] = []
     liability_rate: list[float] = []
     liability_term: list[int] = []
-    liability_payment: list[float] = []
+    liability_payment: list[np.int64] = []
 
     for idx, purchase in enumerate(scenario.scheduled_property_purchases):
         cause[purchase.month, idx] = strings.require(purchase.cause_id)
@@ -122,8 +123,8 @@ def compile_properties_and_liabilities(
                 f"{purchase.location_id!r}; known location ids: {known_location_ids}"
             )
         location_tax_rate[idx] = float(location.annual_property_tax_rate)
-        special_assessment_annual_usd[idx] = float(location.annual_special_assessment_usd)
-        initial_assessed_value[idx] = float(purchase.purchase_price_usd)
+        special_assessment_annual_usd[idx] = usd_to_cents(location.annual_special_assessment_usd)
+        initial_assessed_value[idx] = usd_to_cents(purchase.purchase_price_usd)
         month_array[idx] = int(purchase.month)
         buyer_agent[idx] = strings.require(purchase.buyer_agent_id)
         buyer_account[idx] = strings.require(purchase.buyer_account_id)
@@ -132,12 +133,12 @@ def compile_properties_and_liabilities(
         seller_account[idx] = strings.require(purchase.seller_account_id)
         seller_slot[idx] = slot(account_slot_by_key, purchase.seller_agent_id, purchase.seller_account_id)
         mortgage_principal = purchase.mortgage.principal_usd if purchase.mortgage is not None else 0.0
-        purchase_price[idx] = float(purchase.purchase_price_usd)
-        closing_cost[idx] = float(purchase.buyer_closing_cost_usd)
-        down_payment[idx] = float(purchase.down_payment_usd)
-        adjusted_basis[idx] = float(purchase.purchase_price_usd + purchase.buyer_closing_cost_usd)
-        stake_contribution[idx] = float(purchase.down_payment_usd + purchase.buyer_closing_cost_usd)
-        equity_ledger[idx] = float(purchase.purchase_price_usd - mortgage_principal)
+        purchase_price[idx] = usd_to_cents(purchase.purchase_price_usd)
+        closing_cost[idx] = usd_to_cents(purchase.buyer_closing_cost_usd)
+        down_payment[idx] = usd_to_cents(purchase.down_payment_usd)
+        adjusted_basis[idx] = usd_to_cents(purchase.purchase_price_usd + purchase.buyer_closing_cost_usd)
+        stake_contribution[idx] = usd_to_cents(purchase.down_payment_usd + purchase.buyer_closing_cost_usd)
+        equity_ledger[idx] = usd_to_cents(purchase.purchase_price_usd - mortgage_principal)
         if purchase.mortgage is not None:
             mortgage_slot[idx] = len(liability_codes)
             mortgage = purchase.mortgage
@@ -151,12 +152,14 @@ def compile_properties_and_liabilities(
             liability_counterparty_slot.append(
                 slot(account_slot_by_key, mortgage.lender_agent_id, mortgage.lender_account_id)
             )
-            liability_principal.append(float(mortgage.principal_usd))
+            liability_principal.append(usd_to_cents(mortgage.principal_usd))
             liability_rate.append(float(mortgage.annual_interest_rate))
             liability_term.append(int(mortgage.term_months))
             liability_payment.append(
-                mortgage_monthly_payment_usd(
-                    mortgage.principal_usd, mortgage.annual_interest_rate, int(mortgage.term_months)
+                usd_to_cents(
+                    mortgage_monthly_payment_usd(
+                        mortgage.principal_usd, mortgage.annual_interest_rate, int(mortgage.term_months)
+                    )
                 )
             )
 
@@ -192,9 +195,9 @@ def compile_properties_and_liabilities(
             counterparty_agent=np.asarray(liability_counterparty_agent, dtype=np.int64),
             counterparty_account=np.asarray(liability_counterparty_account, dtype=np.int64),
             counterparty_slot=np.asarray(liability_counterparty_slot, dtype=np.int64),
-            principal=np.asarray(liability_principal, dtype=np.float64),
+            principal=np.asarray(liability_principal, dtype=np.int64),
             annual_rate=np.asarray(liability_rate, dtype=np.float64),
             term_months=np.asarray(liability_term, dtype=np.int64),
-            monthly_payment=np.asarray(liability_payment, dtype=np.float64),
+            monthly_payment=np.asarray(liability_payment, dtype=np.int64),
         ),
     )

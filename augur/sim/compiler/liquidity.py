@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 from augur.model.series import LevelSeriesKey
 from augur.product.asset_key import asset_price_key_or_none
-from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays, slot
+from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_cents, slot
 from augur.sim.scenario import Scenario
 
 
@@ -28,14 +28,14 @@ class LiquidityPolicyCompileOutput:
     cash_slot: NDArray[np.int64]
     source_accounts: NDArray[np.int64]
     trigger_kind: NDArray[np.int64]
-    trigger_fixed: NDArray[np.float64]
-    trigger_base: NDArray[np.float64]
+    trigger_fixed: NDArray[np.int64]
+    trigger_base: NDArray[np.int64]
     trigger_series: NDArray[np.int64]
     trigger_base_month: NDArray[np.int64]
     trigger_period: NDArray[np.int64]
     sale_kind: NDArray[np.int64]
-    sale_fixed: NDArray[np.float64]
-    sale_base: NDArray[np.float64]
+    sale_fixed: NDArray[np.int64]
+    sale_base: NDArray[np.int64]
     sale_series: NDArray[np.int64]
     sale_base_month: NDArray[np.int64]
     sale_period: NDArray[np.int64]
@@ -62,14 +62,14 @@ def compile_liquidity_policies(
     cash_slot = np.full(slot_count, NO_CODE, dtype=np.int64)
     source_accounts = np.full((slot_count, max_source_accounts), NO_CODE, dtype=np.int64)
     trigger_kind = np.full(slot_count, AMOUNT_FIXED, dtype=np.int64)
-    trigger_fixed = np.zeros(slot_count, dtype=np.float64)
-    trigger_base = np.zeros(slot_count, dtype=np.float64)
+    trigger_fixed = np.zeros(slot_count, dtype=np.int64)
+    trigger_base = np.zeros(slot_count, dtype=np.int64)
     trigger_series_index = np.full(slot_count, NO_CODE, dtype=np.int64)
     trigger_base_month = np.zeros(slot_count, dtype=np.int64)
     trigger_adjustment_period = np.ones(slot_count, dtype=np.int64)
     sale_kind = np.full(slot_count, AMOUNT_FIXED, dtype=np.int64)
-    sale_fixed = np.zeros(slot_count, dtype=np.float64)
-    sale_base = np.zeros(slot_count, dtype=np.float64)
+    sale_fixed = np.zeros(slot_count, dtype=np.int64)
+    sale_base = np.zeros(slot_count, dtype=np.int64)
     sale_series_index = np.full(slot_count, NO_CODE, dtype=np.int64)
     sale_base_month = np.zeros(slot_count, dtype=np.int64)
     sale_adjustment_period = np.ones(slot_count, dtype=np.int64)
@@ -89,7 +89,7 @@ def compile_liquidity_policies(
             trigger_series_index[idx],
             trigger_base_month[idx],
             trigger_adjustment_period[idx],
-        ) = amount_arrays(policy.cash_buffer_trigger_below_usd, series_index_by_id)
+        ) = amount_arrays_cents(policy.cash_buffer_trigger_below_usd, series_index_by_id)
         (
             sale_kind[idx],
             sale_fixed[idx],
@@ -97,7 +97,7 @@ def compile_liquidity_policies(
             sale_series_index[idx],
             sale_base_month[idx],
             sale_adjustment_period[idx],
-        ) = amount_arrays(policy.cash_buffer_sale_usd, series_index_by_id)
+        ) = amount_arrays_cents(policy.cash_buffer_sale_usd, series_index_by_id)
         prefixes.append(policy.cause_id_prefix)
         # PE assets are valid chain members for decode/labeling but price off-series → NO_CODE.
         for asset_idx, asset in enumerate(policy.asset_preference_chain):

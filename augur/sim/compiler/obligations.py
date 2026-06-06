@@ -20,7 +20,7 @@ from augur.sim.compiler.helpers import (
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
     StringTable,
-    amount_arrays,
+    amount_arrays_cents,
     empty_month_matrix,
     slot,
 )
@@ -50,11 +50,12 @@ class ObligationCompileOutput:
     to_account: NDArray[np.int64]
     to_slot: NDArray[np.int64]
     amount_kind: NDArray[np.int64]
-    amount_fixed: NDArray[np.float64]
-    amount_base: NDArray[np.float64]
+    amount_fixed: NDArray[np.int64]
+    amount_base: NDArray[np.int64]
     amount_series: NDArray[np.int64]
     amount_base_month: NDArray[np.int64]
     amount_period: NDArray[np.int64]
+    property_tax_annual_rate: NDArray[np.float64]
     source_kind: NDArray[np.int64]
     source_index: NDArray[np.int64]
     property_tax_profile: NDArray[np.int64]
@@ -133,11 +134,12 @@ def compile_obligation_slots(
     to_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     to_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     amount_kind = empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
-    amount_fixed = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_base = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    amount_fixed = empty_month_matrix(horizon, max_slots, np.int64, 0)
+    amount_base = empty_month_matrix(horizon, max_slots, np.int64, 0)
     amount_series = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     amount_base_month = empty_month_matrix(horizon, max_slots, np.int64, 0)
     amount_period = empty_month_matrix(horizon, max_slots, np.int64, 1)
+    property_tax_annual_rate = empty_month_matrix(horizon, max_slots, np.float64, np.nan)
     source_kind = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     source_index = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
@@ -171,7 +173,9 @@ def compile_obligation_slots(
                 to_agent[month, idx] = strings.require(config.to_agent_id)
                 to_account[month, idx] = strings.require(config.to_account_id)
                 to_slot[month, idx] = slot(account_slot_by_key, config.to_agent_id, config.to_account_id)
-                kind, fixed, base, series, base_month, period = amount_arrays(config.amount_due_usd, series_index_by_id)
+                kind, fixed, base, series, base_month, period = amount_arrays_cents(
+                    config.amount_due_usd, series_index_by_id
+                )
                 amount_kind[month, idx] = kind
                 amount_fixed[month, idx] = fixed
                 amount_base[month, idx] = base
@@ -245,7 +249,7 @@ def compile_obligation_slots(
                 to_slot[month, idx] = slot(
                     account_slot_by_key, policy.tax_authority_agent_id, policy.tax_authority_account_id
                 )
-                amount_fixed[month, idx] = (
+                property_tax_annual_rate[month, idx] = (
                     float(policy.annual_tax_rate) if policy.annual_tax_rate is not None else np.nan
                 )
                 owner_code = strings.require(policy.owner_agent_id)
@@ -301,6 +305,7 @@ def compile_obligation_slots(
         amount_series=amount_series,
         amount_base_month=amount_base_month,
         amount_period=amount_period,
+        property_tax_annual_rate=property_tax_annual_rate,
         source_kind=source_kind,
         source_index=source_index,
         property_tax_profile=property_tax_profile,

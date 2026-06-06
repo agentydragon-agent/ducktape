@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from augur.sim.compiler.helpers import StringTable
 from augur.sim.compiler.properties import LiabilityCompileOutput
 from augur.sim.compiler.tax import TaxCompileOutput
+from augur.sim.fixed_point import usd_to_cents
 from augur.sim.scenario import MortgageInterestDeductionPolicy, Scenario
 
 
@@ -44,7 +45,7 @@ class SaltCompileOutput:
       tax of these state links into the federal SALT total."""
 
     link_active: NDArray[np.bool_]
-    cap_by_year: NDArray[np.float64]
+    cap_by_year: NDArray[np.int64]
     contributing_mask: NDArray[np.bool_]
 
 
@@ -111,7 +112,7 @@ def compile_mortgage_interest_deductions(
             # via parallel `liability_rental_interest_ytd` accumulation that mirrors
             # `current.property_rented_fraction` — mid-horizon lifecycle events take effect
             # immediately in MID/Schedule E.
-            ratio[link, lia_slot] = min(1.0, float(cap) / principal)
+            ratio[link, lia_slot] = min(1.0, float(usd_to_cents(cap)) / principal)
         active[link] = bool(np.any(ratio[link] > 0.0))
 
     return MIDCompileOutput(principal_ratio=ratio, link_active=active)
@@ -137,7 +138,7 @@ def compile_federal_salt_deductions(
     horizon = int(scenario.horizon_months)
     year_count = max(1, (horizon + 11) // 12)
     salt_active = np.zeros(max(1, link_count), dtype=np.bool_)
-    salt_cap_by_year = np.zeros((max(1, link_count), year_count), dtype=np.float64)
+    salt_cap_by_year = np.zeros((max(1, link_count), year_count), dtype=np.int64)
     contributing_mask = np.zeros((max(1, link_count), max(1, link_count)), dtype=np.bool_)
 
     if link_count == 0 or not scenario.federal_salt_deduction_policies:
@@ -185,7 +186,7 @@ def compile_federal_salt_deductions(
         # the cap is 0 (no allowed deduction). An empty schedule means SALT is effectively
         # uncapped — represent that by a large sentinel cap.
         if not policy.cap_schedule:
-            salt_cap_by_year[federal_link, :] = np.inf
+            salt_cap_by_year[federal_link, :] = np.iinfo(np.int64).max
             continue
         sorted_entries = sorted(policy.cap_schedule, key=lambda entry: entry.effective_year_index)
         for year in range(year_count):
@@ -193,6 +194,6 @@ def compile_federal_salt_deductions(
             if not applicable:
                 salt_cap_by_year[federal_link, year] = 0.0
             else:
-                salt_cap_by_year[federal_link, year] = float(applicable[-1].cap_usd)
+                salt_cap_by_year[federal_link, year] = usd_to_cents(applicable[-1].cap_usd)
 
     return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)

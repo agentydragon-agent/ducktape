@@ -202,10 +202,10 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
         row["jurisdiction_id"]: row for row in projection.tax_breakdowns.sort("jurisdiction_id").iter_rows(named=True)
     }
     assert breakdowns["federal_us"]["tax_year"] == 0
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.0)
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.04)
     assert breakdowns["federal_us"]["capital_gain_taxable_usd"] == pytest.approx(20_000.0)
     assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(4_016.0, abs=0.01)
-    assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.25, abs=0.01)
+    assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.26, abs=0.01)
     assert breakdowns["california"]["total_tax_usd"] == pytest.approx(2_712.36, abs=0.01)
 
     paid_tax_obligations = projection.obligation_lifecycle.filter(
@@ -239,14 +239,14 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
         {
             "month_index": 12,
             "obligation_id": "alice_tax_true_up_y0",
-            "amount_paid_usd": pytest.approx(3_984.61, abs=0.02),
+            "amount_paid_usd": pytest.approx(3_984.62, abs=0.02),
             "status": "paid",
         },
     ]
 
     alice_final = _net_worth_row(projection.net_worth, agent_id="alice", month=13)
-    assert alice_final["cash_usd"] == pytest.approx(71_015.39, abs=0.02)
-    assert alice_final["book_net_worth_usd"] == pytest.approx(71_015.39, abs=0.02)
+    assert alice_final["cash_usd"] == pytest.approx(71_015.42, abs=0.02)
+    assert alice_final["book_net_worth_usd"] == pytest.approx(71_015.42, abs=0.02)
 
 
 def test_projection_real_estate_book_net_worth_and_liability_balance(san_francisco_location: Location) -> None:

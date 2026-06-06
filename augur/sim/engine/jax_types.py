@@ -12,7 +12,7 @@ class _FoldedSale:
     buffer_index: int
     month: int
     ordered_lots: tuple[int, ...]
-    quantity: float
+    quantity: int
     proceeds_slot: int
     agent_code: int
 
@@ -23,7 +23,7 @@ class _FoldedPurchase:
 
     buffer_index: int
     month: int
-    stake_contribution: float
+    stake_contribution: int
     buyer_slot: int
     seller_slot: int
     mortgage_slot: int
@@ -44,8 +44,8 @@ class _FoldedLiquidity:
     policy_index: int
     agent: int
     cash_slot: int
-    trigger: tuple[int, float, float, int, int]
-    sale: tuple[int, float, float, int, int]
+    trigger: tuple[int, int, int, int, int]
+    sale: tuple[int, int, int, int, int]
     pools: tuple[_LiquidityPool, ...]
 
 
@@ -73,8 +73,8 @@ class _FoldedPE:
     proceeds_cash_slot: int
     owner_agent: int
     floor_kind: int
-    floor_fixed: float
-    floor_base: float
+    floor_fixed: int
+    floor_base: int
     floor_base_month: int
     floor_period: int
     owner_non_pe_lot_indices: tuple[int, ...]
@@ -90,12 +90,13 @@ class _FoldedLifecycleEvent:
     property_slot: int
     rented_fraction: float
     amount: float
+    amount_cents: int
     owner_cash_slot: int
-    purchase_price: float
-    building_basis_initial: float
+    purchase_price: int
+    building_basis_initial: int
     owner_profile: int
     gain_profile: int
-    exclusion_cap: float
+    exclusion_cap: int
     mortgage_liabilities: tuple[int, ...]
 
 
@@ -158,7 +159,7 @@ class _Static:
     sale_olots: tuple[tuple[int, ...], ...]
     pur_buf: tuple[int, ...]
     pur_month: tuple[int, ...]
-    pur_stake: tuple[float, ...]
+    pur_stake: tuple[int, ...]
     pur_buyer: tuple[int, ...]
     pur_seller: tuple[int, ...]
     pur_mort_rows: tuple[int, ...]

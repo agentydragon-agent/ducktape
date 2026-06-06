@@ -39,6 +39,7 @@ from augur.product.wire import (
 )
 from augur.sim.codec.plan import SimulationRun
 from augur.sim.engine import DenseSimulationResult
+from augur.sim.fixed_point import cents_array_to_usd
 from augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
@@ -161,7 +162,7 @@ def rollout_events_from(
 
 def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
     cash_slots = np.flatnonzero(dense.plan.cash_agent_codes == primary_agent_code)
-    return cast(np.ndarray, dense.buffers.state.cash_state[:, cash_slots, :].sum(axis=1))
+    return cast(np.ndarray, cents_array_to_usd(dense.buffers.state.cash_state[:, cash_slots, :].sum(axis=1)))
 
 
 def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
@@ -198,7 +199,7 @@ def _lot_value_by_month(
         asset = plan.assets[int(plan.lot_asset_codes[lot])]
         if not include(asset):
             continue
-        quantity = dense.buffers.state.lot_state[:, lot, :]  # (H+1, R)
+        quantity = dense.buffers.state.lot_state[:, lot, :] / float(plan.lot_quantity_scale[lot])  # (H+1, R)
         # PE lots take their mark from `pe_channels.marks` (typed bundle); non-PE lots
         # read from the series-indexed external_values cube. Both are stored R-major
         # `(…, R, months)`, so transpose to the `(months, R)` = `(H+1, R)` metric layout.
@@ -230,8 +231,8 @@ def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
     plan = dense.plan
     shortfall = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.float64)
     primary_obligations = plan.obligations.agent == primary_agent_code  # [H, O]
-    shortfall[1:] = (dense.buffers.obligations.shortfall * primary_obligations[:, :, None].astype(np.float64)).sum(
-        axis=1
+    shortfall[1:] = cents_array_to_usd(
+        (dense.buffers.obligations.shortfall * primary_obligations[:, :, None].astype(np.int64)).sum(axis=1)
     )
     return shortfall
 
@@ -487,7 +488,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
         # State snapshots are H+1 rows: index 0 = pre-month-0 opening, index s = end of month s-1.
         # The property is active starting at snapshot index `purchase_month + 1` (end of purchase month).
         base_level = levels[purchase_month]  # (R,) per-rollout base value at the purchase month
-        purchase_price = float(plan.properties.purchase_price[prop])
+        purchase_price = float(cents_array_to_usd(plan.properties.purchase_price[prop]))
         # Per rollout: market = purchase_price × level / base_level. Rollouts whose base level never
         # resolved (0) contribute nothing for this property (the R=1 path skipped it via `continue`).
         safe_base = np.where(base_level == 0.0, 1.0, base_level)
@@ -502,7 +503,7 @@ def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_co
     for lia in range(plan.liabilities.codes.shape[0]):
         if int(plan.liabilities.agent[lia]) != primary_agent_code:
             continue
-        balance += dense.buffers.state.liability_principal_state[:, lia, :]
+        balance += cents_array_to_usd(dense.buffers.state.liability_principal_state[:, lia, :])
     return balance
 
 

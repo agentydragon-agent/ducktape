@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
-from augur.sim.codec.helpers import code_column, codes_to_strings, frame_from_columns
+from augur.sim.codec.helpers import code_column, codes_to_strings, frame_from_columns, usd_column
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.events import EVENT_FRAMES
 
@@ -35,9 +35,12 @@ def decode_obligations(
     from_account_codes = plan.obligations.from_account[months, slots]
     to_agent_codes = plan.obligations.to_agent[months, slots]
     to_account_codes = plan.obligations.to_account[months, slots]
-    amount_due = buffers.obligations.due[months, slots, rollouts]
-    amount_paid = buffers.obligations.paid[months, slots, rollouts]
-    shortfall = buffers.obligations.shortfall[months, slots, rollouts]
+    amount_due_cents = buffers.obligations.due[months, slots, rollouts]
+    amount_paid_cents = buffers.obligations.paid[months, slots, rollouts]
+    shortfall_cents = buffers.obligations.shortfall[months, slots, rollouts]
+    amount_due = usd_column(amount_due_cents)
+    amount_paid = usd_column(amount_paid_cents)
+    shortfall = usd_column(shortfall_cents)
     attempt_policy = buffers.obligations.attempt_policy[months, slots, rollouts]
     attempted_sources_per_event = attempted_sources_for_policy_indices(plan, attempt_policy)
 
@@ -69,7 +72,7 @@ def decode_obligations(
         attempted_funding_sources=attempted_sources_per_event,
     )
     # Subset 1: obligations with paid > 0 emit a derived transfer row.
-    paid_mask = amount_paid > 0
+    paid_mask = amount_paid_cents > 0
     if paid_mask.any():
         transfers = frame_from_columns(
             EVENT_FRAMES.transfers,

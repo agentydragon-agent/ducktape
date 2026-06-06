@@ -29,11 +29,15 @@ config (`_TracedConfig`) or rollout seeds — reuses the compiled program; only 
 recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries that reuse
 across processes.
 
-Float32 note: tax amounts, cash flows, and settlements match the float64 reference to within a few
-parts in 1e8; the true-up settlement runs in float64 (a ~$50k liability must settle to exactly zero).
+Integer accounting note: engine monetary state is migrating to int64 cents / explicit quantity
+quanta. JAX x64 is required so those int64 arrays do not silently truncate to int32.
 """
 
 from __future__ import annotations
+
+# JAX x64 must be enabled before importing jax.numpy, so this module intentionally
+# configures JAX between imports.
+# ruff: noqa: E402, I001
 
 import os
 from dataclasses import dataclass
@@ -41,6 +45,9 @@ from functools import partial
 from typing import NamedTuple
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
+
 import jax.numpy as jnp
 import numpy as np
 
@@ -71,6 +78,7 @@ from augur.sim.enums import (
     PrivateEquityDispositionKind,
     PrivateEquityOpportunityOutcome,
 )
+from augur.sim.fixed_point import USD_CENTS
 from augur.sim.tensor_fifo import lot_order_for_pool
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
@@ -82,8 +90,48 @@ if _JAX_CACHE_DIR:
     jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
     jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 
+if jnp.asarray(1, dtype=jnp.int64).dtype != jnp.dtype("int64"):
+    raise RuntimeError("Augur JAX engine requires jax_enable_x64=True for int64 fixed-point accounting")
+
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
+
+
+def _round_int64(value: jnp.ndarray) -> jnp.ndarray:
+    value_f = value.astype(jnp.float64)
+    rounded = jnp.sign(value_f) * jnp.floor(jnp.abs(value_f) + 0.5)
+    return rounded.astype(jnp.int64)
+
+
+def _zeros_i64(shape: tuple[int, ...]) -> jnp.ndarray:
+    return jnp.zeros(shape, dtype=jnp.int64)
+
+
+def _scale_money(amount_cents: jnp.ndarray, factor: jnp.ndarray | float) -> jnp.ndarray:
+    return _round_int64(amount_cents.astype(jnp.float64) * factor)
+
+
+def _price_usd_to_cents(price_usd: jnp.ndarray) -> jnp.ndarray:
+    return _round_int64(price_usd.astype(jnp.float64) * float(USD_CENTS))
+
+
+def _value_cents_from_quanta(
+    quantity_quanta: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray
+) -> jnp.ndarray:
+    return _round_int64(
+        quantity_quanta.astype(jnp.float64) * unit_price_cents.astype(jnp.float64) / quantity_scale.astype(jnp.float64)
+    )
+
+
+def _ceil_quanta_for_value_cents(
+    value_cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray
+) -> jnp.ndarray:
+    raw = (
+        value_cents.astype(jnp.float64)
+        * quantity_scale.astype(jnp.float64)
+        / jnp.where(unit_price_cents > 0, unit_price_cents, 1).astype(jnp.float64)
+    )
+    return jnp.ceil(raw).astype(jnp.int64)
 
 
 class _ScanState(NamedTuple):
@@ -235,6 +283,7 @@ class _Operands(NamedTuple):
     liability_owner_profile_index: jnp.ndarray
     salt_contributing_mask: jnp.ndarray
     lot_asset_series_index: jnp.ndarray
+    lot_quantity_scale: jnp.ndarray
     pe_owner_cash_mask: jnp.ndarray  # (pe_policy, cash)
     # Series-axis row indices, traced (dynamic gather), in phase-loop order. See `_build_program`.
     pe_floor_series: jnp.ndarray  # (n_folded_pe,)
@@ -270,7 +319,7 @@ def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jn
         "eligible": jnp.asarray(pe_channels.eligible_fractions),
         "forced_sale": jnp.asarray(pe_channels.forced_sale_fractions),
         "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
-        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
+        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_cents),
     }
     return jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan)
 
@@ -297,14 +346,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     r = p.rollout_count
     horizon = plan.horizon_months
     cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
-    ordinary0 = jnp.zeros((p.tax_profile_count, r))
-    property_tax_ytd0 = jnp.zeros((p.tax_profile_count, r))
+    ordinary0 = _zeros_i64((p.tax_profile_count, r))
+    property_tax_ytd0 = _zeros_i64((p.tax_profile_count, r))
     lot0 = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
     cg_active0 = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
-    cg_ytd0 = jnp.zeros((p.capital_gain_agent_count, 2, r))
+    cg_ytd0 = _zeros_i64((p.capital_gain_agent_count, 2, r))
     # TLH give-back ledger starts at zero (the harvest phase populates it during the scan); the
     # capital-gains core threads it, so carry a zeroed copy.
-    tlh0 = jnp.zeros((p.harvest_policy_count, r))
+    tlh0 = _zeros_i64((p.harvest_policy_count, r))
     props = plan.properties
     # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
     # events), so they're carry state initialized from the compile-time broadcast.
@@ -355,7 +404,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         prop = int(le_all.property_slot[i])
         owner_profile = int(plan.property_owner_profile_index[prop]) if prop >= 0 else NO_CODE
         gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile]) if owner_profile >= 0 else NO_CODE
-        exclusion_cap = float(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0.0
+        exclusion_cap = int(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0
         mortgage_liabilities = tuple(
             int(lia)
             for lia in range(plan.liabilities.property_slot.shape[0])
@@ -368,9 +417,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
             property_slot=prop,
             rented_fraction=float(le_all.rented_fraction[i]),
             amount=float(le_all.amount[i]),
+            amount_cents=int(le_all.amount_cents[i]),
             owner_cash_slot=int(props.buyer_slot[prop]) if prop >= 0 else NO_CODE,
-            purchase_price=float(plan.properties.purchase_price[prop]) if prop >= 0 else 0.0,
-            building_basis_initial=float(plan.property_building_basis[prop]) if prop >= 0 else 0.0,
+            purchase_price=int(plan.properties.purchase_price[prop]) if prop >= 0 else 0,
+            building_basis_initial=int(plan.property_building_basis[prop]) if prop >= 0 else 0,
             owner_profile=owner_profile,
             gain_profile=gain_profile,
             exclusion_cap=exclusion_cap,
@@ -402,7 +452,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     asset_code=int(sales.asset[s]),
                 )
             ),
-            quantity=float(sales.quantity[s]),
+            quantity=int(sales.quantity[s]),
             proceeds_slot=int(sales.proceeds_slot[s]),
             agent_code=int(sales.agent[s]),
         )
@@ -416,15 +466,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     n_sales = len(folded_sales)
     sale_max_pool = max((len(fs.ordered_lots) for fs in folded_sales), default=1)
     sale_months_t = jnp.asarray([fs.month for fs in folded_sales], dtype=jnp.int32)
-    sale_qty_t = jnp.asarray([fs.quantity for fs in folded_sales], dtype=jnp.float32)
+    sale_qty_t = jnp.asarray([fs.quantity for fs in folded_sales], dtype=jnp.int64)
     sale_pslot = np.array([fs.proceeds_slot for fs in folded_sales], dtype=np.int64).reshape(n_sales)
     sale_bufidx = np.array([fs.buffer_index for fs in folded_sales], dtype=np.int64).reshape(n_sales)
     sale_olots = np.full((n_sales, sale_max_pool), p.lot_count, dtype=np.int64)  # pad with the dummy lot
     for _i, _fs in enumerate(folded_sales):
         sale_olots[_i, : len(_fs.ordered_lots)] = np.asarray(_fs.ordered_lots, dtype=np.int64)
-    sale_price_fixed_t = jnp.asarray(
-        [float(sales.price_fixed[fs.buffer_index]) for fs in folded_sales], dtype=jnp.float32
-    )
+    sale_price_fixed_t = jnp.asarray([int(sales.price_fixed[fs.buffer_index]) for fs in folded_sales], dtype=jnp.int64)
     sale_price_series = np.array(
         [int(sales.price_series[fs.buffer_index]) for fs in folded_sales], dtype=np.int64
     ).reshape(n_sales)
@@ -437,15 +485,15 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         )
         for fs in folded_sales
     ]
-    _prior = np.zeros((n_sales, n_sales), dtype=np.float32)
+    _prior = np.zeros((n_sales, n_sales), dtype=np.int64)
     for _j in range(n_sales):
         for _k in range(_j):
             if _pool_key[_k] == _pool_key[_j]:
-                _prior[_j, _k] = 1.0
+                _prior[_j, _k] = 1
     sale_prior_t = jnp.asarray(_prior)
     # Per-sale -> capital-gain-agent accrual map (the sale's agent's cg buckets).
     sale_cg_map_t = jnp.asarray(
-        np.array([(plan.capital_gain_agent_codes == fs.agent_code) for fs in folded_sales], dtype=np.float32).reshape(
+        np.array([(plan.capital_gain_agent_codes == fs.agent_code) for fs in folded_sales], dtype=np.int64).reshape(
             n_sales, p.capital_gain_agent_count
         )
     )
@@ -454,12 +502,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # per-policy rate `tlh0 / pre_sale_units`).
     _hp = plan.harvest_policies
     _hp_active = (_hp.gain_profile_index >= 0)[:, None]
-    sale_policy_mask_t = jnp.asarray((_hp.lot_mask & _hp_active).astype(np.float32))  # (policy, L)
+    sale_policy_mask_t = jnp.asarray((_hp.lot_mask & _hp_active).astype(np.int64))  # (policy, L)
     folded_purchases = [
         _FoldedPurchase(
             buffer_index=prop,
             month=int(props.month[prop]),
-            stake_contribution=float(props.stake_contribution[prop]),
+            stake_contribution=int(props.stake_contribution[prop]),
             buyer_slot=int(props.buyer_slot[prop]),
             seller_slot=int(props.seller_slot[prop]),
             mortgage_slot=int(props.mortgage_slot[prop]),
@@ -473,7 +521,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # select the financed subset (distinct liability slots) for mortgage origination.
     pur_buf = np.array([fp.buffer_index for fp in folded_purchases], dtype=np.int64)
     pur_month = np.array([fp.month for fp in folded_purchases], dtype=np.int64)
-    pur_stake = np.array([fp.stake_contribution for fp in folded_purchases], dtype=np.float32)
+    pur_stake = np.array([fp.stake_contribution for fp in folded_purchases], dtype=np.int64)
     pur_buyer = np.array([fp.buyer_slot for fp in folded_purchases], dtype=np.int64)
     pur_seller = np.array([fp.seller_slot for fp in folded_purchases], dtype=np.int64)
     pur_mort = np.array([fp.mortgage_slot for fp in folded_purchases], dtype=np.int64)
@@ -545,12 +593,15 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     }
     acc_prop_idx_np = np.where(acc_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)
     acc_pt_rate = np.where(
-        np.isnan(ob.amount_fixed), _np_gather(props.location_tax_rate, acc_prop_idx_np, 0.0), ob.amount_fixed
+        np.isnan(ob.property_tax_annual_rate),
+        _np_gather(props.location_tax_rate, acc_prop_idx_np, 0.0),
+        ob.property_tax_annual_rate,
     )
-    acc["pt_amount"] = jnp.asarray(
-        _np_gather(props.initial_assessed_value, acc_prop_idx_np, 0.0) * acc_pt_rate / 12.0
-        + _np_gather(props.special_assessment_annual_usd, acc_prop_idx_np, 0.0) / 12.0
+    raw_pt_amount = (
+        _np_gather(props.initial_assessed_value, acc_prop_idx_np, 0) * acc_pt_rate / 12.0
+        + _np_gather(props.special_assessment_annual_usd, acc_prop_idx_np, 0) / 12.0
     )
+    acc["pt_amount"] = jnp.asarray(np.sign(raw_pt_amount) * np.floor(np.abs(raw_pt_amount) + 0.5), dtype=jnp.int64)
     acc["pt_prop_month"] = jnp.asarray(_np_gather(props.month, acc_prop_idx_np, 0))
     acc_liab_idx_np = np.where(acc_kind == ObligationSource.MORTGAGE_PAYMENT, ob.source_index, 0)
     acc_liab_prop_slot = _np_gather(liabs.property_slot, acc_liab_idx_np, -1)
@@ -561,15 +612,17 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # Property slot of each mortgage obligation's liability (for the Schedule-E rented-share of interest).
     acc["mort_prop_idx"] = jnp.asarray(np.where(acc_liab_prop_slot >= 0, acc_liab_prop_slot, 0))
     acc_prof_idx = np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, 0)
-    acc_est_prior = _np_gather(plan.tax.profile_prior_year_tax, acc_prof_idx, 0.0)
+    acc_est_prior = _np_gather(plan.tax.profile_prior_year_tax, acc_prof_idx, 0)
     acc["est_prior"] = jnp.asarray(acc_est_prior)
-    acc["est_quarterly"] = jnp.asarray(acc_est_prior / 4.0)
+    acc["est_quarterly"] = jnp.asarray(
+        np.sign(acc_est_prior / 4.0) * np.floor(np.abs(acc_est_prior / 4.0) + 0.5), dtype=jnp.int64
+    )
     tax_year_end = (np.arange(horizon) // 12 - 1) * 12 + 11
     acc["trueup_sel"] = jnp.asarray(
         (
             (plan.tax_liabilities.profile_index[None, None, :] == acc_prof_idx[:, :, None])
             & (plan.tax_liabilities.year_end_month[None, None, :] == tax_year_end[:, None, None])
-        ).astype(np.float64)
+        ).astype(np.int64)
     )
     # Tax-profile index per estimated/true-up obligation slot (for settlement scatter to profile rows);
     # and the (static, per-month) prior year-end being settled.
@@ -617,15 +670,15 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                 # `_Operands.liq_{trigger,sale}_series`): (kind, fixed, base, base_month, period).
                 trigger=(
                     int(liq_policies.trigger_kind[policy]),
-                    float(liq_policies.trigger_fixed[policy]),
-                    float(liq_policies.trigger_base[policy]),
+                    int(liq_policies.trigger_fixed[policy]),
+                    int(liq_policies.trigger_base[policy]),
                     int(liq_policies.trigger_base_month[policy]),
                     int(liq_policies.trigger_period[policy]),
                 ),
                 sale=(
                     int(liq_policies.sale_kind[policy]),
-                    float(liq_policies.sale_fixed[policy]),
-                    float(liq_policies.sale_base[policy]),
+                    int(liq_policies.sale_fixed[policy]),
+                    int(liq_policies.sale_base[policy]),
                     int(liq_policies.sale_base_month[policy]),
                     int(liq_policies.sale_period[policy]),
                 ),
@@ -660,8 +713,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     proceeds_cash_slot=int(pe_policies.proceeds_cash_slot[policy_idx]),
                     owner_agent=int(pe_policies.owner_agent[policy_idx]),
                     floor_kind=int(pe_policies.floor_kind[policy_idx]),
-                    floor_fixed=float(pe_policies.floor_fixed[policy_idx]),
-                    floor_base=float(pe_policies.floor_base[policy_idx]),
+                    floor_fixed=int(pe_policies.floor_fixed[policy_idx]),
+                    floor_base=int(pe_policies.floor_base[policy_idx]),
                     floor_base_month=int(pe_policies.floor_base_month[policy_idx]),
                     floor_period=int(pe_policies.floor_period[policy_idx]),
                     owner_non_pe_lot_indices=owner_non_pe,
@@ -676,8 +729,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     proceeds_cash_slot=NO_CODE,
                     owner_agent=NO_CODE,
                     floor_kind=AMOUNT_FIXED,
-                    floor_fixed=0.0,
-                    floor_base=0.0,
+                    floor_fixed=0,
+                    floor_base=0,
                     floor_base_month=0,
                     floor_period=1,
                     owner_non_pe_lot_indices=(),
@@ -736,18 +789,20 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # Per-(link, month) SALT cap (cap_by_year indexed by the month's tax year), so the traced month
     # can index it directly inside the pass.
     salt_cap_table = (
-        jnp.asarray(plan.salt.cap_by_year[:, cap_year_index_by_month]) if link_count else jnp.zeros((0, horizon))
+        jnp.asarray(plan.salt.cap_by_year[:, cap_year_index_by_month])
+        if link_count
+        else jnp.zeros((0, horizon), dtype=jnp.int64)
     )
 
     salt_contributing_mask = (
-        jnp.asarray(plan.salt.contributing_mask.astype(np.float64))
+        jnp.asarray(plan.salt.contributing_mask.astype(np.int64))
         if link_count
-        else jnp.zeros((0, max(1, link_count)))
+        else jnp.zeros((0, max(1, link_count)), dtype=jnp.int64)
     )
     pe_owner_cash_mask = (
         jnp.asarray(pe_policies.owner_cash_mask)
         if pe_policies.owner_cash_mask.size
-        else jnp.zeros((max(1, pe_issuer_count), p.cash_count))
+        else jnp.zeros((max(1, pe_issuer_count), p.cash_count), dtype=bool)
     )
 
     # Series-axis row indices as TRACED operands, NOT baked into the static `_Static` structure. A
@@ -786,8 +841,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         tlh0=tlh0,
         property_rented_fraction_0=property_rented_fraction_0,
         property_building_basis_0=property_building_basis_0,
-        prop0=jnp.zeros((p.property_count, r)),
-        liab0=jnp.zeros((p.liability_count, r)),
+        prop0=_zeros_i64((p.property_count, r)),
+        liab0=_zeros_i64((p.liability_count, r)),
         tr=tr,
         pc=pc,
         og=og,
@@ -809,6 +864,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         liability_owner_profile_index=jnp.asarray(plan.liability_owner_profile_index),
         salt_contributing_mask=salt_contributing_mask,
         lot_asset_series_index=jnp.asarray(plan.lot_asset_series_index),
+        lot_quantity_scale=jnp.asarray(plan.lot_quantity_scale),
         pe_owner_cash_mask=pe_owner_cash_mask,
         pe_floor_series=pe_floor_series,
         harvest_series=harvest_series,
@@ -877,7 +933,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         sale_olots=tuple(tuple(int(x) for x in row) for row in sale_olots),
         pur_buf=tuple(int(x) for x in pur_buf),
         pur_month=tuple(int(x) for x in pur_month),
-        pur_stake=tuple(float(x) for x in pur_stake),
+        pur_stake=tuple(int(x) for x in pur_stake),
         pur_buyer=tuple(int(x) for x in pur_buyer),
         pur_seller=tuple(int(x) for x in pur_seller),
         pur_mort_rows=tuple(int(x) for x in pur_mort_rows),
@@ -950,7 +1006,7 @@ def _program_impl(
     sale_price_series = baked.sale_price_series  # traced (n_sales,) row indices — dynamic gather
     pur_buf = np.asarray(structure.pur_buf, dtype=np.int64)
     pur_month = np.asarray(structure.pur_month, dtype=np.int64)
-    pur_stake = np.asarray(structure.pur_stake, dtype=np.float32)
+    pur_stake = np.asarray(structure.pur_stake, dtype=np.int64)
     pur_buyer = np.asarray(structure.pur_buyer, dtype=np.int64)
     pur_seller = np.asarray(structure.pur_seller, dtype=np.int64)
     pur_mort_rows = np.asarray(structure.pur_mort_rows, dtype=np.int64)
@@ -988,6 +1044,7 @@ def _program_impl(
     liability_owner_profile_index = baked.liability_owner_profile_index
     salt_contributing_mask = baked.salt_contributing_mask
     lot_asset_series_index = baked.lot_asset_series_index
+    lot_quantity_scale = baked.lot_quantity_scale
     pe_owner_cash_mask = baked.pe_owner_cash_mask
     pe_floor_series = baked.pe_floor_series
     harvest_series = baked.harvest_series
@@ -1038,10 +1095,10 @@ def _program_impl(
         # to `_scatter_rows`'s dump row and contribute nothing.
         dec_col = dec[None, :]
         ordinary = ordinary + _scatter_rows(
-            jnp.zeros_like(ordinary), property_owner_profile_index, -jnp.where(dec_col, property_dep_ytd, 0.0)
+            jnp.zeros_like(ordinary), property_owner_profile_index, -jnp.where(dec_col, property_dep_ytd, 0)
         )
         ordinary = ordinary + _scatter_rows(
-            jnp.zeros_like(ordinary), liability_owner_profile_index, -jnp.where(dec_col, liab_rental_ytd, 0.0)
+            jnp.zeros_like(ordinary), liability_owner_profile_index, -jnp.where(dec_col, liab_rental_ytd, 0)
         )
 
         # §1211/§1212 netting, vectorized over the capital-gain-agent axis (each agent netted once).
@@ -1063,12 +1120,12 @@ def _program_impl(
             jnp.where(do_net, net_lt, cg_ytd[:, CapitalGainClassification.LONG_TERM, :])
         )
         carryforward = jnp.where(do_net, carry_out, carryforward)
-        ordinary = ordinary + _scatter_rows(jnp.zeros_like(ordinary), cg_rep, -jnp.where(do_net, ord_offset, 0.0))
+        ordinary = ordinary + _scatter_rows(jnp.zeros_like(ordinary), cg_rep, -jnp.where(do_net, ord_offset, 0))
 
         # Two-pass SALT bracket math; collect per-link tax + breakdown slabs.
-        annual_tax_by_link = jnp.zeros((r, max(1, link_count)))
-        zero_salt = jnp.zeros(r)
-        breakdown = [jnp.zeros((max(1, link_count), r)) for _ in range(13)]
+        annual_tax_by_link = _zeros_i64((r, max(1, link_count)))
+        zero_salt = _zeros_i64((r,))
+        breakdown = [_zeros_i64((max(1, link_count), r)) for _ in range(13)]
 
         def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
@@ -1085,19 +1142,19 @@ def _program_impl(
             gp = profile_gain_index[profile]
             tax = ord_tax + cap_tax
             cols = [
-                dec.astype(jnp.float32),  # accrual_active flag (->bool post-scan)
-                jnp.where(dec, tax, 0.0),
-                jnp.where(dec, ordinary[profile], 0.0),
-                jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0.0),
-                jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0.0),
-                jnp.where(dec, tcfg.link_standard_deduction[link], 0.0),  # traced value
-                jnp.where(dec, mid, 0.0),
-                jnp.where(dec, salt_deduction, 0.0),
-                jnp.where(dec, itemized, 0.0),
-                jnp.where(dec, ord_taxable, 0.0),
-                jnp.where(dec, cap_taxable, 0.0),
-                jnp.where(dec, ord_tax, 0.0),
-                jnp.where(dec, cap_tax, 0.0),
+                dec.astype(jnp.int64),  # accrual_active flag (->bool post-scan)
+                jnp.where(dec, tax, 0),
+                jnp.where(dec, ordinary[profile], 0),
+                jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0),
+                jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0),
+                jnp.where(dec, tcfg.link_standard_deduction[link], 0),  # traced value
+                jnp.where(dec, mid, 0),
+                jnp.where(dec, salt_deduction, 0),
+                jnp.where(dec, itemized, 0),
+                jnp.where(dec, ord_taxable, 0),
+                jnp.where(dec, cap_taxable, 0),
+                jnp.where(dec, ord_tax, 0),
+                jnp.where(dec, cap_tax, 0),
             ]
             for b, col in enumerate(cols):
                 breakdown[b] = breakdown[b].at[link].set(col)
@@ -1118,8 +1175,8 @@ def _program_impl(
         # Accrue this year's tax liabilities (scatter each link's tax to its year-end slot).
         slot_for_link = tax_slot_table[month]  # (link_count,)
         link_tax = annual_tax_by_link.T  # (link_count, R)
-        written = _scatter_rows(jnp.zeros((taxliab_count, r)), slot_for_link, jnp.where(dec, link_tax, 0.0))
-        written_mask = _scatter_rows(jnp.zeros((taxliab_count, r)), slot_for_link, dec.astype(jnp.float32)) > 0.0
+        written = _scatter_rows(_zeros_i64((taxliab_count, r)), slot_for_link, jnp.where(dec, link_tax, 0))
+        written_mask = _scatter_rows(_zeros_i64((taxliab_count, r)), slot_for_link, dec.astype(jnp.int64)) > 0
         taxliab_amount = jnp.where(written_mask, written, taxliab_amount)
         taxliab_active = taxliab_active | written_mask
 
@@ -1184,13 +1241,11 @@ def _program_impl(
                     jnp.where(active_property, ev.rented_fraction, property_rented_fraction[ev_prop])
                 )
             elif ev_kind == LifecycleKind.CAPITAL_IMPROVEMENT:
-                amount = ev.amount
+                amount = ev.amount_cents
                 owner_cash_slot = ev.owner_cash_slot
                 if owner_cash_slot >= 0:
-                    cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0.0))
-                property_building_basis = property_building_basis.at[ev_prop].add(
-                    jnp.where(active_property, amount, 0.0)
-                )
+                    cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0))
+                property_building_basis = property_building_basis.at[ev_prop].add(jnp.where(active_property, amount, 0))
             elif ev_kind == LifecycleKind.SALE:
                 (
                     cash,
@@ -1255,7 +1310,7 @@ def _program_impl(
         purchase_active_rows = transfer_active_rows = None
         if folded_purchases:
             fires = (month == pur_month)[:, None] & active[None, :]  # (P, R)
-            stake_pos = (pur_stake > 0.0)[:, None]  # (P, 1) static
+            stake_pos = (pur_stake > 0)[:, None]  # (P, 1) static
             # Gathered `tcfg` columns are 1-D per-entity (P,)/(M,) -> `[:, None]` to broadcast over R.
             property_active = property_active.at[pur_buf].set(jnp.where(fires, True, property_active[pur_buf]))
             property_basis = property_basis.at[pur_buf].set(
@@ -1267,7 +1322,7 @@ def _program_impl(
             property_equity = property_equity.at[pur_buf].set(
                 jnp.where(fires, tcfg.property_equity_ledger[pur_buf][:, None], property_equity[pur_buf])
             )
-            stake_flow = jnp.where(fires & stake_pos, pur_stake[:, None], 0.0)  # (P, R)
+            stake_flow = jnp.where(fires & stake_pos, pur_stake[:, None], 0)  # (P, R)
             cash = _scatter_rows(cash, jnp.asarray(pur_buyer), -stake_flow)
             cash = _scatter_rows(cash, jnp.asarray(pur_seller), stake_flow)
             # Mortgage origination: financed subset only (distinct liability slots -> plain scatter-set).
@@ -1280,10 +1335,10 @@ def _program_impl(
                 jnp.where(mfires, tcfg.liability_monthly_payment[pur_mort_idx][:, None], liab_monthly[pur_mort_idx])
             )
             liab_interest_ytd = liab_interest_ytd.at[pur_mort_idx].set(
-                jnp.where(mfires, 0.0, liab_interest_ytd[pur_mort_idx])
+                jnp.where(mfires, 0, liab_interest_ytd[pur_mort_idx])
             )
             liab_principal_ytd = liab_principal_ytd.at[pur_mort_idx].set(
-                jnp.where(mfires, 0.0, liab_principal_ytd[pur_mort_idx])
+                jnp.where(mfires, 0, liab_principal_ytd[pur_mort_idx])
             )
             mort_orig_rows = mort_orig_rows.at[pur_mort_idx].set(mfires)
             # Per-purchase event rows for `ys` (folded order): purchase fired; transfer fired (stake>0).
@@ -1319,66 +1374,69 @@ def _program_impl(
         # collapsed). `L` is padded with a zero dummy lot so the ragged pools share one shape.
         if folded_sales:
             ld = lot_count
-            lot_rem_pad = jnp.concatenate([lot_remaining, jnp.zeros((1, r))], axis=0)  # (L+1, R)
-            cost_pad = jnp.concatenate([cost_basis_per_unit, jnp.zeros(1)])  # (L+1,)
+            lot_rem_pad = jnp.concatenate([lot_remaining, _zeros_i64((1, r))], axis=0)  # (L+1, R)
+            cost_pad = jnp.concatenate([cost_basis_per_unit, _zeros_i64((1,))])  # (L+1,)
+            scale_pad = jnp.concatenate([lot_quantity_scale, jnp.ones(1, dtype=jnp.int64)])  # (L+1,)
             lpm_pad = jnp.concatenate([lot_purchase_month.astype(jnp.int32), jnp.zeros(1, jnp.int32)])
             pool_qty = lot_rem_pad[sale_olots]  # (N, P, R) supply per pool lot
-            target = jnp.where(
-                (active[None, :]) & (month == sale_months_t)[:, None], sale_qty_t[:, None], 0.0
-            )  # (N, R)
+            target = jnp.where((active[None, :]) & (month == sale_months_t)[:, None], sale_qty_t[:, None], 0)  # (N, R)
             prior = sale_prior_t @ target  # (N, R) demand already claimed by earlier same-pool sales
-            oversell = target > (pool_qty.sum(axis=1) - prior) + 1e-9  # (N, R)
+            oversell = target > (pool_qty.sum(axis=1) - prior)  # (N, R)
             d_lo = prior  # demand interval (D_{j-1}, D_j], with oversold sales selling nothing
-            d_hi = prior + jnp.where(oversell, 0.0, target)
+            d_hi = prior + jnp.where(oversell, 0, target)
             s_before = jnp.cumsum(pool_qty, axis=1) - pool_qty  # supply prefix S_{k-1} (N, P, R)
             sold = jnp.maximum(
-                0.0, jnp.minimum(d_hi[:, None, :], s_before + pool_qty) - jnp.maximum(d_lo[:, None, :], s_before)
+                0, jnp.minimum(d_hi[:, None, :], s_before + pool_qty) - jnp.maximum(d_lo[:, None, :], s_before)
             )
 
             # TLH give-back (telescoped): each policy drains tlh proportional to units sold of its lots,
             # at rate tlh0 / pre_sale_units; the per-sale realization is `sold * rate` on the sold lots.
             t_policy = sale_policy_mask_t @ lot_remaining  # (policy, R) pre-sale units
-            gb_rate = jnp.where(t_policy > 0.0, tlh / jnp.where(t_policy > 0.0, t_policy, 1.0), 0.0)  # (policy, R)
-            lot_gb_rate_pad = jnp.concatenate([sale_policy_mask_t.T @ gb_rate, jnp.zeros((1, r))], axis=0)  # (L+1, R)
+            gb_rate = jnp.where(t_policy > 0, tlh / jnp.where(t_policy > 0, t_policy, 1), 0.0)  # (policy, R)
+            lot_gb_rate_pad = jnp.concatenate(
+                [sale_policy_mask_t.T @ gb_rate, jnp.zeros((1, r), dtype=jnp.float64)], axis=0
+            )  # (L+1, R)
 
             # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
             # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
             if external_values.shape[0] > 0:
                 safe_series = jnp.where(sale_price_series >= 0, sale_price_series, 0)
                 unit_price = jnp.where(
-                    jnp.isnan(sale_price_fixed_t)[:, None],
-                    external_values[safe_series, :, month],
+                    (sale_price_series >= 0)[:, None],
+                    _price_usd_to_cents(external_values[safe_series, :, month]),
                     sale_price_fixed_t[:, None],
                 )  # (N, R)
             else:
                 unit_price = jnp.broadcast_to(sale_price_fixed_t[:, None], (n_sales, r))
-            proceeds = sold * unit_price[:, None, :]  # (N, P, R)
-            basis = sold * cost_pad[sale_olots][:, :, None]
-            gains = proceeds - basis + sold * lot_gb_rate_pad[sale_olots]  # (N, P, R) incl. give-back
+            proceeds = _value_cents_from_quanta(
+                sold, unit_price[:, None, :], scale_pad[sale_olots][:, :, None]
+            )  # (N, P, R)
+            basis = _value_cents_from_quanta(sold, cost_pad[sale_olots][:, :, None], scale_pad[sale_olots][:, :, None])
+            gains = proceeds - basis + _round_int64(sold * lot_gb_rate_pad[sale_olots])  # incl. give-back
 
-            total_sold = jnp.zeros((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
+            total_sold = _zeros_i64((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
             lot_remaining = lot_remaining - total_sold[:ld]
-            tlh = tlh - (sale_policy_mask_t @ total_sold[:ld]) * gb_rate
+            tlh = tlh - _round_int64((sale_policy_mask_t @ total_sold[:ld]) * gb_rate)
             cash = cash.at[np.maximum(sale_pslot, 0)].add(
-                jnp.where(jnp.asarray(sale_pslot >= 0)[:, None], proceeds.sum(axis=1), 0.0)
+                jnp.where(jnp.asarray(sale_pslot >= 0)[:, None], proceeds.sum(axis=1), 0)
             )
 
             # Capital gains: classify each pool lot long/short, accrue per sale's cg agents via cg_map.
             long_m = (month - lpm_pad[sale_olots]) >= 12  # (N, P)
             gains_long = (gains * long_m[:, :, None]).sum(axis=1)  # (N, R)
             gains_short = (gains * (~long_m)[:, :, None]).sum(axis=1)
-            sold_pos = sold > 0.0
+            sold_pos = sold > 0
             act_long = (sold_pos & long_m[:, :, None]).any(axis=1)  # (N, R)
             act_short = (sold_pos & (~long_m)[:, :, None]).any(axis=1)
             cg_ytd = cg_ytd.at[:, CapitalGainClassification.LONG_TERM, :].add(sale_cg_map_t.T @ gains_long)
             cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].add(sale_cg_map_t.T @ gains_short)
             cg_active = cg_active.at[:, CapitalGainClassification.LONG_TERM, :].set(
                 cg_active[:, CapitalGainClassification.LONG_TERM, :]
-                | ((sale_cg_map_t.T @ act_long.astype(jnp.float32)) > 0.0)
+                | ((sale_cg_map_t.T @ act_long.astype(jnp.int64)) > 0)
             )
             cg_active = cg_active.at[:, CapitalGainClassification.SHORT_TERM, :].set(
                 cg_active[:, CapitalGainClassification.SHORT_TERM, :]
-                | ((sale_cg_map_t.T @ act_short.astype(jnp.float32)) > 0.0)
+                | ((sale_cg_map_t.T @ act_short.astype(jnp.int64)) > 0)
             )
 
             # Dispositions: scatter sold/basis/proceeds into each sale's slot (dummy lot clamped; sold 0).
@@ -1428,31 +1486,33 @@ def _program_impl(
         # FIFO across the policy's (asset, account) pools sequentially. Branch-free: a pool whose
         # target is 0 sells nothing (the dollar target is capped at the pool's available value).
         liq_disp_active = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r), dtype=bool)
-        liq_disp_units = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
-        liq_disp_basis = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
-        liq_disp_proceeds = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
+        liq_disp_units = _zeros_i64((liq_policy_count, liq_max_assets, lot_axis, r))
+        liq_disp_basis = _zeros_i64((liq_policy_count, liq_max_assets, lot_axis, r))
+        liq_disp_proceeds = _zeros_i64((liq_policy_count, liq_max_assets, lot_axis, r))
         attempt_policy = jnp.full((slot_active.shape[0], r), NO_CODE, dtype=jnp.int64)
         for li, lp in enumerate(folded_liquidity):
             matching = (og["agent"][month] == lp.agent) & (og["from_slot"][month] == lp.cash_slot)  # (slots,)
-            hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0.0).sum(axis=0)  # (R,)
+            hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0).sum(axis=0)  # (R,)
             attempt_policy = jnp.where(matching[:, None] & slot_active, lp.policy_index, attempt_policy)
             cash_balance = cash[lp.cash_slot]
-            required_sale = jnp.maximum(hard_demand - cash_balance, 0.0)
+            required_sale = jnp.maximum(hard_demand - cash_balance, 0)
             post_required_cash = cash_balance + required_sale - hard_demand
             trigger_val = _amount_values_tuple(lp.trigger, liq_trigger_series[li], external_values, month, r)
             sale_val = _amount_values_tuple(lp.sale, liq_sale_series[li], external_values, month, r)
-            buffer_sale = jnp.where((sale_val > 0.0) & (post_required_cash < trigger_val), sale_val, 0.0)
-            remaining = jnp.where(active, required_sale + buffer_sale, 0.0)
+            buffer_sale = jnp.where((sale_val > 0) & (post_required_cash < trigger_val), sale_val, 0)
+            remaining = jnp.where(active, required_sale + buffer_sale, 0)
             pool_series = liq_pool_series[li]
             for pj, pool in enumerate(lp.pools):
                 raw_price = external_values[pool_series[pj], :, month]
                 valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
-                unit_price = jnp.where(valid_price, raw_price, 0.0)
+                unit_price = jnp.where(valid_price, _price_usd_to_cents(raw_price), 0)
                 pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
-                available = lot_remaining[pool_lots].sum(axis=0) * unit_price
-                target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0.0), available), 0.0)
-                sold_units, proceeds, basis, _ovr = _fifo_sell_dollars(
-                    lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit
+                available = _value_cents_from_quanta(
+                    lot_remaining[pool_lots], unit_price[None, :], lot_quantity_scale[pool_lots, None]
+                ).sum(axis=0)
+                target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0), available), 0)
+                sold_units, proceeds, basis = _fifo_sell_cents(
+                    lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit, lot_quantity_scale
                 )
                 lot_remaining = lot_remaining - sold_units.T
                 total_proceeds = proceeds.sum(axis=1)
@@ -1470,12 +1530,12 @@ def _program_impl(
                     proceeds - basis,
                 )
                 liq_disp_active = liq_disp_active.at[lp.policy_index, pool.asset_idx].set(
-                    liq_disp_active[lp.policy_index, pool.asset_idx] | (sold_units > 0.0).T
+                    liq_disp_active[lp.policy_index, pool.asset_idx] | (sold_units > 0).T
                 )
                 liq_disp_units = liq_disp_units.at[lp.policy_index, pool.asset_idx].add(sold_units.T)
                 liq_disp_basis = liq_disp_basis.at[lp.policy_index, pool.asset_idx].add(basis.T)
                 liq_disp_proceeds = liq_disp_proceeds.at[lp.policy_index, pool.asset_idx].add(proceeds.T)
-                remaining = jnp.maximum(remaining - total_proceeds, 0.0)
+                remaining = jnp.maximum(remaining - total_proceeds, 0)
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
@@ -1513,24 +1573,22 @@ def _program_impl(
         is_mortgage = (og["source_kind"][month] == ObligationSource.MORTGAGE_PAYMENT) & (og["cause"][month] >= 0)
         mort_liab_idx = jnp.where(is_mortgage, acc["liab_idx"][month], -1)
         principal_before = _gather_rows(liab_principal, jnp.where(is_mortgage, acc["liab_idx"][month], 0))
-        interest = jnp.minimum(principal_before * acc["mort_rate"][month][:, None] / 12.0, paid_buffer)
-        principal_paid = jnp.minimum(jnp.maximum(paid_buffer - interest, 0.0), principal_before)
+        interest = jnp.minimum(_scale_money(principal_before, acc["mort_rate"][month][:, None] / 12.0), paid_buffer)
+        principal_paid = jnp.minimum(jnp.maximum(paid_buffer - interest, 0), principal_before)
         mort_paid = is_mortgage[:, None] & paid
-        interest_m = jnp.where(mort_paid, interest, 0.0)
-        principal_m = jnp.where(mort_paid, principal_paid, 0.0)
+        interest_m = jnp.where(mort_paid, interest, 0)
+        principal_m = jnp.where(mort_paid, principal_paid, 0)
         rented_per_slot = _gather_rows(property_rented_fraction, acc["mort_prop_idx"][month])
         liab_principal = _scatter_rows(liab_principal, mort_liab_idx, -principal_m)
         liab_interest_ytd = _scatter_rows(liab_interest_ytd, mort_liab_idx, interest_m)
         liab_principal_ytd = _scatter_rows(liab_principal_ytd, mort_liab_idx, principal_m)
-        liab_rental_ytd = _scatter_rows(liab_rental_ytd, mort_liab_idx, interest_m * rented_per_slot)
+        liab_rental_ytd = _scatter_rows(liab_rental_ytd, mort_liab_idx, _scale_money(interest_m, rented_per_slot))
         # Mortgage-payment event slabs, scattered from obligation slots to their liability rows.
         liab_count = liab_principal.shape[0]
-        mort_pay_active = _scatter_rows(jnp.zeros((liab_count, r)), mort_liab_idx, mort_paid.astype(jnp.float32)) > 0.0
-        mort_pay_interest = _scatter_rows(jnp.zeros((liab_count, r)), mort_liab_idx, interest_m)
-        mort_pay_principal = _scatter_rows(jnp.zeros((liab_count, r)), mort_liab_idx, principal_m)
-        mort_pay_total = _scatter_rows(
-            jnp.zeros((liab_count, r)), mort_liab_idx, jnp.where(mort_paid, paid_buffer, 0.0)
-        )
+        mort_pay_active = _scatter_rows(_zeros_i64((liab_count, r)), mort_liab_idx, mort_paid.astype(jnp.int64)) > 0
+        mort_pay_interest = _scatter_rows(_zeros_i64((liab_count, r)), mort_liab_idx, interest_m)
+        mort_pay_principal = _scatter_rows(_zeros_i64((liab_count, r)), mort_liab_idx, principal_m)
+        mort_pay_total = _scatter_rows(_zeros_i64((liab_count, r)), mort_liab_idx, jnp.where(mort_paid, paid_buffer, 0))
         mort_orig = mort_orig_rows
 
         # Tax-liability settlement: a paid TAX_TRUE_UP fully clears its profile-year's liability (the
@@ -1539,17 +1597,17 @@ def _program_impl(
         trueup_sel_m = acc["trueup_sel"][month]  # (slots, taxliab)
         is_trueup = (og["source_kind"][month] == ObligationSource.TAX_TRUE_UP) & (og["cause"][month] >= 0)
         trueup_paid = is_trueup[:, None] & paid  # (slots, R)
-        eligible = jnp.where(taxliab_active, taxliab_amount, 0.0)  # (taxliab, R)
+        eligible = jnp.where(taxliab_active, taxliab_amount, 0)  # (taxliab, R)
         actual_per_trueup = trueup_sel_m @ eligible  # (slots, R): full year tax owed
         settle_k = (trueup_sel_m.astype(bool)[:, :, None] & trueup_paid[:, None, :]).any(axis=0)  # (taxliab, R)
-        taxliab_amount = jnp.where(settle_k, 0.0, taxliab_amount)
+        taxliab_amount = jnp.where(settle_k, 0, taxliab_amount)
         # Settlement event buffers, scattered to tax-profile rows (one true-up per profile per month).
         settle_prof_idx = jnp.where(is_trueup, acc["prof_idx"][month], -1)
         settle_amount = _scatter_rows(
-            jnp.zeros((profile_count, r)), settle_prof_idx, jnp.where(trueup_paid, actual_per_trueup, 0.0)
+            _zeros_i64((profile_count, r)), settle_prof_idx, jnp.where(trueup_paid, actual_per_trueup, 0)
         )
         settle_active = (
-            _scatter_rows(jnp.zeros((profile_count, r)), settle_prof_idx, trueup_paid.astype(jnp.float32)) > 0.0
+            _scatter_rows(_zeros_i64((profile_count, r)), settle_prof_idx, trueup_paid.astype(jnp.int64)) > 0
         )
         settle_year_end = jnp.where(settle_active, acc["tax_year_end"][month], NO_CODE)
 
@@ -1565,6 +1623,7 @@ def _program_impl(
             cg_ytd, cg_active, hp_cumulative = _tlh_harvest_policy_jit(
                 lot_remaining[hp_lots, :],
                 cost_basis_per_unit[hp_lots],
+                lot_quantity_scale[hp_lots],
                 hp_price,
                 hp_prior,
                 tlh[hp_policy],
@@ -1585,17 +1644,18 @@ def _program_impl(
         # forced-sale dispositions, then the LNW-floor tender (+ public-market sale). Branch-free —
         # each FIFO unit-sale's target is capped at units held, so non-firing rollouts sell nothing.
         pe_disp_active = jnp.zeros((pe_issuer_count, n_pe_kinds, lot_axis, r), dtype=bool)
-        pe_disp_units = jnp.zeros((pe_issuer_count, n_pe_kinds, lot_axis, r))
-        pe_disp_basis = jnp.zeros((pe_issuer_count, n_pe_kinds, lot_axis, r))
-        pe_disp_proceeds = jnp.zeros((pe_issuer_count, n_pe_kinds, lot_axis, r))
+        pe_disp_units = _zeros_i64((pe_issuer_count, n_pe_kinds, lot_axis, r))
+        pe_disp_basis = _zeros_i64((pe_issuer_count, n_pe_kinds, lot_axis, r))
+        pe_disp_proceeds = _zeros_i64((pe_issuer_count, n_pe_kinds, lot_axis, r))
         pe_opp = {  # 9 opportunity-trace fields per issuer
-            k: jnp.zeros((pe_issuer_count, r), dtype=(jnp.int64 if k in ("active", "outcome") else jnp.float32))
+            k: _zeros_i64((pe_issuer_count, r))
             for k in ("active", "outcome", "floor", "lnw", "shortfall", "units", "sellable", "target", "proceeds")
         }
         for pei, fpe in enumerate(folded_pe):
             issuer_idx, policy_idx = fpe.issuer_idx, fpe.policy_idx
             ordered = np.asarray(fpe.ordered, dtype=np.int64)
             mark = pe_ch["marks"][issuer_idx, :, month]
+            mark_cents = _price_usd_to_cents(mark)
             positive_mark = mark > 0.0
             tender_active = pe_ch["sale_opp"][issuer_idx, :, month] & active
             public_active = pe_ch["regime"][issuer_idx, :, month] == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
@@ -1605,6 +1665,7 @@ def _program_impl(
             capacity = pe_ch["capacity"][issuer_idx, :, month]
             eligible = pe_ch["eligible"][issuer_idx, :, month]
             units_held = lot_remaining[ordered].sum(axis=0)
+            issuer_scale = lot_quantity_scale[ordered[0]]
             if policy_idx < 0:
                 pe_opp["active"] = pe_opp["active"].at[issuer_idx].set(tender_active.astype(jnp.int64))
                 pe_opp["outcome"] = (
@@ -1613,7 +1674,9 @@ def _program_impl(
                     .set(jnp.where(tender_active, int(PrivateEquityOpportunityOutcome.NO_POLICY), 0))
                 )
                 pe_opp["units"] = pe_opp["units"].at[issuer_idx].set(units_held)
-                pe_opp["sellable"] = pe_opp["sellable"].at[issuer_idx].set(units_held * capacity * eligible)
+                pe_opp["sellable"] = (
+                    pe_opp["sellable"].at[issuer_idx].set(_round_int64(units_held * capacity * eligible))
+                )
                 continue
             proceeds_slot = fpe.proceeds_cash_slot
             owner = fpe.owner_agent
@@ -1631,8 +1694,8 @@ def _program_impl(
                 issuer_idx=issuer_idx,
             ):
                 cash, lot_remaining, cg_active, cg_ytd, tlh, da, du, db, dp = state
-                sold, proceeds, basis, _ovr = _fifo_sell_units(
-                    lot_remaining.T, ordered, target, price, cost_basis_per_unit
+                sold, proceeds, basis = _fifo_sell_units(
+                    lot_remaining.T, ordered, target, price, cost_basis_per_unit, lot_quantity_scale
                 )
                 lot_remaining = lot_remaining - sold.T
                 if proceeds_slot >= 0:
@@ -1650,7 +1713,7 @@ def _program_impl(
                     proceeds - basis,
                 )
                 ki = int(kind)
-                da = da.at[issuer_idx, ki].set(da[issuer_idx, ki] | (sold > 0.0).T)
+                da = da.at[issuer_idx, ki].set(da[issuer_idx, ki] | (sold > 0).T)
                 du = du.at[issuer_idx, ki].add(sold.T)
                 db = db.at[issuer_idx, ki].add(basis.T)
                 dp = dp.at[issuer_idx, ki].add(proceeds.T)
@@ -1668,23 +1731,24 @@ def _program_impl(
                 pe_disp_proceeds,
             )
             # Forced recovery: cash out the whole position at the recovery-implied price.
-            recovery_active = (forced_recovery > 0.0) & active & (units_held > 0.0)
-            safe_units = jnp.where(units_held > 0.0, units_held, 1.0)
-            recovery_price = jnp.where(units_held > 0.0, forced_recovery / safe_units, 1.0)
+            recovery_active = (forced_recovery > 0) & active & (units_held > 0)
+            recovery_price = _round_int64(
+                forced_recovery.astype(jnp.float64)
+                * issuer_scale.astype(jnp.float64)
+                / jnp.where(units_held > 0, units_held, 1).astype(jnp.float64)
+            )
             state = book(
-                jnp.where(recovery_active, units_held, 0.0),
+                jnp.where(recovery_active, units_held, 0),
                 recovery_price,
                 PrivateEquityDispositionKind.FORCED_RECOVERY,
                 state,
             )
             units_held = state[1][ordered].sum(axis=0)
             # Forced sale: a fraction of the remaining position at the mark.
-            forced_active = (forced_sale_fraction > 0.0) & active & positive_mark & (units_held > 0.0)
+            forced_active = (forced_sale_fraction > 0.0) & active & positive_mark & (units_held > 0)
+            forced_target = jnp.minimum(_round_int64(units_held * forced_sale_fraction), units_held)
             state = book(
-                jnp.where(forced_active, units_held * forced_sale_fraction, 0.0),
-                mark,
-                PrivateEquityDispositionKind.FORCED_SALE,
-                state,
+                jnp.where(forced_active, forced_target, 0), mark_cents, PrivateEquityDispositionKind.FORCED_SALE, state
             )
             cash, lot_remaining = state[0], state[1]
             # LNW-floor tender: sell to lift liquid net worth to the floor, capped at sellable units.
@@ -1705,15 +1769,18 @@ def _program_impl(
                 fpe.owner_non_pe_lot_indices,
                 cash,
                 lot_remaining,
+                lot_quantity_scale,
                 external_values,
                 month,
             )
-            pe_shortfall = jnp.maximum(0.0, floor - lnw)  # distinct from the obligation `shortfall` in base_ys
+            pe_shortfall = jnp.maximum(0, floor - lnw)  # distinct from the obligation `shortfall` in base_ys
             units_held = lot_remaining[ordered].sum(axis=0)
-            sellable = units_held * capacity * eligible
-            shortfall_units = jnp.where(positive_mark, pe_shortfall / jnp.where(positive_mark, mark, 1.0), 0.0)
+            sellable = _round_int64(units_held * capacity * eligible)
+            shortfall_units = jnp.where(
+                positive_mark, _ceil_quanta_for_value_cents(pe_shortfall, mark_cents, issuer_scale), 0
+            )
             opp_active = (tender_active | public_active) & active & ~liq_blocked & positive_mark
-            target = jnp.where(opp_active, jnp.minimum(shortfall_units, sellable), 0.0)
+            target = jnp.where(opp_active, jnp.minimum(shortfall_units, sellable), 0)
             outcome = jnp.full(r, int(PrivateEquityOpportunityOutcome.SOLD))
             outcome = jnp.where(pe_shortfall <= 0.0, int(PrivateEquityOpportunityOutcome.FLOOR_SATISFIED), outcome)
             outcome = jnp.where(
@@ -1721,24 +1788,29 @@ def _program_impl(
             )
             outcome = jnp.where(~positive_mark, int(PrivateEquityOpportunityOutcome.NONPOSITIVE_MARK), outcome)
             outcome = jnp.where(liq_blocked, int(PrivateEquityOpportunityOutcome.LIQUIDITY_BLOCKED), outcome)
-            outcome = jnp.where(units_held <= 0.0, int(PrivateEquityOpportunityOutcome.NO_UNITS), outcome)
+            outcome = jnp.where(units_held <= 0, int(PrivateEquityOpportunityOutcome.NO_UNITS), outcome)
             for key, val in (
                 ("active", tender_active.astype(jnp.int64)),
                 ("outcome", jnp.where(tender_active, outcome, 0)),
-                ("floor", jnp.where(tender_active, floor, 0.0)),
-                ("lnw", jnp.where(tender_active, lnw, 0.0)),
-                ("shortfall", jnp.where(tender_active, pe_shortfall, 0.0)),
-                ("units", jnp.where(tender_active, units_held, 0.0)),
-                ("sellable", jnp.where(tender_active, sellable, 0.0)),
-                ("target", jnp.where(tender_active, target, 0.0)),
-                ("proceeds", jnp.where(tender_active, target * mark, 0.0)),
+                ("floor", jnp.where(tender_active, floor, 0)),
+                ("lnw", jnp.where(tender_active, lnw, 0)),
+                ("shortfall", jnp.where(tender_active, pe_shortfall, 0)),
+                ("units", jnp.where(tender_active, units_held, 0)),
+                ("sellable", jnp.where(tender_active, sellable, 0)),
+                ("target", jnp.where(tender_active, target, 0)),
+                ("proceeds", jnp.where(tender_active, _value_cents_from_quanta(target, mark_cents, issuer_scale), 0)),
             ):
                 pe_opp[key] = pe_opp[key].at[issuer_idx].set(val)
             state = (cash, lot_remaining, cg_active, cg_ytd, tlh, state[5], state[6], state[7], state[8])
             state = book(
-                jnp.where(tender_active & ~public_active, target, 0.0), mark, PrivateEquityDispositionKind.TENDER, state
+                jnp.where(tender_active & ~public_active, target, 0),
+                mark_cents,
+                PrivateEquityDispositionKind.TENDER,
+                state,
             )
-            state = book(jnp.where(public_active, target, 0.0), mark, PrivateEquityDispositionKind.PUBLIC_MARKET, state)
+            state = book(
+                jnp.where(public_active, target, 0), mark_cents, PrivateEquityDispositionKind.PUBLIC_MARKET, state
+            )
             cash, lot_remaining, cg_active, cg_ytd, tlh = state[0], state[1], state[2], state[3], state[4]
             pe_disp_active, pe_disp_units, pe_disp_basis, pe_disp_proceeds = state[5], state[6], state[7], state[8]
 
@@ -1946,15 +2018,15 @@ def _program_impl(
         liability_interest_ytd=liab0,
         liability_principal_ytd=liab0,
         liability_rental_interest_ytd=liab0,
-        capital_loss_carryforward=jnp.zeros((p.capital_gain_agent_count, r)),
-        recapture_section_1250_ytd=jnp.zeros((p.tax_profile_count, r)),
+        capital_loss_carryforward=_zeros_i64((p.capital_gain_agent_count, r)),
+        recapture_section_1250_ytd=_zeros_i64((p.tax_profile_count, r)),
         tax_liability_active=jnp.zeros((p.tax_liability_count, r), dtype=bool),
-        tax_liability_amount=jnp.zeros((p.tax_liability_count, r)),
+        tax_liability_amount=_zeros_i64((p.tax_liability_count, r)),
         failed=jnp.zeros(r, dtype=bool),
         failed_month=jnp.full(r, -1, dtype=jnp.int32),
-        sale_disp_units=jnp.zeros((p.scheduled_sale_count, lot_axis, r)),
-        sale_disp_basis=jnp.zeros((p.scheduled_sale_count, lot_axis, r)),
-        sale_disp_proceeds=jnp.zeros((p.scheduled_sale_count, lot_axis, r)),
+        sale_disp_units=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
+        sale_disp_basis=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
+        sale_disp_proceeds=_zeros_i64((p.scheduled_sale_count, lot_axis, r)),
         sale_oversell=jnp.zeros((), dtype=bool),
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
@@ -1976,8 +2048,8 @@ def _program_impl(
 def _amount_values(
     *,
     amount_kind: int,
-    amount_fixed: float,
-    amount_base: float,
+    amount_fixed: int,
+    amount_base: int,
     amount_series: jnp.ndarray,
     amount_base_month: int,
     amount_period: int,
@@ -1990,16 +2062,16 @@ def _amount_values(
     see the series-index determinism note in `collect_level_series_keys`. `amount_kind` stays static (a
     genuine FIXED-vs-series code branch)."""
     if amount_kind == AMOUNT_FIXED:
-        return jnp.full(rollout_count, amount_fixed)
+        return jnp.full(rollout_count, amount_fixed, dtype=jnp.int64)
     reset_month = amount_base_month + ((month - amount_base_month) // amount_period) * amount_period
     series_row = external_values[amount_series]  # (rollouts, H+1) — dynamic gather on the traced index
     base_level = series_row[:, amount_base_month]
     reset_level = series_row[:, reset_month]
-    return amount_base * reset_level / base_level
+    return _round_int64(amount_base * reset_level / base_level)
 
 
 def _amount_values_tuple(
-    spec: tuple[int, float, float, int, int],
+    spec: tuple[int, int, int, int, int],
     series_op: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int | jnp.ndarray,
@@ -2068,14 +2140,14 @@ def _amount_values_vec(
     if external_values.shape[0] == 0:
         # No exogenous series in this scenario, so every amount is necessarily fixed; skip the
         # series gather (it would index a size-0 axis). `shape[0]` is static under jit.
-        return jnp.broadcast_to(amount_fixed[:, None], (amount_kind.shape[0], rollout_count))
+        return jnp.broadcast_to(amount_fixed[:, None], (amount_kind.shape[0], rollout_count)).astype(jnp.int64)
     safe_period = jnp.where(amount_period > 0, amount_period, 1)
     reset_month = amount_base_month + ((month - amount_base_month) // safe_period) * safe_period
     safe_series = jnp.where(amount_series >= 0, amount_series, 0)
     rows = jnp.arange(rollout_count)
     base_level = external_values[safe_series[:, None], rows[None, :], amount_base_month[:, None]]
     reset_level = external_values[safe_series[:, None], rows[None, :], reset_month[:, None]]
-    series_amount = amount_base[:, None] * reset_level / base_level
+    series_amount = _round_int64(amount_base[:, None] * reset_level / base_level)
     return jnp.where((amount_kind == AMOUNT_FIXED)[:, None], amount_fixed[:, None], series_amount)
 
 
@@ -2112,7 +2184,7 @@ def _transfers_jit(
         month,
         rollout_count,
     )
-    amounts = jnp.where(fire, raw, 0.0)
+    amounts = jnp.where(fire, raw, 0)
     cash = _scatter_rows(cash, from_slot, -amounts)
     cash = _scatter_rows(cash, to_slot, amounts)
     ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
@@ -2155,7 +2227,7 @@ def _property_cashflows_jit(
         month,
         rollout_count,
     )
-    amounts = jnp.where(fire, raw, 0.0)
+    amounts = jnp.where(fire, raw, 0)
     cash = _scatter_rows(cash, from_slot, -amounts)
     cash = _scatter_rows(cash, to_slot, amounts)
     ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
@@ -2169,22 +2241,25 @@ def _fifo_sell_units(
     target_units: jnp.ndarray,
     unit_price: jnp.ndarray,
     cost_basis_per_unit: jnp.ndarray,
-    epsilon: float = 1e-9,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of `tensor_fifo.fifo_sell_units`: vectorized cumulative-sum FIFO over `[R, L]` lots."""
+    lot_quantity_scale: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """FIFO-sell a quantity target in lot quanta, returning sold quanta and cent values."""
     ordered_quantity = lot_remaining[:, ordered_lots]
     available_units = ordered_quantity.sum(axis=1)
-    oversell = target_units > available_units + epsilon
-    effective_target = jnp.where(oversell, 0.0, target_units)
+    oversell = target_units > available_units
+    effective_target = jnp.where(oversell, 0, target_units)
     before_units = jnp.cumsum(ordered_quantity, axis=1) - ordered_quantity
-    sold_ordered = jnp.clip(effective_target[:, None] - before_units, 0.0, ordered_quantity)
-    proceeds_ordered = sold_ordered * unit_price[:, None]
-    basis_ordered = sold_ordered * cost_basis_per_unit[ordered_lots][None, :]
+    sold_ordered = jnp.clip(effective_target[:, None] - before_units, 0, ordered_quantity)
+    ordered_scale = lot_quantity_scale[ordered_lots]
+    proceeds_ordered = _value_cents_from_quanta(sold_ordered, unit_price[:, None], ordered_scale[None, :])
+    basis_ordered = _value_cents_from_quanta(
+        sold_ordered, cost_basis_per_unit[ordered_lots][None, :], ordered_scale[None, :]
+    )
     zeros = jnp.zeros_like(lot_remaining)
     sold_units = zeros.at[:, ordered_lots].set(sold_ordered)
     proceeds = zeros.at[:, ordered_lots].set(proceeds_ordered)
     basis = zeros.at[:, ordered_lots].set(basis_ordered)
-    return sold_units, proceeds, basis, oversell
+    return sold_units, proceeds, basis
 
 
 def _apply_tlh_give_back(
@@ -2209,11 +2284,11 @@ def _apply_tlh_give_back(
         fraction_sold = jnp.where(
             pre_sale_units > 0.0, units_sold / jnp.where(pre_sale_units > 0.0, pre_sale_units, 1.0), 0.0
         )
-        give_back = fraction_sold * cumulative  # (R,)
+        give_back = _scale_money(cumulative, fraction_sold)  # (R,)
         per_lot_weight = jnp.where(
             units_sold[:, None] > 0.0, sold_policy / jnp.where(units_sold[:, None] > 0.0, units_sold[:, None], 1.0), 0.0
         )
-        gains = gains.at[:, lot_indices].add(per_lot_weight * give_back[:, None])
+        gains = gains.at[:, lot_indices].add(_round_int64(per_lot_weight * give_back[:, None]))
         tlh_cumulative_harvest = tlh_cumulative_harvest.at[policy_idx].set(cumulative - give_back)
     return gains, tlh_cumulative_harvest
 
@@ -2243,7 +2318,7 @@ def _record_capital_gains(
     )
     long_mask = (month - lot_purchase_month) >= 12  # (L,)
     masks = jnp.stack([long_mask, ~long_mask])  # (2, L), rows ordered LONG_TERM=0, SHORT_TERM=1
-    sold = sold_units > 0.0  # (R, L)
+    sold = sold_units > 0  # (R, L)
     # einsum over lots: (2, L) x (R, L) -> (2, R) per-classification gain sums and activity flags.
     gains_by_class = jnp.einsum("cl,rl->cr", masks.astype(gains.dtype), gains)
     active_by_class = (masks[:, None, :] & sold[None, :, :]).any(axis=2)  # (2, R)
@@ -2307,13 +2382,14 @@ def _obligation_accruals_jit(
     property_tax = jnp.broadcast_to(pt_amount[:, None], configured.shape)
     property_mask = _gather_rows(property_active, prop_idx) & (pt_prop_month[:, None] < month)
     principal = _gather_rows(liab_principal, liab_idx)
-    mortgage = jnp.minimum(_gather_rows(liab_monthly, liab_idx), principal + principal * mort_rate[:, None] / 12.0)
-    mortgage_mask = _gather_rows(liab_active, liab_idx) & (principal > 0.0) & (mort_prop_month[:, None] < month)
+    mortgage_interest = _scale_money(principal, mort_rate[:, None] / 12.0)
+    mortgage = jnp.minimum(_gather_rows(liab_monthly, liab_idx), principal + mortgage_interest)
+    mortgage_mask = _gather_rows(liab_active, liab_idx) & (principal > 0) & (mort_prop_month[:, None] < month)
     estimated = jnp.broadcast_to(est_quarterly[:, None], configured.shape)
-    actual = trueup_sel @ jnp.where(taxliab_active, taxliab_amount, 0.0)  # (slots, rollouts)
+    actual = trueup_sel @ jnp.where(taxliab_active, taxliab_amount, 0)  # (slots, rollouts)
     safe_harbor = jnp.minimum(est_prior[:, None], actual)
-    q4 = jnp.maximum(safe_harbor - est_prior[:, None] * 0.75, 0.0)
-    true_up = jnp.maximum(actual - safe_harbor, 0.0)
+    q4 = jnp.maximum(safe_harbor - _scale_money(est_prior[:, None], 0.75), 0)
+    true_up = jnp.maximum(actual - safe_harbor, 0)
 
     amount = jnp.select(
         [
@@ -2325,7 +2401,7 @@ def _obligation_accruals_jit(
             k == ObligationSource.TAX_TRUE_UP,
         ],
         [configured, property_tax, mortgage, estimated, q4, true_up],
-        default=0.0,
+        default=0,
     )
     kind_mask = jnp.select(
         [
@@ -2336,8 +2412,8 @@ def _obligation_accruals_jit(
         [configured_property_mask, property_mask, mortgage_mask],
         default=True,
     )
-    slot_active = valid_slot[:, None] & active[None, :] & kind_mask & (amount > 0.0)
-    return slot_active, jnp.where(slot_active, amount, 0.0)
+    slot_active = valid_slot[:, None] & active[None, :] & kind_mask & (amount > 0)
+    return slot_active, jnp.where(slot_active, amount, 0)
 
 
 @jax.jit
@@ -2351,7 +2427,7 @@ def _obligation_group_funded_jit(
     """Branch-free funding check: each obligation group (same agent + from-account) is funded for a
     rollout iff that account's cash covers the group's total due. The per-slot group is encoded as
     a static `(slots, slots)` membership matrix, so the group sums are one matmul."""
-    due_masked = jnp.where(accrual_active, accrual_due, 0.0)  # (slots, rollouts)
+    due_masked = jnp.where(accrual_active, accrual_due, 0)  # (slots, rollouts)
     group_due = group_matrix.astype(due_masked.dtype) @ due_masked  # (slots, rollouts)
     cash_padded = jnp.concatenate([cash, jnp.zeros((1, cash.shape[1]), cash.dtype)], axis=0)
     available = cash_padded[jnp.where(from_slot < 0, cash.shape[0], from_slot)]  # (slots, rollouts), -1 -> 0
@@ -2395,56 +2471,54 @@ def _settlement_core_jit(
     """
     paid = accrual_active & funded
     slot_failed = accrual_active & ~funded
-    paid_amount = jnp.where(paid, accrual_due, 0.0)
+    paid_amount = jnp.where(paid, accrual_due, 0)
     cash = _scatter_rows(cash, from_slot, -paid_amount)
     cash = _scatter_rows(cash, to_slot, paid_amount)
     rented = _gather_rows(property_rented_fraction, property_slot_idx)  # (slots, rollouts)
     property_tax_ytd = _scatter_rows(
         property_tax_ytd,
         property_tax_profile,
-        jnp.where(has_property_tax_profile[:, None], paid_amount * (1.0 - rented), 0.0),
+        jnp.where(has_property_tax_profile[:, None], _scale_money(paid_amount, 1.0 - rented), 0),
     )
     deductible = jnp.where(has_property_slot[:, None], rented, deductible_fraction[:, None])
     ordinary_ytd = _scatter_rows(
-        ordinary_ytd, deduction_profile, jnp.where(has_deduction[:, None], -paid_amount * deductible, 0.0)
+        ordinary_ytd, deduction_profile, jnp.where(has_deduction[:, None], -_scale_money(paid_amount, deductible), 0)
     )
-    shortfall = jnp.where(slot_failed, accrual_due, 0.0)
+    shortfall = jnp.where(slot_failed, accrual_due, 0)
     failed_this = slot_failed.any(axis=0)
     failed_month = jnp.where(failed_this & (failed_month < 0), month, failed_month)
     failed = failed | failed_this
     return paid, paid_amount, cash, ordinary_ytd, property_tax_ytd, shortfall, slot_failed, failed, failed_month
 
 
-def _fifo_sell_dollars(
+def _fifo_sell_cents(
     lot_remaining: jnp.ndarray,
     ordered_lots: np.ndarray,
-    target_dollars: jnp.ndarray,
-    unit_price: jnp.ndarray,
+    target_cents: jnp.ndarray,
+    unit_price_cents: jnp.ndarray,
     cost_basis_per_unit: jnp.ndarray,
-    epsilon: float = 1e-9,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of `tensor_fifo.fifo_sell_dollars`: FIFO sell a dollar target, ceiling-rounding units."""
+    lot_quantity_scale: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """FIFO sell a cent target, ceiling-rounding to quantity quanta."""
     ordered_quantity = lot_remaining[:, ordered_lots]
-    available_value = ordered_quantity * unit_price[:, None]
-    oversell = target_dollars > available_value.sum(axis=1) + epsilon
-    effective_target = jnp.where(oversell, 0.0, target_dollars)
+    ordered_scale = lot_quantity_scale[ordered_lots]
+    available_value = _value_cents_from_quanta(ordered_quantity, unit_price_cents[:, None], ordered_scale[None, :])
+    oversell = target_cents > available_value.sum(axis=1)
+    effective_target = jnp.where(oversell, 0, target_cents)
     before_value = jnp.cumsum(available_value, axis=1) - available_value
-    sold_value_ordered = jnp.clip(effective_target[:, None] - before_value, 0.0, available_value)
-    price_col = unit_price[:, None]
-    sale_ratio = jnp.where(price_col > 0.0, sold_value_ordered / jnp.where(price_col > 0.0, price_col, 1.0), 0.0)
-    nearest_units = jnp.round(sale_ratio)
-    nearest_value = nearest_units * price_col
-    sold_units_before_clip = jnp.where(
-        jnp.abs(nearest_value - sold_value_ordered) <= 0.01, nearest_units, jnp.ceil(sale_ratio)
+    sold_value_ordered = jnp.clip(effective_target[:, None] - before_value, 0, available_value)
+    price_col = unit_price_cents[:, None]
+    sold_units_before_clip = _ceil_quanta_for_value_cents(sold_value_ordered, price_col, ordered_scale[None, :])
+    sold_units_ordered = jnp.clip(sold_units_before_clip, 0, ordered_quantity)
+    proceeds_ordered = _value_cents_from_quanta(sold_units_ordered, price_col, ordered_scale[None, :])
+    basis_ordered = _value_cents_from_quanta(
+        sold_units_ordered, cost_basis_per_unit[ordered_lots][None, :], ordered_scale[None, :]
     )
-    sold_units_ordered = jnp.clip(sold_units_before_clip, 0.0, ordered_quantity)
-    proceeds_ordered = sold_units_ordered * price_col
-    basis_ordered = sold_units_ordered * cost_basis_per_unit[ordered_lots][None, :]
     zeros = jnp.zeros_like(lot_remaining)
     sold_units = zeros.at[:, ordered_lots].set(sold_units_ordered)
     proceeds = zeros.at[:, ordered_lots].set(proceeds_ordered)
     basis = zeros.at[:, ordered_lots].set(basis_ordered)
-    return sold_units, proceeds, basis, oversell
+    return sold_units, proceeds, basis
 
 
 def _compute_liquid_net_worth(
@@ -2453,6 +2527,7 @@ def _compute_liquid_net_worth(
     owner_non_pe_lot_indices: tuple[int, ...],
     cash: jnp.ndarray,
     lot_remaining: jnp.ndarray,
+    lot_quantity_scale: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int | jnp.ndarray,
 ) -> jnp.ndarray:
@@ -2466,8 +2541,10 @@ def _compute_liquid_net_worth(
     series_indices = lot_asset_series_index[lot_indices]
     valid = series_indices >= 0
     prices = external_values[jnp.where(valid, series_indices, 0), :, month]
-    prices = jnp.nan_to_num(jnp.where(valid[:, None], prices, 0.0), nan=0.0)
-    lot_value = (lot_remaining[lot_indices, :] * prices).sum(axis=0)
+    prices = _price_usd_to_cents(jnp.nan_to_num(jnp.where(valid[:, None], prices, 0.0), nan=0.0))
+    lot_value = _value_cents_from_quanta(
+        lot_remaining[lot_indices, :], prices, lot_quantity_scale[lot_indices, None]
+    ).sum(axis=0)
     return cash_total + lot_value
 
 
@@ -2486,6 +2563,7 @@ def _compute_liquid_net_worth(
 def _tlh_harvest_policy_jit(
     remaining_lots: jnp.ndarray,
     cost_basis_lots: jnp.ndarray,
+    quantity_scale_lots: jnp.ndarray,
     price: jnp.ndarray,
     prior_price: jnp.ndarray,
     cumulative: jnp.ndarray,
@@ -2505,11 +2583,16 @@ def _tlh_harvest_policy_jit(
     + `split_short_long`), vectorized over rollouts: book a calibrated capital loss as a NEGATIVE in
     `capital_gain_ytd` and accumulate it into the give-back ledger `cumulative`. Per-policy params
     are static (the jitted core compiles once per policy)."""
-    market_value = (remaining_lots * price[None, :]).sum(axis=0)  # (R,)
-    original_basis = (remaining_lots * cost_basis_lots[:, None]).sum(axis=0)  # (R,)
-    adjusted_basis = jnp.maximum(0.0, original_basis - cumulative)
-    safe_mv = jnp.where(market_value > 0.0, market_value, 1.0)
-    embedded_gain = jnp.clip(jnp.where(market_value > 0.0, (market_value - adjusted_basis) / safe_mv, 0.0), 0.0, 1.0)
+    price_cents = _price_usd_to_cents(price)
+    market_value = _value_cents_from_quanta(remaining_lots, price_cents[None, :], quantity_scale_lots[:, None]).sum(
+        axis=0
+    )
+    original_basis = _value_cents_from_quanta(
+        remaining_lots, cost_basis_lots[:, None], quantity_scale_lots[:, None]
+    ).sum(axis=0)
+    adjusted_basis = jnp.maximum(0, original_basis - cumulative)
+    safe_mv = jnp.where(market_value > 0, market_value, 1)
+    embedded_gain = jnp.clip(jnp.where(market_value > 0, (market_value - adjusted_basis) / safe_mv, 0.0), 0.0, 1.0)
     if has_prior:
         safe_prior = jnp.where(prior_price > 0.0, prior_price, 1.0)
         period_return = jnp.where(prior_price > 0.0, (price - prior_price) / safe_prior, 0.0)
@@ -2517,18 +2600,20 @@ def _tlh_harvest_policy_jit(
         period_return = jnp.zeros_like(price)  # month 0: no prior price, treat as flat
     base_monthly = (floor + (peak - floor) * (1.0 - embedded_gain) ** gamma) / 12.0
     fraction = base_monthly * (1.0 + drawdown_sensitivity * jnp.maximum(0.0, -period_return))
-    ceiling = jnp.maximum(0.0, original_basis - cumulative)  # never harvest past available below-basis room
-    gross = jnp.where(active, jnp.minimum(jnp.maximum(market_value * fraction, 0.0), ceiling), 0.0)
+    ceiling = jnp.maximum(0, original_basis - cumulative)  # never harvest past available below-basis room
+    gross = jnp.where(active, jnp.minimum(_scale_money(market_value, fraction), ceiling), 0)
     stf = min(max(short_term_fraction, 0.0), 1.0)
     short_term = int(CapitalGainClassification.SHORT_TERM)
     long_term = int(CapitalGainClassification.LONG_TERM)
-    capital_gain_ytd = capital_gain_ytd.at[gain_profile, short_term].add(-gross * stf)
-    capital_gain_ytd = capital_gain_ytd.at[gain_profile, long_term].add(-gross * (1.0 - stf))
+    st_gross = _scale_money(gross, stf)
+    lt_gross = gross - st_gross
+    capital_gain_ytd = capital_gain_ytd.at[gain_profile, short_term].add(-st_gross)
+    capital_gain_ytd = capital_gain_ytd.at[gain_profile, long_term].add(-lt_gross)
     capital_gain_active = capital_gain_active.at[gain_profile, short_term].set(
-        capital_gain_active[gain_profile, short_term] | (gross * stf > 0.0)
+        capital_gain_active[gain_profile, short_term] | (st_gross > 0)
     )
     capital_gain_active = capital_gain_active.at[gain_profile, long_term].set(
-        capital_gain_active[gain_profile, long_term] | (gross * (1.0 - stf) > 0.0)
+        capital_gain_active[gain_profile, long_term] | (lt_gross > 0)
     )
     return capital_gain_ytd, capital_gain_active, cumulative + gross
 
@@ -2539,10 +2624,10 @@ def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarra
         return jnp.zeros_like(amount)
     upper_edges = jnp.asarray(upper[:count])
     bracket_rates = jnp.asarray(rate[:count])
-    previous_upper = jnp.concatenate([jnp.zeros(1), upper_edges[:-1]])
+    previous_upper = jnp.concatenate([jnp.zeros(1, dtype=upper_edges.dtype), upper_edges[:-1]])
     slice_top = jnp.minimum(amount[:, None], upper_edges[None, :])
-    in_bracket = jnp.maximum(slice_top - previous_upper[None, :], 0.0)
-    return (in_bracket * bracket_rates[None, :]).sum(axis=1)
+    in_bracket = jnp.maximum(slice_top - previous_upper[None, :], 0)
+    return _round_int64((in_bracket * bracket_rates[None, :]).sum(axis=1))
 
 
 def _apply_ltcg_brackets(
@@ -2553,12 +2638,12 @@ def _apply_ltcg_brackets(
         return jnp.zeros_like(ltcg_amount)
     upper_edges = jnp.asarray(upper[:count])
     bracket_rates = jnp.asarray(rate[:count])
-    previous_upper = jnp.concatenate([jnp.zeros(1), upper_edges[:-1]])
+    previous_upper = jnp.concatenate([jnp.zeros(1, dtype=upper_edges.dtype), upper_edges[:-1]])
     total_taxable = ordinary_taxable + ltcg_amount
     slice_top = jnp.minimum(total_taxable[:, None], upper_edges[None, :])
     slice_bottom = jnp.maximum(ordinary_taxable[:, None], previous_upper[None, :])
-    in_bracket = jnp.maximum(slice_top - slice_bottom, 0.0)
-    return (in_bracket * bracket_rates[None, :]).sum(axis=1)
+    in_bracket = jnp.maximum(slice_top - slice_bottom, 0)
+    return _round_int64((in_bracket * bracket_rates[None, :]).sum(axis=1))
 
 
 def _net_capital_gains_jnp(
@@ -2566,22 +2651,22 @@ def _net_capital_gains_jnp(
     long_term: jnp.ndarray,
     carryforward_in: jnp.ndarray,
     *,
-    max_ordinary_offset_usd: float = 3000.0,
+    max_ordinary_offset_cents: int = 300_000,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Branch-free `jnp` port of `tax.net_capital_gains_with_carryforward` (§1211/§1212 netting)."""
     st, lt = short_term, long_term
-    st_loss_vs_lt_gain = jnp.minimum(jnp.maximum(-st, 0.0), jnp.maximum(lt, 0.0))
+    st_loss_vs_lt_gain = jnp.minimum(jnp.maximum(-st, 0), jnp.maximum(lt, 0))
     st, lt = st + st_loss_vs_lt_gain, lt - st_loss_vs_lt_gain
-    lt_loss_vs_st_gain = jnp.minimum(jnp.maximum(-lt, 0.0), jnp.maximum(st, 0.0))
+    lt_loss_vs_st_gain = jnp.minimum(jnp.maximum(-lt, 0), jnp.maximum(st, 0))
     lt, st = lt + lt_loss_vs_st_gain, st - lt_loss_vs_st_gain
     carry = carryforward_in
-    used_short_term = jnp.minimum(jnp.maximum(st, 0.0), carry)
+    used_short_term = jnp.minimum(jnp.maximum(st, 0), carry)
     st, carry = st - used_short_term, carry - used_short_term
-    used_long_term = jnp.minimum(jnp.maximum(lt, 0.0), carry)
+    used_long_term = jnp.minimum(jnp.maximum(lt, 0), carry)
     lt, carry = lt - used_long_term, carry - used_long_term
-    net_short_term, net_long_term = jnp.maximum(st, 0.0), jnp.maximum(lt, 0.0)
-    residual_loss = jnp.maximum(-(st + lt), 0.0) + carry
-    ordinary_offset = jnp.minimum(residual_loss, max_ordinary_offset_usd)
+    net_short_term, net_long_term = jnp.maximum(st, 0), jnp.maximum(lt, 0)
+    residual_loss = jnp.maximum(-(st + lt), 0) + carry
+    ordinary_offset = jnp.minimum(residual_loss, max_ordinary_offset_cents)
     return net_short_term, net_long_term, ordinary_offset, residual_loss - ordinary_offset
 
 
@@ -2610,9 +2695,9 @@ def _compute_tax_for_link(
     standard_deduction = tcfg.link_standard_deduction[link]
     if static.mid_active:
         owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
-        mortgage_interest_deduction = tcfg.mid_principal_ratio[link] @ owner_interest_ytd
+        mortgage_interest_deduction = _round_int64(tcfg.mid_principal_ratio[link] @ owner_interest_ytd)
     else:
-        mortgage_interest_deduction = jnp.zeros(rollout_count)
+        mortgage_interest_deduction = _zeros_i64((rollout_count,))
     itemized_deduction = mortgage_interest_deduction + salt_deduction
     deduction_used = jnp.maximum(itemized_deduction, standard_deduction)
 
@@ -2623,7 +2708,7 @@ def _compute_tax_for_link(
     ordinary_rate = tcfg.link_ordinary_rate[link]
     ordinary_count = static.ordinary_count
     if static.has_ltcg == 1:
-        ordinary_taxable = jnp.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
+        ordinary_taxable = jnp.maximum(ordinary_for_brackets + stcg - deduction_used, 0)
         capital_taxable = ltcg
         ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
         ltcg_tax = _apply_ltcg_brackets(
@@ -2634,19 +2719,19 @@ def _compute_tax_for_link(
             count=static.ltcg_count,
         )
     else:
-        ordinary_taxable = jnp.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0.0)
-        capital_taxable = jnp.zeros(rollout_count)
+        ordinary_taxable = jnp.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0)
+        capital_taxable = _zeros_i64((rollout_count,))
         ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
-        ltcg_tax = jnp.zeros(rollout_count)
+        ltcg_tax = _zeros_i64((rollout_count,))
 
     if federal_style_section_1250:
         ordinary_tax_with_recapture = _apply_brackets(
             ordinary_taxable + recapture, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count
         )
-        implied_recapture_tax = jnp.maximum(ordinary_tax_with_recapture - ordinary_tax, 0.0)
-        section_1250_tax = jnp.minimum(implied_recapture_tax, recapture * section_1250_rate)
+        implied_recapture_tax = jnp.maximum(ordinary_tax_with_recapture - ordinary_tax, 0)
+        section_1250_tax = jnp.minimum(implied_recapture_tax, _scale_money(recapture, section_1250_rate))
     else:
-        section_1250_tax = jnp.zeros(rollout_count)
+        section_1250_tax = _zeros_i64((rollout_count,))
 
     capital_tax = ltcg_tax + section_1250_tax
     return mortgage_interest_deduction, itemized_deduction, ordinary_taxable, capital_taxable, ordinary_tax, capital_tax
@@ -2690,50 +2775,52 @@ def _scan_property_sale(
     closing_cost_pct = ev.amount
     # `home_value_series` is a TRACED scalar row index (dynamic gather), not a baked static index.
     series_row = external_values[home_value_series]  # (rollouts, H+1)
-    market_value = ev.purchase_price * series_row[:, month] / series_row[:, 0]
-    gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
+    market_value = _scale_money(
+        jnp.full(rollout_count, ev.purchase_price, dtype=jnp.int64), series_row[:, month] / series_row[:, 0]
+    )
+    gross_proceeds = _scale_money(market_value, 1.0 - closing_cost_pct / 100.0)
     capex = property_building_basis[prop] - ev.building_basis_initial
     cum_dep = property_cum_dep[prop]
     realized_gain = gross_proceeds - (ev.purchase_price + capex - cum_dep)
-    recapture = jnp.minimum(jnp.maximum(realized_gain, 0.0), cum_dep)
-    post_recapture_gain = jnp.maximum(realized_gain - recapture, 0.0)
+    recapture = jnp.minimum(jnp.maximum(realized_gain, 0), cum_dep)
+    post_recapture_gain = jnp.maximum(realized_gain - recapture, 0)
     # §121: months owner-occupied within the trailing 60-month window (the carried ring's column sum).
     qualifies = oo_window[:, prop, :].sum(axis=0) >= SECTION_121_MIN_QUALIFYING_MONTHS
     owner_profile = ev.owner_profile
     exclusion_cap = ev.exclusion_cap
-    section_121_exclusion = jnp.where(qualifies, jnp.minimum(post_recapture_gain, exclusion_cap), 0.0)
+    section_121_exclusion = jnp.where(qualifies, jnp.minimum(post_recapture_gain, exclusion_cap), 0)
     ltcg = post_recapture_gain - section_121_exclusion
-    mortgage_payoff = jnp.zeros(rollout_count)
+    mortgage_payoff = _zeros_i64((rollout_count,))
     for lia in ev.mortgage_liabilities:
         mortgage_payoff = mortgage_payoff + liab_principal[lia]
-        liab_principal = liab_principal.at[lia].set(jnp.where(active_property, 0.0, liab_principal[lia]))
+        liab_principal = liab_principal.at[lia].set(jnp.where(active_property, 0, liab_principal[lia]))
         liab_active = liab_active.at[lia].set(jnp.where(active_property, False, liab_active[lia]))
     net_cash = gross_proceeds - mortgage_payoff
     owner_cash_slot = ev.owner_cash_slot
     if owner_cash_slot >= 0:
-        cash = cash.at[owner_cash_slot].add(jnp.where(active_property, net_cash, 0.0))
+        cash = cash.at[owner_cash_slot].add(jnp.where(active_property, net_cash, 0))
     if owner_profile >= 0:
-        recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0.0))
+        recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0))
         gain_profile = ev.gain_profile
         if gain_profile >= 0:
             lt = int(CapitalGainClassification.LONG_TERM)
-            cg_ytd = cg_ytd.at[gain_profile, lt].add(jnp.where(active_property, ltcg, 0.0))
+            cg_ytd = cg_ytd.at[gain_profile, lt].add(jnp.where(active_property, ltcg, 0))
             cg_active = cg_active.at[gain_profile, lt].set(cg_active[gain_profile, lt] | active_property)
     property_active = property_active.at[prop].set(property_active[prop] & ~active_property)
     property_rented_fraction = property_rented_fraction.at[prop].set(
         jnp.where(active_property, 0.0, property_rented_fraction[prop])
     )
     property_building_basis = property_building_basis.at[prop].set(
-        jnp.where(active_property, 0.0, property_building_basis[prop])
+        jnp.where(active_property, 0, property_building_basis[prop])
     )
     sale_trace = (
-        jnp.where(active_property, gross_proceeds, 0.0),
-        jnp.where(active_property, mortgage_payoff, 0.0),
-        jnp.where(active_property, net_cash, 0.0),
-        jnp.where(active_property, realized_gain, 0.0),
-        jnp.where(active_property, recapture, 0.0),
-        jnp.where(active_property, section_121_exclusion, 0.0),
-        jnp.where(active_property, ltcg, 0.0),
+        jnp.where(active_property, gross_proceeds, 0),
+        jnp.where(active_property, mortgage_payoff, 0),
+        jnp.where(active_property, net_cash, 0),
+        jnp.where(active_property, realized_gain, 0),
+        jnp.where(active_property, recapture, 0),
+        jnp.where(active_property, section_121_exclusion, 0),
+        jnp.where(active_property, ltcg, 0),
     )
     return (
         cash,
@@ -2761,6 +2848,8 @@ def _apply_depreciation_accrual(
     """Port of `phases._apply_depreciation_accrual`: §168 straight-line monthly depreciation,
     branch-free over all properties (one masked elementwise accrual)."""
     monthly_dep = jnp.where(
-        (~failed)[None, :] & property_active, property_building_basis * property_rented_fraction / (27.5 * 12.0), 0.0
+        (~failed)[None, :] & property_active,
+        _scale_money(property_building_basis, property_rented_fraction / (27.5 * 12.0)),
+        0,
     )
     return property_cumulative_depreciation + monthly_dep, property_depreciation_ytd + monthly_dep

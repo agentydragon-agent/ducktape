@@ -29,6 +29,7 @@ from augur.model.series import (
 from augur.model.series_model import SeriesModelBundle
 from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.sim.fixed_point import cents_to_usd, usd_to_cents
 from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
@@ -62,6 +63,10 @@ from augur.sim.slice import slice_dense_result
 
 CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
+
+
+def _engine_usd(value: float) -> float:
+    return cents_to_usd(usd_to_cents(value))
 
 
 def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> ExternalSeriesContext:
@@ -1736,10 +1741,12 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     the engine computes federal + CA tax on (200000 - std_deduction)
     and writes one tax_liability row per jurisdiction.
 
-    Federal: $200,000 - $14,600 = $185,400 taxable.
+    Monthly paychecks are rounded to cents before entering the engine:
+    12 * $16,666.67 = $200,000.04. Federal: $200,000.04 - $14,600
+    = $185,400.04 taxable.
       10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 84875
-      = 1160.00 + 4266.00 + 11742.50 + 20370.00 = 37538.50
-    California: $200,000 - $5,363 = $194,637 taxable.
+      = 1160.00 + 4266.00 + 11742.50 + 20370.01 = 37538.51
+    California: $200,000.04 - $5,363 = $194,637.04 taxable.
       1% × 10412 + 2% × 14272 + 4% × 14275 + 6% × 15122 + 8% × 14269
       + 9.3% × 126287 = 104.12 + 285.44 + 571.00 + 907.32 + 1141.52
       + 11744.69 = 14754.09
@@ -1784,22 +1791,23 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     accruals = result.events_log.tax_accruals.sort("jurisdiction_id")
     assert accruals.height == 2
     accruals_by_jurisdiction = {row["jurisdiction_id"]: row for row in accruals.iter_rows(named=True)}
-    assert accruals_by_jurisdiction["federal_us"]["amount_usd"] == pytest.approx(37538.50, abs=0.01)
+    annual_income = 12 * _engine_usd(200_000.0 / 12.0)
+    assert accruals_by_jurisdiction["federal_us"]["amount_usd"] == pytest.approx(37538.51, abs=0.01)
     assert accruals_by_jurisdiction["california"]["amount_usd"] == pytest.approx(14754.09, abs=0.02)
     assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
     assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
     breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
-    assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(200_000.0, abs=0.02)
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(185_400.0, abs=0.02)
-    assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(37_538.50, abs=0.01)
-    assert breakdowns["federal_us"]["total_tax_usd"] == pytest.approx(37_538.50, abs=0.01)
+    assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(annual_income, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(185_400.04, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(37_538.51, abs=0.01)
+    assert breakdowns["federal_us"]["total_tax_usd"] == pytest.approx(37_538.51, abs=0.01)
 
     # tax_liabilities at end-of-horizon has two rows (one per
     # jurisdiction) with matching amounts.
     end_liabilities = result.tax_liabilities.filter(pl.col("month_index") == 12).sort("jurisdiction_id")
     assert end_liabilities.height == 2
     assert end_liabilities.get_column("amount_owed_usd").to_list()[0] == pytest.approx(14754.09, abs=0.02)
-    assert end_liabilities.get_column("amount_owed_usd").to_list()[1] == pytest.approx(37538.50, abs=0.01)
+    assert end_liabilities.get_column("amount_owed_usd").to_list()[1] == pytest.approx(37538.51, abs=0.01)
 
     # YTD reflects accumulated income across the year; the year-end
     # reset at month 11 (visible at month_index 12) drops it back
@@ -1807,7 +1815,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     # paychecks.
     ytd_alice = result.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").sort("month_index")
     ytd_values = ytd_alice.get_column("ordinary_income_usd").to_list()
-    assert ytd_values[11] == pytest.approx(11 * (200_000.0 / 12.0), abs=0.02)
+    assert ytd_values[11] == pytest.approx(11 * _engine_usd(200_000.0 / 12.0), abs=0.02)
     assert ytd_values[12] == 0.0
 
 
@@ -1815,15 +1823,15 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     """L8 — Alice gets $50k W-2 wages, plus sells a long-held VTI
     lot (24 months pre-horizon) for a $20k gain at month 6.
 
-    Federal taxable ordinary = 50000 - 14600 = 35400.
+    Federal taxable ordinary = 50000.04 - 14600 = 35400.04.
       10% × 11600 + 12% × 23800 = 1160 + 2856 = 4016.
     LTCG stacks above ordinary. The 0% bracket ends at 47025, so
-    11625 of LTCG falls in 0%; the remaining 8375 falls in 15%.
-      LTCG tax = 8375 × 0.15 = 1256.25.
-    Federal total = 4016 + 1256.25 = 5272.25.
+    11624.96 of LTCG falls in 0%; the remaining 8375.04 falls in 15%.
+      LTCG tax = 8375.04 × 0.15 = 1256.26.
+    Federal total = 4016.00 + 1256.26 = 5272.26.
 
     California taxes LTCG as ordinary income.
-      Total CA taxable = 50000 + 20000 - 5363 = 64637.
+      Total CA taxable = 50000.04 + 20000 - 5363 = 64637.04.
       1% × 10412 + 2% × 14272 + 4% × 14275 + 6% × 15122 + 8% × 10556
       = 104.12 + 285.44 + 571.00 + 907.32 + 844.48 = 2712.36."""
     scenario = Scenario(
@@ -1881,14 +1889,14 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     result = simulate(scenario, rollout_count=1, locations={})
 
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
-    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
+    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.26, abs=0.01)
     assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
     breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.0, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.04, abs=0.02)
     assert breakdowns["federal_us"]["capital_gain_taxable_usd"] == pytest.approx(20_000.0, abs=0.02)
     assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(4_016.0, abs=0.01)
-    assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.25, abs=0.01)
-    assert breakdowns["california"]["ordinary_taxable_usd"] == pytest.approx(64_637.0, abs=0.02)
+    assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.26, abs=0.01)
+    assert breakdowns["california"]["ordinary_taxable_usd"] == pytest.approx(64_637.04, abs=0.02)
     assert breakdowns["california"]["capital_gain_tax_usd"] == 0.0
 
     # YTD captured the LTCG ($20k) before year-end reset.
@@ -1906,9 +1914,9 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     Alice earns $50k, sells a long-held VTI lot for $28k proceeds
     and $20k gain, and has $4k of prior-year tax. The safe-harbor
     quarterlies pay $1k at months 3/5/8/12; the month-12 true-up
-    pays the remaining $3,984.61. Ending cash is:
+    pays the remaining $3,984.62. Ending cash is:
 
-      1000 + 50000 + 28000 - 7984.61 = 71015.39.
+      1000 + 50000.04 + 28000 - 7984.62 = 71015.42.
     """
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
@@ -1966,7 +1974,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
-    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
+    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.26, abs=0.01)
     assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
 
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
@@ -1977,16 +1985,16 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
         {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_usd": pytest.approx(1_000.0)},
         {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_usd": pytest.approx(1_000.0)},
         {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_usd": pytest.approx(1_000.0)},
-        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_usd": pytest.approx(3_984.61, abs=0.02)},
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_usd": pytest.approx(3_984.62, abs=0.02)},
     ]
-    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(7_984.61, abs=0.02)
+    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(7_984.62, abs=0.02)
 
     tax_settlement = result.events_log.tax_settlements.row(0, named=True)
     assert tax_settlement["month_index"] == 12
     assert tax_settlement["tax_year_end_month"] == 11
-    assert tax_settlement["amount_usd"] == pytest.approx(7_984.61, abs=0.02)
+    assert tax_settlement["amount_usd"] == pytest.approx(7_984.62, abs=0.02)
     liabilities_due = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
-    assert liabilities_due == pytest.approx(7_984.61, abs=0.02)
+    assert liabilities_due == pytest.approx(7_984.62, abs=0.02)
     liabilities_settled = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
     assert liabilities_settled == pytest.approx(0.0, abs=0.02)
 
@@ -1995,7 +2003,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
         .get_column("balance_usd")
         .item()
     )
-    assert final_cash == pytest.approx(71_015.39, abs=0.02)
+    assert final_cash == pytest.approx(71_015.42, abs=0.02)
 
     final_lot = result.asset_lots.filter((pl.col("lot_id") == "alice_long_vti") & (pl.col("month_index") == 13))
     assert final_lot.get_column("remaining_quantity").item() == 0.0
@@ -2004,9 +2012,10 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
 def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     """Pinned tax aggregation e2e: wages plus two asset sales.
 
-    Alice earns $50k, sells one long-held lot for $10k LTCG and one
-    short-held lot for $1.5k STCG. Federal ordinary taxable income is
-    50000 + 1500 - 14600 = 36900, producing $4,196 ordinary tax. The
+    Alice earns $50,000.04 after cent-rounded monthly paychecks, sells one
+    long-held lot for $10k LTCG and one short-held lot for $1.5k STCG.
+    Federal ordinary taxable income is 50000.04 + 1500 - 14600 = 36900.04,
+    producing $4,196 ordinary tax. The
     $10k LTCG still fits under the 0% LTCG bracket after stacking, so
     capital-gain tax is $0.
     """
@@ -2084,10 +2093,10 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     accrual = result.events_log.tax_accruals.row(0, named=True)
     assert accrual["amount_usd"] == pytest.approx(4_196.0, abs=0.01)
     breakdown = result.events_log.tax_breakdowns.row(0, named=True)
-    assert breakdown["ordinary_income_usd"] == pytest.approx(50_000.0, abs=0.02)
+    assert breakdown["ordinary_income_usd"] == pytest.approx(50_000.04, abs=0.02)
     assert breakdown["ltcg_usd"] == pytest.approx(10_000.0, abs=0.02)
     assert breakdown["stcg_usd"] == pytest.approx(1_500.0, abs=0.02)
-    assert breakdown["ordinary_taxable_usd"] == pytest.approx(36_900.0, abs=0.02)
+    assert breakdown["ordinary_taxable_usd"] == pytest.approx(36_900.04, abs=0.02)
     assert breakdown["ordinary_tax_usd"] == pytest.approx(4_196.0, abs=0.01)
     assert breakdown["capital_gain_tax_usd"] == pytest.approx(0.0, abs=0.02)
 
@@ -2184,13 +2193,13 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     assert result.events_log.tax_settlements.get_column("amount_usd").sum() == pytest.approx(4_016.0, abs=0.01)
 
     policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("liquidity_sale"))
-    # Ceiling-unit FIFO: month-12 needs $2,516 at $100/unit → ceil(25.16) = 26 whole units → $2,600.
-    # The $84 excess stays in Alice's checking account.
+    # Fixed-point FIFO sells fractional quanta for non-crypto assets too: month-12 needs exactly
+    # $2,516 at $100/unit, so it sells 25.16 units with no excess cash.
     assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_usd").to_dicts() == [
         {"month_index": 3, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
         {"month_index": 5, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
         {"month_index": 8, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"month_index": 12, "units_sold": pytest.approx(26.0), "proceeds_usd": pytest.approx(2_600.0)},
+        {"month_index": 12, "units_sold": pytest.approx(25.16), "proceeds_usd": pytest.approx(2_516.0)},
     ]
 
     final_cash = (
@@ -2198,15 +2207,14 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         .get_column("balance_usd")
         .item()
     )
-    # $2,600 proceeds - $2,516 taxes paid = $84 leftover from ceiling rounding.
-    assert final_cash == pytest.approx(84.0, abs=0.02)
+    assert final_cash == pytest.approx(0.0, abs=0.02)
     remaining_vti = (
         result.asset_lots.filter((pl.col("lot_id") == "alice_vti_seed") & (pl.col("month_index") == 13))
         .get_column("remaining_quantity")
         .item()
     )
-    # 100 - (5+5+5+26) = 59 units remaining.
-    assert remaining_vti == pytest.approx(59.0, abs=0.02)
+    # 100 - (5+5+5+25.16) = 59.84 units remaining.
+    assert remaining_vti == pytest.approx(59.84, abs=0.02)
     final_due = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
     assert final_due == pytest.approx(0.0, abs=0.02)
     assert result.rollout_status.row(0, named=True)["status"] == "active"
@@ -2279,37 +2287,37 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    # Year-end tax: $37538.50 federal + $14754.09 CA = $52292.59.
+    # Year-end tax: $37,538.51 federal + $14,754.09 CA = $52,292.60.
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax"))
     assert tax_payments.height == 1
-    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(52_292.59, abs=0.02)
+    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(52_292.60, abs=0.02)
     assert tax_payments.row(0, named=True)["cause_id"] == "alice_tax_true_up_y0"
     # Tax true-up fires in January after the year-end accrual.
     assert set(tax_payments.get_column("month_index").to_list()) == {12}
     assert result.events_log.tax_settlements.height == 1
     settlement = result.events_log.tax_settlements.row(0, named=True)
     assert settlement["cause_id"] == "alice_tax_settlement_y0"
-    assert settlement["amount_usd"] == pytest.approx(52_292.59, abs=0.02)
+    assert settlement["amount_usd"] == pytest.approx(52_292.60, abs=0.02)
 
     due_before_payment = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
-    assert due_before_payment == pytest.approx(52_292.59, abs=0.02)
+    assert due_before_payment == pytest.approx(52_292.60, abs=0.02)
     due_after_payment = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
     assert due_after_payment == pytest.approx(0.0, abs=0.02)
 
-    # Cash flow: $200k income - $52292.59 tax = $147707.41 at end of horizon.
+    # Cash flow: $200,000.04 income - $52,292.60 tax = $147,707.44 at end of horizon.
     alice_end_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
         .get_column("balance_usd")
         .item()
     )
-    assert alice_end_cash == pytest.approx(200_000.0 - 52_292.59, abs=0.02)
+    assert alice_end_cash == pytest.approx(147_707.44, abs=0.02)
     # The IRS sink accumulates the tax inflows.
     irs_end_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 13))
         .get_column("balance_usd")
         .item()
     )
-    assert irs_end_cash == pytest.approx(52_292.59, abs=0.02)
+    assert irs_end_cash == pytest.approx(52_292.60, abs=0.02)
 
 
 def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
@@ -2489,11 +2497,10 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
     sales = result.events_log.lot_dispositions.sort("rollout_index")
-    # Ceiling-unit FIFO: rollout 0 needs $500 at $100 → ceil(5.0) = 5 units → $500 (exact).
-    # Rollout 1 needs $500 at $200 → ceil(2.5) = 3 whole units → $600 proceeds; $100 stays in cash.
+    # Fixed-point FIFO sells the exact fractional quanta needed for each rollout's price.
     assert sales.select("rollout_index", "units_sold", "proceeds_usd").to_dicts() == [
         {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"rollout_index": 1, "units_sold": pytest.approx(3.0), "proceeds_usd": pytest.approx(600.0)},
+        {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_usd": pytest.approx(500.0)},
     ]
     assert result.events_log.rollout_failures.is_empty()
 
@@ -3083,7 +3090,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
     assert final_stake["contribution_used_usd"] == pytest.approx(110_000.0)
     assert final_stake["equity_ledger_usd"] == pytest.approx(100_000.0)
 
-    mortgage_payment = 400_000.0 * 0.005 / (1.0 - (1.005**-360))
+    mortgage_payment = _engine_usd(400_000.0 * 0.005 / (1.0 - (1.005**-360)))
     final_liability = result.liabilities.filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_liability["principal_usd"] == pytest.approx(400_000.0 - (mortgage_payment - 2_000.0))
     assert final_liability["interest_paid_ytd_usd"] == pytest.approx(2_000.0)
@@ -3175,13 +3182,13 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_fra
     )
     result = simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
 
-    # SF: 500_000 * 0.01180 / 12 = 491.6666...
+    # SF: 500_000 * 0.01180 / 12 = 491.6666..., rounded to cents at the obligation boundary.
     sf_tax = (
         result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "sf_tax_collector"))
         .get_column("balance_usd")
         .item()
     )
-    assert sf_tax == pytest.approx(500_000.0 * 0.01180 / 12.0)
+    assert sf_tax == pytest.approx(_engine_usd(500_000.0 * 0.01180 / 12.0))
 
 
 def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_mare_island_location: Location) -> None:
@@ -3223,8 +3230,8 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_m
     )
     result = simulate(scenario, rollout_count=1, locations={"vallejo_mare_island": vallejo_mare_island_location})
 
-    # Mare Island: 500_000 * 0.0115 / 12 + 2300 / 12 per month.
-    expected_monthly = 500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0
+    # Mare Island: 500_000 * 0.0115 / 12 + 2300 / 12 per month, rounded to cents.
+    expected_monthly = _engine_usd(500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0)
     tax_collected = (
         result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "vallejo_tax_collector"))
         .get_column("balance_usd")

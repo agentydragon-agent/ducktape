@@ -8,12 +8,14 @@ capital-gain-agent index also live here since they're tax-routing concerns."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 
 from augur.sim.compiler.helpers import StringTable, slot
+from augur.sim.fixed_point import usd_to_cents
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.scenario import FilingStatus, Scenario
 
@@ -26,6 +28,7 @@ SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
 # `section_121_exclusion_for` raises NotImplementedError — which keeps "I forgot this
 # branch" from silently falling through to a wrong tax number.
 _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS: dict[FilingStatus, float] = {FilingStatus.SINGLE: 250_000.0}
+_OPEN_ENDED_BRACKET_UPPER_CENTS = np.iinfo(np.int64).max
 
 
 def section_121_exclusion_for(filing_status: FilingStatus) -> float:
@@ -37,6 +40,12 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> float:
             f"bracket lookups, standard-deduction lookups, MID, SALT cap, NIIT thresholds)."
         )
     return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
+
+
+def _bracket_upper_to_cents(upper_usd: float) -> np.int64:
+    if math.isinf(upper_usd):
+        return np.int64(_OPEN_ENDED_BRACKET_UPPER_CENTS)
+    return usd_to_cents(upper_usd)
 
 
 @dataclass(frozen=True)
@@ -61,17 +70,17 @@ class TaxCompileOutput:
     profile_payment_account: NDArray[np.int64]
     profile_authority_agent: NDArray[np.int64]
     profile_authority_account: NDArray[np.int64]
-    profile_prior_year_tax: NDArray[np.float64]
-    profile_section_121_exclusion: NDArray[np.float64]
+    profile_prior_year_tax: NDArray[np.int64]
+    profile_section_121_exclusion: NDArray[np.int64]
     link_profile: NDArray[np.int64]
     link_jurisdiction: NDArray[np.int64]
-    link_standard_deduction: NDArray[np.float64]
+    link_standard_deduction: NDArray[np.int64]
     link_has_ltcg: NDArray[np.int64]
     link_section_1250_rate: NDArray[np.float64]
-    link_ordinary_upper: NDArray[np.float64]
+    link_ordinary_upper: NDArray[np.int64]
     link_ordinary_rate: NDArray[np.float64]
     link_ordinary_count: NDArray[np.int64]
-    link_ltcg_upper: NDArray[np.float64]
+    link_ltcg_upper: NDArray[np.int64]
     link_ltcg_rate: NDArray[np.float64]
     link_ltcg_count: NDArray[np.int64]
 
@@ -87,15 +96,15 @@ def compile_tax(
     payment_account: list[int] = []
     authority_agent: list[int] = []
     authority_account: list[int] = []
-    prior_year_tax: list[float] = []
+    prior_year_tax: list[np.int64] = []
     link_profile: list[int] = []
     link_jurisdiction: list[int] = []
-    standard_deduction: list[float] = []
+    standard_deduction: list[np.int64] = []
     has_ltcg: list[int] = []
     section_1250_rate: list[float] = []
-    ordinary_brackets: list[list[tuple[float, float]]] = []
-    ltcg_brackets: list[list[tuple[float, float]]] = []
-    section_121_exclusion: list[float] = []
+    ordinary_brackets: list[list[tuple[np.int64, float]]] = []
+    ltcg_brackets: list[list[tuple[np.int64, float]]] = []
+    section_121_exclusion: list[np.int64] = []
 
     max_ord = 1
     max_ltcg = 1
@@ -105,17 +114,17 @@ def compile_tax(
         payment_account.append(strings.require(profile.payment_account_id))
         authority_agent.append(strings.require(profile.tax_authority_agent_id))
         authority_account.append(strings.require(profile.tax_authority_account_id))
-        prior_year_tax.append(float(profile.prior_year_tax_usd))
-        section_121_exclusion.append(section_121_exclusion_for(profile.filing_status))
+        prior_year_tax.append(usd_to_cents(profile.prior_year_tax_usd))
+        section_121_exclusion.append(usd_to_cents(section_121_exclusion_for(profile.filing_status)))
         for jurisdiction_id in profile.jurisdiction_ids:
             jurisdiction = jurisdictions[jurisdiction_id]
             ordinary = [
-                (float(bracket.upper_usd), float(bracket.rate))
+                (_bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
                 for bracket in jurisdiction.ordinary_income_brackets[profile.filing_status]
             ]
             ltcg = (
                 [
-                    (float(bracket.upper_usd), float(bracket.rate))
+                    (_bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
                     for bracket in jurisdiction.ltcg_brackets[profile.filing_status]
                 ]
                 if jurisdiction.ltcg_brackets is not None
@@ -125,7 +134,7 @@ def compile_tax(
             max_ltcg = max(max_ltcg, len(ltcg))
             link_profile.append(profile_index)
             link_jurisdiction.append(strings.require(jurisdiction_id))
-            standard_deduction.append(float(jurisdiction.standard_deduction[profile.filing_status]))
+            standard_deduction.append(usd_to_cents(jurisdiction.standard_deduction[profile.filing_status]))
             has_ltcg.append(1 if jurisdiction.ltcg_brackets is not None else 0)
             # Federal-us gets the §1250 25% flat rate cap; all other jurisdictions tax
             # unrecaptured-depreciation as ordinary income (CA, etc.).
@@ -136,10 +145,10 @@ def compile_tax(
             ltcg_brackets.append(ltcg)
 
     link_count = len(link_profile)
-    ordinary_upper = np.zeros((max(1, link_count), max_ord), dtype=np.float64)
+    ordinary_upper = np.zeros((max(1, link_count), max_ord), dtype=np.int64)
     ordinary_rate = np.zeros((max(1, link_count), max_ord), dtype=np.float64)
     ordinary_count = np.zeros(max(1, link_count), dtype=np.int64)
-    ltcg_upper = np.zeros((max(1, link_count), max_ltcg), dtype=np.float64)
+    ltcg_upper = np.zeros((max(1, link_count), max_ltcg), dtype=np.int64)
     ltcg_rate = np.zeros((max(1, link_count), max_ltcg), dtype=np.float64)
     ltcg_count = np.zeros(max(1, link_count), dtype=np.int64)
     for idx, ordinary in enumerate(ordinary_brackets):
@@ -159,11 +168,11 @@ def compile_tax(
         profile_payment_account=np.asarray(payment_account, dtype=np.int64),
         profile_authority_agent=np.asarray(authority_agent, dtype=np.int64),
         profile_authority_account=np.asarray(authority_account, dtype=np.int64),
-        profile_prior_year_tax=np.asarray(prior_year_tax, dtype=np.float64),
-        profile_section_121_exclusion=np.asarray(section_121_exclusion, dtype=np.float64),
+        profile_prior_year_tax=np.asarray(prior_year_tax, dtype=np.int64),
+        profile_section_121_exclusion=np.asarray(section_121_exclusion, dtype=np.int64),
         link_profile=np.asarray(link_profile, dtype=np.int64),
         link_jurisdiction=np.asarray(link_jurisdiction, dtype=np.int64),
-        link_standard_deduction=np.asarray(standard_deduction, dtype=np.float64),
+        link_standard_deduction=np.asarray(standard_deduction, dtype=np.int64),
         link_has_ltcg=np.asarray(has_ltcg, dtype=np.int64),
         link_section_1250_rate=np.asarray(section_1250_rate, dtype=np.float64),
         link_ordinary_upper=ordinary_upper,
