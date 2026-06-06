@@ -8,6 +8,11 @@
     # Unstable for packages that need frequent updates (e.g., claude-code)
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    # Master for packages that temporarily need changes newer than
+    # nixos-unstable. Keep consumers narrow instead of moving whole hosts to
+    # nixpkgs master.
+    nixpkgs-master.url = "github:NixOS/nixpkgs/master";
+
     # Home Manager tracking 25.11 release
     home-manager = {
       url = "github:nix-community/home-manager/release-25.11";

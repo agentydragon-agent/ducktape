@@ -114,12 +114,17 @@ in
     '';
   };
 
+  # TODO: expose this through an authenticated in-cluster route if rugged's
+  # local LLM becomes useful beyond the tablet itself.
+  ducktape.opencode.ruggedLocalLlm.enable = true;
+
   home.packages = [
     ducktapePackages.aiquota
     ducktapePackages.bebas-neue-font
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
+    ducktapePackages.litert-lm
     pkgs.psmisc
     pkgs.telegram-desktop
     pkgs.lightburn

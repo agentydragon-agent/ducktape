@@ -309,6 +309,7 @@ rec {
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
+  litert-lm = pkgs.callPackage ./litert-lm.nix { };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   kubernetes-mcp-server = pkgs.callPackage ./kubernetes-mcp-server.nix { };
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };

@@ -66,6 +66,7 @@ in
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.arc.enable = true;
   ducktape.localLlm.npu.enable = true;
+  ducktape.localLlm.ollamaUpstream.enable = true;
 
   # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
   # Create them before first boot with:

@@ -40,6 +40,32 @@
 }:
 let
   mkSkills = import ../skills.nix sharedSkillsArgs;
+  inherit (config.ducktape.opencode) ruggedLocalLlm;
+  ruggedProvider = lib.optionalAttrs ruggedLocalLlm.enable {
+    # === Rugged: Gemma 4 on local Intel iGPU via upstream Ollama/Vulkan ===
+    # Enabled only by nix/home/hosts/rugged.nix. If this moves behind an
+    # authenticated service route, move the option into shared home config.
+    rugged = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Rugged local Ollama";
+      options = {
+        inherit (ruggedLocalLlm) baseURL;
+      };
+      models = {
+        "gemma4:e2b-it-qat" = {
+          name = "Gemma 4 E2B QAT (rugged iGPU)";
+          reasoning = false;
+          # Ollama's Gemma 4 template advertises tools, but OpenCode tool use
+          # has not been validated on this small local model yet.
+          tool_call = false;
+          limit = {
+            context = 131072;
+            output = 8192;
+          };
+        };
+      };
+    };
+  };
   # OpenCode configuration as JSON
   # Docs: https://opencode.ai/docs/providers/
   opencodeConfig = {
@@ -69,7 +95,7 @@ let
         options = {
           baseURL = "http://0.0.0.0:8000/v1";
         };
-        models = {
+        "models" = {
           # Qwen3-Coder 30B AWQ 4-bit with tensor parallelism across 2x 5090
           # AWQ quantization: ~8.5 GB/GPU weights (vs 28.5 GB bf16)
           # FP8 KV cache: ~23 GB available per GPU = 262K context
@@ -370,15 +396,29 @@ let
           };
         };
       };
-    };
+    }
+    // ruggedProvider;
   };
 in
 {
-  # Write opencode.json to ~/.config/opencode/
-  xdg.configFile."opencode/opencode.json" = {
-    text = builtins.toJSON opencodeConfig;
+  options.ducktape.opencode.ruggedLocalLlm = {
+    enable = lib.mkEnableOption "rugged-only OpenCode provider for the local Ollama/Gemma 4 service";
+
+    baseURL = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:11436/v1";
+      description = "OpenAI-compatible base URL for rugged's upstream Ollama service.";
+    };
+
   };
 
-  # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
-  home.file = mkSkills { prefix = ".config/opencode"; };
+  config = {
+    # Write opencode.json to ~/.config/opencode/
+    xdg.configFile."opencode/opencode.json" = {
+      text = builtins.toJSON opencodeConfig;
+    };
+
+    # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
+    home.file = mkSkills { prefix = ".config/opencode"; };
+  };
 }
