@@ -40,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -93,12 +94,18 @@ class ImageResolutionError(Exception):
 
 
 def _slug_to_container_segment(slug: str) -> str:
-    """Normalize a snapshot slug for use in a Docker container name.
+    """Normalize a snapshot slug for use in a container/pod name segment.
 
-    Replaces '/' with '-' and truncates to 28 characters to keep names manageable.
+    Kubernetes pod names are stricter than Docker container names: they must be
+    lowercase RFC 1123 names, so underscores and any other punctuation need to
+    collapse to dashes. Truncate after normalization and trim trailing dashes so
+    the segment remains valid when followed by ``-{run_id_prefix}``.
+
     Example: 'ducktape/2025-09-03-00' → 'ducktape-2025-09-03-00'
     """
-    return slug.replace("/", "-")[:28]
+    segment = re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-")
+    segment = segment[:28].rstrip("-")
+    return segment or "snapshot"
 
 
 # --- Agent Run Handle ---
@@ -405,6 +412,9 @@ class AgentRegistry:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             if found_run.status != AgentRunStatus.IN_PROGRESS:
+                if found_run.status == status:
+                    logger.info("Run %s already finalized as %s", agent_run_id, status)
+                    return
                 raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
             found_run.status = status
             found_run.container_exit_code = container_exit_code
@@ -590,8 +600,16 @@ class AgentRegistry:
                         agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds, name=container_name
                     )
                     await handle
+            except asyncio.CancelledError:
+                self._finalize_run_if_in_progress(
+                    agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
+                )
+                raise
             except Exception:
                 logger.exception("Unhandled error in background critic run %s", agent_run_id)
+                self._finalize_run_if_in_progress(
+                    agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
+                )
 
         task = asyncio.create_task(_run(), name=f"critic-{agent_run_id}")
         self._running_critics[agent_run_id] = task
@@ -758,17 +776,17 @@ class AgentRegistry:
     def _finalize_run_if_in_progress(
         self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
     ) -> None:
-        """Set a grader run's terminal status + exit code, but only if it's still
+        """Set an agent run's terminal status + exit code, but only if it's still
         IN_PROGRESS — idempotent across reconciles and safe for orphan runs that
         another path may already have finalized."""
         with self._db.session() as session:
             run = session.get(AgentRun, agent_run_id)
             if run is None:
-                logger.warning("Grader run %s not found while finalizing; deleting pod anyway", agent_run_id)
+                logger.warning("Agent run %s not found while finalizing; deleting pod anyway", agent_run_id)
                 return
             if run.status != AgentRunStatus.IN_PROGRESS:
                 return
             run.status = status
             run.container_exit_code = container_exit_code
             session.commit()
-            logger.info("Finalized grader run %s -> %s", agent_run_id, status)
+            logger.info("Finalized agent run %s -> %s", agent_run_id, status)

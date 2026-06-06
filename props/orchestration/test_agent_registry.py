@@ -16,9 +16,9 @@ from props.core.oci_utils import RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.orchestration.agent_registry import AgentRegistry
+from props.orchestration.agent_registry import AgentRegistry, AgentRunHandle, ResolvedImage, _slug_to_container_segment
 from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, PodInfo, TimedOut
-from props.testing.fixtures.runs import make_fake_critic_run
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions, make_fake_critic_run
 
 
 @dataclass
@@ -52,6 +52,42 @@ def _registry(db: Database) -> AgentRegistry:
         registry_config=RegistryProxyConfig(host="reg", port=8000),
         llm_base_url="http://proxy:8000",
     )
+
+
+class _CancellableStartRegistry(AgentRegistry):
+    def __init__(self, db: Database, started: asyncio.Event) -> None:
+        super().__init__(
+            executor=cast(ContainerExecutor, _FakeExecutor()),
+            db=db,
+            db_config=DatabaseConfig(host="h", port=5432, database="d", user="u", password="p"),
+            backend_url="http://backend",
+            agent_base_env={},
+            registry_config=RegistryProxyConfig(host="reg", port=8000),
+            llm_base_url="http://proxy:8000",
+        )
+        self.started = started
+
+    async def _start_agent(
+        self,
+        agent_run_id: UUID,
+        *,
+        image: str,
+        timeout_seconds: int | None = None,
+        name: str,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
+    ) -> AgentRunHandle:
+        del agent_run_id, image, timeout_seconds, name, extra_labels, annotations
+        self.started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+def test_slug_to_container_segment_is_k8s_name_safe() -> None:
+    assert _slug_to_container_segment("ducktape/2025-09-03-00") == "ducktape-2025-09-03-00"
+    assert _slug_to_container_segment("crush/2025-08-30-internal_db") == "crush-2025-08-30-internal-db"
+    assert _slug_to_container_segment("ducktape_llm_common/2026-01-03-00") == "ducktape-llm-common-2026-01"
+    assert _slug_to_container_segment("___") == "snapshot"
 
 
 class _CapturingExecutor:
@@ -195,6 +231,51 @@ async def test_collect_run_cancellation_finalizes_as_cancelled(db: Database) -> 
 
     assert handle.killed  # pod is still deleted on cancellation
     with db.session() as session:
+        run = session.get(AgentRun, agent_run_id)
+        assert run is not None
+        assert run.status == AgentRunStatus.CANCELLED
+        assert run.container_exit_code is None
+
+
+async def test_collect_run_cancellation_finalization_is_idempotent(db: Database) -> None:
+    agent_run_id = _in_progress_critic_run(db)
+    registry = _registry(db)
+    registry._finalize_run_if_in_progress(agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
+
+    registry._persist_run_result(agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
+
+    with db.session() as session:
+        run = session.get(AgentRun, agent_run_id)
+        assert run is not None
+        assert run.status == AgentRunStatus.CANCELLED
+        assert run.container_exit_code is None
+
+
+async def test_background_critic_start_cancellation_finalizes_run(
+    synced_db: Database, all_files_scope: WholeSnapshotExample
+) -> None:
+    started = asyncio.Event()
+    registry = _CancellableStartRegistry(synced_db, started)
+    with synced_db.session() as session:
+        ensure_fake_agent_definitions(session)
+        session.commit()
+
+    agent_run_id = await registry.start_critic(
+        image=ResolvedImage(digest=FAKE_CRITIC_DIGEST, oci_ref=f"registry/critic@{FAKE_CRITIC_DIGEST}"),
+        example=all_files_scope,
+        model="test-model",
+        timeout_seconds=120,
+        parent_run_id=None,
+        budget_usd=1.0,
+    )
+
+    await asyncio.wait_for(started.wait(), timeout=5)
+    task = registry._running_critics[agent_run_id]
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    with synced_db.session() as session:
         run = session.get(AgentRun, agent_run_id)
         assert run is not None
         assert run.status == AgentRunStatus.CANCELLED
