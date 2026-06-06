@@ -232,7 +232,7 @@ function CandleLayer({ series, checkpointRows, rowByMonthBySeries, x, y, bucketM
 // `series` is one entry per scenario: `{ id, label, color, rows, isActive }` where `rows` is the
 // metric fan (`{ monthIndex, year, values: Map<percentile, value> }[]`). The selected-rollout
 // overlay and event markers always belong to the active scenario (the caller passes its
-// `selectedRows`/`selectedEvents`).
+// `selectedRows`/`selectedEvents`) and render over both fan and candle chart modes.
 export function MetricFanChart({
   series,
   metric,
@@ -356,8 +356,8 @@ export function MetricFanChart({
   const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
 
   // Candle view shares the fan's axes + scales; it just renders box-and-whisker candles at
-  // `bucketMonths`-spaced checkpoints instead of continuous bands. The per-rollout overlay, event
-  // markers, and hover tooltip stay fan-only (they're continuous, not per-checkpoint).
+  // `bucketMonths`-spaced checkpoints instead of continuous bands. The selected rollout and events
+  // stay continuous monthly overlays in both modes, while the percentile hover tooltip stays fan-only.
   const candleMode = mode === "candles";
   const maxMonth = Math.max(...allRows.map((row) => row.monthIndex), 0);
   const candleCheckpointRows = candleMode
@@ -539,7 +539,7 @@ export function MetricFanChart({
               ))}
             </>
           ))}
-        {!candleMode && selectedRows.length > 0 && (
+        {selectedRows.length > 0 && (
           <>
             <polyline
               points={selectedLine}
@@ -560,21 +560,20 @@ export function MetricFanChart({
             />
           </>
         )}
-        {!candleMode &&
-          eventMarkers.map((markerProps) => (
-            <FanEventMarker
-              key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
-              {...markerProps}
-              x={x}
-              y={y}
-              top={margin.top}
-              plotHeight={plotHeight}
-              selectedEventMonthIndex={selectedEventMonthIndex}
-              hoveredEventMonthIndex={hoveredEventMonthIndex}
-              onSelectEventMonth={onSelectEventMonth}
-              onHoverEventMonth={onHoverEventMonth}
-            />
-          ))}
+        {eventMarkers.map((markerProps) => (
+          <FanEventMarker
+            key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
+            {...markerProps}
+            x={x}
+            y={y}
+            top={margin.top}
+            plotHeight={plotHeight}
+            selectedEventMonthIndex={selectedEventMonthIndex}
+            hoveredEventMonthIndex={hoveredEventMonthIndex}
+            onSelectEventMonth={onSelectEventMonth}
+            onHoverEventMonth={onHoverEventMonth}
+          />
+        ))}
         {!candleMode &&
           hoveredRow &&
           (() => {

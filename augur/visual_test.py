@@ -317,8 +317,8 @@ def _wait_for_scenario_comparison(page: Page) -> None:
 
 
 def _show_candles(page: Page) -> None:
-    """Switch the rollout chart from fans to candles (the per-checkpoint box-and-whisker view) and
-    wait for all three scenarios' candles to render."""
+    """Switch the rollout chart from fans to candles, then select a rollout so the screenshot pins
+    the continuous rollout trajectory + event markers over the box-and-whisker candles."""
     page.locator("[data-product-chart-mode-toggle]").get_by_text("Candles", exact=True).click()
     page.locator("[data-product-candle-series]").first.wait_for(state="visible", timeout=30_000)
     page.wait_for_function(
@@ -326,12 +326,15 @@ def _show_candles(page: Page) -> None:
         '.map((node) => node.getAttribute("data-product-candle-series"))).size >= 3',
         timeout=30_000,
     )
+    _select_rollout_from_distribution(page)
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
 
 
 def _select_rollout_from_distribution(page: Page) -> None:
     """Select a rollout directly from the multi-variant terminal-distribution chart. A click binds to
     the nearest variant line at that percentile (making it active), drawing the selection marker on
-    the line and the rollout overlay on the fan below, with the events panel carrying the active
+    the line and the rollout overlay on the timeline chart below, with the events panel carrying the active
     badge."""
     plot = page.locator("[data-product-terminal-distribution-plot]")
     plot.wait_for(state="visible", timeout=30_000)
