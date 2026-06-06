@@ -15,7 +15,7 @@ import { MetricFanChart } from "./fan_chart.tsx";
 import { TerminalDistributionChart } from "./terminal_distribution.tsx";
 import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
-import { ScenarioEditor, ScenarioInspector } from "./scenario_editor.tsx";
+import { ScenarioEditor } from "./scenario_editor.tsx";
 import { ScenarioBadge } from "./scenario_tabs.tsx";
 import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } from "./header.tsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton.tsx";
@@ -644,17 +644,10 @@ export function ProductProjectionWorkspace({
           onPatchVariant={patchVariantOverrides}
           onRevertKeys={revertVariantKeys}
           onAddVariant={addVariant}
-        />
-
-        <ScenarioInspector
-          base={base}
-          variants={variants}
-          activeId={activeId}
           onSelect={selectEntry}
           onDeleteVariant={deleteVariant}
           onRename={renameEntry}
           onResetBase={resetBase}
-          onRevertKeys={revertVariantKeys}
         />
 
         {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}

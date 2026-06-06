@@ -134,10 +134,7 @@ js_library(
 js_library(
     name = "scenario_tabs",
     srcs = ["scenario_tabs.tsx"],
-    deps = [
-        ":input_helpers",
-        "//:node_modules/react",
-    ],
+    deps = ["//:node_modules/react"],
 )
 
 js_library(
@@ -146,7 +143,6 @@ js_library(
     deps = [
         ":forms",
         ":input_helpers",
-        ":scenario_tabs",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//augur/frontend/lib:controls",

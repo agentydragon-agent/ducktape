@@ -3,7 +3,6 @@ import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
 import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
-import { ScenarioTabs } from "./scenario_tabs.tsx";
 import {
   DisclosureArrow,
   SellOrderControl,
@@ -303,8 +302,104 @@ function RevertButton({ label, onClick }) {
   );
 }
 
-const TABLE_HEADER =
-  "px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
+function stopSummaryButton(event) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }) {
+  const [editingId, setEditingId] = useState(null);
+  return (
+    <div className="contents" data-product-scenario-tabs="">
+      {entries.map((entry, index) => {
+        const isActive = entry.id === activeId;
+        const isEditing = editingId === entry.id;
+        const isBase = entry.id === "base";
+        // Empty names survive poorly through chart legends and URL round-trips, so normalize on
+        // commit while still allowing in-progress edits to be blank.
+        const commitEdit = () => {
+          if (entry.label.trim() === "") onRename(entry.id, isBase ? "Base" : `Variant ${index}`);
+          setEditingId(null);
+        };
+        return (
+          <div
+            key={entry.id}
+            data-product-scenario-col={entry.id}
+            data-product-scenario-tab={entry.id}
+            data-active={isActive ? "" : undefined}
+            className={`min-w-0 border-b-2 px-2 pb-1.5 text-right ${
+              isActive
+                ? "border-blue-500 text-slate-900 dark:text-slate-50"
+                : "border-transparent text-slate-500 dark:text-slate-400"
+            }`}
+          >
+            <div className="flex min-w-0 items-center justify-end gap-1.5">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: scenarioColor(index) }}
+                aria-hidden="true"
+              />
+              {isEditing ? (
+                <input
+                  data-product-scenario-rename={entry.id}
+                  aria-label={`Rename ${entry.label}`}
+                  autoFocus
+                  className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold text-slate-900 focus:outline-none dark:text-slate-50"
+                  value={entry.label}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => onRename(entry.id, event.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.key === "Enter" || event.key === "Escape") {
+                      event.preventDefault();
+                      commitEdit();
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  data-product-scenario-select={entry.id}
+                  className={`min-w-0 truncate text-sm font-semibold ${
+                    isActive
+                      ? "text-slate-900 dark:text-slate-50"
+                      : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                  }`}
+                  title="Click to select, double-click to rename"
+                  onClick={(event) => {
+                    stopSummaryButton(event);
+                    onSelect(entry.id);
+                  }}
+                  onDoubleClick={(event) => {
+                    stopSummaryButton(event);
+                    setEditingId(entry.id);
+                  }}
+                >
+                  {entry.label}
+                </button>
+              )}
+              {!isBase && (
+                <button
+                  type="button"
+                  data-product-scenario-delete={entry.id}
+                  aria-label={`Delete ${entry.label}`}
+                  className="shrink-0 text-base leading-none text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+                  onClick={(event) => {
+                    stopSummaryButton(event);
+                    onDelete(entry.id);
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // One variant's cell: editable, bound to the override value when overridden or the inherited Base
 // value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
@@ -355,6 +450,10 @@ export function ScenarioEditor({
   onPatchVariant,
   onRevertKeys,
   onAddVariant,
+  onSelect,
+  onDeleteVariant,
+  onRename,
+  onResetBase,
 }) {
   const [open, setOpen] = useState(true);
   // Per-group + timeline collapse — fold away the rows/sections that don't matter for the comparison
@@ -369,6 +468,18 @@ export function ScenarioEditor({
     });
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
   const multi = variants.length > 0;
+  const activeVariant = variants.find((v) => v.id === activeId) ?? null;
+  const resetActive = () => {
+    if (activeVariant == null) onResetBase();
+    else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
+  };
+  const settingColumnWidth = "18rem";
+  const scenarioColumnWidth = "10rem";
+  const tableWidth = `${18 + entries.length * 10}rem`;
+  const comparisonColumns = {
+    gridTemplateColumns: `${settingColumnWidth} repeat(${entries.length}, ${scenarioColumnWidth})`,
+    width: tableWidth,
+  };
 
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
   const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
@@ -430,30 +541,48 @@ export function ScenarioEditor({
       className="augur-card divide-y divide-slate-200 dark:divide-slate-700 [&_summary::-webkit-details-marker]:hidden"
       data-product-scenario-editor=""
     >
-      <summary
-        className="augur-eyebrow flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3"
-        data-product-editor-toggle=""
-      >
-        <span className="inline-flex items-center gap-1">
-          <DisclosureArrow collapsed={!open} />
-          Scenario comparison{multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
-        </span>
-        {variants.length < MAX_VARIANTS && (
-          <Button
-            size="xs"
-            variant="light"
-            data-product-scenario-add=""
-            onClick={(event) => {
-              // Nested in <summary>: stop the click from toggling the disclosure so this only adds a
-              // variant (and leaves the editor's open state untouched).
-              event.preventDefault();
-              event.stopPropagation();
-              onAddVariant();
-            }}
-          >
-            + Add variant
-          </Button>
-        )}
+      <summary className="cursor-pointer list-none px-4 py-3" data-product-editor-toggle="">
+        <div className="overflow-x-auto">
+          <div className="grid min-w-max items-center gap-3" style={comparisonColumns}>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="augur-eyebrow inline-flex items-center gap-1">
+                <DisclosureArrow collapsed={!open} />
+                Scenario comparison
+                {multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
+              </span>
+              <Button
+                size="xs"
+                variant="subtle"
+                onClick={(event) => {
+                  stopSummaryButton(event);
+                  resetActive();
+                }}
+              >
+                Reset {activeVariant == null ? "base" : activeVariant.label}
+              </Button>
+              {variants.length < MAX_VARIANTS && (
+                <Button
+                  size="xs"
+                  variant="light"
+                  data-product-scenario-add=""
+                  onClick={(event) => {
+                    stopSummaryButton(event);
+                    onAddVariant();
+                  }}
+                >
+                  + Add variant
+                </Button>
+              )}
+            </div>
+            <ScenarioHeaderCells
+              entries={entries}
+              activeId={activeId}
+              onSelect={onSelect}
+              onDelete={onDeleteVariant}
+              onRename={onRename}
+            />
+          </div>
+        </div>
       </summary>
 
       {open && (
@@ -467,30 +596,13 @@ export function ScenarioEditor({
               </div>
             )}
             <div className="overflow-x-auto" data-product-scenario-table="">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Setting
-                    </th>
-                    {entries.map((entry, index) => (
-                      <th key={entry.id} className={TABLE_HEADER} data-product-scenario-col={entry.id}>
-                        <span className="inline-flex items-center justify-end gap-1.5">
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: scenarioColor(index) }}
-                            aria-hidden="true"
-                          />
-                          <span
-                            className={entry.id === activeId ? "font-semibold text-slate-700 dark:text-slate-200" : ""}
-                          >
-                            {entry.label}
-                          </span>
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
+              <table className="text-sm" style={{ minWidth: tableWidth, tableLayout: "fixed", width: tableWidth }}>
+                <colgroup>
+                  <col style={{ width: settingColumnWidth }} />
+                  {entries.map((entry) => (
+                    <col key={entry.id} style={{ width: scenarioColumnWidth }} />
+                  ))}
+                </colgroup>
                 <tbody>
                   {GROUPS.map((group) => {
                     const groupKnobs = visibleKnobs.filter((knob) => knob.group === group);
@@ -627,45 +739,5 @@ export function ScenarioEditor({
         </>
       )}
     </details>
-  );
-}
-
-// The scenario selector below the comparison table: chips (add / rename / delete / select) + Reset.
-// The active chip drives only the rollout results below it (histogram / events / terminal table);
-// per-scenario editing — including each scenario's timeline — lives in the comparison editor above.
-export function ScenarioInspector({
-  base,
-  variants,
-  activeId,
-  onSelect,
-  onDeleteVariant,
-  onRename,
-  onResetBase,
-  onRevertKeys,
-}) {
-  const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
-  const activeVariant = variants.find((v) => v.id === activeId) ?? null;
-
-  const resetActive = () => {
-    if (activeVariant == null) onResetBase();
-    else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
-  };
-
-  return (
-    <div
-      className="augur-card flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-      data-product-scenario-inspector=""
-    >
-      <ScenarioTabs
-        entries={entries}
-        activeId={activeId}
-        onSelect={onSelect}
-        onDelete={onDeleteVariant}
-        onRename={onRename}
-      />
-      <Button size="xs" variant="subtle" onClick={resetActive}>
-        Reset {activeVariant == null ? "base" : activeVariant.label}
-      </Button>
-    </div>
   );
 }
