@@ -10,8 +10,6 @@ import numpy as np
 from jax import random
 from pydantic import BaseModel
 
-from augur.model.sim_backend import SimBackend, current_backend
-
 
 class GeometricBrownian(BaseModel):
     """Fixture GBM-sampled level process for one external series.
@@ -21,11 +19,9 @@ class GeometricBrownian(BaseModel):
     per-stream `rollout_seeds`) rather than model config — each rollout is an independent,
     reproducibly-seeded trajectory.
 
-    Two interchangeable implementations exist behind `sim_backend.current_backend()`: the NumPy
-    reference (`_sample_levels_numpy`, a per-rollout `default_rng(seed)` loop) and the JAX path
-    (`_sample_levels_jax`, a vectorized `vmap` over per-seed PRNG keys). They produce different
-    realized values (different RNG algorithms) but the same invariants: per-seed reproducibility,
-    per-seed independence, month-0 == `initial_value`, and the configured log-return moments.
+    The implementation is a vectorized JAX `vmap` over per-seed PRNG keys. It returns host NumPy
+    arrays at the model boundary so downstream compiler/materialization code keeps a simple table
+    interface.
     """
 
     kind: Literal["gbm"] = "gbm"
@@ -34,23 +30,6 @@ class GeometricBrownian(BaseModel):
     monthly_log_return_sigma: float = 0.0
 
     def sample_levels(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
-        if current_backend() is SimBackend.JAX:
-            return self._sample_levels_jax(rollout_seeds, horizon_months)
-        return self._sample_levels_numpy(rollout_seeds, horizon_months)
-
-    def _sample_levels_numpy(self, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
-        rollout_count = len(rollout_seeds)
-        levels = np.empty((rollout_count, horizon_months + 1), dtype=np.float64)
-        levels[:, 0] = self.initial_value
-        for rollout_index, seed in enumerate(rollout_seeds):
-            rng = np.random.default_rng(seed)
-            log_returns = rng.normal(
-                loc=self.monthly_log_return_mu, scale=self.monthly_log_return_sigma, size=horizon_months
-            )
-            levels[rollout_index, 1:] = self.initial_value * np.exp(np.cumsum(log_returns))
-        return levels
-
-    def _sample_levels_jax(self, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
         rollout_count = len(rollout_seeds)
         # One independent PRNG key per rollout, folded from that rollout's (arbitrary-precision,
         # already per-stream) seed in 32-bit words. This is the "vector of R independent seeded

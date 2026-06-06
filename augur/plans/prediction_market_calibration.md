@@ -303,7 +303,7 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
 
 The structured model already sets a _fixed_ `public_market_lockup_months: 6` and the sim
 honours it (sales gate on `liquidity_open = ~liquidity_blocked` in
-`augur/sim/engine/phases.py`), so the user genuinely cannot sell during the post-IPO lockup
+`augur/sim/engine/jax_engine.py`), so the user genuinely cannot sell during the post-IPO lockup
 today. Refine: (a) sample the lockup **duration per rollout** from a model-owned
 distribution (different worlds get different lockups) instead of a constant 6 months;
 (b) confirm the central duration (typical lockups are 90–180 days) and that it applies to

@@ -3,7 +3,7 @@
 Obligations cover a heterogeneous union of scenario-level obligations + mortgage
 payments + property-tax accruals + estimated-tax quarterly payments + tax true-ups.
 The `source_kind`/`source_index` discriminator drives the engine's dispatch and is
-re-purposed across kinds — see the per-kind dispatch in `engine.phases` and the
+re-purposed across kinds — see the per-kind dispatch in `engine.jax_engine` and the
 B5 follow-up that tracks bundling this into typed views."""
 
 from __future__ import annotations

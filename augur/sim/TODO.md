@@ -44,7 +44,7 @@ Anything fully shipped is removed — git history is the record of done work.
   proceeds, mortgage payoff, §121/§1250, or gain routing consistently. A
   future version should define owner shares, liability responsibility,
   contribution ledgers, tax allocation, and sale proceeds together with
-  dual-backend tests before exposing fractional ownership again.
+  focused simulator tests before exposing fractional ownership again.
 - Define the month-0 anchoring rule for every model-driven level series
   in one place. Implementations exist (sp500, crypto, home_value, rent,
   PE, inflation), but no single document says whether a configured value

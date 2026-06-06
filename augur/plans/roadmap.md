@@ -248,7 +248,7 @@ the wrong structure.
   from that month (with a lockup window on `liquidity_blocked`); the sim's
   `_apply_pe_tenders` reads `regime_code` / `liquidity_blocked` /
   `sale_capacity_fraction` per month and opens on-market PE sales at the flip
-  with no tender event required (`augur/sim/engine/phases.py`;
+  with no tender event required (`augur/sim/engine/jax_engine.py`;
   `augur/sim/simulate_test.py::test_pe_public_market_regime_allows_floor_sale_without_tender_event`,
   `augur/model/private_equity_risk_test.py::test_private_equity_risk_public_market_lockup_blocks_liquidity_then_opens`).
   The PE position's regime is therefore NOT fixed for the horizon. There is no

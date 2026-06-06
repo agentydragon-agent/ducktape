@@ -17,7 +17,6 @@ from augur.model.gbm import GeometricBrownian
 from augur.model.level_series_groups import AssetPriceGroups
 from augur.model.series import CryptoKey, CryptoSymbol, HomeValueKey, InflationKey, LocationId, SP500Key
 from augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
-from augur.model.sim_backend import SimBackend
 from augur.model.testing import ConstantFrameModel
 
 
@@ -62,10 +61,9 @@ def test_independent_model_samples_deterministic_levels_for_each_rollout() -> No
     )
 
 
-def test_bundle_api_unites_deterministic_constant_and_gbm_models(backend: SimBackend) -> None:
-    # Runs against both sim backends (NumPy + JAX): the GBM stochastic values differ between
-    # backends, but the asserted invariants below (reproducibility, deterministic anchors,
-    # structure) hold for each.
+def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
+    # The GBM component is stochastic, so this asserts invariants rather than exact samples:
+    # reproducibility, deterministic anchors, and materialized frame structure.
     bundle = SeriesModelBundle.model_validate(
         {
             "model": {

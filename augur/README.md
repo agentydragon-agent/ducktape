@@ -119,10 +119,10 @@ and prints the top cumulative functions. The target is guarded by
 `--horizon-months`, `--metric`, and `--percentiles` when profiling a different
 shape.
 
-The simulator runs through the NumPy dense-array engine. Collect a profile for
+The simulator runs through the JAX dense-array engine. Collect a profile for
 the target request shape directly:
 
 ```bash
 bazelisk run --config=nolint //augur/api:profile_metric_fan -- \
-  --profile-output=/tmp/augur_metric_fan_numpy.prof
+  --profile-output=/tmp/augur_metric_fan_jax.prof
 ```

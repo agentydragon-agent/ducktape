@@ -1,39 +1,42 @@
 # Augur JAX Simulation Review - 2026-06-05
 
-Scope: deep review of the `augur/sim` JAX backend, especially backend parity,
-validation boundaries, numeric/static structure, and host/device handoff.
+Scope: deep review of the `augur/sim` JAX backend, especially validation
+boundaries, numeric/static structure, and host/device handoff.
 
-Update status: commits `bdac2d6b0` and `17a702618` fixed the concrete
-validation-parity and host-boundary issues called out below. The remaining open
-items are the numeric/static cache boundary and the explicit precision contract.
+Update status: commits `bdac2d6b0` and `17a702618` fixed the concrete validation
+and host-boundary issues called out below. The later JAX-only cutover removed the
+NumPy backend and selector, so the former parity tests now live as single-backend
+JAX validation/edge tests. The remaining open items are the numeric/static cache
+boundary and the explicit precision contract.
 
 ## Findings
 
-### TLH harvest validation parity
+### TLH harvest validation
 
-NumPy validates tax-loss-harvesting index prices inside `_apply_tlh_harvest` and
-raises when a harvest policy reads a negative or non-finite price. The JAX path
-previously validated private-equity sampled channels before JIT, but did not
-validate TLH harvest series before entering the compiled scan.
+The removed NumPy backend validated tax-loss-harvesting index prices inside
+`_apply_tlh_harvest` and raised when a harvest policy read a negative or
+non-finite price. The JAX path previously validated private-equity sampled
+channels before JIT, but did not validate TLH harvest series before entering the
+compiled scan.
 
 Status: fixed in `bdac2d6b0` by adding host-side TLH validation before
 `_program_impl` runs. `tlh_harvest_engine_test.py` now covers negative and
-non-finite harvest index prices under both backends.
+non-finite harvest index prices.
 
-Status: expanded in `17a702618` with `validation_parity_test.py`, a focused
-backend-parametrized target for sampled-input and edge-behavior parity:
+Status: expanded in `17a702618`; after the JAX-only cutover this is
+`validation_edge_test.py`, a focused target for sampled-input validation and
+edge behavior:
 
 - private-equity negative / non-finite mark validation;
 - private-equity negative forced-recovery cashout validation;
 - PE and TLH terminal snapshots are not treated as executable sim months;
-- scheduled-sale oversell raises in both backends;
+- scheduled-sale oversell raises;
 - invalid liquidity asset prices produce no sale and leave the obligation
-  unfunded in both backends.
+  unfunded.
 
-Rule going forward: any nontrivial backend behavior difference should be pinned
-by a test that runs under both backends through the existing autouse `backend`
-fixture. This includes validation timing, error messages, and intentionally
-non-raising edge behavior.
+Rule going forward: any nontrivial validation timing, error-message, or
+intentionally non-raising edge behavior should be pinned in focused JAX sim
+tests.
 
 ### Numeric/static JAX cache boundary
 
@@ -94,17 +97,16 @@ is fully pinned.
 ### Current performance expectation
 
 The JAX architecture is broadly sound: one module-level JIT, a static structural
-plan, `lax.scan` for the month loop, and test-suite parity over NumPy and JAX.
-The current CPU profile should not be assumed to beat NumPy at small/medium
-entity counts; the documented win condition is larger fan-out and/or accelerator
-execution.
+plan, and `lax.scan` for the month loop. The current CPU profile should not be
+assumed to beat the old NumPy path at small/medium entity counts; the documented
+win condition is larger fan-out and/or accelerator execution.
 
 ## Test Expectations
 
 Focused tests to run after changes in this area:
 
 ```bash
-bazelisk test //augur/sim:validation_parity_test //augur/sim:tlh_harvest_engine_test //augur/sim:scan_test //augur/sim:jax_engine_reuse_test --config=rbe --test_output=errors
+bazelisk test //augur/sim:validation_edge_test //augur/sim:tlh_harvest_engine_test //augur/sim:scan_test //augur/sim:jax_engine_reuse_test --config=rbe --test_output=errors
 ```
 
 For broader handoff, use the repo-level Bazel targets documented in

@@ -1,4 +1,4 @@
-"""Focused validation and edge-behavior parity tests for NumPy and JAX sim backends."""
+"""Focused validation and edge-behavior tests for the JAX sim engine."""
 
 from __future__ import annotations
 
@@ -114,7 +114,7 @@ def _pe_external_with_channel_value(
     ],
     ids=["pe-negative-mark", "pe-nonfinite-mark", "pe-negative-recovery"],
 )
-def test_private_equity_sampled_channel_validation_parity(channel: str, bad_value: float, match: str) -> None:
+def test_private_equity_sampled_channel_validation(channel: str, bad_value: float, match: str) -> None:
     horizon = 2
     scenario = _pe_validation_scenario(horizon_months=horizon)
     external = _pe_external_with_channel_value(channel=channel, month=1, value=bad_value, horizon_months=horizon)
@@ -184,7 +184,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
     assert result.events_log.rollout_failures.is_empty()
 
 
-def test_scheduled_sale_oversell_validation_parity() -> None:
+def test_scheduled_sale_oversell_validation() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
@@ -220,7 +220,7 @@ def test_scheduled_sale_oversell_validation_parity() -> None:
 
 
 @pytest.mark.parametrize("bad_price", [0.0, -100.0, float("nan")], ids=["zero", "negative", "nonfinite"])
-def test_liquidity_invalid_asset_price_leaves_obligation_unfunded_parity(bad_price: float) -> None:
+def test_liquidity_invalid_asset_price_leaves_obligation_unfunded(bad_price: float) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[

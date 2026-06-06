@@ -287,7 +287,6 @@ py_library(
         "engine/jax_scatter.py",
         "engine/jax_types.py",
         "engine/jax_validation.py",
-        "engine/phases.py",
     ],
     deps = [
         ":buffers",
@@ -297,11 +296,8 @@ py_library(
         ":external_series",
         ":runtime",
         ":scenario",
-        ":tax",
         ":tensor_fifo",
-        ":tlh_harvest",
         "//augur/model:series",
-        "//augur/model:sim_backend",
         "@pypi//jax",
         "@pypi//numpy",
     ],
@@ -327,7 +323,6 @@ py_library(
         "//augur/model:deterministic",
         "//augur/model:level_series_groups",
         "//augur/model:series_model",
-        "//augur/model:sim_backend",
         "@pypi//pytest",
     ],
 )
@@ -371,7 +366,6 @@ py_test(
         ":runtime",
         ":scenario",
         ":simulate",
-        "//augur/model:sim_backend",
         "//augur/product:asset_key",
         "@pypi//polars",
         "@pypi//pytest",
@@ -398,9 +392,9 @@ py_test(
 )
 
 py_test(
-    name = "validation_parity_test",
+    name = "validation_edge_test",
     size = "small",
-    srcs = ["validation_parity_test.py"],
+    srcs = ["validation_edge_test.py"],
     deps = [
         ":conftest",
         ":external_series",
@@ -494,7 +488,6 @@ py_binary(
         ":locations",
         ":scenario",
         ":simulate",
-        "//augur/model:sim_backend",
         "@pypi//jax",
     ],
 )

@@ -1,10 +1,8 @@
-"""Parity tests for the jitted `lax.scan` JAX engine (`run_jax_scan`).
+"""Tests for the jitted `lax.scan` JAX engine (`run_jax_scan`).
 
 The JAX backend is a single always-scan path — `run_jax_scan` compiles the whole month loop into one
-`lax.scan`/XLA program covering every phase. The autouse `backend` fixture (augur/sim/conftest.py)
-runs each test under NumPy (reference) and JAX (scan); identical assertions gate scan == reference.
-These tests pin specific phases (transfers, obligations, sales, purchases, property tax, mortgages,
-year-end tax) with exact expected values on top of that suite-wide parity check.
+`lax.scan`/XLA program covering every phase. These tests pin specific phases (transfers, obligations,
+sales, purchases, property tax, mortgages, year-end tax) with exact expected values.
 """
 
 from __future__ import annotations
@@ -13,7 +11,6 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.model.sim_backend import SimBackend, use_backend
 from augur.product.asset_key import SP500AssetKey
 from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
@@ -46,7 +43,7 @@ def _cash(run, agent_id: str, month_index: int) -> float:
     )
 
 
-def test_transfers_only_scan_parity() -> None:
+def test_transfers_only_scan() -> None:
     # Recurring paycheck for a year + a one-off gift: pure transfers, so JAX runs the lax.scan path.
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="bob")],
@@ -91,7 +88,7 @@ def test_transfers_only_scan_parity() -> None:
     assert _cash(run, "alice", 6) == pytest.approx(100.0 + 6 * 1_000.0)
 
 
-def test_configured_obligation_scan_parity() -> None:
+def test_configured_obligation_scan() -> None:
     # Paycheck (transfer) + monthly rent (CONFIGURED obligation, settled via the funding/settlement
     # cores) — both phases the scan now folds. Always-funded, so no rollout fails.
     scenario = Scenario(
@@ -137,7 +134,7 @@ def test_configured_obligation_scan_parity() -> None:
     assert _cash(run, "payroll", 12) == pytest.approx(-12 * 5_000.0)
 
 
-def test_obligation_failure_scan_parity() -> None:
+def test_obligation_failure_scan() -> None:
     # No income: alice can pay rent in month 0 (1000 -> 400) but not month 1 (needs 600), so the
     # rollout fails at month 1. Failure is per-rollout (a whole Monte-Carlo path), so
     # `_zero_failed_state` zeros every account in that rollout's column from the failure month on —
@@ -182,7 +179,7 @@ def _gain(run, agent_id: str, classification: str, month_index: int) -> float:
     return float(rows.item()) if len(rows) else 0.0
 
 
-def test_scheduled_sale_scan_parity() -> None:
+def test_scheduled_sale_scan() -> None:
     # A long-term capital-gain sale: 100 SP500 units bought 24 months pre-horizon at $80, sold at
     # month 3 for $120 — exercises the scan's FIFO lot matching, proceeds credit, and capital-gain
     # classification. No tax profiles, so the year-end pass never runs and the scenario routes through
@@ -225,7 +222,7 @@ def test_scheduled_sale_scan_parity() -> None:
     assert _gain(run, "alice", "stcg", 4) == pytest.approx(0.0)
 
 
-def test_cash_property_purchase_scan_parity() -> None:
+def test_cash_property_purchase_scan() -> None:
     # All-cash (no-mortgage) home purchase at month 2: the buyer's down payment + closing cost moves
     # to the seller and the property goes active. No tax profile / property-tax policy / mortgage, so
     # it routes through the scan (the financed case is still barred). rented_fraction=0 -> no
@@ -270,7 +267,7 @@ def test_cash_property_purchase_scan_parity() -> None:
     assert _cash(run, "seller", 3) == pytest.approx(510_000.0)
 
 
-def test_property_tax_scan_parity() -> None:
+def test_property_tax_scan() -> None:
     # Cash home purchase at month 0 + a property-tax policy (owner has no tax profile, so no SALT /
     # year-end pass): the monthly ad-valorem tax (assessed 500k × 1.2% / 12 = $500) is a PROPERTY_TAX
     # obligation the scan now accrues + settles, starting the month after purchase. Routes through the
@@ -321,7 +318,7 @@ def test_property_tax_scan_parity() -> None:
     assert _cash(run, "county", 4) == pytest.approx(3 * 500.0)
 
 
-def test_financed_purchase_scan_parity() -> None:
+def test_financed_purchase_scan() -> None:
     # A mortgage-financed home purchase: month 0 originates the loan (down payment moves buyer ->
     # seller, liability principal set), then monthly mortgage-payment obligations (interest/principal
     # split) settle buyer -> lender from month 1. No tax profile, so it routes through the scan.
@@ -380,11 +377,10 @@ def _federal_tax(run) -> float:
     return float(rows.sum())
 
 
-def test_year_end_tax_scan_parity() -> None:
+def test_year_end_tax_scan() -> None:
     # Multi-year W-2 income + a tax profile with a prior-year tax: the December year-end pass accrues a
     # federal + CA liability, and the following year's estimated-tax + true-up obligations settle it.
     # Exercises the scan's full tax machinery (accrual + two-pass SALT + estimated/true-up settlement).
-    # Runs both backends explicitly and asserts the JAX scan matches the NumPy reference.
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
@@ -416,13 +412,11 @@ def test_year_end_tax_scan_parity() -> None:
         ],
         horizon_months=36,
     )
-    with use_backend(SimBackend.NUMPY):
-        numpy_tax = _federal_tax(simulate(scenario, rollout_count=2, locations={}))
-    with use_backend(SimBackend.JAX):
-        jax_tax = _federal_tax(simulate(scenario, rollout_count=2, locations={}))
+    run = simulate(scenario, rollout_count=2, locations={})
+    federal_tax = _federal_tax(run)
 
-    assert numpy_tax > 0.0  # a real federal tax accrued at year-end
-    assert jax_tax == pytest.approx(numpy_tax, rel=1e-5)
+    assert federal_tax > 0.0  # a real federal tax accrued at year-end
+    assert _cash(run, "irs", 36) > 0.0  # estimated payments and true-ups reached the tax authority
 
 
 if __name__ == "__main__":

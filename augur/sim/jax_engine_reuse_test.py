@@ -3,9 +3,8 @@
 The tax brackets/rates/standard deduction, MID principal ratio, transfer amounts, per-lot cost basis,
 initial balances, property basis and mortgage principal enter the compiled program as traced inputs
 (see `_TracedConfig`), not as baked constants. Each test perturbs one such value and asserts the JAX
-engine produces the perturbed plan's correct (NumPy-reference) result — and that the perturbation
-actually moved the output. They guard against a swept field being wrongly baked into the program,
-which the single-scenario parity tests cannot catch.
+engine output changes without recompiling. They guard against a swept field being wrongly baked into
+the program or ignored.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from augur.product.asset_key import SP500AssetKey
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.compiler import compile_simulation
 from augur.sim.compiler.plan import CompiledSimulation
-from augur.sim.engine import _allocate_buffers, _allocate_current_state, _run_month_step, _snapshot_current_state
+from augur.sim.engine import _allocate_buffers
 from augur.sim.engine.jax_engine import _build_program, _program_impl, run_jax_scan
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
@@ -134,43 +133,33 @@ def _run_jax(plan: CompiledSimulation) -> SimulationBuffers:
     return buffers
 
 
-def _run_numpy(plan: CompiledSimulation) -> SimulationBuffers:
-    buffers = _allocate_buffers(plan)
-    current = _allocate_current_state(plan)
-    _snapshot_current_state(buffers.state, current, snapshot_index=0)
-    for month in range(plan.horizon_months):
-        _run_month_step(plan, buffers, current, month)
-    return buffers
-
-
-def _assert_value_sweep_correct(
+def _assert_value_sweep_takes_effect(
     scenario: Scenario,
     perturb: Callable[[CompiledSimulation], CompiledSimulation],
     extract: Callable[[SimulationBuffers], NDArray[np.float64]],
     *,
     locations: dict[str, Location] | None = None,
 ) -> None:
-    """Perturb one traced value into plan B and assert the JAX engine matches the NumPy reference for B
-    — and that the perturbation moved the output (so the swept field isn't wrongly baked / ignored)."""
+    """Perturb one traced value into plan B and assert the output moves without recompilation."""
     plan_a = _compile(scenario, rollout_count=2, locations=locations or {})
     out_a = extract(_run_jax(plan_a)).copy()
+    base_cache_size = _program_impl._cache_size()
 
     plan_b = perturb(plan_a)
     out_b_jax = extract(_run_jax(plan_b))
-    out_b_numpy = extract(_run_numpy(plan_b))
-    np.testing.assert_allclose(out_b_jax, out_b_numpy, rtol=1e-5, atol=1e-3)
     assert not np.allclose(out_b_jax, out_a)
+    assert _program_impl._cache_size() == base_cache_size
 
 
-def test_tax_rate_sweep_produces_correct_result() -> None:
-    _assert_value_sweep_correct(
+def test_tax_rate_sweep_takes_effect() -> None:
+    _assert_value_sweep_takes_effect(
         _tax_scenario(),
         lambda p: replace(p, tax=replace(p.tax, link_ordinary_rate=p.tax.link_ordinary_rate * 1.3)),
         lambda b: b.taxes.accrual_amount,
     )
 
 
-def test_transfer_amount_sweep_produces_correct_result() -> None:
+def test_transfer_amount_sweep_takes_effect() -> None:
     # Bump the (fixed) paycheck amount; NaN entries (non-fixed slots) are left untouched.
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
         fixed = p.transfers.amount_fixed
@@ -178,19 +167,19 @@ def test_transfer_amount_sweep_produces_correct_result() -> None:
             p, transfers=replace(p.transfers, amount_fixed=np.where(np.isnan(fixed), fixed, fixed + 1_000.0))
         )
 
-    _assert_value_sweep_correct(_tax_scenario(), perturb, lambda b: b.taxes.accrual_amount)
+    _assert_value_sweep_takes_effect(_tax_scenario(), perturb, lambda b: b.taxes.accrual_amount)
 
 
-def test_cost_basis_sweep_produces_correct_result() -> None:
-    _assert_value_sweep_correct(
+def test_cost_basis_sweep_takes_effect() -> None:
+    _assert_value_sweep_takes_effect(
         _sale_scenario(),
         lambda p: replace(p, lot_cost_basis_per_unit=p.lot_cost_basis_per_unit * 0.5),
         lambda b: b.state.capital_gain_state,
     )
 
 
-def test_initial_balance_sweep_produces_correct_result() -> None:
-    _assert_value_sweep_correct(
+def test_initial_balance_sweep_takes_effect() -> None:
+    _assert_value_sweep_takes_effect(
         _tax_scenario(),
         lambda p: replace(p, cash_initial_balance=p.cash_initial_balance + 50_000.0),
         lambda b: b.state.cash_state,
@@ -234,8 +223,8 @@ def _financed_purchase_scenario() -> Scenario:
     )
 
 
-def test_property_basis_sweep_produces_correct_result() -> None:
-    _assert_value_sweep_correct(
+def test_property_basis_sweep_takes_effect() -> None:
+    _assert_value_sweep_takes_effect(
         _financed_purchase_scenario(),
         lambda p: replace(p, properties=replace(p.properties, adjusted_basis=p.properties.adjusted_basis * 1.2)),
         lambda b: b.state.property_basis_state,
@@ -243,8 +232,8 @@ def test_property_basis_sweep_produces_correct_result() -> None:
     )
 
 
-def test_mortgage_principal_sweep_produces_correct_result() -> None:
-    _assert_value_sweep_correct(
+def test_mortgage_principal_sweep_takes_effect() -> None:
+    _assert_value_sweep_takes_effect(
         _financed_purchase_scenario(),
         lambda p: replace(p, liabilities=replace(p.liabilities, principal=p.liabilities.principal * 1.1)),
         lambda b: b.state.liability_principal_state,

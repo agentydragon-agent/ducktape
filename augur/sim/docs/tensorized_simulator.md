@@ -1,13 +1,14 @@
 # Tensorized Simulator Plan
 
-The dense backend's month-step phases run as NumPy operations over the rollout
-axis `R`, not as scalar per-rollout loops. Event and state decoders are
-likewise vectorized. This doc records the design (goals, invariants, phase
-algorithms) and what's still open.
+The dense backend's month-step phases run as a JAX `lax.scan` over month, with
+JAX array operations over the rollout axis `R`, not as scalar per-rollout loops.
+Event and state decoders are likewise vectorized over host NumPy buffers. This
+doc records the design (goals, invariants, phase algorithms) and what's still
+open.
 
 ## Goal
 
-Time remains serial:
+Time remains scan-ordered:
 
 ```python
 for month in range(H):
@@ -33,57 +34,44 @@ The chosen design:
 - NumPy-style tensor operations over `R` for monthly state transitions.
 - Dense active-mask event buffers for human-readable event traces.
 - Polars at table/API boundaries.
-- Small compiled helpers only where logic is genuinely scalar or irregular.
-- JAX or PyTorch reserved for phases where NumPy lacks a usable primitive
-  or its gather/scatter/sort APIs would materially simplify the phase.
+- JAX for the hot simulator program.
+- Host NumPy arrays for the stable engine/codec boundary.
 
 ## Framework Stance
 
-NumPy owns the current backend because it has the important primitives for
-this workload:
+JAX owns the current backend because it has the important primitives for this
+workload while compiling the whole month loop into one reusable program:
 
-- `np.where` for masks;
-- `np.minimum`, `np.maximum`, `np.clip` for pointwise transitions;
-- `np.cumsum` and reductions for bounded ordered consumption;
-- `np.argsort`, `np.sort`, and `np.take_along_axis` for lot ordering;
-- `np.put_along_axis`, `np.add.at`, and assignment into gathered/scattered
-  arrays for updates.
+- `jnp.where` for masks;
+- `jnp.minimum`, `jnp.maximum`, `jnp.clip` for pointwise transitions;
+- `jnp.cumsum` and reductions for bounded ordered consumption;
+- JAX gather/scatter updates for lot, event, and state arrays;
+- `lax.scan` for the month loop.
 
-If those primitives make a phase unreadable or too allocation-heavy,
-evaluate JAX or PyTorch for that phase. Both families have axis-wise
-sort/gather/scatter operations. The cost is dependency weight, cold compile
-behavior for JAX, and whether a mixed NumPy/framework boundary makes the
-simulator harder to maintain.
+The cost is cold compile behavior and the need to keep static plan structure
+separate from traced numeric inputs. The codec boundary intentionally remains
+host-side: `run_jax_scan` writes into preallocated NumPy buffers so decoders and
+Polars/API surfaces keep a stable interface.
 
-Do not move the whole simulator to a new framework as a first step.
-Tensorize the dataflow and phase boundaries first; that makes a later
-framework swap a mechanical decision instead of a rewrite mixed with
-semantic changes.
+Do not reintroduce a second numeric backend as an experiment. Prototype narrow
+JAX kernels or host-side codecs if a phase needs cleanup; the production
+simulator has one execution path.
 
-## FIFO Primitives — NumPy
+## FIFO Primitives
 
 The needed operation is not an unbounded queue append/pop. It is bounded
 ordered consumption from a fixed lot axis, which maps to:
 
-- `np.lexsort` or stable `np.argsort` to precompute the FIFO lot order by
+- host-side sorting to precompute the FIFO lot order by
   `(agent, account, asset, purchase_month, lot_id)`;
-- `np.take_along_axis` when the order is per rollout or per slice, or
-  direct indexed selection when the order is static for a
+- direct indexed selection when the order is static for a
   `(agent, account, asset)` group;
-- `np.cumsum(..., axis=1)` to compute the prefix quantity/value consumed
+- `jnp.cumsum(..., axis=1)` to compute the prefix quantity/value consumed
   before each ordered lot;
-- pointwise `np.clip`, `np.minimum`, and `np.divide(..., where=...)` to
+- pointwise `jnp.clip`, `jnp.minimum`, and guarded division to
   compute the units actually sold from each lot;
-- `np.put_along_axis` or direct advanced assignment to scatter sold units
-  back when each target lot appears once;
-- `np.add.at` when multiple source positions may accumulate into the same
-  output position, such as grouped tax/event aggregation.
-
-JAX and PyTorch have equivalent or stronger gather/scatter APIs. Re-evaluate
-only if a NumPy prototype shows FIFO scatter/gather is too slow,
-too allocation-heavy, or too hard to read. If one narrow scalar corner
-remains awkward, consider a small compiled helper before moving the whole
-backend to another tensor framework.
+- JAX scatter updates when multiple source positions may accumulate into the
+  same output position, such as grouped tax/event aggregation.
 
 ## Shape Notation
 

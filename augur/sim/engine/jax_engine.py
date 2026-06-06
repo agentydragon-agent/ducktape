@@ -1,9 +1,9 @@
-"""JAX simulation engine: a single always-`lax.scan` device program, parity-checked against NumPy.
+"""JAX simulation engine: a single always-`lax.scan` device program.
 
 The whole month loop compiles into one `jax.jit` program (`_program_impl`) whose carry is the
 per-rollout `_ScanState`; one `lax.scan` over `jnp.arange(horizon)` runs every phase branch-free, and
 `run_jax_scan(plan, buffers)` fills the (NumPy-allocated, zeroed) `buffers` from the stacked scan
-outputs in one device→host transfer. Every phase of the NumPy `phases.py` engine is implemented:
+outputs in one device→host transfer. The scan covers:
 - scheduled / recurring transfers;
 - property purchases (cash + mortgage origination);
 - scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
@@ -19,9 +19,6 @@ outputs in one device→host transfer. Every phase of the NumPy `phases.py` engi
 - the December year-end tax machinery: Schedule-E rental-interest/depreciation deductions, §1211/§1212
   capital-loss netting, the two-pass SALT walk over MID + LTCG brackets + the §1250 worksheet,
   tax-liability accrual, and the true-up settlement.
-Parity is verified by running the simulator test suite under both backends (the autouse `backend`
-fixture in `augur/sim/conftest.py` parameterizes every test over NumPy and JAX); the backend is
-selected by `sim_backend.current_backend()`.
 
 Caching is JAX-native. `_program_impl` is module-level and
 `@partial(jax.jit, static_argnames=("p", "structure"))`: its compiled executable is keyed by JAX on
@@ -134,8 +131,7 @@ class _ScanState(NamedTuple):
 class LiabilityState:
     """Per-(liability, rollout) mortgage state threaded through the month loop (all R-last `[L, R]`).
 
-    `rental_interest_ytd` is the rented-share slice of `interest_ytd` (Schedule E vs MID split); it
-    stays at the NumPy reference's behavior of not being zeroed on rollout failure.
+    `rental_interest_ytd` is the rented-share slice of `interest_ytd` (Schedule E vs MID split).
     """
 
     active: jnp.ndarray

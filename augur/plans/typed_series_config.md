@@ -162,7 +162,7 @@ End state: config carries zero prefixes; frames/artifacts/API still do.
 ### Magisteria — the structuring principle for Phase 2 (DECIDED)
 
 The flat `series_id` string bag conflates three **disjoint** concerns. Code
-audit (`engine/phases.py` — the only consumer of `external_values`) confirms
+audit (`engine/jax_engine.py` — the runtime consumer of `external_values`) confirms
 every non-PE series belongs to exactly one, defined by **what references it**:
 
 | Magisterium        | Member kinds              | Referenced by      | Mechanic                                                    | Forbidden nonsense             |

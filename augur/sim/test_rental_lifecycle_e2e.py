@@ -1902,9 +1902,8 @@ class TestRentalIncomeTaxation:
     ):
         """§121 is a 24-of-trailing-60-month use test, not cumulative lifetime occupancy.
 
-        This is also a backend-parity guard: the NumPy engine computes the window by subtracting
-        cumulative owner-occupied snapshots, while the JAX scan keeps a 60-month occupancy ring.
-        These cases pin the exact boundary behavior both implementations must preserve.
+        The JAX scan keeps a 60-month occupancy ring. These cases pin the exact boundary behavior
+        that ring must preserve.
         """
 
         purchase_price = 500_000.0
