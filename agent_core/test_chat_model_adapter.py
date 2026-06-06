@@ -121,5 +121,29 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     assert result.output[2].call_id == "call_2"
 
 
+def test_chat_adapter_adds_kickoff_for_instructions_only_request() -> None:
+    model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
+
+    prepared = model.prepare(AgentModelRequest(input=[], instructions="system instructions"))
+
+    assert isinstance(prepared.wire_body, dict)
+    assert prepared.wire_body["messages"] == [
+        {"role": "system", "content": "system instructions"},
+        {"role": "user", "content": "Begin the task using the available tools."},
+    ]
+
+
+def test_chat_adapter_does_not_add_kickoff_when_user_input_exists() -> None:
+    model = ChatCompletionsAgentModel(client=AsyncOpenAI(api_key="sk-test"), model="chat-model")
+
+    prepared = model.prepare(AgentModelRequest(input=[SystemMessage.text("static system"), UserMessage.text("hello")]))
+
+    assert isinstance(prepared.wire_body, dict)
+    assert prepared.wire_body["messages"] == [
+        {"role": "system", "content": "static system"},
+        {"role": "user", "content": "hello"},
+    ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

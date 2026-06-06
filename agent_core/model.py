@@ -53,6 +53,8 @@ from openai_utils.types import ReasoningParams
 
 type AgentWireBody = ResponsesRequest | CompletionCreateParamsNonStreaming
 
+_CHAT_COMPLETIONS_KICKOFF_MESSAGE = "Begin the task using the available tools."
+
 
 @dataclass(frozen=True)
 class AgentModelRequest:
@@ -261,6 +263,11 @@ def _input_to_chat_messages(
         while insert_at < len(messages) and messages[insert_at].get("role") == "system":
             insert_at += 1
         messages.insert(insert_at, ChatCompletionSystemMessageParam(role="system", content=instructions))
+    if not any(message.get("role") == "user" for message in messages):
+        # TODO(props): Find a less awkward neutral agent-request shape so chat
+        # providers do not need a synthetic user kickoff for instructions-only
+        # initial turns.
+        messages.append(ChatCompletionUserMessageParam(role="user", content=_CHAT_COMPLETIONS_KICKOFF_MESSAGE))
     return messages
 
 
