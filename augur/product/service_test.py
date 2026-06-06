@@ -62,7 +62,6 @@ from augur.product.wire import (
     PropertyTaxPaymentEvent,
     RentalIncomePlan,
     RentalManagement,
-    RolloutAtPercentileRequest,
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
@@ -264,7 +263,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
 
 
-def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
+def test_metric_fan_terminal_distribution_and_rollout_detail_cache_behavior(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     fan = product.metric_fan(
@@ -316,10 +315,15 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
         "value": [247_000.0] * 5,
     }
+    assert terminal_distribution.terminal_metric_samples == {
+        "seed": [7, 8],
+        "value": [247_000.0, 247_000.0],
+        "failed": [False, False],
+    }
 
     detail = product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
     assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
@@ -340,14 +344,30 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
         )
     )
 
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
     assert holding_fan.monthly_metric_fan["value"][0] == 835_500.0
 
     fan_with_one_new_seed = product.metric_fan(
         MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash_usd", percentiles=(50,))
     )
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (9,)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,), (9,)]
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
+
+
+def test_metric_fan_cache_retains_reduced_metrics_not_dense_batches(
+    product: service.ProductService, scenario_key: ScenarioKey
+) -> None:
+    product.metric_fan(
+        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(50,))
+    )
+
+    cache_key = scenario_key.model_copy(update={"horizon_months": product._max_horizon_months})
+    cached = product._cache_get(cache_key, 7)
+
+    assert cached is not None
+    assert not hasattr(cached, "batch")
+    assert cached.monthly_metric_arrays["cash_usd"].shape == (product._max_horizon_months + 1,)
 
 
 def test_concurrent_fan_and_terminal_requests_share_one_simulation(
@@ -396,15 +416,8 @@ def test_concurrent_fan_and_terminal_requests_share_one_simulation(
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
 
 
-@pytest.mark.parametrize(
-    ("percentile", "expected_seed", "expected_private_equity_value"),
-    [(0.0, 101, 10_000.0), (50.0, 102, 20_000.0), (100.0, 103, 30_000.0)],
-)
-def test_rollout_at_percentile_selects_detail_from_terminal_metric_distribution(
+def test_terminal_distribution_samples_identify_rollout_terminal_values(
     make_product_service: MakeProductService,
-    percentile: float,
-    expected_seed: int,
-    expected_private_equity_value: float,
 ) -> None:
     issuer_id = IssuerId("private_holding_a")
 
@@ -428,19 +441,27 @@ def test_rollout_at_percentile_selects_detail_from_terminal_metric_distribution(
         funding_policy=FundingPolicy(sell_order=()),
     )
 
-    detail = product.rollout_at_percentile(
-        RolloutAtPercentileRequest(
-            scenario=scenario, first_seed=101, rollout_count=3, metric="private_equity_value_usd", percentile=percentile
+    distribution = product.terminal_distribution(
+        TerminalDistributionRequest(
+            scenario=scenario,
+            first_seed=101,
+            rollout_count=3,
+            metric="private_equity_value_usd",
+            percentiles=(0, 50, 100),
         )
     )
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(101, 102, 103)]
-    assert detail.model_id == "pe_mark_by_rollout_fixture"
-    assert detail.rollout.seed == expected_seed
-    assert detail.rollout.terminal_metrics.private_equity_value_usd == expected_private_equity_value
-    assert (
-        detail.rollout.monthly_metrics["private_equity_value_usd"] == [25_000.0] + [expected_private_equity_value] * 2
-    )
+    assert distribution.model_id == "pe_mark_by_rollout_fixture"
+    assert distribution.terminal_metric_percentiles == {
+        "percentile": [0.0, 50.0, 100.0],
+        "value": [10_000.0, 20_000.0, 30_000.0],
+    }
+    assert distribution.terminal_metric_samples == {
+        "seed": [101, 102, 103],
+        "value": [10_000.0, 20_000.0, 30_000.0],
+        "failed": [False, False, False],
+    }
 
 
 def test_metric_fan_decodes_each_rollout_once_per_batch(

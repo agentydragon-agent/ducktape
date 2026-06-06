@@ -1,9 +1,9 @@
 """End-to-end product-path scale benchmark/smoke.
 
 Drives the real `ProductService.metric_fan` (exogenous sampling → batched
-`simulate_dense` → per-seed `slice_dense_result` + cache → dense reductions →
-percentiles) at a configurable rollout count, so we can see where time/memory go
-through the *actual* product entry point rather than the synthetic sim profiler.
+`simulate_dense` → dense reductions → per-seed reduced-metric cache → percentiles)
+at a configurable rollout count, so we can see where time/memory go through the
+*actual* product entry point rather than the synthetic sim profiler.
 
 CI runs it tiny (defaults) as a smoke test. Scale it locally:
 

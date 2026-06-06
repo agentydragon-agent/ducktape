@@ -150,6 +150,27 @@ export function terminalPercentileValue(result, percentile) {
   return null;
 }
 
+export function terminalMetricSamples(result, metric) {
+  if (result?.metric !== metric.value || !result?.terminalMetricSamples) return [];
+  return rowsFrom(result.terminalMetricSamples)
+    .map((row) => ({
+      seed: Number(row.seed),
+      value: Number(row.value),
+      failed: Boolean(row.failed),
+    }))
+    .filter((row) => Number.isInteger(row.seed) && Number.isFinite(row.value));
+}
+
+export function terminalSampleAtPercentile(result, metric, percentile) {
+  const samples = terminalMetricSamples(result, metric)
+    .slice()
+    .sort((left, right) => left.value - right.value || left.seed - right.seed);
+  if (samples.length === 0) return null;
+  if (samples.length === 1) return samples[0];
+  const rank = Math.floor((Math.max(0, Math.min(100, Number(percentile))) / 100) * (samples.length - 1) + 0.5);
+  return samples[Math.max(0, Math.min(samples.length - 1, rank))];
+}
+
 export function terminalMetricValue(terminalMetrics, metric) {
   return Number(terminalMetrics?.[metric.chartValue]);
 }

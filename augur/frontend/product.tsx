@@ -4,7 +4,7 @@ import { NativeSelect, SegmentedControl } from "@mantine/core";
 import {
   fetchProductMetricFan,
   fetchProductPortfolio,
-  fetchProductRolloutAtPercentile,
+  fetchProductRollout,
   fetchProductTerminalDistribution,
 } from "./client.ts";
 import { fmtNumber } from "./lib/format.ts";
@@ -36,6 +36,7 @@ import {
 import {
   metricFanRows,
   terminalPercentileValue,
+  terminalSampleAtPercentile,
   selectedRolloutMetricRows,
   selectedRolloutEvents,
   visibleMetricOptions,
@@ -254,6 +255,7 @@ export function ProductProjectionWorkspace({
   // Dense terminal-only percentiles are requested separately from the timeline fan. This keeps the
   // fan payload small while giving the terminal distribution enough points to render smoothly.
   const [terminalResultsById, setTerminalResultsById] = useState(() => new Map());
+  const [terminalResultKeysById, setTerminalResultKeysById] = useState(() => new Map());
   const [errorsById, setErrorsById] = useState(() => new Map());
   const [terminalErrorsById, setTerminalErrorsById] = useState(() => new Map());
   const [portfolio, setPortfolio] = useState(null);
@@ -291,6 +293,12 @@ export function ProductProjectionWorkspace({
   }, [chartScenarios]);
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
+  const selectMetricValue = (value) => {
+    setSelectedMetricValue(value);
+    setSelectedPercentile(null);
+    setRolloutError(null);
+    eventSelection.clear();
+  };
 
   const requestEntries = useMemo(
     () =>
@@ -320,12 +328,20 @@ export function ProductProjectionWorkspace({
       })),
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
   );
+  const terminalRequestKeyById = useMemo(
+    () => new Map(terminalRequestEntries.map(({ id, request }) => [id, JSON.stringify(request)])),
+    [terminalRequestEntries]
+  );
   const activeRequest = requestEntries.find((entry) => entry.id === activeId)?.request ?? requestEntries[0].request;
   const activeRawResult = resultsById.get(activeId) ?? null;
   const activeResult = activeRawResult?.metric === selectedMetric.value ? activeRawResult : null;
   const activeRawTerminalResult = terminalResultsById.get(activeId) ?? null;
+  const activeTerminalRequestKey = terminalRequestKeyById.get(activeId) ?? null;
   const activeTerminalResult =
-    activeRawTerminalResult?.metric === selectedMetric.value ? activeRawTerminalResult : null;
+    activeRawTerminalResult?.metric === selectedMetric.value &&
+    terminalResultKeysById.get(activeId) === activeTerminalRequestKey
+      ? activeRawTerminalResult
+      : null;
   const terminalResultsForDisplay = useMemo(() => {
     const next = new Map(resultsById);
     for (const [id, result] of terminalResultsById) {
@@ -354,13 +370,17 @@ export function ProductProjectionWorkspace({
   );
 
   const scenarioCacheKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
-  const rolloutSeedWindowKey = `${activeRequest.firstSeed}|${activeRequest.rolloutCount}`;
+  const selectedTerminalSample = useMemo(
+    () =>
+      selectedPercentile == null
+        ? null
+        : terminalSampleAtPercentile(activeTerminalResult, selectedMetric, selectedPercentile),
+    [activeTerminalResult, selectedMetric, selectedPercentile]
+  );
   const selectedDetailKey =
-    selectedPercentile == null
-      ? null
-      : `${scenarioCacheKey}|${rolloutSeedWindowKey}|${selectedMetric.value}|${selectedPercentile}`;
+    selectedTerminalSample == null ? null : `${scenarioCacheKey}|seed:${selectedTerminalSample.seed}`;
   const selectedDetail = selectedDetailKey ? rolloutDetails.get(selectedDetailKey) : null;
-  const selectedSeed = selectedDetail?.rollout?.seed ?? null;
+  const selectedSeed = selectedTerminalSample?.seed ?? selectedDetail?.rollout?.seed ?? null;
   const selectedSummary = useMemo(
     () =>
       selectedDetail?.rollout
@@ -395,8 +415,8 @@ export function ProductProjectionWorkspace({
     setScenarioSet((previous) => ({ ...previous, base: { ...previous.base, input: productInputDefaults(bootstrap) } }));
   const selectEntry = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
   // Selecting in the distribution chart carries both coordinates: the line picks the variant
-  // (making it active), and the X picks the percentile. The backend resolves that percentile to
-  // one rollout detail without returning per-rollout data in the fan response.
+  // (making it active), and the X picks the percentile. The active terminal-distribution response
+  // maps that percentile to a seed; the full rollout detail is fetched by seed.
   const onSelectPercentile = (variantId, percentile) => {
     selectEntry(variantId);
     setSelectedPercentile(percentile);
@@ -492,6 +512,7 @@ export function ProductProjectionWorkspace({
     };
     setResultsById(prune);
     setTerminalResultsById(prune);
+    setTerminalResultKeysById(prune);
     setErrorsById(prune);
     setTerminalErrorsById(prune);
   }, [chartScenarios]);
@@ -530,9 +551,11 @@ export function ProductProjectionWorkspace({
     const controller = new AbortController();
     const handle = setTimeout(() => {
       for (const { id, label, request } of terminalRequestEntries) {
+        const requestKey = JSON.stringify(request);
         fetchProductTerminalDistribution(request, { signal: controller.signal })
           .then((payload) => {
             setTerminalResultsById((previous) => new Map(previous).set(id, payload));
+            setTerminalResultKeysById((previous) => new Map(previous).set(id, requestKey));
             setTerminalErrorsById((previous) => {
               if (!previous.has(id)) return previous;
               const next = new Map(previous);
@@ -559,17 +582,14 @@ export function ProductProjectionWorkspace({
   }, [selectedDetailKey]);
 
   useEffect(() => {
-    if (selectedPercentile == null || activeTerminalDisplayResult == null || selectedDetailKey == null) return;
+    if (selectedPercentile == null || selectedTerminalSample == null || selectedDetailKey == null) return;
     if (rolloutDetails.has(selectedDetailKey)) return;
     const controller = new AbortController();
     setRolloutError(null);
-    fetchProductRolloutAtPercentile(
+    fetchProductRollout(
       {
         scenario: activeRequest.scenario,
-        firstSeed: activeRequest.firstSeed,
-        rolloutCount: activeRequest.rolloutCount,
-        metric: selectedMetric.value,
-        percentile: selectedPercentile,
+        seed: selectedTerminalSample.seed,
       },
       { signal: controller.signal }
     )
@@ -586,16 +606,7 @@ export function ProductProjectionWorkspace({
         toastFetchError("product-rollout", "Rollout detail failed", error);
       });
     return () => controller.abort();
-  }, [
-    activeRequest.firstSeed,
-    activeRequest.rolloutCount,
-    activeRequest.scenario,
-    activeTerminalDisplayResult,
-    rolloutDetails,
-    selectedDetailKey,
-    selectedMetric.value,
-    selectedPercentile,
-  ]);
+  }, [activeRequest.scenario, rolloutDetails, selectedDetailKey, selectedPercentile, selectedTerminalSample]);
 
   return (
     <div
@@ -676,7 +687,7 @@ export function ProductProjectionWorkspace({
           <RolloutResultsPanel
             visibleMetrics={visibleMetrics}
             selectedMetric={selectedMetric}
-            onSelectMetric={setSelectedMetricValue}
+            onSelectMetric={selectMetricValue}
             metricScale={metricScale}
             horizonMonths={horizonMonths}
             onChangeHorizonMonths={onChangeHorizonMonths}

@@ -153,6 +153,11 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
         "value": [247_000.0, 247_000.0, 247_000.0, 247_000.0, 247_000.0],
     }
+    assert terminal_distribution["terminal_metric_samples"] == {
+        "seed": [7, 8],
+        "value": [247_000.0, 247_000.0],
+        "failed": [False, False],
+    }
 
     holding_fan = _post_json(
         server_url,
@@ -211,16 +216,6 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "shortfall_usd",
     }
     assert terminal["shortfall_usd"] == 0.0
-
-    selected = _post_json(
-        server_url,
-        "/api/product/projections/rollout_at_percentile",
-        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash_usd", "percentile": 0},
-    )
-
-    assert selected["model_id"] == "composite"
-    assert selected["rollout"]["seed"] == 7
-    assert selected["rollout"]["monthly_metrics"]["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
 
     assert [event["kind"] for event in detail["rollout"]["events"]] == ["monthly_expense"] * 3
     assert [event["amount_paid_usd"] for event in detail["rollout"]["events"]] == [1_000.0, 1_000.0, 1_000.0]

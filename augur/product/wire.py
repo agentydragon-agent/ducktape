@@ -250,18 +250,6 @@ class RolloutRequest(ApiModel):
     seed: NonNegativeInt
 
 
-class RolloutAtPercentileRequest(ApiModel):
-    scenario: ScenarioKey
-    first_seed: NonNegativeInt
-    rollout_count: PositiveInt
-    metric: MetricName
-    percentile: Percentage
-
-    @property
-    def rollout_seeds(self) -> tuple[int, ...]:
-        return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
-
-
 class TerminalMetrics(ApiModel):
     cash_usd: float
     holding_value_usd: NonNegativeFloat
@@ -505,6 +493,7 @@ class TerminalDistributionResponse(ApiModel):
     model_id: str
     metric: MetricName
     terminal_metric_percentiles: Frame
+    terminal_metric_samples: Frame
     failed_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()
 

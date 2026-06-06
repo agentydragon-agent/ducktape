@@ -50,7 +50,6 @@ from augur.product.service import ProductService
 from augur.product.wire import (
     MetricFanRequest,
     MetricFanResponse,
-    RolloutAtPercentileRequest,
     RolloutRequest,
     RolloutResponse,
     TerminalDistributionRequest,
@@ -166,10 +165,6 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> JSONResponse:
         return payload(product_service.rollout(request))
-
-    @app.post("/api/product/projections/rollout_at_percentile", response_model=RolloutResponse)
-    def product_projection_rollout_at_percentile(request: RolloutAtPercentileRequest) -> JSONResponse:
-        return payload(product_service.rollout_at_percentile(request))
 
     def calibration_payload(value: ApiModel) -> JSONResponse:
         # Calibration responses carry `date` fields (CalibrationResult.as_of,

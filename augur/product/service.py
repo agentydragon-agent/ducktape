@@ -43,7 +43,6 @@ from augur.product.wire import (
     MetricFanRequest,
     MetricFanResponse,
     MetricName,
-    RolloutAtPercentileRequest,
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
@@ -57,19 +56,17 @@ from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
 from augur.sim.scenario import HarvestPolicy
 from augur.sim.simulate import simulate_dense_with_external_series
-from augur.sim.slice import slice_dense_result
 
-DEFAULT_MAX_CACHE_ROLLOUTS: int | None = None
+DEFAULT_MAX_CACHE_ROLLOUTS = 5_000
 
 
 @dataclass(frozen=True)
 class _CachedRollout:
-    # One simulated batch is shared by every seed it was sampled with; each seed reads its own
-    # column out of `batch` (the metric reductions take a `rollout_index`), so no per-rollout
-    # dense slice is materialized for the fan path. The batch stays alive while any of its seeds
-    # remains cached; `rollout()` slices a single seed out of it on demand for the detail view.
-    batch: DenseSimulationResult
-    column_index: int
+    # Product fan/terminal calls cache reduced product metrics, not the full dense simulator
+    # history. DenseSimulationResult is much larger: it carries every state/event buffer for every
+    # month/rollout and should die as soon as one request has reduced it.
+    monthly_metric_arrays: dict[str, np.ndarray]
+    failed_month_index: int | None
     model_id: str
 
 
@@ -99,8 +96,10 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
-        max_cache_rollouts: int | None = DEFAULT_MAX_CACHE_ROLLOUTS,
+        max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
     ) -> None:
+        if max_cache_rollouts <= 0:
+            raise ValueError("max_cache_rollouts must be positive")
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
         if not models:
@@ -114,9 +113,7 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._max_cache_rollouts = int(max_cache_rollouts if max_cache_rollouts is not None else max_rollout_samples)
-        if self._max_cache_rollouts <= 0:
-            raise ValueError("max_cache_rollouts must be positive")
+        self._max_cache_rollouts = int(max_cache_rollouts)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
@@ -160,6 +157,7 @@ class ProductService:
                 terminal_metric_percentiles=_terminal_metric_percentiles(
                     decoded, metric=request.metric, percentiles=percentiles
                 ),
+                terminal_metric_samples=_terminal_metric_samples(decoded, metric=request.metric),
                 failed_count=sum(1 for rollout in decoded if rollout.failed),
             )
 
@@ -168,27 +166,19 @@ class ProductService:
             [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
             return self._rollout_response(request.scenario, decoded)
 
-    def rollout_at_percentile(self, request: RolloutAtPercentileRequest) -> RolloutResponse:
-        if request.rollout_count > self._max_rollout_samples:
-            raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
-        with self._projection_lock:
-            decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-            selected = _select_rollout_at_percentile(
-                decoded, metric=request.metric, percentile=float(request.percentile)
-            )
-            return self._rollout_response(request.scenario, selected)
-
     def _rollout_response(self, scenario: ScenarioKey, decoded: _DecodedRollout) -> RolloutResponse:
         horizon_months = int(scenario.horizon_months)
         # The detail view needs this one rollout's event log: slice just its column out of the
-        # shared batch (one slice, not R) and decode it. The cached batch spans the server max
-        # horizon; keep only events within the requested window so the detail matches the
-        # truncated monthly metrics.
-        single = slice_dense_result(decoded.cached.batch, rollout_index=decoded.cached.column_index)
+        # shared batch (one slice, not R) and decode it. The fan/terminal cache intentionally does
+        # not retain DenseSimulationResult, so this endpoint re-simulates only the selected seed to
+        # materialize events.
+        dense, _model_id = self._simulate_dense(
+            scenario.model_copy(update={"horizon_months": self._max_horizon_months}), (decoded.seed,)
+        )
         events = tuple(
             event
             for event in rollout_events_from(
-                single.decode(), primary_agent_id=self._primary_agent_id, asset_label_by_id=self._asset_label_by_id
+                dense.decode(), primary_agent_id=self._primary_agent_id, asset_label_by_id=self._asset_label_by_id
             )
             if event.month_index < horizon_months
         )
@@ -239,28 +229,12 @@ class ProductService:
             for seed, entry in fresh.items():
                 cached_by_seed[seed] = entry
                 self._cache_put(cache_key, seed, entry)
-        # Reduce each distinct simulated batch once over its whole (…, R) axis, then column-slice
-        # per seed — rather than calling the reduction once per rollout. Seeds requested together
-        # usually share one batch, so the common fan request is a single vectorized reduction pass.
-        batch_metrics: dict[int, dict[str, np.ndarray]] = {}
-        batch_failed: dict[int, np.ndarray] = {}
         decoded: list[_DecodedRollout] = []
         for seed in seeds:
             cached = cached_by_seed[seed]
-            batch_key = id(cached.batch)
-            if batch_key not in batch_metrics:
-                batch_metrics[batch_key] = monthly_metric_arrays_batch(
-                    cached.batch, primary_agent_id=self._primary_agent_id
-                )
-                batch_failed[batch_key] = failed_month_index_batch(cached.batch)
             # `month_index` runs 0..H_max; keep months 0..horizon (i.e. the first horizon+1 snapshots).
-            # Metric columns are (H+1, R); `month_index` has no rollout axis.
-            arrays = {
-                name: (values if name == "month_index" else values[:, cached.column_index])[: horizon_months + 1]
-                for name, values in batch_metrics[batch_key].items()
-            }
-            failed_month = int(batch_failed[batch_key][cached.column_index])
-            full_failed_month = None if failed_month < 0 else failed_month
+            arrays = {name: values[: horizon_months + 1] for name, values in cached.monthly_metric_arrays.items()}
+            full_failed_month = cached.failed_month_index
             # Months are 0-based (0..horizon-1); a failure at/after the requested horizon is outside it.
             in_window = full_failed_month is not None and full_failed_month < horizon_months
             terminal = terminal_metrics_from_arrays(arrays, failed_month_index=full_failed_month if in_window else None)
@@ -270,6 +244,23 @@ class ProductService:
         return tuple(decoded)
 
     def _simulate_missing(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> dict[int, _CachedRollout]:
+        dense, model_id = self._simulate_dense(scenario_key, seeds)
+        batch_metrics = monthly_metric_arrays_batch(dense, primary_agent_id=self._primary_agent_id)
+        batch_failed = failed_month_index_batch(dense)
+        month_index = batch_metrics["month_index"].copy()
+        return {
+            seed: _CachedRollout(
+                monthly_metric_arrays={
+                    name: (month_index if name == "month_index" else values[:, batch_index].copy())
+                    for name, values in batch_metrics.items()
+                },
+                failed_month_index=(None if int(batch_failed[batch_index]) < 0 else int(batch_failed[batch_index])),
+                model_id=model_id,
+            )
+            for batch_index, seed in enumerate(seeds)
+        }
+
+    def _simulate_dense(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[DenseSimulationResult, str]:
         scenario = build_scenario(
             scenario_key,
             primary_agent_id=self._primary_agent_id,
@@ -301,13 +292,7 @@ class ProductService:
             locations=self._locations,
         )
         model_id = str(sampled.metadata.get("model_id") or scenario_key.model_id)
-        # Cache the batch once, shared by every seed; each seed records only its column. The fan
-        # path reduces a column per seed straight from this batch (no per-rollout slice), and the
-        # detail view slices a single seed out of it on demand.
-        return {
-            seed: _CachedRollout(batch=dense, column_index=batch_index, model_id=model_id)
-            for batch_index, seed in enumerate(seeds)
-        }
+        return dense, model_id
 
     def _cache_get(self, scenario_key: ScenarioKey, seed: int) -> _CachedRollout | None:
         key = (scenario_key, seed)
@@ -356,18 +341,12 @@ def _terminal_metric_percentiles(
     return {"percentile": percentile_array.tolist(), "value": percentile_values.tolist()}
 
 
-def _select_rollout_at_percentile(
-    rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName, percentile: float
-) -> _DecodedRollout:
-    if not rollouts:
-        raise ValueError("rollout percentile selection requires at least one rollout")
-    ordered = sorted(
-        rollouts, key=lambda rollout: (_terminal_metric_value(rollout.terminal_metrics, metric), rollout.seed)
-    )
-    if len(ordered) == 1:
-        return ordered[0]
-    rank = int(np.floor((percentile / 100.0) * (len(ordered) - 1) + 0.5))
-    return ordered[max(0, min(len(ordered) - 1, rank))]
+def _terminal_metric_samples(rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName) -> Frame:
+    return {
+        "seed": [rollout.seed for rollout in rollouts],
+        "value": [_terminal_metric_value(rollout.terminal_metrics, metric) for rollout in rollouts],
+        "failed": [rollout.failed for rollout in rollouts],
+    }
 
 
 def _metric_matrix(

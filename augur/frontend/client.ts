@@ -12,7 +12,6 @@ import {
   zMetricFanRequest,
   zMetricFanResponse,
   zProductPortfolioResponse,
-  zRolloutAtPercentileRequest,
   zRolloutRequest,
   zRolloutResponse,
   zSettingsResponse,
@@ -128,16 +127,6 @@ export function fetchProductTerminalDistribution(terminalDistributionRequest, { 
 
 export function fetchProductRollout(rolloutRequest, { signal }: FetchOptions = {}) {
   return apiPost("/api/product/projections/rollout", zRolloutRequest, zRolloutResponse, rolloutRequest, signal);
-}
-
-export function fetchProductRolloutAtPercentile(rolloutAtPercentileRequest, { signal }: FetchOptions = {}) {
-  return apiPost(
-    "/api/product/projections/rollout_at_percentile",
-    zRolloutAtPercentileRequest,
-    zRolloutResponse,
-    rolloutAtPercentileRequest,
-    signal
-  );
 }
 
 export function fetchCalibrationRun(calibrationRunRequest, { signal }: FetchOptions = {}) {
