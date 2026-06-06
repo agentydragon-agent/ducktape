@@ -410,7 +410,7 @@ def _property_net_worth_components(run: SimulationRun) -> pl.DataFrame:
         pl.lit(0.0, dtype=pl.Float64()).alias("cash_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("liquid_asset_value_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("asset_book_value_usd"),
-        (pl.col("adjusted_basis_usd") * pl.col("ownership_pct")).alias("property_book_value_usd"),
+        pl.col("adjusted_basis_usd").alias("property_book_value_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("liability_principal_usd"),
     )
 

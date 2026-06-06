@@ -362,7 +362,6 @@ class TestRentalLifecycleCashflows:
                     purchase_price_usd=500_000.0,
                     down_payment_usd=500_000.0,
                     buyer_closing_cost_usd=0.0,
-                    ownership_pct=1.0,
                     rented_fraction=0.25,
                 )
             ],
@@ -672,7 +671,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=1.0,
                     land_value_fraction=0.20,
                     buyer_closing_cost_usd=0.0,
@@ -749,7 +747,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=0.0,  # owner-occupied at start
                     land_value_fraction=0.20,
                     buyer_closing_cost_usd=0.0,
@@ -862,7 +859,6 @@ class TestRentalIncomeTaxation:
                         annual_interest_rate=0.06,
                         term_months=360,
                     ),
-                    ownership_pct=1.0,
                     rented_fraction=0.0,
                 )
             ],
@@ -930,7 +926,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=1.0,
                     land_value_fraction=0.20,
                     buyer_closing_cost_usd=0.0,
@@ -1004,7 +999,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=1.0,
                     land_value_fraction=0.20,
                 )
@@ -1098,6 +1092,72 @@ class TestRentalIncomeTaxation:
         assert len(breakdowns_y1) == 1
         b = breakdowns_y1[0]
         assert b["ltcg_usd"] == pytest.approx(205_000.0, abs=1.0)
+
+    def test_property_tied_recurring_obligation_stops_after_property_sale(self, san_francisco_location: Location):
+        """Property-keyed HOA/insurance/maintenance-style obligations stop when the property sells."""
+
+        sale_month = 12
+        monthly_hoa = 400.0
+        scenario = self._sale_scenario(horizon=24, sale_month=sale_month)
+        scenario = scenario.model_copy(
+            update={
+                "agents": [*scenario.agents, Agent(agent_id="hoa")],
+                "initial_cash": [
+                    *scenario.initial_cash,
+                    InitialAccountBalance(agent_id="hoa", account_id="checking", balance_usd=0.0),
+                ],
+                "recurring_obligations": [
+                    RecurringObligation(
+                        start_month=0,
+                        obligation_id="hoa_dues:p1",
+                        obligation_type="hoa_dues",
+                        agent_id=OWNER_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id="hoa",
+                        to_account_id="checking",
+                        amount_due_usd=monthly_hoa,
+                        deduction_category="ordinary",
+                        property_id="p1",
+                    )
+                ],
+            }
+        )
+        levels = [1.0] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
+        ctx = _multi_series(
+            levels_by_series={
+                RENT_SERIES_ID: {0: [1.0] * (scenario.horizon_months + 1)},
+                "home_value:san_francisco": {0: levels},
+            }
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        accruals = run.events_log.obligation_accruals.filter(pl.col("obligation_type") == "hoa_dues").sort(
+            "month_index"
+        )
+        settlements = run.events_log.obligation_settlements.filter(pl.col("obligation_type") == "hoa_dues").sort(
+            "month_index"
+        )
+        expected_months = list(range(sale_month))
+        assert accruals.get_column("month_index").to_list() == expected_months
+        assert settlements.get_column("month_index").to_list() == expected_months
+        assert settlements.get_column("amount_paid_usd").to_list() == pytest.approx([monthly_hoa] * sale_month)
+
+        terminal_hoa_cash = run.cash_balances.filter(
+            (pl.col("agent_id") == "hoa") & (pl.col("month_index") == scenario.horizon_months)
+        )
+        assert terminal_hoa_cash.get_column("balance_usd").item() == pytest.approx(monthly_hoa * sale_month)
+
+        federal_y0 = next(
+            row
+            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            if row["month_index"] == 11 and row["jurisdiction_id"] == "federal_us"
+        )
+        expected_depreciation = 400_000.0 / 27.5
+        assert federal_y0["ordinary_income_usd"] == pytest.approx(
+            12 * 5_000.0 - expected_depreciation - monthly_hoa * sale_month, abs=0.05
+        )
 
     def test_section_1250_recapture_taxed_at_lesser_of_marginal_or_cap_low_bracket(
         self, san_francisco_location: Location
@@ -1210,7 +1270,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=0.0,
                     land_value_fraction=0.20,
                 )
@@ -1247,6 +1306,93 @@ class TestRentalIncomeTaxation:
         assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
         assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
 
+    @pytest.mark.parametrize(
+        ("primary_start_month", "primary_end_month", "expected_exclusion_usd", "expected_ltcg_usd"),
+        [
+            pytest.param(61, 84, 0.0, 158_000.0, id="23-recent-months-does-not-qualify"),
+            pytest.param(60, 84, 158_000.0, 0.0, id="24-recent-months-qualifies"),
+            pytest.param(0, 24, 0.0, 158_000.0, id="24-old-months-outside-lookback-do-not-qualify"),
+            pytest.param(24, 48, 158_000.0, 0.0, id="24-months-at-lookback-boundary-qualify"),
+        ],
+    )
+    def test_section_121_uses_24_of_trailing_60_months(
+        self,
+        san_francisco_location: Location,
+        primary_start_month: int,
+        primary_end_month: int,
+        expected_exclusion_usd: float,
+        expected_ltcg_usd: float,
+    ):
+        """§121 is a 24-of-trailing-60-month use test, not cumulative lifetime occupancy.
+
+        This is also a backend-parity guard: the NumPy engine computes the window by subtracting
+        cumulative owner-occupied snapshots, while the JAX scan keeps a 60-month occupancy ring.
+        These cases pin the exact boundary behavior both implementations must preserve.
+        """
+
+        purchase_price = 500_000.0
+        sale_month = 84
+        horizon = sale_month + 1
+        scenario = Scenario(
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            primary_residence_events=[
+                SetPrimaryResidenceEvent(month=primary_start_month, agent_id=OWNER_AGENT_ID, property_id="p1"),
+                SetPrimaryResidenceEvent(month=primary_end_month, agent_id=OWNER_AGENT_ID, property_id=None),
+            ],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon,
+        )
+        home_values = [1.0] * sale_month + [1.4]
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        sale = run.events_log.property_sale_events.to_dicts()[0]
+        assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["section_121_exclusion_usd"] == pytest.approx(expected_exclusion_usd, abs=1.0)
+        assert sale["long_term_capital_gain_usd"] == pytest.approx(expected_ltcg_usd, abs=1.0)
+
+        post_sale_ltcg = run.capital_gains_ytd.filter(
+            (pl.col("agent_id") == OWNER_AGENT_ID)
+            & (pl.col("classification") == "ltcg")
+            & (pl.col("month_index") == sale_month + 1)
+            & (pl.col("rollout_index") == 0)
+        )
+        actual_ltcg = 0.0 if post_sale_ltcg.is_empty() else float(post_sale_ltcg.get_column("gain_usd").sum())
+        assert actual_ltcg == pytest.approx(expected_ltcg_usd, abs=1.0)
+
     def test_section_121_does_not_apply_to_unassigned_non_rented_property(self, san_francisco_location: Location):
         purchase_price = 500_000.0
         sale_month = 30
@@ -1269,7 +1415,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=0.0,
                     land_value_fraction=0.20,
                 )
@@ -1320,7 +1465,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=0.0,
                     land_value_fraction=0.20,
                 )
@@ -1401,7 +1545,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=0.0,
                     land_value_fraction=0.20,
                 )
@@ -1510,7 +1653,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=1.0 if cumulative_depreciation_eligible else 0.0,
                     land_value_fraction=0.20,
                 )
@@ -1569,7 +1711,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=0.0,
                     land_value_fraction=0.20,
                 )
@@ -1667,7 +1808,6 @@ class TestRentalIncomeTaxation:
                         annual_interest_rate=0.06,
                         term_months=360,
                     ),
-                    ownership_pct=1.0,
                     rented_fraction=rented_fraction,
                 )
             ],
@@ -1745,7 +1885,6 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price,
-                    ownership_pct=1.0,
                     rented_fraction=rented_fraction,
                     # Isolate the property-tax assertion from depreciation: setting
                     # land_value_fraction=1.0 makes the building basis zero, so no §168

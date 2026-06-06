@@ -6,6 +6,33 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Architecture / cutover
 
+- **Backend parity/test hardening before dropping NumPy.** The sim test suite now
+  autouses both backends and has broad property/tax coverage, but a few
+  composition edges can still produce silent wrong answers if NumPy is removed
+  before semantics are pinned:
+  - [ ] **Property-aware rental/management cashflows after sale.** Rental income
+        and property-management fees are generic transfers today; sale tests stop
+        rent manually at `sale_month - 1`. Add product-translator tests proving
+        sale/lifecycle inputs end property-specific rent and management flows, or
+        promote those flows to property-keyed sim events.
+  - [ ] **Same-month lifecycle ordering.** Pin or reject ambiguous same-month
+        combinations of `SetRentedFractionEvent`, `CapitalImprovementEvent`,
+        `SetPrimaryResidenceEvent`, and `PropertySaleEvent`. Ordering changes
+        sale basis, depreciation, §121 qualification, and Schedule E/SALT routing.
+  - [ ] **Duplicate/overlapping identity validation.** Add validation tests for
+        duplicate `TaxProfile.agent_id`, duplicate mortgage `liability_id`,
+        overlapping `PropertyTaxPolicy` entries for one property/month, and
+        `PropertyTaxPolicy.owner_agent_id` mismatches against the property's
+        buyer. Dict/first-match compiler paths should not silently mask bad
+        scenario input.
+  - [ ] **Multi-rollout property-sale parity.** Add a two-rollout property sale
+        test with different home-value paths, asserting sale proceeds, mortgage
+        payoff, §1250 recapture, §121 exclusion, and LTCG remain rollout-scoped.
+  - [ ] **Multi-taxpayer property isolation.** Add a scenario where Alice and Bob
+        each own a property and each has a tax profile; assert property tax,
+        Schedule E, mortgage interest, §121, and sale gains route only to the
+        correct owner's profile.
+
 - **TLH follow-ups.** Pieces 1 (capital-loss netting + carryforward, #1846) and 2
   (reduced-form harvest process, #1881) shipped. Remaining, in rough priority:
   - **Re-fit the decay annually.** The `reduced_form_tlh` decay params are
@@ -38,6 +65,13 @@ Anything fully shipped is removed — git history is the record of done work.
   Config/wire shape can stay list-friendly, but the runtime/compiler
   should consume `{(agent_id, account_id): policy}` so "one policy per
   cash account" is encoded by data shape, not validators.
+- Re-enable partial property ownership only as an explicit co-owner /
+  partner-equity model. The old scalar `ownership_pct` surface was removed
+  because it did not scale cashflows, property taxes, depreciation, sale
+  proceeds, mortgage payoff, §121/§1250, or gain routing consistently. A
+  future version should define owner shares, liability responsibility,
+  contribution ledgers, tax allocation, and sale proceeds together with
+  dual-backend tests before exposing fractional ownership again.
 - Define the month-0 anchoring rule for every model-driven level series
   in one place. Implementations exist (sp500, crypto, home_value, rent,
   PE, inflation), but no single document says whether a configured value
@@ -47,8 +81,8 @@ Anything fully shipped is removed — git history is the record of done work.
   without changing monthly-column semantics:
   - True state snapshots (cash, public asset value, private-equity mark,
     tender-eligible PE value, property value, mortgage balance,
-    home-equity claims, ownership pct, net-worth metrics) sourced from
-    state snapshots rather than transaction ledger rows.
+    home-equity claims, net-worth metrics) sourced from state snapshots
+    rather than transaction ledger rows.
   - Transaction-flow arrays derived from ledger rows where practical.
     Likely next targets: purchase-closing costs, property depreciation,
     and tax payment timing once the tax ledger/liability shape exists.

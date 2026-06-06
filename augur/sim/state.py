@@ -100,7 +100,6 @@ PROPERTY_STAKE_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "property_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
-        "ownership_pct": pl.Float64(),
         "contribution_used_usd": pl.Float64(),
         "equity_ledger_usd": pl.Float64(),
     }

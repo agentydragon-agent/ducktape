@@ -1142,7 +1142,6 @@ def _apply_property_purchases(
         buffers.properties.purchase_active[month, prop, active_rollout] = True
         current.property_active[prop, active_rollout] = True
         current.property_basis[prop, active_rollout] = plan.properties.adjusted_basis[prop]
-        current.property_ownership[prop, active_rollout] = plan.properties.ownership[prop]
         current.property_contribution[prop, active_rollout] = plan.properties.stake_contribution[prop]
         current.property_equity[prop, active_rollout] = plan.properties.equity_ledger[prop]
 
@@ -1374,6 +1373,9 @@ def _apply_obligation_accruals(
                 adjustment_period=int(plan.obligations.amount_period[month, slot]),
                 month=month,
             )
+            prop = int(plan.obligations.property_slot[month, slot])
+            if prop >= 0:
+                active &= current.property_active[prop, :]
         elif source_kind == ObligationSource.MORTGAGE_PAYMENT:
             liab = source_index
             prop = int(plan.liabilities.property_slot[liab])

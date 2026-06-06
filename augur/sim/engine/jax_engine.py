@@ -102,7 +102,6 @@ class _ScanState(NamedTuple):
     tlh: jnp.ndarray
     property_active: jnp.ndarray
     property_basis: jnp.ndarray
-    property_ownership: jnp.ndarray
     property_contribution: jnp.ndarray
     property_equity: jnp.ndarray
     property_cumulative_depreciation: jnp.ndarray
@@ -166,7 +165,6 @@ class _TracedConfig(NamedTuple):
     cash_initial_balance: jnp.ndarray
     lot_initial_quantity: jnp.ndarray
     property_adjusted_basis: jnp.ndarray
-    property_ownership: jnp.ndarray
     property_equity_ledger: jnp.ndarray
     liability_principal: jnp.ndarray
     liability_monthly_payment: jnp.ndarray
@@ -187,7 +185,6 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
         cash_initial_balance=jnp.asarray(plan.cash_initial_balance),
         lot_initial_quantity=jnp.asarray(plan.lot_initial_quantity),
         property_adjusted_basis=jnp.asarray(plan.properties.adjusted_basis),
-        property_ownership=jnp.asarray(plan.properties.ownership),
         property_equity_ledger=jnp.asarray(plan.properties.equity_ledger),
         liability_principal=jnp.asarray(plan.liabilities.principal),
         liability_monthly_payment=jnp.asarray(plan.liabilities.monthly_payment),
@@ -525,6 +522,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     acc = {
         "kind": jnp.asarray(acc_kind),
         "valid": jnp.asarray((ob.cause >= 0) & (acc_kind >= 0)),
+        "configured_prop_idx": jnp.asarray(np.where(ob.property_slot >= 0, ob.property_slot, 0)),
+        "configured_has_prop": jnp.asarray(ob.property_slot >= 0),
         "prop_idx": jnp.asarray(np.where(acc_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)),
         "liab_idx": jnp.asarray(np.where(acc_kind == ObligationSource.MORTGAGE_PAYMENT, ob.source_index, 0)),
     }
@@ -1131,11 +1130,7 @@ def _program_impl(
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
         cg_active, cg_ytd, tlh = s.capital_gain_active, s.capital_gain_ytd, s.tlh
         property_active, property_basis = s.property_active, s.property_basis
-        property_ownership, property_contribution, property_equity = (
-            s.property_ownership,
-            s.property_contribution,
-            s.property_equity,
-        )
+        property_contribution, property_equity = s.property_contribution, s.property_equity
         property_cum_dep, property_owner_occupied = s.property_cumulative_depreciation, s.property_owner_occupied_months
         property_dep_ytd = s.property_depreciation_ytd
         property_rented_fraction, property_building_basis = s.property_rented_fraction, s.property_building_basis
@@ -1245,9 +1240,6 @@ def _program_impl(
             property_active = property_active.at[pur_buf].set(jnp.where(fires, True, property_active[pur_buf]))
             property_basis = property_basis.at[pur_buf].set(
                 jnp.where(fires, tcfg.property_adjusted_basis[pur_buf][:, None], property_basis[pur_buf])
-            )
-            property_ownership = property_ownership.at[pur_buf].set(
-                jnp.where(fires, tcfg.property_ownership[pur_buf][:, None], property_ownership[pur_buf])
             )
             property_contribution = property_contribution.at[pur_buf].set(
                 jnp.where(fires, pur_stake[:, None], property_contribution[pur_buf])
@@ -1368,6 +1360,8 @@ def _program_impl(
             og["amount_series"][month],
             og["amount_base_month"][month],
             og["amount_period"][month],
+            acc["configured_prop_idx"][month],
+            acc["configured_has_prop"][month],
             acc["prop_idx"][month],
             acc["pt_amount"][month],
             acc["pt_prop_month"][month],
@@ -1758,9 +1752,8 @@ def _program_impl(
         cash, ordinary, lot_remaining = cash * keep, ordinary * keep, lot_remaining * keep
         cg_ytd, tlh = cg_ytd * keep[None, None, :], tlh * keep
         capital_loss_carryforward, taxliab_amount = capital_loss_carryforward * keep, taxliab_amount * keep
-        property_basis, property_ownership, property_contribution, property_equity = (
+        property_basis, property_contribution, property_equity = (
             property_basis * keep,
-            property_ownership * keep,
             property_contribution * keep,
             property_equity * keep,
         )
@@ -1777,7 +1770,6 @@ def _program_impl(
             tlh=tlh,
             property_active=property_active,
             property_basis=property_basis,
-            property_ownership=property_ownership,
             property_contribution=property_contribution,
             property_equity=property_equity,
             property_cumulative_depreciation=property_cum_dep,
@@ -1811,7 +1803,6 @@ def _program_impl(
             cg_ytd,
             property_active,
             property_basis,
-            property_ownership,
             property_contribution,
             property_equity,
             property_cum_dep,
@@ -1898,7 +1889,6 @@ def _program_impl(
         tlh=tlh0,
         property_active=jnp.zeros((p.property_count, r), dtype=bool),
         property_basis=prop0,
-        property_ownership=prop0,
         property_contribution=prop0,
         property_equity=prop0,
         property_cumulative_depreciation=prop0,
@@ -2187,6 +2177,8 @@ def _obligation_accruals_jit(
     amount_series: jnp.ndarray,
     amount_base_month: jnp.ndarray,
     amount_period: jnp.ndarray,
+    configured_prop_idx: jnp.ndarray,
+    configured_has_prop: jnp.ndarray,
     prop_idx: jnp.ndarray,
     pt_amount: jnp.ndarray,
     pt_prop_month: jnp.ndarray,
@@ -2223,6 +2215,9 @@ def _obligation_accruals_jit(
         month,
         rollout_count,
     )
+    configured_property_mask = jnp.where(
+        configured_has_prop[:, None], _gather_rows(property_active, configured_prop_idx), True
+    )
     property_tax = jnp.broadcast_to(pt_amount[:, None], configured.shape)
     property_mask = _gather_rows(property_active, prop_idx) & (pt_prop_month[:, None] < month)
     principal = _gather_rows(liab_principal, liab_idx)
@@ -2247,8 +2242,12 @@ def _obligation_accruals_jit(
         default=0.0,
     )
     kind_mask = jnp.select(
-        [k == ObligationSource.PROPERTY_TAX, k == ObligationSource.MORTGAGE_PAYMENT],
-        [property_mask, mortgage_mask],
+        [
+            k == ObligationSource.CONFIGURED_OBLIGATION,
+            k == ObligationSource.PROPERTY_TAX,
+            k == ObligationSource.MORTGAGE_PAYMENT,
+        ],
+        [configured_property_mask, property_mask, mortgage_mask],
         default=True,
     )
     slot_active = valid_slot[:, None] & active[None, :] & kind_mask & (amount > 0.0)

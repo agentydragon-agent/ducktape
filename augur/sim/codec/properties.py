@@ -49,7 +49,6 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
     # state buffers must be viewed R-first too before flattening — the raw buffers are
     # (snapshot, property, rollout). Flattening them raw and applying the R-first mask
     # cross-assigns stake values between properties once property_count > 1.
-    ownership = r_first_view(buffers.state.property_ownership_state)
     contribution = r_first_view(buffers.state.property_contribution_state)
     equity = r_first_view(buffers.state.property_equity_state)
     property_ids = codes_to_strings(plan, plan.properties.id)
@@ -60,7 +59,6 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
             "month_index": months[mask],
             "property_id": property_ids[props[mask]],
             "agent_id": buyer_ids[props[mask]],
-            "ownership_pct": ownership.reshape(-1)[mask],
             "contribution_used_usd": contribution.reshape(-1)[mask],
             "equity_ledger_usd": equity.reshape(-1)[mask],
         },
@@ -100,7 +98,6 @@ def decode_property_purchases(
         purchase_price_usd=plan.properties.purchase_price.astype(np.float64)[props],
         closing_cost_usd=plan.properties.closing_cost.astype(np.float64)[props],
         adjusted_basis_usd=plan.properties.adjusted_basis.astype(np.float64)[props],
-        ownership_pct=plan.properties.ownership.astype(np.float64)[props],
         stake_contribution_usd=plan.properties.stake_contribution.astype(np.float64)[props],
         equity_ledger_usd=plan.properties.equity_ledger.astype(np.float64)[props],
     )

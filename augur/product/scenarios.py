@@ -757,7 +757,6 @@ def _sim_property_purchase(
         purchase_price_usd=purchase_price,
         down_payment_usd=down_payment,
         buyer_closing_cost_usd=purchase_price * float(purchase.closing_cost_pct) / 100.0,
-        ownership_pct=1.0,
         mortgage=mortgage,
         rented_fraction=rented_fraction,
         # The wire schema doesn't yet expose this knob; we use the sim default (0.20) until

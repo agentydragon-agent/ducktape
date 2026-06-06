@@ -2943,7 +2943,6 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
 
     final_stake = result.property_stakes.filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_stake["agent_id"] == "alice"
-    assert final_stake["ownership_pct"] == pytest.approx(1.0)
     assert final_stake["contribution_used_usd"] == pytest.approx(110_000.0)
     assert final_stake["equity_ledger_usd"] == pytest.approx(100_000.0)
 

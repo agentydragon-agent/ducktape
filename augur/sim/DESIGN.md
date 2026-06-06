@@ -170,9 +170,9 @@ usd, …)`. Mixed: occupancy_mode + adjusted_basis_usd +
      §121 use-clock + ownership-tenure-clock are derived on demand
      from the occupancy-change event history (not stored).
    - `property_stakes` — `(rollout, month, agent_id, property_id,
-ownership_pct, contribution_used_usd, equity_ledger_usd)`.
+contribution_used_usd, equity_ledger_usd)`.
      Event-sourced. Single-row-per-property for single-owner;
-     multi-row for partner-equity stretch.
+     partner-equity / co-owner modeling is intentionally out of scope.
    - `rollout_status` — `(rollout, month, status, failure_event_
 id, failure_month)`. Event-sourced.
 

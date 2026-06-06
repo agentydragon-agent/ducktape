@@ -449,7 +449,6 @@ class ScheduledPropertyPurchase(BaseModel):
     purchase_price_usd: float
     down_payment_usd: float
     buyer_closing_cost_usd: float = 0.0
-    ownership_pct: float = 1.0
     mortgage: MortgageFinancing | None = None
     rented_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     # Tax-assessor split between land (non-depreciable) and building (depreciable, 27.5-year

@@ -41,7 +41,6 @@ class StateHistoryBuffers:
     capital_gain_state: NDArray[np.float64]
     property_active_state: NDArray[np.bool_]
     property_basis_state: NDArray[np.float64]
-    property_ownership_state: NDArray[np.float64]
     property_contribution_state: NDArray[np.float64]
     property_equity_state: NDArray[np.float64]
     liability_active_state: NDArray[np.bool_]
@@ -85,12 +84,6 @@ class StateHistoryBuffers:
         )
         _expect_array(
             "property_basis_state", self.property_basis_state, shape=(s, plan.property_count, r), dtype=np.float64
-        )
-        _expect_array(
-            "property_ownership_state",
-            self.property_ownership_state,
-            shape=(s, plan.property_count, r),
-            dtype=np.float64,
         )
         _expect_array(
             "property_contribution_state",
@@ -167,7 +160,6 @@ class CurrentStateBuffers:
     tax_liability_amount: NDArray[np.float64]
     property_active: NDArray[np.bool_]
     property_basis: NDArray[np.float64]
-    property_ownership: NDArray[np.float64]
     property_contribution: NDArray[np.float64]
     property_equity: NDArray[np.float64]
     liability_active: NDArray[np.bool_]
@@ -261,9 +253,6 @@ class CurrentStateBuffers:
         )
         _expect_array("current property_active", self.property_active, shape=(plan.property_count, r), dtype=np.bool_)
         _expect_array("current property_basis", self.property_basis, shape=(plan.property_count, r), dtype=np.float64)
-        _expect_array(
-            "current property_ownership", self.property_ownership, shape=(plan.property_count, r), dtype=np.float64
-        )
         _expect_array(
             "current property_contribution",
             self.property_contribution,

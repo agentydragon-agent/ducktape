@@ -41,7 +41,6 @@ def scatter_ys_to_buffers(
         cg_ytd_h,
         prop_active_h,
         prop_basis_h,
-        prop_ownership_h,
         prop_contribution_h,
         prop_equity_h,
         prop_cum_dep_h,
@@ -100,7 +99,6 @@ def scatter_ys_to_buffers(
     buffers.state.capital_gain_state[1:] = np.asarray(cg_ytd_h)
     buffers.state.property_active_state[1:] = np.asarray(prop_active_h)
     buffers.state.property_basis_state[1:] = np.asarray(prop_basis_h)
-    buffers.state.property_ownership_state[1:] = np.asarray(prop_ownership_h)
     buffers.state.property_contribution_state[1:] = np.asarray(prop_contribution_h)
     buffers.state.property_equity_state[1:] = np.asarray(prop_equity_h)
     buffers.state.property_cumulative_depreciation_state[1:] = np.asarray(prop_cum_dep_h)

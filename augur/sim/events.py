@@ -171,7 +171,6 @@ PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
         "purchase_price_usd": pl.Float64(),
         "closing_cost_usd": pl.Float64(),
         "adjusted_basis_usd": pl.Float64(),
-        "ownership_pct": pl.Float64(),
         "stake_contribution_usd": pl.Float64(),
         "equity_ledger_usd": pl.Float64(),
     }

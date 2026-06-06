@@ -44,7 +44,6 @@ class PropertyCompileOutput:
     closing_cost: NDArray[np.float64]
     down_payment: NDArray[np.float64]
     adjusted_basis: NDArray[np.float64]
-    ownership: NDArray[np.float64]
     stake_contribution: NDArray[np.float64]
     equity_ledger: NDArray[np.float64]
     mortgage_slot: NDArray[np.int64]
@@ -94,7 +93,6 @@ def compile_properties_and_liabilities(
     closing_cost = np.zeros(max(1, prop_count), dtype=np.float64)
     down_payment = np.zeros(max(1, prop_count), dtype=np.float64)
     adjusted_basis = np.zeros(max(1, prop_count), dtype=np.float64)
-    ownership = np.zeros(max(1, prop_count), dtype=np.float64)
     stake_contribution = np.zeros(max(1, prop_count), dtype=np.float64)
     equity_ledger = np.zeros(max(1, prop_count), dtype=np.float64)
     mortgage_slot = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
@@ -138,7 +136,6 @@ def compile_properties_and_liabilities(
         closing_cost[idx] = float(purchase.buyer_closing_cost_usd)
         down_payment[idx] = float(purchase.down_payment_usd)
         adjusted_basis[idx] = float(purchase.purchase_price_usd + purchase.buyer_closing_cost_usd)
-        ownership[idx] = float(purchase.ownership_pct)
         stake_contribution[idx] = float(purchase.down_payment_usd + purchase.buyer_closing_cost_usd)
         equity_ledger[idx] = float(purchase.purchase_price_usd - mortgage_principal)
         if purchase.mortgage is not None:
@@ -182,7 +179,6 @@ def compile_properties_and_liabilities(
             closing_cost=closing_cost,
             down_payment=down_payment,
             adjusted_basis=adjusted_basis,
-            ownership=ownership,
             stake_contribution=stake_contribution,
             equity_ledger=equity_ledger,
             mortgage_slot=mortgage_slot,

@@ -86,7 +86,6 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         tax_liability_amount=np.zeros((p.tax_liability_count, r), dtype=np.float64),
         property_active=np.zeros((p.property_count, r), dtype=np.bool_),
         property_basis=np.zeros((p.property_count, r), dtype=np.float64),
-        property_ownership=np.zeros((p.property_count, r), dtype=np.float64),
         property_contribution=np.zeros((p.property_count, r), dtype=np.float64),
         property_equity=np.zeros((p.property_count, r), dtype=np.float64),
         liability_active=np.zeros((p.liability_count, r), dtype=np.bool_),
@@ -123,7 +122,6 @@ def _snapshot_current_state(state: StateHistoryBuffers, current: CurrentStateBuf
     # and captured sparsely in buffers.tax_liability_changes (accrual + settlement events).
     state.property_active_state[snapshot_index] = current.property_active
     state.property_basis_state[snapshot_index] = current.property_basis
-    state.property_ownership_state[snapshot_index] = current.property_ownership
     state.property_contribution_state[snapshot_index] = current.property_contribution
     state.property_equity_state[snapshot_index] = current.property_equity
     state.liability_active_state[snapshot_index] = current.liability_active
@@ -151,7 +149,6 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
     current.tlh_cumulative_harvest[:, failed] = 0.0
     current.tax_liability_amount[:, failed] = 0.0
     current.property_basis[:, failed] = 0.0
-    current.property_ownership[:, failed] = 0.0
     current.property_contribution[:, failed] = 0.0
     current.property_equity[:, failed] = 0.0
     current.liability_principal[:, failed] = 0.0
@@ -217,7 +214,6 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             # property_*_state[S, P, R]
             property_active_state=np.zeros((s, p.property_count, r), dtype=np.bool_),
             property_basis_state=np.zeros((s, p.property_count, r), dtype=np.float64),
-            property_ownership_state=np.zeros((s, p.property_count, r), dtype=np.float64),
             property_contribution_state=np.zeros((s, p.property_count, r), dtype=np.float64),
             property_equity_state=np.zeros((s, p.property_count, r), dtype=np.float64),
             # liability_*_state[S, B, R]
