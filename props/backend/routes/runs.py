@@ -373,7 +373,12 @@ _jobs: dict[UUID, ValidationJob] = {}
 
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
-    return request.app.state.registry  # type: ignore[no-any-return]
+    registry = request.app.state.registry
+    if registry is None:
+        raise HTTPException(
+            status_code=503, detail="Agent registry is still initializing; retry after /readyz returns 200."
+        )
+    return registry  # type: ignore[no-any-return]
 
 
 # --- Helper functions ---
