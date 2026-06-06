@@ -59,7 +59,7 @@ from augur.sim.scenario import HarvestPolicy
 from augur.sim.simulate import simulate_dense_with_external_series
 from augur.sim.slice import slice_dense_result
 
-DEFAULT_MAX_CACHE_ROLLOUTS = 25_000
+DEFAULT_MAX_CACHE_ROLLOUTS: int | None = None
 
 
 @dataclass(frozen=True)
@@ -99,10 +99,8 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
-        max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
+        max_cache_rollouts: int | None = DEFAULT_MAX_CACHE_ROLLOUTS,
     ) -> None:
-        if max_cache_rollouts <= 0:
-            raise ValueError("max_cache_rollouts must be positive")
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
         if not models:
@@ -116,60 +114,69 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._max_cache_rollouts = int(max_cache_rollouts)
+        self._max_cache_rollouts = int(max_cache_rollouts if max_cache_rollouts is not None else max_rollout_samples)
+        if self._max_cache_rollouts <= 0:
+            raise ValueError("max_cache_rollouts must be positive")
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
         self._cache: OrderedDict[tuple[ScenarioKey, int], _CachedRollout] = OrderedDict()
         # FastAPI + uvicorn dispatches request handlers concurrently. The cache's get→miss→
         # simulate→put sequence is not atomic; without a lock two simultaneous metric-fan
-        # requests on the same scenario+seed can both run the simulation. The lock is held
-        # only across the OrderedDict ops (which are O(1) plus the move_to_end / popitem
-        # bookkeeping) — `_simulate_missing` runs outside the lock so we don't serialize
-        # CPU-bound simulations.
+        # requests on the same scenario+seed can both run the simulation.
         self._cache_lock = threading.Lock()
+        # Keep one product projection in flight per API process. JAX/XLA compilation and dense
+        # simulation batches are memory-heavy enough that overlapping fan + terminal requests can
+        # exceed the production pod limit before either request has a chance to populate the cache.
+        self._projection_lock = threading.Lock()
 
     def metric_fan(self, request: MetricFanRequest) -> MetricFanResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
-        decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-        model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
-        percentiles = tuple(float(pct) for pct in request.percentiles)
-        return MetricFanResponse(
-            model_id=model_id,
-            metric=request.metric,
-            monthly_metric_fan=_monthly_metric_fan(decoded, metric=request.metric, percentiles=percentiles),
-            terminal_metric_percentiles=_terminal_metric_percentiles(
-                decoded, metric=request.metric, percentiles=percentiles
-            ),
-            failed_count=sum(1 for rollout in decoded if rollout.failed),
-        )
+        with self._projection_lock:
+            decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
+            model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
+            percentiles = tuple(float(pct) for pct in request.percentiles)
+            return MetricFanResponse(
+                model_id=model_id,
+                metric=request.metric,
+                monthly_metric_fan=_monthly_metric_fan(decoded, metric=request.metric, percentiles=percentiles),
+                terminal_metric_percentiles=_terminal_metric_percentiles(
+                    decoded, metric=request.metric, percentiles=percentiles
+                ),
+                failed_count=sum(1 for rollout in decoded if rollout.failed),
+            )
 
     def terminal_distribution(self, request: TerminalDistributionRequest) -> TerminalDistributionResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
-        decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-        model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
-        percentiles = tuple(float(pct) for pct in request.percentiles)
-        return TerminalDistributionResponse(
-            model_id=model_id,
-            metric=request.metric,
-            terminal_metric_percentiles=_terminal_metric_percentiles(
-                decoded, metric=request.metric, percentiles=percentiles
-            ),
-            failed_count=sum(1 for rollout in decoded if rollout.failed),
-        )
+        with self._projection_lock:
+            decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
+            model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
+            percentiles = tuple(float(pct) for pct in request.percentiles)
+            return TerminalDistributionResponse(
+                model_id=model_id,
+                metric=request.metric,
+                terminal_metric_percentiles=_terminal_metric_percentiles(
+                    decoded, metric=request.metric, percentiles=percentiles
+                ),
+                failed_count=sum(1 for rollout in decoded if rollout.failed),
+            )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
-        [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
-        return self._rollout_response(request.scenario, decoded)
+        with self._projection_lock:
+            [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
+            return self._rollout_response(request.scenario, decoded)
 
     def rollout_at_percentile(self, request: RolloutAtPercentileRequest) -> RolloutResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
-        decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-        selected = _select_rollout_at_percentile(decoded, metric=request.metric, percentile=float(request.percentile))
-        return self._rollout_response(request.scenario, selected)
+        with self._projection_lock:
+            decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
+            selected = _select_rollout_at_percentile(
+                decoded, metric=request.metric, percentile=float(request.percentile)
+            )
+            return self._rollout_response(request.scenario, selected)
 
     def _rollout_response(self, scenario: ScenarioKey, decoded: _DecodedRollout) -> RolloutResponse:
         horizon_months = int(scenario.horizon_months)

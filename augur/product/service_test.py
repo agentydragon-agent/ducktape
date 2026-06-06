@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -346,6 +348,52 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (9,)]
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
+
+
+def test_concurrent_fan_and_terminal_requests_share_one_simulation(
+    product: service.ProductService,
+    counting_model: CountingModel,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario_key: ScenarioKey,
+) -> None:
+    original_simulate_missing = product._simulate_missing
+    first_simulation_started = threading.Event()
+    release_first_simulation = threading.Event()
+    active_simulations = 0
+    max_active_simulations = 0
+    active_lock = threading.Lock()
+
+    def slow_simulate_missing(scenario: ScenarioKey, seeds: tuple[int, ...]) -> dict[int, service._CachedRollout]:
+        nonlocal active_simulations, max_active_simulations
+        with active_lock:
+            active_simulations += 1
+            max_active_simulations = max(max_active_simulations, active_simulations)
+            first_simulation_started.set()
+        release_first_simulation.wait(timeout=5)
+        try:
+            return original_simulate_missing(scenario, seeds)
+        finally:
+            with active_lock:
+                active_simulations -= 1
+
+    monkeypatch.setattr(product, "_simulate_missing", slow_simulate_missing)
+
+    fan_request = MetricFanRequest(
+        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(5, 50, 95)
+    )
+    terminal_request = TerminalDistributionRequest(
+        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(0, 50, 100)
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fan_future = executor.submit(product.metric_fan, fan_request)
+        assert first_simulation_started.wait(timeout=5)
+        terminal_future = executor.submit(product.terminal_distribution, terminal_request)
+        release_first_simulation.set()
+        fan_future.result(timeout=10)
+        terminal_future.result(timeout=10)
+
+    assert max_active_simulations == 1
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
 
 
 @pytest.mark.parametrize(
