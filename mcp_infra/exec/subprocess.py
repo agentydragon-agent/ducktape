@@ -24,17 +24,9 @@ async def run_proc(
     timeout_s: float,
     *,
     cwd: Path | None = None,
-    stdin: bytes | str | None = None,
     env: dict[str, str] | None = None,
     inherit_env: bool = True,
 ) -> ExecOutcome:
-    if stdin is None:
-        stdin_bytes: bytes | None = None
-    elif isinstance(stdin, str):
-        stdin_bytes = stdin.encode("utf-8", errors="replace")
-    else:
-        stdin_bytes = stdin
-
     proc_env = dict(os.environ) if inherit_env else {}
     if env:
         proc_env.update(env)
@@ -42,7 +34,7 @@ async def run_proc(
     async with async_timer() as get_duration_ms:
         proc = await asyncio.create_subprocess_exec(
             *argv,
-            stdin=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
@@ -50,7 +42,7 @@ async def run_proc(
         )
 
         try:
-            out, err = await asyncio.wait_for(proc.communicate(input=stdin_bytes), timeout=timeout_s)
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
 
             stdout_bytes = out if out is not None else b""
             stderr_bytes = err if err is not None else b""
@@ -90,6 +82,7 @@ class DirectExecArgs(ExecArgsBase):
     # serialize optional args as JSON strings (e.g. glm-4.6 sent env="null" / "[]"),
     # which strict list validation rejected — failing 100% of exec calls.
     # See props/debug/glm46_exec_env_stringification.md.
+    # Stdin is intentionally not model-controlled for the same reason.
 
 
 async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
@@ -107,5 +100,5 @@ async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = N
         cwd_val = default_cwd
 
     timeout_s = max(0.001, input.timeout_ms / 1000.0)
-    outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val, stdin=input.stdin_text)
+    outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val)
     return render_outcome_to_result(outcome, input.max_bytes)

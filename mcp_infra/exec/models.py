@@ -38,7 +38,7 @@ async def async_timer() -> AsyncGenerator[Callable[[], int]]:
 EXIT_CODE_SIGTERM: Final[int] = signal_exit_code(SIGTERM)
 EXIT_CODE_SIGKILL: Final[int] = signal_exit_code(SIGKILL)
 
-# Cap for stdout/stderr/stdin bytes in exec-like servers
+# Cap for stdout/stderr bytes in exec-like servers
 MAX_BYTES_CAP = 150_000
 
 # Cap for execution timeout across exec-like servers (milliseconds)
@@ -61,7 +61,6 @@ class ExecArgsBase(BaseModel):
     # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
     cwd: str | None = None
     timeout_ms: TimeoutMs
-    stdin_text: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

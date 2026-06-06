@@ -78,8 +78,21 @@ Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
   `finish_reason: "tool_calls"` and returns `message.tool_calls[]` with
   `function.name` and JSON-string `function.arguments`.
 - `tool_choice: "auto"` works, and omitting `tool_choice` also works.
-- OpenAI strict tool metadata works: `function.strict: true`, `required`, `enum`, and
-  `additionalProperties: false` were accepted in a function tool schema.
+- OpenAI strict tool metadata is accepted by the API: `function.strict: true`,
+  `required`, `enum`, and `additionalProperties: false` were accepted in a
+  function tool schema. Do not read this as full OpenAI-equivalent enforcement:
+  in a live props critic run on 2026-06-06 (`glm-4.6` via LiteLLM chat
+  completions), the model still produced schema-invalid tool calls, including a
+  `cmd` field stringifying the whole argv list instead of returning `list[str]`,
+  and a malformed tool-call name resembling `python3</arg_value>`. Props' local
+  tool validation rejected those calls, but z.ai returned them despite the
+  strict metadata.
+- `glm-4.6` has a reproducible issue with required nullable fields under strict
+  tool schemas. Direct z.ai and cluster LiteLLM tests both returned `"null"` as
+  a string for required nullable string/array fields, and returned a stringified
+  JSON array for a required nullable array. Required non-null string/array
+  fields worked, and non-null sentinel shapes worked. Prefer non-null sentinel
+  or mode-object schemas over `anyOf: [T, null]` for z.ai tool inputs.
 - Forced named tool choice in the OpenAI object form is rejected:
   `{"type": "function", "function": {"name": "..."}}` returns `400` with
   `{"error":{"code":"1210","message":"Invalid API parameter, please check the documentation."}}`.

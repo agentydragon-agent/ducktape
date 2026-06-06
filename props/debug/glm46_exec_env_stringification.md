@@ -1,7 +1,7 @@
 # glm-4.6 stringifies optional tool-call args → 100% `exec` failure
 
 **Date:** 2026-06-04
-**Status:** mitigated (root knob removed); upstream cause not fully isolated — see Follow-up.
+**Status:** mitigated (`env` and `stdin_text` knobs removed from direct exec); upstream cause not fully isolated — see Follow-up.
 
 ## Symptom
 
@@ -48,20 +48,21 @@ it isn't fully isolated.)
 - **Removed the `env` / `inherit_env` knob from `DirectExecArgs`** (`mcp_infra/exec/subprocess.py`).
   Direct exec now always inherits the ambient environment; nothing set `env` on direct exec, and
   agents reviewing code never need it. The model no longer sees the field, so it can't trip on it.
+- **Removed `stdin_text` from `ExecArgsBase`**. Direct, bwrap, and seatbelt exec tools now expose no
+  model-controlled stdin field; stdin is connected to `/dev/null`.
 - **Generalized the critic's `report_failure`** into an explicit escape hatch (tool docstring +
   `prompt.md.mako`): call it when blocked by tooling/environment/validation instead of hallucinating
   or submitting a partial critique. (Not for "can't run/build the code" — review is static.)
 
 ## Follow-up (not done)
 
-1. **Isolate LiteLLM vs z.ai/GLM.** Call LiteLLM directly with a minimal tool that has a nullable
-   param, model `glm-4.6`, comparing `/v1/responses` vs `/v1/chat/completions` — does only the
-   Responses path stringify? Or enable LiteLLM debug logging / inspect Langfuse to capture the exact
-   z.ai-bound request (translated schema) + raw response.
-2. **Broader risk:** `glm-4.6` stringified `stdin_text` too (silently passed). Other tools with
-   optional/nullable args (grader, critic_dev) may carry subtle silently-wrong values under strict
-   tool-calling on this model. Consider a general mitigation: coerce stringified args at the
+1. **Broader risk:** Other tools with optional/nullable args (grader, critic_dev) may carry subtle
+   silently-wrong values under strict tool-calling on this model. A later live props critic run on 2026-06-06
+   (`641e1a49-de5f-4338-8d19-f6db8be63b5a`, chat-completions path via LiteLLM) also produced
+   schema-invalid calls despite `function.strict: true`: one `exec` call set `cmd` to a JSON-looking
+   string instead of `list[str]`, and another response emitted a malformed tool-call name resembling
+   `python3</arg_value>`. Consider a general mitigation: coerce stringified args at the
    `agent_core` arg-parse boundary, and/or avoid forcing optional/nullable fields into `required` in
    strict tool schemas.
-3. **Observability:** `GET /api/runs/{id}/logs` (Loki) currently times out (separate note) — it would
+2. **Observability:** `GET /api/runs/{id}/logs` (Loki) currently times out (separate note) — it would
    have surfaced this failure far faster than reconstructing it from the transcript.

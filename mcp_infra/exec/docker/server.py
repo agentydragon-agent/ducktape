@@ -227,7 +227,7 @@ class ContainerExecServer(EnhancedFastMCP):
             "Common mistakes:",
             """- DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)""",
             """- DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)""",
-            '- DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}',
+            '- DO: {"cmd": ["sh", "-c", "printf %s content > file.txt"]}',
         ]
 
         if isinstance(cwd_policy, AlwaysSetTo):
