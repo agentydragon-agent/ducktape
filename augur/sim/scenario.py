@@ -854,8 +854,12 @@ class Scenario(BaseModel):
                 )
 
         sale_month_by_property_id: dict[str, int] = {}
+        lifecycle_events_by_property_month: dict[tuple[str, int], list[PropertyLifecycleEvent]] = {}
         for lifecycle_event in self.property_lifecycle_events:
             event_month = int(lifecycle_event.month)
+            lifecycle_events_by_property_month.setdefault((lifecycle_event.property_id, event_month), []).append(
+                lifecycle_event
+            )
             if not 0 <= event_month < horizon:
                 raise ValueError(
                     f"property lifecycle event for {lifecycle_event.property_id!r} "
@@ -884,6 +888,18 @@ class Scenario(BaseModel):
                         f"months {previous_sale_month} and {lifecycle_event.month}"
                     )
                 sale_month_by_property_id[lifecycle_event.property_id] = event_month
+
+        for (property_id, event_month), lifecycle_events in lifecycle_events_by_property_month.items():
+            sale_events = [event for event in lifecycle_events if isinstance(event, PropertySaleEvent)]
+            if not sale_events:
+                continue
+            non_sale_events = [event for event in lifecycle_events if not isinstance(event, PropertySaleEvent)]
+            if non_sale_events:
+                other_types = ", ".join(sorted(type(event).__name__ for event in non_sale_events))
+                raise ValueError(
+                    f"property lifecycle events for {property_id!r} at month {event_month} combine "
+                    f"PropertySaleEvent with {other_types}; same-month sale lifecycle ordering is ambiguous"
+                )
 
         for lifecycle_event in self.property_lifecycle_events:
             sale_month = sale_month_by_property_id.get(lifecycle_event.property_id)
@@ -995,10 +1011,9 @@ class Scenario(BaseModel):
                 f"before its purchase month {purchase_month}"
             )
         sale_month = sale_month_by_property_id.get(property_id)
-        if sale_month is not None and month >= sale_month:
+        if sale_month is not None and month > sale_month:
             raise ValueError(
-                f"{label} assigns property_id {property_id!r} at month {month}, "
-                f"but the property is sold at month {sale_month}"
+                f"{label} assigns property_id {property_id!r} at month {month}, after sale at month {sale_month}"
             )
 
     @model_validator(mode="after")

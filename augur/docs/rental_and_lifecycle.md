@@ -67,8 +67,15 @@ The sim-level scenario separates property use from property ownership:
   frame without adding `property_id` to transfer events.
 
 At runtime, the engine carries mutable per-property `rented_fraction` and building basis
-buffers. Lifecycle events fire at the start of the month step, before obligations,
-depreciation, tax accruals, and sale calculations that read that state.
+buffers. Within each month, primary-residence events fire first, then property
+lifecycle events, then generic transfers, property purchases, property cashflows,
+asset sales, obligations, owner-occupied-month accrual, depreciation, and tax
+accrual. This means a same-month primary-residence event can fire before a sale,
+but the sale clears the assignment and the sold property does not accrue an
+owner-occupied month. Same-property `PropertySaleEvent` cannot share a month with
+`SetRentedFractionEvent` or `CapitalImprovementEvent`; those combinations are
+rejected because sale basis, depreciation, and rental routing would otherwise be
+ambiguous.
 
 Schedule E and owner-use splits read the runtime rented fraction:
 

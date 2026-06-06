@@ -1029,6 +1029,86 @@ class TestRentalIncomeTaxation:
         expected_ordinary = 60_000.0 - expected_depreciation
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(expected_ordinary, abs=0.05)
 
+    def test_same_month_rent_fraction_and_capex_apply_before_depreciation(self, san_francisco_location: Location):
+        """Non-sale lifecycle events in the same month all apply before that month's
+        depreciation accrual.
+
+        The property is not rented for months 0-5. At month 6 it becomes fully rented
+        and receives a $100k capital improvement, so months 6-11 depreciate against
+        $500k building basis, not $400k and not zero.
+        """
+
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id="employer"),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
+                InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=11,
+                    cause_id="wages:employer",
+                    from_agent_id="employer",
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=5_000.0,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=500_000.0,
+                    down_payment_usd=500_000.0,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            property_lifecycle_events=[
+                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=1.0),
+                CapitalImprovementEvent(month=6, property_id="p1", amount_usd=100_000.0, description="new roof"),
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
+        capex_rows = run.events_log.capital_improvement_events.to_dicts()
+        assert [(row["month_index"], row["rented_fraction"]) for row in rented_rows] == [(6, 1.0)]
+        assert [(row["month_index"], row["amount_usd"]) for row in capex_rows] == [(6, 100_000.0)]
+
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        expected_depreciation = 6 * (500_000.0 / 27.5 / 12.0)
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(
+            60_000.0 - expected_depreciation, abs=0.05
+        )
+
     def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(
         self, san_francisco_location: Location
     ):
@@ -1626,6 +1706,44 @@ class TestRentalIncomeTaxation:
         assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
         assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
 
+    def test_same_month_primary_residence_assignment_fires_before_sale_but_does_not_accrue_use(
+        self, san_francisco_location: Location
+    ):
+        sale_month = 30
+        scenario = self._sale_scenario(horizon=36, sale_month=sale_month, cumulative_depreciation_eligible=False)
+        scenario = Scenario.model_validate(
+            {
+                **scenario.model_dump(),
+                "recurring_transfers": [],
+                "primary_residence_events": [
+                    SetPrimaryResidenceEvent(month=sale_month, agent_id=OWNER_AGENT_ID, property_id="p1")
+                ],
+            }
+        )
+        home_values = [1.0] * sale_month + [1.4] * (scenario.horizon_months + 1 - sale_month)
+        ctx = _multi_series(
+            levels_by_series={
+                RENT_SERIES_ID: {0: [1.0] * (scenario.horizon_months + 1)},
+                "home_value:san_francisco": {0: home_values},
+            }
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        assert run.events_log.set_primary_residence_events.to_dicts() == [
+            {
+                "rollout_index": 0,
+                "month_index": sale_month,
+                "agent_id": OWNER_AGENT_ID,
+                "property_id": "p1",
+                "is_primary_residence": True,
+            }
+        ]
+        sale = run.events_log.property_sale_events.to_dicts()[0]
+        assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["long_term_capital_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+
     def test_section_121_does_not_apply_without_owner_occupied_months(self, san_francisco_location: Location):
         """Same sale at month 30, but the property has been 100% rented the entire time.
         Owner-occupied months = 0, so §121 does not apply. The depreciation recapture +
@@ -1710,6 +1828,34 @@ class TestRentalIncomeTaxation:
         assert len(sale_rows) == 1
         assert sale_rows[0]["month_index"] == 12
         assert sale_rows[0]["property_id"] == "p1"
+
+    def test_same_month_property_sale_rejects_rented_fraction_event(self):
+        scenario = self._sale_scenario(horizon=13, sale_month=12)
+        with pytest.raises(ValueError, match="same-month sale lifecycle ordering is ambiguous"):
+            Scenario.model_validate(
+                {
+                    **scenario.model_dump(),
+                    "property_lifecycle_events": [
+                        SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0.0),
+                        PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6.0),
+                    ],
+                }
+            )
+
+    def test_same_month_property_sale_rejects_capital_improvement_event(self):
+        scenario = self._sale_scenario(horizon=13, sale_month=12)
+        with pytest.raises(ValueError, match="same-month sale lifecycle ordering is ambiguous"):
+            Scenario.model_validate(
+                {
+                    **scenario.model_dump(),
+                    "property_lifecycle_events": [
+                        CapitalImprovementEvent(
+                            month=12, property_id="p1", amount_usd=100_000.0, description="new roof"
+                        ),
+                        PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6.0),
+                    ],
+                }
+            )
 
     def _sale_scenario(
         self,

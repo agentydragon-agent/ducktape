@@ -730,10 +730,17 @@ def test_scenario_rejects_primary_residence_assignment_before_purchase() -> None
         )
 
 
-def test_scenario_rejects_primary_residence_assignment_at_or_after_sale() -> None:
-    with pytest.raises(ValidationError, match=r"property is sold at month 2"):
+def test_scenario_allows_primary_residence_assignment_at_sale_month() -> None:
+    _primary_residence_validation_scenario(
+        primary_residence_events=[SetPrimaryResidenceEvent(month=2, agent_id="alice", property_id="home")],
+        property_lifecycle_events=[PropertySaleEvent(month=2, property_id="home", closing_cost_pct=6.0)],
+    )
+
+
+def test_scenario_rejects_primary_residence_assignment_after_sale() -> None:
+    with pytest.raises(ValidationError, match=r"after sale at month 2"):
         _primary_residence_validation_scenario(
-            primary_residence_events=[SetPrimaryResidenceEvent(month=2, agent_id="alice", property_id="home")],
+            primary_residence_events=[SetPrimaryResidenceEvent(month=3, agent_id="alice", property_id="home")],
             property_lifecycle_events=[PropertySaleEvent(month=2, property_id="home", closing_cost_pct=6.0)],
         )
 

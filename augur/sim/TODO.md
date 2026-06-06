@@ -10,10 +10,6 @@ Anything fully shipped is removed — git history is the record of done work.
   autouses both backends and has broad property/tax coverage, but a few
   composition edges can still produce silent wrong answers if NumPy is removed
   before semantics are pinned:
-  - [ ] **Same-month lifecycle ordering.** Pin or reject ambiguous same-month
-        combinations of `SetRentedFractionEvent`, `CapitalImprovementEvent`,
-        `SetPrimaryResidenceEvent`, and `PropertySaleEvent`. Ordering changes
-        sale basis, depreciation, §121 qualification, and Schedule E/SALT routing.
   - [ ] **Duplicate/overlapping identity validation.** Add validation tests for
         duplicate `TaxProfile.agent_id`, duplicate mortgage `liability_id`,
         overlapping `PropertyTaxPolicy` entries for one property/month, and
