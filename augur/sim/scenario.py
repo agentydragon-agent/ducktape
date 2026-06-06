@@ -845,7 +845,11 @@ class Scenario(BaseModel):
             duplicate_list = ", ".join(repr(property_id) for property_id in sorted(duplicate_property_ids))
             raise ValueError(f"duplicate scheduled property purchase property_id(s): {duplicate_list}")
 
-        for cashflow in [*self.scheduled_property_cashflows, *self.recurring_property_cashflows]:
+        property_cashflows: list[ScheduledPropertyCashflow | RecurringPropertyCashflow] = [
+            *self.scheduled_property_cashflows,
+            *self.recurring_property_cashflows,
+        ]
+        for cashflow in property_cashflows:
             if cashflow.property_id not in purchase_month_by_property_id:
                 known = ", ".join(repr(property_id) for property_id in sorted(purchase_month_by_property_id))
                 raise ValueError(
@@ -1063,18 +1067,18 @@ class Scenario(BaseModel):
 
         property_tax_policy_by_property_month: dict[tuple[str, int], int] = {}
         for policy_index, policy in enumerate(self.property_tax_policies):
-            purchase = purchase_by_property_id.get(policy.property_id)
-            if purchase is None:
+            property_purchase = purchase_by_property_id.get(policy.property_id)
+            if property_purchase is None:
                 known = ", ".join(repr(property_id) for property_id in sorted(purchase_by_property_id))
                 raise ValueError(
                     f"property tax policy references unknown property_id {policy.property_id!r}; "
                     f"known: {known or '<none>'}"
                 )
-            if policy.owner_agent_id != purchase.buyer_agent_id:
+            if policy.owner_agent_id != property_purchase.buyer_agent_id:
                 raise ValueError(
                     f"property tax policy for property_id {policy.property_id!r} has "
                     f"owner_agent_id={policy.owner_agent_id!r}, but the property's buyer_agent_id "
-                    f"is {purchase.buyer_agent_id!r}"
+                    f"is {property_purchase.buyer_agent_id!r}"
                 )
             if policy.end_month is not None and policy.end_month < policy.start_month:
                 raise ValueError(
