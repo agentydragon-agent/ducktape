@@ -60,6 +60,47 @@ def _apply_scheduled_transfers(
             current.ordinary_ytd[deduction_profile, active_rollout] -= amount[active_rollout]
 
 
+def _apply_property_cashflows(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for slot in range(plan.property_cashflows.cause.shape[1]):
+        if plan.property_cashflows.cause[month, slot] < 0:
+            continue
+        prop = int(plan.property_cashflows.property_slot[month, slot])
+        if prop < 0:
+            continue
+        slot_active = active_rollout & current.property_active[prop, :]
+        if not slot_active.any():
+            continue
+        amount = _amount_values(
+            plan,
+            kind=int(plan.property_cashflows.amount_kind[month, slot]),
+            fixed=float(plan.property_cashflows.amount_fixed[month, slot]),
+            base=float(plan.property_cashflows.amount_base[month, slot]),
+            series_index=int(plan.property_cashflows.amount_series[month, slot]),
+            base_month=int(plan.property_cashflows.amount_base_month[month, slot]),
+            adjustment_period=int(plan.property_cashflows.amount_period[month, slot]),
+            month=month,
+        )
+        buffers.property_cashflows.active[month, slot, slot_active] = True
+        buffers.property_cashflows.amount[month, slot, slot_active] = amount[slot_active]
+        from_slot = int(plan.property_cashflows.from_slot[month, slot])
+        if from_slot >= 0:
+            current.cash[from_slot, slot_active] -= amount[slot_active]
+        to_slot = int(plan.property_cashflows.to_slot[month, slot])
+        if to_slot >= 0:
+            current.cash[to_slot, slot_active] += amount[slot_active]
+        profile = int(plan.property_cashflows.income_profile[month, slot])
+        if profile >= 0:
+            current.ordinary_ytd[profile, slot_active] += amount[slot_active]
+        deduction_profile = int(plan.property_cashflows.deduction_profile[month, slot])
+        if deduction_profile >= 0:
+            current.ordinary_ytd[deduction_profile, slot_active] -= amount[slot_active]
+
+
 def _amount_values(
     plan: CompiledSimulation,
     *,

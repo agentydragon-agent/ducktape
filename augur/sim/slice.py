@@ -36,6 +36,7 @@ def slice_dense_results(dense: DenseSimulationResult, rollout_indices: Sequence[
     pe_channels = _split_dc(dense.plan.pe_channels, axis=1, indices=indices)
     state = _split_dc(dense.buffers.state, axis=-1, indices=indices)
     transfers = _split_dc(dense.buffers.transfers, axis=-1, indices=indices)
+    property_cashflows = _split_dc(dense.buffers.property_cashflows, axis=-1, indices=indices)
     properties = _split_dc(dense.buffers.properties, axis=-1, indices=indices)
     lot_dispositions = _split_dc(dense.buffers.lot_dispositions, axis=-1, indices=indices)
     private_equity_opportunities = _split_dc(dense.buffers.private_equity_opportunities, axis=-1, indices=indices)
@@ -56,6 +57,7 @@ def slice_dense_results(dense: DenseSimulationResult, rollout_indices: Sequence[
         buffers = SimulationBuffers(
             state=state[pos],
             transfers=transfers[pos],
+            property_cashflows=property_cashflows[pos],
             properties=properties[pos],
             lot_dispositions=lot_dispositions[pos],
             private_equity_opportunities=private_equity_opportunities[pos],

@@ -148,6 +148,45 @@ class RecurringTransfer(BaseModel):
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
 
 
+class ScheduledPropertyCashflow(BaseModel):
+    """A property-domain cashflow lowered to a transfer event while the property is active.
+
+    Unlike generic `ScheduledTransfer`, this cashflow is tied to the referenced property's
+    ownership lifecycle. It may be configured beyond sale; the engine suppresses it once the
+    property is sold.
+    """
+
+    month: int
+    property_id: str
+    cause_id: str
+    from_agent_id: str
+    from_account_id: str
+    to_agent_id: str
+    to_account_id: str
+    amount_usd: AmountSpec
+    income_category: TransferIncomeCategory | None = None
+    deduction_category: TransferDeductionCategory | None = None
+
+
+class RecurringPropertyCashflow(BaseModel):
+    """A recurring property-domain cashflow lowered to transfer events while active."""
+
+    start_month: int
+    end_month: int | None = None
+    property_id: str
+    cause_id: str
+    from_agent_id: str
+    from_account_id: str
+    to_agent_id: str
+    to_account_id: str
+    amount_usd: AmountSpec
+    income_category: TransferIncomeCategory | None = None
+    deduction_category: TransferDeductionCategory | None = None
+
+    def is_active_at(self, month: int) -> bool:
+        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+
+
 class ObligationType(StrEnum):
     """Closed set of `obligation_type` values that flow through dense engine event tables.
 
@@ -666,6 +705,8 @@ class Scenario(BaseModel):
     initial_lots: list[InitialLot] = Field(default_factory=list)
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
+    scheduled_property_cashflows: list[ScheduledPropertyCashflow] = Field(default_factory=list)
+    recurring_property_cashflows: list[RecurringPropertyCashflow] = Field(default_factory=list)
     scheduled_obligations: list[ScheduledObligation] = Field(default_factory=list)
     recurring_obligations: list[RecurringObligation] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
@@ -746,6 +787,13 @@ class Scenario(BaseModel):
                     f"has month {scheduled_obligation.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
+        for scheduled_cashflow in self.scheduled_property_cashflows:
+            if not 0 <= scheduled_cashflow.month < horizon:
+                raise ValueError(
+                    f"scheduled property cashflow {scheduled_cashflow.cause_id!r} "
+                    f"has month {scheduled_cashflow.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
         for purchase in self.scheduled_property_purchases:
             if not 0 <= purchase.month < horizon:
                 raise ValueError(
@@ -761,6 +809,16 @@ class Scenario(BaseModel):
                     f"recurring transfer {recurring_transfer.cause_id!r} "
                     f"has end_month {recurring_transfer.end_month} "
                     f"before start_month {recurring_transfer.start_month}"
+                )
+        for recurring_cashflow in self.recurring_property_cashflows:
+            if (
+                recurring_cashflow.end_month is not None
+                and recurring_cashflow.end_month < recurring_cashflow.start_month
+            ):
+                raise ValueError(
+                    f"recurring property cashflow {recurring_cashflow.cause_id!r} "
+                    f"has end_month {recurring_cashflow.end_month} "
+                    f"before start_month {recurring_cashflow.start_month}"
                 )
         for recurring_obligation in self.recurring_obligations:
             if (
@@ -786,6 +844,14 @@ class Scenario(BaseModel):
         if duplicate_property_ids:
             duplicate_list = ", ".join(repr(property_id) for property_id in sorted(duplicate_property_ids))
             raise ValueError(f"duplicate scheduled property purchase property_id(s): {duplicate_list}")
+
+        for cashflow in [*self.scheduled_property_cashflows, *self.recurring_property_cashflows]:
+            if cashflow.property_id not in purchase_month_by_property_id:
+                known = ", ".join(repr(property_id) for property_id in sorted(purchase_month_by_property_id))
+                raise ValueError(
+                    f"property cashflow {cashflow.cause_id!r} references unknown property_id "
+                    f"{cashflow.property_id!r}; known: {known or '<none>'}"
+                )
 
         sale_month_by_property_id: dict[str, int] = {}
         for lifecycle_event in self.property_lifecycle_events:

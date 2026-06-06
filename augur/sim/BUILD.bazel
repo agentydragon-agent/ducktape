@@ -218,6 +218,7 @@ py_library(
         "compiler/primary_residence.py",
         "compiler/private_equity.py",
         "compiler/properties.py",
+        "compiler/property_cashflows.py",
         "compiler/series.py",
         "compiler/tax.py",
         "compiler/tlh_harvest.py",

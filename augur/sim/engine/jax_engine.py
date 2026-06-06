@@ -161,6 +161,8 @@ class _TracedConfig(NamedTuple):
     mid_principal_ratio: jnp.ndarray
     transfer_amount_fixed: jnp.ndarray
     transfer_amount_base: jnp.ndarray
+    property_cashflow_amount_fixed: jnp.ndarray
+    property_cashflow_amount_base: jnp.ndarray
     cost_basis_per_unit: jnp.ndarray
     cash_initial_balance: jnp.ndarray
     lot_initial_quantity: jnp.ndarray
@@ -181,6 +183,8 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
         mid_principal_ratio=jnp.asarray(plan.mid.principal_ratio),
         transfer_amount_fixed=jnp.asarray(plan.transfers.amount_fixed),
         transfer_amount_base=jnp.asarray(plan.transfers.amount_base),
+        property_cashflow_amount_fixed=jnp.asarray(plan.property_cashflows.amount_fixed),
+        property_cashflow_amount_base=jnp.asarray(plan.property_cashflows.amount_base),
         cost_basis_per_unit=jnp.asarray(plan.lot_cost_basis_per_unit),
         cash_initial_balance=jnp.asarray(plan.cash_initial_balance),
         lot_initial_quantity=jnp.asarray(plan.lot_initial_quantity),
@@ -212,6 +216,7 @@ class _Operands(NamedTuple):
     liab0: jnp.ndarray
     # Whole-horizon static tables sliced by the traced month.
     tr: dict[str, jnp.ndarray]
+    pc: dict[str, jnp.ndarray]
     og: dict[str, jnp.ndarray]
     acc: dict[str, jnp.ndarray]
     # Scheduled-sale stacked static data.
@@ -494,6 +499,21 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "income_profile": jnp.asarray(t.income_profile),
         "deduction_profile": jnp.asarray(t.deduction_profile),
     }
+    pcf = plan.property_cashflows
+    pc = {
+        "cause": jnp.asarray(pcf.cause),
+        "kind": jnp.asarray(pcf.amount_kind),
+        "fixed": jnp.asarray(pcf.amount_fixed),
+        "base": jnp.asarray(pcf.amount_base),
+        "series": jnp.asarray(pcf.amount_series),
+        "base_month": jnp.asarray(pcf.amount_base_month),
+        "period": jnp.asarray(pcf.amount_period),
+        "from_slot": jnp.asarray(pcf.from_slot),
+        "to_slot": jnp.asarray(pcf.to_slot),
+        "property_slot": jnp.asarray(np.where(pcf.property_slot >= 0, pcf.property_slot, 0)),
+        "income_profile": jnp.asarray(pcf.income_profile),
+        "deduction_profile": jnp.asarray(pcf.deduction_profile),
+    }
     ob = plan.obligations
     og = {
         "cause": jnp.asarray(ob.cause),
@@ -773,6 +793,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         prop0=jnp.zeros((p.property_count, r)),
         liab0=jnp.zeros((p.liability_count, r)),
         tr=tr,
+        pc=pc,
         og=og,
         acc=acc,
         sale_months_t=sale_months_t,
@@ -953,6 +974,7 @@ def _program_impl(
     prop0 = baked.prop0
     liab0 = baked.liab0
     tr = dict(baked.tr)  # copy: `fixed`/`base` are overwritten with the traced cfg values below
+    pc = dict(baked.pc)
     og = baked.og
     acc = baked.acc
     sale_months_t = baked.sale_months_t
@@ -977,11 +999,13 @@ def _program_impl(
     liq_trigger_series = baked.liq_trigger_series
     liq_sale_series = baked.liq_sale_series
     liq_pool_series = baked.liq_pool_series
-    # Swept numeric config (traced): cost basis + the transfer-amount entries of the `tr` table.
+    # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
     tcfg = cfg
     cost_basis_per_unit = cfg.cost_basis_per_unit
     tr["fixed"] = cfg.transfer_amount_fixed
     tr["base"] = cfg.transfer_amount_base
+    pc["fixed"] = cfg.property_cashflow_amount_fixed
+    pc["base"] = cfg.property_cashflow_amount_base
 
     def december_tax(
         ordinary: jnp.ndarray,
@@ -1269,6 +1293,27 @@ def _program_impl(
             # Per-purchase event rows for `ys` (folded order): purchase fired; transfer fired (stake>0).
             purchase_active_rows = fires
             transfer_active_rows = fires & stake_pos
+
+        cash, ordinary, property_cashflow_active, property_cashflow_amount = _property_cashflows_jit(
+            pc["cause"][month],
+            pc["kind"][month],
+            pc["fixed"][month],
+            pc["base"][month],
+            pc["series"][month],
+            pc["base_month"][month],
+            pc["period"][month],
+            pc["from_slot"][month],
+            pc["to_slot"][month],
+            pc["property_slot"][month],
+            pc["income_profile"][month],
+            pc["deduction_profile"][month],
+            property_active,
+            cash,
+            ordinary,
+            active,
+            external_values,
+            month,
+        )
 
         # Scheduled asset sales (before obligations: proceeds can fund the month's obligations).
         # Vectorized over ALL sales at once — no Python loop. The across-sales FIFO is one
@@ -1816,6 +1861,8 @@ def _program_impl(
             failed_month,
             transfer_active,
             transfer_amount,
+            property_cashflow_active,
+            property_cashflow_amount,
             slot_active,
             accrual_due,
             paid_buffer,
@@ -2058,6 +2105,49 @@ def _transfers_jit(
     """Branch-free, jit-compiled scheduled-transfer step (all slots vectorized; `month` traced)."""
     rollout_count = cash.shape[1]
     fire = (cause >= 0)[:, None] & active[None, :]  # (slots, rollouts)
+    raw = _amount_values_vec(
+        amount_kind,
+        amount_fixed,
+        amount_base,
+        amount_series,
+        amount_base_month,
+        amount_period,
+        external_values,
+        month,
+        rollout_count,
+    )
+    amounts = jnp.where(fire, raw, 0.0)
+    cash = _scatter_rows(cash, from_slot, -amounts)
+    cash = _scatter_rows(cash, to_slot, amounts)
+    ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
+    ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
+    return cash, ordinary_ytd, fire, amounts
+
+
+@jax.jit
+def _property_cashflows_jit(
+    cause: jnp.ndarray,
+    amount_kind: jnp.ndarray,
+    amount_fixed: jnp.ndarray,
+    amount_base: jnp.ndarray,
+    amount_series: jnp.ndarray,
+    amount_base_month: jnp.ndarray,
+    amount_period: jnp.ndarray,
+    from_slot: jnp.ndarray,
+    to_slot: jnp.ndarray,
+    property_slot: jnp.ndarray,
+    income_profile: jnp.ndarray,
+    deduction_profile: jnp.ndarray,
+    property_active: jnp.ndarray,
+    cash: jnp.ndarray,
+    ordinary_ytd: jnp.ndarray,
+    active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    rollout_count = cash.shape[1]
+    property_gate = _gather_rows(property_active, property_slot)
+    fire = (cause >= 0)[:, None] & active[None, :] & property_gate
     raw = _amount_values_vec(
         amount_kind,
         amount_fixed,

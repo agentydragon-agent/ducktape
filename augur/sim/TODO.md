@@ -10,11 +10,6 @@ Anything fully shipped is removed — git history is the record of done work.
   autouses both backends and has broad property/tax coverage, but a few
   composition edges can still produce silent wrong answers if NumPy is removed
   before semantics are pinned:
-  - [ ] **Property-aware rental/management cashflows after sale.** Rental income
-        and property-management fees are generic transfers today; sale tests stop
-        rent manually at `sale_month - 1`. Add product-translator tests proving
-        sale/lifecycle inputs end property-specific rent and management flows, or
-        promote those flows to property-keyed sim events.
   - [ ] **Same-month lifecycle ordering.** Pin or reject ambiguous same-month
         combinations of `SetRentedFractionEvent`, `CapitalImprovementEvent`,
         `SetPrimaryResidenceEvent`, and `PropertySaleEvent`. Ordering changes
@@ -130,7 +125,15 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Rental tax — Phase 2 done
 
-Landed end-to-end: rental income taxed as ordinary; Schedule E deductions for management/leasing/HOA/insurance/maintenance via deduction_category="ordinary" on transfers + obligations; MID + SALT scaled by (1 - rented_fraction) at compile time; rented-share of mortgage interest deducted via engine year-end Schedule E hook; §168 depreciation accrual on a cumulative state buffer (ready for §1250 recapture in phase 4) + year-end Schedule E deduction.
+Landed end-to-end: rental income taxed as ordinary; property-linked rental
+income plus management/leasing fees are gated by property ownership lifecycle
+and decode as transfer events; Schedule E deductions for
+management/leasing/HOA/insurance/maintenance route via
+`deduction_category="ordinary"` on property cashflows + obligations; MID + SALT
+scaled by (1 - rented_fraction) at compile time; rented-share of mortgage
+interest deducted via engine year-end Schedule E hook; §168 depreciation accrual
+on a cumulative state buffer (ready for §1250 recapture in phase 4) + year-end
+Schedule E deduction.
 
 ## Real-estate lifecycle
 

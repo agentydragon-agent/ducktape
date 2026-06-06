@@ -396,6 +396,17 @@ class TransferEventBuffers:
 
 
 @dataclass
+class PropertyCashflowEventBuffers:
+    active: NDArray[np.bool_]
+    amount: NDArray[np.float64]
+
+    def validate(self, plan: SlotPlan) -> None:
+        shape = (plan.event_months, plan.max_property_cashflow_slots, plan.rollout_count)
+        _expect_array("property_cashflows.active", self.active, shape=shape, dtype=np.bool_)
+        _expect_array("property_cashflows.amount", self.amount, shape=shape, dtype=np.float64)
+
+
+@dataclass
 class PropertyEventBuffers:
     transfer_active: NDArray[np.bool_]
     purchase_active: NDArray[np.bool_]
@@ -599,6 +610,7 @@ class TaxLiabilityChangeLog:
 class SimulationBuffers:
     state: StateHistoryBuffers
     transfers: TransferEventBuffers
+    property_cashflows: PropertyCashflowEventBuffers
     properties: PropertyEventBuffers
     lot_dispositions: LotDispositionEventBuffers
     private_equity_opportunities: PrivateEquityOpportunityEventBuffers
@@ -616,6 +628,7 @@ class SimulationBuffers:
             raise ValueError("slot plan rollout count does not match compiled rollout count")
         self.state.validate(slot_plan)
         self.transfers.validate(slot_plan)
+        self.property_cashflows.validate(slot_plan)
         self.properties.validate(slot_plan)
         self.lot_dispositions.validate(slot_plan)
         self.private_equity_opportunities.validate(slot_plan)

@@ -13,6 +13,7 @@ from augur.sim.buffers import (
     ObligationEventBuffers,
     PrimaryResidenceEventBuffers,
     PrivateEquityOpportunityEventBuffers,
+    PropertyCashflowEventBuffers,
     PropertyEventBuffers,
     SimulationBuffers,
     StateHistoryBuffers,
@@ -33,6 +34,7 @@ from augur.sim.engine.phases import (
     _apply_owner_occupied_month,
     _apply_pe_tenders,
     _apply_primary_residence_events,
+    _apply_property_cashflows,
     _apply_property_purchases,
     _apply_scheduled_asset_sales,
     _apply_scheduled_transfers,
@@ -164,6 +166,7 @@ def _run_month_step(
     _apply_lifecycle_events(plan, buffers, current, month)
     _apply_scheduled_transfers(plan, buffers, current, month)
     _apply_property_purchases(plan, buffers, current, month)
+    _apply_property_cashflows(plan, buffers, current, month)
     _apply_scheduled_asset_sales(plan, buffers, current, month)
     _apply_obligation_accruals(plan, buffers, current, month)
     _apply_liquidity_policy_sales(plan, buffers, current, month)
@@ -234,6 +237,10 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             # transfer_*[H, T, R]
             active=np.zeros((h, p.max_transfer_slots, r), dtype=np.bool_),
             amount=np.zeros((h, p.max_transfer_slots, r), dtype=np.float64),
+        ),
+        property_cashflows=PropertyCashflowEventBuffers(
+            active=np.zeros((h, p.max_property_cashflow_slots, r), dtype=np.bool_),
+            amount=np.zeros((h, p.max_property_cashflow_slots, r), dtype=np.float64),
         ),
         properties=PropertyEventBuffers(
             # property_*_active[H, P, R]

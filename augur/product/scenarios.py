@@ -54,8 +54,10 @@ from augur.sim.scenario import (
     PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
+    RecurringPropertyCashflow,
     RecurringTransfer,
     Scenario,
+    ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
@@ -257,6 +259,8 @@ def build_scenario(
     property_lifecycle_events: list[PropertyLifecycleEvent] = []
     property_tax_policies: list[PropertyTaxPolicy] = []
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = []
+    scheduled_property_cashflows: list[ScheduledPropertyCashflow] = []
+    recurring_property_cashflows: list[RecurringPropertyCashflow] = []
     if scenario_key.property_purchase is not None:
         property_ = properties_by_id[scenario_key.property_purchase.property_id]
         agents.append(Agent(agent_id=PROPERTY_SELLER_AGENT_ID))
@@ -408,8 +412,8 @@ def build_scenario(
         )
         agents.extend(rental_wiring.agents)
         initial_cash.extend(rental_wiring.initial_cash)
-        recurring_transfers.extend(rental_wiring.recurring_transfers)
-        scheduled_transfers.extend(rental_wiring.scheduled_transfers)
+        recurring_property_cashflows.extend(rental_wiring.recurring_property_cashflows)
+        scheduled_property_cashflows.extend(rental_wiring.scheduled_property_cashflows)
 
     private_equity_tender_policies = _build_private_equity_tender_policies(
         scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
@@ -421,6 +425,8 @@ def build_scenario(
         recurring_obligations=recurring_obligations,
         recurring_transfers=recurring_transfers,
         scheduled_transfers=scheduled_transfers,
+        recurring_property_cashflows=recurring_property_cashflows,
+        scheduled_property_cashflows=scheduled_property_cashflows,
         scheduled_property_purchases=scheduled_property_purchases,
         initial_primary_residences=initial_primary_residences,
         primary_residence_events=primary_residence_events,
@@ -523,18 +529,18 @@ def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float
 @dataclass(frozen=True)
 class LandlordRentalWiring:
     """Per-property landlord rental wiring produced by `_wire_landlord_rental`. Caller
-    extends its parallel `agents`/`initial_cash`/`recurring_transfers`/
-    `scheduled_transfers` lists with these four — one merge site per property, instead
-    of mutating caller-owned lists threaded through the helper as kwargs."""
+    extends its parallel `agents`/`initial_cash`/property cashflow lists with these
+    fields — one merge site per property, instead of mutating caller-owned lists
+    threaded through the helper as kwargs."""
 
     agents: tuple[Agent, ...]
     initial_cash: tuple[InitialAccountBalance, ...]
-    recurring_transfers: tuple[RecurringTransfer, ...]
-    scheduled_transfers: tuple[ScheduledTransfer, ...]
+    recurring_property_cashflows: tuple[RecurringPropertyCashflow, ...]
+    scheduled_property_cashflows: tuple[ScheduledPropertyCashflow, ...]
 
 
 _EMPTY_LANDLORD_RENTAL_WIRING = LandlordRentalWiring(
-    agents=(), initial_cash=(), recurring_transfers=(), scheduled_transfers=()
+    agents=(), initial_cash=(), recurring_property_cashflows=(), scheduled_property_cashflows=()
 )
 
 
@@ -578,15 +584,16 @@ def _wire_landlord_rental(
     initial_cash: list[InitialAccountBalance] = [
         InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance_usd=0.0)
     ]
-    recurring_transfers: list[RecurringTransfer] = []
-    scheduled_transfers: list[ScheduledTransfer] = []
+    recurring_property_cashflows: list[RecurringPropertyCashflow] = []
+    scheduled_property_cashflows: list[ScheduledPropertyCashflow] = []
     for segment in rental_segments:
         leased_monthly_rent = base_monthly_rent * segment.fraction_rented
         base_monthly_collected = leased_monthly_rent * vacancy_multiplier
-        recurring_transfers.append(
-            RecurringTransfer(
+        recurring_property_cashflows.append(
+            RecurringPropertyCashflow(
                 start_month=segment.start_month,
                 end_month=segment.end_month,
+                property_id=property_.id,
                 cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
                 from_agent_id=TENANT_AGENT_ID,
                 from_account_id=TENANT_ACCOUNT_ID,
@@ -613,10 +620,11 @@ def _wire_landlord_rental(
         if management_fee_fraction > 0:
             for segment in rental_segments:
                 base_monthly_collected = base_monthly_rent * segment.fraction_rented * vacancy_multiplier
-                recurring_transfers.append(
-                    RecurringTransfer(
+                recurring_property_cashflows.append(
+                    RecurringPropertyCashflow(
                         start_month=segment.start_month,
                         end_month=segment.end_month,
+                        property_id=property_.id,
                         cause_id=f"{MANAGEMENT_FEE_CAUSE_ID}:{property_.id}",
                         from_agent_id=primary_agent_id,
                         from_account_id=PRIMARY_ACCOUNT_ID,
@@ -635,9 +643,10 @@ def _wire_landlord_rental(
         if leasing_fee_months_val > 0:
             for segment in rental_segments:
                 leasing_fee_base = base_monthly_rent * segment.fraction_rented * leasing_fee_months_val
-                scheduled_transfers.extend(
-                    ScheduledTransfer(
+                scheduled_property_cashflows.extend(
+                    ScheduledPropertyCashflow(
                         month=fire_month,
+                        property_id=property_.id,
                         cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
                         from_agent_id=primary_agent_id,
                         from_account_id=PRIMARY_ACCOUNT_ID,
@@ -656,8 +665,8 @@ def _wire_landlord_rental(
     return LandlordRentalWiring(
         agents=tuple(agents),
         initial_cash=tuple(initial_cash),
-        recurring_transfers=tuple(recurring_transfers),
-        scheduled_transfers=tuple(scheduled_transfers),
+        recurring_property_cashflows=tuple(recurring_property_cashflows),
+        scheduled_property_cashflows=tuple(scheduled_property_cashflows),
     )
 
 

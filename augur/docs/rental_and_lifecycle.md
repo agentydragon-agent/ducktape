@@ -47,9 +47,9 @@ Mid-horizon lifecycle events are scoped to the purchased property in product wir
   property activity.
 
 Product lowering turns the effective rented-fraction timeline into tenant-rent and
-agency-fee transfer segments. `set_rented_fraction` events resize, stop, or restart
-those cashflows at the start of their event month. Sale stops rental cashflows in
-the sale month.
+agency-fee property cashflows. `set_rented_fraction` events resize, stop, or
+restart those cashflows at the start of their event month. Sale stops rental
+cashflows in the sale month.
 
 ## Simulator Behavior
 
@@ -60,6 +60,11 @@ The sim-level scenario separates property use from property ownership:
 - `Scenario.primary_residence_events` assigns or clears an agent's main home over time.
 - `Scenario.property_lifecycle_events` handles rented-fraction changes, improvements,
   and sales.
+- `Scenario.scheduled_property_cashflows` and
+  `Scenario.recurring_property_cashflows` model property-linked rent,
+  management, and leasing cashflows. The engine gates them by property
+  ownership lifecycle, then decodes fired rows into the generic transfer event
+  frame without adding `property_id` to transfer events.
 
 At runtime, the engine carries mutable per-property `rented_fraction` and building basis
 buffers. Lifecycle events fire at the start of the month step, before obligations,

@@ -38,6 +38,7 @@ from augur.sim.compiler.properties import (
     PropertyCompileOutput,
     compile_properties_and_liabilities,
 )
+from augur.sim.compiler.property_cashflows import PropertyCashflowCompileOutput, compile_property_cashflows
 from augur.sim.compiler.series import collect_level_series_keys, external_values_cube
 from augur.sim.compiler.tax import (
     TaxCompileOutput,
@@ -76,6 +77,7 @@ class SlotPlan:
     property_count: int
     liability_count: int
     max_transfer_slots: int
+    max_property_cashflow_slots: int
     max_obligation_slots: int
     scheduled_sale_count: int
     liquidity_policy_count: int
@@ -122,6 +124,7 @@ class CompiledSimulation:
     salt: SaltCompileOutput
     tax_liabilities: TaxLiabilityCompileOutput
     transfers: TransferCompileOutput
+    property_cashflows: PropertyCashflowCompileOutput
     properties: PropertyCompileOutput
     # Per-property rented_fraction (0..1). Primary-residence use is tracked separately per agent.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
@@ -209,10 +212,6 @@ def compile_simulation(
 
     tax_liabilities = compile_tax_liability_slots(horizon, tax)
 
-    transfers = compile_transfer_slots(
-        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id
-    )
-
     properties, liabilities = compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
 
     # Per-liability rented_fraction: each liability is tied to one property via
@@ -223,6 +222,12 @@ def compile_simulation(
     property_slot_by_id: dict[str, int] = {
         p.property_id: i for i, p in enumerate(scenario.scheduled_property_purchases)
     }
+    transfers = compile_transfer_slots(
+        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id
+    )
+    property_cashflows = compile_property_cashflows(
+        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id, property_slot_by_id
+    )
     property_rented_fraction = np.array(
         [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
     )
@@ -352,6 +357,7 @@ def compile_simulation(
         property_count=properties.month.shape[0],
         liability_count=liabilities.codes.shape[0],
         max_transfer_slots=transfers.cause.shape[1],
+        max_property_cashflow_slots=property_cashflows.cause.shape[1],
         max_obligation_slots=obligations.cause.shape[1],
         scheduled_sale_count=sales.month.shape[0],
         liquidity_policy_count=liquidity_policies.assets.shape[0],
@@ -388,6 +394,7 @@ def compile_simulation(
         salt=salt,
         tax_liabilities=tax_liabilities,
         transfers=transfers,
+        property_cashflows=property_cashflows,
         properties=properties,
         liabilities=liabilities,
         liability_owner_profile_index=liability_owner_profile_index,

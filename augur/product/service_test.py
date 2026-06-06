@@ -995,26 +995,29 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
 
     rent_transfer = one(
         transfer
-        for transfer in sim_scenario.recurring_transfers
+        for transfer in sim_scenario.recurring_property_cashflows
         if transfer.cause_id == "rental_income:location_a_property"
     )
+    assert rent_transfer.property_id == "location_a_property"
     assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
     assert rent_transfer.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5 * 0.90)
     assert rent_transfer.amount_usd.series == RentKey(location_id=LocationId("location_a"))
 
     management_fee = one(
         transfer
-        for transfer in sim_scenario.recurring_transfers
+        for transfer in sim_scenario.recurring_property_cashflows
         if transfer.cause_id == "management_fee:location_a_property"
     )
+    assert management_fee.property_id == "location_a_property"
     assert isinstance(management_fee.amount_usd, SeriesIndexedAmount)
     assert management_fee.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5 * 0.90 * 0.08)
 
     leasing_fee = one(
         transfer
-        for transfer in sim_scenario.scheduled_transfers
+        for transfer in sim_scenario.scheduled_property_cashflows
         if transfer.cause_id == "leasing_fee:location_a_property:m0"
     )
+    assert leasing_fee.property_id == "location_a_property"
     assert isinstance(leasing_fee.amount_usd, SeriesIndexedAmount)
     assert leasing_fee.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5)
 
@@ -1055,9 +1058,10 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
 
     rent_transfers = [
         transfer
-        for transfer in sim_scenario.recurring_transfers
+        for transfer in sim_scenario.recurring_property_cashflows
         if transfer.cause_id == "rental_income:location_a_property"
     ]
+    assert {transfer.property_id for transfer in rent_transfers} == {"location_a_property"}
     assert [(transfer.start_month, transfer.end_month) for transfer in rent_transfers] == [(0, 2), (3, 5), (8, 11)]
     rent_amounts = []
     for rent_transfer in rent_transfers:
@@ -1068,9 +1072,10 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
 
     management_fees = [
         transfer
-        for transfer in sim_scenario.recurring_transfers
+        for transfer in sim_scenario.recurring_property_cashflows
         if transfer.cause_id == "management_fee:location_a_property"
     ]
+    assert {transfer.property_id for transfer in management_fees} == {"location_a_property"}
     assert [(transfer.start_month, transfer.end_month) for transfer in management_fees] == [(0, 2), (3, 5), (8, 11)]
     fee_amounts = []
     for management_fee in management_fees:
@@ -1083,11 +1088,12 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
     leasing_fees = sorted(
         (
             transfer
-            for transfer in sim_scenario.scheduled_transfers
+            for transfer in sim_scenario.scheduled_property_cashflows
             if transfer.cause_id.startswith("leasing_fee:location_a_property:")
         ),
         key=lambda transfer: transfer.month,
     )
+    assert {transfer.property_id for transfer in leasing_fees} == {"location_a_property"}
     assert [transfer.month for transfer in leasing_fees] == [0, 3, 8]
     leasing_amounts = []
     for leasing_fee in leasing_fees:
@@ -1124,9 +1130,10 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
 
     rent_transfer = one(
         transfer
-        for transfer in sim_scenario.recurring_transfers
+        for transfer in sim_scenario.recurring_property_cashflows
         if transfer.cause_id == "rental_income:location_a_property"
     )
+    assert rent_transfer.property_id == "location_a_property"
     assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
     assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
     assert rent_transfer.amount_usd.base_amount_usd == pytest.approx(4_200.0 * 0.5 * 0.95)

@@ -20,6 +20,7 @@ from augur.sim.compiler.plan import CompiledSimulation, SlotPlan, compile_simula
 from augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOutput
 from augur.sim.compiler.private_equity import PEIssuerCompileOutput, PEPolicyCompileOutput
 from augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
+from augur.sim.compiler.property_cashflows import PropertyCashflowCompileOutput
 from augur.sim.compiler.tax import TaxCompileOutput, TaxLiabilityCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
 from augur.sim.enums import LifecycleKind
@@ -36,6 +37,7 @@ __all__ = [
     "PEIssuerCompileOutput",
     "PEPolicyCompileOutput",
     "PrimaryResidenceEventCompileOutput",
+    "PropertyCashflowCompileOutput",
     "PropertyCompileOutput",
     "SaleCompileOutput",
     "SaltCompileOutput",

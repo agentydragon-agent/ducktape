@@ -139,6 +139,26 @@ def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, t
                 recurring_transfer_months,
             )
         )
+    for scheduled_cashflow in scenario.scheduled_property_cashflows:
+        cashflow_months: tuple[int, ...] = (
+            (scheduled_cashflow.month,) if 0 <= scheduled_cashflow.month < horizon else ()
+        )
+        uses.append(
+            (
+                f"scheduled property cashflow {scheduled_cashflow.cause_id!r}",
+                scheduled_cashflow.amount_usd,
+                cashflow_months,
+            )
+        )
+    for recurring_cashflow in scenario.recurring_property_cashflows:
+        cashflow_months = tuple(month for month in range(horizon) if recurring_cashflow.is_active_at(month))
+        uses.append(
+            (
+                f"recurring property cashflow {recurring_cashflow.cause_id!r}",
+                recurring_cashflow.amount_usd,
+                cashflow_months,
+            )
+        )
     for scheduled_obligation in scenario.scheduled_obligations:
         obligation_months: tuple[int, ...] = (
             (scheduled_obligation.month,) if 0 <= scheduled_obligation.month < horizon else ()

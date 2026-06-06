@@ -31,8 +31,10 @@ from augur.sim.scenario import (
     PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
+    RecurringPropertyCashflow,
     RecurringTransfer,
     Scenario,
+    ScheduledPropertyCashflow,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
@@ -1157,6 +1159,127 @@ class TestRentalIncomeTaxation:
         expected_depreciation = 400_000.0 / 27.5
         assert federal_y0["ordinary_income_usd"] == pytest.approx(
             12 * 5_000.0 - expected_depreciation - monthly_hoa * sale_month, abs=0.05
+        )
+
+    def test_property_cashflows_stop_after_property_sale_but_generic_transfers_continue(
+        self, san_francisco_location: Location
+    ):
+        """Rental and management cashflows are property-domain flows, not generic transfers."""
+
+        sale_month = 12
+        monthly_rent = 5_000.0
+        monthly_management_fee = 500.0
+        leasing_fee = 1_000.0
+        generic_transfer = 123.0
+        scenario = self._sale_scenario(horizon=24, sale_month=sale_month)
+        scenario = scenario.model_copy(
+            update={
+                "agents": [*scenario.agents, Agent(agent_id=MGMT_AGENT_ID), Agent(agent_id="generic_payer")],
+                "initial_cash": [
+                    *scenario.initial_cash,
+                    InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                    InitialAccountBalance(agent_id="generic_payer", account_id="checking", balance_usd=0.0),
+                ],
+                "recurring_transfers": [
+                    RecurringTransfer(
+                        start_month=0,
+                        end_month=23,
+                        cause_id="generic_transfer",
+                        from_agent_id="generic_payer",
+                        from_account_id="checking",
+                        to_agent_id=OWNER_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=generic_transfer,
+                    )
+                ],
+                "recurring_property_cashflows": [
+                    RecurringPropertyCashflow(
+                        start_month=0,
+                        end_month=23,
+                        property_id="p1",
+                        cause_id="rental_income:p1",
+                        from_agent_id=TENANT_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id=OWNER_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=monthly_rent,
+                        income_category="ordinary",
+                    ),
+                    RecurringPropertyCashflow(
+                        start_month=0,
+                        end_month=23,
+                        property_id="p1",
+                        cause_id="management_fee:p1",
+                        from_agent_id=OWNER_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id=MGMT_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=monthly_management_fee,
+                        deduction_category="ordinary",
+                    ),
+                ],
+                "scheduled_property_cashflows": [
+                    ScheduledPropertyCashflow(
+                        month=0,
+                        property_id="p1",
+                        cause_id="leasing_fee:p1:m0",
+                        from_agent_id=OWNER_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id=MGMT_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=leasing_fee,
+                        deduction_category="ordinary",
+                    ),
+                    ScheduledPropertyCashflow(
+                        month=sale_month,
+                        property_id="p1",
+                        cause_id=f"leasing_fee:p1:m{sale_month}",
+                        from_agent_id=OWNER_AGENT_ID,
+                        from_account_id="checking",
+                        to_agent_id=MGMT_AGENT_ID,
+                        to_account_id="checking",
+                        amount_usd=leasing_fee,
+                        deduction_category="ordinary",
+                    ),
+                ],
+            }
+        )
+        levels = [1.0] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
+        ctx = _multi_series(
+            levels_by_series={
+                RENT_SERIES_ID: {0: [1.0] * (scenario.horizon_months + 1)},
+                "home_value:san_francisco": {0: levels},
+            }
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        transfers = run.events_log.transfers
+        rent = transfers.filter(pl.col("cause_id") == "rental_income:p1").sort("month_index")
+        management = transfers.filter(pl.col("cause_id") == "management_fee:p1").sort("month_index")
+        lease_at_purchase = transfers.filter(pl.col("cause_id") == "leasing_fee:p1:m0")
+        lease_at_sale = transfers.filter(pl.col("cause_id") == f"leasing_fee:p1:m{sale_month}")
+        generic = transfers.filter(pl.col("cause_id") == "generic_transfer").sort("month_index")
+
+        assert rent.get_column("month_index").to_list() == list(range(sale_month))
+        assert rent.get_column("amount_usd").to_list() == pytest.approx([monthly_rent] * sale_month)
+        assert management.get_column("month_index").to_list() == list(range(sale_month))
+        assert management.get_column("amount_usd").to_list() == pytest.approx([monthly_management_fee] * sale_month)
+        assert lease_at_purchase.get_column("month_index").to_list() == [0]
+        assert lease_at_purchase.get_column("amount_usd").to_list() == pytest.approx([leasing_fee])
+        assert lease_at_sale.is_empty()
+        assert generic.get_column("month_index").to_list() == list(range(24))
+        assert generic.get_column("amount_usd").to_list() == pytest.approx([generic_transfer] * 24)
+
+        federal_y0 = next(
+            row
+            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            if row["month_index"] == 11 and row["jurisdiction_id"] == "federal_us"
+        )
+        expected_depreciation = 400_000.0 / 27.5
+        assert federal_y0["ordinary_income_usd"] == pytest.approx(
+            12 * monthly_rent - 12 * monthly_management_fee - leasing_fee - expected_depreciation, abs=0.05
         )
 
     def test_section_1250_recapture_taxed_at_lesser_of_marginal_or_cap_low_bracket(

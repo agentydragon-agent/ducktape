@@ -47,6 +47,10 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
         _add_amount_series_key(scheduled_transfer.amount_usd, add)
     for recurring_transfer in scenario.recurring_transfers:
         _add_amount_series_key(recurring_transfer.amount_usd, add)
+    for scheduled_cashflow in scenario.scheduled_property_cashflows:
+        _add_amount_series_key(scheduled_cashflow.amount_usd, add)
+    for recurring_cashflow in scenario.recurring_property_cashflows:
+        _add_amount_series_key(recurring_cashflow.amount_usd, add)
     for scheduled_obligation in scenario.scheduled_obligations:
         _add_amount_series_key(scheduled_obligation.amount_due_usd, add)
     for recurring_obligation in scenario.recurring_obligations:

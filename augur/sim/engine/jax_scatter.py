@@ -54,6 +54,8 @@ def scatter_ys_to_buffers(
         failed_month_h,
         t_active,
         t_amount,
+        pc_active,
+        pc_amount,
         ob_active,
         ob_due,
         ob_paid,
@@ -112,6 +114,8 @@ def scatter_ys_to_buffers(
     buffers.state.rollout_failed_month_state[1:] = np.asarray(failed_month_h)
     buffers.transfers.active[:] = np.asarray(t_active)
     buffers.transfers.amount[:] = np.asarray(t_amount)
+    buffers.property_cashflows.active[:] = np.asarray(pc_active)
+    buffers.property_cashflows.amount[:] = np.asarray(pc_amount)
     buffers.obligations.active[:] = np.asarray(ob_active)
     buffers.obligations.due[:] = np.asarray(ob_due)
     buffers.obligations.paid[:] = np.asarray(ob_paid)
