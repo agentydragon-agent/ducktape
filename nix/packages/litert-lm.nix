@@ -84,6 +84,11 @@ python3Packages.buildPythonApplication rec {
     hash = "sha256-I5CglpPz1yjs+tVhGbMmqfnjAtKQE5L/dbAlBAyjZbk=";
   };
 
+  postInstall = ''
+    patch -d "$out/${python3Packages.python.sitePackages}" -p1 \
+      < ${./litert-lm-serve-speculative-decoding.patch}
+  '';
+
   propagatedBuildInputs =
     (with python3Packages; [
       click

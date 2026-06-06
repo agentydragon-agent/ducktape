@@ -65,6 +65,34 @@ let
         };
       };
     };
+
+    # === Rugged: Gemma 4 on local Intel iGPU via Google LiteRT-LM ===
+    # Start this separately:
+    #   litert-lm serve --host 127.0.0.1 --port 9379 --enable-speculative-decoding=true
+    #
+    # The current Gemma 4 E2B LiteRT artifact rewrites its magic-number target
+    # to 32000 tokens, so advertise that as the usable full context here rather
+    # than Ollama's larger GGUF/QAT context.
+    rugged-litert = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Rugged local LiteRT-LM";
+      options = {
+        baseURL = ruggedLocalLlm.litertBaseURL;
+      };
+      models = {
+        "gemma4-e2b-it,gpu,32000" = {
+          name = "Gemma 4 E2B LiteRT-LM MTP 32k (rugged iGPU)";
+          reasoning = false;
+          # LiteRT-LM's OpenAI handler accepts the tools envelope, but tool use
+          # and output limiting are not reliable enough for OpenCode yet.
+          tool_call = false;
+          limit = {
+            context = 32000;
+            output = 8192;
+          };
+        };
+      };
+    };
   };
   # OpenCode configuration as JSON
   # Docs: https://opencode.ai/docs/providers/
@@ -408,6 +436,12 @@ in
       type = lib.types.str;
       default = "http://127.0.0.1:11436/v1";
       description = "OpenAI-compatible base URL for rugged's upstream Ollama service.";
+    };
+
+    litertBaseURL = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:9379/v1";
+      description = "OpenAI-compatible base URL for rugged's LiteRT-LM service.";
     };
 
   };
