@@ -129,7 +129,7 @@ def _make_lifespan(deps: BackendDeps):
             if deps.config.auto_sync_specimens:
                 await asyncio.to_thread(_sync_all_specimens, db)
 
-            executor = await create_executor(deps.config.executor, db_config, deps.registry_proxy_config)
+            executor = await create_executor(deps.config.executor, db_config)
             logger.info("Using %s executor", deps.config.executor.type)
             model_parallelism_limits = {
                 m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None

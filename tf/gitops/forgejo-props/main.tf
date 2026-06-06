@@ -2,8 +2,13 @@
 #
 # Creates a dedicated `props` service user that owns the props agent images
 # (git.allegedly.works/props/{critic,grader,critic_dev,...}). The props registry
-# proxy authenticates as this user to forward pushes/pulls to Forgejo;
-# agent pods pull via the dockerconfigjson secret. Mirrors tf/gitops/harbor-props.
+# proxy authenticates as this user to forward pushes/pulls to Forgejo.
+#
+# This is proxy-to-Forgejo auth only. Clients of the props registry proxy
+# (CI pushers and kubelet pulls) authenticate to the proxy with props Postgres
+# credentials; the kubelet dockerconfigjson Secret is rendered by
+# cluster/k8s/props/app/registry-pull-secret.yaml from the CNPG props-db-app
+# Secret.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -41,28 +46,5 @@ resource "kubernetes_secret" "props_forgejo_upstream_creds" {
   data = {
     username = forgejo_user.props.login
     password = random_password.props.result
-  }
-}
-
-# Bootstrap imagePullSecret for agent image pulls. The backend rewrites this
-# secret on startup with Postgres credentials for props-registry.allegedly.works.
-resource "kubernetes_secret" "props_forgejo_robot" {
-  metadata {
-    name      = "props-forgejo-robot"
-    namespace = "props"
-  }
-
-  type = "kubernetes.io/dockerconfigjson"
-
-  data = {
-    ".dockerconfigjson" = jsonencode({
-      auths = {
-        "props-registry.allegedly.works" = {
-          username = forgejo_user.props.login
-          password = random_password.props.result
-          auth     = base64encode("${forgejo_user.props.login}:${random_password.props.result}")
-        }
-      }
-    })
   }
 }

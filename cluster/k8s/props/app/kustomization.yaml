@@ -18,6 +18,7 @@ resources:
   - llm-proxy-service.yaml
   - registry-proxy-deployment.yaml
   - registry-proxy-service.yaml
+  - registry-pull-secret.yaml
   - httproute.yaml
   - registry-httproute.yaml
   - rolebinding-ollama-consumer.yaml
