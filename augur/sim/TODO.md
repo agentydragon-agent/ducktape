@@ -49,6 +49,12 @@ Anything fully shipped is removed — git history is the record of done work.
   in one place. Implementations exist (sp500, crypto, home_value, rent,
   PE, inflation), but no single document says whether a configured value
   is a sim-month-0 level or a fixed contract value.
+- Replace float dollar/share accounting in the dense engine with integer
+  cents/share-quantum accounting where possible. The FIFO dollar-sale path
+  currently has a small dollar-space snap before ceiling whole-unit sales so
+  float32/JAX arithmetic does not turn exact ratios like `$50,000 / $500` into
+  a spurious extra share. That tolerance should disappear once obligations,
+  proceeds, cash, and share quantities operate on explicit integer quanta.
 - **Arrays reconcile to ledger.** Monthly result columns should remain
   charts, not truth. Keep shrinking bespoke explanatory array math
   without changing monthly-column semantics:

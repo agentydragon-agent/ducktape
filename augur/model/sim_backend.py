@@ -2,8 +2,7 @@
 
 The JAX simulation core runs in parallel with the NumPy reference. `current_backend()` selects which
 one runs; tests parametrize over both and assert the same invariants against each. The default is
-NumPy (the reference); set `AUGUR_SIM_BACKEND=jax` (or call `use_backend(...)`) to exercise the JAX
-path.
+JAX; set `AUGUR_SIM_BACKEND=numpy` (or call `use_backend(...)`) to exercise the NumPy reference path.
 
 This is a leaf module (only stdlib) so both the model layer (sampling) and the sim engine can read it
 without a dependency cycle.
@@ -27,8 +26,8 @@ class SimBackend(StrEnum):
 
 # A ContextVar (not a module global) so the selection is thread-safe — the API server dispatches
 # requests concurrently — and naturally scoped/reset by `use_backend`. Unset by default; the
-# fallback (env var, else NumPy) is passed to `.get()` rather than baked into the ContextVar.
-_ENV_DEFAULT = SimBackend(os.environ.get(_ENV_VAR, SimBackend.NUMPY))
+# fallback (env var, else JAX) is passed to `.get()` rather than baked into the ContextVar.
+_ENV_DEFAULT = SimBackend(os.environ.get(_ENV_VAR, SimBackend.JAX))
 _backend: ContextVar[SimBackend] = ContextVar("augur_sim_backend")
 
 

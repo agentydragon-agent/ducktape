@@ -89,6 +89,20 @@ def test_fifo_sell_dollars_uses_rollout_specific_prices_and_targets() -> None:
     np.testing.assert_allclose(result.cost_basis_consumed.sum(axis=1), np.array([130.0, 130.0]))
 
 
+def test_fifo_sell_dollars_snaps_near_exact_whole_unit_targets() -> None:
+    result = fifo_sell_dollars(
+        lot_remaining=np.array([[200.0]], dtype=np.float64),
+        ordered_lots=np.array([0], dtype=np.int64),
+        target_dollars=np.array([50_000.004], dtype=np.float64),
+        unit_price=np.array([500.0], dtype=np.float64),
+        cost_basis_per_unit=np.array([400.0], dtype=np.float64),
+    )
+
+    np.testing.assert_allclose(result.sold_units, np.array([[100.0]], dtype=np.float64))
+    np.testing.assert_allclose(result.total_proceeds, np.array([50_000.0]))
+    np.testing.assert_allclose(result.cost_basis_consumed.sum(axis=1), np.array([40_000.0]))
+
+
 def test_fifo_sell_dollars_oversell_and_zero_price_do_not_partial_fill() -> None:
     result = fifo_sell_dollars(
         lot_remaining=np.array([[2.0, 3.0], [2.0, 3.0]], dtype=np.float64),

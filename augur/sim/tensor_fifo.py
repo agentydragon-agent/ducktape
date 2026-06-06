@@ -104,20 +104,19 @@ def fifo_sell_dollars(
     before_value = np.cumsum(available_value, axis=1) - available_value
     sold_value_ordered = np.clip(effective_target[:, None] - before_value, 0.0, available_value)
     # Ceiling-round units: selling $750 from a lot priced at $100/unit means selling
-    # 8 whole units (not 7.5). Clip to ordered_quantity so we never sell more than held.
+    # 8 whole units (not 7.5). Snap targets that are within a cent of an exact whole-unit
+    # value first; otherwise float32-ish upstream arithmetic can turn 100.0 units into
+    # 100.00000x and cause a spurious extra whole-unit sale.
     # Proceeds reflect the actual whole-unit sale (may slightly exceed effective_target).
-    sold_units_ordered = np.clip(
-        np.ceil(
-            np.divide(
-                sold_value_ordered,
-                unit_price[:, None],
-                out=np.zeros_like(sold_value_ordered),
-                where=unit_price[:, None] > 0.0,
-            )
-        ),
-        0.0,
-        ordered_quantity,
+    sale_ratio = np.divide(
+        sold_value_ordered, unit_price[:, None], out=np.zeros_like(sold_value_ordered), where=unit_price[:, None] > 0.0
     )
+    nearest_units = np.rint(sale_ratio)
+    nearest_value = nearest_units * unit_price[:, None]
+    sold_units_before_clip = np.where(
+        np.abs(nearest_value - sold_value_ordered) <= 0.01, nearest_units, np.ceil(sale_ratio)
+    )
+    sold_units_ordered = np.clip(sold_units_before_clip, 0.0, ordered_quantity)
     proceeds_ordered = sold_units_ordered * unit_price[:, None]
     basis_ordered = sold_units_ordered * cost_basis_per_unit[ordered_lots][None, :]
 

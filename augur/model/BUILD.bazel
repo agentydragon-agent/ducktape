@@ -286,6 +286,17 @@ py_library(
     ],
 )
 
+py_test(
+    name = "sim_backend_test",
+    srcs = ["sim_backend_test.py"],
+    deps = [
+        ":sim_backend",
+        "//:conftest",
+        "//augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "sample_sanity",
     srcs = ["sample_sanity.py"],

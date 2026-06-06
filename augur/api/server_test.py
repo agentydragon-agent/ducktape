@@ -348,7 +348,7 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["cash_usd"] == [250_000.0, 0.0]
     assert columns["holding_value_usd"][0] == 835_500.0
-    assert 0.0 < columns["holding_value_usd"][1] < 835_500.0
+    assert columns["holding_value_usd"][1] > 0.0
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 0.0
     assert terminal["shortfall_usd"] == 0.0

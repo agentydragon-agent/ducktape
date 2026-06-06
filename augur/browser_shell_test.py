@@ -162,7 +162,13 @@ def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: P
     page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
     # Select a rollout by clicking the terminal-distribution plot (the per-rollout "sliver" strip
     # was replaced by the quantile-line distribution in #1848; the plot is the click-to-inspect surface).
-    page.locator("[data-product-terminal-distribution-plot]").click()
+    plot = page.locator("[data-product-terminal-distribution-plot]")
+    plot.wait_for(state="visible", timeout=30_000)
+    box = plot.bounding_box()
+    assert box is not None
+    plot.click(position={"x": box["width"] * 0.6, "y": box["height"] * 0.5})
+    page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Event kinds").wait_for(state="visible", timeout=30_000)
     legend = page.get_by_label("Event-kind visibility legend")

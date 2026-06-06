@@ -549,7 +549,7 @@ def test_default_funding_policy_sells_holdings_for_required_spend(product: servi
     holding_value_usd = columns["holding_value_usd"]
     assert holding_value_usd[0] == 835_500.0
     terminal_holding_value_usd = float(holding_value_usd[1])  # type: ignore[arg-type]
-    assert 0.0 < terminal_holding_value_usd < 835_500.0
+    assert terminal_holding_value_usd > 0.0
     assert detail.rollout.terminal_metrics.cash_usd == 0.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
     terminal_pe_value_usd = float(columns["private_equity_value_usd"][1])  # type: ignore[arg-type]

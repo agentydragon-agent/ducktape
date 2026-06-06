@@ -2435,11 +2435,13 @@ def _fifo_sell_dollars(
     before_value = jnp.cumsum(available_value, axis=1) - available_value
     sold_value_ordered = jnp.clip(effective_target[:, None] - before_value, 0.0, available_value)
     price_col = unit_price[:, None]
-    sold_units_ordered = jnp.clip(
-        jnp.ceil(jnp.where(price_col > 0.0, sold_value_ordered / jnp.where(price_col > 0.0, price_col, 1.0), 0.0)),
-        0.0,
-        ordered_quantity,
+    sale_ratio = jnp.where(price_col > 0.0, sold_value_ordered / jnp.where(price_col > 0.0, price_col, 1.0), 0.0)
+    nearest_units = jnp.round(sale_ratio)
+    nearest_value = nearest_units * price_col
+    sold_units_before_clip = jnp.where(
+        jnp.abs(nearest_value - sold_value_ordered) <= 0.01, nearest_units, jnp.ceil(sale_ratio)
     )
+    sold_units_ordered = jnp.clip(sold_units_before_clip, 0.0, ordered_quantity)
     proceeds_ordered = sold_units_ordered * price_col
     basis_ordered = sold_units_ordered * cost_basis_per_unit[ordered_lots][None, :]
     zeros = jnp.zeros_like(lot_remaining)
