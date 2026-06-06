@@ -58,10 +58,8 @@ function RolloutResultsPanel({
   fanSeries,
   percentiles,
   scenarios,
-  resultsById,
   terminalResultsById,
   activeId,
-  activeResult,
   activeTerminalResult,
   selectedRows,
   selectedEvents,
@@ -700,10 +698,8 @@ export function ProductProjectionWorkspace({
             fanSeries={fanSeries}
             percentiles={activeRequest.percentiles}
             scenarios={chartScenarios}
-            resultsById={resultsById}
             terminalResultsById={terminalResultsForDisplay}
             activeId={activeId}
-            activeResult={activeResult}
             activeTerminalResult={activeTerminalDisplayResult}
             selectedRows={selectedRows}
             selectedEvents={selectedEvents}
