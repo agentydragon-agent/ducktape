@@ -6,24 +6,6 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Architecture / cutover
 
-- **Backend parity/test hardening before dropping NumPy.** The sim test suite now
-  autouses both backends and has broad property/tax coverage, but a few
-  composition edges can still produce silent wrong answers if NumPy is removed
-  before semantics are pinned:
-  - [ ] **Duplicate/overlapping identity validation.** Add validation tests for
-        duplicate `TaxProfile.agent_id`, duplicate mortgage `liability_id`,
-        overlapping `PropertyTaxPolicy` entries for one property/month, and
-        `PropertyTaxPolicy.owner_agent_id` mismatches against the property's
-        buyer. Dict/first-match compiler paths should not silently mask bad
-        scenario input.
-  - [ ] **Multi-rollout property-sale parity.** Add a two-rollout property sale
-        test with different home-value paths, asserting sale proceeds, mortgage
-        payoff, §1250 recapture, §121 exclusion, and LTCG remain rollout-scoped.
-  - [ ] **Multi-taxpayer property isolation.** Add a scenario where Alice and Bob
-        each own a property and each has a tax profile; assert property tax,
-        Schedule E, mortgage interest, §121, and sale gains route only to the
-        correct owner's profile.
-
 - **TLH follow-ups.** Pieces 1 (capital-loss netting + carryforward, #1846) and 2
   (reduced-form harvest process, #1881) shipped. Remaining, in rough priority:
   - **Re-fit the decay annually.** The `reduced_form_tlh` decay params are

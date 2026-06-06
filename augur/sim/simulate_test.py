@@ -78,6 +78,49 @@ def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[
     )
 
 
+def _property_link_validation_scenario(
+    *,
+    scheduled_property_purchases: list[ScheduledPropertyPurchase] | None = None,
+    property_tax_policies: list[PropertyTaxPolicy] | None = None,
+    tax_profiles: list[TaxProfile] | None = None,
+) -> Scenario:
+    return Scenario(
+        agents=[
+            Agent(agent_id="alice"),
+            Agent(agent_id="bob"),
+            Agent(agent_id="seller"),
+            Agent(agent_id="lender"),
+            Agent(agent_id="tax_authority"),
+            Agent(agent_id="irs"),
+        ],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000_000.0),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=1_000_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=scheduled_property_purchases
+        or [
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="p1_purchase",
+                property_id="p1",
+                location_id="san_francisco",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,
+            )
+        ],
+        property_tax_policies=property_tax_policies or [],
+        tax_profiles=tax_profiles or [],
+        horizon_months=12,
+    )
+
+
 @pytest.fixture
 def alice_bob_scenario() -> Scenario:
     return Scenario(
@@ -236,6 +279,93 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
             ],
             tax_profiles=[],
             horizon_months=1,
+        )
+
+
+def test_scenario_rejects_duplicate_tax_profile_agent_ids() -> None:
+    with pytest.raises(ValidationError, match=r"duplicate TaxProfile\.agent_id.*'alice'"):
+        _property_link_validation_scenario(
+            tax_profiles=[
+                TaxProfile(agent_id="alice", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs"),
+                TaxProfile(agent_id="alice", jurisdiction_ids=["california"], tax_authority_agent_id="irs"),
+            ]
+        )
+
+
+def test_scenario_rejects_duplicate_mortgage_liability_ids() -> None:
+    with pytest.raises(ValidationError, match=r"duplicate mortgage liability_id.*'shared_mortgage'.*'p1'.*'p2'"):
+        _property_link_validation_scenario(
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="seller",
+                    purchase_price_usd=500_000.0,
+                    down_payment_usd=100_000.0,
+                    mortgage=MortgageFinancing(
+                        liability_id="shared_mortgage",
+                        lender_agent_id="lender",
+                        principal_usd=400_000.0,
+                        annual_interest_rate=0.06,
+                        term_months=360,
+                    ),
+                ),
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p2_purchase",
+                    property_id="p2",
+                    location_id="san_francisco",
+                    buyer_agent_id="bob",
+                    buyer_account_id="checking",
+                    seller_agent_id="seller",
+                    purchase_price_usd=600_000.0,
+                    down_payment_usd=120_000.0,
+                    mortgage=MortgageFinancing(
+                        liability_id="shared_mortgage",
+                        lender_agent_id="lender",
+                        principal_usd=480_000.0,
+                        annual_interest_rate=0.06,
+                        term_months=360,
+                    ),
+                ),
+            ]
+        )
+
+
+def test_scenario_rejects_overlapping_property_tax_policies_for_same_property_month() -> None:
+    with pytest.raises(ValidationError, match=r"overlapping property tax policies.*'p1'.*month 6"):
+        _property_link_validation_scenario(
+            property_tax_policies=[
+                PropertyTaxPolicy(
+                    property_id="p1",
+                    owner_agent_id="alice",
+                    tax_authority_agent_id="tax_authority",
+                    start_month=0,
+                    end_month=6,
+                ),
+                PropertyTaxPolicy(
+                    property_id="p1",
+                    owner_agent_id="alice",
+                    tax_authority_agent_id="tax_authority",
+                    start_month=6,
+                    end_month=11,
+                ),
+            ]
+        )
+
+
+def test_scenario_rejects_property_tax_policy_owner_mismatch() -> None:
+    with pytest.raises(
+        ValidationError, match=r"property tax policy.*property_id 'p1'.*owner_agent_id='bob'.*buyer_agent_id.*'alice'"
+    ):
+        _property_link_validation_scenario(
+            property_tax_policies=[
+                PropertyTaxPolicy(property_id="p1", owner_agent_id="bob", tax_authority_agent_id="tax_authority")
+            ]
         )
 
 

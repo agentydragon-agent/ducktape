@@ -1029,3 +1029,67 @@ class Scenario(BaseModel):
             duplicate_list = ", ".join(f"{agent_id}/{account_id}" for agent_id, account_id in sorted(duplicates))
             raise ValueError(f"duplicate liquidity policies for account(s): {duplicate_list}")
         return self
+
+    @model_validator(mode="after")
+    def _reject_ambiguous_tax_and_liability_links(self) -> Scenario:
+        seen_tax_profile_agents: set[str] = set()
+        duplicate_tax_profile_agents: set[str] = set()
+        for profile in self.tax_profiles:
+            if profile.agent_id in seen_tax_profile_agents:
+                duplicate_tax_profile_agents.add(profile.agent_id)
+            seen_tax_profile_agents.add(profile.agent_id)
+        if duplicate_tax_profile_agents:
+            duplicate_list = ", ".join(repr(agent_id) for agent_id in sorted(duplicate_tax_profile_agents))
+            raise ValueError(f"duplicate TaxProfile.agent_id(s): {duplicate_list}")
+
+        purchase_by_property_id = {purchase.property_id: purchase for purchase in self.scheduled_property_purchases}
+        seen_liability_ids: dict[str, str] = {}
+        duplicate_liability_ids: list[tuple[str, str, str]] = []
+        for purchase in self.scheduled_property_purchases:
+            if purchase.mortgage is None:
+                continue
+            liability_id = purchase.mortgage.liability_id
+            previous_property_id = seen_liability_ids.get(liability_id)
+            if previous_property_id is not None:
+                duplicate_liability_ids.append((liability_id, previous_property_id, purchase.property_id))
+            else:
+                seen_liability_ids[liability_id] = purchase.property_id
+        if duplicate_liability_ids:
+            duplicate_list = ", ".join(
+                f"{liability_id!r} on {first_property_id!r} and {second_property_id!r}"
+                for liability_id, first_property_id, second_property_id in sorted(duplicate_liability_ids)
+            )
+            raise ValueError(f"duplicate mortgage liability_id(s): {duplicate_list}")
+
+        property_tax_policy_by_property_month: dict[tuple[str, int], int] = {}
+        for policy_index, policy in enumerate(self.property_tax_policies):
+            purchase = purchase_by_property_id.get(policy.property_id)
+            if purchase is None:
+                known = ", ".join(repr(property_id) for property_id in sorted(purchase_by_property_id))
+                raise ValueError(
+                    f"property tax policy references unknown property_id {policy.property_id!r}; "
+                    f"known: {known or '<none>'}"
+                )
+            if policy.owner_agent_id != purchase.buyer_agent_id:
+                raise ValueError(
+                    f"property tax policy for property_id {policy.property_id!r} has "
+                    f"owner_agent_id={policy.owner_agent_id!r}, but the property's buyer_agent_id "
+                    f"is {purchase.buyer_agent_id!r}"
+                )
+            if policy.end_month is not None and policy.end_month < policy.start_month:
+                raise ValueError(
+                    f"property tax policy for property_id {policy.property_id!r} has "
+                    f"end_month {policy.end_month} before start_month {policy.start_month}"
+                )
+            for month in range(int(self.horizon_months)):
+                if not policy.is_active_at(month):
+                    continue
+                key = (policy.property_id, month)
+                previous_policy_index = property_tax_policy_by_property_month.get(key)
+                if previous_policy_index is not None:
+                    raise ValueError(
+                        f"overlapping property tax policies for property_id {policy.property_id!r} "
+                        f"at month {month}: indexes {previous_policy_index} and {policy_index}"
+                    )
+                property_tax_policy_by_property_month[key] = policy_index
+        return self

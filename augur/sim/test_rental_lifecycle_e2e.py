@@ -18,6 +18,7 @@ import pytest_bazel
 from augur.model.series import LocationId, RentKey
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.locations import Location
+from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
     Agent,
     CapitalImprovementEvent,
@@ -81,6 +82,21 @@ def _multi_series(*, levels_by_series: dict[str, dict[int, list[float]]]) -> Ext
                     {"rollout_index": rollout_index, "month_index": month_index, "series_id": series_id, "value": value}
                 )
     return ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)))
+
+
+def _mortgage_balance_and_interest_after_payments(
+    *, principal_usd: float, annual_interest_rate: float, term_months: int, payment_count: int
+) -> tuple[float, float]:
+    balance = principal_usd
+    interest_paid = 0.0
+    payment = mortgage_monthly_payment_usd(principal_usd, annual_interest_rate, term_months)
+    for _ in range(payment_count):
+        interest = balance * annual_interest_rate / 12.0
+        amount = min(payment, balance + interest)
+        principal_paid = amount - interest
+        balance = max(0.0, balance - principal_paid)
+        interest_paid += interest
+    return balance, interest_paid
 
 
 def _rental_scenario(
@@ -1174,6 +1190,364 @@ class TestRentalIncomeTaxation:
         assert len(breakdowns_y1) == 1
         b = breakdowns_y1[0]
         assert b["ltcg_usd"] == pytest.approx(205_000.0, abs=1.0)
+
+    def test_multi_rollout_property_sale_keeps_sale_tax_and_mortgage_amounts_rollout_scoped(
+        self, san_francisco_location: Location
+    ):
+        """A single sale event with divergent home-value rollouts must not smear sale math
+        across rollouts.
+
+        The property is rented for 12 months, then owner-occupied for 24 months before sale.
+        That activates all of the property-sale tax plumbing in one scenario: mortgage payoff,
+        §1250 recapture from the rental period, §121 exclusion from the later owner-occupied
+        period, and residual LTCG. The two rollouts use different home values at sale month.
+        """
+
+        purchase_price = 500_000.0
+        mortgage_principal = 400_000.0
+        annual_interest_rate = 0.06
+        mortgage_term_months = 360
+        sale_month = 36
+        horizon = 48
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="lender"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_property_cashflows=[
+                RecurringPropertyCashflow(
+                    start_month=0,
+                    end_month=11,
+                    property_id="p1",
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=5_000.0,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price - mortgage_principal,
+                    rented_fraction=1.0,
+                    land_value_fraction=0.20,
+                    mortgage=MortgageFinancing(
+                        liability_id="p1_mortgage",
+                        lender_agent_id="lender",
+                        lender_account_id="checking",
+                        principal_usd=mortgage_principal,
+                        annual_interest_rate=annual_interest_rate,
+                        term_months=mortgage_term_months,
+                    ),
+                )
+            ],
+            primary_residence_events=[SetPrimaryResidenceEvent(month=12, agent_id=OWNER_AGENT_ID, property_id="p1")],
+            property_lifecycle_events=[
+                SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0.0),
+                PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0),
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon,
+        )
+        home_values_by_rollout = {
+            0: [1.0] * sale_month + [1.2] * (horizon + 1 - sale_month),
+            1: [1.0] * sale_month + [1.6] * (horizon + 1 - sale_month),
+        }
+        ctx = _multi_series(
+            levels_by_series={
+                RENT_SERIES_ID: {0: [1.0] * (horizon + 1), 1: [1.0] * (horizon + 1)},
+                "home_value:san_francisco": home_values_by_rollout,
+            }
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=2, locations={"san_francisco": san_francisco_location}
+        )
+
+        payoff, _ = _mortgage_balance_and_interest_after_payments(
+            principal_usd=mortgage_principal,
+            annual_interest_rate=annual_interest_rate,
+            term_months=mortgage_term_months,
+            payment_count=sale_month - 1,
+        )
+        recapture = 12 * (purchase_price * 0.80 / 27.5 / 12.0)
+        expected_by_rollout = {}
+        for rollout_index, sale_level in [(0, 1.2), (1, 1.6)]:
+            gross = purchase_price * sale_level * 0.94
+            realized_gain = gross - (purchase_price - recapture)
+            post_recapture_gain = realized_gain - recapture
+            section_121 = min(post_recapture_gain, 250_000.0)
+            ltcg = post_recapture_gain - section_121
+            expected_by_rollout[rollout_index] = {
+                "gross_proceeds_usd": gross,
+                "mortgage_payoff_usd": payoff,
+                "net_cash_to_owner_usd": gross - payoff,
+                "realized_gain_usd": realized_gain,
+                "depreciation_recapture_usd": recapture,
+                "section_121_exclusion_usd": section_121,
+                "long_term_capital_gain_usd": ltcg,
+            }
+
+        sale_rows = {
+            row["rollout_index"]: row
+            for row in run.events_log.property_sale_events.sort("rollout_index").iter_rows(named=True)
+        }
+        assert set(sale_rows) == {0, 1}
+        for rollout_index, expected in expected_by_rollout.items():
+            row = sale_rows[rollout_index]
+            assert row["month_index"] == sale_month
+            for field, expected_value in expected.items():
+                assert row[field] == pytest.approx(expected_value, abs=1.0)
+
+        federal_sale_year = {
+            row["rollout_index"]: row
+            for row in run.events_log.tax_breakdowns.filter(
+                (pl.col("month_index") == 47) & (pl.col("jurisdiction_id") == "federal_us")
+            ).iter_rows(named=True)
+        }
+        assert federal_sale_year[0]["ltcg_usd"] == pytest.approx(0.0, abs=1.0)
+        assert federal_sale_year[1]["ltcg_usd"] == pytest.approx(2_000.0, abs=1.0)
+
+    def test_multi_taxpayer_property_tax_schedule_e_mid_and_sale_routing_are_owner_scoped(
+        self, san_francisco_location: Location
+    ):
+        """Two owners with two properties should keep real-estate tax/accounting channels
+        isolated by property owner.
+
+        Alice owns a fully rented property: rental income, depreciation, property tax, and
+        mortgage interest route through Schedule E; no MID or §121 applies. Bob owns an
+        owner-occupied property: property tax routes to SALT, mortgage interest routes to
+        MID, and §121 excludes the sale gain.
+        """
+
+        purchase_price = 500_000.0
+        mortgage_principal = 400_000.0
+        annual_interest_rate = 0.06
+        mortgage_term_months = 360
+        annual_property_tax_rate = 0.012
+        monthly_rent = 5_000.0
+        sale_month = 30
+        horizon = 36
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id="alice"),
+                Agent(agent_id="bob"),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="lender"),
+                Agent(agent_id="tax_authority"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=800_000.0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=800_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_property_cashflows=[
+                RecurringPropertyCashflow(
+                    start_month=0,
+                    end_month=sale_month - 1,
+                    property_id="alice_rental",
+                    cause_id="rental_income:alice_rental",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount_usd=monthly_rent,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="alice_rental_purchase",
+                    property_id="alice_rental",
+                    location_id="san_francisco",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price - mortgage_principal,
+                    rented_fraction=1.0,
+                    land_value_fraction=0.20,
+                    mortgage=MortgageFinancing(
+                        liability_id="alice_rental_mortgage",
+                        lender_agent_id="lender",
+                        lender_account_id="checking",
+                        principal_usd=mortgage_principal,
+                        annual_interest_rate=annual_interest_rate,
+                        term_months=mortgage_term_months,
+                    ),
+                ),
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="bob_home_purchase",
+                    property_id="bob_home",
+                    location_id="san_francisco",
+                    buyer_agent_id="bob",
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price - mortgage_principal,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                    mortgage=MortgageFinancing(
+                        liability_id="bob_home_mortgage",
+                        lender_agent_id="lender",
+                        lender_account_id="checking",
+                        principal_usd=mortgage_principal,
+                        annual_interest_rate=annual_interest_rate,
+                        term_months=mortgage_term_months,
+                    ),
+                ),
+            ],
+            initial_primary_residences=[PrimaryResidenceAssignment(agent_id="bob", property_id="bob_home")],
+            property_lifecycle_events=[
+                PropertySaleEvent(month=sale_month, property_id="alice_rental", closing_cost_pct=6.0),
+                PropertySaleEvent(month=sale_month, property_id="bob_home", closing_cost_pct=6.0),
+            ],
+            property_tax_policies=[
+                PropertyTaxPolicy(
+                    property_id="alice_rental",
+                    owner_agent_id="alice",
+                    tax_authority_agent_id="tax_authority",
+                    annual_tax_rate=annual_property_tax_rate,
+                ),
+                PropertyTaxPolicy(
+                    property_id="bob_home",
+                    owner_agent_id="bob",
+                    tax_authority_agent_id="tax_authority",
+                    annual_tax_rate=annual_property_tax_rate,
+                ),
+            ],
+            mortgage_interest_deduction_policies=[
+                MortgageInterestDeductionPolicy(liability_id="alice_rental_mortgage", owner_agent_id="alice"),
+                MortgageInterestDeductionPolicy(liability_id="bob_home_mortgage", owner_agent_id="bob"),
+            ],
+            federal_salt_deduction_policies=[
+                FederalSaltDeductionPolicy(
+                    profile_id="alice", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=100_000.0)]
+                ),
+                FederalSaltDeductionPolicy(
+                    profile_id="bob", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=100_000.0)]
+                ),
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id="alice",
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us"],
+                    tax_authority_agent_id="irs",
+                ),
+                TaxProfile(
+                    agent_id="bob",
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us"],
+                    tax_authority_agent_id="irs",
+                ),
+            ],
+            horizon_months=horizon,
+        )
+        ctx = _multi_series(
+            levels_by_series={
+                RENT_SERIES_ID: {0: [1.0] * (horizon + 1)},
+                "home_value:san_francisco": {0: [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)},
+            }
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        property_tax_rows = run.events_log.obligation_settlements.filter(
+            pl.col("obligation_type") == "property_tax"
+        ).sort("agent_id", "month_index")
+        alice_property_tax = property_tax_rows.filter(pl.col("agent_id") == "alice")
+        bob_property_tax = property_tax_rows.filter(pl.col("agent_id") == "bob")
+        monthly_property_tax = purchase_price * annual_property_tax_rate / 12.0
+        assert alice_property_tax.height == sale_month - 1
+        assert bob_property_tax.height == sale_month - 1
+        assert alice_property_tax.get_column("amount_paid_usd").to_list() == pytest.approx(
+            [monthly_property_tax] * (sale_month - 1)
+        )
+        assert bob_property_tax.get_column("amount_paid_usd").to_list() == pytest.approx(
+            [monthly_property_tax] * (sale_month - 1)
+        )
+
+        _, year_0_interest = _mortgage_balance_and_interest_after_payments(
+            principal_usd=mortgage_principal,
+            annual_interest_rate=annual_interest_rate,
+            term_months=mortgage_term_months,
+            payment_count=11,
+        )
+        depreciation_year_0 = 12 * (purchase_price * 0.80 / 27.5 / 12.0)
+        property_tax_year_0 = 11 * monthly_property_tax
+        federal_year_0 = {
+            row["agent_id"]: row
+            for row in run.events_log.tax_breakdowns.filter(
+                (pl.col("month_index") == 11) & (pl.col("jurisdiction_id") == "federal_us")
+            ).iter_rows(named=True)
+        }
+        assert federal_year_0["alice"]["ordinary_income_usd"] == pytest.approx(
+            12 * monthly_rent - depreciation_year_0 - property_tax_year_0 - year_0_interest, abs=1.0
+        )
+        assert federal_year_0["alice"]["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert federal_year_0["alice"]["salt_deduction_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert federal_year_0["bob"]["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert federal_year_0["bob"]["mortgage_interest_deduction_usd"] == pytest.approx(year_0_interest, abs=1.0)
+        assert federal_year_0["bob"]["salt_deduction_usd"] == pytest.approx(property_tax_year_0, abs=1.0)
+
+        sale_rows = {
+            row["property_id"]: row
+            for row in run.events_log.property_sale_events.sort("property_id").iter_rows(named=True)
+        }
+        alice_recapture = sale_month * (purchase_price * 0.80 / 27.5 / 12.0)
+        assert sale_rows["alice_rental"]["realized_gain_usd"] == pytest.approx(194_363.64, abs=1.0)
+        assert sale_rows["alice_rental"]["depreciation_recapture_usd"] == pytest.approx(alice_recapture, abs=1.0)
+        assert sale_rows["alice_rental"]["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale_rows["alice_rental"]["long_term_capital_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale_rows["bob_home"]["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale_rows["bob_home"]["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale_rows["bob_home"]["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale_rows["bob_home"]["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
+
+        federal_sale_year = {
+            row["agent_id"]: row
+            for row in run.events_log.tax_breakdowns.filter(
+                (pl.col("month_index") == 35) & (pl.col("jurisdiction_id") == "federal_us")
+            ).iter_rows(named=True)
+        }
+        assert federal_sale_year["alice"]["ltcg_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert federal_sale_year["bob"]["ltcg_usd"] == pytest.approx(0.0, abs=1e-6)
 
     def test_property_tied_recurring_obligation_stops_after_property_sale(self, san_francisco_location: Location):
         """Property-keyed HOA/insurance/maintenance-style obligations stop when the property sells."""
