@@ -27,11 +27,16 @@ api.use({
 
 // Authenticated fetch for endpoints with slash-containing path params (snapshot slugs).
 // openapi-fetch encodes '/' in path params, breaking FastAPI's {slug:path} routes.
-async function authedFetch<T>(url: string): Promise<T> {
+async function authedFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const headers = new Headers(init?.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const resp = await fetch(url, {
+    ...init,
     credentials: "include",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers,
   });
   if (resp.status === 401) onAuthFailed();
   if (!resp.ok) {
@@ -251,6 +256,10 @@ export async function fetchSnapshotDetail(
 export type FileTreeNode = components["schemas"]["FileTreeNode"];
 export type FileTreeResponse = components["schemas"]["FileTreeResponse"];
 export type FileContentResponse = components["schemas"]["FileContentResponse"];
+export type FileContentsResponse = {
+  files: FileContentResponse[];
+  missing: string[];
+};
 
 // Fetch snapshot file tree
 export async function fetchSnapshotTree(snapshotSlug: string): Promise<FileTreeResponse> {
@@ -260,6 +269,15 @@ export async function fetchSnapshotTree(snapshotSlug: string): Promise<FileTreeR
 // Fetch file content from snapshot
 export async function fetchSnapshotFile(snapshotSlug: string, filePath: string): Promise<FileContentResponse> {
   return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files/${filePath}`);
+}
+
+// Fetch multiple file contents from a snapshot with one backend tar read.
+export async function fetchSnapshotFiles(snapshotSlug: string, paths: string[]): Promise<FileContentsResponse> {
+  return authedFetch(`/api/gt/snapshots/${snapshotSlug}/files`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths }),
+  });
 }
 
 // Fetch LLM requests for an agent run

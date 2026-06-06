@@ -8,7 +8,7 @@
   import {
     fetchRun,
     fetchSnapshotDetail,
-    fetchSnapshotFile,
+    fetchSnapshotFiles,
     fetchLLMRequests,
     fetchRunLogs,
     type AgentRunDetail,
@@ -118,18 +118,19 @@
     return { tp_count, fp_count, total_credit };
   }
 
-  // Load run data. snapshotLoaded=true skips re-fetching snapshot+files during polling.
-  async function loadData(snapshotLoaded = false) {
+  function loadSnapshotDataInBackground(criticRun: AgentRunDetail) {
+    const reportedIssues = getReportedIssues(criticRun);
+    if (getAgentType(criticRun) === "critic" && reportedIssues.length > 0 && !snapshotDetail && !loadingSnapshot) {
+      void loadSnapshotData(criticRun);
+    }
+  }
+
+  // Load run data. Snapshot/file hydration intentionally runs in the background
+  // so it cannot block run metadata, logs, or LLM request display.
+  async function loadData() {
     try {
       run = await fetchRun(runId);
-
-      // Load snapshot data for critic runs with reported issues (only on initial load)
-      if (!snapshotLoaded) {
-        const reportedIssues = getReportedIssues(run);
-        if (getAgentType(run) === "critic" && reportedIssues.length > 0) {
-          await loadSnapshotData(run);
-        }
-      }
+      loadSnapshotDataInBackground(run);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load run";
       toast.error(message);
@@ -209,18 +210,19 @@
         }
       }
 
-      // Fetch file contents
       const newContents = new SvelteMap<string, FileContentResponse>();
-      await Promise.all(
-        Array.from(allFilePaths).map(async (path) => {
-          try {
-            const content = await fetchSnapshotFile(snapshotSlug, path);
-            newContents.set(path, content);
-          } catch (e) {
-            console.error(`Failed to fetch file ${path}:`, e);
-          }
-        })
-      );
+      if (allFilePaths.size === 0) {
+        fileContents = newContents;
+        return;
+      }
+
+      const response = await fetchSnapshotFiles(snapshotSlug, Array.from(allFilePaths));
+      for (const content of response.files) {
+        newContents.set(content.path, content);
+      }
+      for (const missingPath of response.missing) {
+        console.error(`Failed to fetch file ${missingPath}: file missing from snapshot`);
+      }
       fileContents = newContents;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load snapshot data";
@@ -234,12 +236,9 @@
     // Skip fetching when initial data is provided (visual tests)
     if (initialRun) return;
 
-    loadData().then(() => {
-      // Load LLM requests after run data is loaded (LLM tab is default)
-      if (run) {
-        loadLLMRequests();
-      }
-    });
+    void loadData();
+    // LLM requests do not depend on ground-truth or file-content loading.
+    void loadLLMRequests();
   });
 </script>
 
@@ -428,7 +427,7 @@
 
     <!-- Critique file viewer (for critic runs with reported issues) -->
     {@const reportedIssues = getReportedIssues(run)}
-    {#if getAgentType(run) === "critic" && reportedIssues.length > 0 && snapshotDetail}
+    {#if getAgentType(run) === "critic" && reportedIssues.length > 0 && (snapshotDetail || loadingSnapshot)}
       {@const edges = getAggregatedEdges(run)}
       <div class="border-b border-gray-200 dark:border-gray-700">
         <div class="px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700">
@@ -441,7 +440,7 @@
           <div class="p-4">
             <p class="text-gray-500 dark:text-gray-400 text-sm">Loading snapshot data...</p>
           </div>
-        {:else}
+        {:else if snapshotDetail}
           <div class="p-4 space-y-6">
             {#each Array.from(fileContents.entries()) as [filePath, fileContent] (filePath)}
               <FileViewer
