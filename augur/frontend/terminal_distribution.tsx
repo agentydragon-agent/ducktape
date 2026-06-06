@@ -3,7 +3,7 @@ import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from
 import { rowsFrom } from "./lib/frame.ts";
 import { scenarioColor } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
-import { SELECTED_ROLLOUT_COLOR } from "./data_helpers.ts";
+import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } from "./data_helpers.ts";
 
 function terminalPercentilePoints(result, metric) {
   if (result?.metric !== metric.value) return [];
@@ -36,6 +36,21 @@ function valueAtPercentile(entry, percentile) {
     return left.value * (1 - weight) + right.value * weight;
   }
   return last.value;
+}
+
+function terminalFailedSamplePoints(result, metric) {
+  const samples = terminalMetricSamples(result, metric)
+    .slice()
+    .sort((left, right) => left.value - right.value || left.seed - right.seed);
+  if (samples.length === 0) return [];
+  return samples
+    .map((sample, index) => ({
+      seed: sample.seed,
+      percentile: samples.length === 1 ? 0.5 : index / (samples.length - 1),
+      value: sample.value,
+      failed: sample.failed,
+    }))
+    .filter((point) => point.failed);
 }
 
 // A click whose nearest line is farther than this (in px, on the Y axis) clears an existing
@@ -81,6 +96,7 @@ export function TerminalDistributionChart({
           color: scenarioColor(index),
           isActive: scenario.id === activeId,
           points: terminalPercentilePoints(resultsById.get(scenario.id), metric),
+          failedPoints: terminalFailedSamplePoints(resultsById.get(scenario.id), metric),
         }))
         .filter((entry) => entry.points.length > 0),
     [scenarios, resultsById, activeId, metric]
@@ -92,7 +108,10 @@ export function TerminalDistributionChart({
 
   if (series.length === 0) return null;
 
-  const allValues = series.flatMap((entry) => entry.points.map((point) => point.value));
+  const allValues = series.flatMap((entry) => [
+    ...entry.points.map((point) => point.value),
+    ...entry.failedPoints.map((point) => point.value),
+  ]);
   const yAxis = fanChartAxis(metric.chartValue, allValues, metricScale);
   const svgHeight = 260;
   const margin = { left: 82, right: 20, top: 16, bottom: 34 };
@@ -252,7 +271,7 @@ export function TerminalDistributionChart({
         <div>
           <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
           <div className="mt-1 text-xs augur-muted">
-            One line per variant, drawn from aggregate terminal percentiles.
+            One line per variant, drawn from aggregate terminal percentiles. Failed rollouts are marked.
           </div>
         </div>
         {selectedPercentile != null && (
@@ -337,6 +356,23 @@ export function TerminalDistributionChart({
             </g>
           );
         })}
+        {orderedSeries.flatMap((entry) =>
+          entry.failedPoints.map((point) => (
+            <circle
+              key={`${entry.id}:${point.seed}`}
+              cx={xAt(point.percentile)}
+              cy={yAt(point.value)}
+              r={entry.isActive ? 3.75 : 3}
+              fill={FAILED_ROLLOUT_COLOR}
+              stroke="white"
+              strokeWidth="1"
+              opacity={entry.isActive ? 0.95 : 0.75}
+              pointerEvents="none"
+              data-product-distribution-failed=""
+              data-product-distribution-failed-seed={point.seed}
+            />
+          ))
+        )}
         {selectedPoint && (
           <>
             <line
