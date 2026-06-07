@@ -362,7 +362,7 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
         "kind": "holding_sale",
         "asset": {"kind": "sp500"},
         "asset_label": "SP500 Proxy (VOO)",
-        "units": 100.0,
+        "units": pytest.approx(100.0),
         "proceeds_usd": 50_000.0,
         "cost_basis_usd": 40_000.0,
     }

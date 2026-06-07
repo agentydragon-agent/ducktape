@@ -53,6 +53,13 @@ function terminalFailedSamplePoints(result, metric) {
     .filter((point) => point.failed);
 }
 
+function sampleAtPercentile(samples, percentile) {
+  if (samples.length === 0) return null;
+  if (samples.length === 1) return samples[0];
+  const rank = Math.floor(Math.max(0, Math.min(1, percentile)) * (samples.length - 1) + 0.5);
+  return samples[Math.max(0, Math.min(samples.length - 1, rank))];
+}
+
 // A click whose nearest line is farther than this (in px, on the Y axis) clears an existing
 // selection instead of selecting. Gated on an existing selection so a first click anywhere still
 // selects the nearest percentile.
@@ -90,14 +97,21 @@ export function TerminalDistributionChart({
   const series = useMemo(
     () =>
       scenarios
-        .map((scenario, index) => ({
-          id: scenario.id,
-          label: scenario.label,
-          color: scenarioColor(index),
-          isActive: scenario.id === activeId,
-          points: terminalPercentilePoints(resultsById.get(scenario.id), metric),
-          failedPoints: terminalFailedSamplePoints(resultsById.get(scenario.id), metric),
-        }))
+        .map((scenario, index) => {
+          const result = resultsById.get(scenario.id);
+          const samples = terminalMetricSamples(result, metric).sort(
+            (left, right) => left.value - right.value || left.seed - right.seed
+          );
+          return {
+            id: scenario.id,
+            label: scenario.label,
+            color: scenarioColor(index),
+            isActive: scenario.id === activeId,
+            points: terminalPercentilePoints(result, metric),
+            samples,
+            failedPoints: terminalFailedSamplePoints(result, metric),
+          };
+        })
         .filter((entry) => entry.points.length > 0),
     [scenarios, resultsById, activeId, metric]
   );
@@ -167,7 +181,8 @@ export function TerminalDistributionChart({
       ? series.find((candidate) => candidate.id === variantId)
       : pickVariant(percentile, cursorY).entry;
     if (!entry) return null;
-    onSelectPercentile(entry.id, Number((percentile * 100).toFixed(1)));
+    const rawPercentile = Number((percentile * 100).toFixed(1));
+    onSelectPercentile(entry.id, rawPercentile, sampleAtPercentile(entry.samples, percentile)?.seed ?? null);
     return entry.id;
   };
 

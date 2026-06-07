@@ -259,6 +259,7 @@ export function ProductProjectionWorkspace({
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioError, setPortfolioError] = useState(null);
   const [selectedPercentile, setSelectedPercentile] = useState(null);
+  const [selectedSeedFromDistribution, setSelectedSeedFromDistribution] = useState(null);
   const [rolloutDetails, setRolloutDetails] = useState(() => new Map());
   const [rolloutError, setRolloutError] = useState(null);
   const eventSelection = useEventSelection();
@@ -294,6 +295,7 @@ export function ProductProjectionWorkspace({
   const selectMetricValue = (value) => {
     setSelectedMetricValue(value);
     setSelectedPercentile(null);
+    setSelectedSeedFromDistribution(null);
     setRolloutError(null);
     eventSelection.clear();
   };
@@ -341,13 +343,14 @@ export function ProductProjectionWorkspace({
       ? activeRawTerminalResult
       : null;
   const terminalResultsForDisplay = useMemo(() => {
-    const next = new Map(resultsById);
+    const next = new Map();
     for (const [id, result] of terminalResultsById) {
       if (result?.metric === selectedMetric.value) next.set(id, result);
     }
     return next;
-  }, [resultsById, terminalResultsById, selectedMetric.value]);
+  }, [terminalResultsById, selectedMetric.value]);
   const activeTerminalDisplayResult = activeTerminalResult ?? activeResult;
+  const activeTerminalSelectionResult = terminalResultsForDisplay.get(activeId) ?? null;
   const runError = errorsById.get(activeId) ?? null;
   const terminalError = terminalErrorsById.get(activeId) ?? null;
 
@@ -372,13 +375,13 @@ export function ProductProjectionWorkspace({
     () =>
       selectedPercentile == null
         ? null
-        : terminalSampleAtPercentile(activeTerminalResult, selectedMetric, selectedPercentile),
-    [activeTerminalResult, selectedMetric, selectedPercentile]
+        : terminalSampleAtPercentile(activeTerminalSelectionResult, selectedMetric, selectedPercentile),
+    [activeTerminalSelectionResult, selectedMetric, selectedPercentile]
   );
-  const selectedDetailKey =
-    selectedTerminalSample == null ? null : `${scenarioCacheKey}|seed:${selectedTerminalSample.seed}`;
+  const selectedRolloutSeed = selectedTerminalSample?.seed ?? selectedSeedFromDistribution;
+  const selectedDetailKey = selectedRolloutSeed == null ? null : `${scenarioCacheKey}|seed:${selectedRolloutSeed}`;
   const selectedDetail = selectedDetailKey ? rolloutDetails.get(selectedDetailKey) : null;
-  const selectedSeed = selectedTerminalSample?.seed ?? selectedDetail?.rollout?.seed ?? null;
+  const selectedSeed = selectedRolloutSeed ?? selectedDetail?.rollout?.seed ?? null;
   const selectedSummary = useMemo(
     () =>
       selectedDetail?.rollout
@@ -415,13 +418,15 @@ export function ProductProjectionWorkspace({
   // Selecting in the distribution chart carries both coordinates: the line picks the variant
   // (making it active), and the X picks the percentile. The active terminal-distribution response
   // maps that percentile to a seed; the full rollout detail is fetched by seed.
-  const onSelectPercentile = (variantId, percentile) => {
+  const onSelectPercentile = (variantId, percentile, seed = null) => {
     selectEntry(variantId);
     setSelectedPercentile(percentile);
+    setSelectedSeedFromDistribution(seed == null ? null : Number(seed));
     setRolloutError(null);
   };
   const clearSelectedRollout = () => {
     setSelectedPercentile(null);
+    setSelectedSeedFromDistribution(null);
     setRolloutError(null);
     eventSelection.clear();
   };
@@ -580,14 +585,14 @@ export function ProductProjectionWorkspace({
   }, [selectedDetailKey]);
 
   useEffect(() => {
-    if (selectedPercentile == null || selectedTerminalSample == null || selectedDetailKey == null) return;
+    if (selectedPercentile == null || selectedRolloutSeed == null || selectedDetailKey == null) return;
     if (rolloutDetails.has(selectedDetailKey)) return;
     const controller = new AbortController();
     setRolloutError(null);
     fetchProductRollout(
       {
         scenario: activeRequest.scenario,
-        seed: selectedTerminalSample.seed,
+        seed: selectedRolloutSeed,
       },
       { signal: controller.signal }
     )
@@ -604,7 +609,7 @@ export function ProductProjectionWorkspace({
         toastFetchError("product-rollout", "Rollout detail failed", error);
       });
     return () => controller.abort();
-  }, [activeRequest.scenario, rolloutDetails, selectedDetailKey, selectedPercentile, selectedTerminalSample]);
+  }, [activeRequest.scenario, rolloutDetails, selectedDetailKey, selectedPercentile, selectedRolloutSeed]);
 
   return (
     <div
