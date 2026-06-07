@@ -137,13 +137,15 @@ function niceTicks(max, target = 5) {
   return { ticks, ceiling };
 }
 
-function StackedMonthlyChart({ months, bucketSeries }) {
+function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
   const spendSeries = bucketSeries.filter((series) => series.kind === STACKABLE_SPEND_KIND);
+  const spendSeriesWithIndex = spendSeries.map((series, originalIndex) => ({ series, originalIndex }));
+  const visibleSpendSeries = spendSeriesWithIndex.filter(({ series }) => !series.hidden);
   if (!months.length || !spendSeries.length) {
     return <div className="px-4 py-6 text-sm augur-muted">No spend data in window.</div>;
   }
   const monthlyTotals = months.map((_, i) =>
-    spendSeries.reduce((acc, series) => acc + Math.max(series.monthlyAmounts[i], 0), 0)
+    visibleSpendSeries.reduce((acc, { series }) => acc + Math.max(series.monthlyAmounts[i], 0), 0)
   );
   const max = Math.max(...monthlyTotals);
   const { ticks, ceiling } = niceTicks(max);
@@ -167,6 +169,17 @@ function StackedMonthlyChart({ months, bucketSeries }) {
     "#fbbf24",
     "#94a3b8",
   ];
+  const colorByBucketId = new Map(
+    spendSeriesWithIndex.map(({ series, originalIndex }) => [series.bucketId, palette[originalIndex % palette.length]])
+  );
+  const colorForBucket = (bucketId) => String(colorByBucketId.get(bucketId) ?? palette[0]);
+  const legendRows = spendSeriesWithIndex
+    .map(({ series, originalIndex }) => ({
+      series,
+      originalIndex,
+      amount: Math.max(series.effectiveAvg, 0),
+    }))
+    .sort((left, right) => right.amount - left.amount || left.originalIndex - right.originalIndex);
   const yAxisWidthPx = 56;
   const innerHeightPx = 220;
   return (
@@ -186,7 +199,7 @@ function StackedMonthlyChart({ months, bucketSeries }) {
             ))}
         </div>
         <div className="relative flex-1">
-          <div className="absolute inset-0 flex flex-col justify-between">
+          <div className="pointer-events-none absolute inset-0 z-0 flex flex-col justify-between">
             {ticks
               .slice()
               .reverse()
@@ -199,31 +212,38 @@ function StackedMonthlyChart({ months, bucketSeries }) {
             preserveAspectRatio="none"
             width="100%"
             height={innerHeightPx}
+            className="relative z-10 block"
             role="img"
             aria-label="Monthly stacked spend"
           >
             {months.map((monthIso, monthIdx) => {
               const barWidth = 100 / months.length;
               let cursor = ceiling;
-              const segments = spendSeries.map((series, seriesIdx) => {
-                const value = Math.max(series.monthlyAmounts[monthIdx], 0);
-                if (value <= 0) return null;
-                const y = cursor - value;
-                cursor = y;
-                return (
-                  <rect
-                    key={series.bucketId}
-                    x={monthIdx * barWidth + barWidth * 0.1}
-                    y={y}
-                    width={barWidth * 0.8}
-                    height={value}
-                    fill={palette[seriesIdx % palette.length]}
-                    opacity="0.9"
-                  >
-                    <title>{`${series.label} · ${fmtMonth(monthIso)}: ${fmtUsd(value)}`}</title>
-                  </rect>
-                );
-              });
+              const segments = visibleSpendSeries
+                .map(({ series, originalIndex }) => ({
+                  series,
+                  originalIndex,
+                  value: Math.max(series.monthlyAmounts[monthIdx], 0),
+                }))
+                .filter(({ value }) => value > 0)
+                .sort((left, right) => right.value - left.value || left.originalIndex - right.originalIndex)
+                .map(({ series, value }) => {
+                  const y = cursor - value;
+                  cursor = y;
+                  return (
+                    <rect
+                      key={series.bucketId}
+                      x={monthIdx * barWidth + barWidth * 0.1}
+                      y={y}
+                      width={barWidth * 0.8}
+                      height={value}
+                      fill={colorForBucket(series.bucketId)}
+                      opacity="0.9"
+                    >
+                      <title>{`${series.label}\n${fmtUsd(value)}\n${fmtMonth(monthIso)}`}</title>
+                    </rect>
+                  );
+                });
               return <g key={monthIso}>{segments}</g>;
             })}
           </svg>
@@ -236,12 +256,30 @@ function StackedMonthlyChart({ months, bucketSeries }) {
           </span>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={{ paddingLeft: yAxisWidthPx }}>
-        {spendSeries.map((series, idx) => (
-          <span key={series.bucketId} className="inline-flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: palette[idx % palette.length] }} />
-            {series.label}
-          </span>
+      <div
+        className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        style={{ paddingLeft: yAxisWidthPx }}
+        role="group"
+        aria-label="Monthly spend bucket visibility"
+      >
+        {legendRows.map(({ series, amount }) => (
+          <button
+            key={series.bucketId}
+            type="button"
+            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-t border-slate-100 py-1.5 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-800 dark:hover:bg-slate-800/60 ${series.hidden ? "opacity-45" : ""}`}
+            onClick={() => onToggleBucket(series)}
+            aria-pressed={!series.hidden}
+            aria-label={series.hidden ? `Show ${series.label}` : `Hide ${series.label}`}
+            title={series.hidden ? `Show ${series.label}` : `Hide ${series.label}`}
+          >
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-sm ${series.hidden ? "opacity-60" : ""}`}
+              style={{ background: colorForBucket(series.bucketId) }}
+              aria-hidden="true"
+            />
+            <span className={`min-w-0 truncate ${series.hidden ? "line-through" : ""}`}>{series.label}</span>
+            <span className={`augur-tabular ${series.hidden ? "line-through" : ""}`}>{fmtUsd(amount)}</span>
+          </button>
         ))}
       </div>
     </div>
@@ -682,9 +720,6 @@ export function BudgetWorkspace() {
     [rows, adjustments]
   );
 
-  // Hidden buckets drop out of the stacked chart entirely (the "natural spending without rent" view).
-  const visibleRows = useMemo(() => adjustedRows.filter((row) => !row.hidden), [adjustedRows]);
-
   const rowsByFamily = useMemo(() => {
     // Group rows by family. Buckets without a declared family share a synthetic
     // "_ungrouped" key so they still render -- just below the named families.
@@ -733,6 +768,9 @@ export function BudgetWorkspace() {
   };
 
   const resetAdjustments = () => setAdjustments(new Map());
+  const toggleBucketVisibility = (series) => {
+    applyAdjustment(series.bucketId, series.hidden ? null : { kind: "hidden" });
+  };
 
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8 space-y-5">
@@ -805,7 +843,11 @@ export function BudgetWorkspace() {
               </div>
             </div>
             <div className="p-4">
-              <StackedMonthlyChart months={snapshot.months} bucketSeries={visibleRows} />
+              <StackedMonthlyChart
+                months={snapshot.months}
+                bucketSeries={adjustedRows}
+                onToggleBucket={toggleBucketVisibility}
+              />
             </div>
           </section>
 
