@@ -333,12 +333,24 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
             key={entry.id}
             data-product-scenario-col={entry.id}
             data-product-scenario-tab={entry.id}
+            data-product-scenario-select={entry.id}
             data-active={isActive ? "" : undefined}
-            className={`flex h-8 min-w-0 items-center justify-center border-b-2 px-2 text-center ${
+            title="Click to select, double-click to rename"
+            className={`flex h-8 min-w-0 cursor-pointer items-center justify-center border-b-2 px-2 text-center ${
               isActive
                 ? "border-blue-500 text-slate-900 dark:text-slate-50"
                 : "border-transparent text-slate-500 dark:text-slate-400"
             }`}
+            onClick={(event) => {
+              if (isEditing) return;
+              stopSummaryButton(event);
+              onSelect(entry.id);
+            }}
+            onDoubleClick={(event) => {
+              if (isEditing) return;
+              stopSummaryButton(event);
+              setEditingId(entry.id);
+            }}
           >
             <div className="flex min-w-0 items-center justify-center gap-1.5">
               <span
@@ -365,26 +377,13 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
                   }}
                 />
               ) : (
-                <button
-                  type="button"
-                  data-product-scenario-select={entry.id}
+                <span
                   className={`min-w-0 truncate text-sm font-semibold ${
-                    isActive
-                      ? "text-slate-900 dark:text-slate-50"
-                      : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+                    isActive ? "text-slate-900 dark:text-slate-50" : "text-slate-600 dark:text-slate-300"
                   }`}
-                  title="Click to select, double-click to rename"
-                  onClick={(event) => {
-                    stopSummaryButton(event);
-                    onSelect(entry.id);
-                  }}
-                  onDoubleClick={(event) => {
-                    stopSummaryButton(event);
-                    setEditingId(entry.id);
-                  }}
                 >
                   {entry.label}
-                </button>
+                </span>
               )}
               {!isBase && (
                 <button
