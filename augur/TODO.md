@@ -58,10 +58,6 @@ Remaining:
       the last-trade price. Track bid and ask separately in the platform model,
       surface stale/wide/no-quote states, and decide whether scoring should use
       midpoint, last, or a conservative interval per platform/market family.
-- [ ] **Compact calibration market charts.** Render categorical / ladder
-      market families as compact bar or line charts overlaying market
-      probabilities vs model probabilities, with hover details for the point or
-      bucket, instead of full-width probability tables.
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
       rollups of per-market KL once the weighting policy is decided.
 

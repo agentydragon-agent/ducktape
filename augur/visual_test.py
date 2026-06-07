@@ -217,6 +217,7 @@ def _wait_for_calibration_page(page: Page) -> None:
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-calibration-catalog]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-calibration-categorical-chart]").first.wait_for(state="visible", timeout=30_000)
     page.locator("[data-calibration-mark-fan]").wait_for(state="visible", timeout=30_000)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")

@@ -378,19 +378,172 @@ function fmtRange(low, high) {
 
 // A Kalshi/Polymarket range family scored as one multinomial D_KL(market ‖ model): the
 // normalized per-bucket market shares vs the model's per-bucket rollout shares at a date.
+const MARKET_BAR_CLASS = "fill-blue-500 dark:fill-blue-400";
+const MODEL_BAR_CLASS = "fill-emerald-500 dark:fill-emerald-400";
+
+function bucketLabel(bucket) {
+  return bucket.label || fmtRange(bucket.low, bucket.high);
+}
+
+function bucketTitle(bucket) {
+  return `${bucketLabel(bucket)}\nMarket: ${fmtProb(bucket.pMarket)}\nModel: ${fmtProb(bucket.pModel)}\n${bucket.marketId}`;
+}
+
+function probabilityY(value, top, chartHeight) {
+  const bounded = Math.min(1, Math.max(0, Number(value)));
+  return top + (1 - bounded) * chartHeight;
+}
+
+function CategoricalMiniChart({ buckets }) {
+  const width = 320;
+  const height = 124;
+  const top = 10;
+  const bottom = 18;
+  const barWidth = Math.min(18, Math.max(7, Math.floor((width - 28) / Math.max(1, buckets.length * 3))));
+  const slot = width / Math.max(1, buckets.length);
+  const chartHeight = height - top - bottom;
+  const useLines = buckets.length > 12;
+  const xFor = (index) => slot * index + slot / 2;
+  const marketPoints = buckets.map(
+    (bucket, index) => `${xFor(index)},${probabilityY(bucket.pMarket, top, chartHeight)}`
+  );
+  const modelPoints = buckets
+    .map((bucket, index) =>
+      bucket.pModel == null ? null : `${xFor(index)},${probabilityY(bucket.pModel, top, chartHeight)}`
+    )
+    .filter(Boolean);
+  const firstLabel = bucketLabel(buckets[0]);
+  const lastLabel = bucketLabel(buckets[buckets.length - 1]);
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="Market probability versus model probability by bucket"
+      className="h-28 w-full overflow-visible"
+      data-calibration-categorical-chart=""
+    >
+      <line
+        x1="0"
+        y1={top + chartHeight}
+        x2={width}
+        y2={top + chartHeight}
+        className="stroke-slate-200 dark:stroke-slate-700"
+      />
+      <line
+        x1="0"
+        y1={probabilityY(0.5, top, chartHeight)}
+        x2={width}
+        y2={probabilityY(0.5, top, chartHeight)}
+        className="stroke-slate-100 dark:stroke-slate-800"
+      />
+      <line x1="0" y1={top} x2={width} y2={top} className="stroke-slate-100 dark:stroke-slate-800" />
+      {useLines ? (
+        <>
+          <polyline
+            points={marketPoints.join(" ")}
+            className="fill-none stroke-blue-500 dark:stroke-blue-400"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {modelPoints.length > 1 && (
+            <polyline
+              points={modelPoints.join(" ")}
+              className="fill-none stroke-emerald-500 dark:stroke-emerald-400"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+          {buckets.map((bucket, index) => (
+            <g key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
+              <title>{bucketTitle(bucket)}</title>
+              <circle
+                cx={xFor(index)}
+                cy={probabilityY(bucket.pMarket, top, chartHeight)}
+                r="2.2"
+                className={MARKET_BAR_CLASS}
+              />
+              {bucket.pModel != null && (
+                <circle
+                  cx={xFor(index)}
+                  cy={probabilityY(bucket.pModel, top, chartHeight)}
+                  r="2.2"
+                  className={MODEL_BAR_CLASS}
+                />
+              )}
+            </g>
+          ))}
+        </>
+      ) : (
+        buckets.map((bucket, index) => {
+          const center = xFor(index);
+          const marketHeight = Math.max(1, bucket.pMarket * chartHeight);
+          const modelHeight = bucket.pModel == null ? 0 : Math.max(1, bucket.pModel * chartHeight);
+          return (
+            <g key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
+              <title>{bucketTitle(bucket)}</title>
+              <rect
+                x={center - barWidth - 1}
+                y={top + chartHeight - marketHeight}
+                width={barWidth}
+                height={marketHeight}
+                rx="2"
+                className={MARKET_BAR_CLASS}
+              />
+              {bucket.pModel == null ? (
+                <line
+                  x1={center + 1}
+                  y1={top + chartHeight - 2}
+                  x2={center + barWidth + 1}
+                  y2={top + chartHeight - 2}
+                  className="stroke-slate-400 dark:stroke-slate-500"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              ) : (
+                <rect
+                  x={center + 1}
+                  y={top + chartHeight - modelHeight}
+                  width={barWidth}
+                  height={modelHeight}
+                  rx="2"
+                  className={MODEL_BAR_CLASS}
+                />
+              )}
+            </g>
+          );
+        })
+      )}
+      <text x="0" y={height - 2} className="fill-slate-500 text-[10px] dark:fill-slate-400">
+        {firstLabel}
+      </text>
+      <text x={width} y={height - 2} textAnchor="end" className="fill-slate-500 text-[10px] dark:fill-slate-400">
+        {lastLabel}
+      </text>
+    </svg>
+  );
+}
+
 function CategoricalPanel({ families }) {
   return (
     <section className="augur-panel overflow-hidden" aria-label="Categorical markets" data-calibration-categorical="">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="augur-eyebrow">Categorical markets (multinomial)</div>
         <div className="mt-1 text-xs augur-muted">
-          Mutually-exclusive range families scored as one multinomial KL = D<sub>KL</sub>(market ‖ model) over the
-          buckets at a single date.
+          Market vs model bucket probabilities. Each card is one multinomial KL = D<sub>KL</sub>(market ‖ model).
         </div>
       </div>
-      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+      <div
+        className="grid gap-3 p-3"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))" }}
+      >
         {families.map((family) => (
-          <div key={family.familyId} data-calibration-categorical-family={family.familyId} className="px-4 py-3">
+          <article
+            key={family.familyId}
+            data-calibration-categorical-family={family.familyId}
+            className="rounded border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
+          >
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 <PlatformBadge platform={family.platform} />
@@ -405,27 +558,20 @@ function CategoricalPanel({ families }) {
                 {fmtKl(family.klBits, { withUnit: true })}
               </div>
             </div>
-            <table className="mt-2 min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <th className="py-1 font-semibold">Bucket</th>
-                  <th className="py-1 text-right font-semibold">Market</th>
-                  <th className="py-1 text-right font-semibold">Model</th>
-                </tr>
-              </thead>
-              <tbody>
-                {family.buckets.map((bucket) => (
-                  <tr key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
-                    <td className="py-1 augur-tabular">{bucket.label || fmtRange(bucket.low, bucket.high)}</td>
-                    <td className="py-1 text-right augur-tabular">{fmtProb(bucket.pMarket)}</td>
-                    <td className="py-1 text-right augur-tabular">
-                      {bucket.pModel == null ? <span className="augur-muted">n/a</span> : fmtProb(bucket.pModel)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+            <CategoricalMiniChart buckets={family.buckets} />
+            <div className="mt-1 flex items-center gap-3 text-[11px] augur-muted">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-blue-500 dark:bg-blue-400" aria-hidden="true" />
+                Market
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" />
+                Model
+              </span>
+              <span className="ml-auto augur-tabular">{family.nResolved.toLocaleString()} resolved</span>
+            </div>
+            <div className="mt-1 text-[11px] augur-muted augur-tabular">{family.buckets.length} buckets</div>
+          </article>
         ))}
       </div>
     </section>
