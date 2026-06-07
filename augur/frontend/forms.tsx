@@ -111,12 +111,6 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange, showLab
   return (
     <div className={`grid gap-2 ${className}`.trim()}>
       {showLabel && <div className="augur-field-label">Timeline (mid-horizon changes)</div>}
-      {events.length === 0 && (
-        <div className="text-xs augur-muted">
-          Add events to change the property&apos;s rented %, primary-home status, fund a capital improvement, or sell
-          mid-horizon.
-        </div>
-      )}
       {events.length > 0 && (
         <div className="overflow-hidden rounded border border-slate-300 divide-y divide-slate-300 dark:border-slate-600 dark:divide-slate-600">
           {events.map((event, index) => (

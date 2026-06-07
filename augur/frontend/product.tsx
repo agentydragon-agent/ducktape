@@ -345,10 +345,15 @@ export function ProductProjectionWorkspace({
   const terminalResultsForDisplay = useMemo(() => {
     const next = new Map();
     for (const [id, result] of terminalResultsById) {
-      if (result?.metric === selectedMetric.value) next.set(id, result);
+      if (
+        result?.metric === selectedMetric.value &&
+        terminalResultKeysById.get(id) === terminalRequestKeyById.get(id)
+      ) {
+        next.set(id, result);
+      }
     }
     return next;
-  }, [terminalResultsById, selectedMetric.value]);
+  }, [terminalResultsById, terminalResultKeysById, terminalRequestKeyById, selectedMetric.value]);
   const activeTerminalDisplayResult = activeTerminalResult ?? activeResult;
   const activeTerminalSelectionResult = terminalResultsForDisplay.get(activeId) ?? null;
   const runError = errorsById.get(activeId) ?? null;
@@ -523,8 +528,7 @@ export function ProductProjectionWorkspace({
   useEffect(() => {
     const controller = new AbortController();
     // Fan out one request per scenario over the shared seed set. Results land in place (no clear)
-    // so the comparison fans stay put while the active scenario is being edited; unchanged
-    // scenarios re-request the same key and return from the server's rollout cache.
+    // so the comparison fans stay put while the active scenario is being edited.
     const handle = setTimeout(() => {
       for (const { id, label, request } of requestEntries) {
         fetchProductMetricFan(request, { signal: controller.signal })

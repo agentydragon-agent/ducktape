@@ -48,10 +48,8 @@ _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TA
 def monthly_metric_arrays_batch(dense: DenseSimulationResult, *, primary_agent_id: str) -> dict[str, np.ndarray]:
     """Per-month product metrics for **every** rollout of a batched result as `{name: (H+1, R)}`.
 
-    Each metric is reduced over the whole `(…, R)` batch in one vectorized pass. The product fan
-    path caches one batch per scenario and decodes it once here, then column-slices per seed —
-    rather than looping a single-rollout reduction over R rollouts. `month_index` is the shared
-    `(H+1,)` axis (no rollout dimension).
+    Each metric is reduced over the whole `(…, R)` batch in one vectorized pass. `month_index` is
+    the shared `(H+1,)` axis (no rollout dimension).
     """
 
     plan = dense.plan

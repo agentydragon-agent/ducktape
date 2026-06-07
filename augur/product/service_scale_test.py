@@ -1,9 +1,9 @@
 """End-to-end product-path scale benchmark/smoke.
 
-Drives the real `ProductService.metric_fan` (exogenous sampling → batched
-`simulate_dense` → dense reductions → per-seed reduced-metric cache → percentiles)
-at a configurable rollout count, so we can see where time/memory go through the
-*actual* product entry point rather than the synthetic sim profiler.
+Drives the real `ProductService.metric_fan` (exogenous sampling → reduced JAX
+product metrics → percentiles) at a configurable rollout count, so we can see
+where time/memory go through the *actual* product entry point rather than the
+synthetic sim profiler.
 
 CI runs it tiny (defaults) as a smoke test. Scale it locally:
 
@@ -37,7 +37,7 @@ def test_metric_fan_scale(make_product_service: MakeProductService, augur_config
     # `make_product_service` registers the realized model under "current_model" (see conftest),
     # so the scenario must reference that id regardless of the config's default preset name.
     model = augur_config.models[augur_config.default_model_id].realize_model()
-    service: ProductService = make_product_service(model, max_cache_rollouts=rollouts + 16)
+    service: ProductService = make_product_service(model)
     scenario = ScenarioKey(
         model_id="current_model", horizon_months=horizon, monthly_spend_usd=5_000.0, spend_index="none"
     )

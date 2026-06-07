@@ -52,6 +52,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from augur.model.series import PrivateEquityRegimeCode
+from augur.product.asset_key import PrivateEquityAssetKey
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
@@ -216,6 +217,26 @@ class _TracedConfig(NamedTuple):
     liability_monthly_payment: jnp.ndarray
 
 
+@dataclass(frozen=True)
+class _ProductSummaryStatic:
+    has_public_lots: bool
+    has_pe_lots: bool
+    has_properties: bool
+
+
+class _ProductSummaryInputs(NamedTuple):
+    cash_mask: jnp.ndarray
+    public_lot_mask: jnp.ndarray
+    pe_lot_mask: jnp.ndarray
+    pe_lot_issuer: jnp.ndarray
+    property_mask: jnp.ndarray
+    property_purchase_month: jnp.ndarray
+    property_purchase_price: jnp.ndarray
+    property_home_value_series: jnp.ndarray
+    liability_mask: jnp.ndarray
+    primary_obligation_mask: jnp.ndarray
+
+
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     """Build the traced-config bundle of swept numeric values from the (concrete) plan."""
     return _TracedConfig(
@@ -307,6 +328,49 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
 
+def run_jax_product_metrics(
+    plan: CompiledSimulation, *, primary_agent_id: str
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Run the JAX month loop but emit only product fan/terminal metrics.
+
+    This keeps the accounting algorithm identical to `run_jax_scan` while avoiding the full
+    DenseSimulationResult history/event slabs. The product fan and terminal endpoints need these
+    reduced histories for all seeds; the full dense trace is reserved for the selected-rollout detail
+    endpoint.
+    """
+    validate_seed_dependent_inputs(plan)
+
+    baked, structure, p, _meta = _build_program(plan)
+    product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
+    external, pe, cfg = _program_inputs(plan)
+    product_ys, product_tail = _program_impl(
+        external, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
+    )
+    product_ys, product_tail = jax.device_get((product_ys, product_tail))
+    (oversell, final_failed_month) = product_tail
+    if bool(np.asarray(oversell)):
+        raise ValueError("scheduled asset sale exceeds available lots")
+    initial_ys, monthly_ys = product_ys
+    names = (
+        "cash_usd",
+        "holding_value_usd",
+        "private_equity_value_usd",
+        "property_value_usd",
+        "mortgage_balance_usd",
+        "shortfall_usd",
+    )
+    arrays: dict[str, np.ndarray] = {"month_index": np.arange(plan.horizon_months + 1, dtype=np.int64)}
+    for name, initial, monthly in zip(names, initial_ys, monthly_ys, strict=True):
+        values = np.concatenate([np.asarray(initial, dtype=np.float64)[None, :], np.asarray(monthly, dtype=np.float64)])
+        arrays[name] = values
+    arrays["home_equity_usd"] = arrays["property_value_usd"] - arrays["mortgage_balance_usd"]
+    arrays["liquid_net_worth_usd"] = arrays["cash_usd"] + arrays["holding_value_usd"]
+    arrays["net_worth_usd"] = (
+        arrays["liquid_net_worth_usd"] + arrays["home_equity_usd"] + arrays["private_equity_value_usd"]
+    )
+    return arrays, np.asarray(final_failed_month, dtype=np.int64)
+
+
 def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
     """The three traced arguments the compiled program takes: the external-series cube, the
     seed-varying PE channel dict, and the swept-numeric `_TracedConfig`."""
@@ -322,6 +386,56 @@ def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jn
         "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_cents),
     }
     return jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan)
+
+
+def _product_summary_inputs(
+    plan: CompiledSimulation, *, primary_agent_id: str
+) -> tuple[_ProductSummaryStatic, _ProductSummaryInputs]:
+    try:
+        primary_agent_code = plan.strings.index(primary_agent_id)
+    except ValueError as exc:
+        raise ValueError(f"compiled simulation string table does not contain {primary_agent_id!r}") from exc
+
+    cash_mask = plan.cash_agent_codes == primary_agent_code
+    pe_issuer_index = {str(issuer_id): idx for idx, issuer_id in enumerate(plan.pe_issuers.issuer_ids)}
+    public_lot_mask = np.zeros(plan.lot_id_codes.shape, dtype=bool)
+    pe_lot_mask = np.zeros(plan.lot_id_codes.shape, dtype=bool)
+    pe_lot_issuer = np.full(plan.lot_id_codes.shape, NO_CODE, dtype=np.int64)
+    for lot, asset_code in enumerate(plan.lot_asset_codes):
+        if int(plan.lot_agent_codes[lot]) != primary_agent_code:
+            continue
+        asset = plan.assets[int(asset_code)]
+        if isinstance(asset, PrivateEquityAssetKey):
+            pe_lot_mask[lot] = True
+            pe_lot_issuer[lot] = pe_issuer_index[str(asset.issuer_id)]
+        else:
+            public_lot_mask[lot] = True
+            if int(plan.lot_asset_series_index[lot]) == NO_CODE:
+                raise ValueError(
+                    f"holding asset {asset.wire_id!r} has no modeled price series in the compiled simulation"
+                )
+
+    property_mask = plan.properties.buyer_agent == primary_agent_code
+    inputs = _ProductSummaryInputs(
+        cash_mask=jnp.asarray(cash_mask),
+        public_lot_mask=jnp.asarray(public_lot_mask),
+        pe_lot_mask=jnp.asarray(pe_lot_mask),
+        pe_lot_issuer=jnp.asarray(pe_lot_issuer),
+        property_mask=jnp.asarray(property_mask),
+        property_purchase_month=jnp.asarray(plan.properties.month.astype(np.int32)),
+        property_purchase_price=jnp.asarray(plan.properties.purchase_price),
+        property_home_value_series=jnp.asarray(plan.property_home_value_series_index.astype(np.int32)),
+        liability_mask=jnp.asarray(plan.liabilities.agent == primary_agent_code),
+        primary_obligation_mask=jnp.asarray(plan.obligations.agent == primary_agent_code),
+    )
+    return (
+        _ProductSummaryStatic(
+            has_public_lots=bool(public_lot_mask.any()),
+            has_pe_lots=bool(pe_lot_mask.any()),
+            has_properties=bool(property_mask.any()),
+        ),
+        inputs,
+    )
 
 
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
@@ -961,7 +1075,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     return baked, structure, p, meta
 
 
-@partial(jax.jit, static_argnames=("p", "structure"))
+@partial(jax.jit, static_argnames=("p", "structure", "product_summary"))
 def _program_impl(
     external_values: jnp.ndarray,
     pe_ch: dict[str, jnp.ndarray],
@@ -969,6 +1083,8 @@ def _program_impl(
     baked: _Operands,
     p: SlotPlan,
     structure: _Static,
+    product_summary: _ProductSummaryStatic | None = None,
+    product_inputs: _ProductSummaryInputs | None = None,
 ) -> tuple:
     """Module-level, natively-cached scan program. `external_values` / `pe_ch` / `cfg` are TRACED
     (seed-varying series + swept numeric config); `baked` is a TRACED pytree of every device array the
@@ -1059,6 +1175,55 @@ def _program_impl(
     tr["base"] = cfg.transfer_amount_base
     pc["fixed"] = cfg.property_cashflow_amount_fixed
     pc["base"] = cfg.property_cashflow_amount_base
+
+    def product_metrics(
+        s: _ScanState, *, snapshot_month: jnp.ndarray, obligation_shortfall: jnp.ndarray, obligation_mask: jnp.ndarray
+    ) -> tuple[jnp.ndarray, ...]:
+        assert product_summary is not None
+        assert product_inputs is not None
+        cash_usd = jnp.where(product_inputs.cash_mask[:, None], s.cash, 0).sum(axis=0).astype(jnp.float64) / float(
+            USD_CENTS
+        )
+        holding_usd = jnp.zeros((r,), dtype=jnp.float64)
+        if product_summary.has_public_lots:
+            safe_series = jnp.maximum(lot_asset_series_index, 0)
+            public_price = external_values[safe_series, :, snapshot_month]
+            public_quantity = s.lot_remaining.astype(jnp.float64) / lot_quantity_scale[:, None].astype(jnp.float64)
+            public_value = public_quantity * public_price
+            holding_usd = jnp.where(product_inputs.public_lot_mask[:, None], public_value, 0.0).sum(axis=0)
+
+        pe_usd = jnp.zeros((r,), dtype=jnp.float64)
+        if product_summary.has_pe_lots:
+            safe_issuer = jnp.maximum(product_inputs.pe_lot_issuer, 0)
+            pe_price = pe_ch["marks"][safe_issuer, :, snapshot_month]
+            pe_quantity = s.lot_remaining.astype(jnp.float64) / lot_quantity_scale[:, None].astype(jnp.float64)
+            pe_value = pe_quantity * pe_price
+            pe_usd = jnp.where(product_inputs.pe_lot_mask[:, None], pe_value, 0.0).sum(axis=0)
+
+        property_usd = jnp.zeros((r,), dtype=jnp.float64)
+        if product_summary.has_properties:
+            valid_series = product_inputs.property_home_value_series >= 0
+            safe_series = jnp.maximum(product_inputs.property_home_value_series, 0)
+            levels = jnp.nan_to_num(external_values[safe_series], nan=0.0)  # (property, rollout, snapshot)
+            current = levels[:, :, snapshot_month]
+            base_index = product_inputs.property_purchase_month[:, None, None]
+            base = jnp.take_along_axis(levels, base_index, axis=2)[:, :, 0]
+            market = (
+                product_inputs.property_purchase_price[:, None].astype(jnp.float64)
+                / float(USD_CENTS)
+                * current
+                / jnp.where(base > 0, base, 1.0)
+            )
+            active_property = product_inputs.property_mask[:, None] & valid_series[:, None] & s.property_active
+            property_usd = jnp.where(active_property & (base > 0), market, 0.0).sum(axis=0)
+
+        mortgage_usd = jnp.where(product_inputs.liability_mask[:, None], s.liability_principal, 0).sum(axis=0).astype(
+            jnp.float64
+        ) / float(USD_CENTS)
+        shortfall_usd = jnp.where(obligation_mask[:, None], obligation_shortfall, 0).sum(axis=0).astype(
+            jnp.float64
+        ) / float(USD_CENTS)
+        return cash_usd, holding_usd, pe_usd, property_usd, mortgage_usd, shortfall_usd
 
     def december_tax(
         ordinary: jnp.ndarray,
@@ -1908,6 +2073,15 @@ def _program_impl(
             sale_disp_proceeds=sale_disp_proceeds,
             sale_oversell=sale_oversell,
         )
+        if product_summary is not None:
+            product_inputs_local = product_inputs
+            assert product_inputs_local is not None
+            return carry, product_metrics(
+                carry,
+                snapshot_month=month + 1,
+                obligation_shortfall=shortfall,
+                obligation_mask=product_inputs_local.primary_obligation_mask[month],
+            )
         base_ys = (
             cash,
             ordinary,
@@ -2035,6 +2209,17 @@ def _program_impl(
         cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
         lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
     )
+    if product_summary is not None:
+        product_inputs_local = product_inputs
+        assert product_inputs_local is not None
+        initial_ys = product_metrics(
+            init,
+            snapshot_month=jnp.asarray(0, dtype=jnp.int32),
+            obligation_shortfall=_zeros_i64((product_inputs_local.primary_obligation_mask.shape[1], r)),
+            obligation_mask=jnp.zeros(product_inputs_local.primary_obligation_mask.shape[1], dtype=bool),
+        )
+        final_carry, ys = jax.lax.scan(step, init, months)
+        return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month)
     final_carry, ys = jax.lax.scan(step, init, months)
     # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
     return ys, (

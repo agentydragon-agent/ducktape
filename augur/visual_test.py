@@ -96,6 +96,50 @@ def _wait_for_product_chart_geometry(page: Page) -> None:
     )
 
 
+def _wait_for_terminal_distribution_density(page: Page, *, min_series: int) -> None:
+    """Wait until the terminal-distribution chart is drawing dense terminal percentiles."""
+    page.wait_for_function(
+        f"""
+        () => {{
+          const plot = document.querySelector("[data-product-terminal-distribution-plot]");
+          const series = Array.from(document.querySelectorAll("[data-product-distribution-series]"));
+          if (!plot) return false;
+          const renderedWidth = Number(plot.getAttribute("data-product-terminal-distribution-rendered-width"));
+          const boxWidth = plot.getBoundingClientRect().width;
+          return (
+            Number.isFinite(renderedWidth) &&
+            renderedWidth >= boxWidth - 2 &&
+            series.length >= {min_series} &&
+            series.every((node) => Number(node.getAttribute("data-product-distribution-point-count")) >= 101)
+          );
+        }}
+        """,
+        timeout=30_000,
+    )
+
+
+def _click_terminal_distribution_percentile(page: Page, *, percentile: float, y_fraction: float) -> None:
+    plot = page.locator("[data-product-terminal-distribution-plot]")
+    plot.wait_for(state="visible", timeout=30_000)
+    box = plot.bounding_box()
+    assert box is not None
+    x = page.evaluate(
+        """
+        (percentile) => {
+          const plot = document.querySelector("[data-product-terminal-distribution-plot]");
+          const renderedWidth =
+            Number(plot.getAttribute("data-product-terminal-distribution-rendered-width")) ||
+            plot.getBoundingClientRect().width;
+          const marginLeft = 82;
+          const marginRight = 20;
+          return marginLeft + Math.max(0, Math.min(1, percentile)) * Math.max(1, renderedWidth - marginLeft - marginRight);
+        }
+        """,
+        percentile,
+    )
+    plot.click(position={"x": float(x), "y": box["height"] * y_fraction})
+
+
 def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
     page.add_style_tag(content=deterministic_style())
@@ -124,6 +168,7 @@ def _wait_for_product_page(page: Page) -> None:
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
     _wait_for_product_chart_geometry(page)
+    _wait_for_terminal_distribution_density(page, min_series=1)
 
 
 def _select_first_rollout(page: Page) -> None:
@@ -131,11 +176,7 @@ def _select_first_rollout(page: Page) -> None:
     cross-selection handshake. A click anywhere in the plot selects the nearest variant line at that
     percentile; clicking at 70% width binds to a mid-upper rollout. Leaves the table-clicked-month
     selected so the screenshot shows event detail."""
-    plot = page.locator("[data-product-terminal-distribution-plot]")
-    plot.wait_for(state="visible", timeout=30_000)
-    box = plot.bounding_box()
-    assert box is not None
-    plot.click(position={"x": box["width"] * 0.7, "y": box["height"] * 0.5})
+    _click_terminal_distribution_percentile(page, percentile=0.7, y_fraction=0.5)
     page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
@@ -199,7 +240,7 @@ def _wait_for_distribution_failures(page: Page) -> None:
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-distribution-series]").first.wait_for(state="visible", timeout=30_000)
+    _wait_for_terminal_distribution_density(page, min_series=1)
     page.locator("[data-product-distribution-failed]").first.wait_for(state="visible", timeout=30_000)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
@@ -309,10 +350,8 @@ def _wait_for_scenario_comparison(page: Page) -> None:
     page.wait_for_function('() => document.querySelectorAll("[data-product-scenario-col]").length >= 3', timeout=30_000)
     # All three scenario fans have drawn their median lines.
     page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 3', timeout=30_000)
-    # The terminal-distribution chart overlays one line per variant (all three present).
-    page.wait_for_function(
-        '() => document.querySelectorAll("[data-product-distribution-series]").length >= 3', timeout=30_000
-    )
+    # The terminal-distribution chart overlays one dense line per variant (all three present).
+    _wait_for_terminal_distribution_density(page, min_series=3)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
     _wait_for_product_chart_geometry(page)
@@ -338,11 +377,7 @@ def _select_rollout_from_distribution(page: Page) -> None:
     the nearest variant line at that percentile (making it active), drawing the selection marker on
     the line and the rollout overlay on the timeline chart below, with the events panel carrying the active
     badge."""
-    plot = page.locator("[data-product-terminal-distribution-plot]")
-    plot.wait_for(state="visible", timeout=30_000)
-    box = plot.bounding_box()
-    assert box is not None
-    plot.click(position={"x": box["width"] * 0.6, "y": box["height"] * 0.4})
+    _click_terminal_distribution_percentile(page, percentile=0.6, y_fraction=0.4)
     page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)

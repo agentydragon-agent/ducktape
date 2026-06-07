@@ -141,12 +141,8 @@ def scenario_key() -> ScenarioKey:
     return ScenarioKey(model_id="current_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none")
 
 
-def test_metric_fan_truncates_one_cached_max_horizon_rollout(
-    product: service.ProductService, counting_model: CountingModel, augur_config: Config
-) -> None:
-    """A shorter requested horizon reuses the single max-horizon simulation and truncates it: the
-    shorter fan is an exact prefix of the longer one, terminal is taken at the truncated endpoint,
-    and only one sample (at the server max horizon) is ever drawn."""
+def test_metric_fan_simulates_requested_horizon(product: service.ProductService, counting_model: CountingModel) -> None:
+    """Product projections run at the requested horizon, not the server max horizon."""
 
     def fan_request(horizon_months: int) -> MetricFanRequest:
         return MetricFanRequest(
@@ -162,18 +158,14 @@ def test_metric_fan_truncates_one_cached_max_horizon_rollout(
     short = product.metric_fan(fan_request(2))
     long = product.metric_fan(fan_request(5))
 
-    # One simulation, run at the server max horizon — not the requested 2 or 5.
-    assert one(counting_model.sample_requests).horizon_months == augur_config.max_horizon_months
+    assert [request.horizon_months for request in counting_model.sample_requests] == [2, 5]
     # horizon h → snapshots 0..h, i.e. h+1 monthly points.
     assert len(set(short.monthly_metric_fan["month_index"])) == 3
     assert len(set(long.monthly_metric_fan["month_index"])) == 6
 
     # `percentiles=(50.0,)` → exactly one value per month, so month_index keys are unique.
     short_by_month = dict(zip(short.monthly_metric_fan["month_index"], short.monthly_metric_fan["value"], strict=True))
-    long_by_month = dict(zip(long.monthly_metric_fan["month_index"], long.monthly_metric_fan["value"], strict=True))
-    for month, value in short_by_month.items():
-        assert value == pytest.approx(long_by_month[month])
-    # Terminal percentile is the metric at the requested horizon's last month, not the max horizon's.
+    # Terminal percentile is the metric at the requested horizon's last month.
     assert one(short.terminal_metric_percentiles["value"]) == pytest.approx(short_by_month[2])
 
 
@@ -263,7 +255,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
 
 
-def test_metric_fan_terminal_distribution_and_rollout_detail_cache_behavior(
+def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     fan = product.metric_fan(
@@ -306,7 +298,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_cache_behavior(
         )
     )
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
     assert terminal_distribution.model_id == "composite"
     assert terminal_distribution.metric == "cash_usd"
     assert terminal_distribution.failed_count == 0
@@ -323,7 +315,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_cache_behavior(
 
     detail = product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
     assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
@@ -344,46 +336,55 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_cache_behavior(
         )
     )
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,), (7, 8)]
     assert holding_fan.monthly_metric_fan["value"][0] == 835_500.0
 
     fan_with_one_new_seed = product.metric_fan(
         MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash_usd", percentiles=(50,))
     )
 
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7,), (9,)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [
+        (7, 8),
+        (7, 8),
+        (7,),
+        (7, 8),
+        (7, 8, 9),
+    ]
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
-def test_metric_fan_cache_retains_reduced_metrics_not_dense_batches(
+def test_reduced_product_projection_matches_dense_metric_decode(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
-    product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(50,))
-    )
+    seeds = (7, 8)
+    dense, _model_id = product._simulate_dense(scenario_key, seeds)
+    expected_metrics = decode.monthly_metric_arrays_batch(dense, primary_agent_id=product._primary_agent_id)
+    expected_failed = decode.failed_month_index_batch(dense)
 
-    cache_key = scenario_key.model_copy(update={"horizon_months": product._max_horizon_months})
-    cached = product._cache_get(cache_key, 7)
+    actual_metrics, actual_failed, _model_id = product._simulate_product_metrics(scenario_key, seeds)
 
-    assert cached is not None
-    assert not hasattr(cached, "batch")
-    assert cached.monthly_metric_arrays["cash_usd"].shape == (product._max_horizon_months + 1,)
+    assert set(actual_metrics) == set(expected_metrics)
+    for name, expected in expected_metrics.items():
+        np.testing.assert_allclose(actual_metrics[name], expected, rtol=0.0, atol=1e-9)
+    np.testing.assert_array_equal(actual_failed, expected_failed)
 
 
-def test_concurrent_fan_and_terminal_requests_share_one_simulation(
+def test_concurrent_fan_and_terminal_requests_run_serially(
     product: service.ProductService,
     counting_model: CountingModel,
     monkeypatch: pytest.MonkeyPatch,
     scenario_key: ScenarioKey,
 ) -> None:
-    original_simulate_missing = product._simulate_missing
+    original_simulate_product_metrics = product._simulate_product_metrics
     first_simulation_started = threading.Event()
     release_first_simulation = threading.Event()
     active_simulations = 0
     max_active_simulations = 0
     active_lock = threading.Lock()
 
-    def slow_simulate_missing(scenario: ScenarioKey, seeds: tuple[int, ...]) -> dict[int, service._CachedRollout]:
+    def slow_simulate_product_metrics(
+        scenario: ScenarioKey, seeds: tuple[int, ...]
+    ) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
@@ -391,12 +392,12 @@ def test_concurrent_fan_and_terminal_requests_share_one_simulation(
             first_simulation_started.set()
         release_first_simulation.wait(timeout=5)
         try:
-            return original_simulate_missing(scenario, seeds)
+            return original_simulate_product_metrics(scenario, seeds)
         finally:
             with active_lock:
                 active_simulations -= 1
 
-    monkeypatch.setattr(product, "_simulate_missing", slow_simulate_missing)
+    monkeypatch.setattr(product, "_simulate_product_metrics", slow_simulate_product_metrics)
 
     fan_request = MetricFanRequest(
         scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(5, 50, 95)
@@ -413,7 +414,7 @@ def test_concurrent_fan_and_terminal_requests_share_one_simulation(
         terminal_future.result(timeout=10)
 
     assert max_active_simulations == 1
-    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
 
 
 def test_terminal_distribution_samples_identify_rollout_terminal_values(
@@ -464,10 +465,10 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     }
 
 
-def test_metric_fan_decodes_each_rollout_once_per_batch(
+def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = decode.monthly_metric_arrays_batch
+    original = service.run_jax_product_metrics
     calls = 0
 
     def counted(*args, **kwargs):
@@ -475,13 +476,13 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "monthly_metric_arrays_batch", counted)
+    monkeypatch.setattr(service, "run_jax_product_metrics", counted)
 
     product.metric_fan(
         MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash_usd", percentiles=(50,))
     )
 
-    # All four seeds share one simulated batch, so the batch is reduced exactly once (not per rollout).
+    # All four seeds share one simulated batch, so the reduced product projection runs once.
     assert calls == 1
 
 

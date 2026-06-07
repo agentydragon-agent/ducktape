@@ -28,7 +28,7 @@ def make_product_service(augur_config: Config, catalog: CatalogResponse) -> Make
     Pass `config=` to run against a modified deployment (e.g. `_with_fixed_cash`); the catalog is
     rebuilt from it, otherwise the shared `catalog` fixture is reused."""
 
-    def _make(model: Sampler, *, config: Config | None = None, max_cache_rollouts: int = 10) -> ProductService:
+    def _make(model: Sampler, *, config: Config | None = None) -> ProductService:
         cfg = augur_config if config is None else config
         cat = catalog if config is None else build_catalog(config)
         resolved = resolve_portfolio_sources(cfg)
@@ -43,7 +43,6 @@ def make_product_service(augur_config: Config, catalog: CatalogResponse) -> Make
             models={"current_model": model},
             max_rollout_samples=cfg.max_rollout_samples,
             max_horizon_months=cfg.max_horizon_months,
-            max_cache_rollouts=max_cache_rollouts,
         )
 
     return _make

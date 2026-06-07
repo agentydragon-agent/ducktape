@@ -143,11 +143,8 @@ class Config(ApiModel):
         default=MAX_HORIZON_MONTHS,
         le=MAX_HORIZON_MONTHS,
         description=(
-            "Server-side maximum rollout length in months. Every scenario+seed is simulated once to "
-            "this horizon (then cached) and the response is truncated to the per-request "
-            "`horizon_months`. The frontend's time-axis charts scroll the requested horizon up to "
-            "this ceiling, so there is no separate horizon input. Larger values make the first load "
-            "of each scenario proportionally heavier; cached truncations are free. Defaults to (and "
+            "Server-side maximum rollout length in months. Product projection requests simulate the "
+            "requested `horizon_months` directly and may not exceed this ceiling. Defaults to (and "
             "may not exceed) the wire's absolute cap."
         ),
     )

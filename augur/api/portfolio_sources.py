@@ -54,8 +54,8 @@ class ResolvedPortfolioSources:
 def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
     """Materialize enabled portfolio sources into Augur's static runtime portfolio.
 
-    Product simulations cache rollouts by scenario+seed, so v0 resolves Plaid at startup
-    instead of changing the initial state under already-cached simulations.
+    v0 resolves Plaid at startup so all requests in one API process see a consistent initial
+    portfolio snapshot.
     """
 
     contributions = [_fixed_contribution(config.portfolio_sources.fixed)]

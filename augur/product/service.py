@@ -1,17 +1,12 @@
-"""Product-shaped query surface. Owns the rollout LRU cache and the model.
+"""Product-shaped query surface. Owns the product simulation model.
 
 Holds the slice of augur config the product surface needs (portfolio, primary
 agent, initial cash); does not know about properties, locations, or bootstrap.
-The cache stores per-rollout R=1 DenseSimulationResult primitives keyed by
-``(ScenarioKey, seed)``, where the key's ``horizon_months`` is normalized to the
-server max horizon: every rollout is simulated once to that max and truncated to
-the per-request horizon, so changing the requested horizon never re-simulates.
 """
 
 from __future__ import annotations
 
 import threading
-from collections import OrderedDict
 from dataclasses import dataclass
 from typing import cast
 
@@ -22,13 +17,14 @@ from augur.api.schemas import Frame
 from augur.api.wire import Property
 from augur.model.exogenous import (
     ExogenousSamplingRequest,
+    SampledExogenousBundle,
     Sampler,
     anchor_sampled_series_levels,
     validate_sample_satisfies_request,
 )
 from augur.product.decode import (
     failed_month_index_batch,
-    monthly_metric_arrays_batch,
+    monthly_metric_arrays,
     rollout_events_from,
     terminal_metrics_from_arrays,
 )
@@ -52,22 +48,13 @@ from augur.product.wire import (
     TerminalMetrics,
 )
 from augur.sim.codec.plan import DenseSimulationResult
+from augur.sim.compiler import compile_simulation
+from augur.sim.engine.jax_engine import run_jax_product_metrics
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
-from augur.sim.scenario import HarvestPolicy
+from augur.sim.runtime import load_jurisdictions_for
+from augur.sim.scenario import HarvestPolicy, Scenario
 from augur.sim.simulate import simulate_dense_with_external_series
-
-DEFAULT_MAX_CACHE_ROLLOUTS = 5_000
-
-
-@dataclass(frozen=True)
-class _CachedRollout:
-    # Product fan/terminal calls cache reduced product metrics, not the full dense simulator
-    # history. DenseSimulationResult is much larger: it carries every state/event buffer for every
-    # month/rollout and should die as soon as one request has reduced it.
-    monthly_metric_arrays: dict[str, np.ndarray]
-    failed_month_index: int | None
-    model_id: str
 
 
 @dataclass(frozen=True)
@@ -75,7 +62,7 @@ class _DecodedRollout:
     seed: int
     monthly_metric_arrays: dict[str, np.ndarray]
     terminal_metrics: TerminalMetrics
-    cached: _CachedRollout
+    model_id: str
 
     @property
     def failed(self) -> bool:
@@ -96,10 +83,7 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
-        max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
     ) -> None:
-        if max_cache_rollouts <= 0:
-            raise ValueError("max_cache_rollouts must be positive")
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
         if not models:
@@ -113,18 +97,11 @@ class ProductService:
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_horizon_months = int(max_horizon_months)
-        self._max_cache_rollouts = int(max_cache_rollouts)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
-        self._cache: OrderedDict[tuple[ScenarioKey, int], _CachedRollout] = OrderedDict()
-        # FastAPI + uvicorn dispatches request handlers concurrently. The cache's get→miss→
-        # simulate→put sequence is not atomic; without a lock two simultaneous metric-fan
-        # requests on the same scenario+seed can both run the simulation.
-        self._cache_lock = threading.Lock()
-        # Keep one product projection in flight per API process. JAX/XLA compilation and dense
-        # simulation batches are memory-heavy enough that overlapping fan + terminal requests can
-        # exceed the production pod limit before either request has a chance to populate the cache.
+        # Keep one product projection in flight per API process. JAX/XLA batches are memory-heavy
+        # enough that overlapping fan + terminal requests can exceed the production pod limit.
         self._projection_lock = threading.Lock()
 
     def metric_fan(self, request: MetricFanRequest) -> MetricFanResponse:
@@ -132,7 +109,7 @@ class ProductService:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         with self._projection_lock:
             decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-            model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
+            model_id = decoded[0].model_id if decoded else request.scenario.model_id
             percentiles = tuple(float(pct) for pct in request.percentiles)
             return MetricFanResponse(
                 model_id=model_id,
@@ -149,7 +126,7 @@ class ProductService:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         with self._projection_lock:
             decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-            model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
+            model_id = decoded[0].model_id if decoded else request.scenario.model_id
             percentiles = tuple(float(pct) for pct in request.percentiles)
             return TerminalDistributionResponse(
                 model_id=model_id,
@@ -163,17 +140,16 @@ class ProductService:
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
         with self._projection_lock:
-            [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
-            return self._rollout_response(request.scenario, decoded)
+            return self._rollout_response(request.scenario, int(request.seed))
 
-    def _rollout_response(self, scenario: ScenarioKey, decoded: _DecodedRollout) -> RolloutResponse:
+    def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
+        self._validate_scenario_key(scenario)
         horizon_months = int(scenario.horizon_months)
-        # The detail view needs this one rollout's event log: slice just its column out of the
-        # shared batch (one slice, not R) and decode it. The fan/terminal cache intentionally does
-        # not retain DenseSimulationResult, so this endpoint re-simulates only the selected seed to
-        # materialize events.
-        dense, _model_id = self._simulate_dense(
-            scenario.model_copy(update={"horizon_months": self._max_horizon_months}), (decoded.seed,)
+        dense, model_id = self._simulate_dense(scenario, (seed,))
+        monthly_arrays = monthly_metric_arrays(dense, primary_agent_id=self._primary_agent_id)
+        failed_month = int(failed_month_index_batch(dense)[0])
+        terminal = terminal_metrics_from_arrays(
+            monthly_arrays, failed_month_index=None if failed_month < 0 else failed_month
         )
         events = tuple(
             event
@@ -184,19 +160,38 @@ class ProductService:
         )
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
-        monthly_metrics_frame = {name: arr.tolist() for name, arr in decoded.monthly_metric_arrays.items()}
+        monthly_metrics_frame = {name: arr.tolist() for name, arr in monthly_arrays.items()}
         return RolloutResponse(
-            model_id=decoded.cached.model_id,
+            model_id=model_id,
             rollout=RolloutOutput(
-                seed=decoded.seed,
-                failed=decoded.failed,
+                seed=seed,
+                failed=terminal.failed_month_index is not None,
                 monthly_metrics=monthly_metrics_frame,
-                terminal_metrics=decoded.terminal_metrics,
+                terminal_metrics=terminal,
                 events=events,
             ),
         )
 
     def _decoded_rollouts(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[_DecodedRollout, ...]:
+        self._validate_scenario_key(scenario_key)
+        batch_metrics, batch_failed, model_id = self._simulate_product_metrics(scenario_key, seeds)
+        month_index = batch_metrics["month_index"].copy()
+        decoded: list[_DecodedRollout] = []
+        for batch_index, seed in enumerate(seeds):
+            arrays = {
+                name: (month_index if name == "month_index" else values[:, batch_index].copy())
+                for name, values in batch_metrics.items()
+            }
+            failed_month = int(batch_failed[batch_index])
+            terminal = terminal_metrics_from_arrays(
+                arrays, failed_month_index=None if failed_month < 0 else failed_month
+            )
+            decoded.append(
+                _DecodedRollout(seed=seed, monthly_metric_arrays=arrays, terminal_metrics=terminal, model_id=model_id)
+            )
+        return tuple(decoded)
+
+    def _validate_scenario_key(self, scenario_key: ScenarioKey) -> None:
         if scenario_key.model_id not in self._models:
             raise ValueError(f"unknown model_id: {scenario_key.model_id!r} (known presets: {sorted(self._models)})")
         if (
@@ -212,55 +207,34 @@ class ProductService:
         horizon_months = int(scenario_key.horizon_months)
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
-        # Every scenario+seed is simulated once at the server max horizon, cached under a horizon-
-        # normalized key, then truncated to the requested horizon below. So scrolling the requested
-        # horizon reuses the cached max-length rollout instead of re-simulating.
-        cache_key = scenario_key.model_copy(update={"horizon_months": self._max_horizon_months})
-        cached_by_seed: dict[int, _CachedRollout] = {}
-        missing: list[int] = []
-        for seed in seeds:
-            entry = self._cache_get(cache_key, seed)
-            if entry is None:
-                missing.append(seed)
-            else:
-                cached_by_seed[seed] = entry
-        if missing:
-            fresh = self._simulate_missing(cache_key, tuple(missing))
-            for seed, entry in fresh.items():
-                cached_by_seed[seed] = entry
-                self._cache_put(cache_key, seed, entry)
-        decoded: list[_DecodedRollout] = []
-        for seed in seeds:
-            cached = cached_by_seed[seed]
-            # `month_index` runs 0..H_max; keep months 0..horizon (i.e. the first horizon+1 snapshots).
-            arrays = {name: values[: horizon_months + 1] for name, values in cached.monthly_metric_arrays.items()}
-            full_failed_month = cached.failed_month_index
-            # Months are 0-based (0..horizon-1); a failure at/after the requested horizon is outside it.
-            in_window = full_failed_month is not None and full_failed_month < horizon_months
-            terminal = terminal_metrics_from_arrays(arrays, failed_month_index=full_failed_month if in_window else None)
-            decoded.append(
-                _DecodedRollout(seed=seed, monthly_metric_arrays=arrays, terminal_metrics=terminal, cached=cached)
-            )
-        return tuple(decoded)
 
-    def _simulate_missing(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> dict[int, _CachedRollout]:
-        dense, model_id = self._simulate_dense(scenario_key, seeds)
-        batch_metrics = monthly_metric_arrays_batch(dense, primary_agent_id=self._primary_agent_id)
-        batch_failed = failed_month_index_batch(dense)
-        month_index = batch_metrics["month_index"].copy()
-        return {
-            seed: _CachedRollout(
-                monthly_metric_arrays={
-                    name: (month_index if name == "month_index" else values[:, batch_index].copy())
-                    for name, values in batch_metrics.items()
-                },
-                failed_month_index=(None if int(batch_failed[batch_index]) < 0 else int(batch_failed[batch_index])),
-                model_id=model_id,
-            )
-            for batch_index, seed in enumerate(seeds)
-        }
+    def _simulate_product_metrics(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
+    ) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
+        scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
+        plan = compile_simulation(
+            scenario,
+            rollout_count=len(seeds),
+            external_series=materialize_sampled_exogenous(sampled),
+            jurisdictions=load_jurisdictions_for(scenario),
+            locations=self._locations,
+        )
+        batch_metrics, batch_failed = run_jax_product_metrics(plan, primary_agent_id=self._primary_agent_id)
+        return batch_metrics, batch_failed, model_id
 
     def _simulate_dense(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[DenseSimulationResult, str]:
+        scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
+        dense = simulate_dense_with_external_series(
+            scenario,
+            rollout_count=len(seeds),
+            external_series=materialize_sampled_exogenous(sampled),
+            locations=self._locations,
+        )
+        return dense, model_id
+
+    def _scenario_and_sample(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
+    ) -> tuple[Scenario, SampledExogenousBundle, str]:
         scenario = build_scenario(
             scenario_key,
             primary_agent_id=self._primary_agent_id,
@@ -285,31 +259,8 @@ class ProductService:
             level_series_anchors=anchors.level_series_anchors,
             private_equity_anchors=anchors.private_equity_anchors,
         )
-        dense = simulate_dense_with_external_series(
-            scenario,
-            rollout_count=len(seeds),
-            external_series=materialize_sampled_exogenous(sampled),
-            locations=self._locations,
-        )
         model_id = str(sampled.metadata.get("model_id") or scenario_key.model_id)
-        return dense, model_id
-
-    def _cache_get(self, scenario_key: ScenarioKey, seed: int) -> _CachedRollout | None:
-        key = (scenario_key, seed)
-        with self._cache_lock:
-            entry = self._cache.get(key)
-            if entry is None:
-                return None
-            self._cache.move_to_end(key)
-            return entry
-
-    def _cache_put(self, scenario_key: ScenarioKey, seed: int, entry: _CachedRollout) -> None:
-        key = (scenario_key, seed)
-        with self._cache_lock:
-            self._cache[key] = entry
-            self._cache.move_to_end(key)
-            while len(self._cache) > self._max_cache_rollouts:
-                self._cache.popitem(last=False)
+        return scenario, sampled, model_id
 
 
 def _monthly_metric_fan(

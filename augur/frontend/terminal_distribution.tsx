@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
 import { rowsFrom } from "./lib/frame.ts";
 import { scenarioColor } from "./input_helpers.ts";
@@ -77,19 +77,32 @@ export function TerminalDistributionChart({
   metricScale = "linear",
 }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
+  const containerRef = useRef(null);
   const svgRef = useRef(null);
-  const [svgWidth, setSvgWidth] = useState(760);
+  const [svgWidth, setSvgWidth] = useState<number | null>(null);
   const [hoverPercentile, setHoverPercentile] = useState(null);
   const dragVariantRef = useRef({ dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false });
 
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const update = () => setSvgWidth(svg.clientWidth || 760);
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const update = () => {
+      const style = window.getComputedStyle(container);
+      const horizontalPadding = parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0");
+      const containerWidth = container.getBoundingClientRect().width - horizontalPadding;
+      const svgWidth = svgRef.current?.getBoundingClientRect().width ?? 0;
+      const width = Math.max(containerWidth, svgWidth);
+      setSvgWidth(Math.max(1, Math.round(width)));
+    };
     update();
+    const animationFrame = requestAnimationFrame(update);
     const ro = new ResizeObserver(update);
-    ro.observe(svg);
-    return () => ro.disconnect();
+    ro.observe(container);
+    if (svgRef.current) ro.observe(svgRef.current);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      ro.disconnect();
+    };
   }, []);
 
   // One percentile line per scenario, colored by position (matching the chips / fan legend), active
@@ -121,6 +134,39 @@ export function TerminalDistributionChart({
   );
 
   if (series.length === 0) return null;
+
+  const header = (
+    <div className="mb-1 flex items-center justify-between gap-3">
+      <div>
+        <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
+        <div className="mt-1 text-xs augur-muted">
+          One line per variant, drawn from aggregate terminal percentiles. Failed rollouts are marked.
+        </div>
+      </div>
+      {selectedPercentile != null && (
+        <button
+          type="button"
+          className="text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
+          onClick={onClear}
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+
+  if (svgWidth == null) {
+    return (
+      <div
+        ref={containerRef}
+        className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
+        data-product-terminal-distribution=""
+        data-product-distribution-scale={metricScale}
+      >
+        {header}
+      </div>
+    );
+  }
 
   const allValues = series.flatMap((entry) => [
     ...entry.points.map((point) => point.value),
@@ -278,27 +324,12 @@ export function TerminalDistributionChart({
 
   return (
     <div
+      ref={containerRef}
       className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
       data-product-terminal-distribution=""
       data-product-distribution-scale={metricScale}
     >
-      <div className="mb-1 flex items-center justify-between gap-3">
-        <div>
-          <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
-          <div className="mt-1 text-xs augur-muted">
-            One line per variant, drawn from aggregate terminal percentiles. Failed rollouts are marked.
-          </div>
-        </div>
-        {selectedPercentile != null && (
-          <button
-            type="button"
-            className="text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
-            onClick={onClear}
-          >
-            Clear
-          </button>
-        )}
-      </div>
+      {header}
       <svg
         ref={svgRef}
         role="slider"
@@ -307,9 +338,11 @@ export function TerminalDistributionChart({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={selectedPercentile ?? 0}
+        width={svgWidth}
         height={svgHeight}
         className="w-full cursor-pointer touch-none select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
         data-product-terminal-distribution-plot=""
+        data-product-terminal-distribution-rendered-width={svgWidth}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -360,7 +393,11 @@ export function TerminalDistributionChart({
         {orderedSeries.map((entry) => {
           const linePoints = entry.points.map((point) => `${xAt(point.percentile)},${yAt(point.value)}`).join(" ");
           return (
-            <g key={entry.id} data-product-distribution-series={entry.id}>
+            <g
+              key={entry.id}
+              data-product-distribution-series={entry.id}
+              data-product-distribution-point-count={entry.points.length}
+            >
               <polyline
                 points={linePoints}
                 fill="none"

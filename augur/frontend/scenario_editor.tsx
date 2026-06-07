@@ -334,7 +334,7 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
             data-product-scenario-col={entry.id}
             data-product-scenario-tab={entry.id}
             data-active={isActive ? "" : undefined}
-            className={`min-w-0 border-b-2 px-2 pb-1.5 text-center ${
+            className={`flex h-8 min-w-0 items-center justify-center border-b-2 px-2 text-center ${
               isActive
                 ? "border-blue-500 text-slate-900 dark:text-slate-50"
                 : "border-transparent text-slate-500 dark:text-slate-400"
@@ -510,7 +510,6 @@ export function ScenarioEditor({
       return next;
     });
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
-  const multi = variants.length > 0;
   const activeVariant = variants.find((v) => v.id === activeId) ?? null;
   const resetActive = () => {
     if (activeVariant == null) onResetBase();
@@ -626,33 +625,38 @@ export function ScenarioEditor({
       <summary className="cursor-pointer list-none px-4 py-3" data-product-editor-toggle="">
         <div className="overflow-x-auto">
           <div className="grid min-w-max items-center gap-3" style={comparisonColumns}>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="augur-eyebrow inline-flex items-center gap-1">
+            <div className="flex h-8 min-w-0 items-center gap-1.5">
+              <span className="augur-eyebrow inline-flex min-w-0 shrink items-center gap-1 whitespace-nowrap">
                 <DisclosureArrow collapsed={!open} />
                 Scenario comparison
-                {multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
               </span>
               <Button
                 size="xs"
                 variant="subtle"
+                className="shrink-0"
+                title={`Reset ${activeVariant == null ? "base" : activeVariant.label}`}
+                aria-label={`Reset ${activeVariant == null ? "base" : activeVariant.label}`}
                 onClick={(event) => {
                   stopSummaryButton(event);
                   resetActive();
                 }}
               >
-                Reset {activeVariant == null ? "base" : activeVariant.label}
+                Reset
               </Button>
               {variants.length < MAX_VARIANTS && (
                 <Button
                   size="xs"
                   variant="light"
+                  className="shrink-0"
                   data-product-scenario-add=""
+                  title="Add variant"
+                  aria-label="Add variant"
                   onClick={(event) => {
                     stopSummaryButton(event);
                     onAddVariant();
                   }}
                 >
-                  + Add variant
+                  Add
                 </Button>
               )}
             </div>
