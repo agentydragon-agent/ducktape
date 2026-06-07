@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 
 import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
@@ -138,6 +138,8 @@ function niceTicks(max, target = 5) {
 }
 
 function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
+  const chartRef = useRef(null);
+  const [tooltip, setTooltip] = useState(null);
   const spendSeries = bucketSeries.filter((series) => series.kind === STACKABLE_SPEND_KIND);
   const spendSeriesWithIndex = spendSeries.map((series, originalIndex) => ({ series, originalIndex }));
   const visibleSpendSeries = spendSeriesWithIndex.filter(({ series }) => !series.hidden);
@@ -182,6 +184,31 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
     .sort((left, right) => right.amount - left.amount || left.originalIndex - right.originalIndex);
   const yAxisWidthPx = 56;
   const innerHeightPx = 220;
+  const showSegmentTooltip = (event, series, value, monthIso) => {
+    const bounds = chartRef.current?.getBoundingClientRect();
+    const left = bounds ? event.clientX - bounds.left : 0;
+    const top = bounds ? event.clientY - bounds.top : 0;
+    setTooltip({
+      bucketId: series.bucketId,
+      label: series.label,
+      amount: value,
+      month: fmtMonth(monthIso),
+      left,
+      top,
+    });
+  };
+  const showFocusedSegmentTooltip = (event, series, value, monthIso) => {
+    const chartBounds = chartRef.current?.getBoundingClientRect();
+    const segmentBounds = event.currentTarget.getBoundingClientRect();
+    setTooltip({
+      bucketId: series.bucketId,
+      label: series.label,
+      amount: value,
+      month: fmtMonth(monthIso),
+      left: chartBounds ? segmentBounds.left + segmentBounds.width / 2 - chartBounds.left : 0,
+      top: chartBounds ? segmentBounds.top - chartBounds.top : 0,
+    });
+  };
   return (
     <div className="overflow-hidden">
       <div className="flex" style={{ height: innerHeightPx }}>
@@ -198,7 +225,7 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
               </span>
             ))}
         </div>
-        <div className="relative flex-1">
+        <div ref={chartRef} className="relative flex-1">
           <div className="pointer-events-none absolute inset-0 z-0 flex flex-col justify-between">
             {ticks
               .slice()
@@ -215,6 +242,10 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
             className="relative z-10 block"
             role="img"
             aria-label="Monthly stacked spend"
+            onPointerLeave={() => setTooltip(null)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setTooltip(null);
+            }}
           >
             {months.map((monthIso, monthIdx) => {
               const barWidth = 100 / months.length;
@@ -239,14 +270,40 @@ function StackedMonthlyChart({ months, bucketSeries, onToggleBucket }) {
                       height={value}
                       fill={colorForBucket(series.bucketId)}
                       opacity="0.9"
-                    >
-                      <title>{`${series.label}\n${fmtUsd(value)}\n${fmtMonth(monthIso)}`}</title>
-                    </rect>
+                      className="cursor-pointer outline-none focus:opacity-100"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${series.label}, ${fmtUsd(value)}, ${fmtMonth(monthIso)}`}
+                      onPointerEnter={(event) => showSegmentTooltip(event, series, value, monthIso)}
+                      onPointerMove={(event) => showSegmentTooltip(event, series, value, monthIso)}
+                      onFocus={(event) => showFocusedSegmentTooltip(event, series, value, monthIso)}
+                      onClick={(event) => showSegmentTooltip(event, series, value, monthIso)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          showFocusedSegmentTooltip(event, series, value, monthIso);
+                        }
+                      }}
+                    />
                   );
                 });
               return <g key={monthIso}>{segments}</g>;
             })}
           </svg>
+          {tooltip && (
+            <div
+              className="pointer-events-none absolute z-20 max-w-56 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-950"
+              style={{
+                left: Math.min(Math.max(tooltip.left + 10, 0), Math.max((chartRef.current?.clientWidth ?? 0) - 190, 0)),
+                top: Math.max(tooltip.top - 12, 0),
+              }}
+              data-budget-chart-tooltip={tooltip.bucketId}
+            >
+              <div className="font-semibold augur-strong">{tooltip.label}</div>
+              <div className="mt-0.5 augur-tabular">{fmtUsd(tooltip.amount)}</div>
+              <div className="mt-0.5 augur-muted">{tooltip.month}</div>
+            </div>
+          )}
         </div>
       </div>
       <div className="flex text-[10px] augur-muted" style={{ paddingLeft: yAxisWidthPx }}>
