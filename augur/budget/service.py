@@ -14,10 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from augur.budget.aggregate import aggregate
 from augur.budget.categorize import classify
+from augur.budget.csv_export import build_summary_csv, build_transactions_csv
 from augur.budget.schema import BudgetConfig
 from augur.budget.wire import (
     BucketMonthly,
     BucketView,
+    BudgetAdjustment,
     BudgetSnapshotResponse,
     BudgetTransactionsResponse,
     LumpyView,
@@ -25,7 +27,7 @@ from augur.budget.wire import (
     TransactionView,
     WindowSpec,
 )
-from plaid_utils.read_model import read_account_directory, read_transactions
+from plaid_utils.read_model import read_account_directory, read_budget_transactions
 
 
 def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | None) -> date:
@@ -63,7 +65,7 @@ class BudgetService:
         today = date.today()
         coverage_starts = self.config.source.coverage_starts
         start_month = _resolve_window(window, today=today, coverage_starts=coverage_starts)
-        transactions = await read_transactions(
+        transactions = await read_budget_transactions(
             session_factory=self.session_factory,
             start_date=start_month,
             end_date=today,
@@ -103,12 +105,19 @@ class BudgetService:
             coverage_starts=coverage_starts,
         )
 
+    async def build_snapshot_csv(self, *, window: WindowSpec, adjustments: dict[str, BudgetAdjustment]) -> str:
+        bucket_ids = {bucket.id for bucket in self.config.buckets}
+        unknown = sorted(set(adjustments) - bucket_ids)
+        if unknown:
+            raise ValueError(f"unknown budget adjustment bucket_id(s): {unknown}")
+        return build_summary_csv(await self.build_snapshot(window=window), adjustments)
+
     async def list_transactions_in_bucket(self, *, bucket_id: str, window: WindowSpec) -> BudgetTransactionsResponse:
         """Drill-down: all transactions in one bucket, enriched with account+link names."""
         today = date.today()
         coverage_starts = self.config.source.coverage_starts
         start_month = _resolve_window(window, today=today, coverage_starts=coverage_starts)
-        transactions = await read_transactions(
+        transactions = await read_budget_transactions(
             session_factory=self.session_factory,
             start_date=start_month,
             end_date=today,
@@ -140,3 +149,6 @@ class BudgetService:
                 if entry.bucket_id == bucket_id
             ),
         )
+
+    async def build_transactions_csv(self, *, bucket_id: str, window: WindowSpec) -> str:
+        return build_transactions_csv(await self.list_transactions_in_bucket(bucket_id=bucket_id, window=window))

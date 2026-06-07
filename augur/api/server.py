@@ -12,7 +12,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import ValidationError
 
 from augur.api.calibration_wire import (
@@ -32,6 +32,7 @@ from augur.budget.service import BudgetService
 from augur.budget.wire import (
     BudgetSnapshotRequest,
     BudgetSnapshotResponse,
+    BudgetSummaryCsvRequest,
     BudgetTransactionsRequest,
     BudgetTransactionsResponse,
 )
@@ -310,6 +311,20 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             bucket_id=request.bucket_id, window=request.window
         )
         return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
+
+    @app.post("/api/budget/snapshot.csv", include_in_schema=False)
+    async def budget_snapshot_csv(request: BudgetSummaryCsvRequest) -> Response:
+        if config.budget_service is None:
+            return error(400, "no budget config for this deployment")
+        result = await config.budget_service.build_snapshot_csv(window=request.window, adjustments=request.adjustments)
+        return Response(content=result, media_type="text/csv; charset=utf-8", headers=no_store)
+
+    @app.post("/api/budget/transactions.csv", include_in_schema=False)
+    async def budget_transactions_csv(request: BudgetTransactionsRequest) -> Response:
+        if config.budget_service is None:
+            return error(400, "no budget config for this deployment")
+        result = await config.budget_service.build_transactions_csv(bucket_id=request.bucket_id, window=request.window)
+        return Response(content=result, media_type="text/csv; charset=utf-8", headers=no_store)
 
     # The health check is not part of the typed wire contract, so keep it out of the
     # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes

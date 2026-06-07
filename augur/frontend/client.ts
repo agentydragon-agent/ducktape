@@ -60,6 +60,21 @@ async function postJson(path, body, signal) {
   );
 }
 
+async function postBlob(path, body, signal) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(decamelizeObjectKeys(body)),
+    signal,
+  });
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    const errorBody = contentType.includes("application/json") ? await response.json() : await response.text();
+    throw new Error(`Backend ${path} failed (${response.status}): ${describeErrorBody(errorBody)}`);
+  }
+  return response.blob();
+}
+
 // Anything with a Zod-like `.parse` (structural, so we don't import zod here). `T` is the wire
 // (snake_case) output type; the helpers below carry it through camelization as `CamelCasedDeep<T>`.
 type Parser<T> = { parse: (data: unknown) => T };
@@ -157,4 +172,12 @@ export function fetchBudgetTransactions(budgetTransactionsRequest, { signal }: F
     budgetTransactionsRequest,
     signal
   );
+}
+
+export function fetchBudgetSummaryCsv(budgetSummaryCsvRequest, { signal }: FetchOptions = {}) {
+  return postBlob("/api/budget/snapshot.csv", budgetSummaryCsvRequest, signal);
+}
+
+export function fetchBudgetTransactionsCsv(budgetTransactionsRequest, { signal }: FetchOptions = {}) {
+  return postBlob("/api/budget/transactions.csv", budgetTransactionsRequest, signal);
 }

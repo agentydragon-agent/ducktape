@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+from typing import Protocol
 
 from augur.budget.default_rules import DEFAULT_RULES
 from augur.budget.schema import (
@@ -14,16 +16,27 @@ from augur.budget.schema import (
     Rule,
     TransferDirection,
 )
-from plaid_utils.schema import TransactionRow
+
+
+class BudgetTransactionLike(Protocol):
+    transaction_id: str
+    account_id: str
+    item_id: str
+    date: date
+    amount: float
+    name: str
+    merchant_name: str | None
+    pfc_primary: str | None
+    pfc_detailed: str | None
 
 
 @dataclass(frozen=True)
 class Classified:
-    transaction: TransactionRow
+    transaction: BudgetTransactionLike
     bucket_id: str
 
 
-def _pattern_matches(rule: Rule, tx: TransactionRow) -> bool:
+def _pattern_matches(rule: Rule, tx: BudgetTransactionLike) -> bool:
     if isinstance(rule, MerchantSubstringRule):
         merchant = (tx.merchant_name or "").lower()
         return rule.pattern.lower() in merchant
@@ -53,7 +66,7 @@ def effective_rules(config: BudgetConfig) -> tuple[Rule, ...]:
     return config.rules
 
 
-def classify(transactions: tuple[TransactionRow, ...], *, config: BudgetConfig) -> tuple[Classified, ...]:
+def classify(transactions: tuple[BudgetTransactionLike, ...], *, config: BudgetConfig) -> tuple[Classified, ...]:
     """Assign each transaction to a bucket; unmatched fall to the per-direction default."""
     rules = effective_rules(config)
     bucket_by_id: dict[str, BucketDef] = {bucket.id: bucket for bucket in config.buckets}
@@ -86,7 +99,7 @@ def classify(transactions: tuple[TransactionRow, ...], *, config: BudgetConfig) 
     return result
 
 
-def _describe(tx: TransactionRow) -> str:
+def _describe(tx: BudgetTransactionLike) -> str:
     return f"{tx.date} {tx.merchant_name or tx.name} {tx.amount:+.2f}"
 
 
@@ -99,7 +112,7 @@ def assert_bucket_directions(classified: tuple[Classified, ...], *, config: Budg
     misroute a leg. (Plaid signs outflows positive, inflows negative.)
     """
     bucket_by_id = {bucket.id: bucket for bucket in config.buckets}
-    violations: list[tuple[BucketDef, TransactionRow]] = []
+    violations: list[tuple[BucketDef, BudgetTransactionLike]] = []
     seen: set[str] = set()
     for entry in classified:
         bucket = bucket_by_id[entry.bucket_id]

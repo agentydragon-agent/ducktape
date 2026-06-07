@@ -17,7 +17,6 @@ from datetime import date
 from augur.budget.categorize import Classified
 from augur.budget.schema import BucketDef, BucketKind, BudgetConfig
 from augur.dates import DAYS_PER_MONTH
-from plaid_utils.schema import TransactionRow
 
 
 def _month_start(d: date) -> date:
@@ -154,4 +153,4 @@ def aggregate(
     return AggregateReport(months=months, buckets=tuple(bucket_reports), lumpy=lumpy)
 
 
-__all__ = ["AggregateReport", "BucketReport", "LumpyTransaction", "MonthlyBucketSeries", "TransactionRow", "aggregate"]
+__all__ = ["AggregateReport", "BucketReport", "LumpyTransaction", "MonthlyBucketSeries", "aggregate"]

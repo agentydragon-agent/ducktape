@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import load_only
 
 from plaid_utils.schema import AccountRow, BalanceSnapshotRow, HoldingSnapshotRow, LinkRow, SecurityRow, TransactionRow
 
@@ -152,6 +153,53 @@ async def read_transactions(
     read attributes after the session closes."""
     stmt = (
         select(TransactionRow)
+        .join(LinkRow, LinkRow.item_id == TransactionRow.item_id)
+        .where(
+            TransactionRow.removed.is_(False),
+            TransactionRow.pending.is_(False),
+            TransactionRow.date >= start_date,
+            TransactionRow.date <= end_date,
+            LinkRow.status != "revoked",
+        )
+        .order_by(TransactionRow.date, TransactionRow.transaction_id)
+    )
+    if account_ids:
+        stmt = stmt.where(TransactionRow.account_id.in_(account_ids))
+    async with session_factory() as session:
+        return tuple((await session.execute(stmt)).scalars().all())
+
+
+async def read_budget_transactions(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    start_date: date,
+    end_date: date,
+    account_ids: tuple[str, ...] = (),
+) -> tuple[TransactionRow, ...]:
+    """Posted transactions as ORM rows projected to only the budget columns.
+
+    The Plaid mirror stores full raw JSON per transaction for audit/debugging, but the
+    budget UI only needs categorization and display scalars. `load_only` keeps these
+    as `TransactionRow` objects while avoiding the raw_json column; `raiseload=True`
+    turns accidental access to an unloaded audit column into an explicit failure instead
+    of a hidden lazy load.
+    """
+    stmt = (
+        select(TransactionRow)
+        .options(
+            load_only(
+                TransactionRow.transaction_id,
+                TransactionRow.account_id,
+                TransactionRow.item_id,
+                TransactionRow.date,
+                TransactionRow.amount,
+                TransactionRow.name,
+                TransactionRow.merchant_name,
+                TransactionRow.pfc_primary,
+                TransactionRow.pfc_detailed,
+                raiseload=True,
+            )
+        )
         .join(LinkRow, LinkRow.item_id == TransactionRow.item_id)
         .where(
             TransactionRow.removed.is_(False),

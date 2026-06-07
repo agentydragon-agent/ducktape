@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 
-import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
-import { buildSummaryCsv, buildTransactionsCsv } from "./budget_csv.ts";
+import {
+  fetchBudgetSnapshot,
+  fetchBudgetSummaryCsv,
+  fetchBudgetTransactions,
+  fetchBudgetTransactionsCsv,
+} from "./client.ts";
 import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments.ts";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
 import { toastFetchError } from "./lib/toast.ts";
@@ -38,8 +42,7 @@ function windowSlug(windowChoice) {
   return windowChoice.replace(":", "-");
 }
 
-function downloadCsv(filename, content) {
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -55,6 +58,10 @@ function downloadCsv(filename, content) {
 }
 
 const EXPORT_BUTTON_CLASS = "augur-icon-button gap-1.5 px-2.5 py-1.5 text-xs font-medium";
+
+function adjustmentsToRequest(adjustments) {
+  return Object.fromEntries(adjustments.entries());
+}
 
 // Mirror the product/calibration shell's URL-state pattern: rewrite only our two budget params
 // (preserving everything else) so a hidden-rent / overridden view round-trips through the URL.
@@ -800,16 +807,27 @@ export function BudgetWorkspace() {
   const totals = useMemo(() => (snapshot ? computeTotals(rows, adjustments) : null), [snapshot, rows, adjustments]);
   const historicalTotals = useMemo(() => (snapshot ? computeTotals(rows, new Map()) : null), [snapshot, rows]);
 
-  const exportSummary = () => {
+  const exportSummary = async () => {
     if (!snapshot) return;
-    // Pass the adjusted rows so the export carries the planning overlay (Planned $/mo + Hidden
-    // columns) alongside the historical actuals when any bucket is hidden/overridden.
-    downloadCsv(`budget-summary-${windowSlug(windowChoice)}.csv`, buildSummaryCsv(snapshot.months, adjustedRows));
+    try {
+      const blob = await fetchBudgetSummaryCsv({
+        window: windowSpec,
+        adjustments: adjustmentsToRequest(adjustments),
+      });
+      downloadBlob(`budget-summary-${windowSlug(windowChoice)}.csv`, blob);
+    } catch (error) {
+      toastFetchError("budget-summary-csv", "Budget CSV export failed", error);
+    }
   };
 
-  const exportTransactions = () => {
-    if (!selectedBucketId || !bucketTx) return;
-    downloadCsv(`budget-transactions-${selectedBucketId}.csv`, buildTransactionsCsv(bucketTx));
+  const exportTransactions = async () => {
+    if (!selectedBucketId) return;
+    try {
+      const blob = await fetchBudgetTransactionsCsv({ bucketId: selectedBucketId, window: windowSpec });
+      downloadBlob(`budget-transactions-${selectedBucketId}.csv`, blob);
+    } catch (error) {
+      toastFetchError("budget-transactions-csv", "Transactions CSV export failed", error);
+    }
   };
 
   // null clears the bucket back to "actual"; otherwise set hidden / override. One adjustment per
@@ -846,7 +864,7 @@ export function BudgetWorkspace() {
               <button
                 type="button"
                 className={EXPORT_BUTTON_CLASS}
-                onClick={exportSummary}
+                onClick={() => void exportSummary()}
                 data-budget-export="summary"
               >
                 ↓ Export CSV
@@ -932,7 +950,7 @@ export function BudgetWorkspace() {
                     <button
                       type="button"
                       className={EXPORT_BUTTON_CLASS}
-                      onClick={exportTransactions}
+                      onClick={() => void exportTransactions()}
                       data-budget-export="transactions"
                     >
                       ↓ Export CSV

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeInt, PositiveInt
+from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveInt
 
 from augur.api.schemas import ApiModel
 from augur.budget.schema import BucketKind
@@ -67,6 +67,23 @@ class LumpyView(ApiModel):
 
 class BudgetSnapshotRequest(ApiModel):
     window: WindowSpec
+
+
+class HiddenBudgetAdjustment(ApiModel):
+    kind: Literal["hidden"] = "hidden"
+
+
+class OverrideBudgetAdjustment(ApiModel):
+    kind: Literal["override"] = "override"
+    monthly: NonNegativeFloat
+
+
+BudgetAdjustment = Annotated[HiddenBudgetAdjustment | OverrideBudgetAdjustment, Field(discriminator="kind")]
+
+
+class BudgetSummaryCsvRequest(ApiModel):
+    window: WindowSpec
+    adjustments: dict[str, BudgetAdjustment] = Field(default_factory=dict)
 
 
 class BudgetSnapshotResponse(ApiModel):
