@@ -31,6 +31,12 @@ export function fmtNumber(value) {
   return number.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+export function fmtQuantity(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "n/a";
+  return number.toLocaleString("en-US", { maximumFractionDigits: 8 });
+}
+
 // Compact platform-volume formatter: "USD" -> "$42k" (built-in compact-currency notation),
 // "contracts" -> "44k contracts" (Kalshi binary contracts resolve $0–$1, so this is a
 // bounded-above proxy for dollar volume), anything else (e.g. Manifold's "𝕄" mana) is

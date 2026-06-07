@@ -416,7 +416,7 @@ function CategoricalPanel({ families }) {
               <tbody>
                 {family.buckets.map((bucket) => (
                   <tr key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
-                    <td className="py-1 augur-tabular">{fmtRange(bucket.low, bucket.high)}</td>
+                    <td className="py-1 augur-tabular">{bucket.label || fmtRange(bucket.low, bucket.high)}</td>
                     <td className="py-1 text-right augur-tabular">{fmtProb(bucket.pMarket)}</td>
                     <td className="py-1 text-right augur-tabular">
                       {bucket.pModel == null ? <span className="augur-muted">n/a</span> : fmtProb(bucket.pModel)}

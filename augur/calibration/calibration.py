@@ -36,6 +36,7 @@ from statsmodels.stats.proportion import proportion_confint
 from augur.calibration.catalog import (
     BucketFamily,
     CorrelateMarket,
+    DateLadderFamily,
     ExactMarket,
     InflationYoyMapping,
     IpoByDateMapping,
@@ -45,14 +46,17 @@ from augur.calibration.catalog import (
     PeEventMapping,
     PreIpoFailureMapping,
     SurfacedMarket,
+    ThresholdLadderFamily,
 )
-from augur.calibration.platform import Market, Platform, PriceClient
+from augur.calibration.platform import Direction, Market, Platform, PriceClient
 from augur.calibration.resolvers import (
     Resolution,
     ResolutionCounts,
     RolloutTrajectory,
     bucket_model_counts,
+    inflation_yoy_bucket_counts,
     inflation_yoy_counts,
+    ipo_by_date_bucket_counts,
     level_by_date_counts,
     level_threshold_counts,
     months_after,
@@ -268,6 +272,27 @@ class _Unmodeled:
     target: str
 
 
+@dataclass(frozen=True)
+class _DerivedBucket:
+    low: float | None
+    high: float | None
+    label: str
+    market_id: str
+    p_market: float
+
+
+@dataclass(frozen=True)
+class _PavaBlock:
+    start: int
+    end: int
+    weight: float
+    value_sum: float
+
+    @property
+    def average(self) -> float:
+        return self.value_sum / self.weight
+
+
 def _resolve_pe(traj: RolloutTrajectory, mapping: PeEventMapping) -> Resolution:
     """Resolve a PE-event market against one rollout's issuer trajectory."""
     if isinstance(mapping, IpoByDateMapping):
@@ -386,6 +411,279 @@ def _categorical_row(
         kl_bits=kl_bits,
         buckets=buckets,
     )
+
+
+def _threshold_ladder_row(
+    family: ThresholdLadderFamily,
+    *,
+    level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
+    live_prices: list[float],
+    as_of: date,
+    horizon_months: int,
+    inflation_history: npt.NDArray[np.float64] | None,
+) -> CategoricalRow:
+    """Convert cumulative threshold contracts into one categorical distribution row.
+
+    `family.thresholds` are cumulative contracts, not buckets: for `direction=above`,
+    each live price is a survival point `P(value > threshold)`; for `direction=below`,
+    each is a CDF point `P(value < threshold)`. Fit the points to a monotone curve and
+    difference adjacent thresholds into bucket probabilities.
+    """
+    ordered = sorted(zip(family.thresholds, live_prices, strict=True), key=lambda item: item[0].threshold)
+    thresholds = [member.threshold for member, _price in ordered]
+    raw_curve = [price for _member, price in ordered]
+    fitted_curve = _monotone_probabilities(raw_curve, increasing=family.direction is Direction.BELOW)
+    derived_buckets = _threshold_ladder_buckets(family, thresholds=thresholds, curve=fitted_curve)
+    lows = [bucket.low for bucket in derived_buckets]
+    highs = [bucket.high for bucket in derived_buckets]
+    matrix = level_paths.get(parse_level_series_key(str(family.series)))
+    model_counts = None
+    if matrix is not None:
+        at_month = months_after(as_of, family.at_date)
+        if family.value_kind == "inflation_yoy":
+            model_counts = inflation_yoy_bucket_counts(
+                matrix,
+                lows=lows,
+                highs=highs,
+                at_month=at_month,
+                horizon_months=horizon_months,
+                window_months=family.window_months,
+                history=inflation_history,
+            )
+        else:
+            model_counts = bucket_model_counts(
+                matrix, lows=lows, highs=highs, at_month=at_month, horizon_months=horizon_months
+            )
+    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
+    p_model = [int(c) / n_resolved for c in model_counts] if model_counts is not None and n_resolved else None
+    p_market = [bucket.p_market for bucket in derived_buckets]
+    kl_bits = kl_bits_categorical(p_market, p_model) if p_model is not None else None
+    buckets = [
+        CategoricalBucket(
+            label=derived_bucket.label,
+            market_id=derived_bucket.market_id,
+            low=derived_bucket.low,
+            high=derived_bucket.high,
+            p_market=derived_bucket.p_market,
+            p_model=p_model[i] if p_model is not None else None,
+        )
+        for i, derived_bucket in enumerate(derived_buckets)
+    ]
+    return CategoricalRow(
+        family_id=family.family_id,
+        question=family.question,
+        platform=family.platform,
+        channel=str(family.series),
+        at_date=family.at_date,
+        n_resolved=n_resolved,
+        kl_bits=kl_bits,
+        buckets=buckets,
+    )
+
+
+def _date_ladder_row(
+    family: DateLadderFamily, *, trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]], live_prices: list[float]
+) -> CategoricalRow:
+    """Convert cumulative event-by-date contracts into one timing distribution row."""
+    ordered = sorted(zip(family.dates, live_prices, strict=True), key=lambda item: item[0].by_date)
+    by_dates = [member.by_date for member, _price in ordered]
+    raw_curve = [price for _member, price in ordered]
+    fitted_curve = _monotone_probabilities(raw_curve, increasing=True)
+    derived_buckets = _date_ladder_buckets(family, by_dates=by_dates, curve=fitted_curve)
+    trajectories = trajectories_by_issuer.get(family.issuer)
+    model_counts = None if trajectories is None else ipo_by_date_bucket_counts(trajectories, by_dates=by_dates)
+    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
+    p_model = [int(c) / n_resolved for c in model_counts] if model_counts is not None and n_resolved else None
+    p_market = [bucket.p_market for bucket in derived_buckets]
+    kl_bits = kl_bits_categorical(p_market, p_model) if p_model is not None else None
+    buckets = [
+        CategoricalBucket(
+            label=derived_bucket.label,
+            market_id=derived_bucket.market_id,
+            p_market=derived_bucket.p_market,
+            p_model=p_model[i] if p_model is not None else None,
+        )
+        for i, derived_bucket in enumerate(derived_buckets)
+    ]
+    return CategoricalRow(
+        family_id=family.family_id,
+        question=family.question,
+        platform=family.platform,
+        channel=family.issuer,
+        at_date=by_dates[-1],
+        n_resolved=n_resolved,
+        kl_bits=kl_bits,
+        buckets=buckets,
+    )
+
+
+def _monotone_probabilities(values: list[float], *, increasing: bool) -> list[float]:
+    """Least-squares monotone fit for probabilities using the pool-adjacent-violators algorithm."""
+    y = [max(0.0, min(1.0, float(value))) for value in values]
+    if not increasing:
+        y = [-value for value in y]
+    blocks: list[_PavaBlock] = []
+    for i, value in enumerate(y):
+        blocks.append(_PavaBlock(start=i, end=i, weight=1.0, value_sum=value))
+        while len(blocks) >= 2 and blocks[-2].average > blocks[-1].average:
+            right = blocks.pop()
+            left = blocks.pop()
+            blocks.append(
+                _PavaBlock(
+                    start=left.start,
+                    end=right.end,
+                    weight=left.weight + right.weight,
+                    value_sum=left.value_sum + right.value_sum,
+                )
+            )
+    fitted = [0.0] * len(values)
+    for block in blocks:
+        avg = block.average
+        if not increasing:
+            avg = -avg
+        for i in range(block.start, block.end + 1):
+            fitted[i] = max(0.0, min(1.0, avg))
+    return fitted
+
+
+def _threshold_ladder_buckets(
+    family: ThresholdLadderFamily, *, thresholds: list[float], curve: list[float]
+) -> list[_DerivedBucket]:
+    buckets: list[_DerivedBucket] = []
+    if family.direction is Direction.ABOVE:
+        previous_probability = 1.0
+        previous_threshold: float | None = None
+        for threshold, probability in zip(thresholds, curve, strict=True):
+            buckets.append(
+                _DerivedBucket(
+                    low=previous_threshold,
+                    high=threshold,
+                    label=_threshold_bucket_label(family, previous_threshold, threshold),
+                    market_id=_synthetic_bucket_id(family, previous_threshold, threshold),
+                    p_market=max(0.0, previous_probability - probability),
+                )
+            )
+            previous_probability = probability
+            previous_threshold = threshold
+        buckets.append(
+            _DerivedBucket(
+                low=previous_threshold,
+                high=None,
+                label=_threshold_bucket_label(family, previous_threshold, None),
+                market_id=_synthetic_bucket_id(family, previous_threshold, None),
+                p_market=max(0.0, previous_probability),
+            )
+        )
+    else:
+        previous_probability = 0.0
+        previous_threshold = None
+        for threshold, probability in zip(thresholds, curve, strict=True):
+            buckets.append(
+                _DerivedBucket(
+                    low=previous_threshold,
+                    high=threshold,
+                    label=_threshold_bucket_label(family, previous_threshold, threshold),
+                    market_id=_synthetic_bucket_id(family, previous_threshold, threshold),
+                    p_market=max(0.0, probability - previous_probability),
+                )
+            )
+            previous_probability = probability
+            previous_threshold = threshold
+        buckets.append(
+            _DerivedBucket(
+                low=previous_threshold,
+                high=None,
+                label=_threshold_bucket_label(family, previous_threshold, None),
+                market_id=_synthetic_bucket_id(family, previous_threshold, None),
+                p_market=max(0.0, 1.0 - previous_probability),
+            )
+        )
+    total = sum(bucket.p_market for bucket in buckets)
+    if total > 0.0:
+        buckets = [
+            _DerivedBucket(
+                low=bucket.low,
+                high=bucket.high,
+                label=bucket.label,
+                market_id=bucket.market_id,
+                p_market=bucket.p_market / total,
+            )
+            for bucket in buckets
+        ]
+    return buckets
+
+
+def _threshold_bucket_label(family: ThresholdLadderFamily, low: float | None, high: float | None) -> str:
+    def fmt(value: float) -> str:
+        if family.value_kind == "inflation_yoy":
+            return f"{value * 100:g}%"
+        return f"{value:g}"
+
+    if low is None:
+        assert high is not None
+        return f"<= {fmt(high)}"
+    if high is None:
+        return f"> {fmt(low)}"
+    return f"{fmt(low)} to {fmt(high)}"
+
+
+def _synthetic_bucket_id(family: ThresholdLadderFamily, low: float | None, high: float | None) -> str:
+    return f"{family.family_id}:{low if low is not None else '-inf'}:{high if high is not None else 'inf'}"
+
+
+def _date_ladder_buckets(family: DateLadderFamily, *, by_dates: list[date], curve: list[float]) -> list[_DerivedBucket]:
+    buckets: list[_DerivedBucket] = []
+    previous_probability = 0.0
+    previous_date: date | None = None
+    for by_date, probability in zip(by_dates, curve, strict=True):
+        buckets.append(
+            _DerivedBucket(
+                low=None,
+                high=None,
+                label=_date_bucket_label(previous_date, by_date),
+                market_id=_synthetic_date_bucket_id(family, previous_date, by_date),
+                p_market=max(0.0, probability - previous_probability),
+            )
+        )
+        previous_probability = probability
+        previous_date = by_date
+    buckets.append(
+        _DerivedBucket(
+            low=None,
+            high=None,
+            label=_date_bucket_label(previous_date, None),
+            market_id=_synthetic_date_bucket_id(family, previous_date, None),
+            p_market=max(0.0, 1.0 - previous_probability),
+        )
+    )
+    total = sum(bucket.p_market for bucket in buckets)
+    if total > 0.0:
+        buckets = [
+            _DerivedBucket(
+                low=bucket.low,
+                high=bucket.high,
+                label=bucket.label,
+                market_id=bucket.market_id,
+                p_market=bucket.p_market / total,
+            )
+            for bucket in buckets
+        ]
+    return buckets
+
+
+def _date_bucket_label(low: date | None, high: date | None) -> str:
+    if low is None:
+        assert high is not None
+        return f"By {high.isoformat()}"
+    if high is None:
+        return f"After {low.isoformat()}"
+    return f"{low.isoformat()} to {high.isoformat()}"
+
+
+def _synthetic_date_bucket_id(family: DateLadderFamily, low: date | None, high: date | None) -> str:
+    low_key = low.isoformat() if low is not None else "-inf"
+    high_key = high.isoformat() if high is not None else "inf"
+    return f"{family.family_id}:{low_key}:{high_key}"
 
 
 def build_anchored_level_paths(
@@ -618,6 +916,33 @@ def run_calibration(
             _categorical_row(
                 family, level_paths=paths, live_prices=live_prices, as_of=as_of, horizon_months=horizon_months
             )
+        )
+    for family in catalog.threshold_ladder_families:
+        prices = [_live(member.market_id, family.platform) for member in family.thresholds]
+        if any(live is None for live in prices):
+            logger.warning(
+                "dropping threshold ladder family %r: a threshold failed to fetch or had no price", family.family_id
+            )
+            continue
+        live_prices = [live.require_probability() for live in prices if live is not None]
+        categorical.append(
+            _threshold_ladder_row(
+                family,
+                level_paths=paths,
+                live_prices=live_prices,
+                as_of=as_of,
+                horizon_months=horizon_months,
+                inflation_history=inflation_history_array,
+            )
+        )
+    for family in catalog.date_ladder_families:
+        prices = [_live(member.market_id, family.platform) for member in family.dates]
+        if any(live is None for live in prices):
+            logger.warning("dropping date ladder family %r: a date failed to fetch or had no price", family.family_id)
+            continue
+        live_prices = [live.require_probability() for live in prices if live is not None]
+        categorical.append(
+            _date_ladder_row(family, trajectories_by_issuer=trajectories_by_issuer, live_prices=live_prices)
         )
 
     return CalibrationResult(

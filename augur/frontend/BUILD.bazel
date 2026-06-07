@@ -429,6 +429,7 @@ tsc_bin.tsc_test(
     data = [
         "budget_adjustments.test.ts",
         "budget_csv.test.ts",
+        "format.test.ts",
         "input_helpers.test.ts",
         "sanity_bands.test.ts",
         "tsconfig.json",
@@ -459,6 +460,7 @@ eslint_bin.eslint_test(
         "budget_adjustments.test.ts",
         "budget_csv.test.ts",
         "eslint.typed.config.js",
+        "format.test.ts",
         "input_helpers.test.ts",
         "sanity_bands.test.ts",
         "tsconfig.json",
@@ -516,6 +518,21 @@ vitest_bin.vitest_test(
         "vitest.config.ts",
         ":input_helpers",
         "//:node_modules",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "format_test",
+    args = [
+        "run",
+        "format.test.ts",
+    ],
+    chdir = package_name(),
+    data = [
+        "format.test.ts",
+        "vitest.config.ts",
+        "//:node_modules",
+        "//augur/frontend/lib:format",
     ],
 )
 

@@ -98,6 +98,34 @@ def resolve_ipo_by_date(traj: RolloutTrajectory, *, by_month: int) -> Resolution
     return Resolution.UNRESOLVED  # deadline beyond the simulated horizon, no IPO yet
 
 
+def ipo_by_date_bucket_counts(
+    trajectories: list[RolloutTrajectory], *, by_dates: list[date]
+) -> npt.NDArray[np.int64] | None:
+    """Per-bucket rollout counts for cumulative IPO-by-date ladders.
+
+    For dates `[d0, d1, ...]`, buckets are `IPO by d0`, `(d0, d1]`, ...,
+    and `not IPO by last date`. The final bucket is only resolved for rollouts
+    whose last date is inside the simulated horizon; otherwise still-private
+    rollouts are uncounted and the categorical row reports `n_resolved` below
+    the rollout count.
+    """
+    if not trajectories:
+        return None
+    by_months = [trajectories[0].month_on_or_before(by_date) for by_date in by_dates]
+    counts = np.zeros(len(by_months) + 1, dtype=np.int64)
+    for traj in trajectories:
+        t_ipo = traj.first_event_month(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
+        if t_ipo is not None:
+            bucket_index = next((i for i, by_month in enumerate(by_months) if t_ipo <= by_month), None)
+            if bucket_index is None:
+                counts[-1] += 1
+            else:
+                counts[bucket_index] += 1
+        elif by_months[-1] <= traj.horizon_months:
+            counts[-1] += 1
+    return counts
+
+
 def resolve_pre_ipo_failure(traj: RolloutTrajectory) -> Resolution:
     """YES iff an absorbing COLLAPSED/ACQUIRED exit occurs before any PUBLIC_MARKET_OPEN."""
     t_fail = traj.first_event_month(*_FAILURE_EVENTS)
@@ -209,6 +237,45 @@ def inflation_yoy_counts(
     yes_mask = yoy >= threshold if direction is Direction.ABOVE else yoy < threshold
     yes = int(np.count_nonzero(yes_mask))
     return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)
+
+
+def inflation_yoy_bucket_counts(
+    matrix: npt.NDArray[np.float64],
+    *,
+    lows: list[float | None],
+    highs: list[float | None],
+    at_month: int,
+    horizon_months: int,
+    window_months: int = 12,
+    history: npt.NDArray[np.float64] | None = None,
+) -> npt.NDArray[np.int64] | None:
+    """Per-bucket rollout counts for trailing YoY values at `at_month`.
+
+    This is the distribution-valued sibling of `inflation_yoy_counts`: instead of
+    testing one threshold, compute each rollout's YoY rate and count it into
+    half-open buckets. Returns `None` when the YoY value is unavailable because the
+    requested month is out of horizon or the pre-anchor denominator is not covered
+    by `history`.
+    """
+    if at_month < 0 or at_month > horizon_months:
+        return None
+    lookback = at_month - window_months
+    if lookback >= 0:
+        denominator: npt.NDArray[np.float64] | np.float64 = matrix[:, lookback]
+    elif history is not None and lookback >= -len(history):
+        denominator = history[lookback]
+    else:
+        return None
+    yoy = matrix[:, at_month] / denominator - 1.0
+    counts = np.zeros(len(lows), dtype=np.int64)
+    for i, (low, high) in enumerate(zip(lows, highs, strict=True)):
+        mask = np.ones(yoy.shape, dtype=bool)
+        if low is not None:
+            mask &= yoy >= low
+        if high is not None:
+            mask &= yoy < high
+        counts[i] = int(np.count_nonzero(mask))
+    return counts
 
 
 def level_by_date_counts(

@@ -26,6 +26,8 @@ from augur.calibration.catalog import (
     BucketFamily,
     BucketMember,
     CorrelateMarket,
+    DateLadderFamily,
+    DateLadderMember,
     ExactMarket,
     InflationYoyMapping,
     IpoByDateMapping,
@@ -36,12 +38,14 @@ from augur.calibration.catalog import (
     MarketCatalog,
     PolymarketRef,
     PreIpoFailureMapping,
+    ThresholdLadderFamily,
+    ThresholdLadderMember,
 )
 from augur.calibration.platform import Direction, Market, Platform, PriceClient
 from augur.calibration.testing import mock_price_clients
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from augur.model.series import IssuerId, PrivateEquityEventKindCode, SP500Key
+from augur.model.series import InflationKey, IssuerId, PrivateEquityEventKindCode, SP500Key
 from augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 
 _ISSUER = "issuer_x"
@@ -325,6 +329,117 @@ def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) ->
     # D_KL(market ‖ model) = 0.2 log2(0.2/0.25) + 0.5 log2(1) + 0.3 log2(0.3/0.25) ≈ 0.0146 bits.
     assert family.kl_bits is not None
     assert math.isclose(family.kl_bits, 0.0146, abs_tol=1e-3)
+
+
+def _inflation_levels(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
+    """4 rollouts: month 7 YoY rates = [2.0%, 3.25%, 3.75%, 5.0%] against history=100."""
+    matrix = np.full((request.rollout_count, request.horizon_months + 1), 100.0, dtype=np.float64)
+    matrix[:, 7] = [102.0, 103.25, 103.75, 105.0]
+    return matrix
+
+
+def test_threshold_ladder_family_derives_categorical_distribution() -> None:
+    model = ConstantFrameModel(
+        levels={InflationKey(): _inflation_levels},
+        private_equity={
+            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
+        },
+    )
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27", "anchors": {"inflation": 100.0}},
+        markets=[],
+        threshold_ladder_families=[
+            ThresholdLadderFamily(
+                family_id="cpi_yoy",
+                question="CPI YoY threshold ladder",
+                platform=Platform.KALSHI,
+                series="inflation",
+                value_kind="inflation_yoy",
+                direction=Direction.ABOVE,
+                at_date=date(2026, 12, 31),
+                thresholds=[
+                    ThresholdLadderMember(market_id="CPI-T3.0", threshold=0.03),
+                    ThresholdLadderMember(market_id="CPI-T3.5", threshold=0.035),
+                    ThresholdLadderMember(market_id="CPI-T4.0", threshold=0.04),
+                ],
+            )
+        ],
+    )
+    seeds = tuple(range(4))
+    sampled = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_index_series=frozenset({InflationKey()}),
+            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"inflation": 100.0},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=4,
+        horizon_months=_HORIZON,
+    )
+    clients = mock_price_clients({Platform.KALSHI: {"CPI-T3.0": 0.90, "CPI-T3.5": 0.60, "CPI-T4.0": 0.20}})
+    result = run_calibration(
+        catalog,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+        inflation_history=[100.0] * 5,
+    )
+
+    assert result.clean == []
+    assert len(result.categorical) == 1
+    family = result.categorical[0]
+    assert family.channel == "inflation"
+    assert [bucket.label for bucket in family.buckets] == ["<= 3%", "3% to 3.5%", "3.5% to 4%", "> 4%"]
+    assert [bucket.p_market for bucket in family.buckets] == pytest.approx([0.10, 0.30, 0.40, 0.20])
+    assert [bucket.p_model for bucket in family.buckets] == [0.25, 0.25, 0.25, 0.25]
+    assert family.kl_bits is not None
+
+
+def test_date_ladder_family_derives_event_timing_distribution(model: ConstantFrameModel) -> None:
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27"},
+        markets=[],
+        date_ladder_families=[
+            DateLadderFamily(
+                family_id="openai_ipo_kalshi",
+                question="OpenAI IPO timing ladder",
+                platform=Platform.KALSHI,
+                issuer=_ISSUER,
+                dates=[
+                    DateLadderMember(market_id="IPO-2026", by_date=date(2026, 12, 31)),
+                    DateLadderMember(market_id="IPO-2031", by_date=date(2031, 6, 30)),
+                ],
+            )
+        ],
+    )
+    seeds = tuple(range(4))
+    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
+    clients = mock_price_clients({Platform.KALSHI: {"IPO-2026": 0.30, "IPO-2031": 0.70}})
+    result = run_calibration(
+        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
+    )
+
+    assert result.clean == []
+    assert len(result.categorical) == 1
+    family = result.categorical[0]
+    assert family.channel == _ISSUER
+    assert [bucket.label for bucket in family.buckets] == [
+        "By 2026-12-31",
+        "2026-12-31 to 2031-06-30",
+        "After 2031-06-30",
+    ]
+    assert [bucket.p_market for bucket in family.buckets] == pytest.approx([0.30, 0.40, 0.30])
+    # Fixture rollouts: IPO@7 -> first bucket, IPO@60 -> second, collapse + no-IPO -> final.
+    assert [bucket.p_model for bucket in family.buckets] == [0.25, 0.25, 0.5]
+    assert family.n_resolved == 4
+    assert family.kl_bits is not None
 
 
 class _ProbClient:

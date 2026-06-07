@@ -326,12 +326,84 @@ class BucketFamily(BaseModel):
     buckets: list[BucketMember] = Field(min_length=2)
 
 
+class ThresholdLadderMember(BaseModel):
+    """One cumulative threshold contract in a ladder family.
+
+    Example: Kalshi CPI YoY has separate binary contracts for "Above 3.0%",
+    "Above 3.1%", ... . Those contracts are not mutually exclusive buckets; they
+    are survival/CDF points that must be differenced into buckets before scoring.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_id: str
+    threshold: float
+
+
+class ThresholdLadderFamily(BaseModel):
+    """A cumulative threshold ladder over one level-derived quantity.
+
+    The child markets represent cumulative probabilities (`value > threshold` for
+    `direction=above`, or `value < threshold` for `direction=below`). Calibration
+    fits a monotone curve over those child prices, differences adjacent points into
+    a one-of-N bucket distribution, then scores that distribution as one categorical
+    row against the model's bucket counts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: str
+    question: str
+    platform: Platform
+    series: str
+    value_kind: Literal["level_at_date", "inflation_yoy"] = "level_at_date"
+    direction: Direction = Direction.ABOVE
+    at_date: date
+    window_months: int = 12
+    thresholds: list[ThresholdLadderMember] = Field(min_length=2)
+
+
+class DateLadderMember(BaseModel):
+    """One cumulative date-threshold event contract in a ladder family.
+
+    Example: "OpenAI IPO before Sep 1", "before Oct 1", ... . These are CDF
+    points over event timing, not independent exact markets; calibration
+    differences adjacent fitted points into timing buckets.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_id: str
+    by_date: date
+
+
+class DateLadderFamily(BaseModel):
+    """A cumulative event-timing ladder over one private-equity issuer.
+
+    The child markets represent `P(event occurs by date)` for increasing dates.
+    Calibration fits a monotone CDF over those child prices, differences adjacent
+    dates into one-of-N timing buckets, then scores that distribution as one
+    categorical row against the issuer's rollout event timings.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: str
+    question: str
+    platform: Platform
+    kind: Literal["ipo_by_date"] = "ipo_by_date"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    dates: list[DateLadderMember] = Field(min_length=2)
+
+
 class MarketCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metadata: CatalogMetadata
     markets: list[MarketSpec]
     bucket_families: list[BucketFamily] = Field(default_factory=list)
+    threshold_ladder_families: list[ThresholdLadderFamily] = Field(default_factory=list)
+    date_ladder_families: list[DateLadderFamily] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: Path) -> MarketCatalog:
@@ -348,6 +420,7 @@ class MarketCatalog(BaseModel):
     def referenced_level_series(self) -> set[str]:
         """Wire ids of every level series any macro market / bucket family scores against."""
         series = {str(family.series) for family in self.bucket_families}
+        series |= {str(family.series) for family in self.threshold_ladder_families}
         for market in self.exact_markets():
             if isinstance(market.mapping, LevelMapping):
                 series.add(market.mapping.series)
@@ -359,4 +432,5 @@ class MarketCatalog(BaseModel):
             market.mapping.issuer for market in self.exact_markets() if isinstance(market.mapping, PeEventMapping)
         }
         issuers |= {market.issuer for market in self.markets if isinstance(market, CorrelateMarket) and market.issuer}
+        issuers |= {family.issuer for family in self.date_ladder_families}
         return issuers

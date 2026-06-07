@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import threading
+from collections import defaultdict
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -404,14 +405,20 @@ def hermetic_prices() -> dict[Platform, dict[str, float]]:
     values only need to be plausible and deterministic; a gentle spread keeps the scored table
     and surfaced list visually populated."""
     catalog = MarketCatalog.from_yaml(get_required_path("_main/augur/calibration/example_openai_catalog.yaml"))
-    by_platform: dict[Platform, dict[str, float]] = {}
+    by_platform: defaultdict[Platform, dict[str, float]] = defaultdict(dict)
     for index, market in enumerate(catalog.markets):
-        by_platform.setdefault(market.platform, {})[market.market_id] = 0.3 + 0.4 * (index % 3) / 2
+        by_platform[market.platform][market.market_id] = 0.3 + 0.4 * (index % 3) / 2
     # Bucket families live outside `markets`; price each member so the categorical auto-run resolves.
-    for family in catalog.bucket_families:
-        for index, member in enumerate(family.buckets):
-            by_platform.setdefault(family.platform, {})[member.market_id] = 0.2 + 0.6 * (index % 4) / 3
-    return by_platform
+    for bucket_family in catalog.bucket_families:
+        for index, bucket_member in enumerate(bucket_family.buckets):
+            by_platform[bucket_family.platform][bucket_member.market_id] = 0.2 + 0.6 * (index % 4) / 3
+    for threshold_family in catalog.threshold_ladder_families:
+        for index, threshold_member in enumerate(threshold_family.thresholds):
+            by_platform[threshold_family.platform][threshold_member.market_id] = 0.2 + 0.6 * (index % 4) / 3
+    for date_family in catalog.date_ladder_families:
+        for index, date_member in enumerate(date_family.dates):
+            by_platform[date_family.platform][date_member.market_id] = 0.2 + 0.6 * (index % 4) / 3
+    return dict(by_platform)
 
 
 @pytest.fixture(scope="module")

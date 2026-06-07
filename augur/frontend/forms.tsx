@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls.tsx";
-import { clampInteger, fmtNumber, fmtUsd } from "./lib/format.ts";
+import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format.ts";
 import { LIFECYCLE_KINDS, SELL_BUCKETS, SELL_BUCKET_BY_CODE, defaultLifecycleEvent } from "./input_helpers.ts";
 import { portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers.ts";
 
@@ -366,7 +366,7 @@ function PortfolioPositionRow({ position }) {
           {position.symbol} · {position.accountLabel || position.accountId}
         </div>
       </td>
-      <td className="py-1 text-right augur-tabular">{fmtNumber(position.quantity)}</td>
+      <td className="py-1 text-right augur-tabular">{fmtQuantity(position.quantity)}</td>
       <td className="py-1 text-right augur-tabular">{fmtUsd(position.unitValueUsd)}</td>
       <td className="py-1 text-right augur-tabular">{fmtUsd(position.totalCostBasisUsd)}</td>
       <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(position.currentValueUsd)}</td>

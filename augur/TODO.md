@@ -53,6 +53,15 @@ Remaining:
 
 - [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
       (today's `mark_fan` is PE-only).
+- [ ] **Prediction-market quote quality.** Calibration currently consumes each
+      platform client's single `Market.probability` value, which for Kalshi is
+      the last-trade price. Track bid and ask separately in the platform model,
+      surface stale/wide/no-quote states, and decide whether scoring should use
+      midpoint, last, or a conservative interval per platform/market family.
+- [ ] **Compact calibration market charts.** Render categorical / ladder
+      market families as compact bar or line charts overlaying market
+      probabilities vs model probabilities, with hover details for the point or
+      bucket, instead of full-width probability tables.
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
       rollups of per-market KL once the weighting policy is decided.
 
@@ -275,6 +284,16 @@ Remaining:
       samples from both distributions, or paired differences
       conditioned on the same underlying exogenous path. Complements
       the multi-scenario comparison item in `augur/sim/TODO.md`.
+- [ ] **Make scenario comparison one responsive variant table.** The
+      collapsed editor should show only the details affordance plus a
+      header row with base/variant titles aligned to their real columns
+      and an affordance to add variants. Expanded rows should put all
+      editable per-scenario settings in the same table model, including
+      sell preference and event/timeline configuration, so base and each
+      variant can override them independently side by side. Remove the
+      separate "Edit a base cell..." style helper UI once the table
+      interaction is self-evident, and let variant columns grow to fill
+      wide pages for readability when there are few variants.
 - [ ] **Shared browser visual-test utilities** for deterministic
       Playwright runs. Augur visual goldens currently carry their own
       Chromium determinism flags and injected determinism CSS; those

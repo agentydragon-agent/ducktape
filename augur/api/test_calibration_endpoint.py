@@ -8,6 +8,7 @@ so the run stays hermetic (no network). `/api/calibration` surfaces the catalog 
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -29,13 +30,19 @@ def _client_for(config: Config) -> TestClient:
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
     # Every market (and every bucket of every categorical family) resolves to the same fixed YES
     # probability so the run is hermetic.
-    by_platform: dict[Platform, dict[str, float]] = {}
+    by_platform: defaultdict[Platform, dict[str, float]] = defaultdict(dict)
     for market in catalog.markets:
-        by_platform.setdefault(market.platform, {})[market.market_id] = 0.5
-    for family in catalog.bucket_families:
-        for member in family.buckets:
-            by_platform.setdefault(family.platform, {})[member.market_id] = 0.5
-    return TestClient(create_app_from_augur_config(config, price_clients=mock_price_clients(by_platform)))
+        by_platform[market.platform][market.market_id] = 0.5
+    for bucket_family in catalog.bucket_families:
+        for bucket_member in bucket_family.buckets:
+            by_platform[bucket_family.platform][bucket_member.market_id] = 0.5
+    for ladder_family in catalog.threshold_ladder_families:
+        for ladder_member in ladder_family.thresholds:
+            by_platform[ladder_family.platform][ladder_member.market_id] = 0.5
+    for date_family in catalog.date_ladder_families:
+        for date_member in date_family.dates:
+            by_platform[date_family.platform][date_member.market_id] = 0.5
+    return TestClient(create_app_from_augur_config(config, price_clients=mock_price_clients(dict(by_platform))))
 
 
 @pytest.fixture
