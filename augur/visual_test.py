@@ -183,7 +183,7 @@ def _wait_for_property_panel(page: Page) -> None:
     """Wait for the Base owning rows + the lifecycle timeline editor (prefilled events) to mount."""
     _wait_for_product_page(page)
     # Owning knobs surface as table rows once the (single) Base scenario buys; the lifecycle timeline
-    # is the active scenario's editor below the table.
+    # is now one of those scenario table rows.
     page.locator("[data-product-knob-row='financingKind']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-timeline]").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Timeline (mid-horizon changes)").wait_for(state="visible", timeout=30_000)

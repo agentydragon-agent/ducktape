@@ -32,12 +32,13 @@ const TERM_DATA = [
 // place and individually overridable per variant. Owning knobs (`needs`) only appear once some
 // scenario makes them relevant (the same "union" trick the metric list uses): `owns` once any
 // scenario buys, `mortgage`/`rented`/`managed` once any buys-with-mortgage / rents-it-out / uses an
-// agency. The lifecycle timeline is the one list-shaped knob — it stays a per-active editor below.
+// agency. The lifecycle timeline is list-shaped, but still renders as a per-scenario table row.
 // Row groups, in display order. Each is independently collapsible; the finer housing split (Mortgage
 // / Rental income / Management as their own groups) lets you fold away the parts that don't matter
 // for the comparison you're looking at.
 const GROUPS = [
   "Property",
+  "Timeline",
   "Mortgage",
   "Rental income",
   "Management",
@@ -130,6 +131,7 @@ const KNOBS = [
   { key: "spendIndex", label: "Spend index", kind: "index", group: "Spending" },
   { key: "monthlyRentUsd", label: "Monthly rent", kind: "usd", step: 100, group: "Outside rent" },
   { key: "rentalLocationId", label: "Rent location", kind: "location", group: "Outside rent" },
+  { key: "sellOrder", label: "Sell preference", kind: "sellOrder", group: "Cash buffer" },
   { key: "cashBufferTriggerBelowUsd", label: "Trigger below", kind: "usd", step: 1000, group: "Cash buffer" },
   { key: "cashBufferSaleUsd", label: "Sell amount", kind: "usd", step: 1000, group: "Cash buffer" },
   { key: "cashBufferIndexToInflation", label: "Buffer index", kind: "boolIndex", group: "Cash buffer" },
@@ -231,6 +233,7 @@ function KnobCell({
   value,
   ariaLabel,
   bootstrap,
+  portfolio,
   muted = false,
   rightSection = undefined,
   placeholder = undefined,
@@ -282,6 +285,10 @@ function KnobCell({
       return wrap(select(TERM_DATA, String(value), (next) => (Number(next) === 180 ? 180 : 360)));
     case "property":
       return wrap(select(propertyOptions(bootstrap), value ?? "", (next) => next || null));
+    case "sellOrder":
+      return wrap(
+        <SellOrderControl sellOrder={value} portfolio={portfolio} compact label={null} onChange={onChange} />
+      );
     default: // location
       return wrap(select(locationOptions(bootstrap), value ?? "", (next) => next || null));
   }
@@ -327,13 +334,13 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
             data-product-scenario-col={entry.id}
             data-product-scenario-tab={entry.id}
             data-active={isActive ? "" : undefined}
-            className={`min-w-0 border-b-2 px-2 pb-1.5 text-right ${
+            className={`min-w-0 border-b-2 px-2 pb-1.5 text-center ${
               isActive
                 ? "border-blue-500 text-slate-900 dark:text-slate-50"
                 : "border-transparent text-slate-500 dark:text-slate-400"
             }`}
           >
-            <div className="flex min-w-0 items-center justify-end gap-1.5">
+            <div className="flex min-w-0 items-center justify-center gap-1.5">
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: scenarioColor(index) }}
@@ -344,7 +351,7 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
                   data-product-scenario-rename={entry.id}
                   aria-label={`Rename ${entry.label}`}
                   autoFocus
-                  className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold text-slate-900 focus:outline-none dark:text-slate-50"
+                  className="min-w-0 flex-1 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none dark:text-slate-50"
                   value={entry.label}
                   onClick={(event) => event.stopPropagation()}
                   onChange={(event) => onRename(entry.id, event.target.value)}
@@ -404,7 +411,7 @@ function ScenarioHeaderCells({ entries, activeId, onSelect, onDelete, onRename }
 // One variant's cell: editable, bound to the override value when overridden or the inherited Base
 // value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
 // box) only when overridden, dropping the key so the cell re-inherits Base.
-function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, onRevertKeys }) {
+function VariantKnobCell({ knob, variant, baseInput, bootstrap, portfolio, onPatchVariant, onRevertKeys }) {
   const resolved = resolveVariant(baseInput, variant.overrides);
   if (!knobApplies(knob, resolved)) return <NaCell />;
   const overridden = knob.key in variant.overrides;
@@ -416,6 +423,7 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
         value={value}
         ariaLabel={`${knob.label} — ${variant.label}`}
         bootstrap={bootstrap}
+        portfolio={portfolio}
         muted={!overridden}
         placeholder={cellPlaceholder(knob, resolved, bootstrap)}
         rightSection={
@@ -432,12 +440,47 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
   );
 }
 
+function TimelineCell({ entry, horizonMonths, onSetBaseField, onPatchVariant, onRevertKeys }) {
+  if (entry.input.propertyId == null) return <NaCell />;
+  const overridden = entry.variant != null && "propertyLifecycleEvents" in entry.variant.overrides;
+  const content = (
+    <LifecycleEventsEditor
+      events={entry.input.propertyLifecycleEvents ?? []}
+      horizonMonths={horizonMonths}
+      showLabel={false}
+      className="min-w-[14rem]"
+      onChange={(events) =>
+        entry.variant == null
+          ? onSetBaseField("propertyLifecycleEvents", events)
+          : onPatchVariant(entry.variant.id, { propertyLifecycleEvents: events })
+      }
+    />
+  );
+  return (
+    <td className="px-3 py-2 align-top" data-product-timeline-cell={entry.id}>
+      <div className={entry.variant != null && !overridden ? "opacity-75" : undefined}>
+        {overridden && (
+          <div className="mb-1 flex justify-end">
+            <button
+              type="button"
+              className="augur-link text-xs font-semibold"
+              onClick={() => onRevertKeys(entry.variant.id, ["propertyLifecycleEvents"])}
+            >
+              Revert
+            </button>
+          </div>
+        )}
+        {content}
+      </div>
+    </td>
+  );
+}
+
 // Full-width scenario editor for the Base + per-variant-overrides model. Every per-scenario knob is
 // a row (Base column + one column per variant); a Base cell edits everywhere, a variant cell
-// overrides individually. The lifecycle timeline (too list-shaped for table cells) is a collapsible
-// per-scenario section below the grid — one editor per owning scenario (Base + variants), with the
-// same inherit/override semantics. Sell order is Base-only. The whole thing collapses so the
-// chart/results below are reachable without scrolling.
+// overrides individually. List-shaped knobs like the lifecycle timeline still live inside their
+// scenario cells, so base/variants remain side-by-side. The whole thing collapses so the chart/results
+// below are reachable without scrolling.
 export function ScenarioEditor({
   base,
   variants,
@@ -474,26 +517,65 @@ export function ScenarioEditor({
     else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
   };
   const settingColumnWidth = "18rem";
-  const scenarioColumnWidth = "10rem";
-  const tableWidth = `${18 + entries.length * 10}rem`;
+  const scenarioMinWidth = "12rem";
+  const tableMinWidth = `${18 + entries.length * 12}rem`;
   const comparisonColumns = {
-    gridTemplateColumns: `${settingColumnWidth} repeat(${entries.length}, ${scenarioColumnWidth})`,
-    width: tableWidth,
+    gridTemplateColumns: `${settingColumnWidth} repeat(${entries.length}, minmax(${scenarioMinWidth}, 1fr))`,
+    minWidth: tableMinWidth,
+    width: "100%",
   };
 
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
   const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
 
-  // Scenarios that buy a property get a lifecycle timeline below the grid (list-shaped, so it doesn't
-  // fit a table cell). A variant's events inherit Base until edited (creating a revertable
-  // `propertyLifecycleEvents` override). The index into `entries` keeps the dot color aligned with the
-  // chart + column headers. The chosen house's read-only facts render as their own collapsible "House
-  // facts" row group (`houseFactsGroup`), inserted after the editable Property group.
+  // Scenarios that buy a property get a lifecycle timeline row inside the grid. A variant's events
+  // inherit Base until edited (creating a revertable `propertyLifecycleEvents` override). The chosen
+  // house's read-only facts render as their own collapsible "House facts" row group
+  // (`houseFactsGroup`), inserted after the editable Property group.
   const timelineCollapsed = collapsed.has("Timeline");
-  const owningScenarios = [
+  const scenarioRows = [
     { id: "base", label: base.label, input: base.input, variant: null },
     ...variants.map((v) => ({ id: v.id, label: v.label, input: resolveVariant(base.input, v.overrides), variant: v })),
-  ].filter((entry) => entry.input.propertyId != null);
+  ];
+  const owningScenarios = scenarioRows.filter((entry) => entry.input.propertyId != null);
+
+  const timelineGroup =
+    owningScenarios.length > 0 ? (
+      <>
+        <tr>
+          <th colSpan={1 + entries.length} className="bg-slate-50 p-0 dark:bg-slate-900">
+            <button
+              type="button"
+              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              aria-expanded={!timelineCollapsed}
+              data-product-group-toggle="Timeline"
+              onClick={() => toggleCollapsed("Timeline")}
+            >
+              <DisclosureArrow collapsed={timelineCollapsed} />
+              Timeline
+              {timelineCollapsed && <span className="ml-1 normal-case augur-muted">1 row</span>}
+            </button>
+          </th>
+        </tr>
+        {!timelineCollapsed && (
+          <tr data-product-timeline="">
+            <th className="whitespace-nowrap px-3 py-2 text-left font-medium augur-strong">
+              Timeline (mid-horizon changes)
+            </th>
+            {scenarioRows.map((entry) => (
+              <TimelineCell
+                key={entry.id}
+                entry={entry}
+                horizonMonths={horizonMonths}
+                onSetBaseField={onSetBaseField}
+                onPatchVariant={onPatchVariant}
+                onRevertKeys={onRevertKeys}
+              />
+            ))}
+          </tr>
+        )}
+      </>
+    ) : null;
 
   // Read-only "House facts" group: one row per surfaced property attribute, one cell per scenario (its
   // resolved property, or "—" when it buys nothing). Collapsible via the same group toggle as the
@@ -588,23 +670,17 @@ export function ScenarioEditor({
       {open && (
         <>
           <div className="px-4 py-3">
-            {multi && (
-              <div className="mb-3 text-xs augur-muted">
-                Edit a Base cell to change it everywhere; edit a variant cell to override just that variant (its ↩
-                reverts it to Base). Variants can differ on any row — what each scenario buys, how it finances,
-                spending.
-              </div>
-            )}
             <div className="overflow-x-auto" data-product-scenario-table="">
-              <table className="text-sm" style={{ minWidth: tableWidth, tableLayout: "fixed", width: tableWidth }}>
+              <table className="w-full text-sm" style={{ minWidth: tableMinWidth, tableLayout: "fixed" }}>
                 <colgroup>
                   <col style={{ width: settingColumnWidth }} />
                   {entries.map((entry) => (
-                    <col key={entry.id} style={{ width: scenarioColumnWidth }} />
+                    <col key={entry.id} />
                   ))}
                 </colgroup>
                 <tbody>
                   {GROUPS.map((group) => {
+                    if (group === "Timeline") return <React.Fragment key={group}>{timelineGroup}</React.Fragment>;
                     const groupKnobs = visibleKnobs.filter((knob) => knob.group === group);
                     if (groupKnobs.length === 0) return null;
                     const groupCollapsed = collapsed.has(group);
@@ -641,6 +717,7 @@ export function ScenarioEditor({
                                       value={base.input[knob.key]}
                                       ariaLabel={`${knob.label} — Base`}
                                       bootstrap={bootstrap}
+                                      portfolio={portfolio}
                                       placeholder={cellPlaceholder(knob, base.input, bootstrap)}
                                       onChange={(value) => onSetBaseField(knob.key, value)}
                                     />
@@ -656,6 +733,7 @@ export function ScenarioEditor({
                                   variant={variant}
                                   baseInput={base.input}
                                   bootstrap={bootstrap}
+                                  portfolio={portfolio}
                                   onPatchVariant={onPatchVariant}
                                   onRevertKeys={onRevertKeys}
                                 />
@@ -669,67 +747,7 @@ export function ScenarioEditor({
                 </tbody>
               </table>
             </div>
-            <SellOrderControl
-              sellOrder={base.input.sellOrder}
-              portfolio={portfolio}
-              onChange={(sellOrder) => onSetBaseField("sellOrder", sellOrder)}
-            />
           </div>
-
-          {owningScenarios.length > 0 && (
-            <div className="px-4 py-3" data-product-timeline="">
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                aria-expanded={!timelineCollapsed}
-                data-product-group-toggle="Timeline"
-                onClick={() => toggleCollapsed("Timeline")}
-              >
-                <DisclosureArrow collapsed={timelineCollapsed} />
-                Timeline
-              </button>
-              {!timelineCollapsed && (
-                <div className="mt-3 space-y-4">
-                  {owningScenarios.map((entry) => {
-                    const index = entries.findIndex((e) => e.id === entry.id);
-                    const overridden = entry.variant != null && "propertyLifecycleEvents" in entry.variant.overrides;
-                    return (
-                      <div key={entry.id}>
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <div className="augur-field-label flex items-center gap-1.5">
-                            <span
-                              className="h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: scenarioColor(index) }}
-                              aria-hidden="true"
-                            />
-                            {entry.label}
-                          </div>
-                          {overridden && (
-                            <button
-                              type="button"
-                              className="augur-link text-xs font-semibold"
-                              onClick={() => onRevertKeys(entry.variant.id, ["propertyLifecycleEvents"])}
-                            >
-                              Revert to base
-                            </button>
-                          )}
-                        </div>
-                        <LifecycleEventsEditor
-                          events={entry.input.propertyLifecycleEvents ?? []}
-                          horizonMonths={horizonMonths}
-                          onChange={(events) =>
-                            entry.variant == null
-                              ? onSetBaseField("propertyLifecycleEvents", events)
-                              : onPatchVariant(entry.variant.id, { propertyLifecycleEvents: events })
-                          }
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
           <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
 

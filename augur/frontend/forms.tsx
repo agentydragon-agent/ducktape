@@ -88,7 +88,7 @@ export function PropertyDetails({ property }) {
   );
 }
 
-export function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
+export function LifecycleEventsEditor({ events, horizonMonths, onChange, showLabel = true, className = "" }) {
   const maxMonth = Math.max(1, Number(horizonMonths) - 1);
   const saleMonth = firstSaleMonth(events);
   // After a sale, the property is frozen: the wire validator rejects any other lifecycle event
@@ -109,8 +109,8 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
     onChange(events.filter((_, idx) => idx !== index));
   };
   return (
-    <div className="mt-3 grid gap-2">
-      <div className="augur-field-label">Timeline (mid-horizon changes)</div>
+    <div className={`grid gap-2 ${className}`.trim()}>
+      {showLabel && <div className="augur-field-label">Timeline (mid-horizon changes)</div>}
       {events.length === 0 && (
         <div className="text-xs augur-muted">
           Add events to change the property&apos;s rented %, primary-home status, fund a capital improvement, or sell
@@ -237,7 +237,13 @@ function LifecycleEventValueField({ event, onChange }) {
   return null;
 }
 
-export function SellOrderControl({ sellOrder, portfolio, onChange }) {
+export function SellOrderControl({
+  sellOrder,
+  portfolio,
+  onChange,
+  label = "Sell preference (top first)",
+  compact = false,
+}) {
   // Render one row per bucket. Enabled rows appear in priority order at the top with up/down
   // controls; disabled rows trail at the bottom, dimmed. Reorder mutates a string of bucket
   // codes (e.g. "pc") so it slots into the URL encoder without an array-equality dance.
@@ -279,8 +285,8 @@ export function SellOrderControl({ sellOrder, portfolio, onChange }) {
 
   const firstDisabledCode = visibleBuckets.find((bucket) => enabledCodes.indexOf(bucket.code) < 0)?.code ?? null;
   return (
-    <div className="mt-3">
-      <div className="augur-field-label mb-2">Sell preference (top first)</div>
+    <div className={compact ? "" : "mt-3"}>
+      {label && <div className="augur-field-label mb-2">{label}</div>}
       <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
         {visibleBuckets.map((bucket) => {
           const enabledIdx = enabledCodes.indexOf(bucket.code);

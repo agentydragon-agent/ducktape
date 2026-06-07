@@ -284,16 +284,6 @@ Remaining:
       samples from both distributions, or paired differences
       conditioned on the same underlying exogenous path. Complements
       the multi-scenario comparison item in `augur/sim/TODO.md`.
-- [ ] **Make scenario comparison one responsive variant table.** The
-      collapsed editor should show only the details affordance plus a
-      header row with base/variant titles aligned to their real columns
-      and an affordance to add variants. Expanded rows should put all
-      editable per-scenario settings in the same table model, including
-      sell preference and event/timeline configuration, so base and each
-      variant can override them independently side by side. Remove the
-      separate "Edit a base cell..." style helper UI once the table
-      interaction is self-evident, and let variant columns grow to fill
-      wide pages for readability when there are few variants.
 - [ ] **Shared browser visual-test utilities** for deterministic
       Playwright runs. Augur visual goldens currently carry their own
       Chromium determinism flags and injected determinism CSS; those
