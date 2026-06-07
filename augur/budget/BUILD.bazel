@@ -18,61 +18,53 @@ py_library(
 )
 
 py_library(
-    name = "categorize",
-    srcs = ["categorize.py"],
-    deps = [
-        ":default_rules",
-        ":schema",
-        "//plaid_utils:schema",
-    ],
-)
-
-py_test(
-    name = "test_categorize",
-    srcs = ["test_categorize.py"],
-    deps = [
-        ":categorize",
-        ":schema",
-        "//plaid_utils:schema",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "aggregate",
-    srcs = ["aggregate.py"],
-    deps = [
-        ":categorize",
-        ":schema",
-        "//augur:dates",
-        "//plaid_utils:schema",
-    ],
-)
-
-py_test(
-    name = "test_aggregate",
-    srcs = ["test_aggregate.py"],
-    deps = [
-        ":aggregate",
-        ":categorize",
-        ":schema",
-        "//augur:dates",
-        "//plaid_utils:schema",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
         ":schema",
         "//augur/api:schemas",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sql_read_model",
+    srcs = ["sql_read_model.py"],
+    deps = [
+        ":default_rules",
+        ":schema",
+        ":wire",
+        "//augur:dates",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sql_read_model",
+    size = "medium",
+    srcs = ["test_sql_read_model.py"],
+    data = [
+        "//plaid_utils:migrations",
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":schema",
+        ":sql_read_model",
+        "//:conftest",
+        "//augur:dates",
+        "//plaid_utils:schema",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:postgres",
+        "@pypi//alembic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -97,11 +89,9 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
-        ":aggregate",
-        ":categorize",
         ":csv_export",
         ":schema",
+        ":sql_read_model",
         ":wire",
-        "//plaid_utils:read_model",
     ],
 )

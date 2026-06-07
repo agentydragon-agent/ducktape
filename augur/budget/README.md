@@ -9,20 +9,19 @@ of force-netting, and surfaces lumpy one-offs separately.
 
 ## Architecture
 
-| Layer              | What it does                                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema.py`        | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + categorization rules, loaded from augur YAML |
-| `default_rules.py` | Generic public-chain rules (DoorDash, Anthropic, Lyft, …). User rules pre-empt these.                                                 |
-| `categorize.py`    | Apply rules; unmatched → `default_bucket_id`; assert each `transfer` bucket stays single-direction                                    |
-| `aggregate.py`     | Monthly per-bucket totals, day-normalized monthly averages, lumpy detection                                                           |
-| `service.py`       | Orchestrates: load (via `plaid_utils.read_model`) → classify → aggregate → wire types                                                 |
-| `wire.py`          | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                    |
+| Layer               | What it does                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + categorization rules, loaded from augur YAML |
+| `default_rules.py`  | Generic public-chain rules (DoorDash, Anthropic, Lyft, …). User rules pre-empt these.                                                 |
+| `sql_read_model.py` | Reads Plaid transactions from Postgres, classifies with direction-gated rules, aggregates monthly totals, and returns drilldowns      |
+| `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                      |
+| `wire.py`           | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                    |
 
 ## What lives in ducktape vs gaffer-private
 
-**ducktape (public):** The framework — schemas, rule kinds, the categorizer,
-the aggregator, the API endpoints, the frontend tab, the public default-rules
-library (major-chain merchants only).
+**ducktape (public):** The framework — schemas, rule kinds, the SQL read model,
+the API endpoints, the frontend tab, and the public default-rules library
+(major-chain merchants only).
 
 **gaffer-private (private):** The actual `budget:` config block in the
 deployment's `Config` YAML, listing the user's specific merchants (medical
@@ -44,36 +43,37 @@ budget:
     plaid_account_ids: []
 
   buckets:
-    - { id: rent, label: Rent, kind: expense }
-    - { id: utilities, label: Utilities, kind: expense }
-    - { id: groceries, label: Groceries, kind: expense }
-    - { id: doordash, label: DoorDash, kind: expense }
-    - { id: restaurants_in_person, label: Restaurants (in person), kind: expense }
-    - { id: ai_subscription, label: AI subscriptions, kind: expense }
-    - { id: transportation, label: Transportation, kind: expense }
-    - { id: insurance, label: Health insurance, kind: expense }
-    - { id: taxes, label: Taxes, kind: expense }
-    - { id: travel, label: Travel, kind: expense }
-    - { id: general_merchandise, label: General merchandise, kind: expense }
-    - { id: electronics, label: Electronics, kind: expense }
-    - { id: entertainment, label: Entertainment, kind: expense }
-    - { id: personal_care, label: Personal care, kind: expense }
-    - { id: bank_fees, label: Bank fees, kind: expense }
-    - { id: government, label: Government, kind: expense }
+    - { id: rent, label: Rent, kind: expense, direction: outflow }
+    - { id: utilities, label: Utilities, kind: expense, direction: outflow }
+    - { id: groceries, label: Groceries, kind: expense, direction: outflow }
+    - { id: doordash, label: DoorDash, kind: expense, direction: outflow }
+    - { id: restaurants_in_person, label: Restaurants (in person), kind: expense, direction: outflow }
+    - { id: ai_subscription, label: AI subscriptions, kind: expense, direction: outflow }
+    - { id: transportation, label: Transportation, kind: expense, direction: outflow }
+    - { id: insurance, label: Health insurance, kind: expense, direction: outflow }
+    - { id: taxes, label: Taxes, kind: expense, direction: outflow }
+    - { id: travel, label: Travel, kind: expense, direction: outflow }
+    - { id: general_merchandise, label: General merchandise, kind: expense, direction: outflow }
+    - { id: electronics, label: Electronics, kind: expense, direction: outflow }
+    - { id: entertainment, label: Entertainment, kind: expense, direction: outflow }
+    - { id: personal_care, label: Personal care, kind: expense, direction: outflow }
+    - { id: bank_fees, label: Bank fees, kind: expense, direction: outflow }
+    - { id: government, label: Government, kind: expense, direction: outflow }
     # Related buckets share a `family`; the UI renders them in one panel showing inflow and
     # outflow side by side (no auto-netting -- reimbursement timing is too lumpy to net safely).
-    - { id: medical_reimbursement, label: Anthem reimbursements, kind: inflow, family: medical }
-    - { id: esketamine, label: Esketamine, kind: expense, family: medical }
-    - { id: therapy, label: Therapy, kind: expense, family: medical }
-    - { id: medical_other, label: Other medical, kind: expense, family: medical }
-    # Transfers are split by direction so each bucket stays single-sided (the categorizer
-    # asserts a transfer bucket never mixes inflow and outflow).
-    - { id: transfers_out, label: Transfers out (internal), kind: transfer }
-    - { id: transfers_in, label: Transfers in (internal), kind: transfer }
-    - { id: income, label: Income, kind: income }
-    - { id: other, label: Uncategorized, kind: expense }
+    - { id: medical_reimbursement, label: Anthem reimbursements, kind: inflow, direction: inflow, family: medical }
+    - { id: esketamine, label: Esketamine, kind: expense, direction: outflow, family: medical }
+    - { id: therapy, label: Therapy, kind: expense, direction: outflow, family: medical }
+    - { id: medical_other, label: Other medical, kind: expense, direction: outflow, family: medical }
+    # Transfers are split by direction so each bucket stays single-sided.
+    - { id: transfers_out, label: Transfers out (internal), kind: transfer, direction: outflow }
+    - { id: transfers_in, label: Transfers in (internal), kind: transfer, direction: inflow }
+    - { id: income, label: Income, kind: income, direction: inflow }
+    - { id: other, label: Uncategorized, kind: expense, direction: outflow }
+    - { id: other_in, label: Uncategorized inflow, kind: inflow, direction: inflow }
 
-  default_bucket_id: other
+  default_outflow_bucket_id: other
+  default_inflow_bucket_id: other_in
 
   # User rules apply BEFORE the public defaults — list private merchants here.
   rules:
