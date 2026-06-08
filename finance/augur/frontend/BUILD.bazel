@@ -3,6 +3,7 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
 load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
@@ -407,6 +408,23 @@ build_test(
         ":image",
         ":image.digest",
     ],
+)
+
+# Regression guard for the docroot layout: the SPA bundle must land at the root of
+# /usr/share/nginx/html (index.html, main.js, styles.css) to match gaffer-private's augur
+# nginx.conf. A stale copy_to_directory root_paths (e.g. after a package move) silently nests
+# the bundle under a subdir, so nginx serves the stock welcome index instead of the app.
+genrule(
+    name = "frontend_layout_listing",
+    srcs = [":frontend_files"],
+    outs = ["frontend_layout_listing.txt"],
+    cmd = "( cd $(location :frontend_files) && find . -type f | LC_ALL=C sort ) > $@",
+)
+
+diff_test(
+    name = "frontend_layout_test",
+    file1 = "frontend_layout.golden.txt",
+    file2 = ":frontend_layout_listing",
 )
 
 # -- Type-check + unit tests ----------------------------------------------------
