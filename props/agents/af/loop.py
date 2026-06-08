@@ -24,18 +24,15 @@ logger = logging.getLogger(__name__)
 def make_agent(
     db: Database, *, instructions: str, tools: list[FunctionTool], middleware: Sequence[MiddlewareTypes]
 ) -> Agent:
-    """Build a props MAF agent for the current run (client selected by the model's api_shape).
-
-    `store=False` runs the Responses-shape client statelessly (full history each turn rather than
-    server-side `previous_response_id`), which is what the props-llm-proxy supports; it's a harmless
-    no-op for the chat-completions shape.
-    """
+    """Build a props MAF agent for the current run (client + default options selected by the
+    model's api_shape — see build_chat_client; e.g. `store=False` only for the Responses shape)."""
+    setup = build_chat_client_from_env(db)
     return Agent(
-        client=build_chat_client_from_env(db),
+        client=setup.client,
         instructions=instructions,
         tools=tools,
         middleware=middleware,
-        default_options={"store": False},
+        default_options=setup.default_options,
     )
 
 

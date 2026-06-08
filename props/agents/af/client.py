@@ -9,8 +9,9 @@ budget logic lives here — over-budget requests are rejected by the proxy.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
-from agent_framework import BaseChatClient, FunctionInvocationConfiguration
+from agent_framework import BaseChatClient, ChatOptions, FunctionInvocationConfiguration
 from agent_framework_anthropic import AnthropicClient
 from agent_framework_openai import OpenAIChatClient, OpenAIChatCompletionClient
 from anthropic import AsyncAnthropic
@@ -19,6 +20,21 @@ from openai_utils.api_shape import LLMApiShape
 from props.agents.runtime import get_current_agent_run
 from props.db.database import Database
 from props.db.models import ModelMetadata
+
+
+@dataclass(frozen=True)
+class ChatClientSetup:
+    """A MAF chat client plus the per-run default options it must be driven with.
+
+    `default_options` is shape-specific and cannot be shared: the OpenAI Responses client
+    needs `store=False` to stay stateless (the proxy rejects server-side
+    `previous_response_id`), but the Anthropic Messages client must NOT receive `store` —
+    the anthropic SDK rejects unknown kwargs client-side (`AsyncMessages.create() got an
+    unexpected keyword argument 'store'`) before any request is sent.
+    """
+
+    client: BaseChatClient
+    default_options: ChatOptions[None]
 
 
 def anthropic_base_url(openai_base_url: str) -> str:
@@ -32,7 +48,7 @@ def anthropic_base_url(openai_base_url: str) -> str:
     return openai_base_url.removesuffix("/v1")
 
 
-def build_chat_client_from_env(db: Database) -> BaseChatClient:
+def build_chat_client_from_env(db: Database) -> ChatClientSetup:
     """Build the MAF chat client for the current agent run's model.
 
     Reads the model from the current agent run and its `api_shape` from
@@ -48,8 +64,8 @@ def build_chat_client_from_env(db: Database) -> BaseChatClient:
     return build_chat_client(model, api_shape)
 
 
-def build_chat_client(model: str, api_shape: LLMApiShape) -> BaseChatClient:
-    """Build the MAF chat client for `model` on `api_shape`.
+def build_chat_client(model: str, api_shape: LLMApiShape) -> ChatClientSetup:
+    """Build the MAF chat client (+ default run options) for `model` on `api_shape`.
 
     Endpoint + key come from `OPENAI_BASE_URL` / `OPENAI_API_KEY` (the props-llm-proxy),
     set by the orchestrator.
@@ -63,21 +79,27 @@ def build_chat_client(model: str, api_shape: LLMApiShape) -> BaseChatClient:
 
     match api_shape:
         case LLMApiShape.CHAT_COMPLETIONS:
-            return OpenAIChatCompletionClient(
+            client: BaseChatClient = OpenAIChatCompletionClient(
                 model=model, api_key=api_key, base_url=base_url, function_invocation_configuration=fn_config
             )
+            return ChatClientSetup(client=client, default_options={})
         case LLMApiShape.RESPONSES:
-            return OpenAIChatClient(
+            # `store=False` runs the Responses client statelessly (full history each turn, no
+            # server-side `previous_response_id`), which is what props-llm-proxy supports.
+            client = OpenAIChatClient(
                 model=model, api_key=api_key, base_url=base_url, function_invocation_configuration=fn_config
             )
+            return ChatClientSetup(client=client, default_options={"store": False})
         case LLMApiShape.ANTHROPIC:
             # Anthropic Messages shape (Claude, or z.ai's GLM Anthropic endpoint) via
             # props-llm-proxy `/v1/messages` (see anthropic_base_url for the `/v1` handling).
             # `auth_token` (not `api_key`) makes the SDK send `Authorization: Bearer <creds>`
             # instead of `x-api-key`, matching the proxy's Bearer credential scheme
-            # (props/backend/auth.py:parse_credentials).
-            return AnthropicClient(
+            # (props/backend/auth.py:parse_credentials). No `store` option — the Anthropic
+            # Messages API has no such param and the SDK rejects it client-side.
+            client = AnthropicClient(
                 model=model,
                 anthropic_client=AsyncAnthropic(base_url=anthropic_base_url(base_url), auth_token=api_key),
                 function_invocation_configuration=fn_config,
             )
+            return ChatClientSetup(client=client, default_options={})

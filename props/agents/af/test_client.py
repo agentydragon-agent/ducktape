@@ -29,6 +29,16 @@ def test_anthropic_base_url_strips_v1() -> None:
     assert anthropic_base_url(_PROXY) == _PROXY
 
 
+def test_default_options_are_shape_specific(monkeypatch: pytest.MonkeyPatch) -> None:
+    # store=False only for the Responses client (stateless); never for Anthropic (the SDK
+    # rejects unknown kwargs) and not needed for chat-completions (stateless already).
+    monkeypatch.setenv("OPENAI_BASE_URL", f"{_PROXY}/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "creds")
+    assert build_chat_client("m", LLMApiShape.RESPONSES).default_options == {"store": False}
+    assert build_chat_client("m", LLMApiShape.ANTHROPIC).default_options == {}
+    assert build_chat_client("m", LLMApiShape.CHAT_COMPLETIONS).default_options == {}
+
+
 def _anthropic_message_response(text: str) -> dict:
     return {
         "id": "msg_test",
@@ -53,8 +63,10 @@ async def test_anthropic_agent_turn_hits_v1_messages(monkeypatch: pytest.MonkeyP
         route = mock.post(f"{_PROXY}/v1/messages").mock(
             return_value=httpx.Response(200, json=_anthropic_message_response("hello from glm"))
         )
-        client = build_chat_client("glm-4.6", LLMApiShape.ANTHROPIC)
-        agent = Agent(client=client, instructions="You are a test agent.")
+        setup = build_chat_client("glm-4.6", LLMApiShape.ANTHROPIC)
+        # The Anthropic SDK rejects a `store` kwarg client-side; it must not be a default option.
+        assert "store" not in setup.default_options
+        agent = Agent(client=setup.client, instructions="You are a test agent.", default_options=setup.default_options)
         result = await agent.run("hi")
 
     assert route.called
