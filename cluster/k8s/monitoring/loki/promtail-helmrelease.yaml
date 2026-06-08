@@ -28,10 +28,18 @@ spec:
     resources:
       requests:
         cpu: 50m
-        memory: 64Mi
+        # Promtail tails container logs; in cgroup v2 the page cache for every
+        # tailed file is charged to this container. A tight memory limit forces
+        # constant eviction + readahead re-reads from disk (observed 2026-06-08:
+        # 128Mi cap -> 23.8 TB physical reads for 66 MB logical, pegging the
+        # node's system disk at 94% util and starving co-located etcd's WAL
+        # fsync -> apiserver<->etcd latency -> NodeReady flaps). Keep the limit
+        # well above the tail working set. See
+        # cluster/debug/2026-05-31-kimsufi-worker-1-notready/.
+        memory: 256Mi
       limits:
-        cpu: 200m
-        memory: 128Mi
+        cpu: 500m
+        memory: 1Gi
 
     tolerations:
       - effect: NoSchedule
