@@ -21,12 +21,22 @@ from props.db.database import Database
 from props.db.models import ModelMetadata
 
 
+def anthropic_base_url(openai_base_url: str) -> str:
+    """Strip a trailing `/v1` from the OpenAI-style base URL for the Anthropic SDK.
+
+    Agents get `OPENAI_BASE_URL` ending in `/v1` (the OpenAI clients append `/responses`,
+    `/chat/completions` to it). The anthropic SDK instead appends the full `/v1/messages`
+    to its base_url, so passing the `/v1`-suffixed URL makes it POST to `/v1/v1/messages`,
+    which 404s at the props-llm-proxy. Strip the suffix so the SDK targets `/v1/messages`.
+    """
+    return openai_base_url.removesuffix("/v1")
+
+
 def build_chat_client_from_env(db: Database) -> BaseChatClient:
     """Build the MAF chat client for the current agent run's model.
 
     Reads the model from the current agent run and its `api_shape` from
-    `model_metadata`. Endpoint + key come from `OPENAI_BASE_URL` / `OPENAI_API_KEY`
-    (the props-llm-proxy), set by the orchestrator.
+    `model_metadata`, then delegates to `build_chat_client`.
     """
     with db.session() as session:
         agent_run = get_current_agent_run(session)
@@ -35,7 +45,15 @@ def build_chat_client_from_env(db: Database) -> BaseChatClient:
         if metadata is None:
             raise RuntimeError(f"Current agent run model is missing from model_metadata: {model}")
         api_shape = LLMApiShape(metadata.api_shape)
+    return build_chat_client(model, api_shape)
 
+
+def build_chat_client(model: str, api_shape: LLMApiShape) -> BaseChatClient:
+    """Build the MAF chat client for `model` on `api_shape`.
+
+    Endpoint + key come from `OPENAI_BASE_URL` / `OPENAI_API_KEY` (the props-llm-proxy),
+    set by the orchestrator.
+    """
     base_url = os.environ["OPENAI_BASE_URL"]
     api_key = os.environ["OPENAI_API_KEY"]
 
@@ -54,11 +72,12 @@ def build_chat_client_from_env(db: Database) -> BaseChatClient:
             )
         case LLMApiShape.ANTHROPIC:
             # Anthropic Messages shape (Claude, or z.ai's GLM Anthropic endpoint) via
-            # props-llm-proxy `/v1/messages`. `auth_token` (not `api_key`) makes the SDK send
-            # `Authorization: Bearer <creds>` instead of `x-api-key`, matching the proxy's
-            # Bearer credential scheme (props/backend/auth.py:parse_credentials).
+            # props-llm-proxy `/v1/messages` (see anthropic_base_url for the `/v1` handling).
+            # `auth_token` (not `api_key`) makes the SDK send `Authorization: Bearer <creds>`
+            # instead of `x-api-key`, matching the proxy's Bearer credential scheme
+            # (props/backend/auth.py:parse_credentials).
             return AnthropicClient(
                 model=model,
-                anthropic_client=AsyncAnthropic(base_url=base_url, auth_token=api_key),
+                anthropic_client=AsyncAnthropic(base_url=anthropic_base_url(base_url), auth_token=api_key),
                 function_invocation_configuration=fn_config,
             )
