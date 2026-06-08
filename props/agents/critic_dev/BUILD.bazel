@@ -86,9 +86,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":grading",
-        "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
         "//openai_utils:pydantic_strict_mode",
+        "//props/agents/af:exec_tool",
         "//props/agents/af:tools",
         "//props/core:eval_api_models",
         "//props/db:database",

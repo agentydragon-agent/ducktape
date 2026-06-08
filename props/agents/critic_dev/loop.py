@@ -17,9 +17,8 @@ from uuid import UUID
 import httpx
 from pydantic import Field
 
-from mcp_infra.exec.models import BaseExecResult
-from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from props.agents.af.exec_tool import make_exec_tool
 from props.agents.af.tools import direct_tools
 from props.agents.critic_dev.grading import wait_until_graded
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
@@ -100,10 +99,6 @@ class LoopState:
 def create_tools(state: LoopState, http_client: httpx.AsyncClient, db: Database) -> list:
     """Build the critic-dev tools (MAF FunctionTools) bound to this run's state/http/db."""
 
-    async def exec(args: DirectExecArgs) -> BaseExecResult:
-        """Execute a shell command. Use for file operations, running tests, etc."""
-        return await run_direct_exec(args, default_cwd=WORKSPACE)
-
     def report_success() -> None:
         """Report that the task completed successfully. Signals exit with success status."""
         state.status = LoopStatus.EXITED_SUCCESS
@@ -180,12 +175,14 @@ def create_tools(state: LoopState, http_client: httpx.AsyncClient, db: Database)
         logger.info("Fetched snapshot %s to %s", args.snapshot_slug, dest)
         return f"Fetched snapshot {args.snapshot_slug} to {dest}"
 
-    return direct_tools(
-        exec,
-        report_success,
-        report_failure,
-        start_critic,
-        wait_until_critic_completed,
-        wait_until_graded_tool,
-        fetch_snapshot,
-    )
+    return [
+        make_exec_tool(WORKSPACE),
+        *direct_tools(
+            report_success,
+            report_failure,
+            start_critic,
+            wait_until_critic_completed,
+            wait_until_graded_tool,
+            fetch_snapshot,
+        ),
+    ]

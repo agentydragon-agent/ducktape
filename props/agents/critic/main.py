@@ -18,9 +18,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from mcp_infra.exec.models import BaseExecResult
-from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from props.agents.af.exec_tool import make_exec_tool
 from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.af.tools import direct_tools
@@ -118,10 +117,6 @@ class ExitState:
 
 def _create_tools(exit_state: ExitState, db: Database) -> list:
     """Build the critic tools (MAF FunctionTools) bound to this run's exit state and db."""
-
-    async def exec(args: DirectExecArgs) -> BaseExecResult:
-        """Execute a shell command in the workspace. Use for code analysis tools like cat, rg, grep, find, etc."""
-        return await run_direct_exec(args, default_cwd=WORKSPACE)
 
     def insert_issue(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
@@ -247,16 +242,12 @@ def _create_tools(exit_state: ExitState, db: Database) -> list:
         logger.info("Reported failure: %s", args.message)
         return f"Reported failure: {args.message}"
 
-    return direct_tools(
-        exec,
-        insert_issue,
-        insert_occurrence,
-        insert_occurrence_multi,
-        delete_issue,
-        list_issues,
-        submit,
-        report_failure,
-    )
+    return [
+        make_exec_tool(WORKSPACE),
+        *direct_tools(
+            insert_issue, insert_occurrence, insert_occurrence_multi, delete_issue, list_issues, submit, report_failure
+        ),
+    ]
 
 
 def _validate_occurrence(occ: ReportedIssueOccurrence) -> None:

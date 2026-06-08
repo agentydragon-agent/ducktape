@@ -18,9 +18,8 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from mcp_infra.exec.models import BaseExecResult
-from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.errors import ContextLengthExceededError, translate_context_length
+from props.agents.af.exec_tool import make_exec_tool
 from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.af.tools import direct_tools
@@ -131,10 +130,6 @@ class GraderState:
 
 def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> list:
     """Build the grader tools (MAF FunctionTools) bound to the given run."""
-
-    async def exec(args: DirectExecArgs) -> BaseExecResult:
-        """Execute a shell command. Use for file operations, database queries, etc."""
-        return await run_direct_exec(args, default_cwd=_WORKSPACE)
 
     def get_drift() -> Drift:
         """Get all pending work: grading edges and clustering issues.
@@ -421,24 +416,26 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
                 raise ValueError(f"Cluster not found: {args.cluster_id}")
         return f"Deleted cluster '{args.cluster_id}'"
 
-    return direct_tools(
-        exec,
-        get_drift,
-        show_issue,
-        show_tp,
-        show_fp,
-        insert_edges,
-        fill_remaining,
-        delete_edges,
-        report_failure,
-        sleep,
-        list_clusters,
-        show_cluster,
-        create_cluster,
-        add_to_cluster,
-        remove_from_cluster,
-        delete_cluster,
-    )
+    return [
+        make_exec_tool(_WORKSPACE),
+        *direct_tools(
+            get_drift,
+            show_issue,
+            show_tp,
+            show_fp,
+            insert_edges,
+            fill_remaining,
+            delete_edges,
+            report_failure,
+            sleep,
+            list_clusters,
+            show_cluster,
+            create_cluster,
+            add_to_cluster,
+            remove_from_cluster,
+            delete_cluster,
+        ),
+    ]
 
 
 async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> None:

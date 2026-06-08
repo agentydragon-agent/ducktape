@@ -50,6 +50,17 @@ py_library(
 )
 
 py_library(
+    name = "exec_tool",
+    srcs = ["exec_tool.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "@pypi//agent_framework_core",
+    ],
+)
+
+py_library(
     name = "middleware",
     srcs = ["middleware.py"],
     visibility = ["//props:__subpackages__"],
