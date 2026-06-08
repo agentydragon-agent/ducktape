@@ -12,6 +12,7 @@ import pytest_asyncio
 import pytest_bazel
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -27,10 +28,13 @@ from finance.augur.budget.schema import (
     BucketKind,
     BudgetConfig,
     BudgetSourceConfig,
+    DateCondition,
+    MatchOverride,
     MatchRule,
     MerchantSubstringCondition,
     MerchantSubstringRule,
     NameRegexCondition,
+    NameSubstringCondition,
     NameSubstringRule,
     Override,
     PfcRule,
@@ -595,6 +599,126 @@ async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
     assert grocery.account_id == "checking"
     assert grocery.merchant_name == "Grocery"
     assert grocery.pfc_primary == "FOOD_AND_DRINK"
+
+
+def _config_with_match_overrides(match_overrides: tuple[MatchOverride, ...]) -> BudgetConfig:
+    """Same buckets/rules as `_budget_config`, plus `match_overrides` (isolation for tests)."""
+    return _budget_config().model_copy(update={"match_overrides": match_overrides})
+
+
+def test_date_condition_validation() -> None:
+    # Valid shapes: exact `on`, or any inclusive single-/two-sided range.
+    DateCondition(on=date(2026, 3, 22))
+    DateCondition(min=date(2026, 1, 1))
+    DateCondition(max=date(2026, 12, 31))
+    DateCondition(min=date(2026, 1, 1), max=date(2026, 1, 31))
+    # `on` is mutually exclusive with min/max.
+    with pytest.raises(ValidationError):
+        DateCondition(on=date(2026, 3, 22), min=date(2026, 3, 1))
+    # At least one bound required.
+    with pytest.raises(ValidationError):
+        DateCondition()
+    # min must not exceed max.
+    with pytest.raises(ValidationError):
+        DateCondition(min=date(2026, 2, 1), max=date(2026, 1, 1))
+
+
+def test_match_override_unknown_bucket_rejected() -> None:
+    base = _budget_config()
+    with pytest.raises(ValidationError):
+        BudgetConfig(
+            source=base.source,
+            buckets=base.buckets,
+            default_outflow_bucket_id="other",
+            default_inflow_bucket_id="other_in",
+            match_overrides=(
+                MatchOverride(condition=NameSubstringCondition(pattern="x"), bucket_id="nonesuch", note="bad ref"),
+            ),
+        )
+
+
+async def test_date_condition_exact_and_range(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    await _seed_budget_rows(session_factory)
+    # Exact date: only the 2026-03-22 outflow (wealthfront_out, +30000) lands in custom.
+    exact = _config_with_rules((MatchRule(bucket_id="custom", condition=DateCondition(on=date(2026, 3, 22))),))
+    assert await _custom_bucket_txns(session_factory, exact) == ["wealthfront_out"]
+    # Inclusive range 03-20..03-21 selects target_preempt (3/20) and anthropic (3/21); both outflow.
+    rng = _config_with_rules(
+        (MatchRule(bucket_id="custom", condition=DateCondition(min=date(2026, 3, 20), max=date(2026, 3, 21))),)
+    )
+    assert await _custom_bucket_txns(session_factory, rng) == ["target_preempt", "anthropic_default_skipped"]
+
+
+async def test_match_override_is_ungated_and_beats_rules(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    await _seed_budget_rows(session_factory)
+    # Default config routes Wealthfront via NameSubstringRule -> transfers_in (inflow leg) and
+    # PfcRule TRANSFER_OUT -> transfers_out (outflow leg). One match_override pulls BOTH signed
+    # legs into the outflow-gated `custom` bucket -- proving match_overrides ignore direction and
+    # outrank rules.
+    config = _config_with_match_overrides(
+        (MatchOverride(condition=NameSubstringCondition(pattern="Wealthfront"), bucket_id="custom", note="both legs"),)
+    )
+    response = await sql_read_model.read_budget_snapshot(
+        session_factory=session_factory,
+        config=config,
+        window_start=date(2026, 3, 15),
+        window_end=date(2026, 4, 30),
+        account_ids=("checking",),
+    )
+    monthly = _monthly_by_bucket(response)
+    # custom already holds target_preempt (+40, via the Target rule); the match_override adds both
+    # Wealthfront legs (+30000 out and -12000 in) regardless of sign: 40 + 30000 - 12000 = 18040.
+    assert monthly["custom"] == (18040.0, 0.0)
+    assert monthly["transfers_out"] == (0.0, 0.0)  # outflow leg no longer falls to the PFC rule
+    assert monthly["transfers_in"] == (0.0, 0.0)  # inflow leg no longer falls to the name rule
+
+
+async def test_transaction_id_override_beats_match_override(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _budget_config(
+        overrides=(Override(transaction_id="wealthfront_out", bucket_id="groceries", note="pin this leg"),)
+    ).model_copy(
+        update={
+            "match_overrides": (
+                MatchOverride(condition=NameSubstringCondition(pattern="Wealthfront"), bucket_id="custom", note="both"),
+            )
+        }
+    )
+    classified = {
+        row.transaction_id: row.bucket_id
+        for row in await sql_read_model.read_all_classified(
+            session_factory=session_factory, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30)
+        )
+    }
+    assert classified["wealthfront_out"] == "groceries"  # transaction_id override wins
+    assert classified["wealthfront_in"] == "custom"  # match_override applies to the rest
+
+
+async def test_match_override_date_freeze_excludes_later_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    # The NUMA-passthrough pattern: freeze a closed historical set by date. AllOf(name, date<=cap)
+    # captures only the on/before-cap leg; later rows fall through to the normal rules.
+    config = _config_with_match_overrides(
+        (
+            MatchOverride(
+                condition=AllOfCondition(
+                    conditions=(NameSubstringCondition(pattern="Wealthfront"), DateCondition(max=date(2026, 3, 22)))
+                ),
+                bucket_id="custom",
+                note="freeze: Wealthfront on/before 2026-03-22",
+            ),
+        )
+    )
+    classified = {
+        row.transaction_id: row.bucket_id
+        for row in await sql_read_model.read_all_classified(
+            session_factory=session_factory, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30)
+        )
+    }
+    assert classified["wealthfront_out"] == "custom"  # 2026-03-22, within the freeze
+    assert classified["wealthfront_in"] == "transfers_in"  # 2026-03-23, after the freeze -> normal rule
 
 
 if __name__ == "__main__":

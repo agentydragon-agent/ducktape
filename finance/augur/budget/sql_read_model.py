@@ -18,6 +18,7 @@ from finance.augur.budget.schema import (
     AnyOfCondition,
     BudgetConfig,
     Condition,
+    DateCondition,
     MatchRule,
     MerchantRegexCondition,
     MerchantSubstringCondition,
@@ -123,6 +124,15 @@ def _compile_condition(cond: Condition, bind: Callable[[object], str]) -> str:
         if cond.max is not None:
             bounds.append(f"{col} <= {bind(cond.max)}")
         return "(" + " AND ".join(bounds) + ")"
+    if isinstance(cond, DateCondition):
+        if cond.on is not None:
+            return f"base_tx.date = {bind(cond.on)}"
+        bounds = []
+        if cond.min is not None:
+            bounds.append(f"base_tx.date >= {bind(cond.min)}")
+        if cond.max is not None:
+            bounds.append(f"base_tx.date <= {bind(cond.max)}")
+        return "(" + " AND ".join(bounds) + ")"
     if isinstance(cond, AccountCondition):
         return f"base_tx.account_id = ANY(CAST({bind(list(cond.account_ids))} AS text[]))"
     if isinstance(cond, AllOfCondition):
@@ -160,6 +170,35 @@ def _compile_rules_case(config: BudgetConfig) -> tuple[str, dict[str, object]]:
             continue
         cond_sql = _compile_condition(_rule_condition(rule), bind)
         arms.append(f"WHEN ({cond_sql}) AND ({_direction_gate(bucket.direction)}) THEN {bind(rule.bucket_id)}")
+    if not arms:
+        return "NULL", params
+    return "CASE " + " ".join(arms) + " END", params
+
+
+def _compile_match_overrides_case(config: BudgetConfig) -> tuple[str, dict[str, object]]:
+    """Build the first-match-wins CASE for condition-keyed match_overrides, plus bind params.
+
+    Unlike `_compile_rules_case` these arms carry NO direction gate -- a match_override routes
+    every matching transaction to its bucket regardless of sign, mirroring how transaction_id
+    overrides ignore direction. Evaluates to NULL when none match. Uses an `mo` bind prefix so
+    its params never collide with the rules CASE (`rc`)."""
+    bucket_ids = {bucket.id for bucket in config.buckets}
+    params: dict[str, object] = {}
+    counter = 0
+
+    def bind(value: object) -> str:
+        nonlocal counter
+        key = f"mo{counter}"
+        counter += 1
+        params[key] = value
+        return f":{key}"
+
+    arms: list[str] = []
+    for match_override in config.match_overrides:
+        if match_override.bucket_id not in bucket_ids:
+            continue
+        cond_sql = _compile_condition(match_override.condition, bind)
+        arms.append(f"WHEN ({cond_sql}) THEN {bind(match_override.bucket_id)}")
     if not arms:
         return "NULL", params
     return "CASE " + " ".join(arms) + " END", params
@@ -211,6 +250,9 @@ classified_tx AS (
             -- direction-gated: an explicit human/agent call routes the txn to its bucket
             -- regardless of sign (e.g. a +amount "Returned Payment" -> transfers_out).
             ovr.bucket_id,
+            -- Condition-keyed match_overrides (_compile_match_overrides_case): also ungated,
+            -- below transaction_id overrides but above rules. NULL when none match.
+            {match_override_case},
             -- Generated first-match-wins CASE over the configured rules (_compile_rules_case);
             -- evaluates to NULL when no rule matches, falling through to the per-direction default.
             {matched_case},
@@ -317,7 +359,12 @@ def _budget_query(
 ) -> tuple[Any, dict[str, object]]:
     """Build an executable statement (classified-tx CTE + `tail`) and its bind params."""
     matched_case, rule_params = _compile_rules_case(config)
-    cte = _CLASSIFIED_TX_CTE_TEMPLATE.format(account_filter=_account_filter_sql(account_ids), matched_case=matched_case)
+    match_override_case, match_override_params = _compile_match_overrides_case(config)
+    cte = _CLASSIFIED_TX_CTE_TEMPLATE.format(
+        account_filter=_account_filter_sql(account_ids),
+        match_override_case=match_override_case,
+        matched_case=matched_case,
+    )
     params: dict[str, object] = {
         "bucket_defs_json": _bucket_defs_json(config),
         "overrides_json": _overrides_json(config),
@@ -327,6 +374,7 @@ def _budget_query(
         "default_outflow_bucket_id": config.default_outflow_bucket_id,
         "account_ids": list(account_ids),
         **rule_params,
+        **match_override_params,
         **(extra_params or {}),
     }
     return text(cte + tail), params

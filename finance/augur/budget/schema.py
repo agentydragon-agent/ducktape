@@ -179,6 +179,31 @@ class AmountCondition(ApiModel):
         return self
 
 
+class DateCondition(ApiModel):
+    """Match on the transaction date (ISO yyyy-mm-dd). Either an exact `on`, or an inclusive
+    `min`/`max` range with at least one bound; `on` is mutually exclusive with min/max.
+
+    Unlike Plaid surrogate keys (transaction_id, account_id), the date is intrinsic to the
+    transaction and survives a relink, so date-bounded conditions are the building block for
+    relink-stable `match_overrides` that freeze a closed historical set."""
+
+    kind: Literal["date"] = "date"
+    on: date | None = None
+    min: date | None = None
+    max: date | None = None
+
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> DateCondition:
+        if self.on is not None:
+            if self.min is not None or self.max is not None:
+                raise ValueError("date condition: `on` is mutually exclusive with min/max")
+        elif self.min is None and self.max is None:
+            raise ValueError("date condition requires `on` or at least one of min/max")
+        elif self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(f"date condition min ({self.min}) > max ({self.max})")
+        return self
+
+
 class AccountCondition(ApiModel):
     """Match when the transaction's account_id is one of `account_ids`."""
 
@@ -214,6 +239,7 @@ Condition = Annotated[
     | NameRegexCondition
     | PfcCondition
     | AmountCondition
+    | DateCondition
     | AccountCondition
     | AllOfCondition
     | AnyOfCondition
@@ -249,6 +275,25 @@ class Override(ApiModel):
     """
 
     transaction_id: str = Field(min_length=1)
+    bucket_id: str = Field(pattern=_ID_PATTERN)
+    note: str = Field(min_length=1)
+
+
+class MatchOverride(ApiModel):
+    """Condition-keyed manual classification. Like `Override` -- highest priority, applied
+    before rules, and NOT direction-gated (so both signed legs of a flow can land in one
+    bucket) -- but matched by transaction *content* (date / amount / descriptor / account)
+    instead of Plaid `transaction_id`. Because the matched fields are intrinsic to the
+    transaction, a match_override survives a relink that mints new ids, where a
+    transaction_id `Override` would go stale.
+
+    A match_override may match many transactions; every match routes to `bucket_id`. Precedence:
+    a transaction_id `Override` wins over any match_override; among match_overrides the first
+    one to match wins (config order); match_overrides as a group beat the rule list. Reach for a
+    transaction_id `Override` when you must pin exactly one of an otherwise field-identical group
+    (e.g. several same-day, same-amount, same-descriptor deposits)."""
+
+    condition: Condition
     bucket_id: str = Field(pattern=_ID_PATTERN)
     note: str = Field(min_length=1)
 
@@ -299,6 +344,9 @@ class BudgetConfig(ApiModel):
     # direction (see `Override`). The primary tool for residual weird cases rules
     # shouldn't generalize (reversals, one-off mislabels).
     overrides: tuple[Override, ...] = ()
+    # Condition-keyed manual classifications (see `MatchOverride`): applied after transaction_id
+    # `overrides` but before `rules`, ungated by direction, and relink-stable. First match wins.
+    match_overrides: tuple[MatchOverride, ...] = ()
     # Transactions with abs(amount) >= this threshold are flagged as "lumpy" (in addition to
     # appearing in their natural bucket). User can re-classify them as one-off vs recurring.
     lumpy_threshold_usd: float = Field(default=500.0, gt=0.0)
@@ -333,6 +381,9 @@ class BudgetConfig(ApiModel):
             if override.transaction_id in seen_override_ids:
                 raise ValueError(f"duplicate override for transaction_id {override.transaction_id!r}")
             seen_override_ids.add(override.transaction_id)
+        for match_override in self.match_overrides:
+            if match_override.bucket_id not in bucket_by_id:
+                raise ValueError(f"match_override references unknown bucket_id {match_override.bucket_id!r}")
         seen_funding_ids: set[str] = set()
         for funding in self.funding_accounts:
             if funding.plaid_account_id in seen_funding_ids:
