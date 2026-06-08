@@ -1,0 +1,19 @@
+rationale: |
+  stopAgentStatusPolling (stores.ts lines 51-54) clears `_statusTimer` and resets it to
+  null, and `_statusTimer` is declared at line 15, but nothing ever assigns
+  `_statusTimer = setInterval(...)` — there is no startAgentStatusPolling counterpart. Agent
+  status polling is never started, so `_statusTimer` is always null and stopAgentStatusPolling
+  is dead. Contrast startAgentsPolling/stopAgentsPolling for `_timer`, which is properly
+  started (setInterval) and stopped. Either add the missing start function or remove the
+  unused timer and stop function.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/web/src/features/agents/stores.ts:
+        - [15, 15]
+        - [51, 54]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/features/agents/stores.ts
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/features/agents/stores.ts
