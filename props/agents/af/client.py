@@ -53,11 +53,12 @@ def build_chat_client_from_env(db: Database) -> BaseChatClient:
                 model=model, api_key=api_key, base_url=base_url, function_invocation_configuration=fn_config
             )
         case LLMApiShape.ANTHROPIC:
-            # Anthropic Messages shape (Claude, or z.ai's GLM Anthropic endpoint). Routing a
-            # cluster model here through props-llm-proxy's Anthropic shape is a later follow-up;
-            # the selector exists so the shape is usable in code now.
+            # Anthropic Messages shape (Claude, or z.ai's GLM Anthropic endpoint) via
+            # props-llm-proxy `/v1/messages`. `auth_token` (not `api_key`) makes the SDK send
+            # `Authorization: Bearer <creds>` instead of `x-api-key`, matching the proxy's
+            # Bearer credential scheme (props/backend/auth.py:parse_credentials).
             return AnthropicClient(
                 model=model,
-                anthropic_client=AsyncAnthropic(base_url=base_url, api_key=api_key),
+                anthropic_client=AsyncAnthropic(base_url=base_url, auth_token=api_key),
                 function_invocation_configuration=fn_config,
             )

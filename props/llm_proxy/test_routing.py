@@ -24,6 +24,7 @@ from props.llm_proxy.routes import (
     _get_upstream_route,
     _merge_props_metadata,
     _resolve_upstream_url,
+    _upstream_auth_headers,
 )
 
 
@@ -198,6 +199,65 @@ def test_chat_usage_extraction() -> None:
     assert usage.input_tokens == 17
     assert usage.cached_input_tokens == 5
     assert usage.output_tokens == 23
+
+
+def test_anthropic_usage_extraction() -> None:
+    # Anthropic reports input_tokens excluding cache; the stored input_tokens must be the
+    # full prompt total (cache_read + cache_creation added back) so the cost view prices it.
+    usage = _extract_usage(
+        LLMApiShape.ANTHROPIC,
+        {
+            "usage": {
+                "input_tokens": 100,
+                "cache_read_input_tokens": 40,
+                "cache_creation_input_tokens": 10,
+                "output_tokens": 23,
+            }
+        },
+    )
+    assert usage.input_tokens == 150
+    assert usage.cached_input_tokens == 40
+    assert usage.output_tokens == 23
+
+
+def test_upstream_auth_headers_anthropic_uses_x_api_key() -> None:
+    headers = _upstream_auth_headers(LLMApiShape.ANTHROPIC, "zai-key")
+    assert headers["x-api-key"] == "zai-key"
+    assert headers["anthropic-version"] == "2023-06-01"
+    assert "Authorization" not in headers
+
+
+def test_upstream_auth_headers_openai_uses_bearer() -> None:
+    headers = _upstream_auth_headers(LLMApiShape.CHAT_COMPLETIONS, "sk-test")
+    assert headers["Authorization"] == "Bearer sk-test"
+    assert "x-api-key" not in headers
+
+
+def test_props_metadata_anthropic_uses_litellm_metadata() -> None:
+    # Anthropic's `metadata` only allows `user_id`, so props correlation goes under
+    # `litellm_metadata` (LiteLLM consumes it and strips it before forwarding to z.ai).
+    body: dict = {}
+    _merge_props_metadata(
+        body,
+        access=LLMAccess(
+            agent_run_id=UUID("00000000-0000-0000-0000-000000000001"),
+            allowed_model="glm-4.6",
+            budget_usd=1.0,
+            parent_agent_run_id=None,
+            agent_type="critic",
+        ),
+        api_shape=LLMApiShape.ANTHROPIC,
+        logical_model="glm-4.6",
+        upstream_model="glm-4.6-anthropic",
+    )
+    assert "metadata" not in body
+    assert body["litellm_metadata"] == {
+        "props.agent_run_id": "00000000-0000-0000-0000-000000000001",
+        "props.agent_type": "critic",
+        "props.api_shape": "anthropic",
+        "props.logical_model": "glm-4.6",
+        "props.upstream_model": "glm-4.6-anthropic",
+    }
 
 
 def test_props_metadata_is_merged_for_langfuse_correlation() -> None:

@@ -3,6 +3,7 @@
 Endpoints:
 - POST /v1/responses - OpenAI Responses API proxy (non-streaming only)
 - POST /v1/chat/completions - OpenAI Chat Completions API proxy (non-streaming only)
+- POST /v1/messages - Anthropic Messages API proxy (non-streaming only)
 
 Features:
 - Validates agent auth tokens against Postgres
@@ -43,6 +44,9 @@ UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
 
 # Default OpenAI upstream config used when model has no explicit upstream
 DEFAULT_OPENAI_UPSTREAM = UpstreamConfig(url_env="OPENAI_BASE_URL", api_key_env="OPENAI_API_KEY")
+
+# Anthropic Messages API version header value (the wire-format version the upstream expects).
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 @dataclass
@@ -192,12 +196,57 @@ def _extract_chat_completions_usage(response_body: dict[str, Any] | None) -> LLM
     )
 
 
+def _extract_anthropic_usage(response_body: dict[str, Any] | None) -> LLMUsageCounts:
+    """Extract token usage from an Anthropic Messages response.
+
+    Anthropic reports `input_tokens` *excluding* cached/cache-creation tokens, unlike
+    OpenAI's `prompt_tokens` which is the full total. The cost view expects the stored
+    `input_tokens` to be the full prompt total (it subtracts `cached_input_tokens` to
+    price the non-cached portion), so we add the cache buckets back into `input_tokens`.
+    """
+    if response_body is None:
+        return LLMUsageCounts()
+    usage_body = response_body.get("usage")
+    if not isinstance(usage_body, dict):
+        return LLMUsageCounts()
+
+    def _int(key: str) -> int:
+        value = usage_body.get(key)
+        return value if isinstance(value, int) else 0
+
+    cache_read = _int("cache_read_input_tokens")
+    prompt_total = _int("input_tokens") + cache_read + _int("cache_creation_input_tokens")
+    output_tokens = usage_body.get("output_tokens")
+    return LLMUsageCounts(
+        input_tokens=prompt_total,
+        cached_input_tokens=cache_read,
+        output_tokens=output_tokens if isinstance(output_tokens, int) else None,
+    )
+
+
 def _extract_usage(api_shape: LLMApiShape, response_body: dict[str, Any] | None) -> LLMUsageCounts:
-    if api_shape == LLMApiShape.RESPONSES:
-        return _extract_responses_usage(response_body)
-    if api_shape == LLMApiShape.CHAT_COMPLETIONS:
-        return _extract_chat_completions_usage(response_body)
-    raise ValueError(f"Unsupported LLM API shape: {api_shape}")
+    match api_shape:
+        case LLMApiShape.RESPONSES:
+            return _extract_responses_usage(response_body)
+        case LLMApiShape.CHAT_COMPLETIONS:
+            return _extract_chat_completions_usage(response_body)
+        case LLMApiShape.ANTHROPIC:
+            return _extract_anthropic_usage(response_body)
+
+
+def _upstream_auth_headers(api_shape: LLMApiShape, api_key: str) -> dict[str, str]:
+    """Auth headers to send to the upstream, per its API shape.
+
+    OpenAI shapes use `Authorization: Bearer`; the Anthropic Messages API uses
+    `x-api-key` + a required `anthropic-version` header.
+    """
+    headers = {"Content-Type": "application/json"}
+    if api_shape == LLMApiShape.ANTHROPIC:
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+    else:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def _log_request(
@@ -230,14 +279,26 @@ def _log_request(
     session.commit()
 
 
+def _props_metadata_field(api_shape: LLMApiShape) -> str:
+    """Request-body field that carries props correlation metadata to the upstream.
+
+    OpenAI shapes use the standard `metadata` map (LiteLLM forwards it to Langfuse).
+    The Anthropic Messages `metadata` object only permits `user_id`, so for that shape
+    we use LiteLLM's `litellm_metadata` field instead — LiteLLM consumes it for logging
+    and strips it before forwarding to the provider, so the Anthropic schema stays valid.
+    """
+    return "litellm_metadata" if api_shape == LLMApiShape.ANTHROPIC else "metadata"
+
+
 def _merge_props_metadata(
     body: dict[str, Any], *, access: LLMAccess, api_shape: LLMApiShape, logical_model: str, upstream_model: str
 ) -> None:
-    metadata = body.get("metadata")
+    field = _props_metadata_field(api_shape)
+    metadata = body.get(field)
     if metadata is None:
         metadata = {}
     if not isinstance(metadata, dict):
-        raise HTTPException(status_code=400, detail="metadata must be an object when provided")
+        raise HTTPException(status_code=400, detail=f"{field} must be an object when provided")
 
     props_metadata: dict[str, str] = {
         "props.agent_run_id": str(access.agent_run_id),
@@ -249,7 +310,7 @@ def _merge_props_metadata(
     if access.parent_agent_run_id is not None:
         props_metadata["props.parent_agent_run_id"] = str(access.parent_agent_run_id)
 
-    body["metadata"] = {**metadata, **props_metadata}
+    body[field] = {**metadata, **props_metadata}
 
 
 async def _read_json_object(request: Request) -> dict[str, Any]:
@@ -262,7 +323,7 @@ async def _read_json_object(request: Request) -> dict[str, Any]:
     return raw_body
 
 
-async def _proxy_openai_request(
+async def _proxy_request(
     request: Request,
     admin_db: AdminDb,
     config: Config,
@@ -301,6 +362,8 @@ async def _proxy_openai_request(
 
     # Rewrite model in request body to upstream model name
     body["model"] = upstream.model_name
+    # Tag the upstream request with props correlation keys for Langfuse (under `metadata` for
+    # OpenAI shapes, `litellm_metadata` for Anthropic — see _props_metadata_field).
     _merge_props_metadata(
         body, access=access, api_shape=api_shape, logical_model=request_model, upstream_model=upstream.model_name
     )
@@ -314,7 +377,7 @@ async def _proxy_openai_request(
             upstream_response = await client.post(
                 upstream_url,
                 json=body,
-                headers={"Authorization": f"Bearer {upstream.api_key}", "Content-Type": "application/json"},
+                headers=_upstream_auth_headers(api_shape, upstream.api_key),
                 timeout=UPSTREAM_TIMEOUT_SECONDS,
             )
         except httpx.TimeoutException:
@@ -379,7 +442,7 @@ async def responses(
     request: Request, admin_db: AdminDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
 ) -> JSONResponse:
     """Proxy OpenAI Responses API requests."""
-    return await _proxy_openai_request(
+    return await _proxy_request(
         request, admin_db, config, auth, api_shape=LLMApiShape.RESPONSES, upstream_path="responses"
     )
 
@@ -389,6 +452,16 @@ async def chat_completions(
     request: Request, admin_db: AdminDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
 ) -> JSONResponse:
     """Proxy OpenAI Chat Completions API requests."""
-    return await _proxy_openai_request(
+    return await _proxy_request(
         request, admin_db, config, auth, api_shape=LLMApiShape.CHAT_COMPLETIONS, upstream_path="chat/completions"
+    )
+
+
+@router.post("/v1/messages")
+async def messages(
+    request: Request, admin_db: AdminDb, config: Config, auth: Annotated[LLMAccess, Depends(require_llm_access)]
+) -> JSONResponse:
+    """Proxy Anthropic Messages API requests."""
+    return await _proxy_request(
+        request, admin_db, config, auth, api_shape=LLMApiShape.ANTHROPIC, upstream_path="messages"
     )
