@@ -75,7 +75,12 @@ def build_chat_client(model: str, api_shape: LLMApiShape) -> ChatClientSetup:
 
     # Surface tool exceptions to the model as the function result (props tools raise validation
     # errors the model is expected to read and retry) rather than aborting the run.
-    fn_config = FunctionInvocationConfiguration(include_detailed_errors=True)
+    #
+    # max_iterations caps LLM roundtrips within a single agent.run() burst; MAF defaults it to 40
+    # and then forces a tool-less final response. Props drives completion itself via
+    # run_until_done()'s done()/max_turns outer loop (props/agents/af/loop.py), so the inner cap
+    # only truncates bursts prematurely. Raise it well past any realistic burst length.
+    fn_config = FunctionInvocationConfiguration(include_detailed_errors=True, max_iterations=10_000)
 
     match api_shape:
         case LLMApiShape.CHAT_COMPLETIONS:
