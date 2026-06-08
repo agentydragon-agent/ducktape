@@ -1,17 +1,15 @@
 """Budget planner configuration: bucket taxonomy and merchant-classification rules.
 
-The augur framework knows nothing about specific user merchants. Generic rules
-(major chains: DoorDash, Anthropic, Lyft, ...) ship in `default_rules.py`;
-user-specific rules (medical providers, therapist, landlord, account IDs) live
-in the deployment's augur `Config` YAML, which augur loads at startup. This
-file just defines the schemas both layers populate.
+The augur framework knows nothing about specific user merchants. The deployment's
+augur `Config` YAML carries the full rule list (merchants, PFC fallbacks, account
+IDs), which augur loads at startup. This file just defines the schemas it populates.
 """
 
 from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
@@ -113,7 +111,122 @@ class PfcRule(_RuleBase):
     detailed: str | None = None
 
 
-Rule = MerchantSubstringRule | NameSubstringRule | PfcRule
+# --- Condition DSL (Stage A): composable predicates for the `match` rule kind ---
+# Leaf conditions mirror the flat rule kinds plus regex / amount / account; composites
+# (all_of / any_of / not) nest arbitrarily. A `MatchRule` pairs a condition with a bucket.
+
+
+class MerchantSubstringCondition(ApiModel):
+    """Case-insensitive substring match against `merchant_name` (NULL treated as empty)."""
+
+    kind: Literal["merchant_substring"] = "merchant_substring"
+    pattern: str = Field(min_length=1)
+
+
+class NameSubstringCondition(ApiModel):
+    """Case-insensitive substring match against the raw `name` descriptor."""
+
+    kind: Literal["name_substring"] = "name_substring"
+    pattern: str = Field(min_length=1)
+
+
+class MerchantRegexCondition(ApiModel):
+    """Case-insensitive POSIX regex against `merchant_name` (NULL treated as empty)."""
+
+    kind: Literal["merchant_regex"] = "merchant_regex"
+    pattern: str = Field(min_length=1)
+
+
+class NameRegexCondition(ApiModel):
+    """Case-insensitive POSIX regex against the raw `name` descriptor."""
+
+    kind: Literal["name_regex"] = "name_regex"
+    pattern: str = Field(min_length=1)
+
+
+class PfcCondition(ApiModel):
+    """Plaid personal_finance_category match; `detailed` optional (primary alone suffices)."""
+
+    kind: Literal["pfc"] = "pfc"
+    primary: str = Field(min_length=1)
+    detailed: str | None = None
+
+
+class AmountCondition(ApiModel):
+    """Inclusive numeric bound on the signed Plaid amount (positive = outflow), or its abs value.
+
+    At least one of `min`/`max` is required. Set `use_abs` to bound abs(amount) instead
+    (e.g. "any leg >= 5000 regardless of direction")."""
+
+    kind: Literal["amount"] = "amount"
+    min: float | None = None
+    max: float | None = None
+    use_abs: bool = False
+
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> AmountCondition:
+        if self.min is None and self.max is None:
+            raise ValueError("amount condition requires at least one of min/max")
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(f"amount condition min ({self.min}) > max ({self.max})")
+        return self
+
+
+class AccountCondition(ApiModel):
+    """Match when the transaction's account_id is one of `account_ids`."""
+
+    kind: Literal["account"] = "account"
+    account_ids: tuple[str, ...] = Field(min_length=1)
+
+
+class AllOfCondition(ApiModel):
+    """AND: every sub-condition must match."""
+
+    kind: Literal["all_of"] = "all_of"
+    conditions: tuple[Condition, ...] = Field(min_length=1)
+
+
+class AnyOfCondition(ApiModel):
+    """OR: at least one sub-condition must match."""
+
+    kind: Literal["any_of"] = "any_of"
+    conditions: tuple[Condition, ...] = Field(min_length=1)
+
+
+class NotCondition(ApiModel):
+    """NOT: matches when the inner condition does not."""
+
+    kind: Literal["not"] = "not"
+    condition: Condition
+
+
+Condition = Annotated[
+    MerchantSubstringCondition
+    | NameSubstringCondition
+    | MerchantRegexCondition
+    | NameRegexCondition
+    | PfcCondition
+    | AmountCondition
+    | AccountCondition
+    | AllOfCondition
+    | AnyOfCondition
+    | NotCondition,
+    Field(discriminator="kind"),
+]
+
+for _composite in (AllOfCondition, AnyOfCondition, NotCondition):
+    _composite.model_rebuild()
+
+
+class MatchRule(_RuleBase):
+    """Rich rule (Stage A): route to `bucket_id` when `condition` matches. Direction-gated
+    by the target bucket like the flat rule kinds; first match wins across all rules."""
+
+    kind: Literal["match"] = "match"
+    condition: Condition
+
+
+Rule = MerchantSubstringRule | NameSubstringRule | PfcRule | MatchRule
 
 
 class Override(ApiModel):
@@ -160,16 +273,13 @@ class BudgetConfig(ApiModel):
     # validator below.
     default_outflow_bucket_id: str = Field(pattern=_ID_PATTERN)
     default_inflow_bucket_id: str = Field(pattern=_ID_PATTERN)
-    # User-specific overrides applied BEFORE the generic defaults. First match wins, so listing
-    # a private merchant rule here pre-empts the public defaults.
+    # The full ordered rule list (flat kinds and/or `match` rules). First match wins; a rule
+    # only fires on the leg whose sign matches its target bucket's direction.
     rules: tuple[Rule, ...] = ()
     # Per-transaction manual classifications, applied BEFORE any rule and ungated by
     # direction (see `Override`). The primary tool for residual weird cases rules
     # shouldn't generalize (reversals, one-off mislabels).
     overrides: tuple[Override, ...] = ()
-    # When True, ship `default_rules.DEFAULT_RULES` after the user's rules. Set False to
-    # opt out of the public rule library entirely (rare; useful for testing).
-    include_default_rules: bool = True
     # Transactions with abs(amount) >= this threshold are flagged as "lumpy" (in addition to
     # appearing in their natural bucket). User can re-classify them as one-off vs recurring.
     lumpy_threshold_usd: float = Field(default=500.0, gt=0.0)
