@@ -1,5 +1,5 @@
-# Recurring across snapshots; same issue in ducktape/2025-11-22-01,
-# ducktape/2025-11-22-02, ducktape/2025-11-26-00.
+# Recurring across snapshots; same issue in ducktape/2025-11-22-00,
+# ducktape/2025-11-22-01, ducktape/2025-11-26-00.
 rationale: |
   stopAgentStatusPolling clears `_statusTimer` and resets it to null, and `_statusTimer` is
   declared at the top of the module, but nothing ever assigns `_statusTimer = setInterval(...)`

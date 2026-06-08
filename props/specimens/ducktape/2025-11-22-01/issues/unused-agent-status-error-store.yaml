@@ -1,4 +1,4 @@
-# Recurring across snapshots; same issue in ducktape/2025-11-22-01,
+# Recurring across snapshots; same issue in ducktape/2025-11-22-00,
 # ducktape/2025-11-22-02 (fixed in ducktape/2025-11-26-00, which writes the store).
 rationale: |
   The agentStatusError store (stores.ts) is exported and read in RightSidebar.svelte (the
