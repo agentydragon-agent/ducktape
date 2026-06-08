@@ -51,6 +51,8 @@ spec:
           volumeMounts:
             - name: ledger
               mountPath: /ledger
+            - name: tmp # git-sync writes git-sync.gitconfig under $HOME (/tmp); rootfs is read-only
+              mountPath: /tmp
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -79,6 +81,8 @@ spec:
           volumeMounts:
             - name: ledger
               mountPath: /ledger
+            - name: tmp # git-sync writes git-sync.gitconfig under $HOME (/tmp); rootfs is read-only
+              mountPath: /tmp
           resources:
             requests:
               cpu: 10m
@@ -131,4 +135,6 @@ spec:
               drop: ["ALL"]
       volumes:
         - name: ledger
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}
