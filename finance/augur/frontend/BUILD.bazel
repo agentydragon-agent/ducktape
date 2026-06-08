@@ -167,9 +167,19 @@ js_library(
 )
 
 js_library(
+    name = "categorical_chart",
+    srcs = ["categorical_chart.tsx"],
+    deps = [
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
     name = "calibration",
     srcs = ["calibration.tsx"],
     deps = [
+        ":categorical_chart",
         ":client",
         ":data_helpers",
         ":fan_chart",
