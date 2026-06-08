@@ -97,8 +97,8 @@ locals {
     # Cilium's VXLAN (pod 1370 + 50 = 1420) ride inside Nebula without
     # fragmentation. Hard max is 1440 (exact-fit to 1500). See cilium-values.yaml
     # and cluster/debug/2026-06-08-nebula-vxlan-mtu/.
-    tun             = { dev = "nebula1", mtu = 1420 }
-    logging         = { level = "info", format = "json" }
+    tun     = { dev = "nebula1", mtu = 1420 }
+    logging = { level = "info", format = "json" }
     timers = {
       connection_alive_interval = 5
       pending_deletion_interval = 10
