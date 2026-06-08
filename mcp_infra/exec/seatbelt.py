@@ -9,7 +9,6 @@ from pathlib import Path
 import anyio
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from pydantic import Field
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import (
@@ -46,10 +45,9 @@ DEFAULT_ENV_WHITELIST: tuple[str, ...] = (
 
 
 class SandboxExecArgs(ExecArgsBase):
-    # Stateless: require a full policy on every call
+    # Stateless: require a full policy on every call.
+    # The `cmd` argv field (with execve semantics) is inherited from ExecArgsBase.
     policy: SBPLPolicy
-    # TODO: unify argv/cmd naming across exec args models
-    argv: list[str] = Field(min_length=1)
     # Explicit env to set/override in the child (applied after policy.env passthrough base)
     env: dict[str, str] | None = None
     trace: bool = False
@@ -92,7 +90,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
             if sys.platform != "darwin":
                 raise ToolError("NOT_DARWIN: sandbox available only on macOS")
 
-            # Pydantic has already validated argv min length and max_bytes range
+            # Pydantic has already validated cmd min length and max_bytes range
             max_b = input.max_bytes
 
             cwd_path = await anyio.Path(input.cwd).resolve() if input.cwd else None
@@ -117,7 +115,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
             try:
                 async with async_timer() as get_duration_ms:
                     async with await apopen(
-                        input.argv,
+                        input.cmd,
                         policy,
                         cwd=cwd_path,
                         env=child_env,

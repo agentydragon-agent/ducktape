@@ -7,7 +7,6 @@ from shutil import which
 
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from pydantic import Field
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import BaseExecResult, ExecArgsBase, ExecOutcome, render_outcome_to_result
@@ -58,7 +57,7 @@ async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None) -> E
 
 
 class BwrapExecArgs(ExecArgsBase):
-    cmd: list[str] = Field(min_length=1)
+    """Bwrap exec args; inherits the `cmd` argv field from ExecArgsBase."""
 
 
 class BwrapExecServer(EnhancedFastMCP):

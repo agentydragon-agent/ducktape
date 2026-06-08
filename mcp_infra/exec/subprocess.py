@@ -4,8 +4,6 @@ import asyncio
 import os
 from pathlib import Path
 
-from pydantic import Field
-
 from mcp_infra.exec.models import (
     BaseExecResult,
     ExecArgsBase,
@@ -74,18 +72,11 @@ async def run_proc(
 
 
 class DirectExecArgs(ExecArgsBase):
-    """Arguments for direct command execution."""
+    """Arguments for direct command execution.
 
-    cmd: list[str] = Field(
-        min_length=1,
-        description=(
-            "Argv vector executed directly via execve — NOT a shell. cmd[0] is the program "
-            "(resolved on PATH); the rest are its literal arguments. No shell processing happens: "
-            "pipes, redirects (|, >, <), globs (*), &&/;, quotes, and $VAR expansion are NOT "
-            'interpreted. Pass a single token list like ["rg", "-n", "foo", "src/"]. To use shell '
-            'features, invoke a shell explicitly: ["bash", "-lc", "cat a.txt | grep foo"].'
-        ),
-    )
+    The `cmd` argv field (with its execve semantics) is inherited from ExecArgsBase.
+    """
+
     # No env / inherit_env knob: direct exec always inherits the ambient environment.
     # Exposing an optional `list[EnvVar] | None` broke tool-calling for models that
     # serialize optional args as JSON strings (e.g. glm-4.6 sent env="null" / "[]"),

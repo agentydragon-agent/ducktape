@@ -49,12 +49,19 @@ MAX_EXEC_TIMEOUT_MS = 300_000
 TimeoutMs = Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]
 
 
+CMD_DESCRIPTION: Final[str] = (
+    "Argv vector executed directly via execve — NOT a shell. cmd[0] is the program "
+    "(resolved on PATH); the rest are its literal arguments. No shell processing happens: "
+    "pipes, redirects (|, >, <), globs (*), &&/;, quotes, and $VAR expansion are NOT "
+    'interpreted. Pass a single token list like ["rg", "-n", "foo", "src/"]. To use shell '
+    'features, invoke a shell explicitly: ["bash", "-lc", "cat a.txt | grep foo"].'
+)
+
+
 class ExecArgsBase(BaseModel):
-    """Shared fields for all exec args models (direct, bwrap, seatbelt).
+    """Shared fields for all exec args models (direct, bwrap, seatbelt)."""
 
-    Subclasses add the command field (currently ``cmd`` or ``argv`` — TODO: unify naming).
-    """
-
+    cmd: list[str] = Field(min_length=1, description=CMD_DESCRIPTION)
     max_bytes: int = Field(
         ..., ge=0, le=100_000, description="Max bytes to capture from stdout and stderr. 0 means both will be empty."
     )
