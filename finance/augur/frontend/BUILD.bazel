@@ -372,7 +372,11 @@ copy_to_directory(
     name = "frontend_files",
     srcs = [":bundle_base"],
     out = "usr/share/nginx/html",
-    root_paths = ["augur/frontend/dist"],
+    # Strip the full package-relative prefix so the bundle lands at the docroot root
+    # (/usr/share/nginx/html/index.html). After the augur -> finance/augur reorg this is
+    # finance/augur/frontend/dist; a stale prefix silently fails to strip, nesting the SPA
+    # under .../finance/augur/frontend/dist and leaving nginx to serve the stock index.
+    root_paths = ["finance/augur/frontend/dist"],
 )
 
 pkg_tar(
