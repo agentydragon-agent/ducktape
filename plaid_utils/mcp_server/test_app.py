@@ -173,6 +173,21 @@ def test_list_links_exposes_product_and_secret_state() -> None:
     ]
 
 
+def test_get_link_state_returns_single_link() -> None:
+    with _client() as client:
+        response = client.get("/api/links/item_123")
+
+    assert response.status_code == 200
+    assert response.json()["item_id"] == "item_123"
+
+
+def test_get_link_state_unknown_item_returns_404() -> None:
+    with _client() as client:
+        response = client.get("/api/links/nope")
+
+    assert response.status_code == 404
+
+
 def test_web_config_exposes_default_history_depth() -> None:
     with _client() as client:
         response = client.get("/api/config")

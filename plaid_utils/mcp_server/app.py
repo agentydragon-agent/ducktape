@@ -249,6 +249,13 @@ def create_app(
     async def list_links() -> list[LinkSummary]:
         return [_link_summary(link) for link in await require_storage().list_active_links()]
 
+    @app.get("/api/links/{item_id}")
+    async def get_link_state(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> LinkSummary:
+        link = await require_storage().get_link(item_id)
+        if link is None:
+            raise HTTPException(404, f"unknown item_id: {item_id}")
+        return _link_summary(link)
+
     @app.get("/api/config")
     async def web_config() -> WebConfigResponse:
         return WebConfigResponse(transaction_days=settings.transaction_days)
@@ -469,6 +476,7 @@ _LINK_HTML = """<!doctype html>
     <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
     <style>
       :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      *, *::before, *::after { box-sizing: border-box; }
       body { margin: 0; background: Canvas; color: CanvasText; }
       main { max-width: 1120px; margin: 0 auto; padding: 32px 20px; }
       header { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
@@ -477,7 +485,7 @@ _LINK_HTML = """<!doctype html>
       section { margin-top: 24px; }
       form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(220px, 1fr) minmax(170px, 1fr) auto; gap: 12px; align-items: end; }
       label { display: grid; gap: 6px; font-size: 13px; color: color-mix(in srgb, CanvasText 78%, Canvas); }
-      input, select, button { font: inherit; min-height: 38px; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas); background: Canvas; color: CanvasText; }
+      input, select, button { font: inherit; height: 38px; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas); background: Canvas; color: CanvasText; }
       button { cursor: pointer; background: #276ef1; color: white; border-color: #276ef1; font-weight: 650; white-space: nowrap; }
       button.secondary { background: Canvas; color: CanvasText; border-color: color-mix(in srgb, CanvasText 24%, Canvas); }
       button.danger { background: #b42318; border-color: #b42318; color: white; }
@@ -485,7 +493,7 @@ _LINK_HTML = """<!doctype html>
       .advanced { display: none; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
       .advanced.visible { display: grid; }
       .check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); border-radius: 6px; color: CanvasText; }
-      .check input { padding: 0; }
+      .check input { padding: 0; height: auto; }
       .status { min-height: 22px; margin-top: 14px; color: color-mix(in srgb, CanvasText 70%, Canvas); font-size: 14px; }
       .table-wrap { overflow-x: auto; }
       table { width: 100%; min-width: 980px; border-collapse: collapse; margin-top: 12px; }
@@ -692,32 +700,44 @@ _LINK_HTML = """<!doctype html>
         document.getElementById('transaction-days-wrap').classList.toggle('hidden', !selectedProducts().includes('transactions'));
       }
       async function exchangePublicToken(public_token, metadata, pending) {
-        await apiFetch('/api/exchange-public-token', {
-          method: 'POST',
-          headers: {'content-type': 'application/json'},
-          body: JSON.stringify({
-            public_token,
-            profile: pending.profile,
-            products: pending.products,
-            transaction_days_requested: pending.transaction_days_requested || null,
-            label: pending.label,
-            institution_id: metadata.institution?.institution_id || null,
-            institution_name: metadata.institution?.name || null
-          })
-        });
-        sessionStorage.removeItem(pendingKey);
-        await refreshLinks();
-        setStatus('Link connected and synced.');
+        try {
+          await apiFetch('/api/exchange-public-token', {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({
+              public_token,
+              profile: pending.profile,
+              products: pending.products,
+              transaction_days_requested: pending.transaction_days_requested || null,
+              label: pending.label,
+              institution_id: metadata.institution?.institution_id || null,
+              institution_name: metadata.institution?.name || null
+            })
+          });
+          setStatus('Link connected and synced.');
+        } catch (error) {
+          // The link row is persisted before the post-link sync runs, so a sync
+          // failure still leaves a usable link — surface the error but keep the row.
+          setStatus(`Link connected, but sync failed: ${error.message || error}`);
+        } finally {
+          sessionStorage.removeItem(pendingKey);
+          await refreshLinks();
+        }
       }
       async function completeUpdate(metadata, pending) {
-        await apiFetch(`/api/links/${encodeURIComponent(pending.item_id)}/complete-update`, {
-          method: 'POST',
-          headers: {'content-type': 'application/json'},
-          body: JSON.stringify({profile: pending.profile, products: pending.products, sync: true})
-        });
-        sessionStorage.removeItem(pendingKey);
-        await refreshLinks();
-        setStatus(metadata?.institution?.name ? `Updated ${metadata.institution.name}.` : 'Link updated and synced.');
+        try {
+          await apiFetch(`/api/links/${encodeURIComponent(pending.item_id)}/complete-update`, {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({profile: pending.profile, products: pending.products, sync: true})
+          });
+          setStatus(metadata?.institution?.name ? `Updated ${metadata.institution.name}.` : 'Link updated and synced.');
+        } catch (error) {
+          setStatus(`Link updated, but sync failed: ${error.message || error}`);
+        } finally {
+          sessionStorage.removeItem(pendingKey);
+          await refreshLinks();
+        }
       }
       function openPlaid(pending, receivedRedirectUri) {
         const handler = Plaid.create({
