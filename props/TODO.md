@@ -20,7 +20,7 @@
   This gap let two crash bugs ship to live runs (the `store` kwarg the Anthropic SDK rejects,
   and the `/v1/v1/messages` double-path). Add a fake-anthropic-server (analog of
   `fake_openai_server.py`) and an agent e2e that drives `AnthropicClient → props-llm-proxy
-  /v1/messages → mock backend` so the anthropic path is covered in CI.
+/v1/messages → mock backend` so the anthropic path is covered in CI.
 
 ## Infrastructure
 
