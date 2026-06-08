@@ -285,19 +285,45 @@ dig allegedly.works NS
 
 **Force retry**: `kubectl delete challenge,order,certificaterequest -n <namespace> --all`
 
-### Loki (Log Retrieval)
+### Loki (Log Retrieval) — use this for logs of pods that no longer exist
 
-Loki collects logs from all pods via Promtail. Useful for postmortems when pod logs have
-been lost (completed Jobs, crashed/evicted pods).
+**Reach for Loki first whenever the pod whose logs you want is gone.** `kubectl logs`
+only works for live pods; the moment a pod is deleted, evicted, or its Job is reaped
+(short `ttlSecondsAfterFinished`, `backoffLimit`/`activeDeadlineSeconds` failures,
+rolled-out ReplicaSets, OOM-killed/CrashLoopBackOff pods that got replaced), its logs
+are only in Loki. Alloy ships every pod's stdout/stderr to Loki, retained far longer
+than the pods themselves — so for any postmortem of a failed Job, a crashed exporter, a
+previous Deployment revision, etc., query Loki instead of giving up on "pod not found".
+
+Loki runs in SimpleScalable mode — there is **no `deploy/loki`**. Query the read path
+(`svc/loki-read:3100`) over the HTTP API. Port-forward + `curl` from your workstation:
 
 ```bash
-START=$(date -d '1 hour ago' +%s)000000000
-END=$(date +%s)000000000
-kubectl exec -n loki deploy/loki -- wget -qO- \
-  "http://localhost:3100/loki/api/v1/query_range?query=%7Bnamespace%3D%22NAMESPACE%22%2Ccontainer%3D%22CONTAINER%22%7D&limit=50&direction=backward&start=$START&end=$END"
+kubectl -n loki port-forward svc/loki-read 3100:3100 &
+END=$(date +%s); START=$((END-10800))   # last 3h
+curl -sG http://localhost:3100/loki/api/v1/query_range \
+  --data-urlencode 'query={namespace="augur", pod=~"budget-exporter.+"}' \
+  --data-urlencode "start=${START}000000000" --data-urlencode "end=${END}000000000" \
+  --data-urlencode 'limit=300' --data-urlencode 'direction=forward'
 ```
 
-Grafana also has Loki as a datasource for interactive log exploration.
+Stream labels available: `namespace`, `pod`, `container`, `app`, `component`, `job`,
+`node_name`, `filename`. List them with `/loki/api/v1/labels` and a label's values with
+`/loki/api/v1/label/<name>/values`.
+
+Gotchas:
+
+- **Select pods by the `pod` label, not a line filter.** The pod name is a stream label,
+  not part of the log text, so `{namespace="x"} |= "mypod"` returns nothing. Use
+  `{namespace="x", pod=~"mypod.+"}`. `|=` / `|~` filter the message body only.
+- **No logs in Loki ⇒ the container never started.** A pod that died in
+  `ContainerCreating` (slow/failed image pull) or was killed before its entrypoint ran
+  emits zero lines — an empty Loki result for it points at the scheduling/pull/mount
+  phase, not the app. (This is exactly how the `budget-exporter` `DeadlineExceeded`
+  failures presented: no streams, because the cold ~334 MB image pull dominated.)
+- Timestamps in the API are **nanoseconds** (hence the `000000000` suffix).
+
+Grafana also has Loki as a datasource for interactive log exploration (Explore view).
 
 ### Nix Cache
 
