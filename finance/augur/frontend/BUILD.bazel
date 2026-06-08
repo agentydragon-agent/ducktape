@@ -167,8 +167,8 @@ js_library(
 )
 
 js_library(
-    name = "categorical_chart",
-    srcs = ["categorical_chart.tsx"],
+    name = "calibration_format",
+    srcs = ["calibration_format.tsx"],
     deps = [
         "//:node_modules/react",
         "//finance/augur/frontend/lib:format",
@@ -176,19 +176,46 @@ js_library(
 )
 
 js_library(
+    name = "calibration_tables",
+    srcs = ["calibration_tables.tsx"],
+    deps = [
+        ":calibration_format",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "sanity_bands_panel",
+    srcs = ["sanity_bands_panel.tsx"],
+    deps = [
+        ":sanity_bands",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "categorical_chart",
+    srcs = ["categorical_chart.tsx"],
+    deps = [
+        ":calibration_format",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "calibration",
     srcs = ["calibration.tsx"],
     deps = [
+        ":calibration_tables",
         ":categorical_chart",
         ":client",
         ":data_helpers",
         ":fan_chart",
-        ":hooks",
         ":input_helpers",
-        ":sanity_bands",
+        ":sanity_bands_panel",
         ":skeleton",
         "//:node_modules/react",
-        "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:toast",
     ],
 )

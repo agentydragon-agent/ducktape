@@ -5,7 +5,7 @@
 
 import React from "react";
 
-import { fmtPct } from "./lib/format.ts";
+import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format.tsx";
 
 const MARKET_BAR_CLASS = "fill-blue-500 dark:fill-blue-400";
 const MODEL_BAR_CLASS = "fill-emerald-500 dark:fill-emerald-400";
@@ -17,16 +17,12 @@ function fmtRange(low, high) {
   return `${Number(low).toLocaleString()}–${Number(high).toLocaleString()}`;
 }
 
-function fmtBucketProb(value) {
-  return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);
-}
-
 function bucketLabel(bucket) {
   return bucket.label || fmtRange(bucket.low, bucket.high);
 }
 
 function bucketTitle(bucket) {
-  return `${bucketLabel(bucket)}\nMarket: ${fmtBucketProb(bucket.pMarket)}\nModel: ${fmtBucketProb(bucket.pModel)}\n${bucket.marketId}`;
+  return `${bucketLabel(bucket)}\nMarket: ${fmtProb(bucket.pMarket)}\nModel: ${fmtProb(bucket.pModel)}\n${bucket.marketId}`;
 }
 
 function probabilityY(value, top, chartHeight) {
@@ -168,5 +164,58 @@ export function CategoricalMiniChart({ buckets }) {
         {lastLabel}
       </text>
     </svg>
+  );
+}
+
+export function CategoricalPanel({ families }) {
+  return (
+    <section className="augur-panel overflow-hidden" aria-label="Categorical markets" data-calibration-categorical="">
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="augur-eyebrow">Categorical markets (multinomial)</div>
+        <div className="mt-1 text-xs augur-muted">
+          Market vs model bucket probabilities. Each card is one multinomial KL = D<sub>KL</sub>(market ‖ model).
+        </div>
+      </div>
+      <div
+        className="grid gap-3 p-3"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 22rem), 1fr))" }}
+      >
+        {families.map((family) => (
+          <article
+            key={family.familyId}
+            data-calibration-categorical-family={family.familyId}
+            className="rounded border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <PlatformBadge platform={family.platform} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold augur-strong">{family.question}</div>
+                  <div className="text-[11px] augur-muted">
+                    {family.channel} · {family.atDate}
+                  </div>
+                </div>
+              </div>
+              <div className={`shrink-0 text-right text-sm ${klTextClass(family.klBits)}`}>
+                {fmtKl(family.klBits, { withUnit: true })}
+              </div>
+            </div>
+            <CategoricalMiniChart buckets={family.buckets} />
+            <div className="mt-1 flex items-center gap-3 text-[11px] augur-muted">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-blue-500 dark:bg-blue-400" aria-hidden="true" />
+                Market
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" />
+                Model
+              </span>
+              <span className="ml-auto augur-tabular">{family.nResolved.toLocaleString()} resolved</span>
+            </div>
+            <div className="mt-1 text-[11px] augur-muted augur-tabular">{family.buckets.length} buckets</div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
