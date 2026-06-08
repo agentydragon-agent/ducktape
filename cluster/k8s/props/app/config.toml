@@ -44,15 +44,93 @@ context_window_tokens = 131072
 max_output_tokens = 131072
 max_parallel_agents = 3
 
-# z.ai GLM-4.6 via LiteLLM (api.z.ai coding plan). Pricing = z.ai list rates.
+# z.ai GLM matrix via LiteLLM through z.ai's Anthropic Messages shape
+# (api.z.ai/api/anthropic), reached via props-llm-proxy's /v1/messages. Routing GLM
+# through the Anthropic shape avoids the union-tool-input bug it hits on the OpenAI chat
+# shape (see docs/z_ai_api.md). The logical name (glm-X) maps to the `<name>-anthropic`
+# LiteLLM model. Pricing/limits below are the z.ai coding-plan list rates for glm-4.6
+# applied uniformly (the plan is quota-based, so per-token cost is a budget guardrail
+# rather than metered billing); refine per-model if z.ai publishes distinct rates.
 [[models]]
-name = "glm-4.6"
+name = "glm-4.5"
 upstream = "litellm"
-upstream_model = "glm-4.6"
-api_shape = "chat_completions"
+upstream_model = "glm-4.5-anthropic"
+api_shape = "anthropic"
 input_usd_per_1m_tokens = 0.39
 cached_input_usd_per_1m_tokens = 0.39
 output_usd_per_1m_tokens = 1.74
 context_window_tokens = 200000
 max_output_tokens = 131072
-max_parallel_agents = 2
+max_parallel_agents = 8
+
+[[models]]
+name = "glm-4.5-air"
+upstream = "litellm"
+upstream_model = "glm-4.5-air-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 8
+
+[[models]]
+name = "glm-4.6"
+upstream = "litellm"
+upstream_model = "glm-4.6-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 8
+
+[[models]]
+name = "glm-4.7"
+upstream = "litellm"
+upstream_model = "glm-4.7-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 8
+
+[[models]]
+name = "glm-5"
+upstream = "litellm"
+upstream_model = "glm-5-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 8
+
+[[models]]
+name = "glm-5-turbo"
+upstream = "litellm"
+upstream_model = "glm-5-turbo-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 8
+
+[[models]]
+name = "glm-5.1"
+upstream = "litellm"
+upstream_model = "glm-5.1-anthropic"
+api_shape = "anthropic"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 8

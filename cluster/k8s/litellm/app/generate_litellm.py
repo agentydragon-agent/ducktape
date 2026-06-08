@@ -38,27 +38,29 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
     ("gemma4:31b-it-q8_0", [("128k", None)]),
 ]
 
-# z.ai (GLM) models served via the Coding Plan endpoint. The key comes from the
-# ZAI_API_KEY env var (litellm-zai-key secret). These speak OpenAI chat/completions;
-# LiteLLM bridges its /responses endpoint to chat so props' OpenAI-compatible LLM
-# proxy (props/llm_proxy/routes.py) can route to them.
-_ZAI_CODING_BASE = "https://api.z.ai/api/coding/paas/v4"
-_ZAI_MODELS: list[str] = ["glm-4.6"]
+# z.ai (GLM) served via z.ai's Anthropic Messages endpoint. The key comes from the
+# ZAI_API_KEY env var (litellm-zai-key secret). Routing GLM through the Anthropic shape
+# avoids the union-tool-input bug GLM hits on the OpenAI chat shape (z.ai's Anthropic
+# adapter parses GLM's XML tool calls back into proper JSON `tool_use.input` objects). See
+# docs/z_ai_api.md. LiteLLM fronts it so it logs to Langfuse (via `litellm_metadata`) and
+# props need not hold ZAI_API_KEY. Exposed via LiteLLM's `/v1/messages` endpoint; props'
+# llm-proxy routes its /v1/messages here. The OpenAI-shaped coding-plan route was removed
+# in favor of this one.
+_ZAI_ANTHROPIC_BASE = "https://api.z.ai/api/anthropic"
+# Full GLM matrix z.ai serves on the Anthropic endpoint (per /api/anthropic/v1/models, 2026-06).
+_ZAI_ANTHROPIC_MODELS: list[str] = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"]
 
 
-def _zai_entries() -> Iterator[dict]:
-    for model in _ZAI_MODELS:
+def _zai_anthropic_entries() -> Iterator[dict]:
+    for model in _ZAI_ANTHROPIC_MODELS:
         yield {
-            "model_name": model,
+            "model_name": f"{model}-anthropic",
             "litellm_params": {
-                "model": f"openai/{model}",
-                "api_base": _ZAI_CODING_BASE,
+                # `anthropic/` provider → LiteLLM posts Anthropic Messages to
+                # {api_base}/v1/messages with x-api-key, no shape translation.
+                "model": f"anthropic/{model}",
+                "api_base": _ZAI_ANTHROPIC_BASE,
                 "api_key": "os.environ/ZAI_API_KEY",
-                # z.ai has no /responses endpoint. Without this, LiteLLM forwards
-                # /v1/responses straight to {api_base}/responses (404). This opts
-                # the openai/ provider into LiteLLM's Responses->chat bridge, so
-                # props' OpenAI-Responses proxy lands on z.ai's chat/completions.
-                "use_chat_completions_api": True,
             },
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
@@ -91,7 +93,7 @@ def generate() -> str:
     model_list: list[dict] = []
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
-    model_list.extend(_zai_entries())
+    model_list.extend(_zai_anthropic_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.
