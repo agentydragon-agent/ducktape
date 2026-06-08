@@ -50,7 +50,7 @@ kept for occasional bang/buck comparisons against OVH:
 python3 cluster/scripts/hcloud_server_types.py --location hil
 ```
 
-This uses the `hcloud` CLI from `cluster/shell.nix`. If the CLI requires a token,
+This uses the `hcloud` CLI from the repo devShell. If the CLI requires a token,
 set it explicitly for the command; `cluster/.envrc` intentionally does not export
 the legacy HCloud token.
 

@@ -276,6 +276,15 @@
         # prepends a shim that aliases addr2line -> llvm-addr2line when it is
         # on PATH.
         pkgs.llvmPackages.bintools-unwrapped
+        # Cluster/infra CLIs (formerly cluster/shell.nix). Used for Talos,
+        # Route 53, Nebula PKI, policy validation, and bare-metal provisioning.
+        pkgs.talosctl
+        pkgs.awscli2 # AWS CLI for Route 53 management
+        pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
+        pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
+        pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
+        pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
+        pkgs.python313Packages.ovh # OVH Python client for ad-hoc API scripts
       ];
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };

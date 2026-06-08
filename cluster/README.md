@@ -168,7 +168,7 @@ Nix home-manager (`nix/home/services/activitywatch.nix`).
 
 ```text
 cluster/
-├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, CLI tools)
+├── .envrc                  # direnv (KUBECONFIG, TALOSCONFIG; CLI tools from root devShell)
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
