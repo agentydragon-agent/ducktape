@@ -11,7 +11,7 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
@@ -30,7 +30,7 @@ from props.backend.auth import (
     require_evaluator_or_admin_access,
 )
 from props.backend.deps import AdminDb
-from props.backend.loki import fetch_run_logs
+from props.backend.loki import fetch_run_logs, run_log_window
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
@@ -1048,9 +1048,16 @@ async def get_run_logs(run_id: UUID, caller_db: CallerDb) -> RunLogsResponse:
     run's pod label. (The LLM transcript is read separately from /llm_requests.)
     """
     with caller_db.session() as session:
-        if session.get(AgentRun, run_id) is None:
+        run = session.get(AgentRun, run_id)
+        if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
-    return RunLogsResponse(run_id=run_id, logs=await fetch_run_logs(run_id))
+        start, end = run_log_window(
+            created_at=run.created_at,
+            last_status_change=run.updated_at,
+            is_in_progress=run.status == AgentRunStatus.IN_PROGRESS,
+            now=datetime.now(UTC),
+        )
+    return RunLogsResponse(run_id=run_id, logs=await fetch_run_logs(run_id, start=start, end=end))
 
 
 def _build_run_info(

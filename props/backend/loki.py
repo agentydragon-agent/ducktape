@@ -22,9 +22,29 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOKI_URL = "http://loki-read.loki.svc.cluster.local:3100"
 ENV_LOKI_URL = "PROPS_LOKI_URL"
 
-_QUERY_TIMEOUT_S = 10.0
+_QUERY_TIMEOUT_S = 30.0
 _MAX_LINES = 5000  # newest N lines (the tail, where failures show up)
-_LOOKBACK = timedelta(days=14)
+# Padding around the run's lifetime, to catch log-shipping lag at the edges.
+LOG_WINDOW_MARGIN = timedelta(minutes=10)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Treat a naive datetime (SQLAlchemy may return tz-naive UTC) as UTC."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def run_log_window(
+    *, created_at: datetime, last_status_change: datetime, is_in_progress: bool, now: datetime
+) -> tuple[datetime, datetime]:
+    """The [start, end] to query a run's logs over: its lifetime plus a margin.
+
+    Keeping this tight is what avoids the Loki split-query fan-out: a run that lived for
+    seconds gets a ~20-minute window (a couple of 15m splits) instead of 14 days (>1000).
+    For a still-running agent the end is `now` (it's still producing logs).
+    """
+    start = _as_utc(created_at) - LOG_WINDOW_MARGIN
+    end = (now if is_in_progress else _as_utc(last_status_change)) + LOG_WINDOW_MARGIN
+    return start, end
 
 
 def loki_base_url() -> str:
@@ -46,14 +66,19 @@ def parse_query_range(payload: dict) -> str:
     return "\n".join(line for _, line in entries)
 
 
-async def fetch_run_logs(run_id: UUID, *, base_url: str | None = None) -> str:
+async def fetch_run_logs(run_id: UUID, *, start: datetime, end: datetime, base_url: str | None = None) -> str:
     """Return an agent run's container logs (up to the most recent `_MAX_LINES`),
-    in chronological order. Empty string if Loki has nothing for the run."""
+    in chronological order. Empty string if Loki has nothing for the run.
+
+    `start`/`end` bound the query to the run's lifetime. This matters: Loki splits a
+    query_range into `split_queries_by_interval` (15m) sub-queries, so a multi-day window
+    fans out into >1000 sub-queries and times out. The caller passes the run's
+    created_at/exit time so the window stays tight (see get_run_logs).
+    """
     base = base_url or loki_base_url()
-    end = datetime.now(UTC)
     params = {
         "query": _logql_for_run(run_id),
-        "start": str(int((end - _LOOKBACK).timestamp() * 1e9)),
+        "start": str(int(start.timestamp() * 1e9)),
         "end": str(int(end.timestamp() * 1e9)),
         "limit": str(_MAX_LINES),
         "direction": "backward",  # newest first; we re-sort ascending for display
