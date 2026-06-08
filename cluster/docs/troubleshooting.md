@@ -108,9 +108,13 @@ for r in json.load(sys.stdin)['items']:
 stalls; `ReasmFails` in `/proc/net/snmp`.
 
 **Cause**: Cilium Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
-ignored, leaving pod MTU at 1500. VXLAN+Nebula needs 1412 (1500 - 50 - 38).
+ignored, leaving pod MTU at 1500. VXLAN rides _inside_ Nebula (nested, not parallel):
+pod + VXLAN 50 must fit `nebula1` tun MTU, and that + Nebula 60 must fit the 1500
+underlay. With `nebula1` tun MTU 1420 the correct pod MTU is `1420 - 50 = 1370`.
 
-**Fix**: Use `MTU: 1412` (uppercase) in `cilium-values.yaml`, then destroy and re-bootstrap.
+**Fix**: Use `MTU: 1370` (uppercase) in `cilium-values.yaml` and `tun.mtu = 1420`
+in `nebula.tf`, then destroy and re-bootstrap. See
+<../debug/2026-06-08-nebula-vxlan-mtu/> for the measurements.
 
 **Diagnosis**:
 

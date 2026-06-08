@@ -25,11 +25,20 @@ cgroup:
   autoMount:
     enabled: false
 
-# Account for double encapsulation (VXLAN + Nebula overlay)
-# eth0 MTU (1500) - VXLAN overhead (50) - Nebula overhead (~38) = 1412
-# Verify with: ping -M do -s 1380 <nebula-ip> after Nebula deployment.
-# NOTE: MTU accounts for Nebula + VXLAN double encapsulation.
-MTU: 1412
+# Pod MTU for the NESTED overlay: Cilium VXLAN rides inside the Nebula tunnel
+# (VXLAN endpoints are the node InternalIPs, which are Nebula 10.42.x addrs).
+# The encapsulation stacks, it does not run in parallel:
+#   pod (1370) + VXLAN (50) = 1420  -> must fit nebula1 tun MTU (1420)
+#   nebula1 (1420) + Nebula (60) = 1480  -> fits eno1 underlay (1500)
+# Measured 2026-06-08 (see cluster/debug/2026-06-08-nebula-vxlan-mtu/):
+#   - OVH inter-node underlay carries a full 1500 DF, incl. the same-/24
+#     .254 hairpin path.
+#   - Nebula overhead = 60 bytes exactly (16 hdr + 16 GCM tag + 20 IP + 8 UDP),
+#     confirmed by tcpdump: a 1300-byte inner packet -> 1360 on the wire.
+# Hard max for this stack is nebula1=1440 / MTU=1390 (exact-fit to 1500). We
+# keep a 20-byte underlay margin: nebula1=1420 (see nebula.tf) / MTU=1370.
+# NOTE: the Helm key is uppercase `MTU`; lowercase `mtu` is silently ignored.
+MTU: 1370
 
 # Gateway API: replaces ingress-nginx (retired March 2026)
 # Reuses per-node Envoy DaemonSet — zero additional controllers.

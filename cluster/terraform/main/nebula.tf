@@ -90,7 +90,14 @@ locals {
     static_host_map = local.nebula_static_host_map
     listen          = { host = "0.0.0.0", port = 4242 }
     punchy          = { punch = true, respond = true }
-    tun             = { dev = "nebula1" }
+    # Raised from Nebula's default 1300 to 1420. The OVH inter-node underlay
+    # was measured (2026-06-08) to carry a full 1500 DF on both normal and
+    # same-/24 .254-hairpin paths, and Nebula's overhead is 60 bytes, so the
+    # wire packet is 1420 + 60 = 1480 (20-byte margin under 1500). This lets
+    # Cilium's VXLAN (pod 1370 + 50 = 1420) ride inside Nebula without
+    # fragmentation. Hard max is 1440 (exact-fit to 1500). See cilium-values.yaml
+    # and cluster/debug/2026-06-08-nebula-vxlan-mtu/.
+    tun             = { dev = "nebula1", mtu = 1420 }
     logging         = { level = "info", format = "json" }
     timers = {
       connection_alive_interval = 5
