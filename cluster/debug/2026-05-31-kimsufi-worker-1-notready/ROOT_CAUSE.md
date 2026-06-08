@@ -51,7 +51,9 @@ shipper must not have its page cache capped near its working set.
   never set). VXLAN rides inside Nebula, so full-size pod packets (1412+50=1462) exceeded
   nebula1's 1300 and fragmented/PMTUD-clamped. **Root-caused + fixed 2026-06-08**: underlay
   measured to carry 1500 (incl. .254 hairpin), Nebula overhead measured at 60 bytes, so set
-  `nebula1=1420` / Cilium `MTU=1370`. See <../2026-06-08-nebula-vxlan-mtu/>.
+  `nebula1=1420` / Cilium `MTU=1420` (Cilium's MTU is the underlay/nebula1 MTU; it subtracts
+  the 50-byte VXLAN overhead itself → 1370 cross-node pod MTU). See
+  <../2026-06-08-nebula-vxlan-mtu/>.
 - **`wyrm2` dead since 2026-05-10** (`Ready=Unknown`): every OVH node's nebula spams
   "Handshake timed out" to `10.42.0.20` every ~7 s. Remove it from the cluster + nebula
   roster.

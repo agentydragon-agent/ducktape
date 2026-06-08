@@ -107,14 +107,14 @@ for r in json.load(sys.stdin)['items']:
 **Symptoms**: 10-30% TCP failures between OVH and Proxmox; webhook timeouts; bootstrap
 stalls; `ReasmFails` in `/proc/net/snmp`.
 
-**Cause**: Cilium Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
-ignored, leaving pod MTU at 1500. VXLAN rides _inside_ Nebula (nested, not parallel):
-pod + VXLAN 50 must fit `nebula1` tun MTU, and that + Nebula 60 must fit the 1500
-underlay. With `nebula1` tun MTU 1420 the correct pod MTU is `1420 - 50 = 1370`.
+**Cause**: Cilium's Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
+ignored, leaving pod MTU at 1500 and causing cross-node fragmentation/loss over the
+VXLAN-in-Nebula stack.
 
-**Fix**: Use `MTU: 1370` (uppercase) in `cilium-values.yaml` and `tun.mtu = 1420`
-in `nebula.tf`, then destroy and re-bootstrap. See
-<../debug/2026-06-08-nebula-vxlan-mtu/> for the measurements.
+**Fix**: Set `MTU: 1420` (uppercase) in `cilium-values.yaml`. Note `MTU` is the
+**underlay** value, not the pod MTU — see <network.md> for the full
+model (and the gotcha that `MTU: 1370` wrongly yields a 1320 pod MTU) and the live
+apply procedure.
 
 **Diagnosis**:
 

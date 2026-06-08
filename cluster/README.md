@@ -30,9 +30,8 @@ See <docs/bootstrap.md> for full setup.
 - Domain: `*.allegedly.works` (AWS Route 53, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → OVH bare metal:443 → Cilium Envoy (Gateway API) → backend pods
 - Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on OVH nodes)
-- Cilium MTU: `MTU: 1370` (uppercase key required). VXLAN rides _inside_ Nebula:
-  pod 1370 + VXLAN 50 = 1420 (= `nebula1` tun MTU) + Nebula 60 = 1480, under the
-  1500 underlay. See <debug/2026-06-08-nebula-vxlan-mtu/>.
+- MTU stack: pod 1370 → Cilium VXLAN → `nebula1` 1420 → `eno1` 1500. See
+  <docs/network.md> for the layering, encapsulation, and MTU model.
 - Kubeconfig patched post-bootstrap to `api.allegedly.works`
 
 ### Node Types

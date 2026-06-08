@@ -807,13 +807,10 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 
 ### CNI: Cilium with VXLAN
 
-VXLAN tunnel mode. OVH and Proxmox nodes are not on the same L2; native routing
-fails. `MTU: 1370` (uppercase, case-sensitive). VXLAN rides _inside_ Nebula
-(nested): pod 1370 + VXLAN 50 = 1420 (`nebula1` tun MTU) + Nebula 60 = 1480,
-under the 1500 underlay. UDP 8472 required.
-See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md> and
-<../debug/2026-06-08-nebula-vxlan-mtu/> (measurements + the corrected model;
-the old "VXLAN 50 + Nebula 38 = 88 parallel" figure was wrong).
+VXLAN tunnel mode (UDP 8472). OVH and Proxmox nodes are not on the same L2; native
+routing fails. The full network layering and MTU model (pod 1370 → Cilium VXLAN →
+`nebula1` 1420 → `eno1` 1500, including the Cilium-`MTU`-is-underlay gotcha) lives in
+<network.md>.
 
 ### Storage Strategy
 

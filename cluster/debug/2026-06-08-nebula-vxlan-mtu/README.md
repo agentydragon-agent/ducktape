@@ -5,7 +5,9 @@
 The Cilium pod MTU was `1412`, derived from a **wrong overhead model**. Cilium VXLAN
 rides **inside** the Nebula tunnel (nested, not parallel), and `nebula1`'s tun MTU was at
 its default **1300** — so full-size pod packets (1412 + 50 VXLAN = 1462) exceeded 1300 and
-had to fragment / PMTUD-clamp. Fixed by raising `nebula1` to 1420 and lowering Cilium to 1370.
+had to fragment / PMTUD-clamp. Fixed by raising `nebula1` to 1420 and setting Cilium's `MTU`
+to 1420 — Cilium's `MTU` is the **underlay** value (the device it tunnels VXLAN over), and it
+subtracts the 50-byte VXLAN overhead itself to get a 1370 cross-node pod MTU.
 
 ## The stack (verified via `cilium-dbg status`)
 
@@ -52,25 +54,25 @@ A 1300-byte inner IP packet produced an outer **UDP payload of 1332** → + 8 (U
 | Outer IPv4 header | 20     |
 | **Total**         | **60** |
 
-## Corrected configuration
+## Outcome
 
-```text
-eno1 (underlay)   1500   measured ceiling (hard; no jumbo on Kimsufi)
-nebula1 tun MTU   1420   1420 + 60 = 1480  (20-byte margin under 1500)
-Cilium / pod MTU  1370   1370 + 50 = 1420  (fits nebula1 exactly)
-```
+Set `nebula1` tun MTU **1420** and Cilium **`MTU: 1420`** → cross-node pod MTU 1370.
+The canonical model, config locations, live-apply procedure, and roaming caveat now
+live in <../../docs/network.md>. This note is the dated investigation record.
 
-- Hard max for the stack: `nebula1 = 1440`, `MTU = 1390` (exact-fit, 1440 + 60 = 1500).
-  We left a 20-byte underlay margin instead of running committed config at the ceiling.
-- Applied in `cluster/terraform/main/cilium-values.yaml` (`MTU: 1370`) and `nebula.tf`
-  (`tun.mtu = 1420`). These are infra-managed (OpenTofu + Cilium/Nebula machine config),
-  **not Flux** — rolling them out restarts Cilium and reloads Nebula across nodes, so do it
-  in a maintenance window, not a hot reconcile.
+### Gotcha that cost a wrong rollout
 
-## Caveat: roaming nodes
+First attempt set Cilium `MTU: 1370` (treating it as the pod MTU). Cilium's `MTU` is
+the **underlay** value and it subtracts the 50-byte VXLAN overhead itself, so that
+produced a **1320** cross-node pod MTU (measured: pod-to-pod DF ceiling 1320, not
+1370). Corrected to `MTU: 1420` (= `nebula1`), which gave a verified 1370 pod ceiling.
 
-This assumes a 1500 underlay. `rugged` (roaming laptop on cellular) has a much smaller path
-MTU (~1162, see `cluster/debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`). A single
-global Cilium MTU can't satisfy both a 1500 datacenter underlay and a cellular path; the fix
-for roaming nodes is TCP MSS clamping / MTU probing, out of scope here. 1370 does not fix
-rugged, but does not make it worse than the previous 1412.
+### Live rollout notes (no re-bootstrap needed)
+
+- **Nebula**: applied per node via `tofu apply -target=talos_machine_configuration_apply…`,
+  one at a time, etcd voters sequentially (workers first, etcd+DB-primary node last),
+  health-checked between each. Each reload is a brief nebula service restart, no reboot.
+- **Cilium**: `null_resource.cilium_bootstrap` has no triggers, so ran the committed
+  `helm upgrade` directly. **`--wait`/`--atomic` rolled back** because dead `wyrm2`'s
+  Pending DaemonSet pod never reports "updated" → `--wait` timed out. Re-ran without
+  `--wait`/`--atomic`; the DaemonSet rolled the 6 healthy nodes cleanly (0 NotReady).
