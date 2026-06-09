@@ -16,12 +16,9 @@ commits.
 - `tf/gitops/github-branch-protection/` — manages a single
   `github_repository_ruleset.default_branch_protection` on `refs/heads/devel`
   and `refs/heads/main`, authenticated via `github-secrets-sync-pat` from
-  `flux-system`. **Staged at `enforcement = "evaluate"`** (2026-06-09): rules
-  are logged in the ruleset insights but not blocked. Flip to `"active"` after
-  one PR confirms the required check contexts match and the automation pushes
-  bypass cleanly. Required status checks (verified against a real PR head):
-  `bazel-ci / Test & Build` and `Pre-commit checks`.
-  Bypass actors:
+  `flux-system`. **`enforcement = "active"`** (2026-06-09). Required status
+  checks (verified as exact matches against a real PR head, #1963):
+  `bazel-ci / Test & Build` and `Pre-commit checks`. Bypass actors:
   - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
     the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs)
     and the owner's own direct pushes.
@@ -32,6 +29,16 @@ commits.
     direct-push workflows on ducktape (`sync-pins.yml`, `nix-flake-update.yml`,
     `container-images.yml`'s `pin-digests` job) already push as the App, so
     they are covered by this bypass on `devel`.
+
+  **Plan limitation:** `enforcement = "evaluate"` (dry-run insights mode) is
+  **GitHub Enterprise-only**. On this personal account the apply returns
+  `422 "Enforcement evaluate option is not supported on this plan. Please
+upgrade to Enterprise"`. The intended "stage in evaluate, watch insights,
+  then flip to active" rollout is therefore unavailable — only `disabled` and
+  `active` work. We went straight to `active`; the context strings and bypass
+  actors were verified out-of-band (PR #1963 + the previously-active main-only
+  ruleset) instead.
+
 - The earlier untracked `tf/gitops/github-repo-rulesets/` module (a separate
   devel+main attempt with the wrong bypass actor — built-in github-actions
   id 15368 — and wrong, double-nested check contexts) has been **deleted**.
@@ -145,17 +152,21 @@ No further migration is needed before enabling protection on `devel`.
 | `nix-flake-update.yml`                     | manual        | `flake.lock` updates             |
 | `container-images.yml` (`pin-digests` job) | on image push | `cluster/**` image digest bumps  |
 
-## Rollout: evaluate → active
+## Rollout — done straight to active
 
-1. Land this change (ruleset now covers `devel` + `main` at
-   `enforcement = "evaluate"`). The `moved` block renames
-   `ducktape_main` → `default_branch_protection` as an in-place state move.
-2. Open a throwaway PR against `devel`. In the repo's **ruleset insights**,
-   confirm both required contexts (`bazel-ci / Test & Build`,
-   `Pre-commit checks`) resolve against the PR's check runs and that the
-   automation pushes show as bypassed, not violations.
-3. Flip `enforcement` to `"active"` and drop the `moved` block (its
-   `CLEANUP` marker notes this).
+The originally-planned evaluate gate turned out to be Enterprise-only (see the
+plan-limitation note above), so the ruleset went straight to
+`enforcement = "active"` covering `devel` + `main`. The `moved` block renames
+`ducktape_main` → `default_branch_protection` as an in-place state move; drop
+it (per its `CLEANUP` marker) once the tf-runner has applied successfully and
+`lastAppliedRevision` advances past the rename.
+
+Verification that substituted for the evaluate gate:
+
+- Required contexts `bazel-ci / Test & Build` and `Pre-commit checks` appeared
+  as exact-match check-run names on PR #1963's head (a real PR against devel).
+- Bypass actors (admin RepositoryRole 5 + ducktape-automation App 3590331) are
+  identical to the previously-active main-only ruleset, which applied cleanly.
 
 ## Historical context
 

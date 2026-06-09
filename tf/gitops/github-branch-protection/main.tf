@@ -9,9 +9,13 @@
 # admin RepositoryRole bypass covers owner/PAT pushes (Flux image automation,
 # rotation CronJobs, the owner's own pushes).
 #
-# Staged at `enforcement = "evaluate"`: rules are logged in the ruleset
-# insights but not blocked. Flip to "active" once one PR confirms the two
-# required check contexts match and the automation pushes bypass cleanly.
+# `enforcement = "active"`. NOTE: this account's plan does not support
+# "evaluate" (dry-run) enforcement — GitHub returns 422 "Enforcement evaluate
+# option is not supported on this plan. Please upgrade to Enterprise" — so we
+# go straight to active. The two required check contexts were verified as
+# exact matches against a real PR head (PR #1963: `bazel-ci / Test & Build`,
+# `Pre-commit checks`), and the bypass actors match the previously-active
+# main-only ruleset, so the active config is proven.
 #
 # Gaffer-private has NO branch protection from this module. GitHub Free
 # does not include any branch protection (rulesets or classic) on private
@@ -62,7 +66,7 @@ resource "github_repository_ruleset" "default_branch_protection" {
   name        = "default-branch-protection"
   repository  = "ducktape"
   target      = "branch"
-  enforcement = "evaluate"
+  enforcement = "active"
 
   conditions {
     ref_name {
