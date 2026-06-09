@@ -136,6 +136,12 @@ in
     { package = ducktapePackages.aiquota; }
   ];
 
+  # Enable GNOME fractional scaling (125/150/175%). GNOME gates these steps
+  # behind this experimental flag; without it Settings only offers 100%/200%.
+  dconf.settings."org/gnome/mutter".experimental-features = [
+    "scale-monitor-framebuffer"
+  ];
+
   # gaffer-private disabled — see nix/docs/private_flake_inputs.md
   # services.google-drive.enable = true;
 
