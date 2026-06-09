@@ -42,6 +42,60 @@ trace to confirm details.
 
 ---
 
+## Runtime-PM autosuspend — the path the workaround missed (2026-06-08)
+
+**A wedge fired from kernel runtime PM, not system suspend.** All of the
+above (and the deployed `--test-low-power-suspend-resume` workaround) only
+covers _system_ sleep/wake — MM's sleep-signal handler. The MHI pci driver
+_also_ enables **runtime PM autosuspend** with a 2s idle delay
+(`power/autosuspend_delay_ms = 2000`, driver default). While on WiFi the
+modem sits idle and gets autosuspended to M3 every few seconds — the same
+broken Foxconn M3 firmware path, reached without MM's low-power dance.
+
+Live trace from rugged, boot 2026-06-04:
+
+```
+Jun 05 02:30:48 kernel: pcieport 0000:00:1c.0: Data Link Layer Link Active not set in 100 msec
+Jun 05 02:30:48 kernel: mhi mhi0: Resuming from non M3 state (SYS ERROR)
+Jun 05 02:30:48 kernel: mhi-pci-generic 0000:71:00.0: failed to resume device: -22
+Jun 05 02:30:48 kernel: device recovery started → reset → reset failed → Recovery failed: -25
+```
+
+**Proof it was runtime PM, not system sleep:** no `PM: suspend entry`
+anywhere near 02:30:48 — the nearest system suspend was 02:50:39 (20 min
+later). So `mhi_pci_runtime_resume` ran, found the firmware in SYS_ERR
+(left there by an earlier idle autosuspend M3), and the no-SBL
+`recovery_work` → FLR wedged it. The resume was provoked by ordinary
+traffic poking wwan0 (nebula handshakes / kubelet / discord all retrying
+at that timestamp). `power/runtime_suspended_time` had accumulated ~4.1h,
+confirming the modem had been autosuspending all along; `power/control`
+reads `on` only because `recovery_work` calls `pm_runtime_forbid()`.
+
+**Fix applied:** udev rule pins `power/control=on` for `105b:e11d` in
+`foxconn-wwan.nix`, disabling runtime autosuspend. The modem stays at M0
+during normal operation; M3 only happens during real system suspend, where
+the MM flag already handles it. This addresses the _cause_ (don't enter the
+broken M3 path while idle), complementary to the kernel-quirk P1 below
+(which would only defang the _symptom_ — the bad FLR — after a crash).
+Re-enumeration re-fires the `add` uevent so the rule re-applies each time.
+Verify post-reboot: `cat /sys/bus/pci/devices/0000:71:00.0/power/control`
+should read `on` with the modem healthy (channels enumerated).
+
+**Non-reboot recovery DOES work (correction to earlier claim).** On
+2026-06-08 `modem.sh recover` cleared this exact wedge without a reboot:
+the kernel's in-place `recovery_work` FLR had already failed `-25`, but a
+full PCI **remove + bus rescan** (`echo 1 > .../remove; echo 1 >
+/sys/bus/pci/rescan`) tore the driver down completely and re-probed from
+scratch — `mhi mhi0: Power on setup success`, all channels enumerated, MM
+auto-unlocked via its wired `fcc-unlock.d`, modem reached `connected` on
+5gnr. So the slot does **not** have to physically lose power; a clean
+driver-level teardown+reprobe is enough (FLR alone isn't, because it
+resets the function while the driver tries to recover in-place against a
+SoC still in PBL). The earlier "only reboot recovers" claim was wrong —
+`recover` just _reported_ failure because of two script bugs (bare
+`FoxFlss` not on PATH under sudo + a premature `die()` before the modem
+finished enumerating), both fixed in `modem.sh` on 2026-06-08.
+
 ## Current status (2026-05-14, end of session 1)
 
 **Applied (workaround path)**:

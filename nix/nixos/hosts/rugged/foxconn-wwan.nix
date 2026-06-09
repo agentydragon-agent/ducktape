@@ -123,6 +123,26 @@ in
       }
     ];
 
+    # Disable runtime-PM autosuspend on the modem PCI function. The MHI pci
+    # driver enables runtime PM with a 2s autosuspend delay by default, so an
+    # idle wwan0 (the normal case while on WiFi) gets sent to M3 every few
+    # seconds. M3 is the SAME broken Foxconn firmware path that wedges this
+    # device on system suspend — but `--test-low-power-suspend-resume` only
+    # covers MM's system sleep/wake handler, NOT kernel runtime PM. A runtime
+    # autosuspend cycle dropped the firmware into SYS_ERR; the next runtime
+    # resume hit `mhi_pci_recovery_work`, which can't reload the SBL (DW5934e
+    # ships `.fw = NULL`), did an FLR, and wedged the modem into PBL with no
+    # channels — invisible to MM/GNOME until reboot.
+    #   Live trace: 2026-06-05 02:30:48 `mhi mhi0: Resuming from non M3 state
+    #   (SYS ERROR)` with NO `PM: suspend entry` nearby (nearest system sleep
+    #   was 20min later) — i.e. a runtime-PM resume, not a system resume.
+    # Keeping power/control=on pins the modem at M0 during normal operation;
+    # M3 only happens during real system suspend, where the MM flag handles it.
+    # See debug/rugged/hw/modem_suspend_research.md §"Runtime-PM autosuspend".
+    services.udev.extraRules = ''
+      ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x105b", ATTR{device}=="0xe11d", ATTR{power/control}="on"
+    '';
+
     # Google Fi cellular connection profile.
     # IPv6 never-default: many WiFi networks only provide ULA IPv6 (no default
     # route). Cellular provides global IPv6 with a default route, which causes

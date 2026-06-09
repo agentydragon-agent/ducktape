@@ -95,20 +95,37 @@ lpac_run() {
 
 # Bring modem from low/disabled to registered. Used after slot switch / esim ops /
 # manual unlock. Idempotent — safe to call when modem is already up.
+# Returns 0 once MM detects the modem, 1 otherwise (callers like cmd_recover
+# rely on this NOT die()ing so they can fall through to the next recovery step).
 bring_modem_online() {
   hdr "bring modem online"
   systemctl start ModemManager 2>/dev/null || true
   sleep 10
-  step "FCC unlock (FoxFlss)…"
-  FoxFlss 2>&1 || step "FoxFlss exit=$? (may be OK if already unlocked)"
-  sleep 5
+  # FCC unlock is handled automatically by MM's wired fcc-unlock.d (installed by
+  # nix/nixos/hosts/rugged/foxconn-wwan.nix with the absolute foxflss store path)
+  # when MM hits "software radio switch is OFF" during enable. We only call
+  # FoxFlss directly as a fallback IF it happens to be on PATH (e.g. running
+  # inside the nix devshell) — under plain sudo it isn't, and that's fine.
+  if command -v FoxFlss >/dev/null 2>&1; then
+    step "FCC unlock (FoxFlss on PATH)…"
+    FoxFlss 2>&1 || step "FoxFlss exit=$? (may be OK if already unlocked)"
+  else
+    step "FoxFlss not on PATH — relying on MM's wired fcc-unlock.d (auto)"
+  fi
   step "restart MM to pick up new power state…"
   systemctl restart ModemManager
-  sleep 15
+  # Poll up to 60s: the unlock → enable → register → connect sequence takes
+  # tens of seconds after a remove/rescan; a fixed sleep raced ahead of it.
+  hdr "wait up to 60s for MM to detect + bring up the modem"
+  wait_for_state 60 registered enabled connected connecting || true
   local m
   m=$(modem_id)
-  [ -n "$m" ] || die "ModemManager did not detect modem after restart"
+  if [ -z "$m" ]; then
+    step "ModemManager has not detected a modem yet"
+    return 1
+  fi
   step "modem state: $(modem_state "$m") / power: $(modem_power "$m")"
+  return 0
 }
 
 # Wait for modem to reach a target state (or a list of states).
