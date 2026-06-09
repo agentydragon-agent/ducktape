@@ -3,3 +3,9 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+
+configMapGenerator:
+  - name: budget-ledger-sync
+    namespace: budget
+    files:
+      - sync/sync.sh
