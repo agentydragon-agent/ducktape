@@ -10,7 +10,7 @@ resources:
   - drivefs-artifacts-credentials.sops.yaml
   - vm-images-credentials.sops.yaml
   - claude-reader-credentials.sops.yaml
-  # ESO assembles the three into one gateway config; Reloader rolls the
+  # ESO assembles these into one gateway config; Reloader rolls the
   # deployment when it changes (cluster-wide autoReloadAll).
   - s3-config-externalsecret.yaml
   - deployment.yaml

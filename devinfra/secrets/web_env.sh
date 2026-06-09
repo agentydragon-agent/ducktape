@@ -34,11 +34,12 @@ try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-toke
 # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
 try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
 
-# Read-only SeaweedFS S3 access via the public gateway (s3.allegedly.works). The
+# SeaweedFS S3 access via the public gateway (s3.allegedly.works). The
 # claude-reader identity has Read+List on attic, drivefs-artifacts, vm-images,
-# augur-assets, listing-monitor-captures. Exported as standard AWS_* so `aws s3`
+# augur-assets, listing-monitor-captures, loom-gym — plus Write+Tagging on
+# loom-gym only (eval-run uploads). Exported as standard AWS_* so `aws s3`
 # and boto3 work with no flags (e.g. `aws s3 ls s3://attic/`). NOTE: this makes
-# every AWS SDK call in the session default to these read-only creds — override
+# every AWS SDK call in the session default to these creds — override
 # AWS_* if you ever need real AWS access. SeaweedFS ignores the region but SigV4
 # requires one to be set.
 _s3_reader="$REPO_ROOT/cluster/k8s/seaweedfs/public-s3/claude-reader-credentials.sops.yaml"
