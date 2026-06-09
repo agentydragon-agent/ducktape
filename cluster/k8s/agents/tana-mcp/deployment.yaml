@@ -124,6 +124,15 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Server-held PAT: readiness then also requires that Tana's MCP
+            # accepts it (POST /mcp initialize -> 200), so a renderer that
+            # drifts off the matching account drives a re-sign instead of
+            # silently leaving the facade serving zero tools.
+            - name: TANA_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: tana-agentydragon-gmail-com-account-pat
+                  key: token
           resources:
             requests:
               cpu: 10m
