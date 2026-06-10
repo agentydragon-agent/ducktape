@@ -192,6 +192,10 @@ resources:
   - budget/namespace/flux-kustomization.yaml
   - budget/app/flux-kustomization.yaml
 
+  # --- evidence (shared evidence-scraping config: the market mirror roster) ---
+  - evidence/namespace/flux-kustomization.yaml
+  - evidence/market-roster/flux-kustomization.yaml
+
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
   - matrix/agent-rbac/flux-kustomization.yaml
