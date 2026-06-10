@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
-use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierMode};
+use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchIdentifierMode};
 use swc_atoms::{Atom, Wtf8Atom};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::{
@@ -29,6 +29,28 @@ pub struct ResolvedMemberBinding {
 struct MemberBindingMatch {
     body_idx: usize,
     binding: ResolvedMemberBinding,
+}
+
+pub fn source_match_declared_binding_names(
+    request_id: &str,
+    source_match: &SourceMatch,
+) -> Result<Vec<String>> {
+    let parsed = js_ast::parse_js_module_ast(
+        &format!("<binding group source_match in {request_id}>"),
+        &source_match.match_source,
+    )
+    .with_context(|| {
+        format!(
+            "logical_module {request_id}: binding_groups[].source_match did not parse as JS:\n{}",
+            source_match.match_source
+        )
+    })?;
+    Ok(parsed
+        .body
+        .iter()
+        .flat_map(declared_bindings)
+        .map(|binding| binding.binding_name)
+        .collect())
 }
 
 pub fn resolve_anonymous_statement_body_index(

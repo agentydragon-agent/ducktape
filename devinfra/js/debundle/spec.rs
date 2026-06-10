@@ -535,7 +535,31 @@ pub struct AnonymousStatement {
 #[serde(deny_unknown_fields)]
 pub struct BindingGroup {
     pub source_match: SourceMatch,
+    /// Selector-local names from `source_match.match` to export under the
+    /// same readable names. This is only sugar for filling `exports`; it does
+    /// not adopt transitive ownership or co-move unnamed statements.
+    #[serde(default, skip_serializing_if = "BindingGroupAdoptNames::is_none")]
+    pub adopt_names: BindingGroupAdoptNames,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub exports: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
+#[serde(untagged)]
+pub enum BindingGroupAdoptNames {
+    #[default]
+    None,
+    All(bool),
+    Names(Vec<String>),
+}
+
+impl BindingGroupAdoptNames {
+    pub fn is_none(&self) -> bool {
+        matches!(
+            self,
+            BindingGroupAdoptNames::None | BindingGroupAdoptNames::All(false)
+        )
+    }
 }
 
 impl AnonymousStatement {

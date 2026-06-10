@@ -284,6 +284,24 @@ binding_groups:
       address: systemEmailAddress
 ```
 
+When the selector source already uses the desired public names, use
+`adopt_names` instead of repeating identity entries under `exports`:
+
+```yaml
+binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      match: |
+        const SYSTEM_EMAIL_LOCAL_PART = "system",
+          SYSTEM_EMAIL_DOMAIN = "example.test",
+          systemEmailAddress = `${SYSTEM_EMAIL_LOCAL_PART}@${SYSTEM_EMAIL_DOMAIN}`;
+    adopt_names: true
+```
+
+`adopt_names: [nameOne, nameTwo]` adopts only the listed selector-local
+bindings. An explicit `exports` entry on the same group overrides the adopted
+public name for that selector-local binding.
+
 For anonymous side-effect statements, prefer `source_match` when
 minified helper or class names drift, but keep selectors unique. If two
 statements are structurally identical under `alpha_all`, debundle must

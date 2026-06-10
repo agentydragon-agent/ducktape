@@ -42,6 +42,7 @@ pub struct Member {
 
 pub struct BindingGroup {
     source_match: FixtureSourceMatch,
+    adopt_names: Option<FixtureAdoptNames>,
     exports: BTreeMap<&'static str, &'static str>,
 }
 
@@ -60,6 +61,52 @@ impl BindingGroup {
                 wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             },
+            adopt_names: None,
+            exports: exports.iter().copied().collect(),
+        }
+    }
+
+    pub fn source_alpha_adopt_all(match_source: impl Into<String>) -> Self {
+        Self {
+            source_match: FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            },
+            adopt_names: Some(FixtureAdoptNames::All(true)),
+            exports: BTreeMap::new(),
+        }
+    }
+
+    pub fn source_alpha_adopt_names(
+        match_source: impl Into<String>,
+        names: &[&'static str],
+    ) -> Self {
+        Self {
+            source_match: FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            },
+            adopt_names: Some(FixtureAdoptNames::Names(names.to_vec())),
+            exports: BTreeMap::new(),
+        }
+    }
+
+    pub fn source_alpha_adopt_all_with_exports(
+        match_source: impl Into<String>,
+        exports: &[(&'static str, &'static str)],
+    ) -> Self {
+        Self {
+            source_match: FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            },
+            adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: exports.iter().copied().collect(),
         }
     }
@@ -179,7 +226,17 @@ struct LogicalModuleBody {
 #[derive(Serialize)]
 struct FixtureBindingGroup {
     source_match: FixtureSourceMatch,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    adopt_names: Option<FixtureAdoptNames>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     exports: BTreeMap<&'static str, &'static str>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(untagged)]
+enum FixtureAdoptNames {
+    All(bool),
+    Names(Vec<&'static str>),
 }
 
 #[derive(Serialize)]
@@ -329,6 +386,7 @@ fn fixture_binding_groups(binding_groups: &[BindingGroup]) -> Vec<FixtureBinding
         .iter()
         .map(|group| FixtureBindingGroup {
             source_match: group.source_match.clone(),
+            adopt_names: group.adopt_names.clone(),
             exports: group.exports.clone(),
         })
         .collect()
