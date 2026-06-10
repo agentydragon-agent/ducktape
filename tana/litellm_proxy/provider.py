@@ -18,8 +18,6 @@ from litellm.types.llms.openai import ChatCompletionToolCallChunk
 from litellm.types.utils import GenericStreamingChunk, ModelResponse, Usage
 from litellm.utils import custom_llm_setup
 
-from tana.firebase_resigner.resigner import FreshTokens, ResignerConfig
-
 DEFAULT_FIREBASE_API_KEY = "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ"
 DEFAULT_FUNCTIONS_BASE_URL = "https://app.tana.inc/functions"
 DEFAULT_REFRESH_TOKEN_SECRET = "tana-mcp/tana-firebase-refresh-token"
@@ -59,6 +57,13 @@ class TanaProxyConfig:
             ignore_large_context_warning=_env_bool("TANA_IGNORE_LARGE_CONTEXT_WARNING", True),
             ignore_out_of_credits_warning=_env_bool("TANA_IGNORE_OUT_OF_CREDITS_WARNING", False),
         )
+
+
+@dataclass(frozen=True)
+class FreshTokens:
+    id_token: str
+    refresh_token: str
+    expires_in: int
 
 
 @dataclass(frozen=True)
@@ -135,10 +140,10 @@ def read_refresh_token_from_config(cfg: TanaProxyConfig, runner: Runner = _run_c
         ) from exc
 
 
-async def _refresh_id_token_once(http: httpx.AsyncClient, cfg: ResignerConfig, refresh_token: str) -> FreshTokens:
+async def _refresh_id_token_once(http: httpx.AsyncClient, firebase_api_key: str, refresh_token: str) -> FreshTokens:
     response = await http.post(
         "https://securetoken.googleapis.com/v1/token",
-        params={"key": cfg.api_key},
+        params={"key": firebase_api_key},
         data={"grant_type": "refresh_token", "refresh_token": refresh_token},
     )
     try:
@@ -153,10 +158,10 @@ async def _refresh_id_token_once(http: httpx.AsyncClient, cfg: ResignerConfig, r
     )
 
 
-def _refresh_id_token_once_sync(http: httpx.Client, cfg: ResignerConfig, refresh_token: str) -> FreshTokens:
+def _refresh_id_token_once_sync(http: httpx.Client, firebase_api_key: str, refresh_token: str) -> FreshTokens:
     response = http.post(
         "https://securetoken.googleapis.com/v1/token",
-        params={"key": cfg.api_key},
+        params={"key": firebase_api_key},
         data={"grant_type": "refresh_token", "refresh_token": refresh_token},
     )
     try:
@@ -262,8 +267,7 @@ class TanaProxyClient:
             return self._id_token
 
         refresh_token = self._refresh_token or self._refresh_token_reader(self._cfg)
-        fresh = await _refresh_id_token_once(http, ResignerConfig(api_key=self._cfg.firebase_api_key), refresh_token)
-        self._refresh_token = fresh.refresh_token
+        fresh = await _refresh_id_token_once(http, self._cfg.firebase_api_key, refresh_token)
         self._id_token = fresh.id_token
         self._id_token_expires_at = self._now() + fresh.expires_in
         return fresh.id_token
@@ -364,8 +368,7 @@ class TanaProxyClient:
             return self._id_token
 
         refresh_token = self._refresh_token or self._refresh_token_reader(self._cfg)
-        fresh = _refresh_id_token_once_sync(http, ResignerConfig(api_key=self._cfg.firebase_api_key), refresh_token)
-        self._refresh_token = fresh.refresh_token
+        fresh = _refresh_id_token_once_sync(http, self._cfg.firebase_api_key, refresh_token)
         self._id_token = fresh.id_token
         self._id_token_expires_at = self._now() + fresh.expires_in
         return fresh.id_token
@@ -417,7 +420,10 @@ class TanaLiteLLM(CustomLLM):
     ) -> AsyncIterator[GenericStreamingChunk]:
         del api_base, custom_prompt_dict, model_response, print_verbose, encoding, api_key
         del logging_obj, acompletion, litellm_params, logger_fn, headers, timeout, client
-        return self._client.astream_completion(model, cast(Sequence[Mapping[str, Any]], messages), optional_params)
+        async for chunk in self._client.astream_completion(
+            model, cast(Sequence[Mapping[str, Any]], messages), optional_params
+        ):
+            yield chunk
 
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:

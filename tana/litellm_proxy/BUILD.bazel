@@ -1,17 +1,26 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "provider",
     srcs = [
         "__init__.py",
+        "custom_handler.py",
         "provider.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//tana/firebase_resigner:resigner",
         "@pypi//httpx",
         "@pypi//litellm",
     ],
+)
+
+py_library(
+    name = "model_registry",
+    srcs = ["model_registry.py"],
+    visibility = ["//visibility:public"],
 )
 
 py_binary(
@@ -25,6 +34,17 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "probe_models",
+    srcs = ["probe_models.py"],
+    main_module = "tana.litellm_proxy.probe_models",
+    tags = ["manual"],
+    deps = [
+        ":model_registry",
+        ":provider",
+    ],
+)
+
 py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
@@ -34,4 +54,37 @@ py_test(
         "@pypi//litellm",
         "@pypi//pytest_bazel",
     ],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    srcs = ["@@rules_python++pip+pypi_313_litellm//:rules_python_wheel_entry_point_litellm.py"],
+    main = "@@rules_python++pip+pypi_313_litellm//:rules_python_wheel_entry_point_litellm.py",
+    deps = [
+        ":provider",
+        "@pypi//litellm",
+    ],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env(binary_name = "server_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["tana-litellm-proxy:latest"],
 )

@@ -57,8 +57,15 @@ Refresh token lookup order:
 2. `TANA_FIREBASE_REFRESH_TOKEN_FILE`
 3. Kubernetes secret via local `kubectl`
 
-The default secret is `tana-mcp/tana-firebase-refresh-token`, key
-`refresh_token`, matching the in-cluster Tana MCP setup.
+For production LiteLLM proxy use, prefer `TANA_FIREBASE_REFRESH_TOKEN` populated
+from a reflected copy of the resigner-maintained Kubernetes Secret. The resigner
+owns and refreshes that Secret; this adapter only reads the configured refresh
+token and caches short-lived Firebase ID tokens. It deliberately does not adopt
+or persist rotated Firebase refresh tokens from the Secure Token response.
+
+The local fallback secret is `tana-mcp/tana-firebase-refresh-token`, key
+`refresh_token`, matching the in-cluster Tana MCP setup. Treat that as a
+development convenience, not the deployed LiteLLM proxy path.
 
 The default `userContext` is `Generic AI Query`, one of the labels observed in
 the Tana client. The live endpoint rejects arbitrary labels during request

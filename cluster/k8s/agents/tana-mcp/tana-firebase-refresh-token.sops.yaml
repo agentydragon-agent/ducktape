@@ -8,6 +8,10 @@ metadata:
             Long-lived Firebase refresh token for the agentydragon@gmail.com Tana
             account. To re-bootstrap, see cluster/docs/plans/tana_mcp_sane_signin.md
             (option B "Bootstrap (no browser required)").
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: litellm
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: litellm
 type: Opaque
 stringData:
     refresh_token: ENC[AES256_GCM,data:MNHY8Y+TzSaMRKV6DBnhAbNJfYW9I9rekt1OxS3LLD05pWU5hbKDnt938ExjlCMLFCbppRRck/X2q+dC/kj3dCDs6AyIS2B/xmN4lF2dpHiWq6pP727eNW3aI7DttNXHM4qvkIc1Q40dqXAy0y6jtzPgFbxcFekFtmJS7XLs3UGvtdWbyDXDk+EJ4Hz3jV09IRY+3i1rOxIuJuph0Zn7te23saEVVRTBogaYl9JE2w10DtsUNGVF,iv:PhoggK6BMxo3/iaxe5Zk4/3jCaqqys7dADMCUuPXbCA=,tag:WkZff5Yw9EfvMJFbiD2rVw==,type:str]

@@ -6,12 +6,14 @@ import json
 import subprocess
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from typing import Any, Protocol, cast
+from urllib.parse import parse_qs
 
 import httpx
 import litellm
 import pytest_bazel
-from litellm.types.utils import Choices, GenericStreamingChunk, Usage
+from litellm.types.utils import Choices, GenericStreamingChunk, ModelResponse, Usage
 
+from tana.litellm_proxy.custom_handler import tana_handler
 from tana.litellm_proxy.provider import (
     TanaChatResult,
     TanaLiteLLM,
@@ -400,6 +402,80 @@ def test_reads_refresh_token_from_kubernetes_secret_json() -> None:
     assert read_refresh_token_from_config(TanaProxyConfig(), runner=runner) == "refresh-token"
 
 
+def test_client_rereads_external_refresh_token_source_after_id_token_expires() -> None:
+    refresh_tokens_seen: list[str] = []
+    reader_tokens = iter(["refresh-from-secret-1", "refresh-from-secret-2"])
+    now = [1000.0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            form = parse_qs(request.content.decode("utf-8"))
+            refresh_token = form["refresh_token"][0]
+            refresh_tokens_seen.append(refresh_token)
+            token_number = len(refresh_tokens_seen)
+            return httpx.Response(
+                200,
+                json={
+                    "id_token": f"id-token-{token_number}",
+                    "refresh_token": f"rotated-refresh-{token_number}",
+                    "expires_in": "120",
+                },
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxy"
+        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+
+    def refresh_token_reader(_cfg: TanaProxyConfig) -> str:
+        return next(reader_tokens)
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = TanaProxyClient(
+                TanaProxyConfig(), http_client=http, refresh_token_reader=refresh_token_reader, now=lambda: now[0]
+            )
+            await client.chat_completion("claude-test", [{"role": "user", "content": "first"}])
+            now[0] = 1061.0
+            await client.chat_completion("claude-test", [{"role": "user", "content": "second"}])
+
+    asyncio.run(run())
+
+    assert refresh_tokens_seen == ["refresh-from-secret-1", "refresh-from-secret-2"]
+
+
+def test_client_does_not_adopt_rotated_refresh_token_from_firebase() -> None:
+    refresh_tokens_seen: list[str] = []
+    now = [1000.0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            form = parse_qs(request.content.decode("utf-8"))
+            refresh_token = form["refresh_token"][0]
+            refresh_tokens_seen.append(refresh_token)
+            token_number = len(refresh_tokens_seen)
+            return httpx.Response(
+                200,
+                json={
+                    "id_token": f"id-token-{token_number}",
+                    "refresh_token": f"rotated-refresh-{token_number}",
+                    "expires_in": "120",
+                },
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxy"
+        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = TanaProxyClient(
+                TanaProxyConfig(refresh_token="configured-refresh-token"), http_client=http, now=lambda: now[0]
+            )
+            await client.chat_completion("claude-test", [{"role": "user", "content": "first"}])
+            now[0] = 1061.0
+            await client.chat_completion("claude-test", [{"role": "user", "content": "second"}])
+
+    asyncio.run(run())
+
+    assert refresh_tokens_seen == ["configured-refresh-token", "configured-refresh-token"]
+
+
 def test_litellm_handler_returns_model_response() -> None:
     class FakeClient(_NoStreamingClient):
         async def chat_completion(
@@ -494,10 +570,55 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
     assert chunks[-1].choices[0].finish_reason == "stop"
 
 
+def test_litellm_handler_astreaming_yields_chunks() -> None:
+    class FakeClient(_NoStreamingClient):
+        async def chat_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> TanaChatResult:
+            raise AssertionError("async streaming test should not call non-streaming chat_completion")
+
+        async def astream_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> AsyncIterator[GenericStreamingChunk]:
+            assert model == "claude-test"
+            assert messages == [{"role": "user", "content": "hi"}]
+            assert optional_params == {"stream": True}
+            yield GenericStreamingChunk(text="async-pong", is_finished=False, finish_reason="", usage=None, index=0)
+            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
+
+    async def collect_chunks() -> list[GenericStreamingChunk]:
+        handler = TanaLiteLLM(FakeClient())
+        return [
+            chunk
+            async for chunk in handler.astreaming(
+                model="claude-test",
+                messages=[{"role": "user", "content": "hi"}],
+                api_base="",
+                custom_prompt_dict={},
+                model_response=cast(ModelResponse, None),
+                print_verbose=lambda *args, **kwargs: None,
+                encoding=None,
+                api_key=None,
+                logging_obj=None,
+                optional_params={"stream": True},
+            )
+        ]
+
+    chunks = asyncio.run(collect_chunks())
+
+    assert chunks[0]["text"] == "async-pong"
+    assert chunks[-1]["is_finished"] is True
+    assert chunks[-1]["finish_reason"] == "stop"
+
+
 def test_registers_tana_as_litellm_custom_provider() -> None:
     handler = register_litellm_provider(TanaLiteLLM())
 
     assert any(item["provider"] == "tana" and item["custom_handler"] is handler for item in litellm.custom_provider_map)
+
+
+def test_custom_handler_module_exports_litellm_handler() -> None:
+    assert isinstance(tana_handler, TanaLiteLLM)
 
 
 if __name__ == "__main__":

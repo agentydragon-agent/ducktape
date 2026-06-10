@@ -89,6 +89,11 @@ jobs:
             }
           - { image: "//tana/firebase_resigner:image", image_name: tana-firebase-resigner, test_target: "" }
           - {
+              image: "//tana/litellm_proxy:image",
+              image_name: tana-litellm-proxy,
+              test_target: "//tana/litellm_proxy:test_provider",
+            }
+          - {
               image: "//x/mcp_oauth_facade:image",
               image_name: mcp-oauth-facade,
               test_target: "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
