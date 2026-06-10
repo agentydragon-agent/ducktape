@@ -1,11 +1,11 @@
 {
   "rbe_worker": {
     "image": "ghcr.io/agentydragon/rbe-worker",
-    "digest": "sha256:721dd54f718b5498242d5116072ea8bb9bd754dcc30c4ec9f2f14f7d7234e962"
+    "digest": "sha256:b2be252cf86b17236cbf609723ba3147b51e9a4f4d0c08a16cc72681d076e1c1"
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
-    "digest": "sha256:ba36e970bffef24d17d675af2b029d3b4f0c9bc39cee7c9324b302def3c89350",
+    "digest": "sha256:1d7a642d2a8b50ee115c2920a12223c127ff3a12ff7fd2c41f02356a2f1830ab",
     "platforms": ["linux/amd64"]
   },
   "excalidraw": {
