@@ -59,5 +59,16 @@ jobs:
           script: |
             set -euo pipefail
             RBE_FLAGS="--config=rbe --config=ci --remote_default_exec_properties=container-image=docker://$RBE_IMAGE"
+            export CI_VM_PROBE_DIR="/home/buildbuddy/workspace/.ducktape-ci-vm-probe"
+            probe_bb_runner() {
+              python3 devinfra/ci/bb_runner_probe.py snapshot "$1" || true
+            }
+            finalize_bb_runner_probe() {
+              python3 devinfra/ci/bb_runner_probe.py finalize --upload || true
+            }
+            trap finalize_bb_runner_probe EXIT
+            probe_bb_runner before-test
             bazel test --keep_going $RBE_FLAGS //... && \
-              bazel build --keep_going $RBE_FLAGS //...
+              probe_bb_runner after-test && \
+              bazel build --keep_going $RBE_FLAGS //... && \
+              probe_bb_runner after-build
