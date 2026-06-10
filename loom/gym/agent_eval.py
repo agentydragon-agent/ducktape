@@ -10,7 +10,7 @@ Requires two images in the local Docker daemon: the wayback proxy
 (`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
 (`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`).
 
-    LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval -- \\
+    LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \\
         --model-id glm-4.5 --task-filter manifold-bitcoin-100k-2024
 """
 
