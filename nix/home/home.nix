@@ -28,15 +28,6 @@ let
     gterm-theme
     bbapi
     ;
-
-  tanaClaude = pkgs.writeShellApplication {
-    name = "tana-claude";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.kubectl
-    ];
-    text = builtins.readFile ./scripts/tana-claude.sh;
-  };
 in
 {
   _module.args.ducktapePackages = ducktapePackages;
@@ -275,8 +266,6 @@ in
           claude --disallowed-tools "WebFetch WebSearch" \
           "$@"
       '')
-
-      tanaClaude
 
       go
 

@@ -11,7 +11,7 @@ Environment:
   TANA_LITELLM_API_KEY       LiteLLM proxy key. If unset, read from Kubernetes.
   TANA_LITELLM_BASE_URL      Proxy URL. Default: https://tana-litellm.allegedly.works
   TANA_LITELLM_MODEL         Model if no positional model is given.
-                             Default: claude-sonnet-4-6/medium
+                             Default: claude-sonnet-4-20250514
   TANA_LITELLM_NAMESPACE     Kubernetes namespace for key lookup. Default: litellm
   TANA_LITELLM_SECRET        Kubernetes Secret for key lookup. Default: litellm-master-key
   TANA_LITELLM_SECRET_KEY    Kubernetes Secret key. Default: api-key
@@ -22,7 +22,7 @@ Environment:
 Examples:
   ./run_claude_code.sh
   ./run_claude_code.sh --bare --print 'Say hi.'
-  ./run_claude_code.sh claude-sonnet-4-6/high --dangerously-skip-permissions
+  ./run_claude_code.sh claude-sonnet-4-20250514 --dangerously-skip-permissions
   TANA_LITELLM_PORT_FORWARD=1 ./run_claude_code.sh
 EOF
 }
@@ -44,7 +44,7 @@ namespace="${TANA_LITELLM_NAMESPACE:-litellm}"
 secret="${TANA_LITELLM_SECRET:-litellm-master-key}"
 secret_key="${TANA_LITELLM_SECRET_KEY:-api-key}"
 base_url="${TANA_LITELLM_BASE_URL:-https://tana-litellm.allegedly.works}"
-model="${TANA_LITELLM_MODEL:-claude-sonnet-4-6/medium}"
+model="${TANA_LITELLM_MODEL:-claude-sonnet-4-20250514}"
 claude_bin="${CLAUDE_BIN:-claude}"
 
 if [ "${1:-}" != "" ] && [ "${1#-}" = "$1" ]; then
