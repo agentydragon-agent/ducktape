@@ -337,27 +337,30 @@ anonymous_statements:
         }
 ```
 
-Identifier expressions whose names start with `EXPR_` match one arbitrary
-expression subtree. Bare expression statements whose names start with `STMT_`
-match one arbitrary statement. Reusing the same placeholder name requires the
-same candidate subtree/statement everywhere it appears. When you don't need
-that equality, use the **bare prefix** as an anonymous wildcard — `EXPR_`,
-`STMT_`, `STMT_LIST_`, or `CLASS_REST` with no suffix — and every occurrence
-matches independently, so there's no need to mint a unique name per
-placeholder. These are still structural selectors: surrounding syntax is exact
-after the identifier policy is applied, and ambiguous matches are rejected
-rather than resolved by source order.
+Each hole keyword has two forms. The **bare keyword** is an anonymous
+wildcard: every occurrence matches independently, so there's no need to mint a
+unique name per throwaway placeholder. The **named form** `KEYWORD_name` binds
+for cross-occurrence equality — the same name must match the same
+candidate subtree/statement everywhere it appears. So `EXPR` is the identifier
+expression that matches one arbitrary expression subtree, and `EXPR_left`
+matches one too but forces every `EXPR_left` to be the same subtree; `STMT` and
+`STMT_setup` are the single-statement equivalents. For example, `foo(EXPR)`
+matches both `foo(123)` and `foo(456)`, and `bar(EXPR, EXPR)` matches
+`bar(1, 2)` (the two holes are independent), whereas `bar(EXPR_x, EXPR_x)` only
+matches a call whose two arguments are identical. These are still structural
+selectors: surrounding syntax is exact after the identifier policy is applied,
+and ambiguous matches are rejected rather than resolved by source order.
 
 Two variable-length **list holes** absorb a contiguous run rather than a
 single node — ideal for pinning a class by a stable skeleton without copying
 its whole minified body:
 
-- A bare `STMT_LIST_*;` statement in a block body matches any run of
-  statements (including none) at that position — e.g. a method or function
-  body you do not want to spell out.
-- A bare `CLASS_REST;` class field (no initializer) matches the remaining
-  class members — "this class by these members, ignore the rest".
-  `CLASS_REST` is an exact token (not a prefix).
+- A bare `STMT_LIST;` statement (or named `STMT_LIST_name;`) in a block body
+  matches any run of statements (including none) at that position — e.g. a
+  method or function body you do not want to spell out.
+- A bare `CLASS_REST;` class field (no initializer) matches a run of class
+  members — "this class by these members, ignore the rest". `CLASS_REST` is an
+  exact token (not a prefix).
 
 ```yaml
 members:
@@ -374,21 +377,28 @@ members:
     name: Counter
 ```
 
-A list takes **at most one** hole — a second `STMT_LIST_*` in the same block,
-or a second `CLASS_REST` in the same class body, is ambiguous and never
-matches. The members or statements you pin around the hole are still matched
-**in order and contiguously**: the elements before the hole must be the
-candidate's leading elements, in that order, and the elements after it the
-candidate's trailing elements, with the hole absorbing only the contiguous
-middle. So `class K { a() { … } b() { … } CLASS_REST; }` matches a class whose
-**first two** members are `a` then `b` (in that order), followed by anything —
-it is _not_ an unordered "class that contains `a` and `b` somewhere" match.
+A list may take **several** holes. Each hole is a gap, and the members or
+statements you pin between the holes are matched as an **ordered subsequence**:
+in source order, each pinned run contiguous, with every hole absorbing an
+arbitrary run (including none) of the candidate's elements. With no leading
+hole the first pinned run is anchored to the candidate's start; with no
+trailing hole the last pinned run is anchored to its end. So
+`class K { a() { … } b() { … } CLASS_REST; }` matches a class whose **first
+two** members are `a` then `b`, followed by anything, while
+`class K { CLASS_REST; open() { … } CLASS_REST; close() { … } CLASS_REST; }`
+matches any class with an `open` method somewhere before a `close` method.
+Either way the match is ordered — it is _not_ an unordered "contains these
+somewhere" match, and pinning `close` before `open` would not match a class
+that defines `open` first. When more than one alignment is possible the
+leftmost is used; that interior choice never changes _which_ declaration
+matched, and a selector that matches more than one top-level declaration is
+still a hard error.
 
 A hole works in **any** position — leading, middle, or trailing. Under
 `alpha_all`, identifiers match by an alpha-correspondence the matcher builds as
 it walks both trees, and a hole never contributes the identifiers it absorbs,
 so the members or statements after a hole still match by their own structure
-rather than by absolute position. (Single-node `EXPR_`/`STMT_` holes share this
+rather than by absolute position. (Single-node `EXPR`/`STMT` holes share this
 property.)
 
 ## Workflow: renaming a binding without moving

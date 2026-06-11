@@ -13,22 +13,24 @@ use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-const EXPR_HOLE_PREFIX: &str = "EXPR_";
-const STMT_HOLE_PREFIX: &str = "STMT_";
-/// A bare `STMT_LIST_*;` expression-statement in a block body is a
-/// statement-**list** hole: it absorbs a contiguous run of candidate
-/// statements (including an empty run) at that position. Distinct from
-/// the single-statement `STMT_` hole, which matches exactly one
-/// statement. `STMT_LIST_` is checked before `STMT_` since it is a
-/// prefix of it.
-const STMT_LIST_HOLE_PREFIX: &str = "STMT_LIST_";
-/// A bare `CLASS_REST;` class field (no initializer) is a class-member
-/// hole: it absorbs the remaining class members at that position. Lets
-/// a selector pin a class by a few stable members and ignore the rest.
-/// Matched as an exact token (not a prefix) so it never collides with a
-/// real field whose name merely starts with `CLASS_REST`, and because it
-/// never reuses, a suffix would be meaningless anyway.
-const CLASS_REST_HOLE_TOKEN: &str = "CLASS_REST";
+/// Syntactic-hole keywords. The **bare keyword** is the anonymous form:
+/// it matches independently at every occurrence and never binds, so
+/// authors don't have to mint a unique name per throwaway placeholder. A
+/// `<keyword>_<name>` identifier is the **named** form, which binds for
+/// cross-occurrence equality — the same name must match the same
+/// subtree/statement everywhere it appears.
+///
+/// `EXPR` matches one arbitrary expression and `STMT` one arbitrary
+/// statement. `STMT_LIST` and `CLASS_REST` are variable-length list holes
+/// (see [`AstWildcardMatcher::match_list_with_holes`]): `STMT_LIST`
+/// absorbs a run of block statements and `CLASS_REST` a run of class
+/// members; several may appear in one list, splitting the pinned
+/// elements into an ordered subsequence with gaps. `STMT_LIST` must be
+/// checked before `STMT`, since `STMT` is a keyword-prefix of it.
+const EXPR_HOLE_KEYWORD: &str = "EXPR";
+const STMT_HOLE_KEYWORD: &str = "STMT";
+const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
+const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -601,6 +603,35 @@ struct AstWildcardMatcher<'a> {
     ident_backward: BTreeMap<Atom, Atom>,
 }
 
+/// A clone of the matcher's mutable binding state, captured before a
+/// tentative segment placement during ordered-subsequence (multi-hole)
+/// list matching and restored when that placement fails — so a
+/// half-applied segment never leaks identifier or wildcard bindings into
+/// the next attempt.
+#[derive(Clone)]
+struct MatcherState {
+    replacements: WildcardReplacements,
+    ident_forward: BTreeMap<Atom, Atom>,
+    ident_backward: BTreeMap<Atom, Atom>,
+}
+
+/// Loop-invariant inputs for the recursive ordered-subsequence search in
+/// [`AstWildcardMatcher::match_list_with_holes`]. Only the `seg_idx` and
+/// `cand_min` cursor arguments change as the search descends.
+struct SegmentSearch<'a, T> {
+    needle: &'a [T],
+    candidate: &'a [T],
+    /// `(needle_start, len)` of each maximal fixed (non-hole) run, in
+    /// source order.
+    segments: &'a [(usize, usize)],
+    /// Whether the first segment is pinned to the candidate's start
+    /// (true unless a hole leads the needle list).
+    anchored_left: bool,
+    /// Whether the last segment is pinned to the candidate's end (true
+    /// unless a hole trails the needle list).
+    anchored_right: bool,
+}
+
 impl<'a> AstWildcardMatcher<'a> {
     fn new(
         selector: &'a AnonymousStatementSelector,
@@ -665,11 +696,11 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_expr(&mut self, wildcard: &str, candidate: &Expr) -> bool {
-        // A bare `EXPR_` (the prefix with no suffix) is an anonymous
-        // wildcard: every occurrence matches independently, so authors
-        // don't have to mint a unique name per placeholder. Named holes
-        // (`EXPR_FOO`) keep their cross-occurrence equality.
-        if is_anonymous_hole(wildcard, EXPR_HOLE_PREFIX) {
+        // The bare keyword `EXPR` is an anonymous wildcard: every
+        // occurrence matches independently, so authors don't have to mint
+        // a unique name per placeholder. Named holes (`EXPR_FOO`) keep
+        // their cross-occurrence equality.
+        if hole_is_anonymous(wildcard, EXPR_HOLE_KEYWORD) {
             return true;
         }
         match self.replacements.expressions.get(wildcard) {
@@ -684,8 +715,8 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_stmt(&mut self, wildcard: &str, candidate: &Stmt) -> bool {
-        // Bare `STMT_` is anonymous; see [`Self::bind_expr`].
-        if is_anonymous_hole(wildcard, STMT_HOLE_PREFIX) {
+        // Bare `STMT` is anonymous; see [`Self::bind_expr`].
+        if hole_is_anonymous(wildcard, STMT_HOLE_KEYWORD) {
             return true;
         }
         match self.replacements.statements.get(wildcard) {
@@ -1813,86 +1844,168 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
-    /// Match a statement list, honoring a single `STMT_LIST_*` hole that
-    /// absorbs a contiguous run of candidate statements at its position.
-    /// With no hole this is an exact element-wise match. Two or more
-    /// statement-list holes in one block are ambiguous and never match.
+    /// Match a statement list. `STMT_LIST;` holes split the needle into
+    /// fixed segments matched as an ordered subsequence with gaps (see
+    /// [`Self::match_list_with_holes`]); with no hole this is an exact
+    /// element-wise match.
     fn match_stmt_slice(&mut self, needle: &[Stmt], candidate: &[Stmt]) -> bool {
-        let holes: Vec<usize> = needle
+        if needle
             .iter()
-            .enumerate()
-            .filter(|(_, stmt)| statement_list_hole_name(stmt).is_some())
-            .map(|(index, _)| index)
-            .collect();
-        match holes.as_slice() {
-            [] => self.match_slice(needle, candidate, Self::match_stmt),
-            &[hole] => self.match_list_around_hole(needle, candidate, hole, Self::match_stmt),
-            _ => false,
+            .any(|stmt| statement_list_hole_name(stmt).is_some())
+        {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                |stmt| statement_list_hole_name(stmt).is_some(),
+                Self::match_stmt,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_stmt)
         }
     }
 
-    /// Match a class member list, honoring a single `CLASS_REST*` hole
-    /// that absorbs the remaining members at its position. Members
-    /// pinned before/after the hole match the candidate's leading/
-    /// trailing members in order (see [`Self::match_list_around_hole`]).
-    /// Two or more `CLASS_REST*` holes in one class body are ambiguous
-    /// and never match.
+    /// Match a class member list. `CLASS_REST;` holes split the needle
+    /// into fixed segments matched as an ordered subsequence with gaps
+    /// (see [`Self::match_list_with_holes`]); with no hole this is an
+    /// exact element-wise match.
     fn match_class_member_slice(
         &mut self,
         needle: &[ClassMember],
         candidate: &[ClassMember],
     ) -> bool {
-        let holes: Vec<usize> = needle
-            .iter()
-            .enumerate()
-            .filter(|(_, member)| is_class_rest_hole(member))
-            .map(|(index, _)| index)
-            .collect();
-        match holes.as_slice() {
-            [] => self.match_slice(needle, candidate, Self::match_class_member),
-            &[hole] => {
-                self.match_list_around_hole(needle, candidate, hole, Self::match_class_member)
-            }
-            _ => false,
+        if needle.iter().any(is_class_rest_hole) {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                is_class_rest_hole,
+                Self::match_class_member,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_class_member)
         }
     }
 
-    /// Match a list whose needle has exactly one list-hole at index
-    /// `hole`: the elements before it match the candidate prefix, the
-    /// elements after it match the candidate suffix, and the hole
-    /// absorbs the contiguous middle (any run, including empty). Like
-    /// the single-node holes, identifiers are matched positionally
-    /// post-alpha-canonicalization, so a hole is most robust at the end
-    /// of a list (a trailing hole keeps the matched prefix's identifier
-    /// numbering aligned with the candidate).
-    fn match_list_around_hole<T>(
+    /// Match a needle list carrying one or more list-holes against a
+    /// candidate list as an **ordered subsequence with gaps**. The holes
+    /// partition the needle into maximal fixed-element segments; each
+    /// segment must appear in the candidate as a contiguous block, the
+    /// segments in source order and non-overlapping, with the gaps
+    /// between them (plus any leading/trailing hole) absorbing arbitrary
+    /// runs of candidate elements — including empty runs. A leading hole
+    /// un-anchors the first segment from the candidate's start; a
+    /// trailing hole un-anchors the last segment from its end. A single
+    /// interior hole degenerates to the old contiguous prefix/suffix
+    /// match (both ends anchored, one gap in the middle).
+    ///
+    /// Matching is greedy-leftmost and commits the first placement under
+    /// which every segment matches, keeping the identifier/wildcard
+    /// bindings it accumulated. This is a pure existence check: the
+    /// interior alignment chosen when several placements are possible
+    /// never changes *which* enclosing declaration matched, and the
+    /// "matched more than one top-level declaration" ambiguity is still a
+    /// hard error in the caller that counts those matches.
+    fn match_list_with_holes<T>(
         &mut self,
         needle: &[T],
         candidate: &[T],
-        hole: usize,
-        mut match_item: impl FnMut(&mut Self, &T, &T) -> bool,
+        is_hole: impl Fn(&T) -> bool,
+        match_item: fn(&mut Self, &T, &T) -> bool,
     ) -> bool {
-        let prefix = hole;
-        let suffix = needle.len() - hole - 1;
-        if candidate.len() < prefix + suffix {
+        let mut segments: Vec<(usize, usize)> = Vec::new();
+        let mut idx = 0;
+        while idx < needle.len() {
+            if is_hole(&needle[idx]) {
+                idx += 1;
+                continue;
+            }
+            let start = idx;
+            while idx < needle.len() && !is_hole(&needle[idx]) {
+                idx += 1;
+            }
+            segments.push((start, idx - start));
+        }
+        // An all-holes needle pins nothing, so it matches any candidate
+        // run (including an empty one).
+        if segments.is_empty() {
+            return true;
+        }
+        let search = SegmentSearch {
+            needle,
+            candidate,
+            segments: &segments,
+            anchored_left: !is_hole(&needle[0]),
+            anchored_right: !is_hole(&needle[needle.len() - 1]),
+        };
+        self.place_segments(&search, 0, 0, match_item)
+    }
+
+    /// Recursive ordered-subsequence search backing
+    /// [`Self::match_list_with_holes`]. Places `segments[seg_idx..]` into
+    /// `candidate[cand_min..]`, trying the leftmost feasible start first
+    /// and rolling the matcher state back after each failed attempt.
+    /// Returns true — leaving the committed bindings in place — once
+    /// every remaining segment is placed.
+    fn place_segments<T>(
+        &mut self,
+        search: &SegmentSearch<T>,
+        seg_idx: usize,
+        cand_min: usize,
+        match_item: fn(&mut Self, &T, &T) -> bool,
+    ) -> bool {
+        let Some(&(needle_start, seg_len)) = search.segments.get(seg_idx) else {
+            return true; // every segment placed
+        };
+        let remaining: usize = search.segments[seg_idx..].iter().map(|(_, len)| len).sum();
+        // The latest start that still leaves room for this and every
+        // following segment; `None` means the candidate is too short.
+        let Some(latest_start) = search.candidate.len().checked_sub(remaining) else {
             return false;
+        };
+        let mut lo = cand_min;
+        let mut hi = latest_start;
+        if seg_idx == 0 && search.anchored_left {
+            // The first segment must start at the candidate's first element.
+            hi = hi.min(0);
         }
-        for index in 0..prefix {
-            if !match_item(self, &needle[index], &candidate[index]) {
-                return false;
+        if seg_idx == search.segments.len() - 1 && search.anchored_right {
+            // The last segment must end at the candidate's last element.
+            lo = lo.max(latest_start);
+        }
+        // An empty `lo..=hi` (e.g. an anchor pushed `lo` past `hi`) means
+        // no feasible placement, so the search backtracks.
+        for start in lo..=hi {
+            let snapshot = self.snapshot();
+            let mut segment_ok = true;
+            for offset in 0..seg_len {
+                if !match_item(
+                    self,
+                    &search.needle[needle_start + offset],
+                    &search.candidate[start + offset],
+                ) {
+                    segment_ok = false;
+                    break;
+                }
             }
-        }
-        let candidate_suffix_start = candidate.len() - suffix;
-        for offset in 0..suffix {
-            if !match_item(
-                self,
-                &needle[hole + 1 + offset],
-                &candidate[candidate_suffix_start + offset],
-            ) {
-                return false;
+            if segment_ok && self.place_segments(search, seg_idx + 1, start + seg_len, match_item) {
+                return true;
             }
+            self.restore(snapshot);
         }
-        true
+        false
+    }
+
+    fn snapshot(&self) -> MatcherState {
+        MatcherState {
+            replacements: self.replacements.clone(),
+            ident_forward: self.ident_forward.clone(),
+            ident_backward: self.ident_backward.clone(),
+        }
+    }
+
+    fn restore(&mut self, state: MatcherState) {
+        self.replacements = state.replacements;
+        self.ident_forward = state.ident_forward;
+        self.ident_backward = state.ident_backward;
     }
 
     fn match_slice<T>(
@@ -1998,10 +2111,10 @@ fn visit_computed_prop_name(prop_name: &mut PropName, visitor: &mut AlphaIdentCa
 struct WildcardIdents {
     expressions: BTreeSet<String>,
     statements: BTreeSet<String>,
-    /// `STMT_LIST_*` statement-list hole names (reserved from
+    /// `STMT_LIST` statement-list hole names (reserved from
     /// alpha-canonicalization like the single-node holes).
     statement_lists: BTreeSet<String>,
-    /// Whether the selector contains any `CLASS_REST*` class-member
+    /// Whether the selector contains any `CLASS_REST` class-member
     /// hole. The marker is a class field key (an `IdentName`, not an
     /// `Ident`), so it survives alpha-canonicalization without being
     /// reserved — only presence matters for routing.
@@ -2011,7 +2124,7 @@ struct WildcardIdents {
 impl WildcardIdents {
     /// True when the selector carries no holes of any kind, so the
     /// caller can take the plain `eq_ignore_span` fast path. List holes
-    /// count: a selector with only `STMT_LIST_*` / `CLASS_REST*` still
+    /// count: a selector with only `STMT_LIST` / `CLASS_REST` holes still
     /// needs the structural matcher.
     fn is_empty(&self) -> bool {
         self.expressions.is_empty()
@@ -2043,12 +2156,13 @@ impl Visit for WildcardIdentCollector {
 
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Some(hole_name) = statement_hole_name(stmt) {
-            // `STMT_LIST_` is a prefix of `STMT_`, so it must win first.
-            if hole_name.starts_with(STMT_LIST_HOLE_PREFIX) {
+            // `STMT` is a keyword-prefix of `STMT_LIST`, so the list hole
+            // must win first.
+            if hole_name_for(hole_name, STMT_LIST_HOLE_KEYWORD).is_some() {
                 self.idents.statement_lists.insert(hole_name.to_string());
                 return;
             }
-            if hole_name.starts_with(STMT_HOLE_PREFIX) {
+            if hole_name_for(hole_name, STMT_HOLE_KEYWORD).is_some() {
                 self.idents.statements.insert(hole_name.to_string());
                 return;
             }
@@ -2069,11 +2183,7 @@ fn expression_hole_name(expr: &Expr) -> Option<&str> {
     let Expr::Ident(ident) = expr else {
         return None;
     };
-    ident
-        .sym
-        .as_ref()
-        .starts_with(EXPR_HOLE_PREFIX)
-        .then_some(ident.sym.as_ref())
+    hole_name_for(ident.sym.as_ref(), EXPR_HOLE_KEYWORD)
 }
 
 fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
@@ -2086,21 +2196,34 @@ fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
     Some(ident.sym.as_ref())
 }
 
-/// The name of a statement-list hole (`STMT_LIST_*;`) if `stmt` is one.
+/// The name of a statement-list hole (`STMT_LIST` / `STMT_LIST_*;`) if
+/// `stmt` is one.
 fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
-    let name = statement_hole_name(stmt)?;
-    name.starts_with(STMT_LIST_HOLE_PREFIX).then_some(name)
+    hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
 }
 
-/// Whether a hole name is the bare `prefix` with no suffix — the
-/// anonymous form, which matches independently at every occurrence
-/// instead of binding for cross-occurrence equality.
-fn is_anonymous_hole(name: &str, prefix: &str) -> bool {
-    name == prefix
+/// If `name` is a hole identifier for `keyword` — the bare keyword
+/// (anonymous) or a `<keyword>_<suffix>` (named) form — return it. The
+/// keyword must be followed by end-of-string or `_`, so `EXPR` and
+/// `EXPR_FOO` match for keyword `EXPR` but `EXPRESSION` does not.
+fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = name.strip_prefix(keyword)?;
+    (rest.is_empty() || rest.starts_with('_')).then_some(name)
+}
+
+/// Whether a hole name is the anonymous form: the bare keyword, or the
+/// keyword with a trailing underscore but no suffix. Anonymous holes
+/// match independently at every occurrence instead of binding for
+/// cross-occurrence equality.
+fn hole_is_anonymous(name: &str, keyword: &str) -> bool {
+    matches!(name.strip_prefix(keyword), Some("") | Some("_"))
 }
 
 /// Whether `member` is a `CLASS_REST;` class-member hole: a class field
-/// whose key is exactly the marker token and which has no initializer.
+/// whose key is exactly the keyword and which has no initializer. Matched
+/// as an exact token (not a `CLASS_REST_*` prefix) so it never collides
+/// with a real field whose name merely starts with `CLASS_REST`; since it
+/// never binds, a suffix would carry no meaning anyway.
 fn is_class_rest_hole(member: &ClassMember) -> bool {
     let ClassMember::ClassProp(prop) = member else {
         return false;
@@ -2108,6 +2231,6 @@ fn is_class_rest_hole(member: &ClassMember) -> bool {
     prop.value.is_none()
         && matches!(
             &prop.key,
-            PropName::Ident(ident) if ident.sym.as_ref() == CLASS_REST_HOLE_TOKEN
+            PropName::Ident(ident) if ident.sym.as_ref() == CLASS_REST_HOLE_KEYWORD
         )
 }
