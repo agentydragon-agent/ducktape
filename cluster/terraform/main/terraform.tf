@@ -13,9 +13,7 @@ terraform {
     # From infrastructure
     talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.38.0" }
-    # From flux
-    flux = { source = "fluxcd/flux", version = "~> 1.7.0" }
-    helm = { source = "hashicorp/helm", version = "~> 3.1.0" }
+    helm       = { source = "hashicorp/helm", version = "~> 3.1.0" }
     # Utility (from multiple)
     local = { source = "hashicorp/local", version = "~> 2.5.0" }
     null  = { source = "hashicorp/null", version = "~> 3.2.0" }
@@ -43,9 +41,9 @@ provider "proxmox" {
   }
 }
 
-# Kubernetes/Helm/Flux — file-based kubeconfig written by infrastructure resources.
+# Kubernetes/Helm — file-based kubeconfig written by infrastructure resources.
 # During bootstrap first pass (-target on infra), the file doesn't exist yet —
-# fine because no k8s/helm/flux resources are targeted.
+# fine because no k8s/helm resources are targeted.
 provider "kubernetes" {
   config_path = "${path.module}/kubeconfig"
 }
@@ -53,20 +51,6 @@ provider "kubernetes" {
 provider "helm" {
   kubernetes = {
     config_path = "${path.module}/kubeconfig"
-  }
-}
-
-provider "flux" {
-  kubernetes = {
-    config_path = "${path.module}/kubeconfig"
-  }
-  git = {
-    url    = "ssh://git@github.com/agentydragon/ducktape.git"
-    branch = "devel"
-    ssh = {
-      username    = "git"
-      private_key = data.sops_file.flux_deploy_key.data["private_key"]
-    }
   }
 }
 

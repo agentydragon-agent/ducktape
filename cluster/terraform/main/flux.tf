@@ -1,24 +1,60 @@
 # Flux GitOps bootstrap — requires infrastructure to be applied first.
-# The kubeconfig file must exist at ${path.module}/kubeconfig.
+#
+# The Flux manifests in cluster/k8s/flux-system are the source of truth. Keep
+# OpenTofu out of the business of regenerating them: Flux bootstrap
+# customization is reviewed in git, and this resource only seeds those committed
+# manifests into an empty cluster.
 
-resource "flux_bootstrap_git" "cluster" {
-  path             = "cluster/k8s"
-  components_extra = ["image-reflector-controller", "image-automation-controller"]
+locals {
+  flux_bootstrap_components_path = "${path.module}/../../k8s/flux-system/gotk-components.yaml"
+  flux_bootstrap_sync_path       = "${path.module}/../../k8s/flux-system/gotk-sync.yaml"
+}
 
-  kustomization_override = <<-EOT
-    apiVersion: kustomize.config.k8s.io/v1beta1
-    kind: Kustomization
-    resources:
-      - gotk-components.yaml
-      - gotk-sync.yaml
-    patches:
-      - target:
-          kind: GitRepository
-          name: flux-system
-        patch: |
-          - op: add
-            path: /spec/sparseCheckout
-            value:
-              - cluster/
+removed {
+  from = flux_bootstrap_git.cluster
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+resource "null_resource" "flux_bootstrap" {
+  triggers = {
+    gotk_components_sha256 = filesha256(local.flux_bootstrap_components_path)
+    gotk_sync_sha256       = filesha256(local.flux_bootstrap_sync_path)
+  }
+
+  depends_on = [
+    kubernetes_secret.sops_age_cluster_secrets,
+    local_file.kubeconfig,
+    null_resource.wait_for_nodes_ready,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
+
+    command = <<-EOT
+      set -euo pipefail
+
+      kubectl apply -f ${local.flux_bootstrap_components_path}
+      kubectl wait --for=condition=Established \
+        crd/gitrepositories.source.toolkit.fluxcd.io \
+        crd/kustomizations.kustomize.toolkit.fluxcd.io \
+        --timeout=60s
+      kubectl -n flux-system rollout status deployment/source-controller --timeout=300s
+      kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=300s
+
+      kubectl apply -f ${local.flux_bootstrap_sync_path}
+      kubectl -n flux-system wait gitrepository.source.toolkit.fluxcd.io/flux-system \
+        --for=condition=Ready \
+        --timeout=300s
+      kubectl -n flux-system wait kustomization.kustomize.toolkit.fluxcd.io/flux-system \
+        --for=condition=Ready \
+        --timeout=600s
   EOT
+  }
 }

@@ -13,7 +13,7 @@ decrypts them using the cluster age key (`sops-age-cluster-secrets` in `flux-sys
 
 Files in `cluster/k8s/**/*.sops.yaml` contain app credentials, API keys, and
 infrastructure tokens. Files in `secrets/*.yaml` contain infrastructure secrets
-(Nebula CA, Flux deploy key, cluster age keypair).
+(Nebula CA, cluster age keypair, legacy auth keys).
 
 ## Age Keys
 

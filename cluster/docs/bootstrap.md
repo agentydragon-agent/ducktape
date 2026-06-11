@@ -20,7 +20,7 @@ See <../README.md> for architecture overview, node topology, and networking deta
 
 Persistent-auth resources (Proxmox API tokens, Nebula node certs, SOPS age key
 deployment) live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
-Core secrets (Nebula CA, Flux deploy key, cluster age keypair) are SOPS-encrypted
+Core secrets (Nebula CA, cluster age keypair) are SOPS-encrypted
 in `secrets/` and read by tofu via the `sops` provider.
 Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
 See <bootstrap_dependencies.md> for the full dependency graph.
@@ -54,7 +54,9 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 
 ### Phase 3: Full Apply (`tofu apply`)
 
-- Flux Bootstrap → GitOps engine with GitHub
+- Flux Bootstrap → applies committed Flux manifests; the root `ducktape` source
+  reads public GitHub anonymously, then Flux decrypts GitHub App auth for
+  private/write paths
 - Core Services → cert-manager, Cilium Gateway API
 - Storage → local-path/SeaweedFS/OpenEBS/Proxmox CSI
 - Platform → ESO, Authentik

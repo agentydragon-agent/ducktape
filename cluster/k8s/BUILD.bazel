@@ -1,4 +1,13 @@
 filegroup(
+    name = "flux_bootstrap_files",
+    srcs = [
+        "flux-system/gotk-components.yaml",
+        "flux-system/gotk-sync.yaml",
+    ],
+    visibility = ["//cluster/terraform/main:__pkg__"],
+)
+
+filegroup(
     name = "cluster_yaml_files",
     srcs = glob(
         ["**/*.yaml"],

@@ -72,8 +72,8 @@ output "expected_node_count" {
 output "flux_deployed" {
   description = "Status of Flux deployment"
   value = {
-    flux_namespace = flux_bootstrap_git.cluster.namespace
-    timestamp      = timestamp()
+    flux_namespace = kubernetes_namespace.flux_system.metadata[0].name
+    bootstrap_id   = null_resource.flux_bootstrap.id
   }
 }
 

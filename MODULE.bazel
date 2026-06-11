@@ -82,7 +82,6 @@ tf.download(
         "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
         "external": "hashicorp/external:2.3.5",
-        "flux": "fluxcd/flux:1.7.6",
         "forgejo": "svalabs/forgejo:1.5.0",
         "github": "integrations/github:6.6.0",
         "grafana": "grafana/grafana:3.22.2",

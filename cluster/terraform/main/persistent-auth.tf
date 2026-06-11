@@ -1,6 +1,6 @@
 # PERSISTENT AUTH
 # Persistent authentication credentials that survive VM lifecycle.
-# Includes: CSI tokens, Flux deploy key, Nebula PKI,
+# Includes: CSI tokens, Nebula PKI,
 # Nix cache signing key, Attic JWT token, SOPS age keypair.
 
 # ============================================================================
@@ -97,23 +97,6 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 
   lifecycle { prevent_destroy = true }
 }
-
-
-
-
-# ============================================================================
-# FLUX DEPLOY KEY (ED25519 for GitHub repository access)
-# ============================================================================
-# Stored in secrets/shared/flux-deploy-key.yaml (SOPS-encrypted).
-# Public key must be registered as a deploy key on the GitHub repo.
-
-data "sops_file" "flux_deploy_key" {
-  source_file = "${path.module}/../../../secrets/shared/flux-deploy-key.yaml"
-}
-
-
-
-
 # ============================================================================
 # NEBULA MESH PKI — CA + per-node certificates
 # ============================================================================
@@ -215,6 +198,10 @@ data "sops_file" "cluster_secrets_age" {
 resource "kubernetes_namespace" "flux_system" {
   metadata {
     name = "flux-system"
+  }
+
+  lifecycle {
+    ignore_changes = [metadata[0].annotations, metadata[0].labels]
   }
 
   depends_on = [

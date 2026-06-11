@@ -11,7 +11,7 @@ L0  External Credentials ──────────────────�
     (Proxmox token, OVH credentials, admin age key)
         │
 L1  SOPS Secrets in Git ─────────────────────────────────────────────────
-    (nebula-ca, flux deploy key, cluster age key, app credentials)
+    (nebula-ca, cluster age key, app credentials)
         │  encrypted with: admin age key (L0)
         │
 L2  Persistent Auth (tofu state) ────────────────────────────────────────
@@ -28,7 +28,7 @@ L4  Cluster Networking ───────────────────
         │
 L5  Flux GitOps ─────────────────────────────────────────────────────────
     (flux-system namespace, Flux controllers, git sync)
-        │  reads: L1 flux deploy key (via L2 tofu), L1 cluster age key
+        │  reads: L1 cluster age key
         │  decrypts: all k8s/**/*.sops.yaml
         │
 L6  Cluster Services ────────────────────────────────────────────────────
@@ -44,11 +44,10 @@ L7  NixOS Worker Integration ─────────────────
 
 Not stored in git or tofu state. Must exist before any `tofu apply`.
 
-| Credential                | Source                                          | Storage               | Consumed By                    |
-| ------------------------- | ----------------------------------------------- | --------------------- | ------------------------------ |
-| Admin age private key     | Derived from `~/.ssh/id_ed25519` via ssh-to-age | User SSH key          | Decrypt all SOPS files locally |
-| GitHub account SSH access | GitHub settings → SSH keys                      | `~/.ssh/id_ed25519`   | Flux deploy key registration   |
-| Domain DNS delegation     | Domain registrar                                | NS records → PowerDNS | External DNS resolution        |
+| Credential            | Source                                          | Storage               | Consumed By                    |
+| --------------------- | ----------------------------------------------- | --------------------- | ------------------------------ |
+| Admin age private key | Derived from `~/.ssh/id_ed25519` via ssh-to-age | User SSH key          | Decrypt all SOPS files locally |
+| Domain DNS delegation | Domain registrar                                | NS records → PowerDNS | External DNS resolution        |
 
 **If lost**: Regenerate from the source (GitHub settings, domain registrar).
 No downstream regeneration needed — these are read-only inputs.
@@ -64,8 +63,6 @@ secrets that Flux and tofu consume.
 | `secrets/nebula/ca.sops.key`                              | Nebula CA private key (SOPS bin)                                           | Admin age key                                                  | L2: tofu node cert signing                                                                           |
 | `secrets/nebula/*.sops.key`                               | Nebula host private keys (binary)                                          | Admin age key + host age key, or admin-only for mobile clients | L7: NixOS worker nebula mesh, ansible, mobile import generation                                      |
 | `secrets/nebula/*.crt`                                    | Nebula host public certs (plain)                                           | None                                                           | L7: NixOS worker nebula mesh, ansible, mobile import generation                                      |
-| `secrets/shared/flux-deploy-key.yaml`                     | ED25519 SSH private key                                                    | Admin age key                                                  | L5: Flux git sync (legacy SSH path; superseded by GitHub App)                                        |
-| `secrets/flux-deploy-key.pub`                             | ED25519 SSH public key (plain)                                             | None                                                           | GitHub deploy key registration (legacy SSH path)                                                     |
 | `secrets/ducktape-automation.<date>.private-key.sops.pem` | GitHub App PEM (RSA, SOPS bin)                                             | Admin age key + cluster-secrets + ci                           | L5: Flux git auth (mirrored into `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml`) |
 | `secrets/shared/cluster-secrets-age.yaml`                 | Age keypair (private + public)                                             | Admin age key                                                  | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret)                                     |
 | `secrets/shared/cluster-tokens.yaml`                      | Proxmox API token; legacy HCloud token retained for account-history access | Admin age key + user age keys                                  | `.envrc` -> `PROXMOX_VE_API_TOKEN`                                                                   |
@@ -81,10 +78,6 @@ files (L7).
 
 **If `secrets/shared/cluster-secrets-age.yaml` is lost**: regenerate and redeploy per
 <secrets.md> § "Rotating the Cluster Age Key".
-
-**If `secrets/shared/flux-deploy-key.yaml` is lost**: Generate new ED25519 key with
-`ssh-keygen -t ed25519`, SOPS-encrypt, commit. Register public key in
-GitHub → repo settings → deploy keys. Redeploy via `tofu apply`.
 
 **If `secrets/shared/cluster-tokens.yaml` is lost**: Re-enter the Proxmox token
 (Proxmox UI -> API Tokens), SOPS-encrypt to `secrets/shared/cluster-tokens.yaml`,
@@ -156,28 +149,30 @@ Phase 2 (`--start-from=infrastructure`).
 
 ## L5: Flux GitOps
 
-Created by `tofu apply` Phase 3. The `flux_bootstrap_git` resource deploys
-Flux controllers and pushes sync manifests to the git repo.
+Created by `tofu apply` Phase 3. OpenTofu applies the committed bootstrap
+manifests from `cluster/k8s/flux-system/` and waits for the root Flux
+`GitRepository` and `Kustomization` to become Ready.
 
-| Dependency                              | Why                                            |
-| --------------------------------------- | ---------------------------------------------- |
-| L1: flux deploy key (via L2 tofu)       | Bootstrap-only; runtime auth is via GitHub App |
-| L1: cluster age key (via L2 k8s secret) | Flux decrypts `*.sops.yaml` in-cluster         |
-| L4: nodes Ready, networking functional  | Flux pods must schedule                        |
+| Dependency                              | Why                                    |
+| --------------------------------------- | -------------------------------------- |
+| L1: cluster age key (via L2 k8s secret) | Flux decrypts `*.sops.yaml` in-cluster |
+| L4: nodes Ready, networking functional  | Flux pods must schedule                |
 
-**If Flux is broken but cluster is healthy**: `tofu apply` with
-`-target=flux_bootstrap_git.cluster` reinstalls Flux. Or delete the
-flux-system namespace and re-run Phase 3.
+**If Flux is broken but cluster is healthy**: inspect and update the committed
+manifests under `cluster/k8s/flux-system/`, then run `tofu apply` to re-apply
+the bootstrap manifests. Or delete the `flux-system` namespace and re-run Phase 3.
 
 ### GitHub App authentication (runtime)
 
-After bootstrap, both `flux-system` and `gaffer-private` GitRepository
-resources authenticate to GitHub via the `ducktape-automation` GitHub App
-(installed user-level on `agentydragon`, with access to both repos). The
-in-cluster Secret `flux-system/ducktape-automation-github-app` holds
-`githubAppID`, `githubAppInstallationID`, and `githubAppPrivateKey` — sourced
-from `secrets/ducktape-automation.<date>.private-key.sops.pem` and committed
-as a SOPS-encrypted Secret manifest at
+The root `flux-system` GitRepository reads the public `ducktape` repo
+anonymously, so cold-start bootstrap does not require local access to the
+GitHub App private key. Flux then decrypts the SOPS-encrypted GitHub App Secret
+and uses it for private/write paths: the private `gaffer-private` GitRepository
+and image update automation pushes. The in-cluster Secret
+`flux-system/ducktape-automation-github-app` holds `githubAppID`,
+`githubAppInstallationID`, and `githubAppPrivateKey` — sourced from
+`secrets/ducktape-automation.<date>.private-key.sops.pem` and committed as a
+SOPS-encrypted Secret manifest at
 `cluster/k8s/flux-system/ducktape-automation-github-app.sops.yaml` (encrypted
 to admin + cluster-secrets recipients). Image-update-automation pushes to
 `gaffer-private` ride on the same Secret.
@@ -194,9 +189,9 @@ mint it, commit, push. Flux picks up the new key on next reconcile.
 write), commit. Flux picks up the change on next source reconcile.
 
 The legacy SSH deploy keys (`secrets/shared/flux-deploy-key.yaml` for ducktape
-and the tofu-managed `gaffer-private-deploy-key` Secret) remain provisioned
-during the App-auth verification window and will be torn down as a follow-up
-once App auth is confirmed stable. See `CLEANUP` markers in
+and the tofu-managed `gaffer-private-deploy-key` Secret) are not part of the
+cold-start bootstrap path. They remain documented only for cleanup of old auth
+paths. See `CLEANUP` markers in
 `cluster/k8s/gaffer-private-source/deploy-key-tf.yaml` and
 `tf/gitops/gaffer-private-flux/main.tf`.
 
@@ -284,7 +279,7 @@ re-enter from the external service and SOPS-encrypt.
 ### Full bootstrap from zero
 
 1. Ensure L0 credentials exist (SSH key, GitHub access)
-2. Ensure L1 SOPS secrets exist in git (nebula-ca, flux deploy key, cluster age key)
+2. Ensure L1 SOPS secrets exist in git (nebula-ca, cluster age key, app credentials)
 3. Start temp PG: `podman run -d --name tofu-pg -e POSTGRES_PASSWORD=tofu -e POSTGRES_DB=tfstate -p 15432:5432 docker.io/postgres:16-alpine`
 4. `tofu init -reconfigure` with `PG_CONN_STR` pointing to temp PG
 5. `bazel run //cluster:bootstrap -- --exclude=module.wyrm2`
