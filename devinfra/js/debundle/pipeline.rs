@@ -209,6 +209,7 @@ pub fn run_transform_cli_with_options(
                 &spec.chunk_renames,
                 &spec.unassigned_mode,
                 &spec.chunk_analysis_options,
+                &spec.chunk_export_purity,
                 MaterializeLogicalModulesOptions {
                     chunk_ids: materialise_chunk_ids,
                     file,
@@ -966,6 +967,7 @@ mod tests {
             chunk_renames: BTreeMap::new(),
             unassigned_mode: BTreeMap::new(),
             chunk_analysis_options: BTreeMap::new(),
+            chunk_export_purity: BTreeMap::new(),
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
             materialize_logical_modules: MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,
