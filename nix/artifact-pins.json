@@ -49,8 +49,8 @@
       "sha256": "HpVoiWept/xwg0wFEL52i+afsgjOQwkZUjU0FuZbYd4="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-d61320c75fe9/debundle",
-      "sha256": "1hMgx1/pdeuWZN1VVo9DhiaHpnVgSapvAQJnm19uj2w="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-df0992056aa9/debundle",
+      "sha256": "3wmSBWqp7nQZ4a7V1SleMtaKpbkgc6q71KGBnmC9aF4="
     }
   }
 }
