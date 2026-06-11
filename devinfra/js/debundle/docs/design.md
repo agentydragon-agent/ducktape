@@ -122,9 +122,11 @@ declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
 
 A compact interned form (a `BindingId(usize)` newtype plus a
 `BindingTable` mapping names to dense indices, so hot paths do
-vector lookups instead of keying by cloned `Id`s) has been sketched
-but is **not implemented** — treat it as an aspirational
-optimization, not a description of the code.
+vector lookups instead of keying by cloned `Id`s) is **hypothetical
+and not implemented** — not a description of the code. Decided
+2026-06: implement it only if corpus profiling shows the
+binding-keyed graph paths as a material cost; such evidence would
+land in `perf/proposer.md`.
 
 Names are stable across the readability rename pass. The rename
 pass changes the _emitted_ identifier in the destination module's
@@ -1696,6 +1698,13 @@ views from that stable graph.
 - **`blocked_cycle`** is reserved vocabulary that is currently
   unreachable: the quotient's contraction gate refuses cycle-creating
   merges, so no emitted class is cyclic by construction.
+
+`landable_today` derives from the same predicate as the status (plus
+anonymous-statement addressability): it is `true` only for
+`peelable_now` proposals whose anonymous owners are all addressable.
+A `blocked_residual_dependency` proposal is never `landable_today` —
+`bindings assign --batch` rejects it; grow the closure so the
+referenced cells land together, or co-locate them manually, first.
 
 Classes whose spec-edit size exceeds `--size-cap-lines` are not
 proposals at all — they surface as diagnostics with reason
