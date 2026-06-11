@@ -37,10 +37,6 @@ path.
 
 ## Encapsulation + module boundaries
 
-### `:analysis` is a Bazel god-crate
-
-The `analysis` `rust_library` (`BUILD.bazel`) compiles ~29 srcs spanning the owner graph (`graph.rs`), the realizability gate (`realizability.rs`), fact extraction (`facts/`), purity (`purity/`), admission (`chunk_admission.rs`), validation, reports, and `stage_one` as one crate. Module boundaries inside it are convention-only; splitting along the existing directory seams would make them compiler-enforced and cut incremental rebuild scope.
-
 ### `ChunkFactorization` is yet another per-chunk IR/report layer
 
 `chunk_factorization.rs::ChunkFactorization` holds `analysis: Arc<ChunkAnalysis>` plus partition + dep_graph + linker_order + maps. Then `validate()` returns a `FactorizationReport` which is yet a third "report" type alongside `ChunkAnalysisReport` and the IR `ChunkAnalysis`. The naming hierarchy is:
@@ -75,7 +71,7 @@ makes invalid operations impossible.
 Watch out for:
 
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-- **`SccDiagnosis` (`realizability.rs:65`, renamed from `UnrealizableScc` in `3dbaf1037`)** vs **`CycleReport` (`validation.rs:38`)** vs **`QuotientSccReport` (`reports/schema.rs:174`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:42`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `SccDiagnosis` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
+- **`SccDiagnosis` (`realizability/mod.rs`, renamed from `UnrealizableScc` in `3dbaf1037`)** vs **`CycleReport` (`validation.rs:38`)** vs **`QuotientSccReport` (`reports/schema.rs:174`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:42`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `SccDiagnosis` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
 
 ## Algorithmic clarity (realizability gate, atom detection)
 
