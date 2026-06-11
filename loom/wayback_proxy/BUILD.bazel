@@ -9,6 +9,8 @@ py_library(
     srcs = ["proxy.py"],
     deps = [
         "@pypi//aiohttp",
+        "@pypi//multidict",
+        "@pypi//pydantic",
         "@pypi//yarl",
     ],
 )
