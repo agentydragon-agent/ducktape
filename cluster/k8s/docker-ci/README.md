@@ -25,7 +25,7 @@ RBE executor (Firecracker)
   │  sets DOCKER_HOST, DOCKER_TLS_VERIFY, DOCKER_CERT_PATH atomically
   │
   ▼
-DinD pod (k8s, Proxmox) — mTLS on tcp://docker-ci.allegedly.works:2376
+DinD pod (k8s, OVH) — mTLS on tcp://docker-ci.allegedly.works:2376
 ```
 
 ## mTLS Certificate Setup
@@ -94,8 +94,10 @@ cp client-key.pem secrets/docker-ci/client-key.sops.pem && sops -e -i secrets/do
 ## Kubernetes Resources
 
 - **Namespace**: `docker-ci` (privileged PSA — DinD requires it)
-- **Deployment**: `docker:27-dind` with `--tlsverify`, pinned to Proxmox
-- **PVC**: 50Gi on `lvm-proxmox-hdd` (Docker image cache at `/var/lib/docker`)
+- **Deployment**: `docker:27-dind` with `--tlsverify`, scheduled on OVH workers
+  (`topology.kubernetes.io/region: hil`)
+- **Storage**: `emptyDir` (30Gi) for `/var/lib/docker` — a disposable overlay2
+  cache, hence no PVC (rationale in `deployment.yaml`).
 - **Service**: ClusterIP on port 2376
 - **ConfigMap**: `docker-ci-public-certs` (ca.pem, server-cert.pem)
 - **Secret**: `docker-ci-server-tls` (server-key.pem, SOPS-encrypted)
