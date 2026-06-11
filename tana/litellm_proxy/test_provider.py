@@ -613,6 +613,41 @@ def test_registers_tana_as_litellm_custom_provider() -> None:
     handler = register_litellm_provider(TanaLiteLLM())
 
     assert any(item["provider"] == "tana" and item["custom_handler"] is handler for item in litellm.custom_provider_map)
+    assert "tana" in litellm.model_list_set
+
+
+def test_registered_tana_provider_handles_async_litellm_completion() -> None:
+    class FakeClient(_NoStreamingClient):
+        async def chat_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> TanaChatResult:
+            assert model == "claude-test"
+            assert messages == [{"role": "user", "content": "hi"}]
+            assert optional_params == {}
+            return TanaChatResult(text="pong")
+
+    original_custom_provider_map = list(litellm.custom_provider_map)
+    original_provider_list = list(litellm.provider_list)
+    original_custom_providers = list(litellm._custom_providers)
+    original_model_list_set = set(litellm.model_list_set)
+    try:
+        litellm.custom_provider_map = []
+        litellm.provider_list = [provider for provider in litellm.provider_list if provider != "tana"]
+        litellm._custom_providers = [provider for provider in litellm._custom_providers if provider != "tana"]
+        litellm.model_list_set.discard("tana")
+
+        register_litellm_provider(TanaLiteLLM(FakeClient()))
+
+        response = asyncio.run(
+            litellm.acompletion(model="tana/claude-test", messages=[{"role": "user", "content": "hi"}])
+        )
+
+        assert response.choices[0].message.content == "pong"
+    finally:
+        litellm.custom_provider_map = original_custom_provider_map
+        litellm.provider_list = original_provider_list
+        litellm._custom_providers = original_custom_providers
+        litellm.model_list_set = original_model_list_set
 
 
 def test_custom_handler_module_exports_litellm_handler() -> None:

@@ -22,6 +22,7 @@ DEFAULT_FIREBASE_API_KEY = "AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ"
 DEFAULT_FUNCTIONS_BASE_URL = "https://app.tana.inc/functions"
 DEFAULT_REFRESH_TOKEN_SECRET = "tana-mcp/tana-firebase-refresh-token"
 DEFAULT_REFRESH_TOKEN_KEY = "refresh_token"
+TANA_PROVIDER = "tana"
 
 
 class TanaProxyError(RuntimeError):
@@ -425,10 +426,21 @@ class TanaLiteLLM(CustomLLM):
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
     custom_handler = handler or TanaLiteLLM()
-    litellm.custom_provider_map = [item for item in litellm.custom_provider_map if item.get("provider") != "tana"]
-    litellm.custom_provider_map.append({"provider": "tana", "custom_handler": custom_handler})
+    litellm.custom_provider_map = [
+        item for item in litellm.custom_provider_map if item.get("provider") != TANA_PROVIDER
+    ]
+    litellm.custom_provider_map.append({"provider": TANA_PROVIDER, "custom_handler": custom_handler})
     custom_llm_setup()
+    ensure_tana_custom_provider_dispatch()
     return custom_handler
+
+
+def ensure_tana_custom_provider_dispatch() -> None:
+    if TANA_PROVIDER not in litellm.provider_list:
+        litellm.provider_list.append(TANA_PROVIDER)
+    if TANA_PROVIDER not in litellm._custom_providers:
+        litellm._custom_providers.append(TANA_PROVIDER)
+    litellm.model_list_set.add(TANA_PROVIDER)
 
 
 def _required_kwarg(name: str, kwargs: Mapping[str, Any]) -> Any:
