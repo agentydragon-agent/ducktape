@@ -99,21 +99,6 @@ private corpus details in Ducktape.
   helper declaration may be syntactically identical across many classes,
   but it becomes unambiguous when selected near the class or decorator
   calls whose property strings identify the target.
-- **AST wildcard holes.** Evaluate typed wildcard holes for expression,
-  statement, and declaration subtrees. Example:
-  `var x = foo(EXPR1, EXPR2, x);` should be able to match
-  `var xxx = foofoo(a(b(c())), b(a(100)), xx);` by binding `EXPR1`
-  and `EXPR2` to arbitrary expression subtrees while alpha-renaming
-  surrounding identifiers. Repeated holes should mean repeated equal
-  subtrees. Ambiguous matches must remain hard errors.
-- **Statement-list and class-member holes.** Extend wildcard matching to
-  contiguous statement lists and class element lists so a selector can match
-  stable class/method structure without copying an entire minified body. For
-  example, `class View { render() { STMT_LIST_BODY } close() { ... } }`
-  should be able to match a class whose `render` body drifted, while still
-  requiring the selected class and member names to be unambiguous. Likewise,
-  class element holes should allow "class with these fields/methods, plus any
-  other members" without forcing an exact whole-class source copy.
 - **Constrained hole matching.** Multi-hole selectors need cheap local
   constraints so authors can say that a hole appears only as a specific
   argument, callback body, object property value, or statement-list slot. This
