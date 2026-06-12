@@ -29,6 +29,7 @@ pkg_tar(
         "//skills/freecad:freecad_tar",
         "//skills/ground_skill:ground_skill_tar",
         "//skills/info_gathering:info_gathering_tar",
+        "//skills/knowledge_hygiene:knowledge_hygiene_tar",
         "//skills/later:later_tar",
         "//skills/lint_audit:lint_audit_tar",
         "//skills/mcp_design:mcp_design_tar",
