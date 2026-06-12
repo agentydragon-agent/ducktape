@@ -1,6 +1,6 @@
 ---
 name: cluster_health
-description: Scan cluster health — Flux kustomizations, pod status, recurring crashes, node conditions, CNPG databases, certificate expiry — and output an actionable summary with fix plan. Use when user asks "how's the cluster", "cluster health", "what's broken", "check the cluster", or similar.
+description: Scan cluster health — Flux kustomizations, pod status, recurring crashes, node conditions, active Alertmanager alerts, CNPG databases, certificate expiry — and output an actionable summary with fix plan. Use when user asks "how's the cluster", "cluster health", "what's broken", "check the cluster", or similar.
 ---
 
 # Cluster Health Check
@@ -30,6 +30,26 @@ Run checks in parallel where possible.
 - Terraform resources (tofu-controller) — ready and applied status
 - Identify suspended kustomizations and cross-reference with `cluster/docs/plan.md`
   "Suspended Kustomizations" to distinguish expected vs unexpected suspensions
+
+### Alertmanager & Prometheus Alerts
+
+- Alertmanager deployment health — Alertmanager CRs, pods, endpoints, and API
+  status in `monitoring`
+- Active firing Alertmanager alerts from the live API, not just PrometheusRule
+  definitions. Query Alertmanager API v2 for active alerts and preserve the
+  identifying labels (`alertname`, `severity`, `namespace`, `pod`, `job`,
+  `service`), `startsAt`, `generatorURL`, and annotations.
+- Separately note silenced or inhibited alerts if they explain why a firing
+  condition is not paging. Do not treat silenced maintenance alerts as healthy
+  without checking the silence reason, creator, matcher, and expiry.
+
+Prefer `kubectl-local` for Kubernetes object reads. For the live Alertmanager API,
+use the least-invasive available path: Kubernetes service proxy if exposed by the
+MCP server, otherwise the `Bash(kubectl ...)` escape hatch outside the sandbox for
+a short `kubectl port-forward` or an ephemeral curl pod in `claude-sandbox`.
+The in-cluster service is typically
+`http://monitoring-alertmanager.monitoring.svc.cluster.local:9093`; query
+`/api/v2/status`, `/api/v2/alerts?active=true`, and `/api/v2/silences`.
 
 ### Pod & Workload Health
 
@@ -74,6 +94,10 @@ the cause before moving on:
 - CNPG issues: check operator logs in `cnpg-system`, individual instance logs, cluster
   events
 - Flux/Helm failures: check the controller logs, the kustomization/helmrelease events
+- Alertmanager alerts: trace each firing alert to the owning PrometheusRule and
+  underlying Kubernetes object; use `generatorURL` or Prometheus/Mimir queries
+  when needed, then classify it as active breakage, stale/wedged alert state,
+  expected maintenance, or already-resolved-but-not-yet-cleared
 - Node problems: check node describe, kubelet conditions, recent events on the node
 - Image pull failures: check if the registry (Harbor) is up, if the image tag exists,
   if pull secrets are configured
@@ -118,12 +142,13 @@ After collecting all data, produce:
 ## Critical Issues
 
 <broken kustomizations, CrashLoopBackOff pods, NotReady nodes, unhealthy CNPG
-clusters, expired certificates — each with: what, impact, evidence, fix>
+clusters, active high-severity Alertmanager alerts, expired certificates — each
+with: what, impact, evidence, fix>
 
 ## Warnings
 
 <high restart counts, unexpected suspensions,
-resource pressure approaching limits>
+active low-severity Alertmanager alerts, resource pressure approaching limits>
 
 ## Expected / Known
 
