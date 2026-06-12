@@ -1,17 +1,16 @@
-**Namespace diagnostics** (`namespace-diagnostics-reader` ClusterRole bound per-namespace):
-harbor, gatus, csi-proxmox, openebs, proxmox-proxy, cnpg-system,
-nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm,
-docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, tana-mcp,
-wayback-cache
+This file intentionally avoids a hand-maintained namespace matrix. The source of
+truth is the set of `*rolebinding-*.yaml` files under:
 
-**Extended read**: ollama (`rolebinding-ollama-reader.yaml` in `ollama/agent-rbac/`),
-langfuse (in `langfuse/agent-rbac/`), openclaw (in `openclaw/gateway-agent-rbac/`),
-props (Role + RoleBinding in `props/agent-rbac/`)
+- `cluster/k8s/**/agent-rbac/`
+- `cluster/k8s/**/gateway-agent-rbac/`
+- `cluster/k8s/agents/shared-rbac/`
 
-**Logs/configmaps** (`logs-configmaps-reader` ClusterRole bound per-namespace):
-monitoring, kube-system, grocy-sf, grocy-vallejo, airlock, authentik,
-augur (plus `flux-system` in `shared-rbac/`). The augur binding lives cross-repo
-in `gaffer-private/k8s/augur/agent-rbac/` since augur itself is reconciled from
-gaffer-private. The augur agent-rbac directory also defines an in-namespace Role
-granting `pods/exec`, `pods/attach`, and `pods/portforward` for debugging the
-single-replica augur deployment.
+Use `roleRef.name` in those files to determine which permission class is bound:
+`namespace-diagnostics-reader`, `logs-configmaps-reader`, or a service-specific
+reader Role/ClusterRole such as `ollama-reader`, `langfuse-log-reader`, or
+`claude-props-reader`.
+
+Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
+`gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an
+in-namespace Role granting `pods/exec`, `pods/attach`, and `pods/portforward` for
+debugging the single-replica augur deployment.
