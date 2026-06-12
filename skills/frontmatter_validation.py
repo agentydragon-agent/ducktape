@@ -8,6 +8,15 @@ import yaml
 MAX_DESCRIPTION_LEN = 1024
 
 
+def _required_string(frontmatter: Mapping[str, object], key: str, source: str) -> str:
+    value = frontmatter.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{source}: frontmatter.{key} must be a string")
+    if not value.strip():
+        raise ValueError(f"{source}: frontmatter.{key} must not be empty")
+    return value
+
+
 def parse_frontmatter_text(text: str) -> Mapping[str, object]:
     if not text.startswith("---\n"):
         raise ValueError("missing YAML frontmatter")
@@ -32,9 +41,8 @@ def parse_frontmatter(skill_path: Path) -> Mapping[str, object]:
 
 def validate_skill_frontmatter_text(text: str, source: str = "SKILL.md") -> None:
     frontmatter = parse_frontmatter_text(text)
-    description = frontmatter.get("description")
-    if not isinstance(description, str):
-        raise ValueError(f"{source}: frontmatter.description must be a string")
+    _required_string(frontmatter, "name", source)
+    description = _required_string(frontmatter, "description", source)
     if len(description) > MAX_DESCRIPTION_LEN:
         raise ValueError(
             f"{source}: frontmatter.description is {len(description)} chars, must be <= {MAX_DESCRIPTION_LEN}"

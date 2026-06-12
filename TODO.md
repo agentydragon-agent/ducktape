@@ -36,6 +36,10 @@
 - [ ] Decide the fate of `secrets/shared/gaffer-private-fetch-pat.yaml` after the private-cache path exists: keep it for another workflow, rotate it, or delete it.
 - [ ] Bundle `hetzner-vnc-screenshot` and `vm-interact` with their respective skills instead of shipping via the `ducktape` umbrella wheel. Today their entry points live in `//:wheel`'s `console_scripts` and ship under `//:ducktape_pkg` (see <BUILD.bazel>); ideally each `skills/<name>/BUILD.bazel` defines its own `py_wheel` + artifact-pin, and the umbrella drops the entry. Lets the skills install standalone (without the full umbrella's transitive deps — fastmcp 3, openai, ducktape-util, etc.) and matches how aiquota / ducktape-git-hooks are packaged. Watch out for the same py_package-vendoring conflict that motivated the umbrella for `git-commit-ai`/`gmail-archiver`: these two skills have light, non-shared deps (hcloud/asyncvnc/pillow/typer for hetzner; platformdirs/PIL/typer for proxmox), so vendoring isn't an issue here.
 
+## Skills
+
+- [ ] Decide how `skills/frontmatter_validation.py` should handle `allowed-tools`. `skills/AGENTS.md` requires explicit user approval before adding it, but enforcement needs a policy that distinguishes approved exceptions from accidental permission grants.
+
 ## Terraform
 
 - [ ] Unify manual `tofu` runs with Bazel-managed providers. Currently manual `tofu plan/apply` resolves providers independently from the `tf.download(mirror={...})` pins in `MODULE.bazel`. Create a wrapper (script or `bazel run` target) that sets `TF_CLI_CONFIG_FILE` pointing at the Bazel-fetched filesystem mirror (`<output_base>/external/@tf_toolchains/mirror/`), so manual runs use the exact same provider versions as `bazel test`.

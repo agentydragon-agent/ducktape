@@ -2,29 +2,37 @@
 
 Personal infrastructure monorepo. Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/Talos k8s).
 
-## Directory Index
+## Selected Directory Index
 
-| Directory          | Purpose                                   |
-| ------------------ | ----------------------------------------- |
-| `agent_cli/`       | Agent REPL CLI                            |
-| `x/agent_server/`  | FastAPI backend, runtime, policy          |
-| `cluster/`         | k8s cluster                               |
-| `tf/`              | GitOps Terraform modules (tofu-ctrl)      |
-| `mcp_infra/`       | MCP compositor and utilities              |
-| `agent_pkg/`       | Agent package infrastructure              |
-| `props/`           | LLM critic eval system                    |
-| `devinfra/`        | Repo build, CI, lint infrastructure       |
-| `ansible/`         | System configuration (playbooks)          |
-| `wt/`              | Worktree management                       |
-| `openai_utils/`    | OpenAI API utilities                      |
-| `tana/`            | Tana export toolkit                       |
-| `finance/`         | Portfolio tracking (Rust)                 |
-| `finance/augur/`   | Probabilistic financial-futures simulator |
-| `loom/`            | Prediction markets → rollout interpolator |
-| `idea/`            | Lightweight future project ideas          |
-| `trilium/`         | Trilium Notes extensions                  |
-| `inventree_utils/` | InventTree plugins                        |
-| `website/`         | Personal website (Hakyll)                 |
+| Directory          | Purpose                                      |
+| ------------------ | -------------------------------------------- |
+| `agent_cli/`       | Agent REPL CLI                               |
+| `x/agent_server/`  | FastAPI backend, runtime, policy             |
+| `cluster/`         | k8s cluster                                  |
+| `tf/`              | GitOps Terraform modules (tofu-ctrl)         |
+| `mcp_infra/`       | MCP compositor and utilities                 |
+| `agent_pkg/`       | Agent package infrastructure                 |
+| `airlock/`         | Human-in-the-loop MCP approval proxy         |
+| `props/`           | LLM critic eval system                       |
+| `devinfra/`        | Repo build, CI, lint infrastructure          |
+| `ansible/`         | System configuration (playbooks)             |
+| `nix/`             | NixOS and home-manager configurations        |
+| `skills/`          | Agent skills and skill packaging             |
+| `wt/`              | Worktree management                          |
+| `openai_utils/`    | OpenAI API utilities                         |
+| `tana/`            | Tana export toolkit                          |
+| `finance/`         | Portfolio tracking (Rust)                    |
+| `finance/augur/`   | Probabilistic financial-futures simulator    |
+| `loom/`            | Prediction markets to rollout interpolator   |
+| `cpap/`            | CPAP data sync and analysis skill            |
+| `difftree/`        | Tree-style git diff visualization            |
+| `gmail_archiver/`  | Gmail cleanup and filter sync tooling        |
+| `gnome/`           | GNOME desktop utilities and Shell extensions |
+| `qr_codes/`        | Household SVG QR codes                       |
+| `idea/`            | Lightweight future project ideas             |
+| `trilium/`         | Trilium Notes extensions                     |
+| `inventree_utils/` | InventTree plugins                           |
+| `website/`         | Personal website (Hakyll)                    |
 
 ## Build System
 
