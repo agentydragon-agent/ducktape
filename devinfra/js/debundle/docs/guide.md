@@ -330,6 +330,30 @@ bindings. An explicit `exports` entry on the same group overrides the adopted
 public name for that selector-local binding. `comments` is keyed by
 selector-local binding name and emits like `members[].comment` after expansion.
 
+When a few useful bindings sit inside a larger `var`/`let`/`const` declaration
+list, use declarator-list holes instead of spelling unrelated siblings:
+
+```yaml
+binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      match: |
+        const DECLARATORS_BEFORE = null,
+          selectedFormatter = EXPR_FORMATTER,
+          selectedLabels = new Map([
+            ["left", "Left"],
+            ["right", "Right"],
+          ]),
+          selectedReader = EXPR_READER,
+          DECLARATORS_AFTER = null;
+    adopt_names: true
+```
+
+`DECLARATORS` and `DECLARATORS_*` absorb any run of declarators, including an
+empty run. The initializer is ignored; selectors commonly write `= null`
+because `const` declarations require an initializer. These pseudo-declarators
+are not exposed through `adopt_names`.
+
 For anonymous side-effect statements, prefer `source_match` when
 minified helper or class names drift, but keep selectors unique. If two
 statements are structurally identical under `alpha_all`, debundle must

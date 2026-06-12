@@ -28,12 +28,17 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 /// (see [`AstWildcardMatcher::match_list_with_holes`]): `STMT_LIST`
 /// absorbs a run of block statements and `CLASS_REST` a run of class
 /// members; several may appear in one list, splitting the pinned
-/// elements into an ordered subsequence with gaps. `STMT_LIST` must be
-/// checked before `STMT`, since `STMT` is a keyword-prefix of it.
+/// elements into an ordered subsequence with gaps. `DECLARATORS`
+/// similarly absorbs a run of variable declarators inside one
+/// `var`/`let`/`const` declaration, so selectors can pin a few stable
+/// declarators without naming the unrelated siblings around them.
+/// `STMT_LIST` must be checked before `STMT`, since `STMT` is a
+/// keyword-prefix of it.
 const EXPR_HOLE_KEYWORD: &str = "EXPR";
 const STMT_HOLE_KEYWORD: &str = "STMT";
 const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
 const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
+const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -347,6 +352,15 @@ pub fn resolve_member_binding_group(
         }
         return Ok(resolved);
     }
+    if parsed.body.len() == 1 && selector_var_decl_has_declarator_holes(&parsed.body[0]) {
+        return resolve_member_binding_group_with_declarator_holes(
+            runtime_module,
+            request_id,
+            &parsed.body[0],
+            selector,
+            exports_by_target,
+        );
+    }
 
     let mut target_locations = BTreeMap::new();
     for target_binding in exports_by_target.keys() {
@@ -534,6 +548,15 @@ fn find_matching_target_bindings(
     selector: &AnonymousStatementSelector,
     target_binding: &str,
 ) -> Result<Vec<MemberBindingMatch>> {
+    if needles.len() == 1 && selector_var_decl_has_declarator_holes(&needles[0]) {
+        return find_matching_target_var_decl_with_declarator_holes(
+            runtime_module,
+            request_id,
+            &needles[0],
+            selector,
+            target_binding,
+        );
+    }
     let (target_item_idx, target_binding_idx) =
         selector_binding_location(needles, request_id, selector, target_binding)?;
     let mut matches = Vec::new();
@@ -625,6 +648,199 @@ fn find_matching_target_var_declarators(
     Ok(matches)
 }
 
+fn find_matching_target_var_decl_with_declarator_holes(
+    runtime_module: &Module,
+    request_id: &str,
+    needle: &ModuleItem,
+    selector: &AnonymousStatementSelector,
+    target_binding: &str,
+) -> Result<Vec<MemberBindingMatch>> {
+    let needle_var =
+        item_var_decl(needle).expect("caller checked selector_var_decl_has_declarator_holes");
+    let (target_decl_idx, target_binding_idx) =
+        selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
+    let prepared = PreparedNeedle::new(needle, selector);
+    let mut matches = Vec::new();
+    for (body_idx, item) in runtime_module.body.iter().enumerate() {
+        let Some(candidate_var) = item_var_decl(item) else {
+            continue;
+        };
+        if !prepared.matches(item) {
+            continue;
+        }
+        let Some(alignment) = prepared.var_declarator_alignment(needle_var, candidate_var) else {
+            continue;
+        };
+        let Some(Some(candidate_decl_idx)) = alignment.get(target_decl_idx) else {
+            bail!(
+                "logical_module {request_id}: members[].selector.source_match target_binding \
+                 `{target_binding}` was matched by a DECLARATORS hole instead of a pinned \
+                 selector declarator. Refine the selector:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        };
+        let Some(candidate_declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
+            bail!(
+                "logical_module {request_id}: members[].selector.source_match target_binding \
+                 `{target_binding}` aligned to missing candidate declarator index \
+                 {candidate_decl_idx}. Source:\n{match_source}",
+                match_source = selector.match_source,
+            );
+        };
+        let declared = declared_bindings_for_var_declarator(candidate_declarator);
+        let Some(binding) = declared.get(target_binding_idx) else {
+            bail!(
+                "logical_module {request_id}: members[].selector.source_match target_binding \
+                 `{target_binding}` matched a variable declarator at body index {body_idx}, \
+                 but that declarator declares only {} bindings. Source:\n{match_source}",
+                declared.len(),
+                match_source = selector.match_source,
+            );
+        };
+        matches.push(MemberBindingMatch {
+            body_idx,
+            binding: binding.clone(),
+        });
+    }
+    Ok(matches)
+}
+
+fn resolve_member_binding_group_with_declarator_holes(
+    runtime_module: &Module,
+    request_id: &str,
+    needle: &ModuleItem,
+    selector: &AnonymousStatementSelector,
+    exports_by_target: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, ResolvedMemberBinding>> {
+    let needle_var =
+        item_var_decl(needle).expect("caller checked selector_var_decl_has_declarator_holes");
+    let target_locations = exports_by_target
+        .keys()
+        .map(|target_binding| {
+            Ok((
+                target_binding.clone(),
+                selector_var_declarator_binding_location(
+                    needle_var,
+                    request_id,
+                    selector,
+                    target_binding,
+                )?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let prepared = PreparedNeedle::new(needle, selector);
+    let mut matches = Vec::new();
+    for (body_idx, item) in runtime_module.body.iter().enumerate() {
+        let Some(candidate_var) = item_var_decl(item) else {
+            continue;
+        };
+        if !prepared.matches(item) {
+            continue;
+        }
+        let Some(alignment) = prepared.var_declarator_alignment(needle_var, candidate_var) else {
+            continue;
+        };
+        let mut resolved = BTreeMap::new();
+        for (target_binding, (target_decl_idx, target_binding_idx)) in &target_locations {
+            let Some(Some(candidate_decl_idx)) = alignment.get(*target_decl_idx) else {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match \
+                     target_binding `{target_binding}` was matched by a DECLARATORS hole \
+                     instead of a pinned selector declarator. Refine the selector:\n{match_source}",
+                    match_source = selector.match_source,
+                );
+            };
+            let Some(candidate_declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match \
+                     target_binding `{target_binding}` aligned to missing candidate \
+                     declarator index {candidate_decl_idx}. Source:\n{match_source}",
+                    match_source = selector.match_source,
+                );
+            };
+            let declared = declared_bindings_for_var_declarator(candidate_declarator);
+            let Some(binding) = declared.get(*target_binding_idx) else {
+                bail!(
+                    "logical_module {request_id}: binding_groups[].source_match \
+                     target_binding `{target_binding}` matched a variable declarator at \
+                     body index {body_idx}, but that declarator declares only {} bindings. \
+                     Source:\n{match_source}",
+                    declared.len(),
+                    match_source = selector.match_source,
+                );
+            };
+            resolved.insert(target_binding.clone(), binding.clone());
+        }
+        matches.push((body_idx, resolved));
+    }
+    match matches.as_slice() {
+        [(_, resolved)] => Ok(resolved.clone()),
+        [] => {
+            let target_hint = exports_by_target
+                .iter()
+                .map(|(target_binding, export_name)| {
+                    format!("target_binding `{target_binding}` for export `{export_name}`")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match for targets \
+                 `{target_hint}` did not match any top-level declaration range in the chunk. \
+                 Selector:\n{match_source}",
+                match_source = selector.match_source,
+            )
+        }
+        multiple => bail!(
+            "logical_module {request_id}: binding_groups[].source_match is ambiguous — \
+             matched {} top-level declarations at body indices {:?}. Refine the selector. \
+             Source:\n{match_source}",
+            multiple.len(),
+            multiple
+                .iter()
+                .map(|(body_idx, _)| *body_idx)
+                .collect::<Vec<_>>(),
+            match_source = selector.match_source,
+        ),
+    }
+}
+
+fn selector_var_declarator_binding_location(
+    needle_var: &VarDecl,
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target_binding: &str,
+) -> Result<(usize, usize)> {
+    let selector_binding_locations = needle_var
+        .decls
+        .iter()
+        .enumerate()
+        .flat_map(|(declarator_idx, declarator)| {
+            declared_bindings_for_var_declarator(declarator)
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(binding_idx, binding)| {
+                    (binding.binding_name == target_binding)
+                        .then_some((declarator_idx, binding_idx))
+                })
+        })
+        .collect::<Vec<_>>();
+    match selector_binding_locations.as_slice() {
+        [single] => Ok(*single),
+        [] => bail!(
+            "logical_module {request_id}: members[].selector.source_match target_binding \
+             `{target_binding}` is not declared by the selector source:\n{match_source}",
+            match_source = selector.match_source,
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: members[].selector.source_match target_binding \
+             `{target_binding}` is ambiguous within the selector source at declarator/binding \
+             indices {:?}. Refine the selector source:\n{match_source}",
+            multiple,
+            match_source = selector.match_source,
+        ),
+    }
+}
+
 fn selector_single_var_declarator(needle: &ModuleItem) -> Option<&VarDecl> {
     match needle {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() == 1 => Some(var),
@@ -636,6 +852,14 @@ fn selector_single_var_declarator(needle: &ModuleItem) -> Option<&VarDecl> {
         }
         _ => None,
     }
+}
+
+fn selector_var_decl_has_declarator_holes(needle: &ModuleItem) -> bool {
+    item_var_decl(needle).is_some_and(|var| {
+        var.decls
+            .iter()
+            .any(|declarator| declarator_list_hole_name(declarator).is_some())
+    })
 }
 
 fn find_matching_var_declarators(
@@ -814,6 +1038,9 @@ fn declared_bindings_for_decl(decl: &Decl) -> Vec<ResolvedMemberBinding> {
 }
 
 fn declared_bindings_for_var_declarator(declarator: &VarDeclarator) -> Vec<ResolvedMemberBinding> {
+    if declarator_list_hole_name(declarator).is_some() {
+        return Vec::new();
+    }
     binding_targets::binding_name_strings(&declarator.name)
         .into_iter()
         .map(|binding_name| ResolvedMemberBinding {
@@ -931,6 +1158,18 @@ impl<'a> PreparedNeedle<'a> {
             // per-comparison clone + canonicalize.
             AstWildcardMatcher::new(self.selector, &self.wildcard_idents, self.alpha)
                 .match_module_item(self.needle, candidate)
+        })
+    }
+
+    fn var_declarator_alignment(
+        &self,
+        needle: &VarDecl,
+        candidate: &VarDecl,
+    ) -> Option<Vec<Option<usize>>> {
+        SyntaxContext::within_ignored_ctxt(|| {
+            let mut matcher =
+                AstWildcardMatcher::new(self.selector, &self.wildcard_idents, self.alpha);
+            matcher.match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
         })
     }
 }
@@ -1230,7 +1469,9 @@ impl<'a> AstWildcardMatcher<'a> {
     fn match_var_decl(&mut self, needle: &VarDecl, candidate: &VarDecl) -> bool {
         needle.kind == candidate.kind
             && needle.declare == candidate.declare
-            && self.match_slice(&needle.decls, &candidate.decls, Self::match_var_declarator)
+            && self
+                .match_var_declarator_slice_with_alignment(&needle.decls, &candidate.decls)
+                .is_some()
     }
 
     fn match_using_decl(&mut self, needle: &UsingDecl, candidate: &UsingDecl) -> bool {
@@ -2278,6 +2519,115 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
+    /// Match a variable declarator list. `DECLARATORS` /
+    /// `DECLARATORS_*` holes split the needle into fixed declarator
+    /// segments matched as an ordered subsequence with gaps. The return
+    /// value maps each needle declarator index to the candidate
+    /// declarator index it matched; list-hole entries are `None`.
+    fn match_var_declarator_slice_with_alignment(
+        &mut self,
+        needle: &[VarDeclarator],
+        candidate: &[VarDeclarator],
+    ) -> Option<Vec<Option<usize>>> {
+        let mut alignment = vec![None; needle.len()];
+        if !needle
+            .iter()
+            .any(|declarator| declarator_list_hole_name(declarator).is_some())
+        {
+            if needle.len() != candidate.len() {
+                return None;
+            }
+            for (idx, (needle, candidate)) in needle.iter().zip(candidate).enumerate() {
+                if !self.match_var_declarator(needle, candidate) {
+                    return None;
+                }
+                alignment[idx] = Some(idx);
+            }
+            return Some(alignment);
+        }
+
+        let mut segments: Vec<(usize, usize)> = Vec::new();
+        let mut idx = 0;
+        while idx < needle.len() {
+            if declarator_list_hole_name(&needle[idx]).is_some() {
+                idx += 1;
+                continue;
+            }
+            let start = idx;
+            while idx < needle.len() && declarator_list_hole_name(&needle[idx]).is_none() {
+                idx += 1;
+            }
+            segments.push((start, idx - start));
+        }
+        if segments.is_empty() {
+            return Some(alignment);
+        }
+
+        let search = SegmentSearch {
+            needle,
+            candidate,
+            segments: &segments,
+            anchored_left: declarator_list_hole_name(&needle[0]).is_none(),
+            anchored_right: declarator_list_hole_name(&needle[needle.len() - 1]).is_none(),
+        };
+        self.place_var_declarator_segments(&search, 0, 0, &mut alignment)
+            .then_some(alignment)
+    }
+
+    fn place_var_declarator_segments(
+        &mut self,
+        search: &SegmentSearch<VarDeclarator>,
+        seg_idx: usize,
+        cand_min: usize,
+        alignment: &mut [Option<usize>],
+    ) -> bool {
+        let Some(&(needle_start, seg_len)) = search.segments.get(seg_idx) else {
+            return true;
+        };
+        let remaining: usize = search.segments[seg_idx..].iter().map(|(_, len)| len).sum();
+        let Some(latest_start) = search.candidate.len().checked_sub(remaining) else {
+            return false;
+        };
+        let mut lo = cand_min;
+        let mut hi = latest_start;
+        if seg_idx == 0 && search.anchored_left {
+            hi = hi.min(0);
+        }
+        if seg_idx == search.segments.len() - 1 && search.anchored_right {
+            lo = lo.max(latest_start);
+        }
+        for start in lo..=hi {
+            let snapshot = self.snapshot();
+            let alignment_snapshot = alignment.to_vec();
+            let mut segment_ok = true;
+            for offset in 0..seg_len {
+                let needle_idx = needle_start + offset;
+                let candidate_idx = start + offset;
+                if !self.match_var_declarator(
+                    &search.needle[needle_idx],
+                    &search.candidate[candidate_idx],
+                ) {
+                    segment_ok = false;
+                    break;
+                }
+                alignment[needle_idx] = Some(candidate_idx);
+            }
+            if segment_ok
+                && self.place_var_declarator_segments(
+                    search,
+                    seg_idx + 1,
+                    start + seg_len,
+                    alignment,
+                )
+            {
+                return true;
+            }
+            self.restore(snapshot);
+            alignment.copy_from_slice(&alignment_snapshot);
+        }
+        false
+    }
+
     /// Match a needle list carrying one or more list-holes against a
     /// candidate list as an **ordered subsequence with gaps**. The holes
     /// partition the needle into maximal fixed-element segments; each
@@ -2507,6 +2857,10 @@ struct WildcardIdents {
     /// `STMT_LIST` statement-list hole names (reserved from
     /// alpha-canonicalization like the single-node holes).
     statement_lists: BTreeSet<String>,
+    /// `DECLARATORS` variable-declarator-list hole names. These are
+    /// pseudo-declarators and must not be alpha-canonicalized as real
+    /// bindings.
+    declarator_lists: BTreeSet<String>,
     /// Whether the selector contains any `CLASS_REST` class-member
     /// hole. The marker is a class field key (an `IdentName`, not an
     /// `Ident`), so it survives alpha-canonicalization without being
@@ -2523,6 +2877,7 @@ impl WildcardIdents {
         self.expressions.is_empty()
             && self.statements.is_empty()
             && self.statement_lists.is_empty()
+            && self.declarator_lists.is_empty()
             && !self.class_rest_present
     }
 }
@@ -2570,6 +2925,14 @@ impl Visit for WildcardIdentCollector {
         }
         member.visit_children_with(self);
     }
+
+    fn visit_var_declarator(&mut self, declarator: &VarDeclarator) {
+        if let Some(hole_name) = declarator_list_hole_name(declarator) {
+            self.idents.declarator_lists.insert(hole_name.to_string());
+            return;
+        }
+        declarator.visit_children_with(self);
+    }
 }
 
 fn expression_hole_name(expr: &Expr) -> Option<&str> {
@@ -2593,6 +2956,17 @@ fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
 /// `stmt` is one.
 fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
     hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
+}
+
+/// The name of a declarator-list hole (`DECLARATORS` /
+/// `DECLARATORS_*`) if `declarator` is one. The initializer is ignored:
+/// `const` syntax requires one, so selectors usually write
+/// `DECLARATORS_BEFORE = null`.
+fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
+    let Pat::Ident(ident) = &declarator.name else {
+        return None;
+    };
+    hole_name_for(ident.id.sym.as_ref(), DECLARATORS_HOLE_KEYWORD)
 }
 
 /// If `name` is a hole identifier for `keyword` — the bare keyword

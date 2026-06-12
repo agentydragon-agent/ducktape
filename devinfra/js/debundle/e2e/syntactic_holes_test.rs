@@ -16,6 +16,9 @@
 //!   want to pin.
 //! - `CLASS_REST;` as a class field absorbs a run of class members —
 //!   e.g. "match this class by these members, ignore the rest".
+//! - `DECLARATORS` / `DECLARATORS_name = null` in a variable declaration
+//!   absorbs a run of declarators — e.g. match a few stable entries in a
+//!   wider `const` list without spelling unrelated siblings.
 //!
 //! Several list holes may appear in one block or class body: they split
 //! the pinned statements/members into an ordered subsequence with gaps,
@@ -175,6 +178,101 @@ export { first, second };
             r#"var second_value = Number.parseInt("4", 10)"#,
         ],
         &[],
+    );
+}
+
+#[test]
+fn member_source_match_declarator_holes_select_binding_from_wider_const_list() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimePrefix = "prefix",
+  runtimeFormat = (value) => String(value).toUpperCase(),
+  runtimeLabels = new Map([
+    ["left", "Left"],
+    ["right", "Right"],
+  ]),
+  runtimeRead = (key) => runtimeLabels.get(key) ?? runtimeFormat(key),
+  runtimeSuffix = "suffix";
+console.log(runtimePrefix, runtimeRead("left"), runtimeSuffix);
+export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix };
+"#,
+        vec![logical_module(
+            "display",
+            &[Member::source_alpha_target(
+                "readDisplayLabel",
+                "readDisplayLabel",
+                r#"const DECLARATORS_BEFORE = null,
+  formatDisplayLabel = EXPR_FORMAT,
+  displayLabels = new Map([
+    ["left", "Left"],
+    ["right", "Right"],
+  ]),
+  readDisplayLabel = EXPR_READ,
+  DECLARATORS_AFTER = null;"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "prefix Left suffix\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/display.js",
+        &["readDisplayLabel"],
+        &["runtimeRead"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/display.js",
+        &["const readDisplayLabel", "runtimeLabels.get"],
+        &["runtimePrefix", "runtimeSuffix", "DECLARATORS"],
+    );
+}
+
+#[test]
+fn binding_group_declarator_holes_extract_multiple_bindings_and_skip_holes_for_adopt_names() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimePrefix = "prefix",
+  runtimeFormat = (value) => String(value).toUpperCase(),
+  runtimeLabels = new Map([
+    ["left", "Left"],
+    ["right", "Right"],
+  ]),
+  runtimeRead = (key) => runtimeLabels.get(key) ?? runtimeFormat(key),
+  runtimeSuffix = "suffix";
+console.log(runtimePrefix, runtimeRead("left"), runtimeFormat("ok"), runtimeSuffix);
+export { runtimePrefix, runtimeFormat, runtimeLabels, runtimeRead, runtimeSuffix };
+"#,
+        vec![logical_module_with_binding_groups(
+            "display",
+            &[],
+            &[BindingGroup::source_alpha_adopt_all(
+                r#"const DECLARATORS_BEFORE = null,
+  formatDisplayLabel = EXPR_FORMAT,
+  displayLabels = new Map([
+    ["left", "Left"],
+    ["right", "Right"],
+  ]),
+  readDisplayLabel = EXPR_READ,
+  DECLARATORS_AFTER = null;"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "prefix Left OK suffix\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/display.js",
+        &["displayLabels", "formatDisplayLabel", "readDisplayLabel"],
+        &["runtimeFormat", "runtimeLabels", "runtimeRead"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/display.js",
+        &[
+            "const formatDisplayLabel",
+            "const displayLabels",
+            "const readDisplayLabel",
+        ],
+        &["runtimePrefix", "runtimeSuffix", "DECLARATORS"],
     );
 }
 
