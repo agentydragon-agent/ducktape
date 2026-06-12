@@ -4,6 +4,57 @@
 
 **Device**: Intel BE201 PCIe (`8086:a876`, subsystem `8086:000e`), driver `btintel_pcie`.
 
+## 2026-06-11 follow-up note
+
+After several suspend/resume cycles, Bluetooth disappeared from userspace. This is
+not a BlueZ or rfkill-level failure:
+
+- `systemctl status bluetooth --no-pager`: `bluetooth.service` is active.
+- `bluetoothctl list`: no controllers.
+- `rfkill list`: only `0: phy0: Wireless LAN`; no Bluetooth rfkill entry.
+- `lspci -nnk`: `00:14.7 Bluetooth [0d11]: Intel Corporation Device [8086:a876]`
+  is still visible, but has no `Kernel driver in use`.
+- `/sys/class/bluetooth` contains no `hci*` device.
+- `/sys/bus/pci/devices/0000:00:14.7/uevent` reports
+  `PCI_ID=8086:A876` and `MODALIAS=pci:v00008086d0000A876...`.
+- Current boot (`7.0.11`) logged:
+  `btintel_pcie 0000:00:14.7: probe with driver btintel_pcie failed with error -62`.
+- Previous boot (`7.0.10`) did work: it logged `Bluetooth: hci0: Found device
+  firmware: intel/ibt-0190-0291-iml.sfi`, then
+  `intel/ibt-0190-0291-pci.sfi`, then DDC load success.
+- Firmware files are present under `/run/current-system/firmware/intel/`, so the
+  current failure happens before firmware selection/download.
+- The previous boot ended uncleanly (`last -x` shows the June 4 login ending in
+  `crash` when the June 8 boot started), so a stuck device power state is still
+  plausible.
+
+Next boot triage:
+
+1. First check whether a true cold power-off restored Bluetooth on kernel
+   `7.0.11`:
+
+   ```bash
+   uname -r
+   bluetoothctl list
+   rfkill list
+   journalctl -k -b --no-pager --grep='btintel_pcie|Bluetooth: hci0|0000:00:14.7'
+   ```
+
+   If `hci0` returns after cold power-off, the likely cause was a wedged PCIe BT
+   function/device power state across an unclean warm reboot.
+
+2. If still broken on `7.0.11`, boot the previous working NixOS generation:
+   `/nix/var/nix/profiles/system-148-link` (`linux-7.0.10`,
+   `nixos-system-rugged-25.11.20260526.25f5383`). Re-run the commands above.
+
+   If `7.0.10` works and `7.0.11` fails, treat this as a kernel regression and
+   pin rugged away from `pkgs.linuxPackages_latest` until a fixed kernel lands.
+   The latest-kernel selection currently comes from
+   `nix/nixos/hosts/rugged/ipu7-camera.nix`.
+
+3. If both kernels fail after a cold power-off, continue with the BIOS/MSI-X
+   diagnostics below.
+
 **What we know**:
 
 - Error -62 is `ETIME` (not `ETIMEDOUT`/-110). In the driver source, this comes from
