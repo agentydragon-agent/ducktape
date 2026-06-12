@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from llm.claude_code_api import BaseResponse, PostToolResponse, PreToolResponse, StopResponse
+from x.claude_linter_v2.claude_code_api import BaseResponse, PostToolResponse, PreToolResponse, StopResponse
 
 
 # Outcome types - more user-friendly representations

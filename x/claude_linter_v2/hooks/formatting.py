@@ -2,7 +2,7 @@
 
 from string import Template
 
-from llm.claude_code_api import SessionID
+from x.claude_linter_v2.claude_code_api import SessionID
 from x.claude_linter_v2.config.models import Violation
 
 # Templates for different message types

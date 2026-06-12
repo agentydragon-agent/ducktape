@@ -1,6 +1,34 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "claude_code_api",
+    srcs = ["claude_code_api.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "claude_outcomes",
+    srcs = ["claude_outcomes.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":claude_code_api",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "claude_hooks",
+    srcs = ["claude_hooks.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":claude_code_api",
+    ],
+)
+
+py_library(
     name = "checkers_v2",
     srcs = ["checkers_v2.py"],
     visibility = ["//:__subpackages__"],
@@ -16,7 +44,7 @@ py_library(
     srcs = ["cli.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//llm:claude_code_api",
+        ":claude_code_api",
         "//x/claude_linter_v2/hooks:exceptions",
         "//x/claude_linter_v2/hooks:handler",
         "//x/claude_linter_v2/session:manager",
@@ -31,8 +59,8 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":claude_code_api",
         ":types",
-        "//llm:claude_code_api",
         "@pypi//pytest",
     ],
 )
@@ -42,7 +70,7 @@ py_library(
     srcs = ["llm_analyzer.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//llm:claude_code_api",
+        ":claude_code_api",
         "//x/claude_linter_v2/config:models",
     ],
 )
@@ -71,7 +99,7 @@ py_library(
     name = "types",
     srcs = ["types.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//llm:claude_code_api"],
+    deps = [":claude_code_api"],
 )
 
 py_binary(
@@ -79,8 +107,8 @@ py_binary(
     srcs = ["cli.py"],
     main = "cli.py",
     deps = [
+        ":claude_code_api",
         ":cli",
-        "//llm:claude_code_api",
         "//x/claude_linter_v2/hooks:exceptions",
         "//x/claude_linter_v2/hooks:handler",
         "//x/claude_linter_v2/session:manager",
@@ -93,8 +121,8 @@ py_test(
     name = "test_diff_intelligence",
     srcs = ["test_diff_intelligence.py"],
     deps = [
+        ":claude_code_api",
         ":conftest",
-        "//llm:claude_code_api",
         "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/diff:categorizer",
         "//x/claude_linter_v2/diff:intelligence",
@@ -107,8 +135,8 @@ py_test(
     name = "test_diff_intelligence_edge_cases",
     srcs = ["test_diff_intelligence_edge_cases.py"],
     deps = [
+        ":claude_code_api",
         ":conftest",
-        "//llm:claude_code_api",
         "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/diff:categorizer",
         "//x/claude_linter_v2/diff:intelligence",
@@ -136,10 +164,10 @@ py_test(
     name = "test_mcp_tools",
     srcs = ["test_mcp_tools.py"],
     deps = [
+        ":claude_code_api",
+        ":claude_outcomes",
         ":conftest",
         ":types",
-        "//llm:claude_code_api",
-        "//llm:claude_outcomes",
         "//x/claude_linter_v2/config:clean_models",
         "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/hooks:handler",
@@ -179,8 +207,8 @@ py_test(
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
     deps = [
+        ":claude_code_api",
         ":conftest",
-        "//llm:claude_code_api",
         "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/hooks:handler",
         "@pypi//pyhamcrest",
@@ -196,8 +224,8 @@ py_test(
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
     deps = [
+        ":claude_code_api",
         ":conftest",
-        "//llm:claude_code_api",
         "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/hooks:handler",
         "@pypi//pytest",

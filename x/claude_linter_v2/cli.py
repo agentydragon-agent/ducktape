@@ -17,7 +17,7 @@ import click
 import humanize
 from pytimeparse import parse as parse_duration
 
-from llm.claude_code_api import SessionID
+from x.claude_linter_v2.claude_code_api import SessionID
 from x.claude_linter_v2.hooks.exceptions import HookBugError
 from x.claude_linter_v2.hooks.handler import HOOK_REQUEST_TYPES, HookHandler
 from x.claude_linter_v2.session.manager import RuleAction, SessionData, SessionManager

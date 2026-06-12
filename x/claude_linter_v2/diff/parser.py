@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from llm.claude_code_api import EditToolCall, MultiEditToolCall
+from x.claude_linter_v2.claude_code_api import EditToolCall, MultiEditToolCall
 
 
 @dataclass

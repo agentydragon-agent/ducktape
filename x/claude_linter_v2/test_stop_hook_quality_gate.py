@@ -5,7 +5,7 @@ import subprocess
 import pytest
 import pytest_bazel
 
-from llm.claude_code_api import StopRequest
+from x.claude_linter_v2.claude_code_api import StopRequest
 from x.claude_linter_v2.config.models import StopHookConfig
 from x.claude_linter_v2.hooks.handler import HookHandler
 

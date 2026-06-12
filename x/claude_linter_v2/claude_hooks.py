@@ -6,7 +6,7 @@ See: https://code.claude.com/docs/en/hooks
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from llm.claude_code_api import (
+from x.claude_linter_v2.claude_code_api import (
     HookResponse,
     PermissionDecisionPayload,
     PermissionHookOutput,

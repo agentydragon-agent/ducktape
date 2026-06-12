@@ -3,8 +3,8 @@
 import logging
 from typing import Any
 
-from llm.claude_code_api import HookEventName
-from llm.claude_outcomes import (
+from x.claude_linter_v2.claude_code_api import HookEventName
+from x.claude_linter_v2.claude_outcomes import (
     HookError,
     HookOutcome,
     NotificationAcknowledge,

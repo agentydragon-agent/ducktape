@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from llm.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
+from x.claude_linter_v2.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
 from x.claude_linter_v2.config.models import Violation
 from x.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategory
 from x.claude_linter_v2.diff.intelligence import DiffIntelligence

@@ -9,7 +9,10 @@ from typing import Any
 
 import platformdirs
 
-from llm.claude_code_api import (
+from x.claude_linter_v2.access.context import PredicateContext
+from x.claude_linter_v2.access.rule_engine import RuleEngine
+from x.claude_linter_v2.checkers_v2 import filter_violations
+from x.claude_linter_v2.claude_code_api import (
     BaseHookRequest,
     BaseResponse,
     BashToolCall,
@@ -24,7 +27,7 @@ from llm.claude_code_api import (
     SubagentStopRequest,
     WriteToolCall,
 )
-from llm.claude_outcomes import (
+from x.claude_linter_v2.claude_outcomes import (
     HookOutcome,
     NotificationAcknowledge,
     PostToolNotifyLLM,
@@ -34,9 +37,6 @@ from llm.claude_outcomes import (
     StopAllow,
     SubagentStopAllow,
 )
-from x.claude_linter_v2.access.context import PredicateContext
-from x.claude_linter_v2.access.rule_engine import RuleEngine
-from x.claude_linter_v2.checkers_v2 import filter_violations
 from x.claude_linter_v2.config.loader import ConfigLoader
 from x.claude_linter_v2.config.models import NotificationHookConfig, PostToolHookConfig, RuleAction
 from x.claude_linter_v2.hooks.exceptions import HookBugError

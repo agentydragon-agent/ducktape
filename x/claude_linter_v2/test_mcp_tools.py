@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from llm.claude_code_api import PostToolUseRequest, PreToolUseRequest
-from llm.claude_outcomes import PostToolSuccess, PreToolApprove
+from x.claude_linter_v2.claude_code_api import PostToolUseRequest, PreToolUseRequest
+from x.claude_linter_v2.claude_outcomes import PostToolSuccess, PreToolApprove
 from x.claude_linter_v2.config.clean_models import ModularConfig
 from x.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
 from x.claude_linter_v2.hooks.handler import HookHandler

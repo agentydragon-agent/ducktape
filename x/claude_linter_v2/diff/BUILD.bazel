@@ -15,7 +15,7 @@ py_library(
     srcs = ["intelligence.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//llm:claude_code_api",
+        "//x/claude_linter_v2:claude_code_api",
         "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/diff:categorizer",
         "//x/claude_linter_v2/diff:parser",
@@ -27,7 +27,7 @@ py_library(
     srcs = ["parser.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//llm:claude_code_api",
+        "//x/claude_linter_v2:claude_code_api",
         "@pypi//pydantic",
     ],
 )

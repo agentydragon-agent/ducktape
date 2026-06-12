@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from llm.claude_code_api import SessionID
+from x.claude_linter_v2.claude_code_api import SessionID
 
 
 def parse_session_id(session_id_str: str) -> SessionID:
