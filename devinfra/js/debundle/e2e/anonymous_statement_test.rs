@@ -540,6 +540,152 @@ export { RuntimeSubject, Existing };
 }
 
 #[test]
+fn alpha_anonymous_statement_target_statement_uses_context_but_claims_only_target() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeLeft = "left",
+  runtimeRight = "right";
+console.log(`${runtimeLeft}:${runtimeRight}`);
+const Existing = "existing";
+console.log(Existing);
+export { runtimeLeft, runtimeRight, Existing };
+"#,
+        vec![logical_module_with_anon_alpha_target_statement(
+            "selected_pair",
+            &[Member::new("runtimeLeft"), Member::new("runtimeRight")],
+            r#"const selectedLeft = "left",
+  selectedRight = "right";
+console.log(`${selectedLeft}:${selectedRight}`);"#,
+            1,
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_pair.js",
+        &[
+            "const runtimeLeft",
+            "const runtimeRight",
+            "console.log(`${runtimeLeft}:${runtimeRight}`)",
+        ],
+        &["const Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const Existing"],
+        &["runtimeLeft}:${runtimeRight"],
+    );
+    assert_entry_output(&fixture, "left:right\nexisting\n");
+}
+
+#[test]
+fn alpha_anonymous_statement_target_statements_claims_multiple_targets_from_one_selector() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeContext = "context";
+console.log("first selected");
+console.log("second selected");
+const Existing = "existing";
+console.log(Existing);
+export { runtimeContext, Existing };
+"#,
+        vec![logical_module_with_anon_alpha_target_statements(
+            "selected_logs",
+            &[],
+            r#"const selectorContext = "context";
+console.log("first selected");
+console.log("second selected");"#,
+            &[1, 2],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_logs.js",
+        &[
+            r#"console.log("first selected")"#,
+            r#"console.log("second selected")"#,
+        ],
+        &["runtimeContext", "Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const runtimeContext", "const Existing"],
+        &["first selected", "second selected"],
+    );
+    assert_entry_output(&fixture, "first selected\nsecond selected\nexisting\n");
+}
+
+#[test]
+fn alpha_anonymous_statement_target_statements_match_assignment_targets_from_context() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let runtimeRecord, runtimeReplay;
+true && (runtimeReplay = "replay");
+false || (runtimeRecord = "record");
+console.log(`${runtimeReplay}:${runtimeRecord}`);
+export { runtimeRecord, runtimeReplay };
+"#,
+        vec![logical_module_with_anon_alpha_target_statements(
+            "bridge_slots",
+            &[Member::new("runtimeRecord"), Member::new("runtimeReplay")],
+            r#"let selectedRecord, selectedReplay;
+true && (selectedReplay = "replay");
+false || (selectedRecord = "record");"#,
+            &[1, 2],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bridge_slots.js",
+        &[
+            "let runtimeRecord",
+            "runtimeReplay = \"replay\"",
+            "runtimeRecord = \"record\"",
+        ],
+        &["selectedRecord", "selectedReplay"],
+    );
+    assert_entry_output(&fixture, "replay:record\n");
+}
+
+#[test]
+fn alpha_anonymous_statement_target_statements_all_supports_top_level_stmt_list_hole() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"console.log("before selected");
+const skippedContext = "skip";
+console.log("after selected");
+const Existing = "existing";
+console.log(Existing);
+export { skippedContext, Existing };
+"#,
+        vec![logical_module_with_anon_alpha_target_statements_all(
+            "selected_logs",
+            &[],
+            r#"console.log("before selected");
+STMT_LIST;
+console.log("after selected");"#,
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_logs.js",
+        &[
+            r#"console.log("before selected")"#,
+            r#"console.log("after selected")"#,
+        ],
+        &["skippedContext", "Existing", "STMT_LIST"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const skippedContext", "const Existing"],
+        &["before selected", "after selected"],
+    );
+    assert_entry_output(&fixture, "before selected\nafter selected\nexisting\n");
+}
+
+#[test]
 fn alpha_anonymous_statement_selector_keeps_member_properties_significant() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const selectedValue = "selected";

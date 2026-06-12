@@ -331,6 +331,8 @@ anonymous_statements:
                     match_source: "register(Co);".to_string(),
                     identifiers: spec::SourceMatchIdentifierMode::AlphaAll,
                     target_binding: None,
+                    target_statement: None,
+                    target_statements: None,
                     wildcard_string_literals: BTreeSet::new(),
                 },
             ])
