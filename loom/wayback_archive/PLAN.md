@@ -3,9 +3,10 @@
 Last trimmed: 2026-06-12.
 
 Status: v0 is live. The old nginx/PVC `wayback-cache` backend was replaced in
-place by the Rust archive service: one pod, one CNPG instance, SeaweedFS S3
-replay bodies, Prometheus metrics, and a public bearer-auth `:8090` listener.
-This file now tracks only current service shape and remaining reliability work.
+place by the Rust archive service: CNPG metadata, SeaweedFS S3 replay bodies,
+Prometheus metrics, and a public bearer-auth `:8090` listener. The current PR
+splits that service into input pods and filler pods connected by a Postgres fill
+queue with `LISTEN/NOTIFY` wakeups.
 
 Companions:
 
@@ -47,23 +48,35 @@ Storage is semantic, not opaque HTTP cache files.
 - Replay identity is `(capture_ts, modifier, canonical_original_url)`.
 - Replay bodies live in SeaweedFS S3, keyed by content hash.
 - CNPG Postgres is authoritative for replay records, Availability/CDX metadata,
-  aliases, stable negatives, fill attempts, limiter snapshots, and audit/debug
-  history.
+  fill locks, fill queue rows, and fill-change notifications.
 - A DB metadata row must not commit before its referenced blob exists. If an S3
   write succeeds and the DB commit fails, the result is an orphan blob that can
   be garbage-collected later.
 - Replay bodies over the configured cap, default 10 MiB, are classified as
   `body_too_large`; they are not retried as transient IA failures.
 
-The v0 deployment intentionally runs one archive-service pod. In-process
-single-flight is sufficient for identical misses inside that pod. Before
-scaling above one replica, add Postgres-backed fill leases or advisory locks
-keyed by endpoint and semantic request key.
+The deployment is split into two roles:
+
+- `wayback-cache` input pods accept agent/proxy HTTP, serve cache hits, enqueue
+  cache misses, and wait up to the configured queue budget for a stored result.
+- `wayback-cache-filler` pods claim due fill queue rows and perform IA egress.
+  They are spread across OVH nodes so cold IA fills can use distinct node
+  egress IPs.
+
+Postgres queue rows deduplicate identical cold misses across input pods. Idle
+fillers and input waiters use `LISTEN/NOTIFY` so a newly enqueued fill or a
+completed fill wakes peers immediately instead of relying on polling.
+
+Runtime settings are loaded from typed YAML mounted at
+`/etc/wayback-archive/config.yaml`. Secrets remain env-backed by name: DB URL,
+S3 access key, S3 secret key, and optional bearer token.
 
 IA acquisition is endpoint-aware:
 
-- Availability, CDX, and replay have separate adaptive in-flight limiters.
-- Queue waits are bounded by `WAYBACK_ARCHIVE_MAX_QUEUE_WAIT_SECONDS`
+- Availability, CDX, and replay have separate adaptive in-flight limiters in
+  each pod. This is intentional while pod placement is tied to node egress IP:
+  one node/IP getting throttled should not globally stop other node/IPs.
+- Queue waits are bounded by `queue_wait_seconds` in the mounted config
   (default 60s).
 - Over-budget waits return `503 + Retry-After`.
 - Transient IA failures (`502`, `503`, `504`, timeouts, connection resets,
@@ -113,21 +126,24 @@ to fix the core issue because agents choose new URLs dynamically.
 
 ## Active Next Steps
 
-1. Verify the deployed limiter telemetry fix in the live service.
+1. Verify the deployed input/filler queue + limiter behavior in the live
+   service.
    - Reprobe the known bad CDX path.
    - Burst cold CDX and replay misses.
    - Confirm `wayback_archive_limiter_in_flight{endpoint="cdx"}` returns to 0.
    - Confirm
      `wayback_archive_acquisition_failures_total{endpoint,reason,status}`
      separates limiter queue timeout from upstream retry/backoff.
+   - Confirm input-side fill waits are visible in
+     `wayback_archive_input_fill_wait_duration_seconds`.
 2. Rerun the 33-task `glm-4.5` panel with:
    - `--message-limit 1000`
    - `--compaction-threshold-tokens 115000`
 3. Record archive-service endpoint counters in the final eval notes, not just
    driver-level aggregate `503` counts.
-4. Tune CDX acquisition if cache-side `503` remains dominant. CDX staying at
-   concurrency 1 protects IA but serializes cold misses enough to hurt the agent
-   loop.
+4. Tune filler concurrency if cache-side `503` remains dominant. CDX staying at
+   low concurrency protects IA but serializes cold misses enough to hurt the
+   agent loop.
 5. Keep `wayback_proxy` retry/wait behavior covered: `503 + Retry-After` should
    be an enforced wait while the proxy has budget, and an agent-visible failure
    only after waiting would exceed that budget.
@@ -139,8 +155,8 @@ to fix the core issue because agents choose new URLs dynamically.
   `wayback_proxy`.
 - Add alias rows for IA canonicalization redirects and equivalent replay URL
   spellings.
-- Add Postgres fill leases/advisory locks before scaling archive-service pods
-  above one replica.
+- Decide whether filler pods should stay as an OVH-spread Deployment, become a
+  DaemonSet, or run on roaming nodes once node/IP policy is clearer.
 - Decide `wayback-archive-db` backup/failover policy before moving from a
   single CNPG instance to the OVH-HA profile.
 - Add orphan-blob garbage collection.
@@ -151,9 +167,8 @@ to fix the core issue because agents choose new URLs dynamically.
 
 - Multiple replay URL spellings for the same capture map to one stored replay
   record.
-- Concurrent identical semantic misses produce one IA backend fetch per service
-  replica; cross-replica duplication is blocked before replica count exceeds
-  one.
+- Concurrent identical semantic misses produce one due fill queue row and one
+  claimed filler attempt at a time.
 - A repeated eval run reuses captures filled by previous runs without touching
   IA for those captures.
 - IA `502/503/504`, connection resets, and timeouts are not cached as archive
