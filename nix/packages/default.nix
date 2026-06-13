@@ -295,6 +295,9 @@ rec {
       dbus
       cairo
       gtk3
+      # Provides org.gnome.Terminal.ProfilesList, which gterm-theme reads via
+      # Gio.Settings at startup.
+      gnome-terminal
     ];
     propagatedBuildInputs = with python3Packages; [
       absl-py
