@@ -30,7 +30,7 @@ functions with `Annotated[T, "description"]` parameters instead.
 | `agent_server/runtime/container.py`          | `send_prompt`              | `SendPromptInput`        |
 | `agent_server/runtime/container.py`          | `abort`                    | none (zero-arg)          |
 | `agent_server/matrix_bot.py`                 | `do_yield`                 | none (zero-arg)          |
-| `x/inop/prompt_feedback_mcp.py`              | `propose_prompt`           | `ProposePromptInput`     |
+| `inop/mcp/prompt_feedback_server.py`         | `propose_prompt`           | `ProposePromptInput`     |
 | `agent_server/mcp/matrix/server.py`          | `send`                     | `SendMessageInput`       |
 | `agent_server/mcp/matrix/server.py`          | `drain_new_messages`       | none (zero-arg)          |
 | `agent_server/mcp/matrix/server.py`          | `do_yield`                 | `YieldInput`             |
@@ -49,7 +49,7 @@ Require FlatTool for: nested models, `Field(ge=, le=, min_length=, pattern=)`,
 
 | File                                         | Tool                       | Reason                                                        |
 | -------------------------------------------- | -------------------------- | ------------------------------------------------------------- |
-| `x/ember/mcp_tools.py`                       | `sleep_until_user_message` | `ConfigDict(extra="forbid")`                                  |
+| `ember/mcp_tools.py`                         | `sleep_until_user_message` | `ConfigDict(extra="forbid")`                                  |
 | `mcp_infra/compositor/resources_server.py`   | `read`                     | `Field(ge=0)` on `start_offset`                               |
 | `mcp_infra/compositor/resources_server.py`   | `read_blocks`              | `Field(ge=0)` constraints                                     |
 | `mcp_infra/compositor/admin.py`              | `attach_server`            | Nested models (`ServerSpec` union)                            |
