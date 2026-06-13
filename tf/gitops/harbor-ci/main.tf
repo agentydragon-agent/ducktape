@@ -1,11 +1,11 @@
 # Harbor CI infrastructure
 #
-# CLEANUP(2026-04-06): All ducktape project images fully migrated to GHCR.
+# CLEANUP(added 2026-04-06): All ducktape project images fully migrated to GHCR.
 # The CI robot account is unused. The pull robot is needed only by props
 # (agent images in Harbor's `props` project). The harbor webhook token and
 # receiver have been removed (all ImageRepositories track GHCR now).
-# Once props also migrates off Harbor, suspend this Terraform resource and
-# orphan with `removed` blocks.
+# Condition MET 2026-06-13: props is on the Forgejo package store. Execute:
+# suspend this Terraform resource and orphan with `removed` blocks.
 #
 # Creates:
 #   - ducktape project (private, single project for all CI-pushed images)
