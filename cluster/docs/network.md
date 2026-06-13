@@ -44,13 +44,12 @@ Full-size cross-node pod packet, end to end:
 
 ### ⚠️ Cilium `MTU` is the UNDERLAY MTU, not the pod MTU
 
-Per the Cilium Helm reference, `MTU` "configures the underlying network MTU … it
-changes the MTU for `cilium_net`, `cilium_host`, `cilium_vxlan` and `lxc_health`
-interfaces." Cilium then **subtracts the 50-byte VXLAN overhead itself** to get the
-cross-node pod (endpoint) route MTU. So:
+Cilium's `MTU` Helm value sets the underlay-device MTU (the `cilium_*`
+interfaces) and subtracts the 50-byte VXLAN overhead itself for the pod route
+MTU. So:
 
-- Set `MTU` to the **device Cilium tunnels over** = `nebula1` = **1420**.
-- Cilium gives pods a cross-node MTU of `1420 − 50 = 1370`.
+- Set `MTU` to the **device Cilium tunnels over** = `nebula1` = **1420** —
+  pods get `1420 − 50 = 1370`.
 - Setting `MTU: 1370` (the desired pod MTU) is **wrong** — it yields a **1320** pod
   MTU (measured 2026-06-08). This mistake cost a wrong rollout; see the debug note.
 
@@ -73,6 +72,12 @@ Hard max for this stack: `nebula1 = 1440`, `MTU = 1440` → pod 1390 (exact-fit,
 | Mesh roster (SSOT)    | `nebula-mesh.json` (repo root)              |
 
 Both are infra-managed (OpenTofu + Talos machine config / Helm), **not Flux**.
+
+Gotcha: Nebula's `lighthouse.local_allow_list` (in `nebula.tf` and
+`nix/nixos/modules/nebula.nix`) must keep excluding `cilium*`/`lxc*` interfaces
+from endpoint advertisement — otherwise overlay pod IPs get advertised as
+Nebula endpoints and you get a tunnel-in-tunnel amplification loop. Incident:
+<lessons_learned/2026_04_07_nebula_cilium_vxlan_loop.md>.
 
 ## Changing MTUs safely (live, no re-bootstrap)
 

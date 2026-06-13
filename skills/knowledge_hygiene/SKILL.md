@@ -83,7 +83,7 @@ Prioritize findings in these categories:
 - **SSOT drift**: duplicated facts, conflicting explanations, unclear canonical owner, copied setup steps, generated output edited by hand
 - **Documentation change-detectors**: copied volatile details that readers could look up from the source of truth, and that mainly create another place to update when the source changes
 - **Zero-value obviousness**: comments, docstrings, README entries, examples, or help text that only restate names, signatures, headings, obvious file purposes, or generic tool behavior
-- **Background-knowledge bloat**: explanations of standard language/framework/tool behavior that the intended audience or a strong agent can already infer, unless this repo intentionally differs
+- **Background-knowledge bloat / framework re-explanation**: explanations of standard language/framework/tool behavior that the intended audience or a strong agent can already infer. The test for each explanatory sentence about a well-known tool: would it be true in any repo using that tool? If yes, cut it — naming the mechanism is enough. Keep only what is false elsewhere: deviations, version pins, local config, gotchas.
 - **Staleness**: dead links, old commands, renamed concepts, outdated screenshots, obsolete support guidance, plans that look active after completion
 - **Ambiguous status**: drafts, archives, investigations, and current contracts not distinguishable at a glance
 - **Audience mismatch**: beginner tutorials mixed with operator runbooks, implementation notes inside user docs, historical rationale presented as current behavior
@@ -100,6 +100,7 @@ Examples of information to remove or compress:
 - README sections that explain standard commands for an obvious artifact, such as running a plain Kubernetes manifest named `scrape-job.yaml` with `kubectl apply -f scrape-job.yaml`
 - Boilerplate descriptions of fixtures, examples, or generated files where the filename and surrounding convention already convey the same fact
 - Copied lists like "service `xyzzy` permits `foo` values `bar`, `baz`, `quux`" when `xyzzy.yaml` is the real owner of allowed values
+- Sections that teach a well-known framework's stock behavior (how Flux reconciles from git, what a Kubernetes Deployment is, how pytest fixtures resolve, what OAuth scopes are) — name the mechanism and state the local deviations/specifics; delete the tutorial
 
 If a standard mechanism differs here in one respect, keep only the deviation and point to the standard mechanism briefly. Example: "This is a Foo framework job; use normal `fooctl` job commands. Deviation: the job needs the `analytics-prod` profile."
 Usually replace volatile mirrors with a pointer plus any durable meaning, policy, or gotcha the source does not contain. Generated Markdown/reference output is an exception, not the default; suggest it only when readers genuinely need the full volatile list inline and there is already a natural generation path.
@@ -132,7 +133,42 @@ doc. Sweep the always-loaded surfaces for, in descending value:
 - **Repetition for emphasis**: a rule stated three times with escalating bold is one
   rule.
 
-### 6. Rank Suggestions
+### 6. Structure And Promotion Sweep
+
+Organizing rule: a fact's canonical home is the file someone must touch when the
+fact changes (**update locality**). The full treatment of a concept (the hub)
+lives at the lowest common ancestor of its consumers; every other mention is a
+one-line scoped pointer stating only the local deviation. Do not propose manually
+maintained backlink / "who links here" notes — if backlinks become needed, that
+is a format/tooling change, not doc content to hand-maintain.
+
+Gather actions for:
+
+- **Wrong home**: a hub far from the artifacts it describes; a concept consumed
+  by two siblings but documented inside one (hoist to the common ancestor); a
+  durable rule trapped in the wrong document kind — operational truth inside a
+  `debug/` investigation, a decision still phrased as a plan, cross-component
+  behavior explained in one code comment.
+- **Missing update path**: a hub with no answer to "what change in the world
+  forces an edit here, and how does the editor notice?" Prefer proposing a
+  change-time convention near the artifact ("update <hub> when changing <X>")
+  over a one-off correction — change-time gardening beats scheduled sweeps.
+- **Promotion candidates** — knowledge living somewhere worse than a doc:
+  - the same question investigated or explained more than once (agent session
+    logs, PR review threads, chat) — the strongest signal;
+  - commit/PR messages that explain a system rather than a change;
+  - `debug/` notes whose conclusions are durable rules — extract the rule to
+    docs with a pointer back; the frozen narrative stays put;
+  - code comments that outgrew one location;
+  - procedures improvised twice (promote to a runbook).
+- **Demotion candidates**: a doc nothing references that hasn't changed while
+  its subject did — verify once, then archive (dated) or delete.
+
+Promotion bar by destination: always-loaded instruction chains take only what
+every session needs; on-demand docs take durable facts with ≥2 consumers in
+space or time; knowledge scoped to one code location stays a comment.
+
+### 7. Rank Suggestions
 
 Score each candidate by:
 
