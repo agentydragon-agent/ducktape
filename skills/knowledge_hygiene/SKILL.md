@@ -46,6 +46,7 @@ Identify:
 - Freshness expectation: current contract, historical record, draft plan, investigation notes, or archive
 - Canonical homes: files, pages, sections, generated sources, schemas, owners, or systems of record
 - Update path: who or what should change the information when the underlying truth changes
+- Repo-defined conventions: discover and honor the structure the gardened repo documents for itself before proposing anything. Read its own style/contributing/`AGENTS.md`/`README.md`/`STYLE.md` first to learn its doc-file roles and transclusion rules (e.g. a `README.md`/`AGENTS.md`/`CLAUDE.md`/`STYLE.md` split, `@`-includes), where each _kind_ of knowledge is filed (`plans/`, `debug/`, `archive/`, `docs/`, `lessons_learned/`, `TODO.md`, `SPEC.md`), and its naming/dating/tombstone formats. Every relocation, promotion, archival, or filing you propose must land knowledge in the home that repo defines — not a generic default. Match an existing sibling's location and naming. If the repo defines no convention for a case, say so and propose one consistent with its existing structure rather than importing an outside one.
 
 Do not assume every artifact should be current. Historical notes are fine when clearly marked and not masquerading as active guidance.
 
@@ -81,7 +82,7 @@ For present-tense operational claims, prefer live evidence when available and ap
 Prioritize findings in these categories:
 
 - **SSOT drift**: duplicated facts, conflicting explanations, unclear canonical owner, copied setup steps, generated output edited by hand
-- **Documentation change-detectors**: copied volatile details that readers could look up from the source of truth, and that mainly create another place to update when the source changes
+- **Documentation change-detectors**: copied volatile details that readers could look up from the source of truth, and that mainly create another place to update when the source changes. Includes **self-referential counts** — prose that states the size of an adjacent list/table ("Twelve things have to line up", "the three steps below", "we support 7 providers"). The number duplicates what the reader can see, adds nothing, and forces a prose edit (twelve→eleven→…) every time a row is added or removed, risking silent drift. Drop the count and let the list speak; if a count is genuinely load-bearing, derive it, don't restate it.
 - **Zero-value obviousness**: comments, docstrings, README entries, examples, or help text that only restate names, signatures, headings, obvious file purposes, or generic tool behavior
 - **Background-knowledge bloat / framework re-explanation**: explanations of standard language/framework/tool behavior that the intended audience or a strong agent can already infer. The test for each explanatory sentence about a well-known tool: would it be true in any repo using that tool? If yes, cut it — naming the mechanism is enough. Keep only what is false elsewhere: deviations, version pins, local config, gotchas.
 - **Staleness**: dead links, old commands, renamed concepts, outdated screenshots, obsolete support guidance, plans that look active after completion
@@ -121,6 +122,16 @@ into agent context versus read on demand:
 A 100-token cut in an always-loaded file outweighs a 1,000-token cut in an on-demand
 doc. Sweep the always-loaded surfaces for, in descending value:
 
+- **Self-transclusion duplication**: when a host file `@`-transcludes another (e.g.
+  `AGENTS.md` whose first line is `@README.md`), the transcluded content is already
+  inlined into the host — every reader of the host sees it. So the host must not
+  restate, summarize, or even add a "see `<README.md>`" pointer back to its own
+  transcluded file: that is pure duplication (or a pointer to content already present).
+  Resolve each `@`-include before judging duplication, and collapse the host to its
+  `@`-line plus only the net-new content that is _not_ in the transcluded file (for a
+  sub-`AGENTS.md`: only agent-only prescriptions absent from its README and from every
+  parent `AGENTS.md`). A sub-`AGENTS.md` that adds nothing new should be just its
+  `@`-include line.
 - **Teaching material for generic practice**: good/bad example pairs and rationale
   paragraphs for rules a strong model already follows. State the rule in one
   imperative line; keep an example only when it defines a repo-specific format.
