@@ -90,6 +90,7 @@ spec:
           SSH_PORT: 2222
           DISABLE_SSH: false
           START_SSH_SERVER: true
+          LFS_START_SERVER: true
 
         session:
           PROVIDER: db
