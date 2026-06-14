@@ -121,7 +121,7 @@ in
       nssmdns4 = true; # mDNS resolution for .local hostnames (printers, etc.)
     };
     blueman.enable = true;
-    fwupd.enable = true; # Firmware updates
+    fwupd.enable = true;
     printing.enable = true;
     thermald.enable = true; # Intel thermal management
     upower.enable = true; # Battery status (dual battery support)
@@ -177,7 +177,8 @@ in
     kdePackages.plasma-keyboard # Plasma virtual keyboard for OSK window-avoidance testing
     maliit-framework # Alternative Wayland input-method stack for comparison
     maliit-keyboard
-    powertop # Power consumption analysis (useful for tablet battery)
+    evtest # Input device event inspection for tablet/stylus debugging
+    powertop
     snapshot # GNOME camera app (uses libcamera/PipeWire natively)
     telegram-desktop
     xdg-terminal-exec # Used by custom Ctrl+Alt+T keybinding; configure via xdg-terminals.list
@@ -197,7 +198,6 @@ in
 
   programs.steam.enable = true;
 
-  # User configuration
   users.users.${username} = {
     shell = pkgs.zsh;
     # Allow reading system logs without sudo (systemd-journal group)
