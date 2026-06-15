@@ -6,14 +6,14 @@
 - Identity attributes from Autentik (username, groups) must propagate all the way to the desktop session for authorization/auditing.
 - Avoid per-host password storage in Guacamole/Teleport; instead rely on short-lived credentials (Kerberos tickets, mTLS certs, etc.).
 
-- ## Constraints & Preferences
+## Constraints & Preferences
 
 - Prefer open-source / self-hosted components; avoid solutions that require paid enterprise licenses.
 - Authentik is the IdP of record; new tooling must integrate via OAuth/OIDC or LDAP/RADIUS.
 - Existing stack includes Guacamole + Autentik + Kubernetes; prototypes should run inside the cluster without touching production hosts.
 - Will tolerate per-host agents / controllers if they enable true SSO, but simpler infrastructure is preferred when possible.
 
-- ## Desired Features
+## Desired Features
 
 - Browser-based portal listing available Linux desktops.
 - MFA via Autentik nice-to-have, but not a strict requirement.
