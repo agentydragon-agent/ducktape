@@ -210,22 +210,37 @@ fn mapping_string_keys(value: &serde_yaml::Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// Canonicalize a selector by round-tripping it through swc (parse → codegen),
+/// so equality is checked on the AST shape, not on incidental text formatting
+/// (indentation, line breaks, trailing commas).
+fn normalize_selector(source: &str) -> String {
+    js_ast::with_swc_globals(|| {
+        let module =
+            js_ast::parse_js_module_ast("<selector expectation>", source).unwrap_or_else(|err| {
+                panic!("selector is not parseable JavaScript ({err}):\n{source}")
+            });
+        js_ast::emit_module_source(&module).expect("emit normalized selector")
+    })
+}
+
 fn assert_selector_shape(
     case_name: &str,
     output: &SelectorOutput,
     expected: &SelectorOutputExpectation,
 ) {
-    let match_source = output.match_source.trim();
     assert_eq!(
-        match_source,
-        expected.expected_match.trim(),
-        "{case_name}: selector for {:?}",
-        output.exports
+        normalize_selector(&output.match_source),
+        normalize_selector(expected.expected_match),
+        "{case_name}: selector for {:?}\n  got: {}\n want: {}",
+        output.exports,
+        output.match_source.trim(),
+        expected.expected_match.trim()
     );
 }
 
 macro_rules! minimizer_expectation_case {
     (
+        $(#[$attr:meta])*
         $test_name:ident,
         fixture = $fixture:literal,
         name = $case_name:literal,
@@ -234,7 +249,7 @@ macro_rules! minimizer_expectation_case {
         expected = $expected:literal $(,)?
     ) => {
         #[test]
-        #[ignore = "target behavior for the future recursive selector minimizer"]
+        $(#[$attr])*
         fn $test_name() {
             run_case(&MinimizedSelectorCase {
                 name: $case_name,
@@ -319,8 +334,45 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+// Aspirational: a target class among many same-shape sibling classes should
+// minimize to CLASS_REST holes plus the one discriminating member, not fall
+// back to emitting the full class body. Today `minimize_class_selector` bails
+// against the sibling competitors and synthesis emits the entire class AST
+// (see the real `infra/http/PlatformApiService.yaml` conversion, ~330 lines).
+minimizer_expectation_case!(
+    #[ignore = "class minimizer falls back to full body among many siblings"]
+    minimizes_class_among_many_siblings,
+    fixture = "class_among_many_siblings",
+    name = "class among many siblings keeps only the discriminating member",
+    module = "app/services",
+    bindings = [("SelectedService", "selectedService")],
+    expected = "expected_match.js",
+);
+
+// Aspirational: a large object literal that shares most keys with sibling
+// objects should minimize to OBJECT_PROPS holes on both sides of the single
+// discriminating key, so the selector survives key reordering. Today the
+// minimizer keeps the discriminating key but omits the trailing OBJECT_PROPS
+// hole, anchoring the key to the object's right edge. On the real
+// `infra/feature_flags.yaml` conversion the same retention path kept all ~50
+// keys (each held to ANYTHING) instead of holing the non-discriminating ones.
+minimizer_expectation_case!(
+    #[ignore = "object minimizer retains all keys instead of OBJECT_PROPS + discriminator"]
+    minimizes_object_keys_over_pinned,
+    fixture = "object_keys_over_pinned",
+    name = "large object keeps only the discriminating key value",
+    module = "app/labels",
+    bindings = [("SelectedLabels", "selectedLabels")],
+    expected = "expected_match.js",
+);
+
+// Re-baselined for the unified keep-shallow anchor policy: both outputs keep each
+// slot's direct shallow literals including object-property values. The group's
+// shared `enabled: true` and the standalone's `kind: "panel"` / `title: "Settings"`
+// / call arg `"settings"` are over-pinned versus the old `ANYTHING` holes. The
+// design note accepts this occasional over-pin as the price of one policy across
+// single (N=1 group) and multi-target group paths.
 #[test]
-#[ignore = "target behavior for future selector partition planning"]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {
         name: "nearby targets become a binding group while distant targets stay individual",

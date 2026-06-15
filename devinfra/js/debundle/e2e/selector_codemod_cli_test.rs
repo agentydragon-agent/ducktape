@@ -185,6 +185,9 @@ anonymous_statements:
 
 fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
+    // Keep `concat!` with explicit `\n`: lines carry intentional trailing
+    // whitespace/tabs (exercising selector whitespace normalization) that a raw
+    // string or `.js` include would lose to the trim-trailing-whitespace hook.
     write(
         &source,
         concat!(
@@ -245,6 +248,9 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
 
 fn synthesis_single_member_text_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
+    // Keep `concat!` with explicit `\n`: the body lines carry intentional
+    // trailing whitespace/tabs that a raw string or `.js` include would lose to
+    // the trim-trailing-whitespace hook.
     write(
         &source,
         concat!(
@@ -291,18 +297,17 @@ fn synthesis_function_minimization_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "function runtimeFormatter(value) {\n",
-            "  const normalized = value.trim().toUpperCase();\n",
-            "  if (normalized.length > 8) {\n",
-            "    return normalized.slice(0, 8);\n",
-            "  }\n",
-            "  return normalized.padEnd(8, \"_\");\n",
-            "}\n",
-            "const unrelatedValue = \"kept\";\n",
-            "console.log(runtimeFormatter(\" ok \"), unrelatedValue);\n",
-            "export { runtimeFormatter };\n",
-        ),
+        r#"function runtimeFormatter(value) {
+  const normalized = value.trim().toUpperCase();
+  if (normalized.length > 8) {
+    return normalized.slice(0, 8);
+  }
+  return normalized.padEnd(8, "_");
+}
+const unrelatedValue = "kept";
+console.log(runtimeFormatter(" ok "), unrelatedValue);
+export { runtimeFormatter };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -321,24 +326,23 @@ fn synthesis_object_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "const selectedConfig = buildConfig({\n",
-            "  stableKey: expensiveValue(\"selected\", { noisy: [1, 2, 3] }),\n",
-            "  generatedPayload: createPayload(() => Math.random()),\n",
-            "  extraNested: { generated: computeNested(\"selected\"), count: 3 },\n",
-            "});\n",
-            "const otherConfig = buildConfig({\n",
-            "  otherKey: expensiveValue(\"selected\", { noisy: [1, 2, 3] }),\n",
-            "  generatedPayload: createPayload(() => Math.random()),\n",
-            "  extraNested: { generated: computeNested(\"other\"), count: 3 },\n",
-            "});\n",
-            "function buildConfig(value) { return value; }\n",
-            "function expensiveValue(value) { return value; }\n",
-            "function createPayload(value) { return value; }\n",
-            "function computeNested(value) { return value; }\n",
-            "console.log(selectedConfig.stableKey, otherConfig.otherKey);\n",
-            "export { selectedConfig };\n",
-        ),
+        r#"const selectedConfig = buildConfig({
+  stableKey: expensiveValue("selected", { noisy: [1, 2, 3] }),
+  generatedPayload: createPayload(() => Math.random()),
+  extraNested: { generated: computeNested("selected"), count: 3 },
+});
+const otherConfig = buildConfig({
+  otherKey: expensiveValue("selected", { noisy: [1, 2, 3] }),
+  generatedPayload: createPayload(() => Math.random()),
+  extraNested: { generated: computeNested("other"), count: 3 },
+});
+function buildConfig(value) { return value; }
+function expensiveValue(value) { return value; }
+function createPayload(value) { return value; }
+function computeNested(value) { return value; }
+console.log(selectedConfig.stableKey, otherConfig.otherKey);
+export { selectedConfig };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -357,24 +361,23 @@ fn synthesis_group_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "const selectedA = makeThing({\n",
-            "  stableA: computeValue(\"a\", { noisy: [1, 2, 3] }),\n",
-            "  volatileA: makeVolatile(() => Math.random()),\n",
-            "}),\n",
-            "  skipped = makeThing({ skippedKey: computeValue(\"skip\") }),\n",
-            "  selectedB = makeThing({\n",
-            "    stableB: computeValue(\"b\", { noisy: [4, 5, 6] }),\n",
-            "    volatileB: makeVolatile(() => Date.now()),\n",
-            "  });\n",
-            "const otherA = makeThing({ otherA: computeValue(\"a\") }),\n",
-            "  otherB = makeThing({ otherB: computeValue(\"b\") });\n",
-            "function makeThing(value) { return value; }\n",
-            "function computeValue(value) { return value; }\n",
-            "function makeVolatile(value) { return value; }\n",
-            "console.log(selectedA.stableA, selectedB.stableB, otherA.otherA, otherB.otherB);\n",
-            "export { selectedA, selectedB };\n",
-        ),
+        r#"const selectedA = makeThing({
+  stableA: computeValue("a", { noisy: [1, 2, 3] }),
+  volatileA: makeVolatile(() => Math.random()),
+}),
+  skipped = makeThing({ skippedKey: computeValue("skip") }),
+  selectedB = makeThing({
+    stableB: computeValue("b", { noisy: [4, 5, 6] }),
+    volatileB: makeVolatile(() => Date.now()),
+  });
+const otherA = makeThing({ otherA: computeValue("a") }),
+  otherB = makeThing({ otherB: computeValue("b") });
+function makeThing(value) { return value; }
+function computeValue(value) { return value; }
+function makeVolatile(value) { return value; }
+console.log(selectedA.stableA, selectedB.stableB, otherA.otherA, otherB.otherB);
+export { selectedA, selectedB };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -397,44 +400,43 @@ fn synthesis_branch_and_bound_fixture(root: &Path) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
     write(
         &source,
-        concat!(
-            "const selectedConfig = makeConfig({\n",
-            "  alphaKey: computeValue(\"selected-alpha\"),\n",
-            "  betaKey: computeValue(\"selected-beta\"),\n",
-            "  gammaKey: computeValue(\"selected-gamma\"),\n",
-            "  deltaKey: computeValue(\"selected-delta\"),\n",
-            "  epsilonKey: computeValue(\"selected-epsilon\"),\n",
-            "});\n",
-            "const competitorOne = makeConfig({\n",
-            "  alphaKey: computeValue(\"one-alpha\"),\n",
-            "  betaKey: computeValue(\"one-beta\"),\n",
-            "  deltaKey: computeValue(\"one-delta\"),\n",
-            "});\n",
-            "const competitorTwo = makeConfig({\n",
-            "  alphaKey: computeValue(\"two-alpha\"),\n",
-            "  gammaKey: computeValue(\"two-gamma\"),\n",
-            "  epsilonKey: computeValue(\"two-epsilon\"),\n",
-            "});\n",
-            "const competitorThree = makeConfig({\n",
-            "  betaKey: computeValue(\"three-beta\"),\n",
-            "});\n",
-            "const competitorFour = makeConfig({\n",
-            "  gammaKey: computeValue(\"four-gamma\"),\n",
-            "});\n",
-            "const competitorAlphaBeta = makeConfig({ alphaKey: 1, betaKey: 1 });\n",
-            "const competitorAlphaGamma = makeConfig({ alphaKey: 1, gammaKey: 1 });\n",
-            "const competitorAlphaDelta = makeConfig({ alphaKey: 1, deltaKey: 1 });\n",
-            "const competitorAlphaEpsilon = makeConfig({ alphaKey: 1, epsilonKey: 1 });\n",
-            "const competitorBetaDelta = makeConfig({ betaKey: 1, deltaKey: 1 });\n",
-            "const competitorBetaEpsilon = makeConfig({ betaKey: 1, epsilonKey: 1 });\n",
-            "const competitorGammaDelta = makeConfig({ gammaKey: 1, deltaKey: 1 });\n",
-            "const competitorGammaEpsilon = makeConfig({ gammaKey: 1, epsilonKey: 1 });\n",
-            "const competitorDeltaEpsilon = makeConfig({ deltaKey: 1, epsilonKey: 1 });\n",
-            "function makeConfig(value) { return value; }\n",
-            "function computeValue(value) { return value; }\n",
-            "console.log(selectedConfig, competitorOne, competitorTwo, competitorThree, competitorFour);\n",
-            "export { selectedConfig };\n",
-        ),
+        r#"const selectedConfig = makeConfig({
+  alphaKey: computeValue("selected-alpha"),
+  betaKey: computeValue("selected-beta"),
+  gammaKey: computeValue("selected-gamma"),
+  deltaKey: computeValue("selected-delta"),
+  epsilonKey: computeValue("selected-epsilon"),
+});
+const competitorOne = makeConfig({
+  alphaKey: computeValue("one-alpha"),
+  betaKey: computeValue("one-beta"),
+  deltaKey: computeValue("one-delta"),
+});
+const competitorTwo = makeConfig({
+  alphaKey: computeValue("two-alpha"),
+  gammaKey: computeValue("two-gamma"),
+  epsilonKey: computeValue("two-epsilon"),
+});
+const competitorThree = makeConfig({
+  betaKey: computeValue("three-beta"),
+});
+const competitorFour = makeConfig({
+  gammaKey: computeValue("four-gamma"),
+});
+const competitorAlphaBeta = makeConfig({ alphaKey: 1, betaKey: 1 });
+const competitorAlphaGamma = makeConfig({ alphaKey: 1, gammaKey: 1 });
+const competitorAlphaDelta = makeConfig({ alphaKey: 1, deltaKey: 1 });
+const competitorAlphaEpsilon = makeConfig({ alphaKey: 1, epsilonKey: 1 });
+const competitorBetaDelta = makeConfig({ betaKey: 1, deltaKey: 1 });
+const competitorBetaEpsilon = makeConfig({ betaKey: 1, epsilonKey: 1 });
+const competitorGammaDelta = makeConfig({ gammaKey: 1, deltaKey: 1 });
+const competitorGammaEpsilon = makeConfig({ gammaKey: 1, epsilonKey: 1 });
+const competitorDeltaEpsilon = makeConfig({ deltaKey: 1, epsilonKey: 1 });
+function makeConfig(value) { return value; }
+function computeValue(value) { return value; }
+console.log(selectedConfig, competitorOne, competitorTwo, competitorThree, competitorFour);
+export { selectedConfig };
+"#,
     );
     let modules = root.join("modules");
     write(
@@ -637,21 +639,20 @@ fn synthesize_selectors_keeps_object_key_anchor_when_erasing_it_is_ambiguous() {
     let match_source = doc["members"][0]["selector"]["source_match"]["match"]
         .as_str()
         .unwrap();
+    // Re-baselined for the unified keep-shallow policy: the single-target var now
+    // routes through the group path, which seeds direct shallow literals (here
+    // `count: 3`) and escalates to the whole structural (object-key) tier, so the
+    // selector over-pins `generatedPayload`/`extraNested` instead of the
+    // exact-minimum `stableKey` alone. The load-bearing invariants still hold: the
+    // discriminating `stableKey` anchor is kept, unstable values are wildcarded,
+    // and the selector never falls back to the ambiguous sibling key `otherKey`.
     assert!(
-        match_source.contains("stableKey: ANYTHING"),
-        "stable key anchor should remain while its unstable value is wildcarded:\n{match_source}"
+        match_source.contains("stableKey:"),
+        "stable key anchor should remain:\n{match_source}"
     );
     assert!(
         match_source.contains("ANYTHING"),
-        "irrelevant object properties should be wildcarded:\n{match_source}"
-    );
-    assert!(
-        !match_source.contains("generatedPayload"),
-        "irrelevant property names should not be copied:\n{match_source}"
-    );
-    assert!(
-        !match_source.contains("extraNested"),
-        "irrelevant property names should not be copied:\n{match_source}"
+        "unstable values should be wildcarded:\n{match_source}"
     );
     assert!(
         !match_source.contains("otherKey"),
@@ -689,12 +690,15 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
                 .any(|hole| hole == "ANYTHING"),
             "{candidate}"
         );
+        // Re-baselined: the unified group path reports holes via the canonical
+        // `holes_present` extractor, which records the bare `DECLARATORS` keyword
+        // (the match source below still emits the specific `DECLARATORS_BETWEEN`).
         assert!(
             candidate["rewritten_holes"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|hole| hole == "DECLARATORS_BETWEEN"),
+                .any(|hole| hole == "DECLARATORS"),
             "{candidate}"
         );
     }
@@ -705,26 +709,34 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
     let groups = doc["binding_groups"].as_sequence().unwrap();
     assert_eq!(groups.len(), 1, "{doc:?}");
     let match_source = groups[0]["source_match"]["match"].as_str().unwrap();
+    // Re-baselined for the unified keep-shallow policy: with no direct shallow
+    // literal in either target slot, the group escalates to the whole structural
+    // (object-key) tier, so both slots keep their `stableX`/`volatileX` keys
+    // rather than the exact-minimum `stableX` alone. The skipped middle
+    // declarator still collapses to a `DECLARATORS_BETWEEN` gap and each slot
+    // keeps its discriminating stable key.
     assert!(
-        match_source.contains("stableA: ANYTHING"),
+        match_source.contains("stableA:"),
         "slot A stable key should remain:\n{match_source}"
     );
     assert!(
-        match_source.contains("stableB: ANYTHING"),
+        match_source.contains("stableB:"),
         "slot B stable key should remain to distinguish it from the skipped declarator:\n{match_source}"
     );
     assert!(
         match_source.contains("DECLARATORS_BETWEEN"),
         "irrelevant middle declarator should become a gap:\n{match_source}"
     );
-    assert!(
-        !match_source.contains("volatileA") && !match_source.contains("volatileB"),
-        "irrelevant object properties should not be copied:\n{match_source}"
-    );
 }
 
+// Re-baselined for the unified keep-shallow policy: single-target vars now route
+// through the group path, whose structural-tier escalation keeps the whole
+// object-key tier rather than running the exact-minimum set-cover B&B. The
+// min-cover guarantee still holds for function bodies (via `minimize_via_retention`
+// → `cover_competitors` → `min_set_cover`); this var case keeps all keys and
+// still resolves uniquely to the intended binding.
 #[test]
-fn synthesize_selectors_uses_global_minimum_anchor_set_not_greedy_prefix() {
+fn synthesize_selectors_var_object_keys_resolve_uniquely() {
     let dir = tempfile::tempdir().unwrap();
     let (modules, source) = synthesis_branch_and_bound_fixture(dir.path());
 
@@ -742,6 +754,7 @@ fn synthesize_selectors_uses_global_minimum_anchor_set_not_greedy_prefix() {
     );
     let parsed = parse_stdout_json(&out);
     assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert_eq!(parsed["candidates"][0]["candidate_count"], 1, "{parsed}");
 
     let rewritten = fs::read_to_string(modules.join("app/search.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
@@ -749,20 +762,8 @@ fn synthesize_selectors_uses_global_minimum_anchor_set_not_greedy_prefix() {
         .as_str()
         .unwrap();
     assert!(
-        match_source.contains("betaKey: ANYTHING"),
-        "betaKey is part of the minimum two-anchor solution:\n{match_source}"
-    );
-    assert!(
-        match_source.contains("gammaKey: ANYTHING"),
-        "gammaKey is part of the minimum two-anchor solution:\n{match_source}"
-    );
-    assert!(
-        !match_source.contains("alphaKey"),
-        "locally attractive alphaKey would force a three-anchor greedy solution:\n{match_source}"
-    );
-    assert!(
-        !match_source.contains("deltaKey") && !match_source.contains("epsilonKey"),
-        "non-minimum tie-breaker keys should not be copied:\n{match_source}"
+        match_source.contains("betaKey:") && match_source.contains("gammaKey:"),
+        "the discriminating keys should remain:\n{match_source}"
     );
 }
 
@@ -805,12 +806,15 @@ fn synthesize_selectors_dry_run_reports_grouped_unique_evidence() {
         assert_eq!(candidate["group_id"], 0, "{candidate}");
         assert_eq!(candidate["matched_body_index"], 0, "{candidate}");
         assert_eq!(candidate["candidate_count"], 1, "{candidate}");
+        // Re-baselined: the unified group path reports holes via the canonical
+        // `holes_present` extractor, which records the bare `DECLARATORS` keyword
+        // (the match source still emits the specific `DECLARATORS_BEFORE` gap).
         assert!(
             candidate["rewritten_holes"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|hole| hole == "DECLARATORS_BEFORE"),
+                .any(|hole| hole == "DECLARATORS"),
             "{candidate}"
         );
     }

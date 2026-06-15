@@ -19,19 +19,16 @@ use serde::Serialize;
 use serde_yaml::Value;
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
-use swc_common::{BytePos, Span, Spanned};
+use swc_common::{BytePos, DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-const ANYTHING_HOLE_KEYWORD: &str = "ANYTHING";
-const EXPR_HOLE_KEYWORD: &str = "EXPR";
-const STMT_HOLE_KEYWORD: &str = "STMT";
-const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
-const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
-const ARGS_HOLE_KEYWORD: &str = "ARGS";
-const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
-const MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL: usize = 4096;
-const MAX_VAR_FEATURE_SEARCH_NODES: usize = 200_000;
+// Hole keyword spellings come from `source_match_holes` so the minimizer
+// emits exactly the tokens the matcher resolves.
+use source_match_holes::{
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+};
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -616,7 +613,6 @@ struct ChunkSelectorIndex {
     source: String,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
-    feature_to_body_indices: BTreeMap<SelectorAnchorFeature, BTreeSet<usize>>,
 }
 
 #[derive(Debug)]
@@ -632,16 +628,6 @@ enum IndexedDeclarationKind {
     Class,
     Var,
     Other,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum SelectorAnchorFeature {
-    DeclarationKind(IndexedDeclarationKind),
-    VarKind(String),
-    FunctionArity(usize),
-    ClassMember(String),
-    ObjectKey(String),
-    CallCallee(String),
 }
 
 #[derive(Debug)]
@@ -967,18 +953,10 @@ impl ChunkSelectorIndex {
         let source = parsed.source_text();
         let mut decls = Vec::new();
         let mut binding_to_decl: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-        let mut feature_to_body_indices: BTreeMap<SelectorAnchorFeature, BTreeSet<usize>> =
-            BTreeMap::new();
         for (body_idx, item) in parsed.module.body.iter().enumerate() {
             let indexed = IndexedDeclaration::from_item(body_idx, item);
             if indexed.declared_bindings.is_empty() {
                 continue;
-            }
-            for feature in selector_anchor_features_for_item(item, indexed.kind) {
-                feature_to_body_indices
-                    .entry(feature)
-                    .or_default()
-                    .insert(body_idx);
             }
             let decl_idx = decls.len();
             for binding in &indexed.declared_bindings {
@@ -994,34 +972,7 @@ impl ChunkSelectorIndex {
             source,
             decls,
             binding_to_decl,
-            feature_to_body_indices,
         }
-    }
-
-    fn frontier_for_features(&self, features: &BTreeSet<SelectorAnchorFeature>) -> BTreeSet<usize> {
-        let mut postings = features
-            .iter()
-            .filter_map(|feature| {
-                self.feature_to_body_indices
-                    .get(feature)
-                    .map(|body_indices| (feature, body_indices))
-            })
-            .collect::<Vec<_>>();
-        postings.sort_by_key(|(_, body_indices)| body_indices.len());
-        let Some((_, first)) = postings.first() else {
-            return self.decls.iter().map(|decl| decl.body_idx).collect();
-        };
-        let mut frontier = (*first).clone();
-        for (_, body_indices) in postings.into_iter().skip(1) {
-            frontier = frontier
-                .intersection(body_indices)
-                .copied()
-                .collect::<BTreeSet<_>>();
-            if frontier.is_empty() {
-                break;
-            }
-        }
-        frontier
     }
 }
 
@@ -1292,33 +1243,8 @@ fn synthesize_specialized_function_selector(
     let Some(Decl::Fn(function)) = item_decl(item) else {
         return Ok(None);
     };
-    let mut features = BTreeSet::from([
-        SelectorAnchorFeature::DeclarationKind(IndexedDeclarationKind::Function),
-        SelectorAnchorFeature::FunctionArity(function.function.params.len()),
-    ]);
-    if !frontier_is_small_and_contains_target(index, decl, &features) {
-        return Ok(None);
-    }
-    let params = function
-        .function
-        .params
-        .iter()
-        .map(|_| ANYTHING_HOLE_KEYWORD)
-        .collect::<Vec<_>>()
-        .join(", ");
-    features.insert(SelectorAnchorFeature::DeclarationKind(
-        IndexedDeclarationKind::Function,
-    ));
-    Ok(Some(SpecializedSelector {
-        match_source: format!(
-            "function {}({params}) {{\n  STMT_LIST;\n}}",
-            target.export_name
-        ),
-        rewritten_holes: BTreeSet::from([
-            ANYTHING_HOLE_KEYWORD.to_string(),
-            "STMT_LIST".to_string(),
-        ]),
-    }))
+    // On `None`, the caller falls back to the exact selector.
+    minimize_function_selector(index, &function.function, decl, target)
 }
 
 fn synthesize_specialized_class_selector(
@@ -1333,45 +1259,8 @@ fn synthesize_specialized_class_selector(
     let Some(Decl::Class(class_decl)) = item_decl(item) else {
         return Ok(None);
     };
-    let mut features = BTreeSet::from([SelectorAnchorFeature::DeclarationKind(
-        IndexedDeclarationKind::Class,
-    )]);
-    if frontier_is_small_and_contains_target(index, decl, &features) {
-        return Ok(Some(SpecializedSelector {
-            match_source: format!("class {} {{\n  CLASS_REST;\n}}", target.export_name),
-            rewritten_holes: BTreeSet::from(["CLASS_REST".to_string()]),
-        }));
-    }
-
-    let mut member_names = class_decl
-        .class
-        .body
-        .iter()
-        .filter_map(class_member_feature_name)
-        .collect::<Vec<_>>();
-    member_names.sort_by_key(|name| {
-        index
-            .feature_to_body_indices
-            .get(&SelectorAnchorFeature::ClassMember(name.clone()))
-            .map_or(usize::MAX, BTreeSet::len)
-    });
-    let mut selected = BTreeSet::new();
-    for name in member_names {
-        features.insert(SelectorAnchorFeature::ClassMember(name.clone()));
-        selected.insert(name);
-        if frontier_is_small_and_contains_target(index, decl, &features) {
-            let members = render_class_member_skeletons(&class_decl.class, &selected, index)?;
-            return Ok(Some(SpecializedSelector {
-                match_source: format!("class {} {{\n{members}}}", target.export_name),
-                rewritten_holes: BTreeSet::from([
-                    ANYTHING_HOLE_KEYWORD.to_string(),
-                    "STMT_LIST".to_string(),
-                    "CLASS_REST".to_string(),
-                ]),
-            }));
-        }
-    }
-    Ok(None)
+    // On `None`, the caller falls back to the exact selector.
+    minimize_class_selector(index, &class_decl.class, decl, target)
 }
 
 fn synthesize_specialized_var_selector(
@@ -1381,930 +1270,999 @@ fn synthesize_specialized_var_selector(
     targets: &[SynthesizedTargetBinding],
 ) -> Result<Option<SpecializedSelector>> {
     let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
-    let target_slots = targets
-        .iter()
-        .map(|target| {
-            decl.declared_bindings
-                .iter()
-                .find(|binding| binding.name == target.runtime_binding)
-                .and_then(|binding| binding.declarator_idx)
-                .with_context(|| {
-                    format!(
-                        "target `{}` is not a var declarator",
-                        target.runtime_binding
-                    )
-                })
+    // Single-target and multi-target vars both route through the AST-prune group
+    // path (the single case is the N=1 group). On `None`, the caller falls back
+    // to the exact selector.
+    minimize_var_group_selector(index, var, decl, targets)
+}
+
+// ===========================================================================
+// Retention-driven selector minimizer.
+//
+// A selector is the target rendered with a *retention set*: the byte spans of
+// the concrete tokens (literals, member/property names, callees, object keys)
+// the selector pins. A node renders concretely iff a kept span lies inside it;
+// every other position is holed — `ANYTHING` for a bare expression, and the
+// run holes `STMT_LIST` / `OBJECT_PROPS` / `CLASS_REST` for dropped statement /
+// object-property / class-member runs.
+//
+// Anchor selection favors keeping shallow literals (direct values/args), then
+// escalates by tier (structural key/member presence, then deeper literals).
+// Function and class single targets resolve through a matcher-driven minimum
+// set cover (`cover_competitors` + `min_set_cover` B&B): each anchor's exclusion
+// set is computed by the production matcher, so discrimination is exact and the
+// cover is minimum-cardinality. Var declarations (single and multi-target
+// groups) share one keep-shallow-then-escalate path (`minimize_var_group_selector`,
+// the single declarator being its N=1 case), proven through the binding-group
+// matcher used as a resolves-uniquely oracle; it keeps each slot's direct shallow
+// literals and may over-pin rather than run an exact-minimum cover. Either way the
+// chosen union is rendered once and proven by the matcher. This is a mechanical
+// first pass — it finds *a* robust pin for the routine cases, not necessarily the
+// most semantically meaningful one.
+// ===========================================================================
+
+/// `(lo, hi)` byte offsets of a retained concrete token.
+type AnchorSpan = (u32, u32);
+
+const MAX_MINIMIZER_ANCHORS: usize = 64;
+
+fn span_key(span: Span) -> AnchorSpan {
+    (span.lo.0, span.hi.0)
+}
+
+fn node_holds_anchor(node: Span, anchor: AnchorSpan) -> bool {
+    node.lo.0 <= anchor.0 && anchor.1 <= node.hi.0
+}
+
+fn node_retains_any(node: Span, kept: &BTreeSet<AnchorSpan>) -> bool {
+    kept.iter().any(|anchor| node_holds_anchor(node, *anchor))
+}
+
+fn ident_node(name: &str) -> Ident {
+    Ident::new_no_ctxt(name.into(), DUMMY_SP)
+}
+
+fn anything_expr() -> Expr {
+    Expr::Ident(ident_node(ANYTHING_HOLE_KEYWORD))
+}
+
+fn stmt_list_stmt() -> Stmt {
+    Stmt::Expr(ExprStmt {
+        span: DUMMY_SP,
+        expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
+    })
+}
+
+fn object_props_prop() -> PropOrSpread {
+    PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(
+        OBJECT_PROPS_HOLE_KEYWORD,
+    ))))
+}
+
+fn anything_pat() -> Pat {
+    Pat::Ident(BindingIdent {
+        id: ident_node(ANYTHING_HOLE_KEYWORD),
+        type_ann: None,
+    })
+}
+
+fn holed_block(block: &BlockStmt, kept: &BTreeSet<AnchorSpan>) -> BlockStmt {
+    let mut holed = block.clone();
+    holed.stmts = hole_stmts(&block.stmts, kept);
+    holed
+}
+
+/// Prune an expression into selector form: keep concrete tokens whose span is in
+/// `kept`, and replace every subtree off a kept token's path with an `ANYTHING`
+/// hole node. The result is an ordinary `swc` AST emitted by codegen, not a
+/// hand-built string.
+fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
+    if !node_retains_any(expr.span(), kept) {
+        return anything_expr();
+    }
+    match expr {
+        Expr::Paren(paren) => hole_expr(&paren.expr, kept),
+        Expr::Lit(_) | Expr::Ident(_) | Expr::Tpl(_) => expr.clone(),
+        Expr::Member(member) => {
+            let mut holed = member.clone();
+            holed.obj = Box::new(hole_expr(&member.obj, kept));
+            Expr::Member(holed)
+        }
+        Expr::Call(call) => {
+            let mut holed = call.clone();
+            holed.callee = hole_callee(&call.callee, kept);
+            holed.args = hole_args(&call.args, kept);
+            Expr::Call(holed)
+        }
+        Expr::New(new_expr) => {
+            let mut holed = new_expr.clone();
+            holed.callee = Box::new(hole_callee_expr(&new_expr.callee, kept));
+            holed.args = new_expr.args.as_ref().map(|args| hole_args(args, kept));
+            Expr::New(holed)
+        }
+        Expr::Object(object) => Expr::Object(hole_object(object, kept)),
+        Expr::Await(await_expr) => {
+            let mut holed = await_expr.clone();
+            holed.arg = Box::new(hole_expr(&await_expr.arg, kept));
+            Expr::Await(holed)
+        }
+        Expr::Unary(unary) => {
+            let mut holed = unary.clone();
+            holed.arg = Box::new(hole_expr(&unary.arg, kept));
+            Expr::Unary(holed)
+        }
+        Expr::Bin(bin) => {
+            let mut holed = bin.clone();
+            holed.left = Box::new(hole_expr(&bin.left, kept));
+            holed.right = Box::new(hole_expr(&bin.right, kept));
+            Expr::Bin(holed)
+        }
+        // Unmodeled shapes carrying a kept anchor: keep verbatim rather than
+        // risk an unsound hole. Over-pinning here is a future refinement.
+        _ => expr.clone(),
+    }
+}
+
+/// Hole a call's callee while keeping the invoked identity — a method name or a
+/// bare function reference is a meaningful, stable pin; only a member receiver
+/// is holed.
+fn hole_callee(callee: &Callee, kept: &BTreeSet<AnchorSpan>) -> Callee {
+    match callee {
+        Callee::Expr(expr) => Callee::Expr(Box::new(hole_callee_expr(expr, kept))),
+        Callee::Super(_) | Callee::Import(_) => callee.clone(),
+    }
+}
+
+fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
+    match expr {
+        Expr::Member(member) => {
+            let mut holed = member.clone();
+            holed.obj = Box::new(hole_expr(&member.obj, kept));
+            Expr::Member(holed)
+        }
+        Expr::Ident(_) => expr.clone(),
+        Expr::Paren(paren) => hole_callee_expr(&paren.expr, kept),
+        _ => hole_expr(expr, kept),
+    }
+}
+
+fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
+    args.iter()
+        .map(|arg| {
+            let mut holed = arg.clone();
+            if arg.spread.is_none() {
+                holed.expr = Box::new(hole_expr(&arg.expr, kept));
+            }
+            holed
         })
-        .collect::<Result<Vec<_>>>()?;
-    if !var_group_frontier_is_bounded(index, var.kind, targets.len()) {
+        .collect()
+}
+
+fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
+    let mut props = Vec::new();
+    let mut dropped_run = false;
+    for prop in &object.props {
+        if node_retains_any(prop.span(), kept) {
+            if dropped_run {
+                props.push(object_props_prop());
+                dropped_run = false;
+            }
+            props.push(hole_prop(prop, kept));
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run {
+        props.push(object_props_prop());
+    }
+    let mut holed = object.clone();
+    holed.props = props;
+    holed
+}
+
+fn hole_prop(prop: &PropOrSpread, kept: &BTreeSet<AnchorSpan>) -> PropOrSpread {
+    let PropOrSpread::Prop(inner) = prop else {
+        return prop.clone();
+    };
+    if let Prop::KeyValue(key_value) = inner.as_ref() {
+        let mut holed = key_value.clone();
+        holed.value = Box::new(hole_expr(&key_value.value, kept));
+        PropOrSpread::Prop(Box::new(Prop::KeyValue(holed)))
+    } else {
+        prop.clone()
+    }
+}
+
+/// Hole a statement list, collapsing runs of dropped statements into a single
+/// `STMT_LIST;` hole statement.
+fn hole_stmts(stmts: &[Stmt], kept: &BTreeSet<AnchorSpan>) -> Vec<Stmt> {
+    let mut out = Vec::new();
+    let mut dropped_run = false;
+    for stmt in stmts {
+        if node_retains_any(stmt.span(), kept) {
+            if dropped_run {
+                out.push(stmt_list_stmt());
+                dropped_run = false;
+            }
+            out.push(hole_stmt(stmt, kept));
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run || out.is_empty() {
+        out.push(stmt_list_stmt());
+    }
+    out
+}
+
+fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
+    match stmt {
+        Stmt::Expr(expr_stmt) => {
+            let mut holed = expr_stmt.clone();
+            holed.expr = Box::new(hole_expr(&expr_stmt.expr, kept));
+            Stmt::Expr(holed)
+        }
+        Stmt::Return(ret) => {
+            let mut holed = ret.clone();
+            holed.arg = ret.arg.as_ref().map(|arg| Box::new(hole_expr(arg, kept)));
+            Stmt::Return(holed)
+        }
+        Stmt::Throw(throw) => {
+            let mut holed = throw.clone();
+            holed.arg = Box::new(hole_expr(&throw.arg, kept));
+            Stmt::Throw(holed)
+        }
+        Stmt::Decl(Decl::Var(var)) => {
+            let mut holed = (**var).clone();
+            for declarator in &mut holed.decls {
+                if let Some(init) = &declarator.init {
+                    declarator.init = Some(Box::new(hole_expr(init, kept)));
+                }
+            }
+            Stmt::Decl(Decl::Var(Box::new(holed)))
+        }
+        Stmt::If(if_stmt) => {
+            let mut holed = if_stmt.clone();
+            holed.test = Box::new(hole_expr(&if_stmt.test, kept));
+            let cons_stmts = match if_stmt.cons.as_ref() {
+                Stmt::Block(block) => hole_stmts(&block.stmts, kept),
+                other => hole_stmts(std::slice::from_ref(other), kept),
+            };
+            holed.cons = Box::new(Stmt::Block(BlockStmt {
+                span: DUMMY_SP,
+                ctxt: SyntaxContext::empty(),
+                stmts: cons_stmts,
+            }));
+            holed.alt = None;
+            Stmt::If(holed)
+        }
+        Stmt::Try(try_stmt) => {
+            let mut holed = try_stmt.clone();
+            holed.block = holed_block(&try_stmt.block, kept);
+            if let Some(handler) = &mut holed.handler {
+                if handler.param.is_some() {
+                    handler.param = Some(anything_pat());
+                }
+                handler.body = holed_block(&handler.body, kept);
+            }
+            if let Some(finalizer) = &mut holed.finalizer {
+                *finalizer = holed_block(finalizer, kept);
+            }
+            Stmt::Try(holed)
+        }
+        Stmt::Block(block) => Stmt::Block(holed_block(block, kept)),
+        // Unmodeled statement shapes carrying a kept anchor: keep verbatim.
+        _ => stmt.clone(),
+    }
+}
+
+/// Candidate concrete anchors, split into preference tiers. Literal values are
+/// stable, meaningful landmarks (a magic string, a config number/bool), so they
+/// are tried before structural member/property and key names. Among literals,
+/// shallower ones (fewer enclosing call/new levels) are preferred: a direct
+/// `key: "primary"` pins less nested structure — and is more rebuild-robust —
+/// than a literal buried inside `mk("primary")`.
+#[derive(Default)]
+struct AnchorCandidates {
+    /// `(span, call-nesting depth)` for each literal.
+    literals: Vec<(AnchorSpan, u32)>,
+    structural: Vec<AnchorSpan>,
+}
+
+/// A literal at most this many call/new levels deep counts as a *direct* value
+/// or argument — a meaningful, stable pin worth keeping. Deeper literals are
+/// treated as buried in incidental computation and ranked below structural
+/// key/member presence.
+const SHALLOW_LITERAL_DEPTH: u32 = 1;
+
+impl AnchorCandidates {
+    /// Anchor tiers, most-preferred first:
+    /// 1. shallow literals (direct values/args), by ascending call depth;
+    /// 2. structural key/member presence;
+    /// 3. deeper literals (buried in nested calls).
+    ///
+    /// Structural presence sits above deep literals because pinning a key's
+    /// existence is leaner and more rebuild-robust than pinning a volatile
+    /// computed value (`stableKey: ANYTHING` over `stableKey: mk("x")`).
+    fn tiers(&self) -> Vec<Vec<AnchorSpan>> {
+        let literal_tier = |depth: u32| -> Vec<AnchorSpan> {
+            self.literals
+                .iter()
+                .filter(|(_, anchor_depth)| *anchor_depth == depth)
+                .map(|(span, _)| *span)
+                .collect()
+        };
+        let mut tiers = Vec::new();
+        let Some(max_depth) = self.literals.iter().map(|(_, depth)| *depth).max() else {
+            if !self.structural.is_empty() {
+                tiers.push(self.structural.clone());
+            }
+            return tiers;
+        };
+        for depth in 0..=max_depth.min(SHALLOW_LITERAL_DEPTH) {
+            let tier = literal_tier(depth);
+            if !tier.is_empty() {
+                tiers.push(tier);
+            }
+        }
+        if !self.structural.is_empty() {
+            tiers.push(self.structural.clone());
+        }
+        for depth in (SHALLOW_LITERAL_DEPTH + 1)..=max_depth {
+            let tier = literal_tier(depth);
+            if !tier.is_empty() {
+                tiers.push(tier);
+            }
+        }
+        tiers
+    }
+
+    /// Shallow literal anchors — direct values/args worth keeping as meaningful
+    /// per-slot pins even when structure alone would already discriminate. This
+    /// includes object-property values (`kind: "primary"`): the unified anchor
+    /// policy favors keeping shallow literals over an exact-minimum cover, so an
+    /// occasional over-pin (a shared `enabled: true`) is accepted as the price
+    /// of a single policy across single and group targets.
+    fn shallow_literals(&self) -> Vec<AnchorSpan> {
+        self.literals
+            .iter()
+            .filter(|(_, depth)| *depth <= SHALLOW_LITERAL_DEPTH)
+            .map(|(span, _)| *span)
+            .collect()
+    }
+
+    /// Tiers consulted only when shallow literals are not enough on their own:
+    /// structural key/member presence, then deeper literals by ascending depth.
+    fn deep_cover_tiers(&self) -> Vec<Vec<AnchorSpan>> {
+        let mut tiers = Vec::new();
+        if !self.structural.is_empty() {
+            tiers.push(self.structural.clone());
+        }
+        if let Some(max_depth) = self.literals.iter().map(|(_, depth)| *depth).max() {
+            for depth in (SHALLOW_LITERAL_DEPTH + 1)..=max_depth {
+                let tier: Vec<AnchorSpan> = self
+                    .literals
+                    .iter()
+                    .filter(|(_, anchor_depth)| *anchor_depth == depth)
+                    .map(|(span, _)| *span)
+                    .collect();
+                if !tier.is_empty() {
+                    tiers.push(tier);
+                }
+            }
+        }
+        tiers
+    }
+}
+
+fn collect_stmt_list_anchors(stmts: &[Stmt]) -> AnchorCandidates {
+    let mut candidates = AnchorCandidates::default();
+    for stmt in stmts {
+        collect_stmt_anchors(stmt, &mut candidates);
+    }
+    candidates
+}
+
+fn collect_stmt_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
+    match stmt {
+        Stmt::Expr(expr_stmt) => collect_expr_anchors(&expr_stmt.expr, 0, candidates),
+        Stmt::Return(ret) => {
+            if let Some(arg) = &ret.arg {
+                collect_expr_anchors(arg, 0, candidates);
+            }
+        }
+        Stmt::Throw(throw) => collect_expr_anchors(&throw.arg, 0, candidates),
+        Stmt::Decl(Decl::Var(var)) => {
+            for declarator in &var.decls {
+                if let Some(init) = &declarator.init {
+                    collect_expr_anchors(init, 0, candidates);
+                }
+            }
+        }
+        Stmt::If(if_stmt) => {
+            collect_expr_anchors(&if_stmt.test, 0, candidates);
+            collect_block_anchors(&if_stmt.cons, candidates);
+        }
+        Stmt::Try(try_stmt) => {
+            for stmt in &try_stmt.block.stmts {
+                collect_stmt_anchors(stmt, candidates);
+            }
+        }
+        Stmt::Block(block) => {
+            for stmt in &block.stmts {
+                collect_stmt_anchors(stmt, candidates);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_block_anchors(stmt: &Stmt, candidates: &mut AnchorCandidates) {
+    match stmt {
+        Stmt::Block(block) => {
+            for stmt in &block.stmts {
+                collect_stmt_anchors(stmt, candidates);
+            }
+        }
+        _ => collect_stmt_anchors(stmt, candidates),
+    }
+}
+
+/// `depth` counts enclosing call/new levels, so the tiered cover can prefer
+/// shallower literal anchors. Object-property values (`kind: "primary"`) are
+/// collected at the enclosing depth like any other literal; the unified
+/// keep-shallow policy retains them rather than treating them as incidental.
+fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidates) {
+    match expr {
+        Expr::Lit(_) | Expr::Tpl(_) => {
+            candidates.literals.push((span_key(expr.span()), depth));
+        }
+        Expr::Paren(paren) => collect_expr_anchors(&paren.expr, depth, candidates),
+        Expr::Member(member) => {
+            collect_expr_anchors(&member.obj, depth, candidates);
+            if let MemberProp::Ident(ident) = &member.prop {
+                candidates.structural.push(span_key(ident.span));
+            } else if let MemberProp::Computed(computed) = &member.prop {
+                collect_expr_anchors(&computed.expr, depth, candidates);
+            }
+        }
+        Expr::Call(call) => {
+            if let Callee::Expr(callee) = &call.callee {
+                collect_expr_anchors(callee, depth, candidates);
+            }
+            for arg in &call.args {
+                if arg.spread.is_none() {
+                    collect_expr_anchors(&arg.expr, depth + 1, candidates);
+                }
+            }
+        }
+        Expr::New(new_expr) => {
+            collect_expr_anchors(&new_expr.callee, depth, candidates);
+            for arg in new_expr.args.as_deref().unwrap_or_default() {
+                if arg.spread.is_none() {
+                    collect_expr_anchors(&arg.expr, depth + 1, candidates);
+                }
+            }
+        }
+        Expr::Object(object) => {
+            for prop in &object.props {
+                if let PropOrSpread::Prop(prop) = prop {
+                    if let Prop::KeyValue(key_value) = prop.as_ref() {
+                        candidates.structural.push(span_key(key_value.key.span()));
+                        collect_expr_anchors(&key_value.value, depth, candidates);
+                    }
+                }
+            }
+        }
+        Expr::Await(await_expr) => collect_expr_anchors(&await_expr.arg, depth, candidates),
+        Expr::Unary(unary) => collect_expr_anchors(&unary.arg, depth, candidates),
+        Expr::Bin(bin) => {
+            collect_expr_anchors(&bin.left, depth, candidates);
+            collect_expr_anchors(&bin.right, depth, candidates);
+        }
+        _ => {}
+    }
+}
+
+/// Body indices a `target_binding` selector with `match_source` resolves to.
+fn matched_body_indices(
+    index: &ChunkSelectorIndex,
+    export_name: &str,
+    match_source: &str,
+) -> Result<BTreeSet<usize>> {
+    let source_match = SourceMatch {
+        match_source: match_source.to_string(),
+        identifiers: SourceMatchIdentifierMode::AlphaAll,
+        target_binding: Some(export_name.to_string()),
+        target_statement: None,
+        target_statements: None,
+        wildcard_string_literals: BTreeSet::new(),
+    };
+    let matches = source_match::member_binding_candidate_matches(
+        &index.parsed.module,
+        "<selector minimization>",
+        &source_match.selector(),
+    )?;
+    Ok(matches.iter().map(|candidate| candidate.body_idx).collect())
+}
+
+fn holes_present(source: &str) -> BTreeSet<String> {
+    let mut holes = BTreeSet::new();
+    for keyword in [
+        ANYTHING_HOLE_KEYWORD,
+        STMT_LIST_HOLE_KEYWORD,
+        OBJECT_PROPS_HOLE_KEYWORD,
+        CLASS_REST_HOLE_KEYWORD,
+        DECLARATORS_HOLE_KEYWORD,
+    ] {
+        if source.contains(keyword) {
+            holes.insert(keyword.to_string());
+        }
+    }
+    holes
+}
+
+/// Minimal anchor cover for a single-target declaration. `render_with` renders
+/// the declaration's selector given a kept-anchor set, and `candidates` are its
+/// concrete anchors. Competitors are exactly the items the maximally-holed
+/// selector still matches; the tiered cover picks the fewest anchors that rule
+/// them out, and the chosen selector is rendered and proven once.
+fn minimize_via_retention(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    candidates: &AnchorCandidates,
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
+) -> Result<Option<SpecializedSelector>> {
+    let empty = BTreeSet::new();
+    let mut competitors = matched_body_indices(index, &target.export_name, &render_with(&empty)?)?;
+    competitors.remove(&decl.body_idx);
+    if competitors.is_empty() {
+        return finish_minimized_selector(index, decl, target, render_with(&empty)?);
+    }
+    let Some(chosen) = cover_competitors(
+        index,
+        target,
+        &competitors,
+        &candidates.tiers(),
+        render_with,
+    )?
+    else {
+        return Ok(None);
+    };
+    finish_minimized_selector(index, decl, target, render_with(&chosen)?)
+}
+
+fn minimize_function_selector(
+    index: &ChunkSelectorIndex,
+    function: &Function,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+) -> Result<Option<SpecializedSelector>> {
+    let Some(body) = &function.body else {
+        return Ok(None);
+    };
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut holed = function.clone();
+        holed.params = function.params.iter().map(|_| anything_param()).collect();
+        if let Some(holed_body) = &mut holed.body {
+            holed_body.stmts = hole_stmts(&body.stmts, kept);
+        }
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Fn(FnDecl {
+            ident: ident_node(&target.export_name),
+            declare: false,
+            function: Box::new(holed),
+        }))))
+    };
+    let candidates = collect_stmt_list_anchors(&body.stmts);
+    minimize_via_retention(index, decl, target, &candidates, &render_with)
+}
+
+/// A `DECLARATORS_<pos> = null` declarator hole absorbing a run of non-target
+/// declarators in a binding-group selector.
+fn declarator_hole(name: &str) -> VarDeclarator {
+    VarDeclarator {
+        span: DUMMY_SP,
+        name: named_pat(name),
+        init: Some(Box::new(Expr::Lit(Lit::Null(Null { span: DUMMY_SP })))),
+        definite: false,
+    }
+}
+
+/// Minimal anchor cover for a `var`/`let`/`const` binding group: render the
+/// shared declaration keeping the target declarators (each `export = <holed
+/// init>`) with `DECLARATORS_*` holes for non-target runs, and pin just enough
+/// anchors for the group to resolve uniquely to the right declaration and
+/// bindings. A single-declarator target is the N=1 case of this path: one
+/// target slot, no `DECLARATORS_*` gaps, and the binding-group matcher's tuple
+/// proof degenerates to the single-binding case in `prove_synthesized_selector`.
+///
+/// The proof uses `prove_synthesized_selector` as a boolean oracle (it yields a
+/// count or an error rather than a candidate set), adding anchors tier by tier
+/// (shallow literals first) until the group resolves correctly.
+fn minimize_var_group_selector(
+    index: &ChunkSelectorIndex,
+    var: &VarDecl,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
+    let export_for = |runtime: &str| {
+        targets
+            .iter()
+            .find(|target| target.runtime_binding == runtime)
+            .map(|target| target.export_name.as_str())
+    };
+    let target_slots: BTreeSet<usize> = var
+        .decls
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, declarator)| {
+            let name = single_ident_pat_name(&declarator.name)?;
+            export_for(name).map(|_| idx)
+        })
+        .collect();
+    if target_slots.len() != targets.len() {
         return Ok(None);
     }
-    let target_decl_indices = target_slots.iter().copied().collect::<BTreeSet<_>>();
-    let mut slot_constraints = vec![BTreeSet::new(); targets.len()];
-    let mut frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
-    if !target_tuple_is_unique(&frontier, decl, &target_slots) {
-        let Some(selected_constraints) = select_min_cost_var_slot_constraints(
-            index,
-            var.kind,
-            targets.len(),
-            decl,
-            &target_slots,
-        ) else {
-            return Ok(None);
-        };
-        slot_constraints = selected_constraints;
-        frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
-        if !target_tuple_is_unique(&frontier, decl, &target_slots) {
-            return Ok(None);
+
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut decls: Vec<VarDeclarator> = Vec::new();
+        let mut skipped_run = false;
+        let mut target_seen = 0usize;
+        for (idx, declarator) in var.decls.iter().enumerate() {
+            if !target_slots.contains(&idx) {
+                skipped_run = true;
+                continue;
+            }
+            if skipped_run {
+                decls.push(declarator_hole(declarator_hole_name(
+                    target_seen,
+                    targets.len(),
+                )));
+                skipped_run = false;
+            }
+            let name = single_ident_pat_name(&declarator.name)
+                .expect("target declarator is a plain identifier");
+            let mut holed = declarator.clone();
+            holed.name = named_pat(export_for(name).expect("target declarator has an export"));
+            holed.init = declarator
+                .init
+                .as_ref()
+                .map(|init| Box::new(hole_expr(init, kept)));
+            decls.push(holed);
+            target_seen += 1;
+        }
+        if skipped_run {
+            decls.push(declarator_hole(declarator_hole_name(
+                target_seen,
+                targets.len(),
+            )));
+        }
+        let mut holed_var = var.clone();
+        holed_var.declare = false;
+        holed_var.decls = decls;
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+    };
+
+    let mut candidates = AnchorCandidates::default();
+    for (idx, declarator) in var.decls.iter().enumerate() {
+        if target_slots.contains(&idx) {
+            if let Some(init) = &declarator.init {
+                collect_expr_anchors(init, 0, &mut candidates);
+            }
         }
     }
 
-    let export_by_runtime = targets
-        .iter()
-        .map(|target| (target.runtime_binding.as_str(), target.export_name.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    let mut parts = Vec::new();
-    let mut holes = BTreeSet::new();
-    let mut skipped_run = 0usize;
-    let mut target_seen = 0usize;
-    for (idx, declarator) in var.decls.iter().enumerate() {
-        if !target_decl_indices.contains(&idx) {
-            skipped_run += 1;
-            continue;
+    let resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
+        Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept)?).is_ok())
+    };
+    // Always keep each slot's shallow literals (a group's declarators are its
+    // meaningful targets), then escalate to structural/deeper anchors only if
+    // the group does not yet resolve uniquely to the right bindings.
+    let mut kept: BTreeSet<AnchorSpan> = candidates.shallow_literals().into_iter().collect();
+    if !resolves(&kept)? {
+        for tier in candidates.deep_cover_tiers() {
+            kept.extend(tier);
+            if resolves(&kept)? {
+                break;
+            }
         }
-        if skipped_run > 0 {
-            let hole = declarator_hole_name(target_seen, target_decl_indices.len());
-            parts.push(format!("{hole} = null"));
-            holes.insert(hole.to_string());
-            skipped_run = 0;
+        if !resolves(&kept)? {
+            return Ok(None);
         }
-        let runtime_name = single_ident_pat_name(&declarator.name)
-            .context("only identifier var declarators can be synthesized today")?;
-        let export_name = export_by_runtime
-            .get(runtime_name)
-            .copied()
-            .context("target declarator missing export name")?;
-        let init = declarator
-            .init
-            .as_deref()
-            .map(|expr| {
-                render_specialized_expr_selector(index, expr, &slot_constraints[target_seen])
-            })
-            .transpose()?
-            .unwrap_or_else(anything_expr_selector);
-        holes.extend(init.holes.clone());
-        parts.push(format!("{export_name} = {}", init.source));
-        target_seen += 1;
     }
-    if skipped_run > 0 {
-        let hole = declarator_hole_name(target_seen, target_decl_indices.len());
-        parts.push(format!("{hole} = null"));
-        holes.insert(hole.to_string());
-    }
+    let source = render_with(&kept)?;
+    let rewritten_holes = holes_present(&source);
     Ok(Some(SpecializedSelector {
-        match_source: format!("{} {};", var_kind_label(var.kind), parts.join(",\n  ")),
-        rewritten_holes: holes,
+        match_source: source,
+        rewritten_holes,
     }))
 }
 
-fn frontier_is_small_and_contains_target(
+/// Minimal anchor cover for a single-target class: render the class keeping
+/// only members (and member-body statements) that carry a chosen anchor, with
+/// `CLASS_REST` for dropped member runs, and cover sibling classes.
+fn minimize_class_selector(
     index: &ChunkSelectorIndex,
-    decl: &IndexedDeclaration,
-    features: &BTreeSet<SelectorAnchorFeature>,
-) -> bool {
-    let frontier = index.frontier_for_features(features);
-    frontier.contains(&decl.body_idx) && frontier.len() == 1
-}
-
-fn select_min_cost_var_slot_constraints(
-    index: &ChunkSelectorIndex,
-    var_kind: VarDeclKind,
-    target_count: usize,
-    decl: &IndexedDeclaration,
-    target_slots: &[usize],
-) -> Option<Vec<BTreeSet<SelectorAnchorFeature>>> {
-    let empty_constraints = vec![BTreeSet::new(); target_count];
-    let tuples =
-        var_group_frontier_with_features(index, var_kind, target_count, &empty_constraints);
-    let target_tuple = VarGroupTuple {
-        body_idx: decl.body_idx,
-        slots: target_slots.to_vec(),
-    };
-    let target_tuple_idx = tuples
-        .iter()
-        .position(|tuple| tuple.tuple == target_tuple)?;
-    let competitors = tuples
-        .iter()
-        .enumerate()
-        .filter_map(|(tuple_idx, _)| (tuple_idx != target_tuple_idx).then_some(tuple_idx))
-        .collect::<BTreeSet<_>>();
-    if competitors.is_empty() {
-        return Some(empty_constraints);
-    }
-
-    let options = var_slot_feature_options(&tuples[target_tuple_idx], target_count);
-    if options.is_empty() {
-        return None;
-    }
-    let option_covers = options
-        .iter()
-        .map(|option| {
-            competitors
-                .iter()
-                .filter_map(|tuple_idx| {
-                    (!var_group_tuple_has_slot_feature(&tuples[*tuple_idx], option))
-                        .then_some(*tuple_idx)
-                })
-                .collect::<BTreeSet<_>>()
-        })
-        .collect::<Vec<_>>();
-    let usable_options = options
-        .into_iter()
-        .zip(option_covers)
-        .filter(|(_, covered)| !covered.is_empty())
-        .map(|(option, covered)| VarSlotSearchOption { option, covered })
-        .collect::<Vec<_>>();
-    if usable_options.is_empty() {
-        return None;
-    }
-
-    let mut search = VarSlotConstraintSearch::new(usable_options, competitors);
-    search.solve().map(|selected| {
-        let mut slot_constraints = vec![BTreeSet::new(); target_count];
-        for option_idx in selected {
-            let option = &search.options[option_idx].option;
-            slot_constraints[option.target_pos].insert(option.feature.clone());
-        }
-        slot_constraints
-    })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct VarSlotFeatureOption {
-    target_pos: usize,
-    feature: SelectorAnchorFeature,
-}
-
-#[derive(Debug)]
-struct VarSlotSearchOption {
-    option: VarSlotFeatureOption,
-    covered: BTreeSet<usize>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct SelectorSearchCost {
-    weighted_features: usize,
-    feature_count: usize,
-}
-
-impl SelectorSearchCost {
-    const ZERO: Self = Self {
-        weighted_features: 0,
-        feature_count: 0,
-    };
-
-    fn add(self, feature: &SelectorAnchorFeature) -> Self {
-        Self {
-            weighted_features: self.weighted_features + feature_cost(feature),
-            feature_count: self.feature_count + 1,
-        }
-    }
-}
-
-fn var_slot_feature_options(
-    target_tuple: &VarGroupTupleWithFeatures,
-    target_count: usize,
-) -> Vec<VarSlotFeatureOption> {
-    (0..target_count)
-        .flat_map(|target_pos| {
-            target_tuple
-                .slot_features
-                .get(target_pos)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(move |feature| VarSlotFeatureOption {
-                    target_pos,
-                    feature,
-                })
-        })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn var_group_tuple_has_slot_feature(
-    tuple: &VarGroupTupleWithFeatures,
-    option: &VarSlotFeatureOption,
-) -> bool {
-    tuple
-        .slot_features
-        .get(option.target_pos)
-        .is_some_and(|features| features.contains(&option.feature))
-}
-
-struct VarSlotConstraintSearch {
-    options: Vec<VarSlotSearchOption>,
-    uncovered_initial: BTreeSet<usize>,
-    options_covering_competitor: BTreeMap<usize, Vec<usize>>,
-    best: Option<(SelectorSearchCost, Vec<usize>)>,
-    memo: BTreeMap<BTreeSet<usize>, SelectorSearchCost>,
-    nodes: usize,
-}
-
-impl VarSlotConstraintSearch {
-    fn new(options: Vec<VarSlotSearchOption>, uncovered_initial: BTreeSet<usize>) -> Self {
-        let mut options_covering_competitor: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for (option_idx, option) in options.iter().enumerate() {
-            for tuple_idx in &option.covered {
-                options_covering_competitor
-                    .entry(*tuple_idx)
-                    .or_default()
-                    .push(option_idx);
-            }
-        }
-        for option_indices in options_covering_competitor.values_mut() {
-            option_indices
-                .sort_by(|a, b| option_sort_key(&options[*a]).cmp(&option_sort_key(&options[*b])));
-        }
-        Self {
-            options,
-            uncovered_initial,
-            options_covering_competitor,
-            best: None,
-            memo: BTreeMap::new(),
-            nodes: 0,
-        }
-    }
-
-    fn solve(&mut self) -> Option<Vec<usize>> {
-        let greedy = self.greedy_upper_bound()?;
-        self.best = Some(greedy);
-        self.branch(
-            self.uncovered_initial.clone(),
-            Vec::new(),
-            BTreeSet::new(),
-            SelectorSearchCost::ZERO,
-        );
-        self.best.as_ref().map(|(_, selected)| selected.clone())
-    }
-
-    fn greedy_upper_bound(&self) -> Option<(SelectorSearchCost, Vec<usize>)> {
-        let mut uncovered = self.uncovered_initial.clone();
-        let mut selected = Vec::new();
-        let mut selected_set = BTreeSet::new();
-        let mut cost = SelectorSearchCost::ZERO;
-        while !uncovered.is_empty() {
-            let (option_idx, _) = self
-                .options
-                .iter()
-                .enumerate()
-                .filter(|(option_idx, _)| !selected_set.contains(option_idx))
-                .map(|(option_idx, option)| {
-                    let covered_count = option.covered.intersection(&uncovered).count();
-                    (option_idx, covered_count)
-                })
-                .filter(|(_, covered_count)| *covered_count > 0)
-                .max_by(|(a_idx, a_covered), (b_idx, b_covered)| {
-                    a_covered.cmp(b_covered).then_with(|| {
-                        option_sort_key(&self.options[*b_idx])
-                            .cmp(&option_sort_key(&self.options[*a_idx]))
-                    })
-                })?;
-            selected_set.insert(option_idx);
-            selected.push(option_idx);
-            cost = cost.add(&self.options[option_idx].option.feature);
-            uncovered = uncovered
-                .difference(&self.options[option_idx].covered)
-                .copied()
-                .collect();
-        }
-        selected.sort_by(|a, b| {
-            option_sort_key(&self.options[*a]).cmp(&option_sort_key(&self.options[*b]))
-        });
-        Some((cost, selected))
-    }
-
-    fn branch(
-        &mut self,
-        uncovered: BTreeSet<usize>,
-        selected: Vec<usize>,
-        selected_set: BTreeSet<usize>,
-        cost: SelectorSearchCost,
-    ) {
-        self.nodes += 1;
-        if self.nodes > MAX_VAR_FEATURE_SEARCH_NODES {
-            return;
-        }
-        if let Some((best_cost, _)) = &self.best
-            && cost >= *best_cost
-        {
-            return;
-        }
-        if uncovered.is_empty() {
-            let mut normalized = selected;
-            normalized.sort_by(|a, b| {
-                option_sort_key(&self.options[*a]).cmp(&option_sort_key(&self.options[*b]))
-            });
-            let replace = self.best.as_ref().is_none_or(|(best_cost, best_selected)| {
-                cost < *best_cost
-                    || (cost == *best_cost
-                        && selected_sort_key(&self.options, &normalized)
-                            < selected_sort_key(&self.options, best_selected))
-            });
-            if replace {
-                self.best = Some((cost, normalized));
-            }
-            return;
-        }
-        if self
-            .memo
-            .get(&uncovered)
-            .is_some_and(|seen_cost| *seen_cost <= cost)
-        {
-            return;
-        }
-        self.memo.insert(uncovered.clone(), cost);
-
-        let Some(pivot) = self.best_pivot_competitor(&uncovered, &selected_set) else {
-            return;
-        };
-        let Some(option_indices) = self.options_covering_competitor.get(&pivot).cloned() else {
-            return;
-        };
-        for option_idx in option_indices {
-            if selected_set.contains(&option_idx) {
-                continue;
-            }
-            let option = &self.options[option_idx];
-            let new_uncovered = uncovered
-                .difference(&option.covered)
-                .copied()
-                .collect::<BTreeSet<_>>();
-            if new_uncovered.len() == uncovered.len() {
-                continue;
-            }
-            let new_cost = cost.add(&option.option.feature);
-            if let Some((best_cost, _)) = &self.best
-                && new_cost >= *best_cost
-            {
-                continue;
-            }
-            let mut new_selected = selected.clone();
-            new_selected.push(option_idx);
-            let mut new_selected_set = selected_set.clone();
-            new_selected_set.insert(option_idx);
-            self.branch(new_uncovered, new_selected, new_selected_set, new_cost);
-        }
-    }
-
-    fn best_pivot_competitor(
-        &self,
-        uncovered: &BTreeSet<usize>,
-        selected_set: &BTreeSet<usize>,
-    ) -> Option<usize> {
-        uncovered
-            .iter()
-            .filter_map(|tuple_idx| {
-                let covering_options = self.options_covering_competitor.get(tuple_idx)?;
-                let available_count = covering_options
-                    .iter()
-                    .filter(|option_idx| !selected_set.contains(option_idx))
-                    .count();
-                (available_count > 0).then_some((*tuple_idx, available_count))
-            })
-            .min_by_key(|(tuple_idx, available_count)| (*available_count, *tuple_idx))
-            .map(|(tuple_idx, _)| tuple_idx)
-    }
-}
-
-fn option_sort_key(option: &VarSlotSearchOption) -> (usize, usize, usize, &SelectorAnchorFeature) {
-    (
-        feature_cost(&option.option.feature),
-        option.option.target_pos,
-        usize::MAX - option.covered.len(),
-        &option.option.feature,
-    )
-}
-
-fn selected_sort_key<'a>(
-    options: &'a [VarSlotSearchOption],
-    selected: &'a [usize],
-) -> Vec<(usize, usize, usize, &'a SelectorAnchorFeature)> {
-    selected
-        .iter()
-        .map(|option_idx| option_sort_key(&options[*option_idx]))
-        .collect()
-}
-
-fn feature_cost(feature: &SelectorAnchorFeature) -> usize {
-    match feature {
-        SelectorAnchorFeature::DeclarationKind(_)
-        | SelectorAnchorFeature::VarKind(_)
-        | SelectorAnchorFeature::FunctionArity(_) => 0,
-        SelectorAnchorFeature::ObjectKey(_) | SelectorAnchorFeature::ClassMember(_) => 1,
-        SelectorAnchorFeature::CallCallee(_) => 2,
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct VarGroupTuple {
-    body_idx: usize,
-    slots: Vec<usize>,
-}
-
-#[derive(Debug, Clone)]
-struct VarGroupTupleWithFeatures {
-    tuple: VarGroupTuple,
-    slot_features: Vec<BTreeSet<SelectorAnchorFeature>>,
-}
-
-fn selector_anchor_features_for_item(
-    item: &ModuleItem,
-    kind: IndexedDeclarationKind,
-) -> BTreeSet<SelectorAnchorFeature> {
-    let mut features = BTreeSet::from([SelectorAnchorFeature::DeclarationKind(kind)]);
-    match item_decl(item) {
-        Some(Decl::Fn(function)) => {
-            features.insert(SelectorAnchorFeature::FunctionArity(
-                function.function.params.len(),
-            ));
-        }
-        Some(Decl::Var(var)) => {
-            features.insert(SelectorAnchorFeature::VarKind(
-                var_kind_label(var.kind).to_string(),
-            ));
-        }
-        Some(Decl::Class(class)) => {
-            for member in &class.class.body {
-                if let Some(name) = class_member_feature_name(member) {
-                    features.insert(SelectorAnchorFeature::ClassMember(name));
-                }
-            }
-        }
-        _ => {}
-    }
-    features
-}
-
-fn collect_renderable_var_anchor_features(
-    expr: &Expr,
-    features: &mut BTreeSet<SelectorAnchorFeature>,
-) {
-    if is_hole_expr(expr) {
-        return;
-    }
-    match expr {
-        Expr::Call(call) => {
-            if let Some(callee) = call_callee_feature_name(&call.callee) {
-                features.insert(SelectorAnchorFeature::CallCallee(callee));
-            }
-            for arg in &call.args {
-                if let Expr::Object(object) = arg.expr.as_ref() {
-                    collect_direct_object_key_features(object, features);
-                }
-            }
-        }
-        Expr::Object(object) => collect_direct_object_key_features(object, features),
-        _ => {}
-    }
-}
-
-fn collect_direct_object_key_features(
-    object: &ObjectLit,
-    features: &mut BTreeSet<SelectorAnchorFeature>,
-) {
-    for prop in &object.props {
-        if let PropOrSpread::Prop(prop) = prop
-            && let Some(name) = prop_key_name(prop.as_ref())
-        {
-            features.insert(SelectorAnchorFeature::ObjectKey(name));
-        }
-    }
-}
-
-fn var_group_frontier(
-    index: &ChunkSelectorIndex,
-    var_kind: VarDeclKind,
-    target_count: usize,
-    slot_constraints: &[BTreeSet<SelectorAnchorFeature>],
-) -> BTreeSet<VarGroupTuple> {
-    var_group_frontier_with_features(index, var_kind, target_count, slot_constraints)
-        .into_iter()
-        .map(|tuple| tuple.tuple)
-        .collect()
-}
-
-fn var_group_frontier_with_features(
-    index: &ChunkSelectorIndex,
-    var_kind: VarDeclKind,
-    target_count: usize,
-    slot_constraints: &[BTreeSet<SelectorAnchorFeature>],
-) -> Vec<VarGroupTupleWithFeatures> {
-    let mut tuples = Vec::new();
-    for decl in &index.decls {
-        if decl.kind != IndexedDeclarationKind::Var {
-            continue;
-        }
-        let (Some(ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))))
-        | Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-            decl: Decl::Var(var),
-            ..
-        })))) = index.parsed.module.body.get(decl.body_idx)
-        else {
-            continue;
-        };
-        if var.kind != var_kind || var.decls.len() < target_count {
-            continue;
-        }
-        let declarator_features = var
-            .decls
-            .iter()
-            .map(|declarator| {
-                let mut features = BTreeSet::new();
-                if let Some(init) = declarator.init.as_deref() {
-                    collect_renderable_var_anchor_features(init, &mut features);
-                }
-                features
-            })
-            .collect::<Vec<_>>();
-        let mut combinations = Vec::new();
-        collect_slot_combinations(
-            var.decls.len(),
-            target_count,
-            0,
-            &mut Vec::new(),
-            &mut combinations,
-        );
-        for slots in combinations {
-            let matches_constraints = slots.iter().enumerate().all(|(target_pos, slot)| {
-                let constraints = &slot_constraints[target_pos];
-                constraints.is_empty()
-                    || declarator_features
-                        .get(*slot)
-                        .is_some_and(|features| constraints.is_subset(features))
-            });
-            if matches_constraints {
-                let slot_features = slots
-                    .iter()
-                    .map(|slot| declarator_features.get(*slot).cloned().unwrap_or_default())
-                    .collect();
-                tuples.push(VarGroupTupleWithFeatures {
-                    tuple: VarGroupTuple {
-                        body_idx: decl.body_idx,
-                        slots,
-                    },
-                    slot_features,
-                });
-            }
-        }
-    }
-    tuples
-}
-
-fn var_group_frontier_is_bounded(
-    index: &ChunkSelectorIndex,
-    var_kind: VarDeclKind,
-    target_count: usize,
-) -> bool {
-    index.decls.iter().all(|decl| {
-        if decl.kind != IndexedDeclarationKind::Var {
-            return true;
-        }
-        let (Some(ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))))
-        | Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-            decl: Decl::Var(var),
-            ..
-        })))) = index.parsed.module.body.get(decl.body_idx)
-        else {
-            return true;
-        };
-        var.kind != var_kind
-            || var.decls.len() < target_count
-            || !combination_count_exceeds(
-                var.decls.len(),
-                target_count,
-                MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL,
-            )
-    })
-}
-
-fn combination_count_exceeds(n: usize, k: usize, limit: usize) -> bool {
-    if k > n {
-        return false;
-    }
-    let k = k.min(n - k);
-    let mut count = 1u128;
-    let limit = limit as u128;
-    for i in 1..=k {
-        count = count * (n - k + i) as u128 / i as u128;
-        if count > limit {
-            return true;
-        }
-    }
-    false
-}
-
-fn collect_slot_combinations(
-    len: usize,
-    target_count: usize,
-    start: usize,
-    current: &mut Vec<usize>,
-    out: &mut Vec<Vec<usize>>,
-) {
-    if current.len() == target_count {
-        out.push(current.clone());
-        return;
-    }
-    for idx in start..len {
-        current.push(idx);
-        collect_slot_combinations(len, target_count, idx + 1, current, out);
-        current.pop();
-    }
-}
-
-fn target_tuple_is_unique(
-    frontier: &BTreeSet<VarGroupTuple>,
-    decl: &IndexedDeclaration,
-    target_slots: &[usize],
-) -> bool {
-    frontier.len() == 1
-        && frontier.contains(&VarGroupTuple {
-            body_idx: decl.body_idx,
-            slots: target_slots.to_vec(),
-        })
-}
-
-struct RenderedExprSelector {
-    source: String,
-    holes: BTreeSet<String>,
-}
-
-fn render_specialized_expr_selector(
-    index: &ChunkSelectorIndex,
-    expr: &Expr,
-    selected_features: &BTreeSet<SelectorAnchorFeature>,
-) -> Result<RenderedExprSelector> {
-    match expr {
-        Expr::Call(call) if call_has_selected_feature(call, selected_features) => {
-            render_specialized_call_selector(index, call, selected_features)
-        }
-        Expr::Object(object) if object_has_selected_key(object, selected_features) => Ok(
-            render_specialized_object_selector(object, selected_features),
-        ),
-        _ => Ok(RenderedExprSelector {
-            source: ANYTHING_HOLE_KEYWORD.to_string(),
-            holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
-        }),
-    }
-}
-
-fn render_specialized_call_selector(
-    index: &ChunkSelectorIndex,
-    call: &CallExpr,
-    selected_features: &BTreeSet<SelectorAnchorFeature>,
-) -> Result<RenderedExprSelector> {
-    let callee = match &call.callee {
-        Callee::Expr(expr) => source_for_span(index, expr.span())?.text,
-        _ => return Ok(anything_expr_selector()),
-    };
-    let mut args = Vec::new();
-    let mut holes = BTreeSet::new();
-    let mut skipped = false;
-    for arg in &call.args {
-        if let Expr::Object(object) = arg.expr.as_ref()
-            && object_has_selected_key(object, selected_features)
-        {
-            if skipped {
-                args.push(ARGS_HOLE_KEYWORD.to_string());
-                holes.insert(ARGS_HOLE_KEYWORD.to_string());
-                skipped = false;
-            }
-            let rendered = render_specialized_object_selector(object, selected_features);
-            holes.extend(rendered.holes.clone());
-            args.push(rendered.source);
-        } else {
-            skipped = true;
-        }
-    }
-    if skipped || args.is_empty() {
-        args.push(ARGS_HOLE_KEYWORD.to_string());
-        holes.insert(ARGS_HOLE_KEYWORD.to_string());
-    }
-    Ok(RenderedExprSelector {
-        source: format!("{callee}({})", args.join(", ")),
-        holes,
-    })
-}
-
-fn render_specialized_object_selector(
-    object: &ObjectLit,
-    selected_features: &BTreeSet<SelectorAnchorFeature>,
-) -> RenderedExprSelector {
-    let mut parts = Vec::new();
-    let mut skipped = false;
-    for prop in &object.props {
-        let key = match prop {
-            PropOrSpread::Prop(prop) => prop_key_name(prop.as_ref()),
-            PropOrSpread::Spread(_) => None,
-        };
-        if let Some(key) = key
-            && selected_features.contains(&SelectorAnchorFeature::ObjectKey(key.clone()))
-        {
-            if skipped {
-                parts.push(ANYTHING_HOLE_KEYWORD.to_string());
-                skipped = false;
-            }
-            parts.push(format!("{key}: {ANYTHING_HOLE_KEYWORD}"));
-        } else {
-            skipped = true;
-        }
-    }
-    if skipped || parts.is_empty() {
-        parts.push(ANYTHING_HOLE_KEYWORD.to_string());
-    }
-    RenderedExprSelector {
-        source: format!("{{ {} }}", parts.join(", ")),
-        holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
-    }
-}
-
-fn anything_expr_selector() -> RenderedExprSelector {
-    RenderedExprSelector {
-        source: ANYTHING_HOLE_KEYWORD.to_string(),
-        holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
-    }
-}
-
-fn call_has_selected_feature(
-    call: &CallExpr,
-    selected_features: &BTreeSet<SelectorAnchorFeature>,
-) -> bool {
-    call_callee_feature_name(&call.callee).is_some_and(|callee| {
-        selected_features.contains(&SelectorAnchorFeature::CallCallee(callee))
-    }) || call.args.iter().any(|arg| {
-        matches!(
-            arg.expr.as_ref(),
-            Expr::Object(object) if object_has_selected_key(object, selected_features)
-        )
-    })
-}
-
-fn object_has_selected_key(
-    object: &ObjectLit,
-    selected_features: &BTreeSet<SelectorAnchorFeature>,
-) -> bool {
-    object.props.iter().any(|prop| {
-        let Some(key) = (match prop {
-            PropOrSpread::Prop(prop) => prop_key_name(prop.as_ref()),
-            PropOrSpread::Spread(_) => None,
-        }) else {
-            return false;
-        };
-        selected_features.contains(&SelectorAnchorFeature::ObjectKey(key))
-    })
-}
-
-fn prop_key_name(prop: &Prop) -> Option<String> {
-    match prop {
-        Prop::KeyValue(key_value) => prop_name_to_string(&key_value.key),
-        Prop::Method(method) => prop_name_to_string(&method.key),
-        Prop::Getter(getter) => prop_name_to_string(&getter.key),
-        Prop::Setter(setter) => prop_name_to_string(&setter.key),
-        Prop::Shorthand(ident) if !is_hole_name(ident.sym.as_ref()) => Some(ident.sym.to_string()),
-        Prop::Assign(assign) if !is_hole_name(assign.key.sym.as_ref()) => {
-            Some(assign.key.sym.to_string())
-        }
-        _ => None,
-    }
-}
-
-fn prop_name_to_string(name: &PropName) -> Option<String> {
-    match name {
-        PropName::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => Some(ident.sym.to_string()),
-        PropName::Str(value) => Some(value.value.to_string_lossy().to_string()),
-        PropName::Num(value) => Some(value.value.to_string()),
-        _ => None,
-    }
-}
-
-fn class_member_feature_name(member: &ClassMember) -> Option<String> {
-    match member {
-        ClassMember::Constructor(_) => Some("constructor".to_string()),
-        ClassMember::Method(method) => prop_name_to_string(&method.key),
-        ClassMember::PrivateMethod(method) => Some(method.key.name.to_string()),
-        ClassMember::ClassProp(prop) => prop_name_to_string(&prop.key),
-        ClassMember::PrivateProp(prop) => Some(prop.key.name.to_string()),
-        ClassMember::AutoAccessor(_) => None,
-        _ => None,
-    }
-}
-
-fn render_class_member_skeletons(
     class: &Class,
-    selected: &BTreeSet<String>,
-    index: &ChunkSelectorIndex,
-) -> Result<String> {
-    let mut lines = vec!["  CLASS_REST;".to_string()];
-    for member in &class.body {
-        let Some(name) = class_member_feature_name(member) else {
-            continue;
-        };
-        if !selected.contains(&name) {
-            continue;
-        }
-        lines.push(render_class_member_skeleton(member, &name, index)?);
-        lines.push("  CLASS_REST;".to_string());
-    }
-    Ok(lines.join("\n") + "\n")
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+) -> Result<Option<SpecializedSelector>> {
+    let export = target.export_name.clone();
+    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+        let mut holed_class = class.clone();
+        holed_class.body = hole_class_members(&class.body, kept);
+        emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
+            ident: ident_node(&export),
+            declare: false,
+            class: Box::new(holed_class),
+        }))))
+    };
+    let candidates = collect_class_anchors(class);
+    minimize_via_retention(index, decl, target, &candidates, &render_with)
 }
 
-fn render_class_member_skeleton(
-    member: &ClassMember,
-    name: &str,
-    index: &ChunkSelectorIndex,
-) -> Result<String> {
+fn anything_param() -> Param {
+    Param {
+        span: DUMMY_SP,
+        decorators: vec![],
+        pat: anything_pat(),
+    }
+}
+
+fn named_pat(name: &str) -> Pat {
+    Pat::Ident(BindingIdent {
+        id: ident_node(name),
+        type_ann: None,
+    })
+}
+
+/// A `CLASS_REST;` class-field hole that absorbs a run of dropped members.
+fn class_rest_member() -> ClassMember {
+    ClassMember::ClassProp(ClassProp {
+        span: DUMMY_SP,
+        key: PropName::Ident(IdentName::new(CLASS_REST_HOLE_KEYWORD.into(), DUMMY_SP)),
+        value: None,
+        type_ann: None,
+        is_static: false,
+        decorators: vec![],
+        accessibility: None,
+        is_abstract: false,
+        is_optional: false,
+        is_override: false,
+        readonly: false,
+        declare: false,
+        definite: false,
+    })
+}
+
+fn hole_class_members(members: &[ClassMember], kept: &BTreeSet<AnchorSpan>) -> Vec<ClassMember> {
+    let mut out = Vec::new();
+    let mut dropped_run = false;
+    for member in members {
+        if node_retains_any(member.span(), kept) {
+            if dropped_run {
+                out.push(class_rest_member());
+                dropped_run = false;
+            }
+            out.push(hole_class_member(member, kept));
+        } else {
+            dropped_run = true;
+        }
+    }
+    if dropped_run || out.is_empty() {
+        out.push(class_rest_member());
+    }
+    out
+}
+
+fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> ClassMember {
     match member {
-        ClassMember::Constructor(constructor) => {
-            let params = constructor
+        ClassMember::Method(m) => {
+            let mut holed = m.clone();
+            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
+            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::Method(holed)
+        }
+        ClassMember::PrivateMethod(m) => {
+            let mut holed = m.clone();
+            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
+            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::PrivateMethod(holed)
+        }
+        ClassMember::Constructor(ctor) => {
+            let mut holed = ctor.clone();
+            holed.params = ctor
                 .params
                 .iter()
-                .map(|_| ANYTHING_HOLE_KEYWORD)
-                .collect::<Vec<_>>()
-                .join(", ");
-            Ok(format!("  constructor({params}) {{\n    STMT_LIST;\n  }}"))
+                .map(|_| ParamOrTsParamProp::Param(anything_param()))
+                .collect();
+            holed.body = ctor.body.as_ref().map(|body| holed_block(body, kept));
+            ClassMember::Constructor(holed)
         }
-        ClassMember::Method(method) => {
-            let params = method
-                .function
-                .params
-                .iter()
-                .map(|_| ANYTHING_HOLE_KEYWORD)
-                .collect::<Vec<_>>()
-                .join(", ");
-            Ok(format!("  {name}({params}) {{\n    STMT_LIST;\n  }}"))
-        }
-        ClassMember::ClassProp(prop) => {
-            let key = prop_name_to_string(&prop.key).unwrap_or_else(|| name.to_string());
-            Ok(format!("  {key} = {ANYTHING_HOLE_KEYWORD};"))
-        }
-        _ => Ok(format!("  {}", source_for_span(index, member.span())?.text)),
+        // Class fields and other members carrying a kept anchor: keep verbatim.
+        _ => member.clone(),
     }
 }
 
-fn call_callee_feature_name(callee: &Callee) -> Option<String> {
-    match callee {
-        Callee::Expr(expr) => expr_feature_name(expr),
-        Callee::Super(_) => Some("super".to_string()),
-        Callee::Import(_) => Some("import".to_string()),
+/// Emit a synthesized selector item (a holed declaration) to source via the
+/// shared codegen — the only AST→string step, and the matcher's parse inverts it.
+fn emit_selector(item: ModuleItem) -> Result<String> {
+    js_ast::emit_module_source(&Module {
+        span: DUMMY_SP,
+        body: vec![item],
+        shebang: None,
+    })
+}
+
+fn collect_class_anchors(class: &Class) -> AnchorCandidates {
+    let mut candidates = AnchorCandidates::default();
+    for member in &class.body {
+        if let Some(span) = class_member_name_span(member) {
+            candidates.structural.push(span_key(span));
+        }
+        match member {
+            ClassMember::Method(m) => collect_block_stmt_anchors(&m.function.body, &mut candidates),
+            ClassMember::PrivateMethod(m) => {
+                collect_block_stmt_anchors(&m.function.body, &mut candidates)
+            }
+            ClassMember::Constructor(ctor) => {
+                collect_block_stmt_anchors(&ctor.body, &mut candidates)
+            }
+            ClassMember::ClassProp(prop) => {
+                if let Some(value) = &prop.value {
+                    collect_expr_anchors(value, 0, &mut candidates);
+                }
+            }
+            _ => {}
+        }
+    }
+    candidates
+}
+
+fn collect_block_stmt_anchors(body: &Option<BlockStmt>, candidates: &mut AnchorCandidates) {
+    if let Some(block) = body {
+        for stmt in &block.stmts {
+            collect_stmt_anchors(stmt, candidates);
+        }
     }
 }
 
-fn expr_feature_name(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => Some(ident.sym.to_string()),
-        Expr::Member(member) => {
-            let obj = match member.obj.as_ref() {
-                Expr::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => {
-                    Some(ident.sym.to_string())
-                }
-                Expr::Member(_) => expr_feature_name(member.obj.as_ref()),
-                _ => None,
-            }?;
-            let prop = match &member.prop {
-                MemberProp::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => {
-                    Some(ident.sym.to_string())
-                }
-                MemberProp::PrivateName(name) => Some(name.name.to_string()),
-                MemberProp::Computed(_) => None,
-                _ => None,
-            }?;
-            Some(format!("{obj}.{prop}"))
-        }
+fn class_member_name_span(member: &ClassMember) -> Option<Span> {
+    let prop_name_span = |name: &PropName| match name {
+        PropName::Ident(ident) => Some(ident.span),
+        _ => None,
+    };
+    match member {
+        ClassMember::Method(m) => prop_name_span(&m.key),
+        ClassMember::ClassProp(prop) => prop_name_span(&prop.key),
         _ => None,
     }
 }
 
-fn is_hole_expr(expr: &Expr) -> bool {
-    matches!(expr, Expr::Ident(ident) if is_hole_name(ident.sym.as_ref()))
+/// Tiered minimum set cover. Tiers are tried most-preferred first; within a
+/// tier, the matcher gives each anchor's exclusion set and a minimum-cardinality
+/// cover (branch-and-bound) clears as many still-uncovered competitors as the
+/// tier can, leaving the rest to later tiers. Tier order encodes meaning
+/// preference; minimum cardinality within a tier avoids greedy over-pinning.
+/// The final selector is proven once by the caller. Returns `None` if even all
+/// anchors together cannot single out the target.
+fn cover_competitors(
+    index: &ChunkSelectorIndex,
+    target: &SynthesizedTargetBinding,
+    competitors: &BTreeSet<usize>,
+    tiers: &[Vec<AnchorSpan>],
+    render_with: &impl Fn(&BTreeSet<AnchorSpan>) -> Result<String>,
+) -> Result<Option<BTreeSet<AnchorSpan>>> {
+    let mut uncovered = competitors.clone();
+    let mut chosen = BTreeSet::new();
+    for tier in tiers {
+        if uncovered.is_empty() {
+            break;
+        }
+        let mut exclusions: Vec<(AnchorSpan, BTreeSet<usize>)> = Vec::new();
+        for &anchor in tier.iter().take(MAX_MINIMIZER_ANCHORS) {
+            let survivors = matched_body_indices(
+                index,
+                &target.export_name,
+                &render_with(&BTreeSet::from([anchor]))?,
+            )?;
+            let excluded: BTreeSet<usize> = uncovered.difference(&survivors).copied().collect();
+            if !excluded.is_empty() {
+                exclusions.push((anchor, excluded));
+            }
+        }
+        let coverable: BTreeSet<usize> = exclusions
+            .iter()
+            .flat_map(|(_, excluded)| excluded.iter().copied())
+            .collect();
+        if coverable.is_empty() {
+            continue;
+        }
+        for anchor in min_set_cover(&exclusions, &coverable) {
+            chosen.insert(anchor);
+        }
+        uncovered = uncovered.difference(&coverable).copied().collect();
+    }
+    if uncovered.is_empty() {
+        Ok(Some(chosen))
+    } else {
+        Ok(None)
+    }
 }
 
-fn is_hole_name(name: &str) -> bool {
-    name == ANYTHING_HOLE_KEYWORD
-        || name == EXPR_HOLE_KEYWORD
-        || name.starts_with("EXPR_")
-        || name == STMT_HOLE_KEYWORD
-        || name.starts_with("STMT_")
-        || name == "STMT_LIST"
-        || name.starts_with("STMT_LIST_")
-        || name == CLASS_REST_HOLE_KEYWORD
-        || name.starts_with("CLASS_REST_")
-        || name == DECLARATORS_HOLE_KEYWORD
-        || name.starts_with("DECLARATORS_")
-        || name == ARGS_HOLE_KEYWORD
-        || name.starts_with("ARGS_")
-        || name == OBJECT_PROPS_HOLE_KEYWORD
-        || name.starts_with("OBJECT_PROPS_")
+/// Minimum-cardinality set cover of `universe` by `sets` (each an anchor and the
+/// competitors it excludes). Branch-and-bound on the least-coverable element;
+/// `universe` is the union of all sets, so a cover always exists. Instances are
+/// tiny (anchors and competitors are per-chunk), so exhaustive search with
+/// best-length pruning stays well within budget and avoids greedy over-pinning.
+fn min_set_cover(
+    sets: &[(AnchorSpan, BTreeSet<usize>)],
+    universe: &BTreeSet<usize>,
+) -> Vec<AnchorSpan> {
+    let mut best: Option<Vec<AnchorSpan>> = None;
+    let mut chosen: Vec<AnchorSpan> = Vec::new();
+    min_set_cover_search(sets, universe.clone(), &mut chosen, &mut best);
+    best.unwrap_or_default()
+}
+
+fn min_set_cover_search(
+    sets: &[(AnchorSpan, BTreeSet<usize>)],
+    remaining: BTreeSet<usize>,
+    chosen: &mut Vec<AnchorSpan>,
+    best: &mut Option<Vec<AnchorSpan>>,
+) {
+    if remaining.is_empty() {
+        if best.as_ref().is_none_or(|found| chosen.len() < found.len()) {
+            *best = Some(chosen.clone());
+        }
+        return;
+    }
+    if best
+        .as_ref()
+        .is_some_and(|found| chosen.len() + 1 >= found.len())
+    {
+        return;
+    }
+    // Branch on the still-uncovered competitor that the fewest anchors exclude:
+    // every cover must include one of those anchors, which keeps the tree narrow.
+    let Some(pivot) = remaining.iter().copied().min_by_key(|competitor| {
+        sets.iter()
+            .filter(|(_, excluded)| excluded.contains(competitor))
+            .count()
+    }) else {
+        return;
+    };
+    for (anchor, excluded) in sets {
+        if chosen.contains(anchor) || !excluded.contains(&pivot) {
+            continue;
+        }
+        chosen.push(*anchor);
+        min_set_cover_search(
+            sets,
+            remaining.difference(excluded).copied().collect(),
+            chosen,
+            best,
+        );
+        chosen.pop();
+    }
+}
+
+fn finish_minimized_selector(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    target: &SynthesizedTargetBinding,
+    source: String,
+) -> Result<Option<SpecializedSelector>> {
+    let targets = std::slice::from_ref(target);
+    if prove_synthesized_selector(index, decl, targets, &source).is_err() {
+        return Ok(None);
+    }
+    let rewritten_holes = holes_present(&source);
+    Ok(Some(SpecializedSelector {
+        match_source: source,
+        rewritten_holes,
+    }))
 }
 
 fn render_var_group_selector(
@@ -3440,3 +3398,6 @@ pub fn render_selector_codemod_text(report: &SelectorCodemodReport, out: &mut St
 fn is_zero(value: &usize) -> bool {
     *value == 0
 }
+
+#[cfg(test)]
+mod selector_minimizer_proptest;
