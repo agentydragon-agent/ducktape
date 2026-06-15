@@ -194,8 +194,10 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     .expect("source-aware rewrite loaded synthesis index"),
                 selected_exports,
                 &original_text,
-                config.minimize_synthesized_selectors,
-                config.apply,
+                NameBindingRewriteOptions {
+                    minimize_synthesized_selectors: config.minimize_synthesized_selectors,
+                    apply: config.apply,
+                },
             )?;
             text_edits.extend(outcomes.text_edits);
             summary.members_scanned += outcomes.members_scanned;
@@ -578,6 +580,12 @@ struct NameBindingMember {
     comment: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct NameBindingRewriteOptions {
+    minimize_synthesized_selectors: bool,
+    apply: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct SynthesizedSelectorGroup {
     body_idx: usize,
@@ -652,8 +660,7 @@ fn rewrite_name_bindings_to_source_match(
     index: &ChunkSelectorIndex,
     selected_exports: Option<&BTreeSet<String>>,
     source_text: &str,
-    minimize_synthesized_selectors: bool,
-    apply: bool,
+    options: NameBindingRewriteOptions,
 ) -> Result<NameBindingRewriteOutcomes> {
     let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
         return Ok(NameBindingRewriteOutcomes {
@@ -733,7 +740,7 @@ fn rewrite_name_bindings_to_source_match(
             index,
             decl_idx,
             &group_members,
-            minimize_synthesized_selectors,
+            options.minimize_synthesized_selectors,
         ) {
             Ok(synthesized) => synthesized,
             Err(err) => {
@@ -758,12 +765,12 @@ fn rewrite_name_bindings_to_source_match(
                 file,
                 member_index: member.member_index,
                 export_name: Some(member.export_name.clone()),
-                apply,
+                apply: options.apply,
                 group_id,
                 synthesized: &synthesized,
                 target_binding: Some(target.export_name.clone()),
             }));
-            if apply {
+            if options.apply {
                 let edit = source_match_selector_text_edit(
                     source_text,
                     member.member_index,
@@ -792,23 +799,23 @@ fn rewrite_name_bindings_to_source_match(
                     file,
                     member_index: member.member_index,
                     export_name: Some(member.export_name.clone()),
-                    apply,
+                    apply: options.apply,
                     group_id,
                     synthesized: &synthesized,
                     target_binding: None,
                 }));
-                if apply {
+                if options.apply {
                     replacements.insert(member.member_index, None);
                     removed_group_member_indices.insert(member.member_index);
                 }
             }
-            if apply {
+            if options.apply {
                 binding_groups.push(binding_group_value(&synthesized, &group_members));
             }
         }
     }
 
-    if apply {
+    if options.apply {
         if !binding_groups.is_empty() {
             text_edits.extend(binding_group_text_edits(
                 source_text,
