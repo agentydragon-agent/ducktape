@@ -15,6 +15,9 @@ let
   codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
   codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
   codexSccacheCache = "${config.xdg.cacheHome}/sccache";
+  # Current Codex host-owned GitHub app connector id. Codex matches app approval
+  # config by connector id from the tool's MCP metadata, not by display name.
+  githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
 
   codexSettings = {
     model = "gpt-5.5";
@@ -95,14 +98,21 @@ let
       persistence = "save-all";
     };
     apps = {
-      github = {
+      ${githubCodexAppsConnectorId} = {
         tools = {
-          # Raw codex_apps GitHub connector tool names exposed as
-          # mcp__codex_apps__github.<tool>.
-          _create_pull_request = {
+          # Raw tool names from `codex app-server`'s host-owned `codex_apps`
+          # server for the GitHub connector. Codex also matches tool titles, so
+          # include those to tolerate tool namespace churn under the same app id.
+          github_create_pull_request = {
             approval_mode = "approve";
           };
-          _update_pull_request = {
+          github_update_pull_request = {
+            approval_mode = "approve";
+          };
+          create_pull_request = {
+            approval_mode = "approve";
+          };
+          update_pull_request = {
             approval_mode = "approve";
           };
         };

@@ -103,10 +103,16 @@ def test_main_adds_github_pr_app_tool_approvals(tmp_path, monkeypatch) -> None:
     base.write_text(
         textwrap.dedent(
             """
-            [apps.github.tools._create_pull_request]
+            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_create_pull_request]
             approval_mode = "approve"
 
-            [apps.github.tools._update_pull_request]
+            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_update_pull_request]
+            approval_mode = "approve"
+
+            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.create_pull_request]
+            approval_mode = "approve"
+
+            [apps.connector_76869538009648d5b282a4bb21c3d157.tools.update_pull_request]
             approval_mode = "approve"
             """
         )
@@ -116,7 +122,7 @@ def test_main_adds_github_pr_app_tool_approvals(tmp_path, monkeypatch) -> None:
             """
             model = "local"
 
-            [apps.github]
+            [apps.slack]
             enabled = true
             """
         )
@@ -128,9 +134,12 @@ def test_main_adds_github_pr_app_tool_approvals(tmp_path, monkeypatch) -> None:
 
     result = tomllib.loads(live.read_text())
     assert result["model"] == "local"
-    assert result["apps"]["github"]["enabled"] is True
-    assert result["apps"]["github"]["tools"]["_create_pull_request"]["approval_mode"] == "approve"
-    assert result["apps"]["github"]["tools"]["_update_pull_request"]["approval_mode"] == "approve"
+    assert result["apps"]["slack"]["enabled"] is True
+    github_connector = result["apps"]["connector_76869538009648d5b282a4bb21c3d157"]
+    assert github_connector["tools"]["github_create_pull_request"]["approval_mode"] == "approve"
+    assert github_connector["tools"]["github_update_pull_request"]["approval_mode"] == "approve"
+    assert github_connector["tools"]["create_pull_request"]["approval_mode"] == "approve"
+    assert github_connector["tools"]["update_pull_request"]["approval_mode"] == "approve"
 
 
 if __name__ == "__main__":
