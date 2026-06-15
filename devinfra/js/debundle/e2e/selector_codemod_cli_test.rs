@@ -287,6 +287,112 @@ anonymous_statements:
     (modules, source)
 }
 
+fn synthesis_function_minimization_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    write(
+        &source,
+        concat!(
+            "function runtimeFormatter(value) {\n",
+            "  const normalized = value.trim().toUpperCase();\n",
+            "  if (normalized.length > 8) {\n",
+            "    return normalized.slice(0, 8);\n",
+            "  }\n",
+            "  return normalized.padEnd(8, \"_\");\n",
+            "}\n",
+            "const unrelatedValue = \"kept\";\n",
+            "console.log(runtimeFormatter(\" ok \"), unrelatedValue);\n",
+            "export { runtimeFormatter };\n",
+        ),
+    );
+    let modules = root.join("modules");
+    write(
+        &modules.join("app/format.yaml"),
+        r#"members:
+  - name: FormatValue
+    selector:
+      binding:
+        name: runtimeFormatter
+"#,
+    );
+    (modules, source)
+}
+
+fn synthesis_object_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    write(
+        &source,
+        concat!(
+            "const selectedConfig = buildConfig({\n",
+            "  stableKey: expensiveValue(\"selected\", { noisy: [1, 2, 3] }),\n",
+            "  generatedPayload: createPayload(() => Math.random()),\n",
+            "  extraNested: { generated: computeNested(\"selected\"), count: 3 },\n",
+            "});\n",
+            "const otherConfig = buildConfig({\n",
+            "  otherKey: expensiveValue(\"selected\", { noisy: [1, 2, 3] }),\n",
+            "  generatedPayload: createPayload(() => Math.random()),\n",
+            "  extraNested: { generated: computeNested(\"other\"), count: 3 },\n",
+            "});\n",
+            "function buildConfig(value) { return value; }\n",
+            "function expensiveValue(value) { return value; }\n",
+            "function createPayload(value) { return value; }\n",
+            "function computeNested(value) { return value; }\n",
+            "console.log(selectedConfig.stableKey, otherConfig.otherKey);\n",
+            "export { selectedConfig };\n",
+        ),
+    );
+    let modules = root.join("modules");
+    write(
+        &modules.join("app/config.yaml"),
+        r#"members:
+  - name: SelectedConfig
+    selector:
+      binding:
+        name: selectedConfig
+"#,
+    );
+    (modules, source)
+}
+
+fn synthesis_group_anchor_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let source = root.join("chunks/app.js");
+    write(
+        &source,
+        concat!(
+            "const selectedA = makeThing({\n",
+            "  stableA: computeValue(\"a\", { noisy: [1, 2, 3] }),\n",
+            "  volatileA: makeVolatile(() => Math.random()),\n",
+            "}),\n",
+            "  skipped = makeThing({ skippedKey: computeValue(\"skip\") }),\n",
+            "  selectedB = makeThing({\n",
+            "    stableB: computeValue(\"b\", { noisy: [4, 5, 6] }),\n",
+            "    volatileB: makeVolatile(() => Date.now()),\n",
+            "  });\n",
+            "const otherA = makeThing({ otherA: computeValue(\"a\") }),\n",
+            "  otherB = makeThing({ otherB: computeValue(\"b\") });\n",
+            "function makeThing(value) { return value; }\n",
+            "function computeValue(value) { return value; }\n",
+            "function makeVolatile(value) { return value; }\n",
+            "console.log(selectedA.stableA, selectedB.stableB, otherA.otherA, otherB.otherB);\n",
+            "export { selectedA, selectedB };\n",
+        ),
+    );
+    let modules = root.join("modules");
+    write(
+        &modules.join("app/group.yaml"),
+        r#"members:
+  - name: SelectedA
+    selector:
+      binding:
+        name: selectedA
+  - name: SelectedB
+    selector:
+      binding:
+        name: selectedB
+"#,
+    );
+    (modules, source)
+}
+
 #[test]
 fn dry_run_reports_single_binding_rewrite_without_writing() {
     let dir = tempfile::tempdir().unwrap();
@@ -349,6 +455,7 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_text() {
             source.to_str().unwrap(),
             "--item",
             "app/bootstrap:FormatValue",
+            "--no-minimize",
             "--apply",
             "--format",
             "json",
@@ -395,6 +502,169 @@ anonymous_statements:
 "#
     );
     assert_no_trailing_whitespace(&rewritten);
+}
+
+#[test]
+fn synthesize_selectors_minimizes_function_body_by_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_function_minimization_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/format:FormatValue",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert!(
+        parsed["candidates"][0]["rewritten_holes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|hole| hole == "STMT_LIST"),
+        "{parsed}"
+    );
+
+    let rewritten = fs::read_to_string(modules.join("app/format.yaml")).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
+        .as_str()
+        .unwrap();
+    assert!(
+        match_source.contains("function FormatValue(ANYTHING)"),
+        "{match_source}"
+    );
+    assert!(match_source.contains("STMT_LIST;"), "{match_source}");
+    assert!(
+        !match_source.contains("padEnd"),
+        "irrelevant function body should not be copied:\n{match_source}"
+    );
+}
+
+#[test]
+fn synthesize_selectors_keeps_object_key_anchor_when_erasing_it_is_ambiguous() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_object_anchor_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/config:SelectedConfig",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 1, "{parsed}");
+    assert!(
+        parsed["candidates"][0]["rewritten_holes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|hole| hole == "ANYTHING"),
+        "{parsed}"
+    );
+
+    let rewritten = fs::read_to_string(modules.join("app/config.yaml")).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
+        .as_str()
+        .unwrap();
+    assert!(
+        match_source.contains("stableKey: ANYTHING"),
+        "stable key anchor should remain while its unstable value is wildcarded:\n{match_source}"
+    );
+    assert!(
+        match_source.contains("ANYTHING"),
+        "irrelevant object properties should be wildcarded:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("generatedPayload"),
+        "irrelevant property names should not be copied:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("extraNested"),
+        "irrelevant property names should not be copied:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("otherKey"),
+        "selector must not fall back to the ambiguous sibling key:\n{match_source}"
+    );
+}
+
+#[test]
+fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = synthesis_group_anchor_fixture(dir.path());
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/group:SelectedA",
+            "--item",
+            "app/group:SelectedB",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 2, "{parsed}");
+    for candidate in parsed["candidates"].as_array().unwrap() {
+        assert!(
+            candidate["rewritten_holes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hole| hole == "ANYTHING"),
+            "{candidate}"
+        );
+        assert!(
+            candidate["rewritten_holes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|hole| hole == "DECLARATORS_BETWEEN"),
+            "{candidate}"
+        );
+    }
+
+    let rewritten = fs::read_to_string(modules.join("app/group.yaml")).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    assert_eq!(doc["members"].as_sequence().unwrap().len(), 0, "{doc:?}");
+    let groups = doc["binding_groups"].as_sequence().unwrap();
+    assert_eq!(groups.len(), 1, "{doc:?}");
+    let match_source = groups[0]["source_match"]["match"].as_str().unwrap();
+    assert!(
+        match_source.contains("stableA: ANYTHING"),
+        "slot A stable key should remain:\n{match_source}"
+    );
+    assert!(
+        match_source.contains("stableB: ANYTHING"),
+        "slot B stable key should remain to distinguish it from the skipped declarator:\n{match_source}"
+    );
+    assert!(
+        match_source.contains("DECLARATORS_BETWEEN"),
+        "irrelevant middle declarator should become a gap:\n{match_source}"
+    );
+    assert!(
+        !match_source.contains("volatileA") && !match_source.contains("volatileB"),
+        "irrelevant object properties should not be copied:\n{match_source}"
+    );
 }
 
 #[test]

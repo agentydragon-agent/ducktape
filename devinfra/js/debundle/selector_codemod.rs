@@ -30,6 +30,7 @@ const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 const DECLARATORS_HOLE_KEYWORD: &str = "DECLARATORS";
 const ARGS_HOLE_KEYWORD: &str = "ARGS";
 const OBJECT_PROPS_HOLE_KEYWORD: &str = "OBJECT_PROPS";
+const MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL: usize = 4096;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +55,7 @@ pub struct SelectorCodemodConfig {
     pub modules_root: PathBuf,
     pub apply: bool,
     pub rewrite: SelectorCodemodRewrite,
+    pub minimize_synthesized_selectors: bool,
     pub files: Vec<PathBuf>,
     pub modules: Vec<String>,
     pub module_prefixes: Vec<String>,
@@ -192,6 +194,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                     .expect("source-aware rewrite loaded synthesis index"),
                 selected_exports,
                 &original_text,
+                config.minimize_synthesized_selectors,
                 config.apply,
             )?;
             text_edits.extend(outcomes.text_edits);
@@ -604,6 +607,7 @@ struct ChunkSelectorIndex {
     source: String,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
+    feature_to_body_indices: BTreeMap<SelectorAnchorFeature, BTreeSet<usize>>,
 }
 
 #[derive(Debug)]
@@ -613,12 +617,26 @@ struct IndexedDeclaration {
     declared_bindings: Vec<IndexedBinding>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum IndexedDeclarationKind {
     Function,
     Class,
     Var,
     Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum SelectorAnchorFeature {
+    DeclarationKind(IndexedDeclarationKind),
+    VarKind(String),
+    FunctionArity(usize),
+    ClassMember(String),
+    ObjectKey(String),
+    CallCallee(String),
+    StringLiteral(String),
+    NumberLiteral(String),
+    BoolLiteral(bool),
+    NullLiteral,
 }
 
 #[derive(Debug)]
@@ -634,6 +652,7 @@ fn rewrite_name_bindings_to_source_match(
     index: &ChunkSelectorIndex,
     selected_exports: Option<&BTreeSet<String>>,
     source_text: &str,
+    minimize_synthesized_selectors: bool,
     apply: bool,
 ) -> Result<NameBindingRewriteOutcomes> {
     let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
@@ -710,22 +729,26 @@ fn rewrite_name_bindings_to_source_match(
     let mut text_edits = Vec::new();
     let mut groups_changed = 0;
     for (group_id, (decl_idx, group_members)) in grouped.into_iter().enumerate() {
-        let synthesized =
-            match synthesize_simplest_selector_for_group(index, decl_idx, &group_members) {
-                Ok(synthesized) => synthesized,
-                Err(err) => {
-                    for member in group_members {
-                        candidates.push(skipped_candidate(
-                            module,
-                            file,
-                            member.member_index,
-                            Some(member.export_name),
-                            format!("{err:#}"),
-                        ));
-                    }
-                    continue;
+        let synthesized = match synthesize_simplest_selector_for_group(
+            index,
+            decl_idx,
+            &group_members,
+            minimize_synthesized_selectors,
+        ) {
+            Ok(synthesized) => synthesized,
+            Err(err) => {
+                for member in group_members {
+                    candidates.push(skipped_candidate(
+                        module,
+                        file,
+                        member.member_index,
+                        Some(member.export_name),
+                        format!("{err:#}"),
+                    ));
                 }
-            };
+                continue;
+            }
+        };
         groups_changed += 1;
         if group_members.len() == 1 {
             let member = &group_members[0];
@@ -940,10 +963,18 @@ impl ChunkSelectorIndex {
         let source = parsed.source_text();
         let mut decls = Vec::new();
         let mut binding_to_decl: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        let mut feature_to_body_indices: BTreeMap<SelectorAnchorFeature, BTreeSet<usize>> =
+            BTreeMap::new();
         for (body_idx, item) in parsed.module.body.iter().enumerate() {
             let indexed = IndexedDeclaration::from_item(body_idx, item);
             if indexed.declared_bindings.is_empty() {
                 continue;
+            }
+            for feature in selector_anchor_features_for_item(item, indexed.kind) {
+                feature_to_body_indices
+                    .entry(feature)
+                    .or_default()
+                    .insert(body_idx);
             }
             let decl_idx = decls.len();
             for binding in &indexed.declared_bindings {
@@ -959,7 +990,34 @@ impl ChunkSelectorIndex {
             source,
             decls,
             binding_to_decl,
+            feature_to_body_indices,
         }
+    }
+
+    fn frontier_for_features(&self, features: &BTreeSet<SelectorAnchorFeature>) -> BTreeSet<usize> {
+        let mut postings = features
+            .iter()
+            .filter_map(|feature| {
+                self.feature_to_body_indices
+                    .get(feature)
+                    .map(|body_indices| (feature, body_indices))
+            })
+            .collect::<Vec<_>>();
+        postings.sort_by_key(|(_, body_indices)| body_indices.len());
+        let Some((_, first)) = postings.first() else {
+            return self.decls.iter().map(|decl| decl.body_idx).collect();
+        };
+        let mut frontier = (*first).clone();
+        for (_, body_indices) in postings.into_iter().skip(1) {
+            frontier = frontier
+                .intersection(body_indices)
+                .copied()
+                .collect::<BTreeSet<_>>();
+            if frontier.is_empty() {
+                break;
+            }
+        }
+        frontier
     }
 }
 
@@ -1009,6 +1067,7 @@ fn synthesize_simplest_selector_for_group(
     index: &ChunkSelectorIndex,
     decl_idx: usize,
     members: &[NameBindingMember],
+    minimize_synthesized_selectors: bool,
 ) -> Result<SynthesizedSelectorGroup> {
     let decl = index
         .decls
@@ -1027,37 +1086,58 @@ fn synthesize_simplest_selector_for_group(
             runtime_binding: member.binding_name.clone(),
         })
         .collect::<Vec<_>>();
-    let (mut match_source, rewritten_holes) = match decl.kind {
-        IndexedDeclarationKind::Var => render_var_group_selector(index, item, decl, &targets)?,
-        IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => {
-            let target = targets
-                .first()
-                .context("function/class synthesis requires one target")?;
-            if targets.len() != 1 {
-                bail!("grouped function/class declarations are not supported");
-            }
+    let exact_selector = || {
+        render_exact_selector_for_group(index, item, decl, &targets).map(|(source, holes)| {
             (
-                render_single_binding_item_selector(
-                    index,
-                    item,
-                    &target.runtime_binding,
-                    &target.export_name,
-                )?,
-                Vec::new(),
+                trim_selector_source_line_suffixes(&source),
+                holes.into_iter().collect::<BTreeSet<_>>(),
             )
-        }
-        IndexedDeclarationKind::Other => {
-            bail!("unsupported declaration kind for selector synthesis")
-        }
+        })
     };
-    // Normalize before proving uniqueness, so generated YAML is diff-clean
-    // while semantically significant whitespace changes still fail matching.
-    match_source = trim_selector_source_line_suffixes(&match_source);
+    let specialized = minimize_synthesized_selectors
+        .then(|| synthesize_specialized_selector(index, item, decl, &targets))
+        .transpose()?
+        .flatten();
+    let (match_source, rewritten_holes, candidate_count) = if let Some(specialized) = specialized {
+        let match_source = trim_selector_source_line_suffixes(&specialized.match_source);
+        match prove_synthesized_selector(index, decl, &targets, &match_source) {
+            Ok(candidate_count) => (match_source, specialized.rewritten_holes, candidate_count),
+            Err(_) => {
+                let (exact_source, exact_holes) = exact_selector()?;
+                let candidate_count =
+                    prove_synthesized_selector(index, decl, &targets, &exact_source)
+                        .context("proving exact synthesized selector fallback")?;
+                (exact_source, exact_holes, candidate_count)
+            }
+        }
+    } else {
+        let (exact_source, exact_holes) = exact_selector()?;
+        let candidate_count = prove_synthesized_selector(index, decl, &targets, &exact_source)
+            .context("proving exact synthesized selector")?;
+        (exact_source, exact_holes, candidate_count)
+    };
 
-    let mut candidate_count = None;
+    Ok(SynthesizedSelectorGroup {
+        body_idx: decl.body_idx,
+        target_bindings: targets,
+        match_source,
+        rewritten_holes: rewritten_holes.into_iter().collect(),
+        candidate_count,
+    })
+}
+
+fn prove_synthesized_selector(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    match_source: &str,
+) -> Result<usize> {
+    if targets.is_empty() {
+        bail!("selector synthesis group has no targets");
+    }
     if targets.len() > 1 {
         let selector = SourceMatch {
-            match_source: match_source.clone(),
+            match_source: match_source.to_string(),
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             target_binding: None,
             target_statement: None,
@@ -1082,7 +1162,7 @@ fn synthesize_simplest_selector_for_group(
                 decl.body_idx
             );
         }
-        for target in &targets {
+        for target in targets {
             let binding = matched.bindings.get(&target.export_name).with_context(|| {
                 format!(
                     "synthesized selector target `{}` did not resolve a binding",
@@ -1098,60 +1178,958 @@ fn synthesize_simplest_selector_for_group(
                 );
             }
         }
-        candidate_count = Some(1);
+        return Ok(1);
     }
 
-    if let [target] = targets.as_slice() {
-        let source_match = SourceMatch {
-            match_source: match_source.clone(),
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding: Some(target.export_name.clone()),
-            target_statement: None,
-            target_statements: None,
-            wildcard_string_literals: BTreeSet::new(),
-        };
-        let selector = source_match.selector();
-        let matches = source_match::member_binding_candidate_matches(
-            &index.parsed.module,
-            "<selector synthesis>",
-            &selector,
-        )?;
-        let current_count = matches.len();
-        if candidate_count
-            .replace(current_count)
-            .is_some_and(|prior| prior != current_count)
+    let [target] = targets else {
+        unreachable!("target length already handled")
+    };
+    let source_match = SourceMatch {
+        match_source: match_source.to_string(),
+        identifiers: SourceMatchIdentifierMode::AlphaAll,
+        target_binding: Some(target.export_name.clone()),
+        target_statement: None,
+        target_statements: None,
+        wildcard_string_literals: BTreeSet::new(),
+    };
+    let selector = source_match.selector();
+    let matches = source_match::member_binding_candidate_matches(
+        &index.parsed.module,
+        "<selector synthesis>",
+        &selector,
+    )?;
+    let candidate_count = matches.len();
+    let [candidate] = matches.as_slice() else {
+        bail!("synthesized selector matched {candidate_count} candidate declaration groups");
+    };
+    if candidate.body_idx != decl.body_idx {
+        bail!(
+            "synthesized selector matched body index {} instead of intended {}",
+            candidate.body_idx,
+            decl.body_idx
+        );
+    };
+    if candidate.binding.binding_name != target.runtime_binding {
+        bail!(
+            "synthesized selector target `{}` resolved `{}` instead of intended `{}`",
+            target.export_name,
+            candidate.binding.binding_name,
+            target.runtime_binding
+        );
+    }
+    Ok(candidate_count)
+}
+
+struct SpecializedSelector {
+    match_source: String,
+    rewritten_holes: BTreeSet<String>,
+}
+
+fn render_exact_selector_for_group(
+    index: &ChunkSelectorIndex,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<(String, Vec<String>)> {
+    match decl.kind {
+        IndexedDeclarationKind::Var => render_var_group_selector(index, item, decl, targets),
+        IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => {
+            let target = targets
+                .first()
+                .context("function/class synthesis requires one target")?;
+            if targets.len() != 1 {
+                bail!("grouped function/class declarations are not supported");
+            }
+            Ok((
+                render_single_binding_item_selector(
+                    index,
+                    item,
+                    &target.runtime_binding,
+                    &target.export_name,
+                )?,
+                Vec::new(),
+            ))
+        }
+        IndexedDeclarationKind::Other => {
+            bail!("unsupported declaration kind for selector synthesis")
+        }
+    }
+}
+
+fn synthesize_specialized_selector(
+    index: &ChunkSelectorIndex,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
+    match decl.kind {
+        IndexedDeclarationKind::Function => {
+            synthesize_specialized_function_selector(index, item, decl, targets)
+        }
+        IndexedDeclarationKind::Class => {
+            synthesize_specialized_class_selector(index, item, decl, targets)
+        }
+        IndexedDeclarationKind::Var => {
+            synthesize_specialized_var_selector(index, item, decl, targets)
+        }
+        IndexedDeclarationKind::Other => Ok(None),
+    }
+}
+
+fn synthesize_specialized_function_selector(
+    index: &ChunkSelectorIndex,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
+    let [target] = targets else {
+        return Ok(None);
+    };
+    let Some(Decl::Fn(function)) = item_decl(item) else {
+        return Ok(None);
+    };
+    let mut features = BTreeSet::from([
+        SelectorAnchorFeature::DeclarationKind(IndexedDeclarationKind::Function),
+        SelectorAnchorFeature::FunctionArity(function.function.params.len()),
+    ]);
+    if !frontier_is_small_and_contains_target(index, decl, &features) {
+        return Ok(None);
+    }
+    let params = function
+        .function
+        .params
+        .iter()
+        .map(|_| ANYTHING_HOLE_KEYWORD)
+        .collect::<Vec<_>>()
+        .join(", ");
+    features.insert(SelectorAnchorFeature::DeclarationKind(
+        IndexedDeclarationKind::Function,
+    ));
+    Ok(Some(SpecializedSelector {
+        match_source: format!(
+            "function {}({params}) {{\n  STMT_LIST;\n}}",
+            target.export_name
+        ),
+        rewritten_holes: BTreeSet::from([
+            ANYTHING_HOLE_KEYWORD.to_string(),
+            "STMT_LIST".to_string(),
+        ]),
+    }))
+}
+
+fn synthesize_specialized_class_selector(
+    index: &ChunkSelectorIndex,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
+    let [target] = targets else {
+        return Ok(None);
+    };
+    let Some(Decl::Class(class_decl)) = item_decl(item) else {
+        return Ok(None);
+    };
+    let mut features = BTreeSet::from([SelectorAnchorFeature::DeclarationKind(
+        IndexedDeclarationKind::Class,
+    )]);
+    if frontier_is_small_and_contains_target(index, decl, &features) {
+        return Ok(Some(SpecializedSelector {
+            match_source: format!("class {} {{\n  CLASS_REST;\n}}", target.export_name),
+            rewritten_holes: BTreeSet::from(["CLASS_REST".to_string()]),
+        }));
+    }
+
+    let mut member_names = class_decl
+        .class
+        .body
+        .iter()
+        .filter_map(class_member_feature_name)
+        .collect::<Vec<_>>();
+    member_names.sort_by_key(|name| {
+        index
+            .feature_to_body_indices
+            .get(&SelectorAnchorFeature::ClassMember(name.clone()))
+            .map_or(usize::MAX, BTreeSet::len)
+    });
+    let mut selected = BTreeSet::new();
+    for name in member_names {
+        features.insert(SelectorAnchorFeature::ClassMember(name.clone()));
+        selected.insert(name);
+        if frontier_is_small_and_contains_target(index, decl, &features) {
+            let members = render_class_member_skeletons(&class_decl.class, &selected, index)?;
+            return Ok(Some(SpecializedSelector {
+                match_source: format!("class {} {{\n{members}}}", target.export_name),
+                rewritten_holes: BTreeSet::from([
+                    ANYTHING_HOLE_KEYWORD.to_string(),
+                    "STMT_LIST".to_string(),
+                    "CLASS_REST".to_string(),
+                ]),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+fn synthesize_specialized_var_selector(
+    index: &ChunkSelectorIndex,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
+    let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
+    let target_slots = targets
+        .iter()
+        .map(|target| {
+            decl.declared_bindings
+                .iter()
+                .find(|binding| binding.name == target.runtime_binding)
+                .and_then(|binding| binding.declarator_idx)
+                .with_context(|| {
+                    format!(
+                        "target `{}` is not a var declarator",
+                        target.runtime_binding
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if !var_group_frontier_is_bounded(index, var.kind, targets.len()) {
+        return Ok(None);
+    }
+    let target_decl_indices = target_slots.iter().copied().collect::<BTreeSet<_>>();
+    let mut slot_constraints = vec![BTreeSet::new(); targets.len()];
+    let mut selected_feature_order = Vec::new();
+    let mut frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
+    if !target_tuple_is_unique(&frontier, decl, &target_slots) {
+        let mut feature_options = target_initializer_features(var, &target_slots);
+        feature_options.sort_by(|(a_pos, a), (b_pos, b)| {
+            feature_cost(a)
+                .cmp(&feature_cost(b))
+                .then_with(|| {
+                    tuple_feature_discrimination(index, var.kind, targets.len(), *a_pos, a).cmp(
+                        &tuple_feature_discrimination(index, var.kind, targets.len(), *b_pos, b),
+                    )
+                })
+                .then_with(|| a_pos.cmp(b_pos))
+                .then_with(|| a.cmp(b))
+        });
+        for (target_pos, feature) in feature_options {
+            if slot_constraints[target_pos].insert(feature.clone()) {
+                selected_feature_order.push((target_pos, feature));
+            }
+            frontier = var_group_frontier(index, var.kind, targets.len(), &slot_constraints);
+            if target_tuple_is_unique(&frontier, decl, &target_slots) {
+                break;
+            }
+        }
+        if !target_tuple_is_unique(&frontier, decl, &target_slots) {
+            return Ok(None);
+        }
+        prune_redundant_slot_constraints(
+            index,
+            var.kind,
+            targets.len(),
+            decl,
+            &target_slots,
+            &selected_feature_order,
+            &mut slot_constraints,
+        );
+    }
+
+    let export_by_runtime = targets
+        .iter()
+        .map(|target| (target.runtime_binding.as_str(), target.export_name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut parts = Vec::new();
+    let mut holes = BTreeSet::new();
+    let mut skipped_run = 0usize;
+    let mut target_seen = 0usize;
+    for (idx, declarator) in var.decls.iter().enumerate() {
+        if !target_decl_indices.contains(&idx) {
+            skipped_run += 1;
+            continue;
+        }
+        if skipped_run > 0 {
+            let hole = declarator_hole_name(target_seen, target_decl_indices.len());
+            parts.push(format!("{hole} = null"));
+            holes.insert(hole.to_string());
+            skipped_run = 0;
+        }
+        let runtime_name = single_ident_pat_name(&declarator.name)
+            .context("only identifier var declarators can be synthesized today")?;
+        let export_name = export_by_runtime
+            .get(runtime_name)
+            .copied()
+            .context("target declarator missing export name")?;
+        let init = declarator
+            .init
+            .as_deref()
+            .map(|expr| {
+                render_specialized_expr_selector(index, expr, &slot_constraints[target_seen])
+            })
+            .transpose()?
+            .unwrap_or_else(anything_expr_selector);
+        holes.extend(init.holes.clone());
+        parts.push(format!("{export_name} = {}", init.source));
+        target_seen += 1;
+    }
+    if skipped_run > 0 {
+        let hole = declarator_hole_name(target_seen, target_decl_indices.len());
+        parts.push(format!("{hole} = null"));
+        holes.insert(hole.to_string());
+    }
+    Ok(Some(SpecializedSelector {
+        match_source: format!("{} {};", var_kind_label(var.kind), parts.join(",\n  ")),
+        rewritten_holes: holes,
+    }))
+}
+
+fn frontier_is_small_and_contains_target(
+    index: &ChunkSelectorIndex,
+    decl: &IndexedDeclaration,
+    features: &BTreeSet<SelectorAnchorFeature>,
+) -> bool {
+    let frontier = index.frontier_for_features(features);
+    frontier.contains(&decl.body_idx) && frontier.len() == 1
+}
+
+fn target_initializer_features(
+    var: &VarDecl,
+    target_slots: &[usize],
+) -> Vec<(usize, SelectorAnchorFeature)> {
+    let mut features = BTreeSet::new();
+    for (target_pos, slot) in target_slots.iter().enumerate() {
+        if let Some(init) = var
+            .decls
+            .get(*slot)
+            .and_then(|declarator| declarator.init.as_deref())
         {
-            bail!("selector candidate count changed across target bindings");
-        }
-        let [candidate] = matches.as_slice() else {
-            bail!("synthesized selector matched {current_count} candidate declaration groups");
-        };
-        if candidate.body_idx != decl.body_idx {
-            bail!(
-                "synthesized selector matched body index {} instead of intended {}",
-                candidate.body_idx,
-                decl.body_idx
-            );
-        };
-        if candidate.binding.binding_name != target.runtime_binding {
-            bail!(
-                "synthesized selector target `{}` resolved `{}` instead of intended `{}`",
-                target.export_name,
-                candidate.binding.binding_name,
-                target.runtime_binding
+            let mut slot_features = BTreeSet::new();
+            collect_renderable_var_anchor_features(init, &mut slot_features);
+            features.extend(
+                slot_features
+                    .into_iter()
+                    .map(|feature| (target_pos, feature)),
             );
         }
-    } else if targets.is_empty() {
-        bail!("selector synthesis group has no targets");
+    }
+    features.into_iter().collect()
+}
+
+fn tuple_feature_discrimination(
+    index: &ChunkSelectorIndex,
+    var_kind: VarDeclKind,
+    target_count: usize,
+    target_pos: usize,
+    feature: &SelectorAnchorFeature,
+) -> usize {
+    let mut slot_constraints = vec![BTreeSet::new(); target_count];
+    slot_constraints[target_pos].insert(feature.clone());
+    var_group_frontier(index, var_kind, target_count, &slot_constraints).len()
+}
+
+fn prune_redundant_slot_constraints(
+    index: &ChunkSelectorIndex,
+    var_kind: VarDeclKind,
+    target_count: usize,
+    decl: &IndexedDeclaration,
+    target_slots: &[usize],
+    selected_feature_order: &[(usize, SelectorAnchorFeature)],
+    slot_constraints: &mut [BTreeSet<SelectorAnchorFeature>],
+) {
+    for (target_pos, feature) in selected_feature_order.iter().rev() {
+        if !slot_constraints[*target_pos].remove(feature) {
+            continue;
+        }
+        let frontier = var_group_frontier(index, var_kind, target_count, slot_constraints);
+        if !target_tuple_is_unique(&frontier, decl, target_slots) {
+            slot_constraints[*target_pos].insert(feature.clone());
+        }
+    }
+}
+
+fn feature_cost(feature: &SelectorAnchorFeature) -> usize {
+    match feature {
+        SelectorAnchorFeature::DeclarationKind(_)
+        | SelectorAnchorFeature::VarKind(_)
+        | SelectorAnchorFeature::FunctionArity(_) => 0,
+        SelectorAnchorFeature::ObjectKey(_) | SelectorAnchorFeature::ClassMember(_) => 1,
+        SelectorAnchorFeature::CallCallee(_) => 2,
+        SelectorAnchorFeature::BoolLiteral(_) | SelectorAnchorFeature::NullLiteral => 3,
+        SelectorAnchorFeature::StringLiteral(_) | SelectorAnchorFeature::NumberLiteral(_) => 4,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct VarGroupTuple {
+    body_idx: usize,
+    slots: Vec<usize>,
+}
+
+fn selector_anchor_features_for_item(
+    item: &ModuleItem,
+    kind: IndexedDeclarationKind,
+) -> BTreeSet<SelectorAnchorFeature> {
+    let mut features = BTreeSet::from([SelectorAnchorFeature::DeclarationKind(kind)]);
+    match item_decl(item) {
+        Some(Decl::Fn(function)) => {
+            features.insert(SelectorAnchorFeature::FunctionArity(
+                function.function.params.len(),
+            ));
+        }
+        Some(Decl::Var(var)) => {
+            features.insert(SelectorAnchorFeature::VarKind(
+                var_kind_label(var.kind).to_string(),
+            ));
+        }
+        _ => {}
+    }
+    let mut collector = SelectorAnchorFeatureCollector::default();
+    item.visit_with(&mut collector);
+    features.extend(collector.features);
+    features
+}
+
+#[derive(Default)]
+struct SelectorAnchorFeatureCollector {
+    features: BTreeSet<SelectorAnchorFeature>,
+}
+
+impl Visit for SelectorAnchorFeatureCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if is_hole_expr(expr) {
+            return;
+        }
+        collect_expr_anchor_features(expr, &mut self.features);
+        expr.visit_children_with(self);
     }
 
-    Ok(SynthesizedSelectorGroup {
-        body_idx: decl.body_idx,
-        target_bindings: targets,
-        match_source,
-        rewritten_holes,
-        candidate_count: candidate_count.unwrap_or(0),
+    fn visit_prop_or_spread(&mut self, prop_or_spread: &PropOrSpread) {
+        if is_object_property_hole(prop_or_spread) {
+            return;
+        }
+        if let PropOrSpread::Prop(prop) = prop_or_spread
+            && let Some(name) = prop_key_name(prop.as_ref())
+        {
+            self.features.insert(SelectorAnchorFeature::ObjectKey(name));
+        }
+        prop_or_spread.visit_children_with(self);
+    }
+
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        if is_class_rest_hole_member(member) {
+            return;
+        }
+        if let Some(name) = class_member_feature_name(member) {
+            self.features
+                .insert(SelectorAnchorFeature::ClassMember(name));
+        }
+        member.visit_children_with(self);
+    }
+}
+
+fn collect_expr_anchor_features(expr: &Expr, features: &mut BTreeSet<SelectorAnchorFeature>) {
+    if is_hole_expr(expr) {
+        return;
+    }
+    match expr {
+        Expr::Call(call) => {
+            if let Some(callee) = call_callee_feature_name(&call.callee) {
+                features.insert(SelectorAnchorFeature::CallCallee(callee));
+            }
+            for arg in &call.args {
+                collect_expr_anchor_features(&arg.expr, features);
+            }
+        }
+        Expr::Object(object) => {
+            for prop in &object.props {
+                if let PropOrSpread::Prop(prop) = prop
+                    && let Some(name) = prop_key_name(prop.as_ref())
+                {
+                    features.insert(SelectorAnchorFeature::ObjectKey(name));
+                }
+            }
+            let mut collector = SelectorAnchorFeatureCollector::default();
+            object.visit_children_with(&mut collector);
+            features.extend(collector.features);
+        }
+        Expr::Lit(lit) => match lit {
+            Lit::Str(value) => {
+                features.insert(SelectorAnchorFeature::StringLiteral(
+                    value.value.to_string_lossy().to_string(),
+                ));
+            }
+            Lit::Num(value) => {
+                features.insert(SelectorAnchorFeature::NumberLiteral(
+                    value.value.to_string(),
+                ));
+            }
+            Lit::Bool(value) => {
+                features.insert(SelectorAnchorFeature::BoolLiteral(value.value));
+            }
+            Lit::Null(_) => {
+                features.insert(SelectorAnchorFeature::NullLiteral);
+            }
+            _ => {}
+        },
+        _ => {
+            let mut collector = SelectorAnchorFeatureCollector::default();
+            expr.visit_children_with(&mut collector);
+            features.extend(collector.features);
+        }
+    }
+}
+
+fn collect_renderable_var_anchor_features(
+    expr: &Expr,
+    features: &mut BTreeSet<SelectorAnchorFeature>,
+) {
+    if is_hole_expr(expr) {
+        return;
+    }
+    match expr {
+        Expr::Call(call) => {
+            if let Some(callee) = call_callee_feature_name(&call.callee) {
+                features.insert(SelectorAnchorFeature::CallCallee(callee));
+            }
+            for arg in &call.args {
+                if let Expr::Object(object) = arg.expr.as_ref() {
+                    collect_direct_object_key_features(object, features);
+                }
+            }
+        }
+        Expr::Object(object) => collect_direct_object_key_features(object, features),
+        _ => {}
+    }
+}
+
+fn collect_direct_object_key_features(
+    object: &ObjectLit,
+    features: &mut BTreeSet<SelectorAnchorFeature>,
+) {
+    for prop in &object.props {
+        if let PropOrSpread::Prop(prop) = prop
+            && let Some(name) = prop_key_name(prop.as_ref())
+        {
+            features.insert(SelectorAnchorFeature::ObjectKey(name));
+        }
+    }
+}
+
+fn var_group_frontier(
+    index: &ChunkSelectorIndex,
+    var_kind: VarDeclKind,
+    target_count: usize,
+    slot_constraints: &[BTreeSet<SelectorAnchorFeature>],
+) -> BTreeSet<VarGroupTuple> {
+    let mut tuples = BTreeSet::new();
+    for decl in &index.decls {
+        if decl.kind != IndexedDeclarationKind::Var {
+            continue;
+        }
+        let (Some(ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))))
+        | Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })))) = index.parsed.module.body.get(decl.body_idx)
+        else {
+            continue;
+        };
+        if var.kind != var_kind || var.decls.len() < target_count {
+            continue;
+        }
+        let mut combinations = Vec::new();
+        collect_slot_combinations(
+            var.decls.len(),
+            target_count,
+            0,
+            &mut Vec::new(),
+            &mut combinations,
+        );
+        for slots in combinations {
+            let matches_constraints = slots.iter().enumerate().all(|(target_pos, slot)| {
+                let constraints = &slot_constraints[target_pos];
+                constraints.is_empty()
+                    || var
+                        .decls
+                        .get(*slot)
+                        .and_then(|declarator| declarator.init.as_deref())
+                        .is_some_and(|init| {
+                            let mut features = BTreeSet::new();
+                            collect_expr_anchor_features(init, &mut features);
+                            constraints.is_subset(&features)
+                        })
+            });
+            if matches_constraints {
+                tuples.insert(VarGroupTuple {
+                    body_idx: decl.body_idx,
+                    slots,
+                });
+            }
+        }
+    }
+    tuples
+}
+
+fn var_group_frontier_is_bounded(
+    index: &ChunkSelectorIndex,
+    var_kind: VarDeclKind,
+    target_count: usize,
+) -> bool {
+    index.decls.iter().all(|decl| {
+        if decl.kind != IndexedDeclarationKind::Var {
+            return true;
+        }
+        let (Some(ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))))
+        | Some(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })))) = index.parsed.module.body.get(decl.body_idx)
+        else {
+            return true;
+        };
+        var.kind != var_kind
+            || var.decls.len() < target_count
+            || !combination_count_exceeds(
+                var.decls.len(),
+                target_count,
+                MAX_VAR_GROUP_FRONTIER_TUPLES_PER_DECL,
+            )
     })
+}
+
+fn combination_count_exceeds(n: usize, k: usize, limit: usize) -> bool {
+    if k > n {
+        return false;
+    }
+    let k = k.min(n - k);
+    let mut count = 1u128;
+    let limit = limit as u128;
+    for i in 1..=k {
+        count = count * (n - k + i) as u128 / i as u128;
+        if count > limit {
+            return true;
+        }
+    }
+    false
+}
+
+fn collect_slot_combinations(
+    len: usize,
+    target_count: usize,
+    start: usize,
+    current: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+) {
+    if current.len() == target_count {
+        out.push(current.clone());
+        return;
+    }
+    for idx in start..len {
+        current.push(idx);
+        collect_slot_combinations(len, target_count, idx + 1, current, out);
+        current.pop();
+    }
+}
+
+fn target_tuple_is_unique(
+    frontier: &BTreeSet<VarGroupTuple>,
+    decl: &IndexedDeclaration,
+    target_slots: &[usize],
+) -> bool {
+    frontier.len() == 1
+        && frontier.contains(&VarGroupTuple {
+            body_idx: decl.body_idx,
+            slots: target_slots.to_vec(),
+        })
+}
+
+struct RenderedExprSelector {
+    source: String,
+    holes: BTreeSet<String>,
+}
+
+fn render_specialized_expr_selector(
+    index: &ChunkSelectorIndex,
+    expr: &Expr,
+    selected_features: &BTreeSet<SelectorAnchorFeature>,
+) -> Result<RenderedExprSelector> {
+    match expr {
+        Expr::Call(call) if call_has_selected_feature(call, selected_features) => {
+            render_specialized_call_selector(index, call, selected_features)
+        }
+        Expr::Object(object) if object_has_selected_key(object, selected_features) => Ok(
+            render_specialized_object_selector(object, selected_features),
+        ),
+        _ => Ok(RenderedExprSelector {
+            source: ANYTHING_HOLE_KEYWORD.to_string(),
+            holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+        }),
+    }
+}
+
+fn render_specialized_call_selector(
+    index: &ChunkSelectorIndex,
+    call: &CallExpr,
+    selected_features: &BTreeSet<SelectorAnchorFeature>,
+) -> Result<RenderedExprSelector> {
+    let callee = match &call.callee {
+        Callee::Expr(expr) => source_for_span(index, expr.span())?.text,
+        _ => return Ok(anything_expr_selector()),
+    };
+    let mut args = Vec::new();
+    let mut holes = BTreeSet::new();
+    let mut skipped = false;
+    for arg in &call.args {
+        if let Expr::Object(object) = arg.expr.as_ref()
+            && object_has_selected_key(object, selected_features)
+        {
+            if skipped {
+                args.push(ARGS_HOLE_KEYWORD.to_string());
+                holes.insert(ARGS_HOLE_KEYWORD.to_string());
+                skipped = false;
+            }
+            let rendered = render_specialized_object_selector(object, selected_features);
+            holes.extend(rendered.holes.clone());
+            args.push(rendered.source);
+        } else {
+            skipped = true;
+        }
+    }
+    if skipped || args.is_empty() {
+        args.push(ARGS_HOLE_KEYWORD.to_string());
+        holes.insert(ARGS_HOLE_KEYWORD.to_string());
+    }
+    Ok(RenderedExprSelector {
+        source: format!("{callee}({})", args.join(", ")),
+        holes,
+    })
+}
+
+fn render_specialized_object_selector(
+    object: &ObjectLit,
+    selected_features: &BTreeSet<SelectorAnchorFeature>,
+) -> RenderedExprSelector {
+    let mut parts = Vec::new();
+    let mut skipped = false;
+    for prop in &object.props {
+        let key = match prop {
+            PropOrSpread::Prop(prop) => prop_key_name(prop.as_ref()),
+            PropOrSpread::Spread(_) => None,
+        };
+        if let Some(key) = key
+            && selected_features.contains(&SelectorAnchorFeature::ObjectKey(key.clone()))
+        {
+            if skipped {
+                parts.push(ANYTHING_HOLE_KEYWORD.to_string());
+                skipped = false;
+            }
+            parts.push(format!("{key}: {ANYTHING_HOLE_KEYWORD}"));
+        } else {
+            skipped = true;
+        }
+    }
+    if skipped || parts.is_empty() {
+        parts.push(ANYTHING_HOLE_KEYWORD.to_string());
+    }
+    RenderedExprSelector {
+        source: format!("{{ {} }}", parts.join(", ")),
+        holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+    }
+}
+
+fn anything_expr_selector() -> RenderedExprSelector {
+    RenderedExprSelector {
+        source: ANYTHING_HOLE_KEYWORD.to_string(),
+        holes: BTreeSet::from([ANYTHING_HOLE_KEYWORD.to_string()]),
+    }
+}
+
+fn call_has_selected_feature(
+    call: &CallExpr,
+    selected_features: &BTreeSet<SelectorAnchorFeature>,
+) -> bool {
+    call_callee_feature_name(&call.callee).is_some_and(|callee| {
+        selected_features.contains(&SelectorAnchorFeature::CallCallee(callee))
+    }) || call.args.iter().any(|arg| {
+        matches!(
+            arg.expr.as_ref(),
+            Expr::Object(object) if object_has_selected_key(object, selected_features)
+        )
+    })
+}
+
+fn object_has_selected_key(
+    object: &ObjectLit,
+    selected_features: &BTreeSet<SelectorAnchorFeature>,
+) -> bool {
+    object.props.iter().any(|prop| {
+        let Some(key) = (match prop {
+            PropOrSpread::Prop(prop) => prop_key_name(prop.as_ref()),
+            PropOrSpread::Spread(_) => None,
+        }) else {
+            return false;
+        };
+        selected_features.contains(&SelectorAnchorFeature::ObjectKey(key))
+    })
+}
+
+fn prop_key_name(prop: &Prop) -> Option<String> {
+    match prop {
+        Prop::KeyValue(key_value) => prop_name_to_string(&key_value.key),
+        Prop::Method(method) => prop_name_to_string(&method.key),
+        Prop::Getter(getter) => prop_name_to_string(&getter.key),
+        Prop::Setter(setter) => prop_name_to_string(&setter.key),
+        Prop::Shorthand(ident) if !is_hole_name(ident.sym.as_ref()) => Some(ident.sym.to_string()),
+        Prop::Assign(assign) if !is_hole_name(assign.key.sym.as_ref()) => {
+            Some(assign.key.sym.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn prop_name_to_string(name: &PropName) -> Option<String> {
+    match name {
+        PropName::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => Some(ident.sym.to_string()),
+        PropName::Str(value) => Some(value.value.to_string_lossy().to_string()),
+        PropName::Num(value) => Some(value.value.to_string()),
+        _ => None,
+    }
+}
+
+fn class_member_feature_name(member: &ClassMember) -> Option<String> {
+    match member {
+        ClassMember::Constructor(_) => Some("constructor".to_string()),
+        ClassMember::Method(method) => prop_name_to_string(&method.key),
+        ClassMember::PrivateMethod(method) => Some(method.key.name.to_string()),
+        ClassMember::ClassProp(prop) => prop_name_to_string(&prop.key),
+        ClassMember::PrivateProp(prop) => Some(prop.key.name.to_string()),
+        ClassMember::AutoAccessor(_) => None,
+        _ => None,
+    }
+}
+
+fn render_class_member_skeletons(
+    class: &Class,
+    selected: &BTreeSet<String>,
+    index: &ChunkSelectorIndex,
+) -> Result<String> {
+    let mut lines = vec!["  CLASS_REST;".to_string()];
+    for member in &class.body {
+        let Some(name) = class_member_feature_name(member) else {
+            continue;
+        };
+        if !selected.contains(&name) {
+            continue;
+        }
+        lines.push(render_class_member_skeleton(member, &name, index)?);
+        lines.push("  CLASS_REST;".to_string());
+    }
+    Ok(lines.join("\n") + "\n")
+}
+
+fn render_class_member_skeleton(
+    member: &ClassMember,
+    name: &str,
+    index: &ChunkSelectorIndex,
+) -> Result<String> {
+    match member {
+        ClassMember::Constructor(constructor) => {
+            let params = constructor
+                .params
+                .iter()
+                .map(|_| ANYTHING_HOLE_KEYWORD)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(format!("  constructor({params}) {{\n    STMT_LIST;\n  }}"))
+        }
+        ClassMember::Method(method) => {
+            let params = method
+                .function
+                .params
+                .iter()
+                .map(|_| ANYTHING_HOLE_KEYWORD)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(format!("  {name}({params}) {{\n    STMT_LIST;\n  }}"))
+        }
+        ClassMember::ClassProp(prop) => {
+            let key = prop_name_to_string(&prop.key).unwrap_or_else(|| name.to_string());
+            Ok(format!("  {key} = {ANYTHING_HOLE_KEYWORD};"))
+        }
+        _ => Ok(format!("  {}", source_for_span(index, member.span())?.text)),
+    }
+}
+
+fn call_callee_feature_name(callee: &Callee) -> Option<String> {
+    match callee {
+        Callee::Expr(expr) => expr_feature_name(expr),
+        Callee::Super(_) => Some("super".to_string()),
+        Callee::Import(_) => Some("import".to_string()),
+    }
+}
+
+fn expr_feature_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => Some(ident.sym.to_string()),
+        Expr::Member(member) => {
+            let obj = match member.obj.as_ref() {
+                Expr::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => {
+                    Some(ident.sym.to_string())
+                }
+                Expr::Member(_) => expr_feature_name(member.obj.as_ref()),
+                _ => None,
+            }?;
+            let prop = match &member.prop {
+                MemberProp::Ident(ident) if !is_hole_name(ident.sym.as_ref()) => {
+                    Some(ident.sym.to_string())
+                }
+                MemberProp::PrivateName(name) => Some(name.name.to_string()),
+                MemberProp::Computed(_) => None,
+                _ => None,
+            }?;
+            Some(format!("{obj}.{prop}"))
+        }
+        _ => None,
+    }
+}
+
+fn is_hole_expr(expr: &Expr) -> bool {
+    matches!(expr, Expr::Ident(ident) if is_hole_name(ident.sym.as_ref()))
+}
+
+fn is_object_property_hole(prop_or_spread: &PropOrSpread) -> bool {
+    matches!(
+        prop_or_spread,
+        PropOrSpread::Prop(prop)
+            if matches!(prop.as_ref(), Prop::Shorthand(ident) if is_hole_name(ident.sym.as_ref()))
+    )
+}
+
+fn is_class_rest_hole_member(member: &ClassMember) -> bool {
+    matches!(
+        member,
+        ClassMember::ClassProp(prop)
+            if prop.value.is_none()
+                && matches!(&prop.key, PropName::Ident(ident) if is_hole_name(ident.sym.as_ref()))
+    )
+}
+
+fn is_hole_name(name: &str) -> bool {
+    name == ANYTHING_HOLE_KEYWORD
+        || name == EXPR_HOLE_KEYWORD
+        || name.starts_with("EXPR_")
+        || name == STMT_HOLE_KEYWORD
+        || name.starts_with("STMT_")
+        || name == "STMT_LIST"
+        || name.starts_with("STMT_LIST_")
+        || name == CLASS_REST_HOLE_KEYWORD
+        || name.starts_with("CLASS_REST_")
+        || name == DECLARATORS_HOLE_KEYWORD
+        || name.starts_with("DECLARATORS_")
+        || name == ARGS_HOLE_KEYWORD
+        || name.starts_with("ARGS_")
+        || name == OBJECT_PROPS_HOLE_KEYWORD
+        || name.starts_with("OBJECT_PROPS_")
 }
 
 fn render_var_group_selector(

@@ -219,6 +219,11 @@ pub struct SelectorCodemodArgs {
     #[arg(long = "apply")]
     pub apply: bool,
 
+    /// Preserve exact synthesized source slices instead of minimizing them with
+    /// proof-checked selector holes.
+    #[arg(long = "no-minimize")]
+    pub no_minimize: bool,
+
     /// Restrict to one or more module YAML files. Relative paths are resolved
     /// under `--modules` when possible.
     #[arg(long = "file")]
@@ -654,6 +659,7 @@ fn run_selector_codemod_cmd(args: SelectorCodemodArgs) -> Result<()> {
         modules_root: args.modules_root,
         apply: args.apply,
         rewrite: args.rewrite.into(),
+        minimize_synthesized_selectors: !args.no_minimize,
         files: args.files,
         modules: args.modules,
         module_prefixes: args.module_prefixes,
