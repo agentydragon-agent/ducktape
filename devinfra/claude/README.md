@@ -191,6 +191,21 @@ ships with ~84% reserved; we run as root) via `tune2fs -r`, freeing most of the 
 disk that is otherwise inaccessible — idempotent and skipped once the reservation is low.
 See <web_env/docs/container_spec.md>.
 
+#### Install mode
+
+`web_setup.sh` supports two install modes, selected by the `DUCKTAPE_WEB_SETUP_MODE`
+env var (or a `--mode=<...>` arg):
+
+| Mode                          | How devtools + skills are installed                                                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile` (default)           | `nix profile install .#devtools`, then per-skill symlinks into `~/.claude/skills/`.                                                                                                                       |
+| `home-manager` (experimental) | `home-manager switch --impure --flake .#claude-web`. Home Manager installs the same devtools and deploys Claude Code settings + skills through the shared HM skills module (<../../nix/home/skills.nix>). |
+
+The `home-manager` mode activates `homeConfigurations.claude-web` (defined in `flake.nix`,
+config at <../../nix/home/hosts/claude-web.nix>). It reuses the flake's `devToolPackages`
+list, so the two modes can't drift, and lets the web session pick up skills, plugins, MCP
+servers, and Claude settings from the same home-manager config the NixOS hosts use.
+
 Secrets are **not** decrypted by `web_setup.sh`. `SOPS_AGE_KEY` is a user UI env var
 delivered only to the interactive Claude Code process — not to the setup script. All
 decryption happens in the hook daemon via `startup_env_script` (`web_env.sh`) at
