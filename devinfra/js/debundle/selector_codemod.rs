@@ -15,19 +15,22 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use selector_candidate_index::SelectorCandidateIndex;
 use serde::Serialize;
 use serde_yaml::Value;
+use source_match::BodyIndexFilter;
 use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::{BytePos, DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitWith};
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
     EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -547,6 +550,11 @@ struct ChunkSelectorIndex {
     source: String,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
+    /// Built once per chunk and shared across every member and binding group so
+    /// the minimizer's per-anchor matcher scans only plausible top-level body
+    /// indices instead of the whole chunk. A pure prefilter — see
+    /// [`matched_body_indices`].
+    candidate_index: SelectorCandidateIndex,
 }
 
 #[derive(Debug)]
@@ -891,11 +899,13 @@ impl ChunkSelectorIndex {
             }
             decls.push(indexed);
         }
+        let candidate_index = SelectorCandidateIndex::new(&parsed.module);
         Self {
             parsed,
             source,
             decls,
             binding_to_decl,
+            candidate_index,
         }
     }
 }
@@ -1716,6 +1726,14 @@ fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidat
 }
 
 /// Body indices a `target_binding` selector with `match_source` resolves to.
+///
+/// The shared per-chunk [`SelectorCandidateIndex`] narrows the matcher's scan to
+/// the top-level body indices whose features could still match the selector,
+/// turning the inner loop from O(all top-level statements) into O(plausible
+/// candidates). The candidate set is a sound superset of the full-scan matches,
+/// so the still-run structural matcher remains the source of truth: it proves
+/// every reported match and discards index false positives. See
+/// `prefilter_matches_brute_force_scan` for the superset invariant test.
 fn matched_body_indices(
     index: &ChunkSelectorIndex,
     export_name: &str,
@@ -1729,10 +1747,17 @@ fn matched_body_indices(
         target_statements: None,
         wildcard_string_literals: BTreeSet::new(),
     };
-    let matches = source_match::member_binding_candidate_matches(
+    let selector = source_match.selector();
+    let candidates: BTreeSet<usize> = index
+        .candidate_index
+        .candidate_set_for_source_match(&selector)?
+        .body_indices()
+        .collect();
+    let matches = source_match::member_binding_candidate_matches_within(
         &index.parsed.module,
         "<selector minimization>",
-        &source_match.selector(),
+        &selector,
+        BodyIndexFilter::Restricted(&candidates),
     )?;
     Ok(matches.iter().map(|candidate| candidate.body_idx).collect())
 }
@@ -1809,6 +1834,159 @@ fn minimize_function_selector(
     minimize_via_retention(index, decl, target, &candidates, &render_with)
 }
 
+// ===========================================================================
+// Regex-over-string-literal anchors (`STR_LITERAL_MATCHING_RE("<pattern>")`).
+//
+// A var-binding selector that pins an exact string literal breaks whenever a
+// rebuild perturbs a volatile fragment of that literal (a content hash, build
+// counter, or other generated tail). When the *stable* part of the literal
+// already discriminates the target from its siblings, we can pin that stable
+// structure with a regex and wildcard the volatile fragment, so the selector
+// survives the rebuild.
+//
+// Derivation rule (intentionally conservative — see
+// `selector_minimizer_discrimination.md`):
+//
+//   * We only derive a pattern when the literal ends in a *volatile tail*: a
+//     trailing run of hex/digits. The tail must be at least
+//     `MIN_VOLATILE_TAIL_LEN` chars so a one- to three-char numeric suffix
+//     (which is more likely meaningful than generated) is left alone. Any
+//     separator before the tail (`chunk-`, `main.`) stays in the pinned prefix.
+//   * The derived pattern is `^<escaped stable prefix><tail class>$`, anchored
+//     so `Regex::is_match` (which is otherwise a substring test) pins the whole
+//     value. The stable prefix is escaped with `regex::escape`, so every
+//     metacharacter in the literal is matched literally; only the volatile tail
+//     becomes a character-class wildcard (`[0-9A-Fa-f]+` for a hex tail,
+//     `[0-9]+` for a pure-digit tail).
+//   * If the whole literal would be the volatile tail (no stable prefix), we
+//     return `None`: a bare `^[0-9]+$` pins nothing meaningful and would almost
+//     never discriminate.
+//
+// Limits we deliberately accept: this recognizes only trailing hex/digit
+// volatility (the dominant bundler pattern: `chunk-a1b2c3`, `main.4f3a2b.js`,
+// `vendor_1024`). It does not model embedded volatile fragments, GUID shapes,
+// or base64 hashes. The cover never *requires* a regex anchor — it is offered
+// only as an upgrade of an already-kept exact literal, and is taken only when
+// the upgraded selector still resolves uniquely (so an over-broad pattern is
+// rejected, never emitted). A pattern that fails to compile as `regex::Regex`
+// is likewise never emitted.
+// ===========================================================================
+
+/// Minimum length of a trailing hex/digit run for it to count as a volatile
+/// fragment worth wildcarding. Short numeric suffixes (`v2`, `s3`) are more
+/// often meaningful than generated, so they stay pinned exactly.
+const MIN_VOLATILE_TAIL_LEN: usize = 4;
+
+/// Derive an anchored `STR_LITERAL_MATCHING_RE` pattern that pins the stable
+/// prefix of `value` and wildcards a trailing volatile hex/digit fragment, or
+/// `None` when no meaningful stable-prefix/volatile-tail split exists. The
+/// returned pattern is always a valid `regex::Regex` (the only metacharacters
+/// it introduces are the anchors and a character class; the prefix is escaped).
+fn regex_anchor_pattern(value: &str) -> Option<String> {
+    let chars: Vec<char> = value.chars().collect();
+    // Length of the trailing run of hex digits.
+    let hex_tail = chars
+        .iter()
+        .rev()
+        .take_while(|c| c.is_ascii_hexdigit())
+        .count();
+    if hex_tail < MIN_VOLATILE_TAIL_LEN {
+        return None;
+    }
+    // Prefer a pure-digit tail class when the whole tail is decimal; otherwise
+    // a hex class. (Hex is a superset of digits, so the digit class is the
+    // tighter, more honest wildcard when applicable.)
+    let tail_is_decimal = chars[chars.len() - hex_tail..]
+        .iter()
+        .all(char::is_ascii_digit);
+    let tail_class = if tail_is_decimal {
+        "[0-9]+"
+    } else {
+        "[0-9A-Fa-f]+"
+    };
+    let stable_prefix: String = chars[..chars.len() - hex_tail].iter().collect();
+    // A regex anchor must pin *something* stable: an empty or separator-only
+    // prefix discriminates nothing, so decline. The trailing separator (if any)
+    // stays in the pinned, escaped prefix — `chunk-a1b2c3` pins `chunk-`, not
+    // `chunk`, which is the conservative choice (one fewer wildcarded char).
+    if stable_prefix.is_empty() || stable_prefix.chars().all(|c| matches!(c, '-' | '_' | '.')) {
+        return None;
+    }
+    let pattern = format!("^{}{tail_class}$", regex::escape(&stable_prefix));
+    // Guard the invariant directly: never hand the matcher a pattern it cannot
+    // compile (the matcher silently treats an uncompilable pattern as a
+    // non-match, which would make the selector match nothing).
+    regex::Regex::new(&pattern).ok()?;
+    Some(pattern)
+}
+
+/// Build the `STR_LITERAL_MATCHING_RE("<pattern>")` call expression the matcher
+/// interprets as a regex-over-string-literal predicate.
+fn regex_predicate_call(pattern: &str) -> Expr {
+    Expr::Call(CallExpr {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        callee: Callee::Expr(Box::new(Expr::Ident(ident_node(
+            STRING_LITERAL_REGEX_PREDICATE,
+        )))),
+        args: vec![ExprOrSpread {
+            spread: None,
+            expr: Box::new(Expr::Lit(Lit::Str(Str {
+                span: DUMMY_SP,
+                value: pattern.into(),
+                raw: None,
+            }))),
+        }],
+        type_args: None,
+    })
+}
+
+/// Replace each kept string literal whose span is a chosen regex anchor with the
+/// `STR_LITERAL_MATCHING_RE` predicate call. Runs as a post-pass over the holed
+/// selector AST: holed literals keep their original source span, so matching by
+/// span here is exact and never touches a literal the cover did not select.
+struct RegexAnchorSubstitution<'a> {
+    patterns: &'a BTreeMap<AnchorSpan, String>,
+}
+
+impl VisitMut for RegexAnchorSubstitution<'_> {
+    fn visit_mut_expr(&mut self, expr: &mut Expr) {
+        if let Expr::Lit(Lit::Str(str_lit)) = expr {
+            if let Some(pattern) = self.patterns.get(&span_key(str_lit.span)) {
+                *expr = regex_predicate_call(pattern);
+                return;
+            }
+        }
+        expr.visit_mut_children_with(self);
+    }
+}
+
+/// Candidate regex anchors for the var-binding minimizer: the `(span, pattern)`
+/// of each string literal in a target slot's init for which `regex_anchor_pattern`
+/// yields a wildcarding pattern. Only literals already in the kept set are ever
+/// upgraded, so this is a superset filtered against `kept` at upgrade time.
+fn collect_regex_anchor_candidates(init: &Expr) -> BTreeMap<AnchorSpan, String> {
+    #[derive(Default)]
+    struct Collector {
+        candidates: BTreeMap<AnchorSpan, String>,
+    }
+    impl Visit for Collector {
+        fn visit_expr(&mut self, expr: &Expr) {
+            if let Expr::Lit(Lit::Str(str_lit)) = expr {
+                if let Some(pattern) =
+                    regex_anchor_pattern(str_lit.value.to_string_lossy().as_ref())
+                {
+                    self.candidates.insert(span_key(str_lit.span), pattern);
+                }
+            }
+            expr.visit_children_with(self);
+        }
+    }
+    let mut collector = Collector::default();
+    init.visit_with(&mut collector);
+    collector.candidates
+}
+
 /// A `DECLARATORS_<pos> = null` declarator hole absorbing a run of non-target
 /// declarators in a binding-group selector.
 fn declarator_hole(name: &str) -> VarDeclarator {
@@ -1856,7 +2034,9 @@ fn minimize_var_group_selector(
         return Ok(None);
     }
 
-    let render_with = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
+    let render_with = |kept: &BTreeSet<AnchorSpan>,
+                       regex_anchors: &BTreeMap<AnchorSpan, String>|
+     -> Result<String> {
         let mut decls: Vec<VarDeclarator> = Vec::new();
         let mut skipped_run = false;
         let mut target_seen = 0usize;
@@ -1876,10 +2056,17 @@ fn minimize_var_group_selector(
                 .expect("target declarator is a plain identifier");
             let mut holed = declarator.clone();
             holed.name = named_pat(export_for(name).expect("target declarator has an export"));
-            holed.init = declarator
-                .init
-                .as_ref()
-                .map(|init| Box::new(hole_expr(init, kept)));
+            holed.init = declarator.init.as_ref().map(|init| {
+                let mut holed_init = hole_expr(init, kept);
+                if !regex_anchors.is_empty() {
+                    // Post-pass: swap each kept literal whose span was chosen as
+                    // a regex anchor for the `STR_LITERAL_MATCHING_RE` predicate.
+                    holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
+                        patterns: regex_anchors,
+                    });
+                }
+                Box::new(holed_init)
+            });
             decls.push(holed);
             target_seen += 1;
         }
@@ -1904,8 +2091,12 @@ fn minimize_var_group_selector(
         }
     }
 
+    let no_regex = BTreeMap::new();
     let resolves = |kept: &BTreeSet<AnchorSpan>| -> Result<bool> {
-        Ok(prove_synthesized_selector(index, decl, targets, &render_with(kept)?).is_ok())
+        Ok(
+            prove_synthesized_selector(index, decl, targets, &render_with(kept, &no_regex)?)
+                .is_ok(),
+        )
     };
     // Always keep each slot's shallow literals (a group's declarators are its
     // meaningful targets), then escalate to structural/deeper anchors only if
@@ -1922,7 +2113,37 @@ fn minimize_var_group_selector(
             return Ok(None);
         }
     }
-    let source = render_with(&kept)?;
+
+    // Regex-literal upgrade: among kept string literals, offer a robust
+    // `STR_LITERAL_MATCHING_RE` anchor for each that has a derivable
+    // stable-prefix/volatile-tail pattern, but only accept the upgrade when the
+    // resulting selector *still* resolves uniquely (gate 1). The exact-literal
+    // form is the default; regex is opt-in by merit. Upgrades are applied one
+    // literal at a time so a too-broad pattern on one literal never blocks a
+    // sound upgrade on another.
+    let mut regex_anchors: BTreeMap<AnchorSpan, String> = BTreeMap::new();
+    for (idx, declarator) in var.decls.iter().enumerate() {
+        if !target_slots.contains(&idx) {
+            continue;
+        }
+        let Some(init) = &declarator.init else {
+            continue;
+        };
+        for (span, pattern) in collect_regex_anchor_candidates(init) {
+            if !kept.contains(&span) || regex_anchors.contains_key(&span) {
+                continue;
+            }
+            regex_anchors.insert(span, pattern);
+            let trial = render_with(&kept, &regex_anchors)?;
+            if prove_synthesized_selector(index, decl, targets, &trial).is_err() {
+                // The regex anchor broke uniqueness (over-broad among siblings),
+                // so back it out and keep the exact literal.
+                regex_anchors.remove(&span);
+            }
+        }
+    }
+
+    let source = render_with(&kept, &regex_anchors)?;
     let rewritten_holes = holes_present(&source);
     Ok(Some(SpecializedSelector {
         match_source: source,
@@ -2925,6 +3146,66 @@ fn is_zero(value: &usize) -> bool {
 mod selector_minimizer_proptest;
 
 #[cfg(test)]
+mod regex_anchor_pattern_tests {
+    use super::*;
+
+    #[test]
+    fn pins_stable_prefix_and_wildcards_hex_tail() {
+        let pattern = regex_anchor_pattern("chunk-a1b2c3").expect("derivable hex tail");
+        assert_eq!(pattern, "^chunk\\-[0-9A-Fa-f]+$");
+        let re = regex::Regex::new(&pattern).unwrap();
+        // The pattern matches the seen value and rebuild variants of the same
+        // stable prefix, but not a different prefix.
+        assert!(re.is_match("chunk-a1b2c3"));
+        assert!(re.is_match("chunk-ffffff"));
+        assert!(!re.is_match("widget-a1b2c3"));
+        // Anchored: a longer string sharing the prefix must not match.
+        assert!(!re.is_match("chunk-a1b2c3-extra"));
+    }
+
+    #[test]
+    fn prefers_decimal_class_for_pure_digit_tail() {
+        let pattern = regex_anchor_pattern("vendor_1024").expect("derivable digit tail");
+        assert_eq!(pattern, "^vendor_[0-9]+$");
+        let re = regex::Regex::new(&pattern).unwrap();
+        assert!(re.is_match("vendor_1024"));
+        assert!(re.is_match("vendor_9999"));
+        // The decimal class is tighter than hex: a hex-only rebuild would not
+        // match, which is fine — we wildcard only what we observed (digits).
+        assert!(!re.is_match("vendor_abcd"));
+    }
+
+    #[test]
+    fn escapes_regex_metacharacters_in_the_prefix() {
+        let pattern = regex_anchor_pattern("main.bundle.4f3a2b").expect("derivable");
+        assert_eq!(pattern, "^main\\.bundle\\.[0-9A-Fa-f]+$");
+        let re = regex::Regex::new(&pattern).unwrap();
+        assert!(re.is_match("main.bundle.4f3a2b"));
+        // The `.`s are literal, not any-char wildcards.
+        assert!(!re.is_match("mainXbundleY4f3a2b"));
+    }
+
+    #[test]
+    fn declines_short_numeric_suffixes() {
+        // A two/three-char numeric suffix is more likely meaningful than
+        // generated, so no pattern is offered (`MIN_VOLATILE_TAIL_LEN`).
+        assert_eq!(regex_anchor_pattern("v2"), None);
+        assert_eq!(regex_anchor_pattern("step3"), None);
+        assert_eq!(regex_anchor_pattern("h2o"), None);
+    }
+
+    #[test]
+    fn declines_when_no_stable_prefix_remains() {
+        // The whole literal is the volatile tail: a bare digit/hex anchor pins
+        // nothing meaningful.
+        assert_eq!(regex_anchor_pattern("123456"), None);
+        assert_eq!(regex_anchor_pattern("deadbeef"), None);
+        // Separator-only prefix is likewise rejected.
+        assert_eq!(regex_anchor_pattern("-123456"), None);
+    }
+}
+
+#[cfg(test)]
 mod full_ast_fallback_tests {
     use super::*;
 
@@ -3058,5 +3339,105 @@ export { target };\n";
         // emits even when full_ast_fallback is off.
         let outcome = outcome_for(HARD_TO_MINIMIZE, "target", false, false);
         assert!(matches!(outcome, GroupSelectorOutcome::Synthesized(_)));
+    }
+}
+
+#[cfg(test)]
+mod prefilter_soundness_tests {
+    use super::*;
+
+    /// Many same-shaped sibling `const`s plus a few non-var statements, so the
+    /// candidate-index prefilter has both true matches to keep and unrelated
+    /// statements to prune. Synthetic only.
+    fn many_sibling_chunk() -> String {
+        let mut chunk = String::new();
+        for idx in 0..200 {
+            chunk.push_str(&format!(
+                "const binding{idx} = makeWidget(\"token-{idx}\", {{ role: \"button\" }});\n"
+            ));
+        }
+        for idx in 0..50 {
+            chunk.push_str(&format!("function helper{idx}(a, b) {{ return a + b; }}\n"));
+        }
+        chunk.push_str("sideEffect();\n");
+        chunk
+    }
+
+    /// The full unfiltered scan: matcher over every top-level statement. Source
+    /// of truth the prefilter must not under-include.
+    fn brute_force_matches(
+        index: &ChunkSelectorIndex,
+        export: &str,
+        source: &str,
+    ) -> BTreeSet<usize> {
+        let source_match = SourceMatch {
+            match_source: source.to_string(),
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: Some(export.to_string()),
+            target_statement: None,
+            target_statements: None,
+            wildcard_string_literals: BTreeSet::new(),
+        };
+        source_match::member_binding_candidate_matches_within(
+            &index.parsed.module,
+            "<brute-force>",
+            &source_match.selector(),
+            BodyIndexFilter::All,
+        )
+        .unwrap()
+        .iter()
+        .map(|matched| matched.body_idx)
+        .collect()
+    }
+
+    #[test]
+    fn prefilter_matches_brute_force_scan() {
+        js_ast::with_swc_globals(|| {
+            let index = ChunkSelectorIndex::new(
+                js_ast::parse_js_module_consuming("<prefilter-test>", many_sibling_chunk())
+                    .unwrap(),
+            );
+            // A selector specific enough to match exactly one sibling, and a holed
+            // selector that matches every sibling: both must agree between the
+            // prefiltered and brute-force scans.
+            for (export, source) in [
+                (
+                    "Target",
+                    r#"const Target = makeWidget("token-137", { role: "button" });"#,
+                ),
+                (
+                    "Target",
+                    r#"const Target = makeWidget(EXPR_HOLE, { role: "button" });"#,
+                ),
+            ] {
+                let prefiltered = matched_body_indices(&index, export, source).unwrap();
+                let brute = brute_force_matches(&index, export, source);
+                let candidates: BTreeSet<usize> = index
+                    .candidate_index
+                    .candidate_set_for_source_match(&{
+                        SourceMatch {
+                            match_source: source.to_string(),
+                            identifiers: SourceMatchIdentifierMode::AlphaAll,
+                            target_binding: Some(export.to_string()),
+                            target_statement: None,
+                            target_statements: None,
+                            wildcard_string_literals: BTreeSet::new(),
+                        }
+                        .selector()
+                    })
+                    .unwrap()
+                    .body_indices()
+                    .collect();
+                assert!(
+                    brute.is_subset(&candidates),
+                    "candidate set must be a sound superset of the brute-force matches: \
+                     brute={brute:?} candidates={candidates:?}"
+                );
+                assert_eq!(
+                    prefiltered, brute,
+                    "prefiltered scan must report identical matches to the full scan"
+                );
+            }
+        });
     }
 }
