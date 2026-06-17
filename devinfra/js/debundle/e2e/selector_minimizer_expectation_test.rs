@@ -13,6 +13,8 @@ use std::process::Command;
 
 use serde_json::Value;
 
+use debundle_e2e_support::{debundler_path, write_text_file};
+
 struct MinimizedSelectorCase {
     name: &'static str,
     source: &'static str,
@@ -37,26 +39,6 @@ struct SelectorOutput {
     match_source: String,
 }
 
-fn debundle_binary() -> PathBuf {
-    let runfiles_path = std::env::var("RUNFILES_DIR")
-        .or_else(|_| std::env::var("TEST_SRCDIR"))
-        .expect("runfiles env var");
-    let candidate = Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle");
-    assert!(
-        candidate.exists(),
-        "debundle binary not at {}",
-        candidate.display()
-    );
-    candidate
-}
-
-fn write(path: &Path, body: &str) {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-}
-
 fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Output {
     let mut args = vec![
         "spec",
@@ -65,7 +47,7 @@ fn run_synthesize_selectors(modules: &Path, extra: &[&str]) -> std::process::Out
         modules.to_str().unwrap(),
     ];
     args.extend_from_slice(extra);
-    let out = Command::new(debundle_binary())
+    let out = Command::new(debundler_path())
         .args(&args)
         .output()
         .expect("spawn debundle");
@@ -90,7 +72,7 @@ fn parse_stdout_json(out: &std::process::Output) -> Value {
 
 fn write_case(root: &Path, case: &MinimizedSelectorCase) -> (PathBuf, PathBuf) {
     let source = root.join("chunks/app.js");
-    write(&source, case.source);
+    write_text_file(&source, case.source);
 
     let modules = root.join("modules");
     let mut module_yaml = String::from("members:\n");
@@ -100,7 +82,7 @@ fn write_case(root: &Path, case: &MinimizedSelectorCase) -> (PathBuf, PathBuf) {
             binding.export_name, binding.runtime_name
         ));
     }
-    write(&modules.join(format!("{}.yaml", case.module)), &module_yaml);
+    write_text_file(&modules.join(format!("{}.yaml", case.module)), &module_yaml);
     (modules, source)
 }
 
