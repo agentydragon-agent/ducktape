@@ -32,8 +32,8 @@ improvement with deeper steps below.
   nudge.
 - Only the low-energy corner stayed stuck: {3, 4} passes × {0.0, −0.1}.
 
-Photos: `result-grid-front.jpg` (all cells seated), `result-spontaneous-drops.jpg` (holes =
-the 4 that fell unaided: 6/−0.1, 4/−0.2, 5/−0.2, 6/−0.2), `result-cutouts.jpg` (the 8
+Photos: `grid_front.jpg` (all cells seated), `spontaneous_drops.jpg` (holes =
+the 4 that fell unaided: 6/−0.1, 4/−0.2, 5/−0.2, 6/−0.2), `cutouts.jpg` (the 8
 released squares).
 
 ## Conclusion

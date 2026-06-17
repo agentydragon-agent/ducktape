@@ -72,7 +72,7 @@ cause of the inconsistent 8.4 mm cuts.
 
 ## Focus test — 2026-06-17
 
-Photo: <focus-test-2026-06-17.jpg> (LightBurn Focus Test ladder; lines go from
+Photo: <focus_test_2026_06_17.jpg> (LightBurn Focus Test ladder; lines go from
 wide/charred at the top to a fine kerf near focus).
 
 ### Setup
@@ -140,5 +140,21 @@ Full writeup: <8mm_plywood_4/README.md>. Repeats exp 3's grid with **negative** 
 **`z_per_pass = −0.2`, 4 passes fell out spontaneously** at 50% / 20 mm/s; fixed focus never
 dropped unaided and needed 5+ passes for even a nudge.
 
-**Current production recipe:** 50% power, 20 mm/s, focus at surface, **`z_per_pass = −0.2`,
-4 passes** (5 for margin). Next: exp 5 trims power/speed for less burn at this pass count.
+**Recipe after exp 4:** 50% power, 20 mm/s, focus at surface, `z_per_pass = −0.2`, 4 passes.
+_Refined by exp 5 below._
+
+## Experiment — 8.4 mm plywood power × speed sweep (8mm_plywood_5) — DONE 2026-06-17
+
+Full writeup: <8mm_plywood_5/README.md>. Held `z_per_pass = −0.2`, 5 passes, focus at
+surface; swept power {35,40,45,50}% × speed {20,25,30} mm/s.
+
+**Result: speed is the dominant lever for full penetration, not power.** 20 mm/s severs at
+every power (even 35%); 25 mm/s only at 50%; 30 mm/s never fully cuts (bottom veneer left).
+40/20 and 45/20 fell out spontaneously.
+
+Edge close-ups (`8mm_plywood_5/edge_closeups/`) show char is similar across the 20 mm/s
+cells — slower dwell means low power doesn't burn less; 50/25 is marginally cleanest.
+
+**Production recipe:** focus at surface (7.4 mm spacer), `z_per_pass = −0.2`, **5 passes,
+40% power, 20 mm/s** — reliable spontaneous release at modest power. Keep speed at 20 (faster
+leaves the bottom veneer except at 50%). Alt: 50% / 25 mm/s if throughput/edge matters.

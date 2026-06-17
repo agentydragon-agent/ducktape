@@ -25,7 +25,7 @@ down."
 ## Results
 
 A cell "passes" if the 20 mm square releases with a **light finger nudge** (nothing more
-forceful). `result-cutouts.jpg` shows the squares that came free that way.
+forceful). `cutouts.jpg` shows the squares that came free that way.
 
 | passes \ z/pass | 0.0      | +0.1      | +0.2      |
 | --------------- | -------- | --------- | --------- |
@@ -40,7 +40,7 @@ forceful). `result-cutouts.jpg` shows the squares that came free that way.
 - The four that wouldn't release with a nudge: **4/0.1, 5/0.1, 6/0.1, 4/0.2** — all
   stepping cells (which defocused upward due to the inverted sign).
 
-Photos: `result-grid-labeled.jpg` (grid front), `result-cutouts.jpg` (released squares).
+Photos: `grid_labeled.jpg` (grid front), `cutouts.jpg` (released squares).
 
 ## Conclusion
 
