@@ -158,3 +158,14 @@ cells — slower dwell means low power doesn't burn less; 50/25 is marginally cl
 **Production recipe:** focus at surface (7.4 mm spacer), `z_per_pass = −0.2`, **5 passes,
 40% power, 20 mm/s** — reliable spontaneous release at modest power. Keep speed at 20 (faster
 leaves the bottom veneer except at 50%). Alt: 50% / 25 mm/s if throughput/edge matters.
+Use **45%** for full-size parts (margin for warp / bed-position variation).
+
+### Hold-down
+
+The honeycomb bed is **ferromagnetic** (steel) — strong neodymium magnets clamp through
+8.6 mm ply to it. Hold-downs only need to **flatten warp** (focus consistency); the sheet
+stays one piece until the last pass, so parts don't shift. Ring the perimeter (outside the
+job bounding box = always clear of the head); add an interior magnet only for a center bow,
+at a spot LightBurn's traversal preview shows the head avoids. Keep magnets low — head
+clearance drops to ~4 mm as the bed rises during passes; a strike mid-cut ruins the part.
+(Printed comb-nub hold-downs are the fallback if a non-magnetic bed is ever used.)
