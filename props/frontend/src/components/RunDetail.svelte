@@ -41,18 +41,27 @@
   }
   const { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
 
-  // State
-  let run: AgentRunDetail | null = $state(initialRun ?? null);
-  let loading = $state(!initialRun);
+  // State. A discriminated union keeps the loading/loaded/error states mutually
+  // exclusive (no "loaded but also errored" combo). initialRun (visual tests / SSR
+  // hydration) seeds the loaded state; otherwise we start in loading.
+  type RunLoad =
+    | { status: "loading" }
+    | { status: "loaded"; run: AgentRunDetail }
+    | { status: "error"; message: string };
+  // svelte-ignore state_referenced_locally
+  let load: RunLoad = $state(initialRun ? { status: "loaded", run: initialRun } : { status: "loading" });
 
   // Critique viewer state
+  // svelte-ignore state_referenced_locally
   let snapshotDetail: SnapshotDetailResponse | null = $state(initialSnapshotDetail ?? null);
+  // svelte-ignore state_referenced_locally
   let fileContents = $state(
     initialFileContents ? new SvelteMap(initialFileContents) : new SvelteMap<string, FileContentResponse>()
   );
   let loadingSnapshot = $state(false);
 
   // LLM requests state
+  // svelte-ignore state_referenced_locally
   let llmRequests: LLMRequestInfo[] = $state(initialLLMRequests ?? []);
   let loadingLLMRequests = $state(false);
 
@@ -129,13 +138,13 @@
   // so it cannot block run metadata, logs, or LLM request display.
   async function loadData() {
     try {
-      run = await fetchRun(runId);
-      loadSnapshotDataInBackground(run);
+      const fetchedRun = await fetchRun(runId);
+      load = { status: "loaded", run: fetchedRun };
+      loadSnapshotDataInBackground(fetchedRun);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load run";
+      load = { status: "error", message };
       toast.error(message);
-    } finally {
-      loading = false;
     }
   }
 
@@ -251,11 +260,13 @@
           class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
         />
         <h2 class="text-lg font-semibold">Run Details</h2>
-        {#if run}
+        {#if load.status === "loaded"}
+          {@const run = load.run}
           <span class="font-mono text-sm text-gray-500 dark:text-gray-400"><RunIdLink id={run.agent_run_id} /></span>
         {/if}
       </div>
-      {#if run}
+      {#if load.status === "loaded"}
+        {@const run = load.run}
         <span class="px-2 py-1 rounded text-sm font-medium capitalize {getStatusColor(run.status)}">
           {formatStatus(run.status)}
         </span>
@@ -264,11 +275,12 @@
     <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Runs", href: "/runs" }, { label: runId }]} />
   </div>
 
-  {#if loading}
+  {#if load.status === "loading"}
     <div class="p-4">
       <p class="text-gray-500 dark:text-gray-400">Loading...</p>
     </div>
-  {:else if run}
+  {:else if load.status === "loaded"}
+    {@const run = load.run}
     <!-- Run info -->
     <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -539,9 +551,9 @@
         </div>
       {/if}
     </div>
-  {:else}
+  {:else if load.status === "error"}
     <div class="p-4">
-      <p class="text-red-500 dark:text-red-400">Failed to load run</p>
+      <p class="text-red-500 dark:text-red-400">{load.message}</p>
     </div>
   {/if}
 </div>
