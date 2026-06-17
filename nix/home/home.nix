@@ -37,6 +37,29 @@ let
     ];
     text = builtins.readFile ./scripts/tana-claude.sh;
   };
+
+  mkHomeGtkBookmark =
+    { path, title }:
+    "file://${config.home.homeDirectory}/${path} ${title}";
+
+  gtkFileChooserBookmarks = map mkHomeGtkBookmark (
+    [
+      {
+        path = "code/ducktape";
+        title = "Ducktape";
+      }
+    ]
+    ++ lib.optionals config.services.google-drive.enable [
+      {
+        path = "drive";
+        title = "Google Drive";
+      }
+      {
+        path = "drive/dokumenty";
+        title = "Dokumenty";
+      }
+    ]
+  );
 in
 {
   _module.args.ducktapePackages = ducktapePackages;
@@ -91,6 +114,10 @@ in
     publicShare = "$HOME";
     templates = "$HOME";
     videos = "$HOME";
+  };
+
+  xdg.configFile."gtk-3.0/bookmarks" = lib.mkIf enableGui {
+    text = lib.concatStringsSep "\n" gtkFileChooserBookmarks + "\n";
   };
 
   nix.package = lib.mkDefault pkgs.nix;
