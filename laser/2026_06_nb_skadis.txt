@@ -1,0 +1,6 @@
+Specs for new Skadis pegboards for laser once they shifted around the laser ~June 2026
+
+skadis for side of laser cutter ventilation box:
+    for the top of the left side: 19x22"
+    for the top of the front: width 26" x height 10.5", with hole for the key opening
+    for the bottom of the front: width 26" x height 31", with holes for turnkeys
