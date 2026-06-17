@@ -1,0 +1,40 @@
+title = "8.4mm plywood — passes x z/pass (focus@surface, 7.4mm spacer)"
+
+# Energy held constant (50% / 20 mm/s); scan pass count vs focus step-down.
+# z values are COMMANDED mm (physical = x3.69; quantum 0.1 cmd = 0.37mm).
+# z_per_pass POSITIVE = bed rises = focus deepens (this machine's convention).
+# Set focus by sandwich [head | 7.4mm spacer | material], with the BED parked at a
+# commanded Z <= ~2998.6, then REMOVE the spacer. Worst cell (7 passes x +0.2) rises
+# 1.2 cmd = 4.43mm physical -> 2.97mm crash clearance, reaches <= ~2999.8 (< 2999.9 max).
+
+[x]
+param = "num_passes"
+values = [4, 5, 6, 7]
+show_labels = false
+
+[y]
+param = "z_per_pass_mm"
+values = [0.0, 0.1, 0.2]
+show_labels = false
+
+[cut]
+power_pct = 50
+speed_mm_s = 20
+z_offset_mm = 0.0
+
+[geometry]
+cell_size_mm = 20
+
+[labels]
+cell_text = "values"
+show_legend = true
+
+[text_layer]
+power_pct = 7
+
+[border]
+enabled = true
+
+[font]
+name = "zzSTENCIL"
+h_cell_mm = 5.2
