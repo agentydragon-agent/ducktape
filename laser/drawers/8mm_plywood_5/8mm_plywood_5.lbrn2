@@ -82,13 +82,13 @@
     <CutSetting type="Cut">
         <index Value="1" />
         <name Value="C01" />
-        <minPower Value="25.0" />
-        <maxPower Value="25.0" />
+        <minPower Value="35.0" />
+        <maxPower Value="35.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="20.0" />
+        <speed Value="30.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -111,8 +111,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -139,13 +139,13 @@
     <CutSetting type="Cut">
         <index Value="2" />
         <name Value="C02" />
-        <minPower Value="27.0" />
-        <maxPower Value="27.0" />
+        <minPower Value="40.0" />
+        <maxPower Value="40.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="20.0" />
+        <speed Value="30.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -168,8 +168,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -196,13 +196,13 @@
     <CutSetting type="Cut">
         <index Value="3" />
         <name Value="C03" />
-        <minPower Value="25.0" />
-        <maxPower Value="25.0" />
+        <minPower Value="35.0" />
+        <maxPower Value="35.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="18.0" />
+        <speed Value="25.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -225,8 +225,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -253,13 +253,13 @@
     <CutSetting type="Cut">
         <index Value="4" />
         <name Value="C04" />
-        <minPower Value="29.0" />
-        <maxPower Value="29.0" />
+        <minPower Value="45.0" />
+        <maxPower Value="45.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="20.0" />
+        <speed Value="30.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -282,8 +282,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -310,13 +310,13 @@
     <CutSetting type="Cut">
         <index Value="5" />
         <name Value="C05" />
-        <minPower Value="27.0" />
-        <maxPower Value="27.0" />
+        <minPower Value="40.0" />
+        <maxPower Value="40.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="18.0" />
+        <speed Value="25.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -339,8 +339,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -367,13 +367,13 @@
     <CutSetting type="Cut">
         <index Value="6" />
         <name Value="C06" />
-        <minPower Value="25.0" />
-        <maxPower Value="25.0" />
+        <minPower Value="50.0" />
+        <maxPower Value="50.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="16.0" />
+        <speed Value="30.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -396,8 +396,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -424,13 +424,13 @@
     <CutSetting type="Cut">
         <index Value="7" />
         <name Value="C07" />
-        <minPower Value="32.0" />
-        <maxPower Value="32.0" />
+        <minPower Value="35.0" />
+        <maxPower Value="35.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
         <speed Value="20.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -453,8 +453,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -481,13 +481,13 @@
     <CutSetting type="Cut">
         <index Value="8" />
         <name Value="C08" />
-        <minPower Value="29.0" />
-        <maxPower Value="29.0" />
+        <minPower Value="45.0" />
+        <maxPower Value="45.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="18.0" />
+        <speed Value="25.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -510,8 +510,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -538,13 +538,13 @@
     <CutSetting type="Cut">
         <index Value="9" />
         <name Value="C09" />
-        <minPower Value="27.0" />
-        <maxPower Value="27.0" />
+        <minPower Value="40.0" />
+        <maxPower Value="40.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="16.0" />
+        <speed Value="20.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -567,8 +567,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -595,13 +595,13 @@
     <CutSetting type="Cut">
         <index Value="10" />
         <name Value="C10" />
-        <minPower Value="32.0" />
-        <maxPower Value="32.0" />
+        <minPower Value="50.0" />
+        <maxPower Value="50.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="18.0" />
+        <speed Value="25.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -624,8 +624,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -652,13 +652,13 @@
     <CutSetting type="Cut">
         <index Value="11" />
         <name Value="C11" />
-        <minPower Value="25.0" />
-        <maxPower Value="25.0" />
+        <minPower Value="45.0" />
+        <maxPower Value="45.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="14.0" />
+        <speed Value="20.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -681,8 +681,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -709,13 +709,13 @@
     <CutSetting type="Cut">
         <index Value="12" />
         <name Value="C12" />
-        <minPower Value="29.0" />
-        <maxPower Value="29.0" />
+        <minPower Value="50.0" />
+        <maxPower Value="50.0" />
         <minPower2 Value="0" />
         <maxPower2 Value="0" />
-        <speed Value="16.0" />
+        <speed Value="20.0" />
         <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
+        <zOffset Value="0.0" />
         <enableLaser1 Value="1" />
         <enableLaser2 Value="0" />
         <startDelay Value="0" />
@@ -738,8 +738,8 @@
         <overcut Value="0" />
         <rampLength Value="0" />
         <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
+        <numPasses Value="5" />
+        <zPerPass Value="-0.2" />
         <perforate Value="0" />
         <perfLen Value="0.1" />
         <perfSkip Value="0.1" />
@@ -765,234 +765,6 @@
     </CutSetting>
     <CutSetting type="Cut">
         <index Value="13" />
-        <name Value="C13" />
-        <minPower Value="27.0" />
-        <maxPower Value="27.0" />
-        <minPower2 Value="0" />
-        <maxPower2 Value="0" />
-        <speed Value="14.0" />
-        <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
-        <enableLaser1 Value="1" />
-        <enableLaser2 Value="0" />
-        <startDelay Value="0" />
-        <endDelay Value="0" />
-        <throughPower Value="0" />
-        <throughPower2 Value="0" />
-        <enableCutThroughStart Value="0" />
-        <enableCutThroughEnd Value="0" />
-        <priority Value="13" />
-        <frequency Value="20000" />
-        <overrideFrequency Value="0" />
-        <PPI Value="200" />
-        <enablePPI Value="0" />
-        <doOutput Value="1" />
-        <hide Value="0" />
-        <runBlower Value="1" />
-        <autoBlower Value="0" />
-        <blowerSpeedOverride Value="0" />
-        <blowerSpeedPercent Value="100" />
-        <overcut Value="0" />
-        <rampLength Value="0" />
-        <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
-        <perforate Value="0" />
-        <perfLen Value="0.1" />
-        <perfSkip Value="0.1" />
-        <dotMode Value="0" />
-        <dotTime Value="1" />
-        <dotSpacing Value="0.1" />
-        <manualTabs Value="1" />
-        <tabSize Value="0.5" />
-        <tabCount Value="1" />
-        <tabSpacing Value="50" />
-        <skipInnerTabs Value="0" />
-        <tabsUseSpacing Value="1" />
-        <scanOpt Value="mergeAll" />
-        <bidir Value="1" />
-        <crossHatch Value="0" />
-        <overscan Value="0" />
-        <overscanPercent Value="2.5" />
-        <floodFill Value="0" />
-        <interval Value="0.1" />
-        <angle Value="0" />
-        <cellsPerInch Value="50" />
-        <halftoneAngle Value="22.5" />
-    </CutSetting>
-    <CutSetting type="Cut">
-        <index Value="14" />
-        <name Value="C14" />
-        <minPower Value="32.0" />
-        <maxPower Value="32.0" />
-        <minPower2 Value="0" />
-        <maxPower2 Value="0" />
-        <speed Value="16.0" />
-        <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
-        <enableLaser1 Value="1" />
-        <enableLaser2 Value="0" />
-        <startDelay Value="0" />
-        <endDelay Value="0" />
-        <throughPower Value="0" />
-        <throughPower2 Value="0" />
-        <enableCutThroughStart Value="0" />
-        <enableCutThroughEnd Value="0" />
-        <priority Value="14" />
-        <frequency Value="20000" />
-        <overrideFrequency Value="0" />
-        <PPI Value="200" />
-        <enablePPI Value="0" />
-        <doOutput Value="1" />
-        <hide Value="0" />
-        <runBlower Value="1" />
-        <autoBlower Value="0" />
-        <blowerSpeedOverride Value="0" />
-        <blowerSpeedPercent Value="100" />
-        <overcut Value="0" />
-        <rampLength Value="0" />
-        <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
-        <perforate Value="0" />
-        <perfLen Value="0.1" />
-        <perfSkip Value="0.1" />
-        <dotMode Value="0" />
-        <dotTime Value="1" />
-        <dotSpacing Value="0.1" />
-        <manualTabs Value="1" />
-        <tabSize Value="0.5" />
-        <tabCount Value="1" />
-        <tabSpacing Value="50" />
-        <skipInnerTabs Value="0" />
-        <tabsUseSpacing Value="1" />
-        <scanOpt Value="mergeAll" />
-        <bidir Value="1" />
-        <crossHatch Value="0" />
-        <overscan Value="0" />
-        <overscanPercent Value="2.5" />
-        <floodFill Value="0" />
-        <interval Value="0.1" />
-        <angle Value="0" />
-        <cellsPerInch Value="50" />
-        <halftoneAngle Value="22.5" />
-    </CutSetting>
-    <CutSetting type="Cut">
-        <index Value="15" />
-        <name Value="C15" />
-        <minPower Value="29.0" />
-        <maxPower Value="29.0" />
-        <minPower2 Value="0" />
-        <maxPower2 Value="0" />
-        <speed Value="14.0" />
-        <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
-        <enableLaser1 Value="1" />
-        <enableLaser2 Value="0" />
-        <startDelay Value="0" />
-        <endDelay Value="0" />
-        <throughPower Value="0" />
-        <throughPower2 Value="0" />
-        <enableCutThroughStart Value="0" />
-        <enableCutThroughEnd Value="0" />
-        <priority Value="15" />
-        <frequency Value="20000" />
-        <overrideFrequency Value="0" />
-        <PPI Value="200" />
-        <enablePPI Value="0" />
-        <doOutput Value="1" />
-        <hide Value="0" />
-        <runBlower Value="1" />
-        <autoBlower Value="0" />
-        <blowerSpeedOverride Value="0" />
-        <blowerSpeedPercent Value="100" />
-        <overcut Value="0" />
-        <rampLength Value="0" />
-        <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
-        <perforate Value="0" />
-        <perfLen Value="0.1" />
-        <perfSkip Value="0.1" />
-        <dotMode Value="0" />
-        <dotTime Value="1" />
-        <dotSpacing Value="0.1" />
-        <manualTabs Value="1" />
-        <tabSize Value="0.5" />
-        <tabCount Value="1" />
-        <tabSpacing Value="50" />
-        <skipInnerTabs Value="0" />
-        <tabsUseSpacing Value="1" />
-        <scanOpt Value="mergeAll" />
-        <bidir Value="1" />
-        <crossHatch Value="0" />
-        <overscan Value="0" />
-        <overscanPercent Value="2.5" />
-        <floodFill Value="0" />
-        <interval Value="0.1" />
-        <angle Value="0" />
-        <cellsPerInch Value="50" />
-        <halftoneAngle Value="22.5" />
-    </CutSetting>
-    <CutSetting type="Cut">
-        <index Value="16" />
-        <name Value="C16" />
-        <minPower Value="32.0" />
-        <maxPower Value="32.0" />
-        <minPower2 Value="0" />
-        <maxPower2 Value="0" />
-        <speed Value="14.0" />
-        <kerf Value="0.0" />
-        <zOffset Value="-0.1" />
-        <enableLaser1 Value="1" />
-        <enableLaser2 Value="0" />
-        <startDelay Value="0" />
-        <endDelay Value="0" />
-        <throughPower Value="0" />
-        <throughPower2 Value="0" />
-        <enableCutThroughStart Value="0" />
-        <enableCutThroughEnd Value="0" />
-        <priority Value="16" />
-        <frequency Value="20000" />
-        <overrideFrequency Value="0" />
-        <PPI Value="200" />
-        <enablePPI Value="0" />
-        <doOutput Value="1" />
-        <hide Value="0" />
-        <runBlower Value="1" />
-        <autoBlower Value="0" />
-        <blowerSpeedOverride Value="0" />
-        <blowerSpeedPercent Value="100" />
-        <overcut Value="0" />
-        <rampLength Value="0" />
-        <rampOuter Value="0" />
-        <numPasses Value="4" />
-        <zPerPass Value="-0.7" />
-        <perforate Value="0" />
-        <perfLen Value="0.1" />
-        <perfSkip Value="0.1" />
-        <dotMode Value="0" />
-        <dotTime Value="1" />
-        <dotSpacing Value="0.1" />
-        <manualTabs Value="1" />
-        <tabSize Value="0.5" />
-        <tabCount Value="1" />
-        <tabSpacing Value="50" />
-        <skipInnerTabs Value="0" />
-        <tabsUseSpacing Value="1" />
-        <scanOpt Value="mergeAll" />
-        <bidir Value="1" />
-        <crossHatch Value="0" />
-        <overscan Value="0" />
-        <overscanPercent Value="2.5" />
-        <floodFill Value="0" />
-        <interval Value="0.1" />
-        <angle Value="0" />
-        <cellsPerInch Value="50" />
-        <halftoneAngle Value="22.5" />
-    </CutSetting>
-    <CutSetting type="Cut">
-        <index Value="17" />
         <name Value="Border" />
         <minPower Value="10.0" />
         <maxPower Value="10.0" />
@@ -1009,7 +781,7 @@
         <throughPower2 Value="0" />
         <enableCutThroughStart Value="0" />
         <enableCutThroughEnd Value="0" />
-        <priority Value="17" />
+        <priority Value="13" />
         <frequency Value="20000" />
         <overrideFrequency Value="0" />
         <PPI Value="200" />
@@ -1048,112 +820,88 @@
         <cellsPerInch Value="50" />
         <halftoneAngle Value="22.5" />
     </CutSetting>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="8.4mm plywood" H="10" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 57 132</XForm>
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="8.4mm plywood exp5" H="10" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+        <XForm>1 0 0 1 57 104</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="Z=-0.1 mm, Kerf=0 mm, Z/pass=-0.7 mm, Passes=4" H="7" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 57 119</XForm>
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="Z=0mm Kerf=0mm Z/pass=-0.2mm Passes=5" H="7" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+        <XForm>1 0 0 1 57 91</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
-        <XForm>1 0 0 1 15 101.75</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="14" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 15 96.25</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="27" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
-        <XForm>1 0 0 1 43 101.75</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="14" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 43 96.25</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="29" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
-        <XForm>1 0 0 1 71 101.75</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="14" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 71 96.25</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="32" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
-        <XForm>1 0 0 1 99 101.75</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="14" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 99 96.25</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="35" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 15 73.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="16" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 15 68.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="27" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="40" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 43 73.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="16" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 43 68.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="29" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="45" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 71 73.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="16" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 71 68.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="32" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="50" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 99 73.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="16" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 99 68.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="35" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 15 45.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="18" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 15 40.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="27" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="40" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 43 45.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="18" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 43 40.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="29" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="45" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 71 45.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="18" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 71 40.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="32" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="50" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 99 45.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="18" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 99 40.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="25" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="35" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 15 17.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="30" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 15 12.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="27" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="40" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 43 17.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="30" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 43 12.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="29" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="45" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 71 17.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="30" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 71 12.25</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="32" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="50" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 99 17.75</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="20" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="30" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
         <XForm>1 0 0 1 99 12.25</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="0" W="20" H="20" Cr="0">
         <XForm>1 0 0 1 -6.5 -6.5</XForm>
     </Shape>
-    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="Power %" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+    <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="PWR%" H="5.2" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
         <XForm>1 0 0 1 -6.5 -3.75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="zzSTENCIL,-1,100,5,50,0,0,0,0,0" Str="mm/s" H="5.2" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
@@ -1175,10 +923,10 @@
         <XForm>1 0 0 1 43 43</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="6" W="20" H="20" Cr="0">
-        <XForm>1 0 0 1 15 71</XForm>
+        <XForm>1 0 0 1 99 15</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="7" W="20" H="20" Cr="0">
-        <XForm>1 0 0 1 99 15</XForm>
+        <XForm>1 0 0 1 15 71</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="8" W="20" H="20" Cr="0">
         <XForm>1 0 0 1 71 43</XForm>
@@ -1190,25 +938,13 @@
         <XForm>1 0 0 1 99 43</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="11" W="20" H="20" Cr="0">
-        <XForm>1 0 0 1 15 99</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="12" W="20" H="20" Cr="0">
         <XForm>1 0 0 1 71 71</XForm>
     </Shape>
-    <Shape Type="Rect" CutIndex="13" W="20" H="20" Cr="0">
-        <XForm>1 0 0 1 43 99</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="14" W="20" H="20" Cr="0">
+    <Shape Type="Rect" CutIndex="12" W="20" H="20" Cr="0">
         <XForm>1 0 0 1 99 71</XForm>
     </Shape>
-    <Shape Type="Rect" CutIndex="15" W="20" H="20" Cr="0">
-        <XForm>1 0 0 1 71 99</XForm>
+    <Shape Type="Rect" CutIndex="13" W="134.225" H="105" Cr="0">
+        <XForm>1 0 0 1 64.1125 54.5</XForm>
     </Shape>
-    <Shape Type="Rect" CutIndex="16" W="20" H="20" Cr="0">
-        <XForm>1 0 0 1 99 99</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="17" W="151.55" H="133" Cr="0">
-        <XForm>1 0 0 1 72.775 68.5</XForm>
-    </Shape>
-    <Notes ShowOnLoad="0" Notes="Generated by material_test.py  x=power_pct:[25.0, 27.0, 29.0, 32.0]  y=speed_mm_s:[14.0, 16.0, 18.0, 20.0]" />
+    <Notes ShowOnLoad="0" Notes="Generated by material_test.py  x=power_pct:[35.0, 40.0, 45.0, 50.0]  y=speed_mm_s:[20.0, 25.0, 30.0]" />
 </LightBurnProject>

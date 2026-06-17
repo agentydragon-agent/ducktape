@@ -1,0 +1,41 @@
+title = "8.4mm plywood exp5"
+
+# Exp 5: least-burn optimization. Hold the working focus-stepping from exp4
+# (z_per_pass = -0.2 commanded, NEGATIVE = bed up = focus deeper), 5 passes for a little
+# margin, and sweep power DOWN x speed UP to find the lowest-energy recipe that still severs.
+# Known-good anchor: 50% / 20 mm/s (easiest corner). Frontier should cross the grid.
+#
+# Crash: 5 passes x -0.2 rises 4*0.2 = 0.8 cmd = 2.95mm -> set focus origin bed Z <= ~2999.1.
+# Verify on cell 1 that the bed RISES over passes.
+
+[x]
+param = "power_pct"
+values = [35, 40, 45, 50]
+show_labels = false
+
+[y]
+param = "speed_mm_s"
+values = [20, 25, 30]
+show_labels = false
+
+[cut]
+z_offset_mm = 0.0
+z_per_pass_mm = -0.2
+num_passes = 5
+
+[geometry]
+cell_size_mm = 20
+
+[labels]
+cell_text = "values"
+show_legend = true
+
+[text_layer]
+power_pct = 7
+
+[border]
+enabled = true
+
+[font]
+name = "zzSTENCIL"
+h_cell_mm = 5.2

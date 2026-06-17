@@ -1,0 +1,41 @@
+title = "8.4mm plywood exp4"
+
+# Exp 4: flip z_per_pass NEGATIVE so stepping actually deepens focus (exp3 showed
+# positive lowered the bed). Hunt for the minimum pass count; 7 was overkill.
+# Energy held at 50% / 20 mm/s. z values COMMANDED (physical = x3.69).
+#
+# NEGATIVE z_per_pass = bed RISES = focus deeper (verify on cell 1!). Bed now moves
+# toward the head + the 2999.9 hard limit, so set focus origin at bed Z <= ~2998.9.
+# Worst cell (6 passes x -0.2) rises 5*0.2 = 1.0 cmd = 3.69mm -> 3.7mm crash clearance.
+
+[x]
+param = "num_passes"
+values = [3, 4, 5, 6]
+show_labels = false
+
+[y]
+param = "z_per_pass_mm"
+values = [0.0, -0.1, -0.2]
+show_labels = false
+
+[cut]
+power_pct = 50
+speed_mm_s = 20
+z_offset_mm = 0.0
+
+[geometry]
+cell_size_mm = 20
+
+[labels]
+cell_text = "values"
+show_legend = true
+
+[text_layer]
+power_pct = 7
+
+[border]
+enabled = true
+
+[font]
+name = "zzSTENCIL"
+h_cell_mm = 5.2

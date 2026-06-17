@@ -17,6 +17,14 @@ LightBurn-driven. Cut params: power %, speed mm/s.
   tighten, remove the spacer. So **focus is decoupled from bed commanded Z** — you can make
   the focus sandwich with the bed parked anywhere in a range, then pick a bed Z that leaves
   room to rise under the hard limit.
+- **`z_per_pass` sign gotcha:** despite the controller's "increasing Z = bed up", and even
+  though LightBurn _displays_ the step as positive, **a positive `z_per_pass` lowers the bed
+  each pass** (focus away from material). The sign is flipped somewhere between the cut
+  setting and the bed — root cause not found (maybe a LightBurn Z-direction switch or a
+  controller axis-dir config). Pragmatic rule: **use negative `z_per_pass` in the TOML to
+  raise the bed / deepen focus** (matches the generator's default). Positive-lowers-bed
+  observed in 8mm_plywood_3; **negative-raises-bed / deepens-focus confirmed in
+  8mm_plywood_4** (deeper steps released the cut at far fewer passes).
 - Power capped at **55%** (Noisebridge tube-life rule). 8.4 mm ply is over their stated
   ~6 mm reliable cut depth for the 150 W.
 
@@ -105,39 +113,32 @@ All `z_offset_mm` / `z_per_pass_mm` values in cut configs must be exact multiple
 0.1 commanded, or LightBurn rounds them unpredictably. Finer Z would require fixing the
 Ruida vendor step-length (trained-maintainer only) — not worth it.
 
-## Planned experiment — 8.4 mm plywood cut scan (8mm_plywood_3)
+## Experiment — 8.4 mm plywood cut scan (8mm_plywood_3) — DONE 2026-06-17
 
-Config: <8mm_plywood_3.toml> → `8mm_plywood_3.lbrn2`. **Not yet run.**
+Full writeup (config, lbrn2, photos, results table): <8mm_plywood_3/README.md>.
 
-Goal: find a recipe that severs 8.4 mm ply consistently, now that focus + Z are known.
-Prior failures were the Z miscalibration (focus jumped ~2.6 mm/pass); energy was never
-the limiter, so this scan fixes energy and sweeps **pass count × focus step-down**.
+**Result:** with focus + Z calibrated, **8.4 mm ply severs cleanly at 50% / 20 mm/s with
+fixed focus at the surface** — every `z_per_pass = 0` cell released with a light finger
+nudge at all pass counts (4–7), and `7/0` fell out unaided. Per-pass Z stepping was never
+needed.
 
-| Axis | Param        | Values (commanded) | physical                |
-| ---- | ------------ | ------------------ | ----------------------- |
-| X    | `num_passes` | 4, 5, 6, 7         | —                       |
-| Y    | `z_per_pass` | 0.0, +0.1, +0.2    | 0, +0.37, +0.74 mm/pass |
+**Discovered:** **positive `z_per_pass` drives the bed _down_** (focus away from material),
+so the stepping cells defocused and cut worse. LightBurn displays the step as positive too,
+and the controller coordinate is fine (increasing commanded Z = bed up) — so the sign is
+flipped somewhere unidentified. Pragmatic fix for the next experiment: **use negative
+`z_per_pass` in the TOML** to raise the bed / deepen focus.
 
-`z_per_pass` is **positive** = bed rises = focus deepens (this machine's convention; the
-bed/table moves up to push focus into the board). Held constant: power **50%** (min=max,
-under the 55% tube cap), speed **20 mm/s**, `z_offset = 0.0` (focus at surface).
+**Production recipe (fixed-focus):** 50% power, 20 mm/s, focus at surface (7.4 mm spacer),
+`z_per_pass = 0`, **6 passes** (7 for certainty). _Superseded by exp 4 below._
 
-Z envelope: focus is set by the head wingnut (sandwich `[head | 7.4mm spacer | material]`),
-so the bed Z at focus is whatever you park it at — set it **≤ ~2998.6 commanded** so the
-rise stays under the 2999.9 hard limit. Crash budget: worst cell = 7 passes × +0.2 = 1.2
-commanded = 4.43 mm physical rise → 2.97 mm clearance below the 7.4 mm gap; reaches
-≤ ~2999.8. Rule: keep `(max_passes − 1) × z_per_pass_cmd ≤ 1.35`.
+## Experiment — 8.4 mm plywood cut scan (8mm_plywood_4) — DONE 2026-06-17
 
-At the machine:
+Full writeup: <8mm_plywood_4/README.md>. Repeats exp 3's grid with **negative** `z_per_pass`
+(passes 3–6 × z/pass 0/−0.1/−0.2) so focus tracks the cut deeper.
 
-1. Material on bed. Sandwich `[head | 7.4mm spacer | material top]`, bed parked at
-   commanded Z **≤ ~2998.6**; tighten the wingnut; **remove the spacer**.
-2. On the first cell, confirm the bed **rises** over passes (focus going deeper). If it
-   drops instead, the Z sign is flipped — negate `z_per_pass` and rerun.
-3. Judge each 20 mm square from the back: it passes only if it drops out cleanly.
-4. If even 7 passes / +0.2 won't sever: round 2 raises the pass cap and/or slows to
-   12–15 mm/s — not power past 55%.
+**Result:** the negative flip works — deeper steps released the cut at far fewer passes.
+**`z_per_pass = −0.2`, 4 passes fell out spontaneously** at 50% / 20 mm/s; fixed focus never
+dropped unaided and needed 5+ passes for even a nudge.
 
-### Result
-
-_(fill in after running)_
+**Current production recipe:** 50% power, 20 mm/s, focus at surface, **`z_per_pass = −0.2`,
+4 passes** (5 for margin). Next: exp 5 trims power/speed for less burn at this pass count.
