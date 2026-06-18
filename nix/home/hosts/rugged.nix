@@ -144,8 +144,10 @@ in
     "scale-monitor-framebuffer"
   ];
 
-  # gaffer-private disabled — see nix/docs/private_flake_inputs.md
-  # services.google-drive.enable = true;
+  # drivefs is provided by gaffer-private CI via cache.allegedly.works/gaffer
+  # (per nix/gaffer-pins.json + nix/packages/gaffer.nix). Substituted, never
+  # built from source on the consumer side.
+  services.google-drive.enable = true;
 
   home.stateVersion = "25.11";
 }

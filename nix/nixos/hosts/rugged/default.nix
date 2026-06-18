@@ -35,17 +35,16 @@ in
     ./local_llm_arc.nix
     ./local_llm_npu.nix
     ./iio-debug.nix
+    ../../modules/attic-substituter.nix
   ];
 
-  # TODO: enable Attic substituter for cache.allegedly.works/{main,gaffer}.
-  # Reader JWT is already auto-rotated into secrets/hosts/rugged-attic.yaml
-  # by the attic-jwt-rotation CronJob (rotators.json entry exists). Wiring
-  # mirrors wyrm2 (nix/nixos/hosts/wyrm2/default.nix:48–55) — import
-  # ../../modules/attic-substituter.nix and:
-  #   ducktape.attic-substituter = {
-  #     enable = true;
-  #     sopsFile = ../../../../secrets/hosts/rugged-attic.yaml;
-  #   };
+  # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
+  # auto-rotated by attic-jwt-rotation CronJob; the SOPS file is decryptable
+  # by the rugged host key + agentydragon user key.
+  ducktape.attic-substituter = {
+    enable = true;
+    sopsFile = ../../../../secrets/hosts/rugged-attic.yaml;
+  };
 
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
