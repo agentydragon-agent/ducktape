@@ -12,6 +12,7 @@ metadata:
     # import isn't throttled (see tana-mcp-facade for the full rationale).
     goldilocks.fairwinds.com/vpa-resource-policy: >
       {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
+
 spec:
   replicas: 1
   selector:
@@ -25,7 +26,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260610075322-2c51610 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260618233329-7c3ebb0 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
