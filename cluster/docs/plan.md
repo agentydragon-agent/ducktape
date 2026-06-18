@@ -62,6 +62,14 @@ returns (not independently parked):
 
 ## Next Actions
 
+- [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
+      Forgejo's namespace is Goldilocks-enabled and has a generated
+      `goldilocks-forgejo` VPA, but the VPA control-plane deployments in
+      `kube-system` (`vpa-recommender`, `vpa-updater`,
+      `vpa-admission-controller`) are currently scaled to 0, so no
+      recommendations or automatic updates are happening. Find when/why VPA
+      was disabled, decide whether Goldilocks should be active again, and
+      document the intended mode if it should stay off.
 - [ ] **Repopulate augur-assets bucket** (last remnant of the SeaweedFS bulk
       volume loss recovery — see
       <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>).
