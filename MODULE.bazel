@@ -689,7 +689,7 @@ use_repo(
 )
 
 # ─ one-off override for xml-conduit ─────────────────────────────────────────
-extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
+extra_deps = use_extension("//third_party:xml_conduit_deps.bzl", "xml_conduit_deps")
 use_repo(extra_deps, "xml_conduit")
 
 # ─ External binaries via http_archive ────────────────────────────────────────
