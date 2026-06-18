@@ -84,8 +84,13 @@
           }
         ) data.pins;
 
-      # skills.tar unpacked into a flat directory of skill subdirs.
-      skillsUnpacked = pkgs.runCommand "skills" { } "mkdir $out && tar xf ${artifacts.skills} -C $out";
+      # all_skills.skill (a zip) unpacked into a flat directory of skill subdirs.
+      # bsdtar auto-detects the archive format, so this works both with the
+      # current `all_skills_tar.tar` pin and the `.skill` zip once a release
+      # publishes it and sync-pins updates artifact-pins.json.
+      skillsUnpacked = pkgs.runCommand "skills" {
+        nativeBuildInputs = [ pkgs.libarchive ];
+      } "mkdir $out && bsdtar -xf ${artifacts.skills} -C $out";
 
       pkgsUnstable = import nixpkgs-unstable {
         inherit system;
