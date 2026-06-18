@@ -11,4 +11,4 @@ before designing a cut.
   the swept axes in the TOML `title` (no `"passes × z/pass"`-style headers). Keep `title` to
   the material plus a short identifier only, e.g. `"8.4mm plywood exp5"`.
 - Each experiment gets its own `8mm_plywood_N/` folder holding the toml, the generated
-  lbrn2, result photos, and a short README of setup + results.
+  lbrn2 and a short README of setup + results; result photos live in the Google Photos album (linked from the README), not committed.

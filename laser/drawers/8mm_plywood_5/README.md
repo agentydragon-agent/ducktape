@@ -14,7 +14,7 @@ lowest-energy recipe that still fully severs. Machine facts: <../calibration_log
 
 `fell` = dropped during the cut · `clean` = full sever, came out with no/▏trivial effort ·
 `push` = top severed but **bottom veneer intact**, needed a finger push to crack ·
-`stuck` = did not release. `push`/`clean` judged from `edges.jpg` (cross-sections in grid
+`stuck` = did not release. `push`/`clean` judged from the [edges photo][e5-edges] (cross-sections in grid
 layout) and the user's handling.
 
 | speed \ power | 35        | 40       | 45       | 50    |
@@ -30,8 +30,8 @@ layout) and the user's handling.
 - `push` cells left the **bottom veneer** uncut — the kerf didn't penetrate the last layer.
   Consistent with the cut front running marginal at the bottom on the faster rows.
 
-Photos: `grid_front.jpg` (all seated), `spontaneous_drops.jpg` (holes = 40/20 & 45/20 that
-fell during the cut), `cutouts.jpg` (tops, grid layout), `edges.jpg` (cross-sections, grid
+Photos: [grid front][e5-grid] (all seated), [spontaneous drops][e5-drop] (holes = 40/20 & 45/20 that
+fell during the cut), [cut-outs][e5-cut] (tops, grid layout), [edges][e5-edges] (cross-sections, grid
 layout — `push` cells show lighter raw veneer at the bottom).
 
 ## Conclusion
@@ -45,8 +45,7 @@ any less than higher powers at 20 mm/s. Final recipe pick is in the close-up sec
 
 ## Edge close-ups (char comparison)
 
-Two angles each of the four full-cut candidates in `edge_closeups/` (`<power>_<speed>_{a,b}.jpg`):
-35/20, 40/20, 45/20, 50/25.
+Two angles each of the four full-cut candidates (Google Photos): 35/20 ([a][c35a], [b][c35b]), 40/20 ([a][c40a], [b][c40b]), 45/20 ([a][c45a], [b][c45b]), 50/25 ([a][c50a], [b][c50b]).
 
 **Verdict: char is broadly similar across all four** — every cut has a heavy blackened kerf
 wall (inherent to CO₂ on glue-layered ply). The only visible trend: the **slower 20 mm/s
@@ -70,3 +69,16 @@ Edge char is near its floor for this material; further gains would need air-assi
 masking, not parameter changes. If throughput matters, exp 6 could check whether **6–7 passes
 lets 25–30 mm/s fully sever** (faster per-cut, similar or less char). Otherwise the recipe is
 settled.
+
+[e5-grid]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipMmSEffRFmAxgv2sC5kKk9ZiuOeghuwBcZysxtg?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[e5-drop]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipNtfaHiBprimkZzTJRvo5s0-Q-6v5tyrCXDxgjV?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[e5-cut]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipOTcn17y-vWEJLc9E6NbGN1MbBmTFYw94v0mSZf?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[e5-edges]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipOv2hweVlFINUd8EaxOXJylqToevl2KcXCQPD7d?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c35a]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipPaUKQ6ewY09P-gVssUQniv0wFJ3CUnLIsvELmn?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c35b]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipPL9CxEmZv7yT9W3L1Ef-BmNGwDf7KnzOuGQjsY?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c40a]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipMAtuLfLQeqQwyRq2WVcW7DlNtesBlcieVLYjfF?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c40b]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipMLZL6gHEpxXq5rV9PpErpst2aCOEHOBjjnVOVZ?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c45a]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipMPVxYGaLU4q6MWebVfxC1e7OlQAxKtJGJnHmal?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c45b]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipO2Q2z9k53-gjZZLqkbT9JfHDp3Lk5L2SaBg1Ix?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c50a]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipPbWID4bNkznbvRaGGGqg9e1zXqRRVdDfidQobM?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[c50b]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipOK6vyuyLXzCyNn7PcYWpm4oT1z92kEczA11UWh?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3

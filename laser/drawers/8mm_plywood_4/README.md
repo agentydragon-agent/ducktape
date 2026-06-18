@@ -32,8 +32,8 @@ improvement with deeper steps below.
   nudge.
 - Only the low-energy corner stayed stuck: {3, 4} passes × {0.0, −0.1}.
 
-Photos: `grid_front.jpg` (all cells seated), `spontaneous_drops.jpg` (holes =
-the 4 that fell unaided: 6/−0.1, 4/−0.2, 5/−0.2, 6/−0.2), `cutouts.jpg` (the 8
+Photos: [grid front][e4-grid] (all cells seated), [spontaneous drops][e4-drop] (holes =
+the 4 that fell unaided: 6/−0.1, 4/−0.2, 5/−0.2, 6/−0.2), [cut-outs][e4-cut] (the 8
 released squares).
 
 ## Conclusion
@@ -50,3 +50,7 @@ fixed-focus**: `z_per_pass = −0.2`, **4 passes** gives a clean spontaneous dro
 Optimize for less burn / power at fixed 4–5 passes / −0.2: sweep **power down** (e.g.
 35/40/45/50%) and/or **speed up** (20/25/30 mm/s) to find the minimum energy that still
 severs cleanly.
+
+[e4-grid]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipMUrYgReQkWI2zSmWt04DU7hu2jKvwrkf-zz8Mv?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[e4-drop]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipMFabwQ-bYrWyYP6bNSUnLofIfX3gK9b9r5PTsu?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[e4-cut]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipN0mzCgUjYRKIbCSUKogWcqlOUvr9WUOxj1788_?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3

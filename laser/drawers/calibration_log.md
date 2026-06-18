@@ -72,7 +72,7 @@ cause of the inconsistent 8.4 mm cuts.
 
 ## Focus test — 2026-06-17
 
-Photo: <focus_test_2026_06_17.jpg> (LightBurn Focus Test ladder; lines go from
+Photo: [focus test ladder][focus-photo] (LightBurn Focus Test ladder; lines go from
 wide/charred at the top to a fine kerf near focus).
 
 ### Setup
@@ -152,7 +152,7 @@ surface; swept power {35,40,45,50}% × speed {20,25,30} mm/s.
 every power (even 35%); 25 mm/s only at 50%; 30 mm/s never fully cuts (bottom veneer left).
 40/20 and 45/20 fell out spontaneously.
 
-Edge close-ups (`8mm_plywood_5/edge_closeups/`) show char is similar across the 20 mm/s
+Edge close-ups (the [Google Photos album][gphotos-album]) show char is similar across the 20 mm/s
 cells — slower dwell means low power doesn't burn less; 50/25 is marginally cleanest.
 
 **Production recipe:** focus at surface (7.4 mm spacer), `z_per_pass = −0.2`, **5 passes,
@@ -169,3 +169,6 @@ job bounding box = always clear of the head); add an interior magnet only for a 
 at a spot LightBurn's traversal preview shows the head avoids. Keep magnets low — head
 clearance drops to ~4 mm as the bed rises during passes; a strike mid-cut ruins the part.
 (Printed comb-nub hold-downs are the fallback if a non-magnetic bed is ever used.)
+
+[focus-photo]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipPNwQbE3jtlAgbU3gnAqTB4VeKin-McRwmW8_Rq?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[gphotos-album]: https://photos.app.goo.gl/WPgWyv2fPheY8eDG7

@@ -25,7 +25,7 @@ down."
 ## Results
 
 A cell "passes" if the 20 mm square releases with a **light finger nudge** (nothing more
-forceful). `cutouts.jpg` shows the squares that came free that way.
+forceful). the [cut-outs photo][e3-cut] shows the squares that came free that way.
 
 | passes \ z/pass | 0.0      | +0.1      | +0.2      |
 | --------------- | -------- | --------- | --------- |
@@ -40,7 +40,7 @@ forceful). `cutouts.jpg` shows the squares that came free that way.
 - The four that wouldn't release with a nudge: **4/0.1, 5/0.1, 6/0.1, 4/0.2** — all
   stepping cells (which defocused upward due to the inverted sign).
 
-Photos: `grid_labeled.jpg` (grid front), `cutouts.jpg` (released squares).
+Photos: [labeled grid][e3-grid], [released squares][e3-cut].
 
 ## Conclusion
 
@@ -52,3 +52,6 @@ The original "inconsistent cuts" were the Z miscalibration, not energy or focus.
 **6 passes** for margin (7 for certainty). No focus stepping.
 
 If stepping is ever revisited, use **negative** `z_per_pass` (bed up = focus deeper).
+
+[e3-grid]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipPpw4xch7I3voD3U14eoX94ujr-wLGrFP8bsuEt?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
+[e3-cut]: https://photos.google.com/share/AF1QipM1oj5Y8VAvqJsvA8Z6zUneTlEMUgcKar-bqDRTKQDyphouFGdHAoWeB8cUFRnJYA/photo/AF1QipPFIAwi-B5nY_EELJY0udUutbIECNyKCTF3YM28?key=eTV5a3d5cjF0bVhuX3QtcHZWR1g4X3o1eGplTXZ3
