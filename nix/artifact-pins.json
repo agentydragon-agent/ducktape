@@ -1,8 +1,8 @@
 {
   "pins": {
     "bbr": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-9566680e6b80/bbr-0.1.0-py3-none-any.whl",
-      "sha256": "lWZoDmuApuj0xhgvK3raYFeUAIPjVKcH3pkSZlTsKdg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-435a5bd81c06/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "Q1pb2BwGRT0Ld1CeLvQ6fyAESLt4RPOTWtmWUfNg/H8="
     },
     "bb": {
       "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.387/bazel-5.0.387-linux-x86_64",
