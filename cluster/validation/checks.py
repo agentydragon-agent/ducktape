@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
-import yaml
-
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import HelmReleaseResource, K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
@@ -123,36 +121,3 @@ def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
                 f'{_GOLDILOCKS_ENABLED_LABEL} label (set to "true" or "false")'
             )
     return errors
-
-
-def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
-    """Check that all blueprint YAML files are listed in the authentik configMapGenerator."""
-    authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
-    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
-
-    if not authentik_kust.exists():
-        raise FileNotFoundError(f"Expected {authentik_kust} to exist")
-    if not blueprints_dir.exists():
-        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
-
-    with authentik_kust.open() as f:
-        doc = yaml.safe_load(f)
-
-    listed_files: set[str] = set()
-    for generator in doc.get("configMapGenerator", []):
-        if generator.get("name") == "authentik-sso-blueprints":
-            listed_files = {Path(f).name for f in generator.get("files", [])}
-            break
-
-    on_disk = {p.name for p in blueprints_dir.glob("*.yaml")}
-    unlisted = sorted(on_disk - listed_files)
-
-    if unlisted:
-        return [
-            f"Authentik blueprint not listed in configMapGenerator: {name}. "
-            f"Add 'blueprints/{name}' to the authentik-sso-blueprints files list "
-            f"in k8s/authentik/app/kustomization.yaml."
-            for name in unlisted
-        ]
-
-    return []
