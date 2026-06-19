@@ -347,34 +347,61 @@ Action kinds (only these two):
   and the evidence, and let it work out the how; don't shrink the ask to one
   mechanical step when the real win is bigger.
 
+**Interlink entities by their natural URL.** Where an item references an addressable
+entity, link it so the operator (and executors) can click straight through. The
+dashboard renders Markdown, so use `[text](url)` in `body` (and ``[`code`](url)``
+for file paths, which renders as a code-styled link); put plain URLs in
+`prepared_prompt` text. Natural URLs by source: **ducktape files** →
+`github.com/agentydragon/ducktape/blob/devel/<path>`; **GitHub PRs / commits / CI
+runs** → their `…/pull/<n>`, `…/commit/<sha>`, `…/actions/runs/<id>` URLs; **Gmail
+messages** → `mail.google.com/mail/u/0/#all/<messageId>`; **Tana nodes** → their Tana
+URL; **Drive files** → `drive.google.com/file/d/<fileId>/view`; **Calendar events** →
+their `htmlLink`. Plaid transactions have no public URL — keep referencing them by
+date + merchant + amount. Never put a secret or token in a URL (the hard rules
+already forbid this).
+
+**Attach operator action buttons (`actions[]`).** An item may carry an `actions`
+list — buttons the dashboard console renders as **click / un-click toggles**. The
+console is dumb: clicking records a marker under `clicks/<item-id>/<action-id>`, un-clicking
+deletes it (each a commit); it never runs the action. **You** give the meaning on
+your next run (the run procedure's _reduce operator clicks_ step): for each click
+present, do the action's `intent`, then delete the click. So attach whatever fits —
+the standard set (`snooze`/`reject`/`done`/`raise`/`lower`, all `kind: command` whose
+`intent` you interpret into a status/score change) plus item-specific ones ("compare
+cleaner options"). `kind: claude_handoff` actions carry a `prompt` and render as an
+inline `claude.ai/new` deep-link instead (no click state). A free-form **feedback**
+box on every page writes a new `intake/` note.
+
 ## Dashboard
 
-Your queue's rendered view is a small **read-only website** at
-`https://haku.allegedly.works`: an in-cluster nginx git-syncs your state repo and
-serves **only** its `dashboard/` directory, behind Authentik (operator-only). The
-`items/<id>.yaml` files are the data; `dashboard/index.html` is the **single
-rendered view** — there is no separate `items.md`. Keep it current every run:
+Your queue's rendered view is a small **interactive website** at
+`https://haku.allegedly.works`, behind Authentik (operator-only). The console (a
+FastAPI service in ducktape's `haku/console/`) serves it as a **React single-page
+app over a JSON API**, reading your `items/<id>.yaml` at request time — there is no
+static page to regenerate and no separate `items.md`. The console runs at **exactly
+your perimeter** (read-only to the world, writing only to `haku-state`); it is the
+operator's interface _to you_, not a privilege escalation.
 
-- Maintain `dashboard/index.html` with a **generator you author and keep in your
-  state** (e.g. `dashboard/generate.py`) that reads `items/` and renders a
-  self-contained HTML page. Treat the generator as part of your knowledge garden —
-  version it and improve it over time. Run it whenever items change and commit the
-  result (you may wire it as a git pre-commit hook so it can't drift from the
-  items); pushing is what updates the live site.
-- Render all `open` items, sorted by `value` descending, scannable by **tiering**
-  the deep backlog rather than dropping items:
-  - **Up next**: the top items (≤7) to act on now, each with its `body` and — for
-    `prepared_prompt` items — a `claude.ai/new?q=<url-encoded prompt>` deep-link
-    button (fall back to a link to the item file when the encoded prompt would
-    exceed ~2000 characters).
-  - **Backlog**: everything else in a collapsible `<details>` block — a compact
-    list/table of all remaining open items, however long.
-  - A standing **"Add intake note"** link to Forgejo's new-file editor,
-    `https://git.allegedly.works/haku/haku-state/_new/main/intake/`, plus a footer
-    with counts by status and the last-scan time.
-- Only `dashboard/` is web-served. Put only publishable content there, don't rely
-  on anything outside it being visible, and never include secrets (the item rules
-  already forbid this).
+What the console renders (so you know what the operator sees):
+
+- All `open` items, ranked by `value`, **tiered** so the deep backlog stays scannable:
+  **Up next** (top ≤7) and a collapsible **Backlog**. Each task is a collapsible
+  `<details>` whose `<summary>` is a compact row (value, title, deadline, kind); the
+  full **`body` (Markdown→HTML)**, the action toggles, and the primary action button
+  live **only inside that task's expanded view**. A `prepared_prompt` item exposes a
+  `claude.ai/new?q=<url-encoded prompt>` deep-link (falling back to the item file once
+  the encoded prompt would exceed ~2000 characters).
+- The **`actions[]`** you attach (rendered as click/un-click toggles), a global
+  **feedback** box, an **"Add intake note"** link to Forgejo, and a status +
+  last-scan footer. The operator's clicks and feedback return to you as commits — the
+  `clicks/` overlay and `intake/` notes (see the _Item contract_) — which you reduce
+  each run.
+
+You shape **content** by writing good items; the **look** lives in the console's React
+bundle and changes only with a ducktape rebuild — there are no runtime template
+overrides. You author no generator and commit no `dashboard/` page, templates, or
+`index.html`; the console renders from `items/` on its own. Never put secrets in items
+(the item rules already forbid this).
 
 ## Playbooks
 

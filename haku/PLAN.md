@@ -78,10 +78,10 @@ items under its own credentials. Each role:
   agent account or me) changed what, when, and why, with diffs. Provisioned by
   `tf/gitops/haku-state` (the `augur-evidence` pattern): the `haku` service
   user owns it, I review as Forgejo site-admin.
-- **Dashboard** — v0 is **just a view of git**. It is the value-sorted
-  `dashboard/index.html` Haku regenerates from its items, served read-only behind
-  Authentik by an nginx + git-sync Deployment (see phase 2). There is no separate
-  `items.md` — the HTML is the single rendered view.
+- **Dashboard** — v0 is **just a view of git**. The `haku/console` service (a React
+  SPA over a JSON API) renders the value-sorted view from `items/` at request time,
+  served behind Authentik (see phase 2). There is no separate `items.md` and no page
+  Haku regenerates — the console renders.
   Exactly three affordances per item,
   all of which are commits: **hand off** (follow the handoff URL, mark
   `in_progress`), **archive** (flip to a terminal status), and **leave
@@ -556,19 +556,27 @@ The web home already runs end to end, so phase 1 widens and sharpens the queue:
   `status` after the handoff session finishes).
 - Dashboard ladder — escalate a rung only when the current one demonstrably
   hurts:
-  1. **Committed static page (DONE):** Haku regenerates `dashboard/index.html`
-     in its state via a generator it authors and keeps under `dashboard/`; an
+  1. **Committed static page (RETIRED — superseded in place by rung 2):** Haku
+     regenerated `dashboard/index.html` via a generator under `dashboard/`; an
      nginx + git-sync Deployment (`cluster/k8s/haku/dashboard/`, modelled on the
-     budget/Fava app) serves only that directory at `haku.allegedly.works` behind
-     Authentik (agentydragon-only). Affordances are plain links: `claude.ai/new?q=`
-     handoff buttons and a Forgejo new-file deep link for adding intake notes.
-  2. **Pretty dashboard, still no backend**: a real web app (Svelte) whose
-     build reads the repo from a git-sync volume and renders client-side;
-     archive/feedback buttons call the Forgejo API with my Authentik session.
-  3. **Proper app image**: Bazel `oci_image` → `push-images.yml` → Flux image
-     automation (the standard <../cluster/docs/container-images.md> path),
-     deployed in the `haku-sandbox` namespace, reading the repo via git-sync or
-     Forgejo API. Only if rung 2's client-side-only model runs out of road.
+     budget/Fava app) served only that directory at `haku.allegedly.works` behind
+     Authentik (agentydragon-only). Cut over to the console in place and deleted — the
+     `haku-dashboard` Authentik provider was repointed to the console Service, and Haku no
+     longer generates `index.html`.
+  2. **Interactive console (DONE — `haku/console/`):** a tested ducktape app (Bazel
+     `oci_image` → `push-images.yml` → Flux image automation, deployed in
+     `haku-sandbox`, the standard <../cluster/docs/container-images.md> path) serves
+     the dashboard as a **React SPA over a JSON API** from a pygit2 clone of
+     `haku-state` and owns its **own** write path (a `haku-console` git identity),
+     rather than calling the Forgejo API with my session. It runs at **exactly Haku's
+     perimeter** and is driven by `haku-state` at runtime (items + per-item
+     `actions[]`), so Haku evolves the content and the action surface without an image
+     rebuild. Operator
+     clicks are recorded as a generic `clicks/<item>/<action>` overlay (plus a
+     free-form `intake/` feedback box); Haku reduces the overlay on its next run.
+     **Takes over `haku.allegedly.works` in place** — the `haku-dashboard` Authentik
+     provider is repointed to the console Service and the rung-1 nginx dashboard is
+     retired. Design: `haku-state` repo's `plans/dashboard-arm.md`.
 
 ### Phase 3 — later, maybe
 

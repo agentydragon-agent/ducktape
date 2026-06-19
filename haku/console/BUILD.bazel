@@ -1,0 +1,154 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "git_state",
+    srcs = ["git_state.py"],
+    deps = [
+        ":models",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    deps = [
+        ":config",
+        ":git_state",
+        ":models",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "haku.console.app",
+    deps = [":app"],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":git_state",
+    ],
+)
+
+# Prints the OpenAPI schema; the frontend's js_openapi_schema runs it to generate types.
+py_binary(
+    name = "export_schema_bin",
+    main_module = "haku.console.export_schema",
+    deps = [":export_schema"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":app",
+        ":config",
+        ":git_state",
+        ":models",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# ── OCI image (the haku-console service) ──────────────────────────────────────
+# Plain debian-slim base: the console clones/pushes haku-state over cluster-internal
+# plaintext HTTP, so (unlike finance/beancount_export) it needs no ca-certificates
+# apt layer for pygit2.
+
+aspect_py_binary(
+    name = "server_bin",
+    main = "app.py",
+    deps = [":app"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+# The built React SPA, flattened to /app/web (index.html + main.js + styles.css),
+# served by StaticFiles via HAKU_CONSOLE_STATIC_DIR below.
+pkg_files(
+    name = "web_files",
+    srcs = ["//haku/console/frontend:bundle"],
+    prefix = "/app/web",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "web_tar",
+    srcs = [":web_files"],
+)
+
+oci_image(
+    name = "server_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = dict(
+        py_image_env(binary_name = "server_bin"),
+        HAKU_CONSOLE_STATIC_DIR = "/app/web",
+    ),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-console",
+    },
+    tars = [
+        ":server_layers",
+        ":web_tar",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "server_load",
+    image = ":server_image",
+    repo_tags = ["haku-console:latest"],
+)
