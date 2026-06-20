@@ -44,6 +44,7 @@
 #   preferredNotifChannel     : string   : Task completion notifications: "auto", "terminal_bell",
 #                                          "iterm2", "iterm2_with_bell", "kitty", "ghostty",
 #                                          "notifications_disabled"
+#   teammateMode              : string   : Agent team display mode ("in-process", "auto", "tmux")
 #   spinnerVerbs              : object   : Customize action verbs {mode: "append", verbs: [...]}
 #   showClearContextOnPlanAccept: boolean: Show context clearing on plan accept (default: false)
 #   prUrlTemplate             : string   : PR URL template for code-review tools
@@ -291,6 +292,7 @@
 # Background Tasks & Agents:
 #   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS : 0/1 - Disable Ctrl+B, subagent backgrounds
 #   CLAUDE_CODE_DISABLE_AGENT_VIEW       : 0/1 - Disable background agent view
+#   CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS : 0/1 - Enable experimental agent teams
 #   CLAUDE_CODE_EXIT_AFTER_STOP_DELAY    : ms to wait before auto-exit (SDK mode)
 #
 # Configuration & Storage:
@@ -589,6 +591,7 @@ in
       # (e.g. "Denied by config rule: telemetry.aspect.build:443") appear in
       # ~/.claude/debug/ session logs.
       env.SRT_DEBUG = "1";
+      env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 
       # Auto-generated from cfg.plugins
       enabledPlugins = lib.listToAttrs (
