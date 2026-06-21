@@ -1,0 +1,13 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "ikea_3d_models",
+    srcs = [
+        "SKILL.md",
+        "ikea_api_reference.md",
+        "scripts/download_ikea_glb.sh",
+        "scripts/glb_to_stl.py",
+        "scripts/glb_to_stl.sh",
+        "scripts/search_ikea.py",
+    ],
+)

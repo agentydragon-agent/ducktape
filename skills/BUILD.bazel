@@ -32,6 +32,7 @@ pkg_zip(
         "//skills/freecad:freecad_files",
         "//skills/google_photos_link:google_photos_link_files",
         "//skills/ground_skill:ground_skill_files",
+        "//skills/ikea_3d_models:ikea_3d_models_files",
         "//skills/info_gathering:info_gathering_files",
         "//skills/knowledge_hygiene:knowledge_hygiene_files",
         "//skills/later:later_files",
