@@ -9,40 +9,15 @@ Audit findings deferred for later.
       enough retention to use the available storage comfortably, and run a
       restore drill before relying on the backups.
 
-## Mitmproxy: forward in-cluster + label-selector fix (DRAFT, uncommitted)
+## Mitmproxy: tighten `NO_PROXY`?
 
-The Kyverno `inject-mitmproxy` policy auto-injects `HTTP_PROXY` into every
-pod in `claude-sandbox`, `openclaw-sandbox`, `openclaw-gateway`. Two issues:
+The label-selector fix (`ccnp-sandbox-proxy-egress`) and the in-cluster
+forwarding egress rule (`cnp-cloud-api-egress` `toEntities: cluster`) are
+committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 
-1. The `ccnp-sandbox-proxy-egress` CCNP allowed traffic to pods labeled
-   `app: mitmproxy` — but the deployment uses
-   `app.kubernetes.io/name: mitmproxy`, so the rule matched no pods and
-   sandbox pods couldn't reach mitmproxy when they needed to. External
-   pip/curl through `HTTP_PROXY` silently timed out. **Real bug.**
-2. Mitmproxy's egress (`cnp-cloud-api-egress`) only allowed a fixed set
-   of cloud LLM FQDNs. So when a sandbox pod sent a request through
-   mitmproxy targeting an in-cluster destination (e.g. an
-   HTTPS_PROXY-respecting tool that ignored NO_PROXY), mitmproxy
-   couldn't actually forward to `ollama.ollama`.
-
-Drafted fix (uncommitted, in working tree): keep mitmproxy in-path and
-required for sandbox pods, but extend its egress to allow forwarding to
-in-cluster Services. Bench Jobs that want mitmproxy to forward don't need
-code changes; existing NO_PROXY-aware tools still bypass for in-cluster
-destinations as before.
-
-Files touched:
-
-- <../agents/mitmproxy/ccnp-sandbox-proxy-egress.yaml> —
-  label-selector fix (the real bug).
-- <../agents/mitmproxy/cnp-cloud-api-egress.yaml> — added
-  `toEntities: cluster` egress rule on common ports (80, 443, 8000,
-  8080, 11434) so mitmproxy can forward to in-cluster Services.
-
-`NO_PROXY` in `inject-mitmproxy.yaml` is unchanged. Open question:
-whether to also tighten `NO_PROXY` (forcing all sandbox traffic through
-mitmproxy unconditionally) — that's a stricter posture giving full audit
-but losing the bypass escape hatch.
+- [ ] Decide whether to tighten `NO_PROXY` to force all sandbox traffic
+      through mitmproxy unconditionally — a stricter posture giving full
+      audit but losing the in-cluster bypass escape hatch.
 
 ## OpenClaw secrets
 
@@ -120,11 +95,11 @@ errors until migrations complete. After a manual visit to the Grocy web UI,
 the MCP server starts successfully. Consider an init container or startup probe
 that pokes Grocy's `/login` endpoint before the MCP server starts.
 
-## Remove `kubectl-local` shell-script MCP server
+## Remove `kubectl-local` MCP server
 
 Now that `cluster-kubectl-sandbox-diagnostics` (in-cluster OAuth MCP at
 `kubectl-sandbox-mcp.allegedly.works`) is configured in `.mcp.json`, the local
-`kubectl-local` shell-script wrapper (`devinfra/claude/kubectl-local-mcp.sh`) is
+`kubectl-local` MCP wrapper (`devinfra/claude/kubectl_local_mcp.py`) is
 likely redundant — both resolve to the same sandbox-scoped RBAC.
 
 Before removing:

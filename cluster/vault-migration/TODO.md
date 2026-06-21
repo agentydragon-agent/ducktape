@@ -18,5 +18,5 @@ Vault decommissioned. KV store emptied. Deployment deleted.
 
 ## Suspended services (migrate when unsuspending)
 
-- **Gitea**: add SOPS secret for admin password (`kv/gitea/admin` value is gone — generate fresh)
-- **InvenTree**: add SOPS secrets for admin + db passwords (same)
+- **InvenTree**: add SOPS secrets for admin + db passwords (`kv/inventree/*`
+  values are gone — generate fresh)

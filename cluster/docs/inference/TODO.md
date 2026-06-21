@@ -10,8 +10,13 @@ freely as we run things and learn what surprises us.
 
 **Done at HumanEval:** see <runs/2026-04-29_humaneval_gpt20/README.md>.
 pass@1 = 0.957 / 0.970 / 0.970 at low / medium / high. Saturation; no
-discrimination across efforts. Continued at BigCodeBench / LiveCodeBench
-/ SWE-bench (next).
+discrimination across efforts.
+
+**SWE-bench Verified N=100 (shuffled): paused, no headline yet** — see
+<runs/2026-04-29_swebench_n100_shuffled_gpt20/README.md>. Two aborted
+attempts; the `swe_bench_react` scaffold is the right shape, but Ollama
+context-sizing (`num_ctx=262144` vs the model's 131072) still needs
+fixing before a usable run. BigCodeBench / LiveCodeBench still untouched.
 
 Pick one off-the-shelf coding eval that's already in Inspect AI; mirror
 the AIME structure (sweep `reasoning_effort` ∈ {low, medium, high}).
