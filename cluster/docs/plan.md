@@ -86,15 +86,6 @@ returns (not independently parked):
       recommendations or automatic updates are happening. Find when/why VPA
       was disabled, decide whether Goldilocks should be active again, and
       document the intended mode if it should stay off.
-- [ ] **Repopulate augur-assets bucket** (last remnant of the SeaweedFS bulk
-      volume loss recovery — see
-      <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>).
-      All other affected buckets were nuked and consumers reset 2026-06-02:
-      `gitea-shared-storage` PVC dropped + Forgejo re-initialized; `forgejo`
-      S3 orphan dropped; `loki`/`mimir-blocks`/`mimir-ruler`/`tempo` buckets
-      nuked (data loss accepted, forward ingest is fine on v183+). Only the
-      6 `augur-assets` landing jpegs still need to be re-uploaded — they
-      live in `gaffer-private`, not this repo.
 - [ ] **Wire gecko's bootstrap image to autoprovision (stable `latest` key).**
       gecko's `gecko-root` DataVolume hardcodes a specific
       `bootstrap/<sha>.qcow2` URL, so when that object's SeaweedFS chunks were
