@@ -70,10 +70,6 @@ Unclear what the three strings mean. A named struct or comment would help.
 
 ## P5 — Test-Specific Issues
 
-### Cycle-forcing fixture pattern (~20 repetitions across 4 files)
-
-Every test in `purity_test.rs`, `object_plain_data_calls_test.rs`, `pure_members_test.rs`, and `at_init_s_chain_dataflow_test.rs` follows: create source with SE anchor + target binding + reader → run fixture → assert module source and entry output. A shared `assert_pure_cycle_break(source, logical_modules, module_path, contains, not_contains, expected_stdout)` in support.rs would eliminate ~300 lines.
-
 ### `accepted_spec_runs_under_node_test.rs` — `★ RED test` markers
 
 Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.

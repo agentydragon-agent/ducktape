@@ -99,20 +99,17 @@ export {{ a, b, c }};
 #[test]
 fn pure_members_admits_namespace_member_call() {
     let case = PureMembersCase::new("{ value: 1 }", "b.value", &["makePure"]);
-    let fixture = run_fixture(case.opts());
 
     // Peel succeeded: b is in b_module without dragging a.
     // The fact that the build didn't error on a cycle proves
     // that `ns.makePure(...)` was classified Pure.
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+    assert_pure_cycle_break_with_opts(
+        case.opts(),
+        "b_module",
         &["const b = "],
         &["const a", "(()=>1)"],
+        "2\n",
     );
-
-    // Behaviour preserved: c == b.value + a == 1 + 1 == 2.
-    assert_entry_output(&fixture, "2\n");
 }
 
 /// Companion negative: the same fixture shape but the spec lists
@@ -124,7 +121,7 @@ fn pure_members_admits_namespace_member_call() {
 fn pure_members_does_not_bleed_to_other_props() {
     // Annotated property is not the one called.
     let case = PureMembersCase::new("{ value: 1 }", "b.value", &["somethingElse"]);
-    expect_rejection_containing_all(case.opts(), &["cycle", "b_module", "residual"]);
+    expect_pure_cycle_rejection(case.opts(), "b_module");
 }
 
 /// Args are still classified independently of the spec hint — the
@@ -138,7 +135,7 @@ fn pure_members_call_with_impure_arg_does_not_admit() {
         "(b ? 1 : 0)",
         &["makePure"],
     );
-    expect_rejection_containing_all(case.opts(), &["cycle", "b_module", "residual"]);
+    expect_pure_cycle_rejection(case.opts(), "b_module");
 }
 
 #[test]

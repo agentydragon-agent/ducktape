@@ -32,7 +32,7 @@ use debundle_e2e_support::*;
 /// `b` is not SE, the cycle disappears, validator accepts.
 #[test]
 fn object_freeze_on_plain_object_literal_admits() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = Object.freeze({ x: 1 });
 const c = b.x + a;
@@ -40,19 +40,16 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = Object.freeze("],
         &["const a"],
+        "2\n",
     );
-    assert_entry_output(&fixture, "2\n");
 }
 
 #[test]
 fn object_entries_on_plain_object_literal_admits() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = Object.entries({ x: 1, y: 2 });
 const c = b.length + a;
@@ -60,21 +57,18 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = Object.entries("],
         &["const a"],
+        "3\n",
     );
-    assert_entry_output(&fixture, "3\n");
 }
 
 #[test]
 fn object_keys_on_plain_array_literal_admits() {
     // Array literal is also an ordinary plain-data shape — its own
     // properties are integer-indexed data slots, no accessors.
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = Object.keys([10, 20, 30]);
 const c = b.length + a;
@@ -82,19 +76,16 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = Object.keys("],
         &["const a"],
+        "4\n",
     );
-    assert_entry_output(&fixture, "4\n");
 }
 
 #[test]
 fn object_from_entries_on_array_of_pair_literals_admits() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = Object.fromEntries([["x", 1], ["y", 2]]);
 const c = b.x + a;
@@ -102,14 +93,11 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = Object.fromEntries("],
         &["const a"],
+        "2\n",
     );
-    assert_entry_output(&fixture, "2\n");
 }
 
 /// Negative: a non-literal argument (an IIFE call here) leaves
@@ -117,7 +105,7 @@ export { a, b, c };
 /// closes and the validator rejects.
 #[test]
 fn object_entries_on_non_literal_arg_does_not_admit() {
-    expect_rejection_containing_all(
+    expect_pure_cycle_rejection(
         FixtureOpts::new(
             r#"const a = (() => 1)();
 const b = Object.entries((() => ({ x: 1 }))());
@@ -127,7 +115,7 @@ export { a, b, c };
 "#,
             vec![logical_module("b_module", &[Member::new("b")])],
         ),
-        &["cycle", "b_module", "residual"],
+        "b_module",
     );
 }
 
@@ -138,7 +126,7 @@ export { a, b, c };
 /// cycle is preserved.
 #[test]
 fn object_values_on_object_with_getter_does_not_admit() {
-    expect_rejection_containing_all(
+    expect_pure_cycle_rejection(
         FixtureOpts::new(
             r#"const a = (() => 1)();
 const b = Object.values({ get x() { return 1; } });
@@ -148,6 +136,6 @@ export { a, b, c };
 "#,
             vec![logical_module("b_module", &[Member::new("b")])],
         ),
-        &["cycle", "b_module", "residual"],
+        "b_module",
     );
 }

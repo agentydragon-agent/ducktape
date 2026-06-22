@@ -1419,6 +1419,45 @@ pub fn assert_module_source(
     }
 }
 
+pub fn assert_pure_cycle_break(
+    source: &str,
+    logical_modules: Vec<LogicalModuleEntry>,
+    module_path: &str,
+    contains: &[&str],
+    does_not_contain: &[&str],
+    expected_stdout: &str,
+) -> Fixture {
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(source, logical_modules),
+        module_path,
+        contains,
+        does_not_contain,
+        expected_stdout,
+    )
+}
+
+pub fn assert_pure_cycle_break_with_opts(
+    opts: FixtureOpts<'_>,
+    module_path: &str,
+    contains: &[&str],
+    does_not_contain: &[&str],
+    expected_stdout: &str,
+) -> Fixture {
+    let fixture = run_fixture(opts);
+    assert_module_source(
+        &fixture.out_root,
+        &format!("{}/modules/{module_path}.js", fixture.chunk_id),
+        contains,
+        does_not_contain,
+    );
+    assert_entry_output(&fixture, expected_stdout);
+    fixture
+}
+
+pub fn expect_pure_cycle_rejection(opts: FixtureOpts<'_>, module_path: &str) {
+    expect_rejection_containing_all(opts, &["cycle", module_path, "residual"]);
+}
+
 pub fn assert_file_ends_with_single_newline(out_root: &Path, module_path: &str) {
     let code = fs::read_to_string(out_root.join(module_path))
         .unwrap_or_else(|e| panic!("read {module_path}: {e}"));

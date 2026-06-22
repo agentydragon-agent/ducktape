@@ -753,7 +753,7 @@ export { A, B, C, PureBox };
 
 #[test]
 fn new_map() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = new Map();
 const c = b.size + a;
@@ -761,19 +761,16 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = new Map()"],
         &["const a"],
+        "1\n",
     );
-    assert_entry_output(&fixture, "1\n");
 }
 
 #[test]
 fn new_set() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = new Set();
 const c = b.size + a;
@@ -781,19 +778,16 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = new Set()"],
         &["const a"],
+        "1\n",
     );
-    assert_entry_output(&fixture, "1\n");
 }
 
 #[test]
 fn new_weakmap() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = new WeakMap();
 const c = (b ? "y" : "n") + a;
@@ -801,19 +795,16 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = new WeakMap()"],
         &["const a"],
+        "y1\n",
     );
-    assert_entry_output(&fixture, "y1\n");
 }
 
 #[test]
 fn new_array() {
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = new Array();
 const c = b.length + a;
@@ -821,14 +812,11 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = new Array()"],
         &["const a"],
+        "1\n",
     );
-    assert_entry_output(&fixture, "1\n");
 }
 
 #[test]
@@ -837,7 +825,7 @@ fn new_set_with_array_of_primitives() {
     // all-Pure elements. ECMA-262 §24.2.1.1: iterates via the
     // built-in Array iterator and calls `Set.add` per element;
     // no user code on primitive keys.
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = new Set(["x", "y", "z"]);
 const c = b.size + a;
@@ -845,14 +833,11 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = new Set("],
         &["const a"],
+        "4\n",
     );
-    assert_entry_output(&fixture, "4\n");
 }
 
 #[test]
@@ -862,7 +847,7 @@ fn new_map_with_array_of_pure_pairs() {
     // construct path Get's [0]/[1] of each entry (own data
     // properties on a fresh Array, no getter) and Map.set's
     // them (primitive key SameValueZero, no user code).
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = new Map([["x", 1], ["y", 2]]);
 const c = b.get("x") + a;
@@ -870,14 +855,11 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = new Map(", r#""x""#],
         &["const a"],
+        "2\n",
     );
-    assert_entry_output(&fixture, "2\n");
 }
 
 #[test]
@@ -886,7 +868,7 @@ fn class_static_new_map_field() {
     // only static-side-effect candidate. Without the rule the
     // class is flagged side-effecting and pulled into the
     // S-chain.
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 class C {
   static x = new Map();
@@ -896,14 +878,11 @@ console.log(c);
 export { a, C, c };
 "#,
         vec![logical_module("c_module", &[Member::new("C")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/c_module.js",
+        "c_module",
         &["class C", "static x = new Map()"],
         &["const a"],
+        "1\n",
     );
-    assert_entry_output(&fixture, "1\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -984,20 +963,16 @@ export { a, b, c };
             "export function f() { return 1; }\n",
         )],
     };
-    let fixture = run_fixture(opts);
-
     // The peel succeeded: b is in b_module without dragging a.
     // The fact that the build didn't error on a cycle proves
     // that `cx()` was classified Pure by the call classifier.
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+    assert_pure_cycle_break_with_opts(
+        opts,
+        "b_module",
         &["const b = "],
         &["const a", "(()=>1)"],
+        "2\n",
     );
-
-    // Behaviour preserved: c == a + b == 1 + 1 == 2.
-    assert_entry_output(&fixture, "2\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,7 +1108,7 @@ fn symbol_with_string_literal_arg_classified_pure() {
     //
     // With this rule: Symbol("b") is Pure → b is not SE → no
     // b → a s-edge. Only edge: residual → b_module. DAG.
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = Symbol("b");
 const c = b.description + a;
@@ -1141,14 +1116,11 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = Symbol(", "export {", "b"],
         &["const a", "(()=>1)"],
+        "b1\n",
     );
-    assert_entry_output(&fixture, "b1\n");
 }
 
 #[test]
@@ -1156,7 +1128,7 @@ fn symbol_with_no_args_classified_pure() {
     // No description argument — pure under the same rule
     // (ECMA-262 §20.4.1.1 step 2: descString is undefined when
     // description is undefined, no ToString call).
-    let fixture = run_fixture(FixtureOpts::new(
+    assert_pure_cycle_break(
         r#"const a = (() => 1)();
 const b = Symbol();
 const c = (typeof b) + a;
@@ -1164,14 +1136,11 @@ console.log(c);
 export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
-    ));
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/b_module.js",
+        "b_module",
         &["const b = Symbol()", "export {", "b"],
         &["const a"],
+        "symbol1\n",
     );
-    assert_entry_output(&fixture, "symbol1\n");
 }
 
 #[test]
