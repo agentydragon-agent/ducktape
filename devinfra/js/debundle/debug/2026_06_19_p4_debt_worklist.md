@@ -1,9 +1,9 @@
-# P4 expressivity — remaining worklist
+# Global selector solver — Gaffer evidence worklist
 
-Complement to <../plans/selector_constraint_model.md> (design narrative) and
-<../plans/selector_resolver_endpoint.md> (endpoint runbook). The remaining
-construct-by-construct work to drive the spec's `binding.name` debt toward zero,
-ordered by impact-per-unit-effort.
+Companion evidence for <../plans/selector_constraint_model.md>, the canonical
+selector global-solve plan. This is the construct-by-construct downstream
+worklist for reducing `binding.name` debt and collecting missing
+language/fact/diagnostic requirements, ordered by impact-per-unit-effort.
 
 ## Where the debt is (measured 2026-06-21, gaffer `78d928dca7`, post round-2)
 
@@ -14,11 +14,11 @@ The drop came from round-1 (`domains/*`) + round-2's four lanes (`shared/ui`,
 `app/{shell,state,panel}`). By layer: features 397, domains 275, app 203, shared 64,
 integrations 46, infra 4.
 
-The single dominant module is **`app/bootstrap` (99 pins, all score-100)** — the fused
-at-init megamodule, an X5 concern (below), not a lane. The rest is a distributed tail
-across ~150 families; the ~72 esbuild decorate-trio pins (next section) are scattered
-through it. (Name-only census; the source-aware near-ambiguous second-half backlog
-needs a separate `--source-file` run.)
+The single dominant module is **`app/bootstrap` (99 pins, all score-100)** — the
+fused at-init megamodule, a global-solve concern, not a lane. The rest is a
+distributed tail across ~150 families; the ~72 esbuild decorate-trio pins (next
+section) are scattered through it. (Name-only census; the source-aware
+near-ambiguous second-half backlog needs a separate `--source-file` run.)
 
 ## Remaining worklist (impact-ordered)
 
@@ -62,36 +62,37 @@ rest.
 
 ~362 pins targeted. The round-2 lanes' residual (e.g. `features/{media,node_selection,
 tuples,workspace}` at 11–14 each) is mostly proven honest debt — not worth re-sweeping
-until the decorate-trio application (above) and X4/X5 land.
+until the decorate-trio application (above) and the global-solve cutover land.
 
-### X4 — counting / uniqueness
+### G3 — counting / uniqueness
 
 `all_different` for duplicate-claim diagnostics and per-target categoricity as a constraint
-rather than a post-hoc check. Most useful atop the global solve (X5).
+rather than a post-hoc check.
 
-### X5 — one global solve
+### G3/G4 — one global solve and materializer cutover
 
 Shift from per-selector solves to a single CSP over the whole spec (shared logic variables
-for `@Name`, `all_different` across targets). The architectural capstone for the fused
-`app/bootstrap` megamodule (99 pins, all score-100); the conversions and X4 fold
+for `@Name`, `all_different` across targets), then feed materialization a resolved
+claim map. This is the architectural answer for the fused `app/bootstrap`
+megamodule (99 pins, all score-100); bridge conversions and G3 counting fold
 into it.
 
 ## Primitive reach (measured against this bundle)
 
-- **X1 `cross_ref`** (`references` / `aliases @Name`): in use (17 sites); delegator/alias
+- **`cross_ref`** (`references` / `aliases @Name`): in use (17 sites); delegator/alias
   conversions partially harvested, more remain in the distributed tail. The
   one-`cross_ref`-per-module ceiling is **lifted** — N same-module `cross_ref` members
   (each anchored on a same-module `source_match` anchor) now resolve to distinct
   bindings (see <2026_06_20_cross_ref_multi_member_per_module.md>), so the same-module
   alias clusters held back as `note:` debt in gaffer `metaNode.yaml` are now convertible
   in a follow-up gaffer pass.
-- **X2 `reads_member`**: **largely exhausted here — ~7 genuine conversions landed**, not the
+- **`reads_member`**: **largely exhausted here — ~7 genuine conversions landed**, not the
   ~72 an earlier estimate assumed. This bundle has no distinctive-per-helper codegen-context
   cluster; the `.X`-reading helpers that exist are mostly the global-`Object` decorate trios
   above (un-pinnable by selectors).
-- **X3 `member_of_module`**: **no candidates in this bundle.** The chunk has 6 empty
+- **`member_of_module`**: **no candidates in this bundle.** The chunk has 6 empty
   subclasses — 5 extend builtin `Error`, 1 extends a bare local identifier — and **zero** of
-  the `class X extends mod.Y {}` member-access shape X3 requires (a flat single-chunk Vite
+  the `class X extends mod.Y {}` member-access shape `member_of_module` requires (a flat single-chunk Vite
   bundle has no cross-module `mod.Y` superclass). Keep the primitive for other bundles.
 - **`passed_to_call`** (target-as-argument): **no current debt in this bundle** — the
   `register(...)` sites here pass locals, not separately-declared top-level bindings. The
@@ -108,14 +109,14 @@ n.getNodeOrPlaceholder(systemIds.coreTemplateId); }, … })`). The spec pins the
   factory_ as one member (`SystemNodesAccessor` → `binding: { name: sOe }`); the getters
   are **not** separate spec members and **not** separate owners, so they are **not** part
   of the 989 `binding.name` debt — the factory is one pin, not 226. The whole selector
-  resolution layer (X1–X3 and `passed_to_call` alike) resolves at _owner_ (top-level
+  resolution layer (bridge primitives and `passed_to_call` alike) resolves at _owner_ (top-level
   statement) granularity via `binding_for_owner`, so "pin getter `coreTemplate` by its
   `systemIds.coreTemplateId` argument" has no representable target: there is no owner to
   resolve to, and no spec member to pin. A `passed_to_call`-style "target makes a call
   with a discriminating argument" edge does not help either — every getter's call lives
   in the _same_ owner (`sOe`), already pinned. Retiring per-getter identity needs
   **sub-owner targets** (addressing a member of an object literal as a distinct entity),
-  a granularity the model does not have; it is an X5 / finer-granularity concern, not a
+  a granularity the model does not have; it is a global-solve / finer-granularity concern, not a
   new selector. Documented here as an explicit dead end rather than hacked through.
 - A target distinguished only by an _external_ `registry.register(Target)` where `Target`
   is a top-level binding → **retired** by the landed `passed_to_call` selector (above).

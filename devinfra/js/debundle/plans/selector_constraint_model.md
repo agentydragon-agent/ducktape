@@ -18,8 +18,7 @@ selector IR over AST + owner-graph facts, solve shared `@Name` variables and
 spec conversions are dogfood and evidence for missing language/fact coverage;
 they should not add more long-lived anchor-first bridge architecture. The
 remaining-work index is <../debug/2026_06_19_p4_debt_worklist.md>, and the
-Gaffer-derived language evidence is in
-<selector_language_feature_requests.md>.
+Gaffer-derived language evidence is summarized below.
 
 Extends the selector-authoring guidance in <../docs/selectors.md> and the
 `debundle_stabilize` skill — which fix _who_ chooses anchors (an agent, not the
@@ -252,10 +251,22 @@ full-solution enumeration). `all_different(targets)` is a rule
 `dup(A, B) :- claims(A, N), claims(B, N), A < B.` → `duplicate-claim`. Translate-out =
 answer tuple per distinguished variable → claim node → module.
 
-**Engine.** In-process Rust Datalog — **Ascent** or **Crepe** (rules compile to Rust);
-**Soufflé** for the fastest mature out-of-process engine; **Differential Dataflow /
-DDlog** if we later want **incremental** re-evaluation (attractive for the interactive
-`stabilize` loop: edit one selector, re-check instantly).
+**Solver choice.** Use **Ascent** as the first production solver. It is already
+in the Rust dependency set, `selector_solve.rs` uses it for the owner-graph
+relational kernel, and the synthetic query examples already prove the needed
+feature shape: cross-ref joins, disequality / `all_different`, stratified
+negation, recursion, count aggregation, and mixed AST-label + graph-edge joins.
+The selector IR should be represented as EDB facts consumed by a fixed Ascent
+rule library, not by generating Rust or raw Datalog per selector. That keeps the
+Bazel/Rust integration in-process and makes the current `selector_solve` tests a
+real migration bridge.
+
+Do **not** start with Soufflé, Crepe, or DDlog. Soufflé is the fallback if
+Ascent cannot hit the latency/memory target after profiling, but it would add an
+out-of-process toolchain and serialization boundary now. Crepe does not buy us
+anything over the already-used Ascent path. Differential Dataflow / DDlog is a
+future incremental-evaluation option for interactive `stabilize` loops, not the
+initial batch resolver.
 
 **Caveats.** Pure positive Datalog needs care for closed-world / counting anchors ("the
 class with _exactly_ these members"; "the _only_ class with method m" as a writable
@@ -618,6 +629,58 @@ bridge layer. The remaining work is to make this model the production resolver:
   derived predicates. The real-spec conversion worklist in
   <../debug/2026_06_19_p4_debt_worklist.md> is evidence and dogfood for this,
   not a reason to add more permanent bridge passes.
+
+## Execution contract
+
+- **Build/test gate**: build the changed debundler library and its consumers;
+  run the changed area's tests with `--cache_test_results=no` and lint on for a
+  final step.
+- **Resolver parity gate**: while both resolver paths exist, the global solve
+  and the current fact-based/staged resolver agree on every covered resolved
+  target, no-match, ambiguous match, duplicate claim, and unsupported construct.
+- **Real-spec conversion gate**: after converting a downstream selector from a
+  name pin to a structural or relational selector, generated output stays
+  byte-identical and the converted selector resolves to the same binding the
+  name pin did. Cross-ref-only selectors prove through solver categoricity and
+  byte-identical output.
+- **Abort bar**: if a selector kind or relation will not admit one general
+  faithful encoding, stop and write the dead-end analysis. Do not add a
+  special-case resolver, silent fallback, or under-constrained lowering.
+
+## Gaffer evidence queue
+
+The 2026-06-22 `tana/re/web` stabilization dispatch on Gaffer
+`78d928dca7` reduced selector debt from `name_only_total` 940 to 905
+(`name_only_fragile` 939 to 904). The largest remaining buckets were
+`app/bootstrap` 73, `domains/graph` 39, `features/nodes` 32, and
+`domains/ai` 17. Workers stopped where the current language required
+neighbor-borrowed context, long exact bodies, positional multi-declarator pins,
+or relation shapes visible in facts but awkward in the selector surface.
+
+Use these as language/synthesis requirements for G5, not as independent
+resolver architecture:
+
+- **Inverse use-site selectors**: target-as-call-argument, setter/callback
+  assignment, owner that reads a stable member/key, and owner that calls or
+  registers `@Anchor` with a stable property/member. Needed for use-site-only
+  constants and registry/setter slots.
+- **State slot / setter / getter families**: claim a state cell by its relation
+  to its setter/getter/cache/singleton family without pinning neighboring
+  declarations positionally.
+- **Multi-declarator slot selectors**: identify one target inside mixed
+  `let` / `const` runs by stable family evidence plus a named slot relation, not
+  "the second variable in this declaration."
+- **Registry and roster selectors**: identify values by stable membership in an
+  object/array table, call, key, or adapter roster.
+- **Large-prefix synthesis performance**: make prefix-wide inventory and
+  candidate discovery practical for `app/bootstrap` scale, ideally under 10s on
+  warmed inputs or with an explicit resumable offline mode.
+- **Neighbor-borrow diagnostics**: tag candidate provenance as own
+  literal/member, relation anchor, sibling family anchor, or neighbor borrow;
+  make broad apply refuse neighbor-borrow candidates unless forced.
+- **Dispatchable worklists**: emit lane-ready groups with item names, likely
+  selector family, candidate command, and blocker class (`landable`,
+  `needs-relation-feature`, `honest-debt`, `too-expensive`).
 
 ## Open questions
 

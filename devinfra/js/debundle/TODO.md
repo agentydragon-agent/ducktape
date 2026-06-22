@@ -51,7 +51,7 @@ Dispatch work in this order:
    owner graph, atomic unit, module DAG, and JS realization gates downstream.
 6. **Language/synthesis work as solver vocabulary (P0.6).** Add only language
    features that lower to the global IR or expose facts it already needs. Use
-   <plans/selector_language_feature_requests.md> as the evidence queue.
+   the Gaffer evidence queue in <plans/selector_constraint_model.md>.
 
 The minimizer polish tail and automation product flows remain valuable, but
 they should build on the global resolver contract rather than harden today's
@@ -69,17 +69,16 @@ progress output and a resumable or cacheable plan.
 One-line status for each `plans/` design doc; this is the discovery index, not a
 parallel dispatch queue.
 
-- <plans/selector_constraint_model.md> + <plans/selector_resolver_endpoint.md> — **active
-  (P0 global resolver).** Current top priority: replace per-selector and
-  per-relational-family resolution with one whole-spec/component constraint
-  solve over AST + owner-graph facts. X1-X3 plus `passed_to_call` /
-  `makes_decorate_call` / `intrinsic_alias` are useful fact/selector
-  vocabulary, but are bridge implementations until they fold into the global
-  IR. See <debug/2026_06_19_p4_debt_worklist.md> for real-spec evidence.
-- <plans/selector_language_feature_requests.md> — **active evidence queue.**
-  Gaffer-derived selector-language and synthesis requests. Treat these as
-  authoring vocabulary and candidate-generation work for the global IR, not as
-  a separate resolver strategy.
+- <plans/selector_constraint_model.md> — **active (P0 global resolver).**
+  Canonical plan for the selector model, Ascent solver choice, execution
+  phases, verification gates, and Gaffer evidence queue. Current top priority:
+  replace per-selector and per-relational-family resolution with one
+  whole-spec/component constraint solve over AST + owner-graph facts. The
+  landed bridge primitives (`cross_ref`, `reads_member`, `member_of_module`,
+  `passed_to_call`, `makes_decorate_call`, `intrinsic_alias`) are useful
+  fact/selector vocabulary, but are bridge implementations until they fold into
+  the global IR. See <debug/2026_06_19_p4_debt_worklist.md> for real-spec
+  evidence.
 - <plans/automated_spec_workflows.md> — **active design, downstream of P0.**
   North-star for the inventory/plan/apply/validate CLI surface and the
   synthesize / stabilize / version-port / new-app-bootstrap flows. Foundational

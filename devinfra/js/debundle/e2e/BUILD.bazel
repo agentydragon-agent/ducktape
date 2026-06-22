@@ -229,8 +229,8 @@ rust_test(
 # The @Name cross-reference primitive (selector_solve's referencer_for /
 # alias_owner_for) must resolve the metaNode debt shapes -- a shapeless
 # delegator pinned by what it calls, a re-export pinned by what it aliases --
-# on an owner_graph.json the real pipeline emits, not a synthetic EDB. P4
-# step 1; see plans/selector_constraint_model.md.
+# on an owner_graph.json the real pipeline emits, not a synthetic EDB. See
+# plans/selector_constraint_model.md.
 rust_test(
     name = "selector_solve_cross_reference_test",
     srcs = ["selector_solve_cross_reference_test.rs"],
@@ -246,11 +246,11 @@ rust_test(
     ],
 )
 
-# The `reads_member` primitive (P4 step 2) through the full lowering pipeline:
+# The `reads_member` primitive through the full lowering pipeline:
 # a member pinned by the member it reads (`obj.X`) — the stable identity of the
 # ~72 TS codegen helpers — resolves to the correct binding, lands in the right
 # module, and runs under Node, with fail-closed ambiguous/zero/unknown-object
-# cases. See plans/selector_resolver_endpoint.md Phase X2.
+# cases. See plans/selector_constraint_model.md Phase G5.
 rust_test(
     name = "reads_member_lowering_test",
     srcs = ["reads_member_lowering_test.rs"],
@@ -265,12 +265,12 @@ rust_test(
     ],
 )
 
-# The `member_of_module` primitive (P4 step 3) through the full lowering
+# The `member_of_module` primitive through the full lowering
 # pipeline: the first use-site selector — a member pinned by how it is consumed
 # (`mod.X`, `mod` an imported binding) — resolves to the correct binding, lands
 # in the right module, and runs under Node, including the empty-class/superclass
 # disambiguation and fail-closed ambiguous/zero/non-imported cases. See
-# plans/selector_resolver_endpoint.md Phase X3.
+# plans/selector_constraint_model.md Phase G5.
 rust_test(
     name = "member_of_module_lowering_test",
     srcs = ["member_of_module_lowering_test.rs"],
