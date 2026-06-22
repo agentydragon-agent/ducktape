@@ -1,0 +1,69 @@
+# Idempotently ensures the `paperless_users` group exists with the full set of
+# document/app permissions (every permission in the `documents` and `paperless`
+# Django apps — version-robust, no hardcoded codenames, and includes the
+# `view_uisettings` permission the web UI requires). New Authentik SSO users are
+# auto-joined to this group (PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS), giving them
+# full non-admin functionality without a superuser or admin password.
+#
+# Re-applied on every reconcile (kustomize force). Retries via backoffLimit until
+# the webserver has applied migrations (auth_group table must exist first).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: paperless-bootstrap-group
+  namespace: paperless
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: paperless-bootstrap-group
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15
+          workingDir: /usr/src/paperless/src
+          command:
+            - python3
+            - manage.py
+            - shell
+            - -c
+            - |
+              from django.contrib.auth.models import Group, Permission
+              g, _ = Group.objects.get_or_create(name="paperless_users")
+              g.permissions.set(
+                  Permission.objects.filter(
+                      content_type__app_label__in=["documents", "paperless"]
+                  )
+              )
+              print("paperless_users now has", g.permissions.count(), "permissions")
+          envFrom:
+            - configMapRef:
+                name: paperless-config
+          env:
+            - name: PAPERLESS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-secrets
+                  key: secret-key
+            - name: PAPERLESS_DBPASS
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-db-app
+                  key: password
+            - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-sso-providers
+                  key: providers
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

@@ -145,6 +145,25 @@ README, transcluded here:
 
 @k8s/agents/claude-rbac/README.md
 
+## Storage Selection
+
+**Prefer replicated/distributed storage (`seaweedfs-ovh`) over node-local storage
+(`local-path-*`) for app PVCs.** A SeaweedFS volume is served from the SeaweedFS
+cluster, not the consuming pod's node, so the pod can reschedule across nodes (drain,
+node loss, rebalance) and keep its data. `local-path-*` pins the pod to the one node
+that owns the directory — a node failure strands the volume. New OVH-hosted apps default
+to `seaweedfs-ovh` for document/media/state volumes.
+
+Use `local-path-*` only when:
+
+- The workload does its **own** replication and must own a raw local disk — **CNPG
+  Postgres** (follow <docs/cnpg_conventions.md>; never put a DB on SeaweedFS) and similar
+  self-replicating stores.
+- A benchmark shows SeaweedFS latency/throughput is inadequate for the workload
+  (see <docs/seaweedfs_csi_bench.md>) — record the finding before falling back.
+
+Storage-class table and region notes live in <README.md> § Storage.
+
 ## Flux Kustomization Layering
 
 **Never mix HelmReleases with CRD instances in the same Kustomization.**

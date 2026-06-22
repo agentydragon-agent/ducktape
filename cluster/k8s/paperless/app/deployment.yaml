@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paperless
+  namespace: paperless
+  labels:
+    app.kubernetes.io/name: paperless
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: paperless
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: paperless
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: paperless
+          image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: paperless-config
+          env:
+            - name: PAPERLESS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-secrets
+                  key: secret-key
+            - name: PAPERLESS_DBPASS
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-db-app
+                  key: password
+            - name: PAPERLESS_SOCIALACCOUNT_PROVIDERS
+              valueFrom:
+                secretKeyRef:
+                  name: paperless-sso-providers
+                  key: providers
+          volumeMounts:
+            - name: data
+              mountPath: /usr/src/paperless/data
+              subPath: data
+            - name: data
+              mountPath: /usr/src/paperless/media
+              subPath: media
+            - name: data
+              mountPath: /usr/src/paperless/consume
+              subPath: consume
+            - name: data
+              mountPath: /usr/src/paperless/export
+              subPath: export
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /accounts/login/
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /accounts/login/
+              port: 8000
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /accounts/login/
+              port: 8000
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: paperless-data

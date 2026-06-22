@@ -278,6 +278,13 @@ resources:
   # --- scanner ---
   - scanner/flux-kustomization.yaml
 
+  # --- paperless ---
+  - paperless/namespace/flux-kustomization.yaml
+  - paperless/secrets/flux-kustomization.yaml
+  - paperless/db/flux-kustomization.yaml
+  - paperless/cache/flux-kustomization.yaml
+  - paperless/app/flux-kustomization.yaml
+
   # --- activitywatch ---
   - activitywatch/flux-kustomization.yaml
 

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: paperless-config
+  namespace: paperless
+data:
+  PAPERLESS_URL: "https://paperless.allegedly.works"
+  PAPERLESS_TIME_ZONE: "America/Los_Angeles"
+  PAPERLESS_OCR_LANGUAGE: "eng"
+
+  # Postgres (CNPG paperless-db; password injected from paperless-db-app secret)
+  PAPERLESS_DBENGINE: "postgresql"
+  PAPERLESS_DBHOST: "paperless-db-rw.paperless.svc.cluster.local"
+  PAPERLESS_DBPORT: "5432"
+  PAPERLESS_DBNAME: "paperless"
+  PAPERLESS_DBUSER: "paperless"
+
+  # Valkey (RedisReplication primary endpoint)
+  PAPERLESS_REDIS: "redis://paperless-valkey-ovh-master.paperless.svc.cluster.local:6379"
+
+  # OIDC-only auth via Authentik (django-allauth openid_connect provider).
+  # PAPERLESS_SOCIALACCOUNT_PROVIDERS JSON is injected from the reflected
+  # paperless-sso-providers secret. New SSO users are auto-provisioned and
+  # joined to the paperless_users group (created by the bootstrap Job), which
+  # carries full non-admin document permissions.
+  PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
+  PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
+  PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS: "true"
+  PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS: "paperless_users"
+  PAPERLESS_ACCOUNT_ALLOW_SIGNUPS: "false"
+  PAPERLESS_DISABLE_REGULAR_LOGIN: "true"
+  PAPERLESS_REDIRECT_LOGIN_TO_SSO: "true"
