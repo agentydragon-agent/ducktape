@@ -31,6 +31,27 @@ export { b };
 }
 
 #[test]
+fn after_entry_probe_imports_the_fixture_chunk_entry() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const value = "custom";
+console.log("entry");
+export { value };
+"#,
+            vec![logical_module("feature/value", &[Member::new("value")])],
+        )
+        .with_chunk_id("static/custom"),
+    );
+    assert_generated_module_after_entry_script(
+        &fixture,
+        r#"const { value } = await import("./static/custom/modules/feature/value.js");
+console.log(value);
+"#,
+        "custom\n",
+    );
+}
+
+#[test]
 fn folds_unclaimed_assigner_with_extracted_mutable_binding() {
     // This is the minimal shape behind the an upstream boot-progress
     // `Assignment to constant variable` failure: the spec peels a
@@ -99,7 +120,7 @@ export { Text };
         &["import { id }"],
     );
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         r#"const { Text } = await import("./static/app/modules/shared/ui/text.js");
 console.log(Text({ id: "probe" }).props.id);
 "#,
@@ -202,7 +223,7 @@ export { s };
         &["u"],
     );
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         r#"const { w } = await import("./static/app/modules/consumer.js");
 console.log(w({ a: null, b: "d" }));
 "#,
@@ -1092,7 +1113,7 @@ export { St as B, Ite };
         "entry export B must not be mistaken for the vendor binding; got:\n{moved}",
     );
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         r#"const { runConsumer } = await import("./static/app/modules/feature/consumer.js");
 console.log(runConsumer());
 "#,

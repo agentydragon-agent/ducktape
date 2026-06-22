@@ -1,10 +1,11 @@
 # Plan: agent-authored forward-compatible selectors
 
-Status: **in progress**. The plan and the `debundle_stabilize` skill (M2) landed in
-#2332; **M1 (read-only primitives) is complete** — `match-selector` (query + over-pin
-slack) in #2335, `synthesize-selectors --candidates N` (ranked menu) in #2339.
-Remaining: grounding the skill's playbook with tested fixtures (M2) and port-based
-evaluation (M3). Reframes the selector-choice half of
+Status: **reference + active eval tail**. The plan and the `debundle_stabilize`
+skill landed in #2332; **M1 (read-only primitives) is complete** —
+`match-selector` (query + over-pin slack) in #2335, `synthesize-selectors
+--candidates N` (ranked menu) in #2339. Remaining: grounding the skill's
+playbook with tested fixtures (M2) and port-based evaluation (M3). Use
+<../TODO.md> for dispatch order. This doc reframes the selector-choice half of
 [automated spec workflows](automated_spec_workflows.md). That doc's mechanical
 `selective × stable × cost` ranker
 ([read-off minimization](readoff_minimization.md)) stays — but demoted from

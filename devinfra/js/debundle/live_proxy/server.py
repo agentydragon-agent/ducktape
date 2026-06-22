@@ -22,9 +22,12 @@ from devinfra.js.debundle.live_proxy.core import (
     load_live_proxy_configuration,
     parse_live_proxy_args,
 )
-from devinfra.js.debundle.live_proxy.logging_utils import configure_logging
 
 log = logging.getLogger(__name__)
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    logging.basicConfig(datefmt="%Y-%m-%dT%H:%M:%S%z", format="%(asctime)s [%(levelname)s] %(message)s", level=level)
 
 
 @dataclass(frozen=True)

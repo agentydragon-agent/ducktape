@@ -813,17 +813,27 @@ fn fixture_binding_groups(binding_groups: &[BindingGroup]) -> Vec<FixtureBinding
 /// (the map key) plus its body (members).
 pub type LogicalModuleEntry = (String, Value);
 
-pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
+fn logical_module_entry(
+    path: &str,
+    members: &[Member],
+    binding_groups: &[BindingGroup],
+    anonymous_statements: Vec<FixtureAnonymousStatement>,
+    comment: Option<String>,
+) -> LogicalModuleEntry {
     (
         path.to_string(),
         serde_json::to_value(LogicalModuleBody {
-            comment: None,
+            comment,
             members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: Vec::new(),
+            binding_groups: fixture_binding_groups(binding_groups),
+            anonymous_statements,
         })
         .expect("logical module fixture must serialize"),
     )
+}
+
+pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
+    logical_module_entry(path, members, &[], Vec::new(), None)
 }
 
 pub fn logical_module_with_binding_groups(
@@ -831,16 +841,7 @@ pub fn logical_module_with_binding_groups(
     members: &[Member],
     binding_groups: &[BindingGroup],
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: fixture_binding_groups(binding_groups),
-            anonymous_statements: Vec::new(),
-        })
-        .expect("logical module fixture must serialize"),
-    )
+    logical_module_entry(path, members, binding_groups, Vec::new(), None)
 }
 
 /// Like [`logical_module`] but attaches a module-level `comment:` block,
@@ -851,16 +852,7 @@ pub fn logical_module_with_comment(
     members: &[Member],
     comment: impl Into<String>,
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: Some(comment.into()),
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: Vec::new(),
-        })
-        .expect("logical module fixture must serialize"),
-    )
+    logical_module_entry(path, members, &[], Vec::new(), Some(comment.into()))
 }
 
 /// Like [`logical_module`] but also emits an `anonymous_statements:`
@@ -875,18 +867,15 @@ pub fn logical_module_with_anon(
     members: &[Member],
     anon_matches: &[&str],
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: anon_matches
-                .iter()
-                .map(|m| FixtureAnonymousStatement::exact(*m))
-                .collect(),
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        anon_matches
+            .iter()
+            .map(|m| FixtureAnonymousStatement::exact(*m))
+            .collect(),
+        None,
     )
 }
 
@@ -895,15 +884,12 @@ pub fn logical_module_with_anon_alpha(
     members: &[Member],
     anon_match: &str,
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all(anon_match)],
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::alpha_all(anon_match)],
+        None,
     )
 }
 
@@ -913,18 +899,15 @@ pub fn logical_module_with_anon_alpha_target_statement(
     anon_match: &str,
     target_statement: usize,
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_target_statement(
-                anon_match,
-                target_statement,
-            )],
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::alpha_all_target_statement(
+            anon_match,
+            target_statement,
+        )],
+        None,
     )
 }
 
@@ -934,18 +917,15 @@ pub fn logical_module_with_anon_alpha_target_statements(
     anon_match: &str,
     target_statements: &[usize],
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_target_statements(
-                anon_match,
-                target_statements,
-            )],
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::alpha_all_target_statements(
+            anon_match,
+            target_statements,
+        )],
+        None,
     )
 }
 
@@ -954,17 +934,14 @@ pub fn logical_module_with_anon_alpha_target_statements_all(
     members: &[Member],
     anon_match: &str,
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_target_statements_all(
-                anon_match,
-            )],
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::alpha_all_target_statements_all(
+            anon_match,
+        )],
+        None,
     )
 }
 
@@ -974,18 +951,15 @@ pub fn logical_module_with_anon_alpha_string_wildcards(
     anon_match: &str,
     wildcard_string_literals: &[&str],
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_with_wildcard_strings(
-                anon_match,
-                wildcard_string_literals,
-            )],
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::alpha_all_with_wildcard_strings(
+            anon_match,
+            wildcard_string_literals,
+        )],
+        None,
     )
 }
 
@@ -995,17 +969,12 @@ pub fn logical_module_with_anon_comment(
     anon_match: &str,
     comment: impl Into<String>,
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![
-                FixtureAnonymousStatement::exact(anon_match).with_comment(comment),
-            ],
-        })
-        .expect("logical module fixture must serialize"),
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::exact(anon_match).with_comment(comment)],
+        None,
     )
 }
 
@@ -1473,20 +1442,22 @@ pub fn assert_generated_module_script(out_root: &Path, source: &str, expected_st
 }
 
 pub fn assert_generated_module_after_entry_script(
-    out_root: &Path,
+    fixture: &Fixture,
     source: &str,
     expected_stdout: &str,
 ) {
+    let entry_specifier = format!("./{}/entry.js", fixture.chunk_id);
     // Silences the entry's own console.log (the entry already executes its
     // top-level effect) before running the caller-supplied probe script.
     let wrapped = format!(
         "const __log = console.log;\n\
          console.log = () => {{}};\n\
-         await import(\"./static/app/entry.js\");\n\
+         await import({});\n\
          console.log = __log;\n\
          {source}",
+        serde_json::to_string(&entry_specifier).unwrap(),
     );
-    assert_generated_module_script(out_root, &wrapped, expected_stdout);
+    assert_generated_module_script(&fixture.out_root, &wrapped, expected_stdout);
 }
 
 /// Append a marker print to each listed emitted module file, run the

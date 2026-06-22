@@ -19,6 +19,11 @@ hold category-specific evidence:
 - <perf/> — measured performance notes. Update these from actual profiles
   before major matcher/index rewrites.
 
+Planning hygiene: keep active dispatch order here. `plans/` files are design
+records and scoped backlogs; when a plan's core work is complete, its remaining
+tail should be summarized here instead of leaving the plan looking like a second
+priority queue.
+
 **Current focus (2026-06-16 reprioritization).** The read-off **minimizer is
 complete** — every form migrated, interior holing + multi-feature value-anchor
 cover landed, the branch-and-bound cover deleted, the `render_var_slots` dedup
@@ -48,9 +53,10 @@ progress output and a resumable or cacheable plan.
 
 ### Live plan docs (debundle planning index)
 
-One-line status for each `plans/` design doc; this is the discovery index.
+One-line status for each `plans/` design doc; this is the discovery index, not a
+parallel dispatch queue.
 
-- <plans/readoff_minimization.md> — **core complete.** Read-off selector
+- <plans/readoff_minimization.md> — **reference + polish backlog.** Read-off selector
   minimizer (chunk-wide AST-shape index); every form migrated and the cover
   deleted. Dogfood value-capture done (stabilization lanes, rounds 1–3). Open: a
   polish tail (keep-shallow group-cover retirement, language simplification). Holds
@@ -58,11 +64,11 @@ One-line status for each `plans/` design doc; this is the discovery index.
 - <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
   (complete).** Literature spike that gates the read-off design; durable, not a
   TODO.
-- <plans/automated_spec_workflows.md> — **active.** North-star for the
+- <plans/automated_spec_workflows.md> — **active design.** North-star for the
   inventory/plan/apply/validate CLI surface and the synthesize / stabilize /
   version-port / new-app-bootstrap flows. Foundational milestones realized by the
   read-off work; repair-report, version-port, and bootstrap flows not started.
-- <plans/selector_authoring_agent.md> — **in progress.** Reframes selector choice as an
+- <plans/selector_authoring_agent.md> — **reference + active eval tail.** Reframes selector choice as an
   agent task: the `debundle_stabilize` skill picks forward-compatible anchors; the
   minimizer is demoted to suggester + uniqueness oracle. Plan + skill landed (#2332);
   **M1 read-only primitives complete** — `match-selector` query + over-pin slack
@@ -201,24 +207,22 @@ applied. The applied items (the empty-arm collapse, the `Resolution`
 `MemberRequest` `RelationalSelector` enum + `selector_kind_label`, and the
 `resolve_anchor` anchor-resolution helper) are done and intentionally omitted.
 
-- **C3 part 2 — data-drive the six relational resolution passes.**
-  <lowering/materialize/plan*builder.rs> has six near-parallel
-  `resolve_and_claim*\*` passes (`cross_ref`/`reads_member`/`member_of_module`/`passed_to_call`/`makes_decorate_call`/`intrinsic_alias`), each with a
-no-op-when-absent guard, a per-pass `Resolution`build, an anchor-map lookup, a
-per-member loop, and a`claim_post_stage_a_binding`tail; the six call sites in
-<lowering/materialize/mod.rs> mirror them. Part 1 (the shared`resolve_anchor`
-helper) landed. Part 2 — collapsing the passes themselves into one data-driven
-loop over the relational enum — was **deferred as too risky to do confidently**:
-the passes have genuinely different resolution-builder signatures
-(`member_of_module`needs`import_sources`; others don't), different anchor
-sources (`resolved_anchor_bindings`vs`claimed_member_bindings`vs none),
-different per-primitive kernel calls +`with_context`closures, and — load-bearing
-— each call site carries a distinct`time_phase!`timing label that is a side
-output. A uniform loop needs a heavy trait abstraction over genuinely-different
-code and would either drop or have to re-map the per-pass timing labels. If
-attempted, preserve every`time_phase!`label and keep the per-primitive bits
-legible (shared-helper route, not a code-gen macro). The per-resolver`#[allow(clippy::too_many_arguments)]`s only become removable once the standalone
-  resolvers disappear into the loop.
+- **C3 remainder — deeper data-driven relational resolution.**
+  `lowering/materialize/plan_builder.rs` now shares the common relational
+  member scan through `relational_targets`, so the repeated no-op guard and
+  per-member loops are no longer open-coded six times. The deferred part is a
+  fuller collapse of the six `resolve_and_claim_*` passes (`cross_ref`,
+  `reads_member`, `member_of_module`, `passed_to_call`, `makes_decorate_call`,
+  `intrinsic_alias`) into one data-driven pass. That remains behavior-risky:
+  the passes have genuinely different resolution-builder signatures
+  (`member_of_module` needs `import_sources`; others do not), different anchor
+  sources (`resolved_anchor_bindings` vs `claimed_member_bindings` vs none),
+  different per-primitive kernel calls and `with_context` closures, and each
+  call site carries a distinct `time_phase!` timing label. If attempted,
+  preserve every `time_phase!` label and keep the per-primitive bits legible
+  (shared-helper route, not a code-gen macro). The per-resolver
+  `#[allow(clippy::too_many_arguments)]`s only become removable once the
+  standalone resolvers disappear into the loop.
 
 ## Excalidraw live-browser smoke
 

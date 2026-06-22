@@ -1,13 +1,14 @@
 # Plan: read-off selector minimization
 
-Status: **core complete** — every form (function/class/object/var + multi-target
-group) is migrated, interior holing + multi-feature value-anchor cover landed, the
-branch-and-bound cover is deleted, and the `render_var_slots` dedup is done. What
-remains is **dogfood value-capture** (apply to the real spec) plus a low-priority
-polish tail. The architecture is a single chunk-wide AST-shape index that
-selectors are **read off** rather than searched. This doc is the current state
-plus the open backlog; it is not a changelog. Sibling planning docs are indexed
-from <../TODO.md>; the cross-program priority is in <../TODO.md>'s "Current focus".
+Status: **reference + polish backlog** — every form (function/class/object/var +
+multi-target group) is migrated, interior holing + multi-feature value-anchor
+cover landed, the branch-and-bound cover is deleted, and the `render_var_slots`
+dedup is done. Dogfood value-capture for the stabilization lanes is complete
+through rounds 1-3; what remains is a low-priority polish tail. The architecture
+is a single chunk-wide AST-shape index that selectors are **read off** rather
+than searched. This doc is the current state plus the scoped backlog; it is not a
+dispatch queue or changelog. Sibling planning docs are indexed from <../TODO.md>;
+the cross-program priority is in <../TODO.md>'s "Current focus".
 
 ## Motivation
 

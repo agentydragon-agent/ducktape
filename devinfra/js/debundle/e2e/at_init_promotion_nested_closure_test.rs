@@ -61,7 +61,7 @@ export { state, setupHandler };
     ));
     assert_entry_output(&fixture, "initial\n");
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         "console.log(globalThis.__readState());\n",
         "initial\n",
     );
@@ -114,7 +114,7 @@ export { state, setupHandler };
     ));
     assert_entry_output(&fixture, "initial\n");
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         "globalThis.__updateState();\n\
          const mod = await import(\"./static/app/modules/mod_state.js\");\n\
          console.log(mod.state);\n",

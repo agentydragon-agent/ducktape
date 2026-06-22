@@ -1,5 +1,9 @@
 # Automated Debundle Spec Workflows
 
+Status: **active design**. This is the north-star design for the spec automation
+product flows. Use <../TODO.md> for dispatch order; this document keeps the
+workflow contract, CLI shape, and milestone breakdown.
+
 ## Goal
 
 Make debundle specs cheap to create, stabilize, and port across minified bundle

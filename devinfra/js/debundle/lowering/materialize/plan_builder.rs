@@ -122,6 +122,23 @@ fn resolved_anchor_bindings(
     anchor_binding
 }
 
+fn relational_targets<'a, T: 'a, F>(
+    explicit_requests: &'a [LogicalRequest],
+    selector: F,
+) -> impl Iterator<Item = (usize, &'a LogicalRequest, &'a MemberRequest, &'a T)> + 'a
+where
+    F: Fn(&'a MemberRequest) -> Option<&'a T> + Copy + 'a,
+{
+    explicit_requests
+        .iter()
+        .enumerate()
+        .flat_map(move |(index, request)| {
+            request.members.iter().filter_map(move |member| {
+                selector(member).map(|target| (index, request, member, target))
+            })
+        })
+}
+
 /// Wording for one selector's `@Anchor` resolution diagnostics. The selector kind
 /// and the anchor's role (`anchor` / `object` / `class` / `referenced_by`) shape
 /// the messages a relational pass emits when its anchor is ambiguous or absent.
@@ -911,9 +928,9 @@ impl ChunkPlanBuilder {
         declaration_by_name: &HashMap<Id, usize>,
     ) -> Result<()> {
         // No-op (and no owner-graph solve) for chunks without any cross-ref member.
-        if !explicit_requests
-            .iter()
-            .any(|request| request.members.iter().any(|m| m.cross_ref().is_some()))
+        if relational_targets(explicit_requests, MemberRequest::cross_ref)
+            .next()
+            .is_none()
         {
             return Ok(());
         }
@@ -928,23 +945,20 @@ impl ChunkPlanBuilder {
         // pick out exactly one declaring owner) errors rather than guessing.
         // Duplicate-claim clashes still follow the chunk's keep-going policy
         // inside `resolve_cross_ref_member`.
-        for (index, request) in explicit_requests.iter().enumerate() {
-            for member in &request.members {
-                let Some(target) = member.cross_ref() else {
-                    continue;
-                };
-                self.resolve_cross_ref_member(
-                    request,
-                    member,
-                    target,
-                    &resolution,
-                    &anchor_binding,
-                    index,
-                    chunk_top_level_mark,
-                    chunk_id,
-                    declaration_by_name,
-                )?;
-            }
+        for (index, request, member, target) in
+            relational_targets(explicit_requests, MemberRequest::cross_ref)
+        {
+            self.resolve_cross_ref_member(
+                request,
+                member,
+                target,
+                &resolution,
+                &anchor_binding,
+                index,
+                chunk_top_level_mark,
+                chunk_id,
+                declaration_by_name,
+            )?;
         }
         Ok(())
     }
@@ -1091,9 +1105,9 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         // No-op (and no owner-graph solve / AST member-read scan) for chunks
         // without any reads-member member.
-        if !explicit_requests
-            .iter()
-            .any(|request| request.members.iter().any(|m| m.reads_member().is_some()))
+        if relational_targets(explicit_requests, MemberRequest::reads_member)
+            .next()
+            .is_none()
         {
             return Ok(());
         }
@@ -1104,23 +1118,20 @@ impl ChunkPlanBuilder {
 
         let anchor_binding = resolved_anchor_bindings(explicit_requests);
 
-        for (index, request) in explicit_requests.iter().enumerate() {
-            for member in &request.members {
-                let Some(target) = member.reads_member() else {
-                    continue;
-                };
-                self.resolve_reads_member_member(
-                    request,
-                    member,
-                    target,
-                    &resolution,
-                    &anchor_binding,
-                    index,
-                    chunk_top_level_mark,
-                    chunk_id,
-                    declaration_by_name,
-                )?;
-            }
+        for (index, request, member, target) in
+            relational_targets(explicit_requests, MemberRequest::reads_member)
+        {
+            self.resolve_reads_member_member(
+                request,
+                member,
+                target,
+                &resolution,
+                &anchor_binding,
+                index,
+                chunk_top_level_mark,
+                chunk_id,
+                declaration_by_name,
+            )?;
         }
         Ok(())
     }
@@ -1210,9 +1221,9 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         // No-op (and no owner-graph solve / AST call-argument scan) for chunks
         // without any passed-to-call member.
-        if !explicit_requests
-            .iter()
-            .any(|request| request.members.iter().any(|m| m.passed_to_call().is_some()))
+        if relational_targets(explicit_requests, MemberRequest::passed_to_call)
+            .next()
+            .is_none()
         {
             return Ok(());
         }
@@ -1223,23 +1234,20 @@ impl ChunkPlanBuilder {
 
         let anchor_binding = resolved_anchor_bindings(explicit_requests);
 
-        for (index, request) in explicit_requests.iter().enumerate() {
-            for member in &request.members {
-                let Some(target) = member.passed_to_call() else {
-                    continue;
-                };
-                self.resolve_passed_to_call_member(
-                    request,
-                    member,
-                    target,
-                    &resolution,
-                    &anchor_binding,
-                    index,
-                    chunk_top_level_mark,
-                    chunk_id,
-                    declaration_by_name,
-                )?;
-            }
+        for (index, request, member, target) in
+            relational_targets(explicit_requests, MemberRequest::passed_to_call)
+        {
+            self.resolve_passed_to_call_member(
+                request,
+                member,
+                target,
+                &resolution,
+                &anchor_binding,
+                index,
+                chunk_top_level_mark,
+                chunk_id,
+                declaration_by_name,
+            )?;
         }
         Ok(())
     }
@@ -1333,12 +1341,10 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         // No-op (and no owner-graph solve / AST decorate-call scan) for chunks
         // without any makes-decorate-call member.
-        if !explicit_requests.iter().any(|request| {
-            request
-                .members
-                .iter()
-                .any(|m| m.makes_decorate_call().is_some())
-        }) {
+        if relational_targets(explicit_requests, MemberRequest::makes_decorate_call)
+            .next()
+            .is_none()
+        {
             return Ok(());
         }
         // The owner-graph solve carrying the `makes_decorate_call` EDB (decorator
@@ -1348,23 +1354,20 @@ impl ChunkPlanBuilder {
 
         let anchor_binding = resolved_anchor_bindings(explicit_requests);
 
-        for (index, request) in explicit_requests.iter().enumerate() {
-            for member in &request.members {
-                let Some(target) = member.makes_decorate_call() else {
-                    continue;
-                };
-                self.resolve_makes_decorate_call_member(
-                    request,
-                    member,
-                    target,
-                    &resolution,
-                    &anchor_binding,
-                    index,
-                    chunk_top_level_mark,
-                    chunk_id,
-                    declaration_by_name,
-                )?;
-            }
+        for (index, request, member, target) in
+            relational_targets(explicit_requests, MemberRequest::makes_decorate_call)
+        {
+            self.resolve_makes_decorate_call_member(
+                request,
+                member,
+                target,
+                &resolution,
+                &anchor_binding,
+                index,
+                chunk_top_level_mark,
+                chunk_id,
+                declaration_by_name,
+            )?;
         }
         Ok(())
     }
@@ -1459,12 +1462,10 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         // No-op (and no owner-graph solve / AST intrinsic-alias scan) for chunks
         // without any intrinsic-alias member.
-        if !explicit_requests.iter().any(|request| {
-            request
-                .members
-                .iter()
-                .any(|m| m.intrinsic_alias().is_some())
-        }) {
+        if relational_targets(explicit_requests, MemberRequest::intrinsic_alias)
+            .next()
+            .is_none()
+        {
             return Ok(());
         }
         // The owner-graph solve carrying the `intrinsic_alias` EDB (intrinsic-alias
@@ -1472,7 +1473,9 @@ impl ChunkPlanBuilder {
         // owner). Built once per chunk, only when such a member exists.
         let resolution = intrinsic_alias::build_resolution(owner_graph, module);
 
-        for (index, request) in explicit_requests.iter().enumerate() {
+        for (index, request, member, target) in
+            relational_targets(explicit_requests, MemberRequest::intrinsic_alias)
+        {
             // The `referenced_by` helper is pinned by `makes_decorate_call` (run
             // earlier), which co-locates it in the companion's own module, so its
             // binding lives in `module_plans[index]` rather than in
@@ -1481,22 +1484,17 @@ impl ChunkPlanBuilder {
             // that module so a generic helper `name:` shared across modules stays
             // unambiguous per module.
             let anchor_binding = self.claimed_member_bindings_in_module(index);
-            for member in &request.members {
-                let Some(target) = member.intrinsic_alias() else {
-                    continue;
-                };
-                self.resolve_intrinsic_alias_member(
-                    request,
-                    member,
-                    target,
-                    &resolution,
-                    &anchor_binding,
-                    index,
-                    chunk_top_level_mark,
-                    chunk_id,
-                    declaration_by_name,
-                )?;
-            }
+            self.resolve_intrinsic_alias_member(
+                request,
+                member,
+                target,
+                &resolution,
+                &anchor_binding,
+                index,
+                chunk_top_level_mark,
+                chunk_id,
+                declaration_by_name,
+            )?;
         }
         Ok(())
     }
@@ -1579,12 +1577,10 @@ impl ChunkPlanBuilder {
     ) -> Result<()> {
         // No-op (and no owner-graph solve / AST scan) for chunks without any
         // member-of-module member.
-        if !explicit_requests.iter().any(|request| {
-            request
-                .members
-                .iter()
-                .any(|m| m.member_of_module().is_some())
-        }) {
+        if relational_targets(explicit_requests, MemberRequest::member_of_module)
+            .next()
+            .is_none()
+        {
             return Ok(());
         }
         // The owner-graph solve carrying the `member_of_module` use-site EDB
@@ -1592,32 +1588,29 @@ impl ChunkPlanBuilder {
         // when a member-of-module member exists.
         let resolution = member_of_module::build_resolution(owner_graph, module, import_sources);
 
-        for (index, request) in explicit_requests.iter().enumerate() {
-            for member in &request.members {
-                let Some(target) = member.member_of_module() else {
-                    continue;
-                };
-                let binding = member_of_module::resolve_member_of_module(&resolution, target)
-                    .with_context(|| {
-                        format!(
-                            "logical_module {}: members[].selector.member_of_module for member \
+        for (index, request, member, target) in
+            relational_targets(explicit_requests, MemberRequest::member_of_module)
+        {
+            let binding = member_of_module::resolve_member_of_module(&resolution, target)
+                .with_context(|| {
+                    format!(
+                        "logical_module {}: members[].selector.member_of_module for member \
                              `{}` did not resolve to exactly one binding via consuming \
                              `{}.{}`. The use-site relation must pick out exactly one declaring \
                              owner; add or refine `kind:` if several owners consume the module \
                              member.",
-                            request.id, member.export_name, target.module, target.member,
-                        )
-                    })?;
-                self.claim_post_stage_a_binding(
-                    request,
-                    member,
-                    binding,
-                    index,
-                    chunk_top_level_mark,
-                    chunk_id,
-                    declaration_by_name,
-                )?;
-            }
+                        request.id, member.export_name, target.module, target.member,
+                    )
+                })?;
+            self.claim_post_stage_a_binding(
+                request,
+                member,
+                binding,
+                index,
+                chunk_top_level_mark,
+                chunk_id,
+                declaration_by_name,
+            )?;
         }
         Ok(())
     }

@@ -153,7 +153,7 @@ export { helper, run };
         &["return helper()"],
     );
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         r#"const { run } = await import("./static/app/modules/mod_run.js");
 console.log(run());
 "#,
@@ -199,7 +199,7 @@ export { run };
         &["return helper()"],
     );
     assert_generated_module_after_entry_script(
-        &fixture.out_root,
+        &fixture,
         r#"const { run } = await import("./static/app/modules/mod_run.js");
 console.log(run());
 "#,

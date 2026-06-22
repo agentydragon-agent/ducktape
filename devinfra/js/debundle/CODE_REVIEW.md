@@ -1,6 +1,6 @@
 # Debundle Code Review
 
-Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritized by impact.
+Full-package review of `devinfra/js/debundle/`. Findings prioritized by impact.
 
 ---
 
@@ -13,15 +13,6 @@ The simulator (`realizability/esm_simulator.rs`), the incremental quotient + ove
 ### `vendor/mod.rs` further split
 
 The vendor-into-emission collapse left `vendor/{emission,manifests,passthrough,plan,strip,validate,wrappers}.rs` extracted and deleted the dispatcher/job plumbing; `mod.rs` (~1.3K lines + tests) still mixes package/subpath resolution helpers, export-surface collection helpers, `MaterializedOutputChunkIndex`, the shared import factories (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and the `make_*` constructors), and the post-strip consumer scan — each liftable into its own module.
-
-### `purity/mod.rs` (~2570 lines) — remaining concerns
-
-Whitelist tables already in `purity/whitelists.rs`; long PlainData /
-`PURE_OBJECT_CALLS_ON_PLAIN_DATA` rustdocs already trimmed to
-`docs/purity_soundness.md`. Remaining: graph construction
-(`ChunkCodeGraph`), expression classification, PlainData write
-scanning, and TS enum IIFE recognition still live in `mod.rs` —
-could be sub-split further if it keeps growing.
 
 ---
 
@@ -86,14 +77,6 @@ Every test in `purity_test.rs`, `object_plain_data_calls_test.rs`, `pure_members
 ### `accepted_spec_runs_under_node_test.rs` — `★ RED test` markers
 
 Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.
-
-### `logical_module_with_*` constructor sprawl in `e2e/support.rs`
-
-Six `logical_module_with_*` variants (binding groups, comment, anon, anon-alpha, anon-alpha-wildcards, anon-comment) plus the base `logical_module` differ only in which optional pieces they populate. A small builder replaces the family.
-
-### `assert_generated_module_after_entry_script` hardcodes the entry path
-
-The `e2e/support.rs` helper asserts against a literal `./static/app/entry.js`, so fixtures built with `with_chunk_id` can't use it. Derive the expected specifier from the fixture's chunk id.
 
 ### Whitespace OR-chain assertions
 
