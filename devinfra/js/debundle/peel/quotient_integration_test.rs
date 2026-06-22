@@ -30,8 +30,8 @@ use peel::quotient::{
     greedy_merge_to_convergence, greedy_merge_to_convergence_full_scan,
 };
 use report_fixtures::{
-    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, module_ref, no_claims,
-    owner_edge, residual_owner,
+    active_owner, atomic_edge, atomic_unit_for, claims, graph_of, module_group, module_ref,
+    no_claims, owner_edge, residual_owner,
 };
 
 // ---------- Tests. ----------
@@ -275,7 +275,7 @@ fn merge_closing_asymmetric_i_cycle_is_rejected_at_the_merge() {
         ],
         vec![],
     );
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let cx = group_ids[0];
@@ -705,14 +705,6 @@ fn golden_extend_active_via_anon() -> OwnerGraphReport {
 // pre-existing-module bit). Owners not in any group remain singletons
 // with their per-owner residual flag derived from the report.
 
-fn make_module_group(module_id: &str, owner_idxs: Vec<usize>) -> peel::quotient::PartitionGroup {
-    peel::quotient::PartitionGroup {
-        owner_idxs: owner_idxs.into_iter().map(OwnerIdx).collect(),
-        is_pre_existing_module: true,
-        label: Some(module_id.to_string()),
-    }
-}
-
 #[test]
 fn greedy_extends_existing_module_with_only_consumer() {
     // Pre-existing module M = {owner:a (BindingA)} declared as
@@ -737,7 +729,7 @@ fn greedy_extends_existing_module_with_only_consumer() {
         vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
     );
 
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
@@ -775,7 +767,7 @@ fn greedy_absorbs_tiny_named_helper_into_unique_consumer() {
         vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
     );
 
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
@@ -809,7 +801,7 @@ fn greedy_terminates_at_convergence() {
         vec![],
     );
 
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     let (mut q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let before = q.iter_classes().count();
@@ -850,7 +842,7 @@ fn greedy_never_splits_existing_spec_module() {
         vec![],
     );
 
-    let groups = vec![make_module_group("ui/x", vec![0, 1])];
+    let groups = vec![module_group("ui/x", vec![0, 1])];
     let (mut q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let _ = greedy_merge_to_convergence(&mut q);
@@ -901,7 +893,7 @@ fn greedy_never_merges_into_residual() {
         vec![],
     );
 
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let residual_idx = q.owner_idx_of("owner:residual_catchall").unwrap();
@@ -961,7 +953,7 @@ fn incremental_state_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![make_module_group("ui/x", vec![0])],
+            vec![module_group("ui/x", vec![0])],
         ));
     }
     {
@@ -983,7 +975,7 @@ fn incremental_state_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![make_module_group("ui/x", vec![0, 1])],
+            vec![module_group("ui/x", vec![0, 1])],
         ));
     }
     {
@@ -1007,10 +999,7 @@ fn incremental_state_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![
-                make_module_group("ui/x", vec![0]),
-                make_module_group("ui/y", vec![1]),
-            ],
+            vec![module_group("ui/x", vec![0]), module_group("ui/y", vec![1])],
         ));
     }
     {
@@ -1032,10 +1021,7 @@ fn incremental_state_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![
-                make_module_group("ui/x", vec![0]),
-                make_module_group("ui/y", vec![1]),
-            ],
+            vec![module_group("ui/x", vec![0]), module_group("ui/y", vec![1])],
         ));
     }
 
@@ -1187,10 +1173,7 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![
-                make_module_group("ui/x", vec![0]),
-                make_module_group("ui/y", vec![1]),
-            ],
+            vec![module_group("ui/x", vec![0]), module_group("ui/y", vec![1])],
         ));
     }
     {
@@ -1213,7 +1196,7 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![make_module_group("ui/x", vec![0, 1])],
+            vec![module_group("ui/x", vec![0, 1])],
         ));
     }
     {
@@ -1237,9 +1220,9 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
                 vec![],
             ),
             vec![
-                make_module_group("ui/x", vec![0]),
-                make_module_group("ui/y", vec![1]),
-                make_module_group("ui/z", vec![2]),
+                module_group("ui/x", vec![0]),
+                module_group("ui/y", vec![1]),
+                module_group("ui/z", vec![2]),
             ],
         ));
     }
@@ -1262,10 +1245,7 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![
-                make_module_group("ui/x", vec![0]),
-                make_module_group("ui/y", vec![1]),
-            ],
+            vec![module_group("ui/x", vec![0]), module_group("ui/y", vec![1])],
         ));
     }
     {
@@ -1291,7 +1271,7 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
                 ],
                 vec![],
             ),
-            vec![make_module_group("ui/x", vec![0])],
+            vec![module_group("ui/x", vec![0])],
         ));
     }
     assert!(
@@ -1386,9 +1366,9 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
         vec![],
     );
     let groups = vec![
-        make_module_group("ui/a", vec![0]),
-        make_module_group("ui/h", vec![1]),
-        make_module_group("ui/b", vec![2]),
+        module_group("ui/a", vec![0]),
+        module_group("ui/h", vec![1]),
+        module_group("ui/b", vec![2]),
     ];
     let (q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
@@ -1478,9 +1458,9 @@ fn greedy_merges_three_clusters_under_cap() {
         vec![],
     );
     let groups = vec![
-        make_module_group("ui/a", vec![0]),
-        make_module_group("ui/b", vec![1]),
-        make_module_group("ui/c", vec![2]),
+        module_group("ui/a", vec![0]),
+        module_group("ui/b", vec![1]),
+        module_group("ui/c", vec![2]),
     ];
     let (mut q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, 150, &groups).unwrap();
@@ -1521,9 +1501,9 @@ fn greedy_stops_at_cap() {
         vec![],
     );
     let groups = vec![
-        make_module_group("ui/a", vec![0]),
-        make_module_group("ui/b", vec![1]),
-        make_module_group("ui/c", vec![2]),
+        module_group("ui/a", vec![0]),
+        module_group("ui/b", vec![1]),
+        module_group("ui/c", vec![2]),
     ];
     let (mut q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, 40, &groups).unwrap();
@@ -1575,10 +1555,7 @@ fn greedy_resolves_realizability_cycle_by_merging() {
         ],
         vec![],
     );
-    let groups = vec![
-        make_module_group("ui/a", vec![0]),
-        make_module_group("ui/b", vec![1]),
-    ];
+    let groups = vec![module_group("ui/a", vec![0]), module_group("ui/b", vec![1])];
     let (mut q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups).unwrap();
     let contractions = greedy_merge_to_convergence(&mut q);
@@ -2607,7 +2584,7 @@ fn incremental_kernel_query_matches_rebuild_after_each_contract() {
                 ],
                 vec![],
             ),
-            vec![make_module_group("ui/x", vec![0])],
+            vec![module_group("ui/x", vec![0])],
         ));
     }
 
@@ -2684,7 +2661,7 @@ fn fixture_chain() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
         ],
         vec![],
     );
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     (report, groups)
 }
 
@@ -2715,7 +2692,7 @@ fn fixture_star() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
         ],
         vec![],
     );
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     (report, groups)
 }
 
@@ -2748,10 +2725,7 @@ fn fixture_mutual_eager() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGro
         ],
         vec![],
     );
-    let groups = vec![
-        make_module_group("ui/x", vec![0]),
-        make_module_group("ui/y", vec![1]),
-    ];
+    let groups = vec![module_group("ui/x", vec![0]), module_group("ui/y", vec![1])];
     (report, groups)
 }
 
@@ -2779,10 +2753,7 @@ fn fixture_asymmetric_cycle() -> (OwnerGraphReport, Vec<peel::quotient::Partitio
         ],
         vec![],
     );
-    let groups = vec![
-        make_module_group("ui/x", vec![0]),
-        make_module_group("ui/y", vec![1]),
-    ];
+    let groups = vec![module_group("ui/x", vec![0]), module_group("ui/y", vec![1])];
     (report, groups)
 }
 
@@ -2825,9 +2796,9 @@ fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<peel::quotient::Par
         vec![],
     );
     let groups = vec![
-        make_module_group("ui/x", vec![0]),
-        make_module_group("ui/y", vec![1]),
-        make_module_group("ui/z", vec![2]),
+        module_group("ui/x", vec![0]),
+        module_group("ui/y", vec![1]),
+        module_group("ui/z", vec![2]),
     ];
     (report, groups)
 }

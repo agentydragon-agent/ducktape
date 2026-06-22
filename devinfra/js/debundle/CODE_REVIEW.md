@@ -22,10 +22,6 @@ The vendor-into-emission collapse left `vendor/{emission,manifests,passthrough,p
 
 `program_analysis.rs::analyze_program_shallow` (import/export records, owner records, side-effect ordinals, rewritable-specifier booleans) keeps its own top-level traversal and declaration classification (`classify_top_level_decl`) alongside the `facts/` walk the analysis pipeline uses. The two rule sets can drift independently; fold the shallow extractor into the facts traversal or derive its records from `StatementFacts`.
 
-### Test fixture builders in peel/ remaining duplicates
-
-`peel/test_utils.rs` already hosts `binding()`, `member()`, `module_ref()`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local — could probably be unified with a small enum-tagged builder.
-
 ---
 
 ## P2 — Structural Issues
@@ -69,10 +65,6 @@ Unclear what the three strings mean. A named struct or comment would help.
 ---
 
 ## P5 — Test-Specific Issues
-
-### `accepted_spec_runs_under_node_test.rs` — `★ RED test` markers
-
-Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.
 
 ### Whitespace OR-chain assertions
 

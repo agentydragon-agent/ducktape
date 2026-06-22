@@ -88,9 +88,7 @@ rust_test(
     ],
 )
 
-# Layer-1 AST-shape index + read-off API (W1 of the read-off minimization
-# redesign; see plans/readoff_minimization.md). Built alongside the existing
-# minimizer (strangler-fig); additive, no behavior change.
+# AST-shape index + read-off API for selector synthesis.
 rust_library(
     name = "shape_index",
     srcs = ["shape_index.rs"],
@@ -555,6 +553,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":peel",
         ":spec",
         "@crates//:swc_atoms",
     ],

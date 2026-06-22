@@ -1,11 +1,9 @@
-//! Read-off selector renderer (W2 of the read-off minimization redesign; see
-//! `plans/readoff_minimization.md`).
+//! Read-off selector renderer.
 //!
-//! W1 built the [`ShapeIndex`] and its [`ShapeIndex::minimal_anchor_set`]
-//! read-off API, which returns the minimal [`AnchorSet`] — the smallest set of
-//! the target's own features whose posting-list intersection is the singleton
-//! `{target}`. W1's soundness test used a stand-in renderer; this is the
-//! production one.
+//! The [`ShapeIndex`] and its [`ShapeIndex::minimal_anchor_set`] read-off API
+//! return the minimal [`AnchorSet`] — the smallest set of the target's own
+//! features whose posting-list intersection is the singleton `{target}`. This
+//! module renders that anchor set into the production `source_match` language.
 //!
 //! ## What it does
 //!

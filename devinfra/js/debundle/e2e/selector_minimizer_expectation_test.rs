@@ -676,7 +676,7 @@ fn minimizes_binding_group_partition() {
 // mapping each, rather than four standalone source_match selectors. Each
 // accessor is first minimized individually (the shared `resolveContext().services`
 // receiver holes to `ANYTHING`, keeping the single discriminating member), then
-// the anti-unification grouping pass (readoff_minimization.md item 7) detects
+// the anti-unification grouping pass detects
 // that the adjacent minimized selectors share the same canonical shape and merges
 // the run. Real-spec analogue: `app/state/accessors.yaml`
 // `use{AppUser,NodeSpace,FocusService,CoreServices}`, four adjacent
@@ -721,8 +721,8 @@ fn minimizes_adjacent_accessor_group() {
     });
 }
 
-// General co-occurrence grouping for non-function runs (readoff_minimization.md
-// item 5): four adjacent sibling *class* declarations, each individually
+// General co-occurrence grouping for non-function runs: four adjacent sibling
+// *class* declarations, each individually
 // minimized to `class …Card { kind = "<unique>"; CLASS_REST }`, share the same
 // canonical selector shape and collapse into ONE binding_group whose
 // source_match is the consecutive run, instead of four standalone source_match

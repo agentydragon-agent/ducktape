@@ -28,11 +28,10 @@ use analysis::ids::{LogicalModuleIndex, ModuleId};
 use analysis::partition::Partition;
 use analysis::{DepKind, OwnerGraphNodeReport, OwnerGraphReport};
 use gate::{LadderDecision, RealizabilityVerdict, SccRejection, check_realizability_touching};
-use peel::quotient::{
-    ClassId, OwnerIdx, PartitionGroup, QuotientGraph, SpecModuleGroup, build_seed_quotient,
-    greedy_step,
+use peel::quotient::{ClassId, QuotientGraph, SpecModuleGroup, build_seed_quotient, greedy_step};
+use report_fixtures::{
+    active_owner, atomic_unit_for, graph_of, module_group, owner_edge, residual_owner,
 };
-use report_fixtures::{active_owner, atomic_unit_for, graph_of, owner_edge, residual_owner};
 
 const CAP_LINES: usize = 10_000;
 
@@ -259,14 +258,6 @@ fn compare_gate_to_reference(
 // each fixture pins the decision's direction.
 // ---------------------------------------------------------------------
 
-fn make_module_group(module_id: &str, owner_idxs: Vec<usize>) -> PartitionGroup {
-    PartitionGroup {
-        owner_idxs: owner_idxs.into_iter().map(OwnerIdx).collect(),
-        is_pre_existing_module: true,
-        label: Some(module_id.to_string()),
-    }
-}
-
 /// Sanity anchor: on a clean acyclic shape the gate and the reference
 /// agree on every precondition-passing pair (both directions —
 /// accepts and rejects).
@@ -289,9 +280,9 @@ fn gate_matches_reference_on_clean_chain() {
         vec![],
     );
     let groups = vec![
-        make_module_group("ui/a", vec![0]),
-        make_module_group("ui/h", vec![1]),
-        make_module_group("ui/b", vec![2]),
+        module_group("ui/a", vec![0]),
+        module_group("ui/h", vec![1]),
+        module_group("ui/b", vec![2]),
     ];
     let (mut q, _) =
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
@@ -361,7 +352,7 @@ fn gate_rejects_pass2_tdz_merge() {
         ],
         vec![],
     );
-    let groups = vec![make_module_group("ui/x", vec![0])];
+    let groups = vec![module_group("ui/x", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let cx = group_ids[0];
@@ -399,7 +390,7 @@ fn gate_rejects_module_granularity_pass1_cycle() {
         ],
         vec![],
     );
-    let groups = vec![make_module_group("ui/a", vec![0])];
+    let groups = vec![module_group("ui/a", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];
@@ -437,7 +428,7 @@ fn gate_rejects_promotion_created_cross_rebind() {
         ],
         vec![],
     );
-    let groups = vec![make_module_group("ui/a", vec![0])];
+    let groups = vec![module_group("ui/a", vec![0])];
     let (mut q, group_ids) =
         QuotientGraph::from_report_with_partition_extended(&report, CAP_LINES, &groups).unwrap();
     let ca = group_ids[0];

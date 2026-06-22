@@ -768,7 +768,7 @@ fn rewrite_name_bindings_to_source_match(
         }
     }
 
-    // Anti-unification grouping (readoff_minimization.md items 5 + 7): collapse
+    // Anti-unification grouping: collapse
     // maximal runs of adjacent, same-shape single-target declarations (any kind:
     // function, class, var) into one run-based binding_group. Multi-declarator var
     // groups (already grouped by shared declaration) and lone groups pass through
@@ -1166,7 +1166,7 @@ fn synthesize_simplest_selector_for_group(
 }
 
 // ===========================================================================
-// Anti-unification grouping (readoff_minimization.md items 5 + 7).
+// Anti-unification grouping.
 //
 // `synthesize_simplest_selector_for_group` already groups members that share an
 // enclosing declaration (multi-declarator var statements). The second grouping

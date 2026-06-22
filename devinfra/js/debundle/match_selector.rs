@@ -2,12 +2,11 @@
 //! chunk and report what it binds — and, when it pins a unique target, how much
 //! further it could be holed.
 //!
-//! The interactive prove-gate probe behind the selector-authoring loop
-//! (`plans/selector_authoring_agent.md`): the agent forms an anchor hypothesis,
-//! writes a candidate `match`, and asks "does this resolve to the singleton I
-//! mean, and the right one — and did I over-pin it?" before committing the
-//! selector to YAML. Matching and slack share the same parse + baseline resolve,
-//! so they are answered together.
+//! The interactive prove-gate probe behind selector authoring: the agent forms
+//! an anchor hypothesis, writes a candidate `match`, and asks "does this resolve
+//! to the singleton I mean, and the right one — and did I over-pin it?" before
+//! committing the selector to YAML. Matching and slack share the same parse +
+//! baseline resolve, so they are answered together.
 //!
 //! **Slack** is the mechanical half of "report over-narrow selectors as debt even
 //! when they match": each entry is a strictly looser variant of the selector —

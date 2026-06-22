@@ -130,11 +130,10 @@ context window that distinguishes otherwise ambiguous candidates.
 ### Minimizer
 
 "Produce the loosest readable selector that uniquely selects this entity" is a
-first-class operation. Its design and implementation now live in
-<readoff_minimization.md> (the read-off AST-shape index + a greedy set-cover over
-a `selective × stable` feature ranking, with the production matcher as the
-prove-gate); this section defers to that plan rather than restating the algorithm
-and drifting.
+first-class operation. The landed implementation is the read-off AST-shape index
+plus greedy set-cover over a `selective x stable` feature ranking, with the
+production matcher as the prove-gate. Current minimizer polish lives in
+<../TODO.md>.
 
 The product-vision intent this doc still owns: "simplest" means
 lowest-cost-forward-compatible, not shortest or exact-source — prefer low-cost
@@ -148,12 +147,12 @@ use the same cost model, comparing one `binding_groups` selector against repeate
 member selectors and splitting when one huge selector would need long exact
 bodies or volatile initializers to be unique.
 
-**Reframe (see <selector_authoring_agent.md>).** The cost model ranks and _proves_
-candidates but does not _choose_ the anchor: picking a purpose-bearing,
+**Reframe.** The cost model ranks and _proves_ candidates but does not _choose_
+the anchor: picking a purpose-bearing,
 forward-compatible anchor over a merely-unique one (the `name`-key vs `"running"`
 problem) is an intelligence task delegated to an agent, with the minimizer demoted
 to a suggester and the prove-gate kept as the validity oracle. The over-pin backlog
-below is then about better _defaults_, not about spec quality.
+tracked in <../TODO.md> is then about better _defaults_, not about spec quality.
 
 ### Patch Plans
 
@@ -468,12 +467,10 @@ Patch planning and application should be deterministic:
 
 Milestones 0-2 (consolidate `selector-codemod`, shared source inventory +
 structural selector synthesis, hole-based minimization) are largely landed: the
-shared per-chunk index (`selector_candidate_index.rs` → `shape_index.rs`), the
+shared per-chunk index (`selector_candidate_index.rs` -> `shape_index.rs`), the
 read-off minimizer, the list-hole renderer, and resolver-verified emission are
-the concrete realization, tracked in <readoff_minimization.md>. Open items in
-that scope (co-occurrence-based `binding_groups` grouping, remaining over-pin
-forms, whole-spec apply) live in that doc's backlog. The remaining milestones
-below are the not-yet-started product flows.
+the concrete realization. Open minimizer polish lives in <../TODO.md>. The
+remaining milestones below are the not-yet-started product flows.
 
 ### Milestone 3: Repair Reports and Patch Plans
 

@@ -3,9 +3,8 @@
 Real-chunk measurements of the read-off `synthesize-selectors` minimizer against
 the ~7 MB minified chunk (`static/index-DI2GynTv.js`). Earlier search-era and
 migration-phase findings (the apply-crash fix, the original over-pin shapes) are
-superseded; next steps live in the plan backlog
-(<../plans/readoff_minimization.md>). What remains here is the load-bearing perf
-measurement that backs the W4 budget item, plus the current dogfood-apply survey
+superseded; next steps live in <../TODO.md>. What remains here is the load-bearing perf
+measurement that backs the latency budget, plus the current dogfood-apply survey
 (below) that drives the next over-pin-reduction wave.
 
 ## Dogfood-apply survey (2026-06-17, post enclosing-context + interior-cover)

@@ -24,12 +24,12 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-16 reprioritization).** The read-off **minimizer is
-complete** — every form migrated, interior holing + multi-feature value-anchor
-cover landed, the branch-and-bound cover deleted, the `render_var_slots` dedup
-done, and the enclosing-context residual handled; only a low-priority polish tail
-remains in <plans/readoff_minimization.md>. The active frontier has shifted to the
-**automation product flows**, in dispatch order:
+**Current focus (2026-06-16 reprioritization; pruned 2026-06-22).** The read-off
+**minimizer is complete** — every form migrated, interior holing + multi-feature
+value-anchor cover landed, the branch-and-bound cover deleted, the
+`render_var_slots` dedup done, and the enclosing-context residual handled. Its
+remaining polish tail is tracked below, not in a completed plan. The active
+frontier has shifted to the **automation product flows**, in dispatch order:
 
 1. **Spec repair from diagnostics (P0.3)** — build on the landed keep-going
    diagnostics (#2302) to propose mechanically-proven patch plans.
@@ -40,9 +40,8 @@ remains in <plans/readoff_minimization.md>. The active frontier has shifted to t
 4. **Excalidraw public live-browser smoke (P1.7)** — public-CI repro leverage,
    independent of all the above.
 
-The minimizer polish tail (keep-shallow group-cover retirement, language
-simplification) is maintenance-priority — pick up opportunistically, not ahead of
-the frontier above.
+The minimizer polish tail is maintenance-priority — pick up opportunistically,
+not ahead of the frontier above.
 
 Prefer dispatching work in this order. Large downstream spec migrations should
 lean on tooling generated from this queue instead of hand-authored YAML.
@@ -56,25 +55,10 @@ progress output and a resumable or cacheable plan.
 One-line status for each `plans/` design doc; this is the discovery index, not a
 parallel dispatch queue.
 
-- <plans/readoff_minimization.md> — **reference + polish backlog.** Read-off selector
-  minimizer (chunk-wide AST-shape index); every form migrated and the cover
-  deleted. Dogfood value-capture done (stabilization lanes, rounds 1–3). Open: a
-  polish tail (keep-shallow group-cover retirement, language simplification). Holds
-  its own current-state + backlog.
-- <plans/readoff_algorithm_research.md> + <plans/readoff_research/> — **reference
-  (complete).** Literature spike that gates the read-off design; durable, not a
-  TODO.
 - <plans/automated_spec_workflows.md> — **active design.** North-star for the
   inventory/plan/apply/validate CLI surface and the synthesize / stabilize /
   version-port / new-app-bootstrap flows. Foundational milestones realized by the
   read-off work; repair-report, version-port, and bootstrap flows not started.
-- <plans/selector_authoring_agent.md> — **reference + active eval tail.** Reframes selector choice as an
-  agent task: the `debundle_stabilize` skill picks forward-compatible anchors; the
-  minimizer is demoted to suggester + uniqueness oracle. Plan + skill landed (#2332);
-  **M1 read-only primitives complete** — `match-selector` query + over-pin slack
-  (value + structural, #2335/#2345) and `synthesize-selectors --candidates N` ranked
-  menu across all read-off forms (#2339 + binding-group menu). Open: ground the skill
-  playbook with tested fixtures (M2) and port-based evaluation (M3).
 - <plans/selector_constraint_model.md> + <plans/selector_resolver_endpoint.md> — **active
   (P4 expressivity).** The fact-based resolver + the full X1–X3 relational primitive
   suite (`cross_ref` / `reads_member` / `member_of_module`) plus `passed_to_call` /
@@ -121,8 +105,7 @@ propose`.
 5. **Workflow latency budget.** Interactive commands target <10s on warmed
    inputs; >60s is a blocker unless explicitly an offline/profile mode with
    progress output and a resumable plan. The whole-spec minimize budget and the
-   measured real-chunk numbers live in <plans/readoff_minimization.md> (W4) and
-   <debug/selector_minimizer_dogfood.md>.
+   measured real-chunk numbers live in <debug/selector_minimizer_dogfood.md>.
 
 ### P1 — broad workflow integration
 
@@ -149,6 +132,13 @@ propose`.
    location in duplicate-claim diagnostics.
 7. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
    private-corpus debundler issues can be reproduced and protected in public CI.
+8. **Ground selector-stabilization skill fixtures.** The `debundle_stabilize`
+   loop and playbook landed; add tested, anonymized fixtures for the common
+   anchor-choice cases so the skill's guidance is executable rather than only
+   prose.
+9. **Port-based selector-stability evaluation.** Run a two-version bundle pair
+   as a held-out evaluation of `debundle_stabilize`: report survived/broke
+   verdicts by anchor kind and feed the scorecard back into the playbook.
 
 ### P2 — pipeline performance and architecture cleanup
 
@@ -161,6 +151,42 @@ propose`.
    path-keyed index if fresh profiles show chunk file lookup hot.
 5. Move `split_entry_body` to a draining/move-based implementation if fresh
    profiles show retained-statement cloning hot.
+
+### P3 — read-off minimizer polish
+
+The read-off minimizer's completed design and research notes were pruned from
+`plans/` on 2026-06-22. The live maintenance tail is:
+
+1. **Dogfood-apply on gaffer-private.** Run `synthesize-selectors --apply` on
+   the real spec to convert the large set of fragile name-pins into robust
+   `source_match` selectors, review for over-pin, and PR the beneficial ones.
+   Revert any converted selector whose `match` block is >40 lines and has <=2
+   holes back to a name pin. Keep pin-compatible with the released debundler
+   expected by the gaffer validation flow, regenerate goldens, and re-measure
+   selector debt after each batch.
+2. **Retire the keep-shallow group cover.** Multi-target var binding-group
+   read-off landed, but `minimize_var_group_selector` still falls back to
+   `collect_expr_anchors` plus `AnchorCandidates` for groups whose per-slot
+   single-binding view cannot single a slot out. Remove that path after
+   tuple-aware read-off covers the residual groups, or deliberately accept them
+   as selector debt.
+3. **Hole declaration neighbors in enclosing-context anchoring.** When
+   `render_via_neighbor_context` anchors a near-duplicate target to a stable
+   neighboring function/class declaration, it still pins the neighbor's body
+   verbatim. Reuse the per-form read-off to hole the neighbor name/params/body
+   and keep only its discriminating value anchor. Ignored expectation fixture:
+   `neighbor_context_whole_function_neighbor`.
+4. **Route class-expression initializers through class read-off.**
+   `try_var_read_off` still has no `Expr::Class` arm, so `const X = class {…}`
+   can be pinned whole while the equivalent class declaration minimizes via
+   class-body holing. Ignored expectation fixture:
+   `class_expression_const_whole_body`.
+5. **Journal `AlphaMatchScope` and reduce prove-gate fan-out.** Whole-spec
+   apply spends too much time cloning alpha scopes during matcher backtracking.
+   Replace clone-on-snapshot with an undo log, switch the alpha maps to
+   `FxHashMap`, and use the candidate-index intersection to prune neighbor/group
+   prove-gate fan-out. Profile evidence lives in
+   <debug/selector_minimizer_perf.md>.
 
 ## Code refactor / dedup opportunities (2026-06-17 survey)
 

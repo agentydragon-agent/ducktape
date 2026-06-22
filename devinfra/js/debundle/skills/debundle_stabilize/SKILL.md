@@ -369,9 +369,9 @@ authority.
 ## Background
 
 The design rationale (why anchor choice is an agent judgment rather than a cost
-term) and the verifiability asymmetry live in the `selector_authoring_agent` plan
-under `devinfra/js/debundle/plans/`. Both `match-selector` (probes "what does this
-candidate match?" and reports over-pin slack in one shot) and
+term) and the verifiability asymmetry are summarized in
+`devinfra/js/debundle/docs/selectors.md`. Both `match-selector` (probes "what does
+this candidate match?" and reports over-pin slack in one shot) and
 `synthesize-selectors --candidates N` (a menu of ranked candidates rather than the
 minimizer's single pick) have landed. The two-bundle-version dogfood pair is the
 eventual scorecard for whether these instructions actually produce durable

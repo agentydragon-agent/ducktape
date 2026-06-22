@@ -44,6 +44,13 @@ Default to this ladder when writing or repairing selectors:
 5. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
+The minimizer is a suggester and uniqueness oracle, not the final authority on
+forward compatibility. It can rank concise candidates and prove what they match
+today; an agent still chooses whether the surviving anchors are semantic enough
+to survive a future minified rebuild. Use `match-selector` to test a candidate
+and inspect over-pin slack, and use `synthesize-selectors --candidates N` as a
+ranked menu rather than an automatic accept list.
+
 ## Bulk conversion loop
 
 For broad old-spec conversion passes, use an automation-first loop:

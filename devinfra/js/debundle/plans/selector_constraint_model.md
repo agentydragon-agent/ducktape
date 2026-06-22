@@ -10,10 +10,10 @@ gate, not new power. **P4 — the relational/cross-reference query layer this do
 clusters (the conversions), counting/uniqueness, and one global solve. The remaining-work index is
 <../debug/2026_06_19_p4_debt_worklist.md>.
 
-Extends
-[the selector-authoring-agent plan](selector_authoring_agent.md) — which fixed
-_who_ chooses anchors (an agent, not the cost model) — with a proposal for _what a
-selector is_. Motivated by the tana/re stabilization pass
+Extends the selector-authoring guidance in <../docs/selectors.md> and the
+`debundle_stabilize` skill — which fix _who_ chooses anchors (an agent, not the
+cost model) — with a proposal for _what a selector is_. Motivated by the tana/re
+stabilization pass
 ([stabilize dogfood note](../debug/2026_06_18_stabilize_skill_dogfood.md), findings
 F11–F13): real bindings whose only stable identity lives in a **non-adjacent or
 cross-module** node, which the current local-match model cannot express, and which
@@ -165,8 +165,7 @@ parsers feeding one constraint store.
 - **`stabilize`** = search for an alternative constraint-set for the targets that (a)
   keeps the global CSP target-categorical and (b) maximizes expected `T`-invariance of
   the atoms used. Heuristic, because `T` is unknown — the minimizer optimizes a proxy
-  (size / locality / `selective × stable × cost`, see
-  [read-off minimization](readoff_minimization.md)); the real objective is
+  (size / locality / `selective x stable x cost`); the real objective is
   `T`-invariance, and the agent supplies that prior.
 
 ## Implementation: the solving core

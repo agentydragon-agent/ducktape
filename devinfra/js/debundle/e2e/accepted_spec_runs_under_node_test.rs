@@ -1,5 +1,4 @@
-//! Regression tests (originally RED) for "a spec ducktape ACCEPTS
-//! must run under Node".
+//! Regression tests for "a spec ducktape ACCEPTS must run under Node".
 //!
 //! This is a generalization of #1681: that PR pinned the
 //! residual-class TDZ shape. This pins a different shape that
@@ -215,9 +214,8 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
 
 #[test]
 fn peeled_method_reassigning_top_level_let_executes_under_node() {
-    // Regression test (originally RED): minimal reproduction of
-    // the `Assignment to constant variable` runtime crash hit
-    // when peeling an upstream class.
+    // Minimal reproduction of the `Assignment to constant variable`
+    // runtime crash hit when peeling an upstream class.
     //
     // Upstream shape (paraphrased):
     //

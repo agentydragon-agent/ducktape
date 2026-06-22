@@ -1,9 +1,6 @@
-//! Layer-1 AST-shape index + read-off selector API (W1 of the read-off
-//! minimization redesign; see `plans/readoff_minimization.md`).
+//! AST-shape index + read-off selector API.
 //!
-//! This is the strangler-fig foundation built *alongside* the existing
-//! `selector_codemod` cover-search minimizer without changing its behavior. It
-//! provides:
+//! This is the foundation for selector synthesis. It provides:
 //!
 //!   1. A hash-consed Merkle shape index over the chunk AST (O(N) build):
 //!      every distinct alpha-equivalent subtree shape gets one canonical

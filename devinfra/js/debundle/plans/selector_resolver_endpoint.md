@@ -25,30 +25,17 @@ byte-identical); apply the X-primitives to their clusters (per
 global-solve capstone. Terminate at name-only = 0 (or committed faithful-encoding
 dead-ends). Real-spec conversions land in gaffer-private (PR #366 + per-family lanes).
 
-## Recipe (degraded web session — verified flag forms)
+## Execution Notes
 
-- **Build/test on RBE** with `bazelisk` + the system-java truststore and the RBE key.
-  `source devinfra/secrets/web_env.sh` (sets `BUILDBUDDY_API_KEY`), then
-  `bazelisk … --config=rbe --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY
---shell_executable=/bin/bash`. **No `--platforms=`** (strips RBE container identity ⇒
-  `PERMISSION_DENIED: Container identity unknown`). `dangerouslyDisableSandbox: true`.
-- **Query/convert** (selector-debt, synthesize-selectors, match-selector) via
-  `gaffer//tana/re:debundle_cli`; **all bazel flags before `--`** (for `run … -- …`).
-- **Byte-identical gate:** `bazelisk test
-//tana/re/web/78d928dca7:regen_js_test --config=rbe …` (from gaffer) → `PASSED`.
-- **Test a NEW ducktape primitive against the real spec** without a repin:
-  `--config=source-debundler --override_module=ducktape=/home/user/ducktape` on the
-  gaffer build (see <gaffer//tana/re/web/AGENTS.md>). The full lane recipe lives in
-  <../debug/2026_06_20_gaffer_phaseA_lane_recipe.md>.
+Real-spec conversions land in gaffer-private. Use that repo's current `tana/re`
+agent instructions for branch, commit, and source-debundler override details; do
+not freeze one session's degraded-web command line here. The durable lane recipe
+from the 2026-06 run remains in
+<../debug/2026_06_20_gaffer_phaseA_lane_recipe.md>.
 
-## Operating rules (every step)
-
-- **Branch** `claude/lucid-mendel-178j6q` (both repos). Commit footers: the
-  `Co-Authored-By` + `Claude-Session` trailers. **Never open a PR** unless asked.
-  **No model identifier** in any committed artifact.
-- **Commits** via `nix develop --command git commit -F <msgfile>`; rustfmt + prettier
-  hooks may reformat → re-stage and re-commit (or pre-run `rustfmt --edition 2024`).
-- Each step ends in a **verified** (build + test green, lint on) commit + push.
+Each conversion step should still end in a verified commit: changed lib and
+consumer tests green, lint on, and generated output byte-identical unless the step
+explicitly changes output.
 
 ## Verification gates
 
@@ -102,13 +89,3 @@ Shift from per-selector solves to a single CSP over the whole spec: shared logic
 variables for `@Name`, `all_different` across targets. The capstone — X1–X4 fold in.
 Largest architectural step; hold to the abort bar if the global encoding won't stay
 faithful.
-
-## Progress ledger
-
-Append a row per verified commit for the remaining work (X-conversions, X4, X5). The
-F + X1–X3 build-out is complete and squashed into the debundle PR; its blow-by-blow
-walkthrough and pre-squash commit hashes are retired (the durable record is the code,
-the PR, and the debt worklist).
-
-| phase | step | commit | gate result |
-| ----- | ---- | ------ | ----------- |
