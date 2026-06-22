@@ -37,9 +37,7 @@ The root cause is always a broken session start hook — notify the user if reco
 
 Prefer the `kubectl-local` MCP server tools over `Bash(kubectl ...)` for any
 operation that the `oidc-ksbx-groups:kubectl-sandbox-users` RBAC group allows.
-The MCP server uses an in-memory kubeconfig with an Authentik-issued bearer JWT;
-the JWT's group claim maps to `oidc-ksbx-groups:kubectl-sandbox-users`. It never
-triggers permission prompts.
+It uses an in-memory kubeconfig and never triggers permission prompts.
 
 **RBAC source of truth**: keep permission details in
 <cluster/k8s/agents/claude-rbac/README.md> and the RoleBinding files it points to,
@@ -49,18 +47,7 @@ or write permissions.
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.
 
-**In-cluster MCP variants** (also available to any MCP client — Claude Code, claude.ai):
-
-- `kubectl-sandbox-mcp` at `https://kubectl-sandbox-mcp.allegedly.works/mcp` —
-  Authentik OAuth + custom scope mapping forces the issued token's `groups`
-  claim to `["kubectl-sandbox-users"]` regardless of caller. Even an admin
-  only gets sandbox access through this server.
-- `kubectl-passthrough-mcp` at `https://kubectl-passthrough-mcp.allegedly.works/mcp` —
-  Authentik OAuth + passthrough; caller's own OIDC group claims go to kube-apiserver
-  (i.e., admin gets admin).
-
-Both are public OAuth2 clients (PKCE, no client_secret). For design rationale,
-DCR workaround, and the whole OAuth-dance saga, see
+In-cluster OAuth MCP variants are documented in
 <cluster/docs/mcp_oauth_authentik_notes.md>.
 
 ## Sandbox
@@ -71,18 +58,9 @@ Run `bb`, `bazel`, `bazelisk`, `bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`
 
 ## Bazel Commands
 
-### Tool hierarchy
-
-| Tool       | What it is                                                                                                                                                       |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bazelisk` | Bazel version manager — downloads and runs the correct Bazel version. Our shim also injects the session bazelrc.                                                 |
-| `bazel`    | Raw Bazel binary (avoid — version not pinned, no session bazelrc injection).                                                                                     |
-| `bb`       | BuildBuddy CLI. `bb remote` runs Bazel **on BuildBuddy RBE runner VMs** using files synced from the local repo.                                                  |
-| `bbr`      | Our convenience wrapper around `bb remote` (<devinfra/bbr.py>). Adds RBE flags, session tags, and auto-syncs git diffs. **Default choice for build/test/query.** |
-
-**Prefer `bbr` for almost everything.** Use `bb run` for targets that need to execute on the local machine (Gazelle, manifest updates, formatters). Use `bazelisk` for local runs that need the session bazelrc (cert injection, new external repo fetches).
-
-`bb run` always executes the binary locally — build actions use RBE by default.
+**Prefer `bbr` for build/test/query.** Use `bb run` for targets whose binary must
+execute locally (Gazelle, manifest updates, formatters). Use `bazelisk` for local
+runs that need the session bazelrc. Avoid raw `bazel`.
 
 ```bash
 bbr test //path/to:target
@@ -92,8 +70,6 @@ bbr query '...'
 # Runs locally (binary always executes on the local machine):
 bb run //devinfra:gazelle
 ```
-
-### Remote execution and caching
 
 Remote execution (RBE) and remote caching are the **expected defaults** — do not disable them. In particular:
 
@@ -105,36 +81,9 @@ Remote execution (RBE) and remote caching are the **expected defaults** — do n
 1. First, retry the Bash tool call with `dangerouslyDisableSandbox: true` — the Claude Code sandbox's `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
 2. If it still fails, **stop and report the connectivity issue to the user**. The user may need to recover the session start hook or check VPN/firewall state.
 
-### Build outputs and invocation data
-
-`bbr` runs with `--remote_download_minimal`, so artifacts stay on the runner; fetch with
-`--remote_download_regex='...'` or `--remote_download_outputs=toplevel`. Fetched outputs
-land under `bb-out/bazel-out/k8-fastbuild/bin/<pkg>/<name>` (not `bazel-bin/` — that
-symlink only exists in local workspaces). `bbr` writes the invocation ID to
-`~/.cache/bbr/last_invocation_id`; undeclared test outputs, logs, target history, and
-invocation details come from `bbapi {artifact,target,invocation} ...`. Full recipes
-(golden screenshot updates, pass/fail timelines, log retrieval): `/buildbuddy_api` skill.
-
-### Session bazelrc and `bb` vs `bazelisk`
-
-**`bb` ignores the session bazelrc; use `bazelisk` for local runs that need it.**
-The Claude Code session start hook writes per-session Bazel config (JVM truststore,
-RBE headers) to `<session_dir>/bazelrc`. The `bazelisk` shim auto-injects it; `bb`
-does not. If `bb` starts a fresh Bazel server (option mismatch, idle timeout, new
-external repo fetch) it will fail with `TLS error: PKIX path building failed`. For
-local-only runs that need the session config, use `bazelisk run //target -- ...`.
-RBE-bound work (`bbr ...`) is unaffected because runner VMs don't use the session
-truststore.
-
-### Configuration layers
-
-| Layer   | Source                           | Contents                                                  |
-| ------- | -------------------------------- | --------------------------------------------------------- |
-| Repo    | `devinfra/bbr.json` (checked in) | `runner_exec_properties`, `container_image`, `bazel_args` |
-| Session | `$BBR_BAZELRC` file              | `--build_metadata` (ROLE, session TAGS)                   |
-| Ad-hoc  | `$BBR_REMOTE_ARGS` env var       | Extra `bb remote` flags                                   |
-
-**Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by the session start hook or Nix devshell).
+Build outputs, invocation data, and `bbr` configuration layers live in
+<devinfra/bbr.py>. BuildBuddy log retrieval and target-history recipes live in the
+`buildbuddy_api` skill.
 
 ### NixOS hosts
 
@@ -213,12 +162,6 @@ If you need to run sops outside the repo, derive the key manually (see `.envrc`)
 
 ## Conventions
 
-See README.md for descriptions of each convention. Agent rules:
-
-- **`x/`**: code under `x/` is experimental/unstable. Don't treat it as stable API.
-- **`TODO.md`**: cross-cutting or project-level TODOs go here. Remove entries once done.
-- **`plans/`**: delete or tombstone a plan once fully completed.
-- **`PLAN.md`**: a directory's single central plan — use instead of a one-file `plans/`; same lifecycle as `plans/` entries.
 - **`debug/`**: write investigation notes here, not in code comments or PR descriptions.
 - **`SPEC.md`**: update when the component's high-level contract changes (new promise, new credential class, new behavior visible to users). Do **not** record implementation details — those go in README.md or code. Example: <devinfra/claude/claude_hook/SPEC.md>.
 

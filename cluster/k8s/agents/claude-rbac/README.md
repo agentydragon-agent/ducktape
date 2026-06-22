@@ -48,28 +48,14 @@ from applying.
 
 ### 1. claude-sandbox namespace — full CRUD
 
-Defined in <role-sandbox.yaml>, bound via <rolebinding-sandbox.yaml>:
-
-- Pods: create/delete, logs, exec, attach
-- Workloads: deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs
-- Config: configmaps, secrets, PVCs, events, services
-- ⚠️ **Resource limits** (<resourcequota.yaml>): 8 CPU, 16Gi memory, 20 pods
+Defined in <role-sandbox.yaml>, bound via <rolebinding-sandbox.yaml>. Resource limits
+live in <resourcequota.yaml> and <limitrange.yaml>.
 
 ### 2. Cluster-wide read — diagnostics
 
 `cluster-diagnostics-reader` ClusterRole (<clusterrole-cluster-diagnostics-reader.yaml>),
-bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
-
-- Core: nodes, pods, services, endpoints, PVs, PVCs, events, namespaces, resourcequotas
-- Workloads: deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, HPAs, VPAs
-- Networking: ingresses, networkpolicies, Gateway API routes, Cilium policies
-- Storage: storageclasses, volumeattachments
-- GitOps: Flux kustomizations (+ patch for reconcile), HelmReleases, git/helm/OCI repos,
-  image policies, Terraform resources
-- Certs & secrets: cert-manager certificates/issuers, trust-manager bundles, ExternalSecrets
-- Monitoring: Prometheus, Alertmanager, ServiceMonitors, metrics API (pods + nodes)
-- Other: RBAC roles/bindings, CRDs, webhooks, leases, priority classes, Kyverno policies,
-  PowerDNS zones
+bound via <../shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml>. The
+ClusterRole YAML is the resource-list source of truth.
 
 ### 3. Cross-namespace read
 
@@ -88,11 +74,8 @@ reuses the same three ClusterRoles:
   readable credential material — it can see what's running and how it's wired, nothing it could
   exfiltrate.
 - **Logs/configmaps in infrastructure namespaces only** (co-subjected on the per-namespace
-  bindings): `flux-system`, `monitoring`, `kube-system`, `cnpg-system`, `cert-manager`,
-  `local-path-storage`, `openebs`, `csi-proxmox`, `node-feature-discovery`,
-  `nvidia-device-plugin`. These carry controller diagnostics, not user content. Haku is
-  deliberately **not** added to user-content/credential-bearing namespaces (`matrix`, `grocy`,
-  `authentik`, `props`, `langfuse`, `litellm`, `harbor`).
+  bindings). These carry controller diagnostics, not user content. The binding YAMLs listed by
+  <permissions.md> are the namespace source of truth.
 
 This widens the original `haku-sandbox`-only perimeter (<../../../../haku/PLAN.md>) to read-only
 diagnostics; the structural fences (read-only verbs, no secret material, mitmproxy egress) are
@@ -158,7 +141,7 @@ Two callers, different kubeconfig materialization strategies:
 ## Security Considerations
 
 - **Write isolation**: Full CRUD only in `claude-sandbox` namespace
-- **Broad read**: Cluster-wide diagnostics read (nodes, pods, Flux, certs, metrics, etc.)
-- **Resource quotas**: 8 CPU, 16Gi memory, 20 pods (see <resourcequota.yaml>)
+- **Broad read**: Cluster-wide diagnostics read; see <clusterrole-cluster-diagnostics-reader.yaml>
+- **Resource quotas**: see <resourcequota.yaml> and <limitrange.yaml>
 - **Flux patch**: Can trigger Flux reconciliation via annotation patch (Kyverno policy
   restricts to annotation-only patches)
