@@ -2,12 +2,18 @@
 
 This note collects feature requests from the 2026-06-22 `tana/re/web`
 selector-stabilization dispatch in `gaffer-private`. It is deliberately framed
-as selector-language and synthesis work, not as a replacement for the relational
-resolver. The current Datalog/fact substrate already has the right shape for
-most of these cases: stable identity lives in facts such as resolved uses,
-member reads, call arguments, module membership, and assignment/register
-relationships. The missing pieces are mostly author-facing vocabulary,
-synthesis search, diagnostics, and performance.
+as selector-language and synthesis work under the global selector constraint
+resolver, not as a replacement for that resolver. The current Datalog/fact
+substrate already has the right shape for most of these cases: stable identity
+lives in facts such as resolved uses, member reads, call arguments, module
+membership, and assignment/register relationships. The missing pieces are
+mostly author-facing vocabulary, synthesis search, diagnostics, and performance.
+
+Use this file as the P0.6 evidence queue for
+<selector_resolver_endpoint.md>: every accepted request should lower to the
+global selector IR, expose a fact the solver already ought to know, or improve
+candidate generation over that IR. Do not add a new ad-hoc resolver path for
+one Gaffer shape.
 
 ## Evidence Snapshot
 
@@ -192,4 +198,3 @@ Acceptance criteria:
 - each item has one of: landable candidate, needs relation feature, honest
   debt, too expensive;
 - the report is stable enough to hand directly to worktree lane agents.
-

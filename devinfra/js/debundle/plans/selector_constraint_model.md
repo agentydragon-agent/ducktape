@@ -1,14 +1,25 @@
 # Plan: selectors as one global constraint problem (relational spec model)
 
-**Current state.** The hand-rolled matcher is retired: the fact-based `ChunkResolver` is the
-**sole** selector resolver (`AstWildcardMatcher` / `AstWildcardResolver` / `DifferentialResolver`
-deleted). Re-homing the existing selector language onto the relational AST-facts substrate — proven
-by a full-corpus differential against the old matcher — is done; that parity was the equivalence
-gate, not new power. **P4 — the relational/cross-reference query layer this doc exists for (`@Name`,
-`calls`/`alias`, the global solve) — is in progress:** the relational primitives `cross_ref` /
-`reads_member` / `member_of_module` have landed; what remains is applying them to the real spec
-clusters (the conversions), counting/uniqueness, and one global solve. The remaining-work index is
-<../debug/2026_06_19_p4_debt_worklist.md>.
+**Current state (2026-06-22).** The hand-rolled matcher is retired: the fact-based
+`ChunkResolver` is the **sole** `source_match` resolver
+(`AstWildcardMatcher` / `AstWildcardResolver` / `DifferentialResolver` deleted).
+Re-homing the existing selector language onto the relational AST-facts substrate
+— proven by a full-corpus differential against the old matcher — is done; that
+parity was the equivalence gate, not new power. The relational bridge primitives
+(`cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`,
+`makes_decorate_call`, `intrinsic_alias`) have landed as staged materializer
+passes.
+
+**Reframing.** The next architectural goal is not "do more per-selector
+conversions, then eventually solve globally." It is to make the global
+constraint solve the resolver itself: compile every selector form into one
+selector IR over AST + owner-graph facts, solve shared `@Name` variables and
+`all_different` together, and hand materialization a resolved claim map. Real
+spec conversions are dogfood and evidence for missing language/fact coverage;
+they should not add more long-lived anchor-first bridge architecture. The
+remaining-work index is <../debug/2026_06_19_p4_debt_worklist.md>, and the
+Gaffer-derived language evidence is in
+<selector_language_feature_requests.md>.
 
 Extends the selector-authoring guidance in <../docs/selectors.md> and the
 `debundle_stabilize` skill — which fix _who_ chooses anchors (an agent, not the
@@ -35,6 +46,19 @@ special cases, silent fallbacks, or hacks to force a hard construct through. If 
 the model itself, turns out not to admit such a faithful, principled encoding, we **abort and
 rethink the design** rather than push on with ugly hacks — an honest dead end beats a matcher we
 cannot trust.
+
+Operationally, this means the Ducktape-side work leads with the engine contract:
+
+1. one engine-facing selector IR shared by `run`, `validate`,
+   `match-selector`, `selector-debt`, synthesis, and repair;
+2. one fact store per chunk/component containing AST-shape facts,
+   binding-resolution facts, owner/reference facts, and derived-predicate inputs;
+3. one solve per connected selector component, with `@Name` as a shared logic
+   variable rather than a lookup into already-resolved members;
+4. one diagnostic/result projection for no-match, ambiguity, duplicate claims,
+   unsupported constructs, and "which facts forced uniqueness";
+5. one resolved claim map consumed by the existing atomic-DAG / realizability /
+   emission pipeline.
 
 ## Problem: the only join we have is adjacency
 
@@ -113,6 +137,13 @@ Solving the whole spec at once is the key move, not an optimization:
 
 So selectors do not "depend on each other"; they are **matched against `G` at the
 same time**.
+
+This also makes the current anchor-first bridge a migration artifact. Today
+relational selectors often resolve `@Name` through members that were already
+claimed by `source_match` or binding-name resolution. In the endpoint, that
+ordering disappears: both the anchor and the target are distinguished variables
+in the same query, so the solver can handle cycles and mutually-constraining
+clusters without stratifying selector resolution.
 
 ## The invariant signature (what makes a selector stable)
 
@@ -560,24 +591,33 @@ with a uniqueness guard, and an AST-literal-∧-import-edge join all resolve to 
 So the vocabulary is proven expressible in the engine we picked — the gap to production is the
 phase-2 AST-facts EDB and the template→atoms lowering, not the solver's capability.
 
-## Remaining work (P4)
+## Remaining work (global-solve cutover)
 
-Everything that reproduces the existing selector language is done; P4 is where the new expressivity
-arrives — the relational/cross-reference layer this doc exists for. The relational primitives
-(`cross_ref` / `reads_member` / `member_of_module`, and the `@Name` solver kernel: a `references`
-relation with `referencer_for`/`alias_owner_for`) have landed. What remains:
+Everything that reproduces the old selector language is done at the current
+bridge layer. The remaining work is to make this model the production resolver:
 
-- **Join the semantic `resolves_to` edge into the fact matcher.** It lives in `owner_graph.json` but
-  is not yet joined into the matcher; the derived `calls`/`alias` rules build on it.
-- **Apply the relational primitives to the real spec clusters** — the conversions: rewrite the
-  metaNode debt pins (bare delegators, empty-ish classes, consumer clusters) as re-minification-proof
-  cross-ref queries, turning roughly 18 stabilization-debt items into ~5 and removing the
-  neighbor-borrow temptation. The per-cluster conversion worklist is the live index in
-  <../debug/2026_06_19_p4_debt_worklist.md>.
-- **X4 — counting / uniqueness.** Stratified-negation / aggregation anchors ("the _only_ X with
-  method m"; "whose sole use is `@Y`"); categoricity as a check stays plain counting.
-- **X5 — one global solve.** Shift from per-selector solves to one CSP over the whole spec: shared
-  logic variables for `@Name`, `all_different` for duplicate-claim, per-target categoricity.
+- **G1 — IR and fact-store contract.** Specify the normalized selector atom set,
+  target variables, clause-local variables, derived predicates, source spans,
+  and diagnostic payloads. This is the shared contract for `run`, `validate`,
+  `match-selector`, `selector-debt`, synthesis, and repair.
+- **G2 — `source_match` parity lowering.** Lower today's JS-with-holes selectors
+  and binding groups into IR atoms. Keep the fact-based `ChunkResolver` as the
+  oracle until the corpus differential is zero, including alpha matching,
+  run-hole placement, regex literal predicates, anonymous statements, and
+  binding groups.
+- **G3 — shared-variable solve.** Join AST facts, binding-resolution facts, and
+  owner/reference facts into one solve per connected selector component.
+  `@Name` becomes a shared target variable; no-match / ambiguous / unique and
+  `all_different` duplicate claims are result projections.
+- **G4 — materializer cutover.** Replace staged per-selector claiming plus late
+  relational passes with a solver-produced claim map. The owner graph,
+  atomic-DAG, module-DAG, and emit gates stay downstream.
+- **G5 — relation/language fold-in.** Re-express `cross_ref`, `reads_member`,
+  `member_of_module`, `passed_to_call`, `makes_decorate_call`,
+  `intrinsic_alias`, and the Gaffer feature-request vocabulary as IR atoms or
+  derived predicates. The real-spec conversion worklist in
+  <../debug/2026_06_19_p4_debt_worklist.md> is evidence and dogfood for this,
+  not a reason to add more permanent bridge passes.
 
 ## Open questions
 

@@ -24,24 +24,38 @@ records and scoped backlogs; when a plan's core work is complete, its remaining
 tail should be summarized here instead of leaving the plan looking like a second
 priority queue.
 
-**Current focus (2026-06-16 reprioritization; pruned 2026-06-22).** The read-off
-**minimizer is complete** — every form migrated, interior holing + multi-feature
-value-anchor cover landed, the branch-and-bound cover deleted, the
-`render_var_slots` dedup done, and the enclosing-context residual handled. Its
-remaining polish tail is tracked below, not in a completed plan. The active
-frontier has shifted to the **automation product flows**, in dispatch order:
+**Current focus (2026-06-22 global-solve reframing).** The read-off minimizer
+and fact-based `source_match` resolver are complete enough to stop scaling the
+staged resolver shape. The active frontier is now the **global selector
+constraint solver**: compile every selector in a chunk/spec component into one
+query over the source facts, solve shared `@Name` variables together, enforce
+target categoricity + `all_different` inside the solve, then feed the resolved
+claims to the existing atomic/realizability gate.
 
-1. **Spec repair from diagnostics (P0.3)** — build on the landed keep-going
-   diagnostics (#2302) to propose mechanically-proven patch plans.
-2. **Patch-plan / dry-run / explain infrastructure (P0.1)** — the apply-with-review
-   substrate the repair + bulk-codemod flows pipe through.
-3. **Version-port (P1.1) and new-app bootstrap (P1.2)** — the remaining
-   `automated_spec_workflows.md` milestones.
-4. **Excalidraw public live-browser smoke (P1.7)** — public-CI repro leverage,
-   independent of all the above.
+Dispatch work in this order:
 
-The minimizer polish tail is maintenance-priority — pick up opportunistically,
-not ahead of the frontier above.
+1. **Global selector IR and fact schema (P0.1).** Define the engine-facing
+   atom set for targets, clause-local variables, shape atoms, relational atoms,
+   and derived predicates. This is the contract all authoring syntax lowers to.
+2. **`source_match` lowering parity (P0.2).** Lower today's JS-with-holes
+   selectors into the same IR while keeping the current fact-based resolver as
+   the oracle until a differential reaches zero.
+3. **Shared `@Name` variables (P0.3).** Replace the production-only
+   anchor-first bridge with solver-owned target symbols so relation selectors
+   do not depend on already-resolved members.
+4. **Counting/uniqueness in the solve (P0.4).** Make no-match, ambiguous, and
+   duplicate-claim diagnostics projections of the solver result, not a mix of
+   per-selector checks and post-hoc duplicate detection.
+5. **Materializer integration (P0.5).** Build facts once, solve the selector
+   component once, and let `materialize` consume a resolved claim map. Keep the
+   owner graph, atomic unit, module DAG, and JS realization gates downstream.
+6. **Language/synthesis work as solver vocabulary (P0.6).** Add only language
+   features that lower to the global IR or expose facts it already needs. Use
+   <plans/selector_language_feature_requests.md> as the evidence queue.
+
+The minimizer polish tail and automation product flows remain valuable, but
+they should build on the global resolver contract rather than harden today's
+per-selector/late-pass shape.
 
 Prefer dispatching work in this order. Large downstream spec migrations should
 lean on tooling generated from this queue instead of hand-authored YAML.
@@ -55,16 +69,23 @@ progress output and a resumable or cacheable plan.
 One-line status for each `plans/` design doc; this is the discovery index, not a
 parallel dispatch queue.
 
-- <plans/automated_spec_workflows.md> — **active design.** North-star for the
-  inventory/plan/apply/validate CLI surface and the synthesize / stabilize /
-  version-port / new-app-bootstrap flows. Foundational milestones realized by the
-  read-off work; repair-report, version-port, and bootstrap flows not started.
 - <plans/selector_constraint_model.md> + <plans/selector_resolver_endpoint.md> — **active
-  (P4 expressivity).** The fact-based resolver + the full X1–X3 relational primitive
-  suite (`cross_ref` / `reads_member` / `member_of_module`) plus `passed_to_call` /
-  `makes_decorate_call` / `intrinsic_alias` landed in #2398. Remaining: X4/X5
-  (counting/uniqueness + one global solve) and the real-spec push-to-zero conversions
-  (underway via the stabilization lanes) — see <debug/2026_06_19_p4_debt_worklist.md>.
+  (P0 global resolver).** Current top priority: replace per-selector and
+  per-relational-family resolution with one whole-spec/component constraint
+  solve over AST + owner-graph facts. X1-X3 plus `passed_to_call` /
+  `makes_decorate_call` / `intrinsic_alias` are useful fact/selector
+  vocabulary, but are bridge implementations until they fold into the global
+  IR. See <debug/2026_06_19_p4_debt_worklist.md> for real-spec evidence.
+- <plans/selector_language_feature_requests.md> — **active evidence queue.**
+  Gaffer-derived selector-language and synthesis requests. Treat these as
+  authoring vocabulary and candidate-generation work for the global IR, not as
+  a separate resolver strategy.
+- <plans/automated_spec_workflows.md> — **active design, downstream of P0.**
+  North-star for the inventory/plan/apply/validate CLI surface and the
+  synthesize / stabilize / version-port / new-app-bootstrap flows. Foundational
+  milestones realized by the read-off work; repair-report, version-port, and
+  bootstrap flows should consume the solver-backed validation/diagnostic
+  contract rather than cloning selector resolution logic.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.
@@ -75,29 +96,59 @@ parallel dispatch queue.
   planner design space + algorithm/analysis backlog behind `debundle modules
 propose`.
 
-### P0 — automation-first selector workflows
+### P0 — global selector constraint resolver
+
+1. **Global selector IR and fact schema.** Define the normalized atom/rule
+   representation for shape constraints, relational constraints, target
+   variables, local holes, derived predicates, and selector diagnostics. The IR
+   is the single contract for `run`, `validate`, `match-selector`,
+   `selector-debt`, and synthesis.
+2. **Fact extraction boundary.** Expose the AST facts currently used by
+   `ChunkResolver` and the owner/reference facts currently used by
+   `selector_solve` through one chunk fact store. Preserve the fail-closed rule:
+   unmodeled AST constructs or relations must report `unsupported`, not silently
+   drop facts.
+3. **Lower `source_match` to IR with differential parity.** Compile existing
+   JS-with-holes selectors and binding groups into query atoms. Keep the current
+   resolver as the reference until the corpus differential is zero, including
+   alpha matching, run holes, regex literal predicates, anonymous statements,
+   and binding groups.
+4. **Make `@Name` a solver variable.** Carry spec target symbols through the
+   solve instead of resolving relation anchors from already-claimed members.
+   This removes anchor-first ordering and allows mutually constraining selector
+   clusters.
+5. **Categoricity and `all_different`.** Return per-target no-match /
+   ambiguous / unique outcomes and duplicate claims from one solve result. The
+   keep-going report should become a projection of this result.
+6. **Materializer claim-map integration.** Replace
+   `add_explicit_request`-then-late-pass claiming with "solve selectors, then
+   consume resolved claims." The atomic unit, module DAG, cycle, and JS
+   realization gates stay downstream and unchanged.
+7. **Fold relational bridge passes into derived predicates.** Re-express
+   `cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`,
+   `makes_decorate_call`, and `intrinsic_alias` as selector IR / derived
+   predicates. Keep the existing bridge tests as parity tests until the bridge
+   passes can be deleted.
+8. **Real-spec dogfood as evidence, not architecture.** Continue Gaffer
+   selector stabilization only where it produces language/fact/diagnostic
+   requirements for the global solver or proves the new resolver byte-identical.
+
+### P1 — automation product flows over the solver
 
 1. **Patch-plan based bulk codemods.** Extend `debundle spec selector-codemod`
    or add adjacent verbs so every broad rewrite can emit a dry-run patch plan,
-   apply with filters, and explain every skipped candidate. (Selector
-   minimization at synthesis time, unique-literal-initializer → structural
-   selectors, and over-pinned-object `OBJECT_PROPS` rewrites are done via the
-   read-off path; converting repeated member-form selectors into
-   `binding_groups` is the co-occurrence-grouping item in the read-off backlog.
-   The open work here is the dry-run / patch-plan / explain-every-skip
-   infrastructure that the rewrite classes pipe through.)
+   apply with filters, and explain every skipped candidate. The prove gate
+   should be solver categoricity, not an independent selector-matcher path.
 2. **Selector diagnostics — remaining extensions.** The keep-going JSON report
    (`debundle spec validate --keep-going --format text|json|ndjson`) landed
    (#2302; shared contract in `selector_diagnostics.rs`) and classifies
-   unresolved / ambiguous / duplicate-claim failures with full provenance. Still
-   open: structured entries for anonymous-statement `source_match` failures and
-   blocker comments (today carried only as a `coverage_notes` gap), and the
-   free-readable-identifier class (P1.5) so `alpha_all` readable names that are
-   free references rather than local binders are reported, not silently dropped.
-3. **Spec repair from diagnostics.** Add a workflow that consumes the keep-going
-   report, proposes mechanically proven patch plans for no-match, ambiguous,
-   duplicate-claim, and unsupported-selector cases, and leaves residual semantic
-   decisions as explicit tasks.
+   unresolved / ambiguous / duplicate-claim failures with full provenance. Fold
+   remaining anonymous-statement failures, blocker comments, and
+   free-readable-identifier cases into the solver-backed report shape.
+3. **Spec repair from diagnostics.** Add a workflow that consumes the
+   solver-backed keep-going report, proposes mechanically proven patch plans for
+   no-match, ambiguous, duplicate-claim, and unsupported-selector cases, and
+   leaves residual semantic decisions as explicit tasks.
 4. **Orthogonal CLI surface.** Converge new automation on the
    inventory/plan/apply/validate/explain model in
    <plans/automated_spec_workflows.md>. Avoid one-off command shapes that cannot
@@ -106,37 +157,34 @@ propose`.
    inputs; >60s is a blocker unless explicitly an offline/profile mode with
    progress output and a resumable plan. The whole-spec minimize budget and the
    measured real-chunk numbers live in <debug/selector_minimizer_dogfood.md>.
-
-### P1 — broad workflow integration
-
-1. **Version-port workflow.** Given v1 chunks + spec and v2 chunks, resolve v1
+6. **Version-port workflow.** Given v1 chunks + spec and v2 chunks, resolve v1
    selectors to source identities/fingerprints, search v2 for matching
    entities, apply confident selector repairs, and emit a residual report for
    semantic drift.
-2. **New-app spec bootstrap.** Connect module proposals, naming output, and
+7. **New-app spec bootstrap.** Connect module proposals, naming output, and
    selector synthesis so new debundle specs start with structural selectors and
    an explicit debt/confidence report.
-3. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
+8. **Selector-debt ranking improvements.** Extend `debundle spec selector-debt`
    with source-aware ranking for multi-statement windows, repeated selector
    bodies that can become binding groups, and "stable literal by value"
-   candidates. Prefer output that can feed the P0 codemod dry-run.
-4. **Cross-module binding-group design.** Design a form for one matched source
+   candidates. Prefer output that can feed the solver-backed patch-plan dry-run.
+9. **Cross-module binding-group design.** Design a form for one matched source
    context to export bindings into different logical modules without duplicating
    the selector body.
-5. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
+10. **Free-readable-identifier diagnostics.** When an `alpha_all` selector uses
    readable names that are free references rather than local binders, explain
    that they do not refer to previously exported symbols. Suggest grouping or
    holes.
-6. **Duplicate-claim identity.** Track claims by declaration identity instead
+11. **Duplicate-claim identity.** Track claims by declaration identity instead
    of only emitted/minified spelling; include declaration kind and source
    location in duplicate-claim diagnostics.
-7. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
+12. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke so
    private-corpus debundler issues can be reproduced and protected in public CI.
-8. **Ground selector-stabilization skill fixtures.** The `debundle_stabilize`
+13. **Ground selector-stabilization skill fixtures.** The `debundle_stabilize`
    loop and playbook landed; add tested, anonymized fixtures for the common
    anchor-choice cases so the skill's guidance is executable rather than only
    prose.
-9. **Port-based selector-stability evaluation.** Run a two-version bundle pair
+14. **Port-based selector-stability evaluation.** Run a two-version bundle pair
    as a held-out evaluation of `debundle_stabilize`: report survived/broke
    verdicts by anchor kind and feed the scorecard back into the playbook.
 
