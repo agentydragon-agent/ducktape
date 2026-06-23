@@ -95,10 +95,17 @@ spec:
           volumeMounts:
             - name: workspace # git clones + agent workdir (entrypoint: /workspace)
               mountPath: /workspace
+            - name: home # $HOME (.netrc, .gitconfig, ant config) — see HOME env
+              mountPath: /home/haku
             - name: tmp
               mountPath: /tmp
       volumes:
         - name: workspace
+          emptyDir: {}
+        # The image has no /home/haku: `createHome` runs at NixOS activation,
+        # which we skip (we exec the worker directly, not systemd). Mount a
+        # writable emptyDir there (fsGroup 100 makes it haku-writable).
+        - name: home
           emptyDir: {}
         - name: tmp
           emptyDir: {}
