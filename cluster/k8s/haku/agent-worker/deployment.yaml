@@ -75,16 +75,22 @@ spec:
                 secretKeyRef:
                   name: haku-state-git-write
                   key: password
-            # In-cluster Forgejo host for the haku-state .netrc machine line
-            # (haku-state is git.allegedly.works/haku/haku-state). ducktape is on
-            # public GitHub (below), not the cluster Forgejo, so it needs no creds.
+            # .netrc machine line for git auth. Must match the host in the clone
+            # URLs below — both repos are reached via the in-cluster Forgejo
+            # Service (forgejo-http.forgejo), NOT the public git.allegedly.works
+            # ingress: the haku egress proxy doesn't tunnel git, and the internal
+            # Service bypasses it. (.netrc matches on host, ignoring the :3000
+            # port.) The haku-state repo_url secret already uses this host.
             - name: HAKU_GIT_HOST
-              value: git.allegedly.works
+              value: forgejo-http.forgejo
             # ducktape clone (read-only: haku/base + run.md, the live manual).
-            # Public GitHub repo — cloned anonymously over HTTPS, so the single
-            # .netrc entry (HAKU_GIT_HOST, for haku-state) is all the git auth needed.
+            # The Forgejo mirror agentydragon/ducktape (the `haku` user has read
+            # via collaborator grant). GitHub is unreachable from the worker
+            # (egress proxy blocks it), so we clone the in-cluster mirror, authed
+            # by the .netrc above. NOTE: the mirror is bumped manually for now —
+            # see the README TODO; it is not yet turnkey-synced from GitHub.
             - name: HAKU_DUCKTAPE_REPO_URL
-              value: https://github.com/agentydragon/ducktape
+              value: http://forgejo-http.forgejo:3000/agentydragon/ducktape.git
           resources:
             requests:
               cpu: 200m

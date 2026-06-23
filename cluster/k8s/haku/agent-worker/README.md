@@ -5,10 +5,28 @@ Anthropic's work queue (`ant beta:worker poll`) and executes tool calls inside
 `haku-sandbox`. Design, trust split, and the control-plane provisioning live with
 the component: <../../../../haku/runtime/managed_agent/README.md>.
 
-The image is the full-NixOS `.#haku-worker-image` (systemd PID 1), built and
-pushed to `ghcr.io/agentydragon/haku-worker` by
-`.github/workflows/haku-worker-image.yml`; Flux tracks the tag via the
-`haku-worker` ImagePolicy.
+The image is the full-NixOS `.#haku-worker-image`, built and pushed to
+`ghcr.io/agentydragon/haku-worker` by `.github/workflows/haku-worker-image.yml`;
+Flux tracks the tag via the `haku-worker` ImagePolicy. We don't boot the image
+(no systemd): the pod runs the worker closure directly as non-root `haku` —
+see `deployment.yaml` and `../../../../haku/runtime/managed_agent/nixos.nix`.
+
+## Manual prerequisites — NOT yet turnkey
+
+These are required for the worker to function and are **not** provisioned
+declaratively yet (TODO: fold into Terraform gitops like the other Forgejo
+resources):
+
+- **Forgejo ducktape mirror** (`git.allegedly.works/agentydragon/ducktape`): the
+  worker clones ducktape from this in-cluster mirror, not GitHub (the egress
+  proxy blocks GitHub). The mirror is **bumped manually** — it is not
+  auto-synced from GitHub. Push the mirror before expecting Haku to see new
+  `haku/base` / `haku/run.md` content.
+- **`haku` read access to the mirror**: the `haku` Forgejo user must be a
+  collaborator (read) on `agentydragon/ducktape`. Granted manually via the
+  Forgejo admin API:
+  `PUT /api/v1/repos/agentydragon/ducktape/collaborators/haku {"permission":"read"}`.
+  Not yet Terraform-managed.
 
 ## Activation runbook
 
@@ -17,12 +35,10 @@ pushed to `ghcr.io/agentydragon/haku-worker` by
    value, created only via the Console — never the API.
 2. **Set the secret**: `sops cluster/k8s/haku/agent-worker/environment-key.sops.yaml`
    and replace the placeholder `environment_key` with the generated value.
-3. **Confirm the env wiring** in `deployment.yaml`: `ANTHROPIC_ENVIRONMENT_ID`
-   and `HAKU_GIT_HOST` (the haku-state Forgejo host). `HAKU_DUCKTAPE_REPO_URL` is
-   the public GitHub repo, cloned anonymously.
+3. **Confirm the env wiring** in `deployment.yaml`: `ANTHROPIC_ENVIRONMENT_ID`,
+   `HAKU_GIT_HOST` (the in-cluster Forgejo Service `forgejo-http.forgejo`), and
+   `HAKU_DUCKTAPE_REPO_URL` (the in-cluster ducktape mirror). Both git clones are
+   authed by the `haku` `.netrc` line for that host.
 4. **Activate**: set `suspend: false` in `flux-kustomization.yaml`, commit, push.
-   Watch the Deployment — being the first systemd container here, verify it boots
-   unprivileged (cgroup-v2 delegation, writable `/run`); tune the pod
-   `securityContext` if systemd needs an adjustment.
 5. **Smoke test**: `ant beta:deployments run --deployment-id depl_011DSrUoXuhoDWJoPyDuePqR`
    (org `ANTHROPIC_API_KEY`, off the worker) and watch the session in the Console.
