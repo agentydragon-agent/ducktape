@@ -1,16 +1,19 @@
-# Full-NixOS container image for the Haku Managed Agents self-hosted worker
-# (Runtime B, haku/runtime/managed_agent). systemd PID 1, declaratively
-# consistent with the rest of the fleet (wyrm2/rugged/nix-rbe-worker).
+# NixOS-closure container image for the Haku Managed Agents self-hosted worker
+# (Runtime B, haku/runtime/managed_agent). We build a full-NixOS rootfs (so the
+# whole tool closure — bash/git/kubectl/ant/psql/… — is consistent with the rest
+# of the fleet) but we do NOT boot it: the pod runs the worker process directly.
 #
-# Runs UNPRIVILEGED: on the cluster's cgroup-v2 nodes (Talos) systemd boots as
-# PID 1 in an ordinary non-root container — no --privileged, no extra caps. k8s
-# supervises the pod; systemd here just runs the one worker unit and gives it
-# journald + Restart. The real fence is the haku-sandbox perimeter (haku SA +
-# RBAC, mitmproxy egress), not anything inside the container.
+# Runs UNPRIVILEGED and as NON-ROOT: k8s execs `/sw/bin/haku-worker-run` (the
+# wrapper below, on the stable system-path) as uid 1000 (`haku`) with all caps
+# dropped. There is no systemd, no `/init`, no NixOS activation — booting systemd
+# PID 1 in an unprivileged container fails to mount the API filesystems
+# (/proc, /dev, /run …), and we don't need it: the closure runs fine on its own,
+# and k8s already supplies supervision (restartPolicy) and log capture. The real
+# fence is the haku-sandbox perimeter (haku SA + RBAC, mitmproxy egress).
 #
 # Build: nix build .#haku-worker-image   (flake emits an uncompressed rootfs tar)
 # Load:  docker import result/tarball/*.tar haku-worker
-# Run:   docker run --rm haku-worker /init      (k8s: command: ["/init"])
+# Run:   docker run --rm --user 1000 haku-worker /sw/bin/haku-worker-run
 {
   modulesPath,
   pkgs,
@@ -51,6 +54,16 @@ let
     install -Dm755 ${./entrypoint.sh} $out/bin/haku-entrypoint
     patchShebangs $out/bin/haku-entrypoint
   '';
+
+  # The pod's entry process. A thin wrapper that puts the worker tool closure on
+  # PATH (so the image doesn't depend on the container PATH) and execs the
+  # entrypoint. Added to systemPackages below, so it lands at the stable path
+  # `/sw/bin/haku-worker-run` — what the Deployment's `command` invokes.
+  haku-worker-run = pkgs.writeShellApplication {
+    name = "haku-worker-run";
+    runtimeInputs = workerTools;
+    text = ''exec ${entrypoint}/bin/haku-entrypoint "$@"'';
+  };
 in
 {
   imports = [ (modulesPath + "/virtualisation/docker-image.nix") ];
@@ -59,8 +72,16 @@ in
   networking.nftables.enable = false;
   nixpkgs.config.allowUnfree = true; # anthropic-cli is unfree
 
-  # Non-root agent user (uid 1000). Set the pod's fsGroup to its primary group
-  # so a /workspace emptyDir mount stays writable.
+  # Non-root agent user (uid 1000). The pod runs the worker as this uid via
+  # securityContext.runAsUser. createHome gives a writable /home/haku in the
+  # image for the entrypoint's ~/.netrc and git config. fsGroup on the pod (gid
+  # 100, haku's primary `users` group) keeps the /workspace emptyDir writable.
+  #
+  # No systemd unit: the worker's env (ANTHROPIC_*/HAKU_* from the Deployment,
+  # plus the HTTP(S)_PROXY/SSL_CERT_FILE that the haku-sandbox Kyverno policy
+  # injects for mitmproxy egress) lands directly in the entry process's
+  # environment — no ImportEnvironment indirection needed. k8s gives us restart
+  # and log capture.
   users.users.haku = {
     isNormalUser = true;
     uid = 1000;
@@ -68,44 +89,8 @@ in
     createHome = true;
   };
 
-  # The worker unit: clone ducktape + haku-state, then long-poll Anthropic's
-  # self-hosted work queue (ant beta:worker poll). entrypoint.sh holds the body.
-  systemd.services.haku-worker = {
-    description = "Haku Managed Agents self-hosted worker";
-    wantedBy = [ "multi-user.target" ];
-    path = workerTools;
-    serviceConfig = {
-      Type = "exec";
-      User = "haku";
-      WorkingDirectory = "/workspace";
-      ExecStart = "${entrypoint}/bin/haku-entrypoint";
-      Restart = "always";
-      RestartSec = 5;
-      # The worker's env arrives on the CONTAINER (PID 1 = systemd): the operator
-      # sets the ANTHROPIC_*/HAKU_* vars (envFrom secret/configMap), and the
-      # haku-sandbox Kyverno policy (inject-haku-mitmproxy) injects the egress
-      # proxy + its CA bundle (HTTP(S)_PROXY/NO_PROXY, SSL_CERT_FILE=/mitmproxy-ca/…
-      # and the CURL/REQUESTS/NODE variants). ImportEnvironment lifts all of them
-      # from PID 1's environment into this unit (systemd >= 254; NixOS 25.11 ships
-      # newer) — without the proxy/CA imports the worker wouldn't trust the
-      # mitmproxy CA and every proxied HTTPS call would fail. EnvironmentFile is
-      # an optional fallback: mount a secret as an env file.
-      ImportEnvironment =
-        "ANTHROPIC_ENVIRONMENT_ID ANTHROPIC_ENVIRONMENT_KEY "
-        + "HAKU_DUCKTAPE_REPO_URL HAKU_STATE_REPO_URL "
-        + "HAKU_GIT_HOST HAKU_GIT_USERNAME HAKU_GIT_PASSWORD "
-        + "HTTP_PROXY HTTPS_PROXY NO_PROXY "
-        + "SSL_CERT_FILE CURL_CA_BUNDLE REQUESTS_CA_BUNDLE NODE_EXTRA_CA_CERTS";
-      EnvironmentFile = "-/etc/haku-worker/env";
-    };
-  };
-
-  # /workspace: the git clones + agent workdir, writable by haku. In k8s this is
-  # normally an emptyDir (with the pod fsGroup above the mount is group-writable).
-  systemd.tmpfiles.rules = [ "d /workspace 0750 haku users -" ];
-
   security.pki.certificateFiles = [ "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
-  environment.systemPackages = workerTools;
+  environment.systemPackages = workerTools ++ [ haku-worker-run ];
 
   system.stateVersion = "25.11";
 }
