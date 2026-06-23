@@ -1,0 +1,62 @@
+Z = 2995.0
+then focus
+at Z = 2997.0, almost touches the tool head!
+-> moving to Z = 2996 and running it.
+then move 4 mm up (
+
+
+2996.0 = where I calibrated with the 9mm spacer.
+starting at 2992.0
+-> going up to +6
+
+best line is at 4.8
+  -> that would be 2996.8...
+
+22.77 mm distance from tool head to wood, at H=2992.0
+spacer touches the tool head at 2996.1 mm = distance of 8.64 mm
+-> this was actual delta 14.13 mm, but laser reported 4.1 mm... -> miscalibrated about 3.446x !!
+
+-> if I want to go up by 0.64 mm, I need to move it by nominal 0.2
+
+bed up 1.1 mm down each time
+
+8.66 / 3.44 = 
+
+-2.3mm per pass
+2 passes
+
+Z offset: 0.6 mm => -0.2 nominal
+distance is 8 mm from tool head = 2.32 nominal
+
+thickness of materialis about 8.6 mm, so that's about 2.5 nominal
+so i'd want to go down by half the material, that would be about -1.25
+
+
+if i want to go full, that would be about -0.8 nominal per step
+
+2994.2 = position of bed at calibration point
+
+URL:
+https://boxes.hackerspace-bamberg.de/UniversalBox?FingerJoint_style=rectangular&FingerJoint_surroundingspaces=2.0&FingerJoint_bottom_lip=0.0&FingerJoint_edge_width=1.0&FingerJoint_extra_length=0.06&FingerJoint_finger=2.0&FingerJoint_play=0.0&FingerJoint_space=2.0&FingerJoint_width=1.0&Stackable_angle=60&Stackable_bottom_stabilizers=0.0&Stackable_height=2.0&Stackable_holedistance=1.0&Stackable_width=4.0&Hinge_grip_percentage=0&Hinge_outset=0&Hinge_outset=1&Hinge_pinwidth=0.5&Hinge_axle=2.0&Hinge_grip_length=0&Hinge_hingestrength=1&CabinetHinge_bore=3.2&CabinetHinge_eyes_per_hinge=5&CabinetHinge_hinges=2&CabinetHinge_style=inside&CabinetHinge_eye=1.5&CabinetHinge_play=0.05&CabinetHinge_spacing=2.0&SlideOnLid_hole_width=0&SlideOnLid_second_pin=0&SlideOnLid_second_pin=1&SlideOnLid_spring=both&SlideOnLid_style=rectangular&SlideOnLid_surroundingspaces=2.0&SlideOnLid_bottom_lip=0.0&SlideOnLid_edge_width=1.0&SlideOnLid_extra_length=0.0&SlideOnLid_finger=3.0&SlideOnLid_play=0.05&SlideOnLid_space=2.0&SlideOnLid_width=1.0&Click_angle=5.0&Click_bottom_radius=0.1&Click_depth=3.0&RoundedTriangleEdge_height=50.0&RoundedTriangleEdge_r_hole=2.0&RoundedTriangleEdge_radius=30.0&RoundedTriangleEdge_outset=1.0&Mounting_d_head=6.5&Mounting_d_shaft=3.0&Mounting_margin=0.125&Mounting_num=2&Mounting_side=back&Mounting_style=straight+edge%2C+within&HandleEdge_height=20.0&HandleEdge_hole_height=75.0&HandleEdge_hole_width=40%3A40&HandleEdge_on_sides=0&HandleEdge_on_sides=1&HandleEdge_radius=10.0&HandleEdge_outset=1.0&Flex_stretch=1.05&Flex_connection=1.0&Flex_distance=0.5&Flex_width=5.0&Lid_handle=none&Lid_style=none&Lid_handle_height=8.0&Lid_height=4.0&Lid_play=0.1&top_edge=e&bottom_edge=h&x=396&y=285&h=223&outside=0&outside=1&vertical_edges=finger+joints&thickness=8.66&burn=0&format=lbrn2&labels=0&labels=1&reference=0&tabs=0.0&qr_code=0&inner_corners=loop&spacing=0.5&debug=0&language=en&render=0
+
+31x10 + 27x36 inches
+
+
+parameters of first failed drawer were:
+Boxes.py, Abox:
+- 0.06 extra length of fingers for filing
+- outer dimensions
+- X=396 (outer width), Y=285 (outer depth), H = 223 (outer height).
+burn 0 (set in Lightburn to Kerf offset = 0.210 mm
+Settings in Lightburn: 12 mm/s, 31-33% power, 3 passes, -0.1 Z initial, -0.8 Z per pass.
+But we'll need more burn. Setting to 11 mm/s. It was kinda hard getting some of those out.
+Had to use a chisel.
+
+Let's also remove the longer fingers, that would require sanding them off which I won't do, with the decorative fronts.
+
+-----
+
+2026-02-24:
+
+Let's do 4 passes.
+
