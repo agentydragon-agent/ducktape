@@ -10,13 +10,6 @@ pushed to `ghcr.io/agentydragon/haku-worker` by
 `.github/workflows/haku-worker-image.yml`; Flux tracks the tag via the
 `haku-worker` ImagePolicy.
 
-## Shipped suspended
-
-`flux-kustomization.yaml` has `suspend: true`. It is the first systemd-PID1 pod
-in the cluster (runs as root PID 1, unprivileged; the worker process drops to
-non-root `haku` via the systemd unit), and it can't authenticate until the
-environment key exists. Nothing deploys until the operator activates it.
-
 ## Activation runbook
 
 1. **Generate the environment key** in the Console (Environments →

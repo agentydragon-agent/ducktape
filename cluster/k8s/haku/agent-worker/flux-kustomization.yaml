@@ -4,11 +4,7 @@ metadata:
   name: haku-agent-worker
   namespace: flux-system
 spec:
-  # Shipped SUSPENDED: this is the first systemd-PID1 pod in the cluster and the
-  # worker can't authenticate until the operator generates the environment key
-  # (see environment-key.sops.yaml). Activate it with the runbook in README.md:
-  # generate + sops the env key, then flip `suspend: false`.
-  suspend: true
+  suspend: false
   interval: 10m
   retryInterval: 1m
   timeout: 5m
