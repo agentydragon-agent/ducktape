@@ -8,8 +8,8 @@
 # journald + Restart. The real fence is the haku-sandbox perimeter (haku SA +
 # RBAC, mitmproxy egress), not anything inside the container.
 #
-# Build: nix build .#haku-worker-image
-# Load:  docker import result/tarball/*.tar.xz haku-worker
+# Build: nix build .#haku-worker-image   (flake emits an uncompressed rootfs tar)
+# Load:  docker import result/tarball/*.tar haku-worker
 # Run:   docker run --rm haku-worker /init      (k8s: command: ["/init"])
 {
   modulesPath,

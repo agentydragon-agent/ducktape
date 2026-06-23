@@ -417,8 +417,17 @@
           # Full-NixOS container image for the Haku Managed Agents self-hosted
           # worker (Runtime B, haku/runtime/managed_agent).
           # Build: nix build .#haku-worker-image
-          # Load:  docker import result/tarball/*.tar.xz haku-worker
-          haku-worker-image = self.nixosConfigurations.haku-worker.config.system.build.tarball;
+          # Load:  docker import result/tarball/*.tar haku-worker
+          # Emit an UNCOMPRESSED rootfs tar: the CI step `podman import`s it and
+          # compresses the layer once (gzip). The default `pixz -t` xz pass would
+          # just be decompressed and re-gzipped — wasted work — and importing the
+          # `.tar.xz` directly yields an inconsistent layer the node rejects with
+          # "wrong diff id calculated on extraction".
+          haku-worker-image = self.nixosConfigurations.haku-worker.config.system.build.tarball.override {
+            compressCommand = "cat";
+            compressionExtension = "";
+            extraInputs = [ ];
+          };
           # Pre-built UEFI qcow2 VM images for Proxmox deployment.
           # Build: nix build .#wyrm2-image
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
