@@ -28,6 +28,7 @@ later is the one thing that would reintroduce the SDK-version question.
 | `haku.deployment.yaml`  | scheduled-deployment wake trigger                                | control plane |
 | `provision.sh`          | one-shot: create environment/agent/vault/deployment via `ant`    | operator / CI |
 | `entrypoint.sh`         | clone ducktape + haku-state, then `ant beta:worker poll`         | `haku-worker` |
+| `nixos.nix`             | full-NixOS worker image (`nix build .#haku-worker-image`)        | CI / build    |
 
 ## Trust split — keep the org key off the worker
 
@@ -38,24 +39,33 @@ later is the one thing that would reintroduce the SDK-version question.
   org-scoped `ANTHROPIC_API_KEY`, run from CI / the operator laptop — **never**
   on the worker host.
 
-## Worker image (CI-only build)
+## Worker image (`nix build .#haku-worker-image`)
 
-A debian image with `bash`, `git`, `kubectl`, `postgresql-client`, `curl`,
-`ca-certificates`, `fastmcp`, and the **`ant` CLI** (Go binary from
-`github.com/anthropics/anthropic-cli/releases`), entrypoint `entrypoint.sh`.
-Built on CI (apt mirrors 403 in the Claude-web sandbox), pushed to GHCR, pinned
-by Flux — the standard <../../../cluster/docs/container-images.md> path. The
-fixed `ant` toolset is `bash/read/write/edit/glob/grep`; Haku reaches Plaid
-(`psql`), Google (`curl`), and the cluster (`kubectl`, in-cluster `haku` SA)
-through `bash`. Tana is a native `mcp_toolset` (Anthropic-side, vault auth).
+A full-NixOS container image (`nixos.nix`, systemd PID 1 — declaratively
+consistent with the rest of the fleet) carrying `bash`, `git`, `kubectl`,
+`postgresql` (`psql`), `curl`, `jq`, `cacert`, `fastmcp`, and the **`ant` CLI**
+(the `anthropic-cli` nix package). The `haku-worker` systemd unit runs
+`entrypoint.sh` as the non-root `haku` user. Build the rootfs tarball with
+`nix build .#haku-worker-image`; CI imports it (`podman import … --change 'CMD
+["/init"]'`) and pushes to GHCR, pinned by Flux — see
+<../../../cluster/docs/container-images.md>.
 
-## k8s wiring — operator-owned (follow-up)
+Runs **unprivileged** on the cluster's cgroup-v2 (Talos) nodes — k8s boots it
+with `command: ["/init"]`; no `--privileged`, no extra caps. The fixed `ant`
+toolset is `bash/read/write/edit/glob/grep`; Haku reaches Plaid (`psql`),
+Google (`curl`), and the cluster (`kubectl`, in-cluster `haku` SA) through
+`bash`. Tana is a native `mcp_toolset` (Anthropic-side, vault auth).
 
-The `haku-worker` Deployment, the `ANTHROPIC_ENVIRONMENT_KEY` secret, and the
-clone/git env live under `cluster/k8s/…/haku/` — see
-<../../plans/managed_agents.md> § "k8s wiring". The worker reuses Haku's existing
-`haku-sandbox` perimeter (`haku` SA + RBAC, `haku-mitmproxy` egress,
-ResourceQuota); none of it relies on agent restraint.
+## k8s wiring
+
+The `haku-worker` Deployment, its `haku-worker` ServiceAccount (bound to
+`haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret stub, and the
+clone/git env live in <../../../cluster/k8s/haku/agent-worker/README.md> —
+shipped **suspended** (it's the first systemd-PID1 pod in the cluster and needs
+an operator-generated environment key; that dir's README is the activation
+runbook). The worker reuses Haku's `haku-sandbox` perimeter (`haku-sandbox-admin`
+RBAC, `haku-mitmproxy` egress + CA injection, ResourceQuota); none of it relies
+on agent restraint.
 
 ## Bring-up
 
@@ -70,6 +80,12 @@ ant beta:deployments run --deployment-id "$DEPL_ID"   # test one run, watch in C
 
 `ANTHROPIC_ENVIRONMENT_ID`, `ANTHROPIC_ENVIRONMENT_KEY`, `HAKU_DUCKTAPE_REPO_URL`,
 `HAKU_STATE_REPO_URL`, `HAKU_GIT_HOST`, `HAKU_GIT_USERNAME`, `HAKU_GIT_PASSWORD`.
+
+Set these on the pod (`envFrom` a Secret/ConfigMap); systemd PID 1 lifts them
+into the `haku-worker` unit via `ImportEnvironment=` (fallback: mount a Secret as
+an env file at `/etc/haku-worker/env`). Set the pod `fsGroup` to the `haku` gid
+so the `/workspace` emptyDir is writable, and layer the `haku-mitmproxy` CA into
+`/etc/ssl/certs/ca-certificates.crt` so HTTPS through the proxy validates.
 
 Beta-surface field/flag names (`agent_toolset_20260401`, `vault_ids`, the
 deployment schema) follow the `ant` docs as of 2026-06 — verify with

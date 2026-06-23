@@ -72,40 +72,44 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
   `kubectl_sandbox_fixed_groups` `else` default with an explicit SA→group map
   once the claude-sandbox JWT path has soaked (`tf/gitops/agent-machine-access`).
 
-## Managed Agents runtime (Runtime B) — remaining to go live
+## Managed Agents runtime (Runtime B) — operator activation to go live
 
-Runtime B (`runtime/managed_agent/`) is built and its control plane is
+Runtime B (`runtime/managed_agent/`) is built end-to-end and its control plane is
 provisioned (environment `env_015uqL9WAMSDytQEWWmLG9zF`, agent, vault +
 `tana-mcp-ro` credential, scheduled deployment `depl_011DSrUoXuhoDWJoPyDuePqR`;
-full IDs recorded on #2438). The worker is not yet deployed. Remaining:
+full IDs recorded on #2438). PR #2442 adds the worker image build+push and the
+k8s manifests (`cluster/k8s/haku/agent-worker/`, shipped **suspended**). What
+remains is operator activation (runbook in that dir's README):
 
-- **`haku-worker` Deployment** in `haku-sandbox`
-  (`cluster/k8s/haku/agent-worker/`, operator-owned): the worker image,
-  `serviceAccountName: haku`, non-root, behind `haku-mitmproxy`; env
-  `ANTHROPIC_ENVIRONMENT_ID` (the `env_…` above) + `ANTHROPIC_ENVIRONMENT_KEY`
-  and the `HAKU_{DUCKTAPE_REPO_URL,STATE_REPO_URL,GIT_HOST,GIT_USERNAME,GIT_PASSWORD}`
-  clone/push env (source creds — Plaid, Google, git — already reflected into
-  `haku-sandbox` from v0).
-- **`ANTHROPIC_ENVIRONMENT_KEY` secret** — generate in Console (Environments →
-  `haku-selfhosted` → "Generate environment key"), SOPS-encrypt under
-  `cluster/k8s/haku/…` to the **cluster/Flux** age key (not the `haku` key), Flux
-  → secret.
-- **Worker image** (CI build) — `bash`/`git`/`kubectl`/`postgresql-client`/`curl`/
-  `fastmcp` + the `ant` CLI. Now that `ant` is packaged in nix (`anthropic-cli`),
-  prefer reusing the `.#agent-haku` closure + `ant` over a hand-rolled apt image.
+- **Generate the environment key** in the Console (Environments →
+  `haku-selfhosted` → "Generate environment key") and `sops`
+  `cluster/k8s/haku/agent-worker/environment-key.sops.yaml` to the real value
+  (placeholder today, encrypted to the cluster/Flux age key).
+- **Activate + validate**: flip `suspend: false` on the Kustomization and watch
+  the Deployment — first systemd-PID1 pod in the cluster, so confirm it boots
+  unprivileged (cgroup-v2 delegation, writable `/run`) and tune the pod
+  `securityContext` if needed.
 - **Smoke test** — `ant beta:deployments run --deployment-id depl_011DSrUoXuhoDWJoPyDuePqR`,
   watch in the Console.
 
 Settled (not blockers):
 
+- **Image build + push** — `nix build .#haku-worker-image` (full-NixOS,
+  `runtime/managed_agent/nixos.nix`) → `.github/workflows/haku-worker-image.yml`
+  imports + pushes to `ghcr.io/agentydragon/haku-worker`; Flux tracks the tag via
+  the `haku-worker` ImagePolicy.
 - **Egress** — `api.anthropic.com` is on the `haku-mitmproxy` allowlist
   (`cluster/k8s/agents/haku-mitmproxy/cnp-haku-cloud-api-egress.yaml`); the worker
   reaches the work queue through the TLS-terminating proxy and trusts its CA via
-  the existing inject policy.
-- **SOPS identity** — the `&haku` age key already exists, but the in-cluster
-  worker needs no `SOPS_AGE_KEY`: it uses the `haku` ServiceAccount for `kubectl`
-  and reads creds from k8s secrets (only the web home decrypts the
-  public-`kubeapi` JWT via SOPS).
+  the inject policy (imported into the systemd unit).
+- **SOPS identity** — the in-cluster worker needs no `SOPS_AGE_KEY`: it uses its
+  `haku-worker` ServiceAccount for `kubectl` and reads creds from k8s secrets
+  (only the web home decrypts the public-`kubeapi` JWT via SOPS).
+- **Git sources** — haku-state on the in-cluster Forgejo
+  (`git.allegedly.works/haku/haku-state`, single `.netrc` via `HAKU_GIT_HOST` +
+  the `haku-state-git-write` creds); ducktape on public GitHub (anonymous,
+  read-only) — it isn't mirrored to the cluster Forgejo yet (that migration is
+  the "Cluster Forgejo repos" item above).
 
 ## Later (post-v0)
 
