@@ -427,6 +427,20 @@
             compressCommand = "cat";
             compressionExtension = "";
             extraInputs = [ ];
+            # The agent toolset's `bash` tool execs `/bin/bash` at that literal
+            # path (PATH-independent). NixOS activation would create it, but we
+            # run the closure directly without booting, so bake /bin/{bash,sh}
+            # into the rootfs here (-> the system-path bash at the stable /sw).
+            # extraCommands REPLACES the docker-container profile's value (and
+            # must be an executable script, not a string), so the profile's /etc
+            # + /proc/sys/dev fixups are re-applied here too.
+            extraCommands = self.nixosConfigurations.haku-worker.pkgs.writeScript "haku-worker-tarball-extra" ''
+              rm etc
+              mkdir -p proc sys dev etc bin
+              chmod u+w bin
+              ln -sf /sw/bin/bash bin/bash
+              ln -sf /sw/bin/sh bin/sh
+            '';
           };
           # Pre-built UEFI qcow2 VM images for Proxmox deployment.
           # Build: nix build .#wyrm2-image
