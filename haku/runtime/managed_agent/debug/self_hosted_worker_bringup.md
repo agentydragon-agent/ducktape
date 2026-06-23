@@ -52,8 +52,16 @@ code) → `is_error=false`, empty text → 400 → deadlock. So it was a real
 empty-output command, masked by the agent's `2>/dev/null | head`.
 
 - Present in `ant` **1.12.1** (latest release, 2026-06-10) — no upgrade fixes it.
-  **Report to Anthropic** (precise ask: `textResult`/worker must send a
-  placeholder like `(no output)` for empty results).
+- **Upstream tracking issue:
+  [anthropics/claude-code#65395](https://github.com/anthropics/claude-code/issues/65395)**
+  — an accurate report of this exact bug (filed against `ant` v1.9.0; notes it
+  fires on any silently-succeeding command — `mkdir`/`touch`/`cd`/`export`). It
+  was **auto-closed by a bot as a duplicate of the unrelated
+  [#29447](https://github.com/anthropics/claude-code/issues/29447)** (a
+  compaction `tool_use`/`tool_result` mismatch — a different 400), so it is
+  effectively un-triaged and still unfixed on 1.12.1. Worth a comment with our
+  1.12.1 / sdk-v1.50.1 evidence + the fix ask: `textResult`/the worker must send
+  a placeholder like `(no output)` for empty results.
 - Diagnose by turning on `ANT_DEBUG=1` (worker Deployment env → global `ant
 --debug`); the `tool result send hit permanent 4xx` line is the tell. Without
   it the worker only logs `claimed work`.
@@ -153,9 +161,12 @@ relative-path prompt, `--shallow-since="1 week ago"`). Agent updated to v2
 - Deploy + verify the `--shallow-since` image (commit `1ac0930196`) — confirm
   base-sync's `git log <pin>..HEAD` now returns non-empty and the session
   completes (commits `haku-state`).
-- **Empty-result→400 deadlock is unfixed** (upstream `ant` gap). Mitigated by the
-  week-of-history clone; still bites any empty-output tool call. **Report to
-  Anthropic.**
+- **Empty-result→400 deadlock is unfixed** (upstream `ant`/SDK gap). Mitigated by
+  the week-of-history clone; still bites any empty-output tool call. Already
+  reported as
+  [claude-code#65395](https://github.com/anthropics/claude-code/issues/65395) but
+  wrongly bot-closed as a dup of unrelated #29447 — **comment with our 1.12.1
+  evidence to get it re-triaged** (or open a fresh issue referencing it).
 - Manual, non-turnkey prereqs: bump the Forgejo `agentydragon/ducktape` mirror;
   keep the `haku` read-collaborator grant. (TODO: Terraform-manage both.)
 - Revert the temporary settings above once stable.
