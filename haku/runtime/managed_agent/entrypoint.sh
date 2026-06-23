@@ -14,19 +14,23 @@ umask 077
 printf 'machine %s login %s password %s\n' \
   "$HAKU_GIT_HOST" "$HAKU_GIT_USERNAME" "$HAKU_GIT_PASSWORD" >"$HOME/.netrc"
 
-clone_or_pull() { # <url> <dest>
+clone_or_pull() { # <url> <dest> [extra git clone flags...]
   if [ -d "$2/.git" ]; then
     git -C "$2" pull --ff-only
   else
-    git clone --depth 1 "$1" "$2"
+    git clone "${@:3}" "$1" "$2"
   fi
 }
 
 # Behavior: ducktape's haku/base + haku/run.md, read at runtime (live-editable —
-# no image rebuild to change the manual).
-clone_or_pull "$HAKU_DUCKTAPE_REPO_URL" "$ducktape_dir"
+# no image rebuild to change the manual). NOT --depth 1: the run procedure's
+# base-sync diffs HEAD against the last-reconciled commit (`git log <pin>..HEAD`),
+# which needs that commit present. A week of history covers the wake cadence;
+# a `git log` that reaches past the pin just errors empty (and an empty tool
+# result currently deadlocks the session — ant posts "" and the API 400s it).
+clone_or_pull "$HAKU_DUCKTAPE_REPO_URL" "$ducktape_dir" --shallow-since="1 week ago"
 # Memory + the only write surface.
-clone_or_pull "$HAKU_STATE_REPO_URL" "$state_dir"
+clone_or_pull "$HAKU_STATE_REPO_URL" "$state_dir" --depth 1
 git -C "$state_dir" config user.name haku
 git -C "$state_dir" config user.email haku@allegedly.works
 
