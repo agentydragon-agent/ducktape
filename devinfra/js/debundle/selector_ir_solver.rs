@@ -14,9 +14,9 @@ use std::fmt;
 use analysis::{OwnerId, StatementOrdinal};
 use ascent::ascent;
 use selector_ir::{
-    ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom, SelectorFact,
-    SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget, SelectorTargetId,
-    SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
+    ClaimKind, ClaimOutcome, NodeTerm, OrdinalTerm, OwnerTerm, ResolvedClaim, SelectorAtom,
+    SelectorFact, SelectorFactStore, SelectorProgram, SelectorProgramError, SelectorTarget,
+    SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult, StringTerm, VariableDomain,
 };
 
 fn optional_u32_matches(expected: &Option<u32>, actual: u32) -> bool {
@@ -51,6 +51,7 @@ ascent! {
     relation source_match_candidate(String, usize, String); // selector key, owner, matched binding
     relation ast_kind(u32, String); // AST node, node kind tag
     relation ast_child(u32, u32, u32); // parent, child index, child
+    relation ast_child_count(u32, u32); // node, number of direct AST children
     relation ast_string_literal(u32, String); // node, value
     relation ast_string_wildcard(u32, String); // needle node, wildcard token
     relation ast_number_literal(u32, String); // node, value
@@ -209,6 +210,7 @@ ascent! {
 
     relation required_statement_ordinal_for_owner(usize, usize, usize);
     relation required_ast_kind(usize, usize, String);
+    relation required_ast_child_count(usize, usize, u32);
     relation required_ast_child_parent(usize, usize, u32, u32);
     relation required_ast_child_child(usize, usize, u32, u32);
     relation required_ast_string_literal(usize, usize, String);
@@ -226,6 +228,10 @@ ascent! {
         required_ast_kind(constraint, var, node_kind),
         ast_kind(node, actual),
         if actual == node_kind;
+    node_constraint_support(*constraint, *var, *node) <--
+        required_ast_child_count(constraint, var, count),
+        ast_child_count(node, actual),
+        if actual == count;
     node_constraint_support(*constraint, *var, *parent) <--
         required_ast_child_parent(constraint, var, index, child),
         ast_child(parent, actual_index, actual_child),
@@ -290,6 +296,7 @@ ascent! {
     relation required_ast_child(usize, usize, usize, u32);
     relation required_ast_top_level(usize, usize, usize);
     relation required_owner_top_level_root(usize, usize, usize);
+    relation required_ast_string_literal_var(usize, usize, usize);
 
     relation binary_constraint_edge(usize, usize, usize, usize, usize);
     binary_constraint_edge(*constraint, *left_var, *left_owner, *right_var, *right_owner) <--
@@ -331,6 +338,11 @@ ascent! {
     node_ordinal_constraint_edge(*constraint, *node_var, *node, *ordinal_var, *ordinal) <--
         required_ast_top_level(constraint, node_var, ordinal_var),
         ast_top_level(node, ordinal);
+
+    relation node_string_constraint_edge(usize, usize, u32, usize, String);
+    node_string_constraint_edge(*constraint, *node_var, *node, *string_var, value.clone()) <--
+        required_ast_string_literal_var(constraint, node_var, string_var),
+        ast_string_literal(node, value);
 
     relation owner_node_constraint_edge(usize, usize, usize, usize, u32);
     owner_node_constraint_edge(*constraint, *owner_var, *owner, *node_var, *node) <--
@@ -419,6 +431,9 @@ pub fn solve(
     }
     for (parent, index, child) in &fact_index.ast_children {
         ascent.ast_child.push((*parent, *index, *child));
+    }
+    for (node, count) in &fact_index.ast_child_counts {
+        ascent.ast_child_count.push((*node, *count));
     }
     for (node, value) in &fact_index.ast_string_literals {
         ascent.ast_string_literal.push((*node, value.clone()));
@@ -550,6 +565,9 @@ pub fn solve(
                 constraint.variable.0,
                 node_kind.clone(),
             )),
+            NodeUnaryConstraintKind::ChildCount { count } => ascent
+                .required_ast_child_count
+                .push((constraint.id, constraint.variable.0, *count)),
             NodeUnaryConstraintKind::ChildParent { index, child } => {
                 ascent.required_ast_child_parent.push((
                     constraint.id,
@@ -721,6 +739,17 @@ pub fn solve(
             )),
         }
     }
+    for constraint in &support.node_string_constraints {
+        match constraint.kind {
+            NodeStringConstraintKind::AstStringLiteral => {
+                ascent.required_ast_string_literal_var.push((
+                    constraint.id,
+                    constraint.node.0,
+                    constraint.string.0,
+                ));
+            }
+        }
+    }
     ascent.run();
 
     let unary_supports = group_unary_supports(ascent.constraint_support);
@@ -730,6 +759,7 @@ pub fn solve(
     let owner_ordinal_edges = group_owner_ordinal_edges(ascent.owner_ordinal_constraint_edge);
     let node_node_edges = group_node_node_edges(ascent.node_node_constraint_edge);
     let node_ordinal_edges = group_node_ordinal_edges(ascent.node_ordinal_constraint_edge);
+    let node_string_edges = group_node_string_edges(ascent.node_string_constraint_edge);
     let derived_support = DerivedSupport {
         owner_unary: unary_supports,
         node_unary: node_unary_supports,
@@ -738,6 +768,7 @@ pub fn solve(
         owner_ordinal: owner_ordinal_edges,
         node_node: node_node_edges,
         node_ordinal: node_ordinal_edges,
+        node_string: node_string_edges,
     };
     let candidates = solve_candidate_sets(program, &support, &fact_index, derived_support);
 
@@ -870,11 +901,25 @@ fn group_node_ordinal_edges(
     grouped
 }
 
+fn group_node_string_edges(
+    rows: Vec<(usize, usize, u32, usize, String)>,
+) -> BTreeMap<usize, BTreeSet<(u32, String)>> {
+    let mut grouped = BTreeMap::new();
+    for (constraint, _node_var, node, _string_var, value) in rows {
+        grouped
+            .entry(constraint)
+            .or_insert_with(BTreeSet::new)
+            .insert((node, value));
+    }
+    grouped
+}
+
 #[derive(Debug, Default)]
 struct CandidateSets {
     owners: BTreeMap<SelectorVariableId, BTreeSet<OwnerId>>,
     nodes: BTreeMap<SelectorVariableId, BTreeSet<u32>>,
     ordinals: BTreeMap<SelectorVariableId, BTreeSet<StatementOrdinal>>,
+    strings: BTreeMap<SelectorVariableId, BTreeSet<String>>,
 }
 
 struct DerivedSupport {
@@ -885,6 +930,7 @@ struct DerivedSupport {
     owner_ordinal: BTreeMap<usize, BTreeSet<(OwnerId, StatementOrdinal)>>,
     node_node: BTreeMap<usize, BTreeSet<(u32, u32)>>,
     node_ordinal: BTreeMap<usize, BTreeSet<(u32, StatementOrdinal)>>,
+    node_string: BTreeMap<usize, BTreeSet<(u32, String)>>,
 }
 
 fn solve_candidate_sets(
@@ -911,7 +957,11 @@ fn solve_candidate_sets(
                     .ordinals
                     .insert(variable.id, facts.all_statement_ordinals.clone());
             }
-            VariableDomain::String => {}
+            VariableDomain::String => {
+                candidates
+                    .strings
+                    .insert(variable.id, facts.all_strings.clone());
+            }
         }
     }
 
@@ -1074,12 +1124,42 @@ fn solve_candidate_sets(
                 changed = true;
             }
         }
+        for constraint in &support.node_string_constraints {
+            let edges = derived
+                .node_string
+                .get(&constraint.id)
+                .cloned()
+                .unwrap_or_default();
+            let node_current = candidates
+                .nodes
+                .get(&constraint.node)
+                .cloned()
+                .unwrap_or_default();
+            let string_current = candidates
+                .strings
+                .get(&constraint.string)
+                .cloned()
+                .unwrap_or_default();
+            let (node_allowed, string_allowed): (BTreeSet<_>, BTreeSet<_>) = edges
+                .iter()
+                .filter(|(node, value)| {
+                    node_current.contains(node) && string_current.contains(value)
+                })
+                .map(|(node, value)| (*node, value.clone()))
+                .unzip();
+            if intersect_candidate_set(&mut candidates.nodes, constraint.node, node_allowed) {
+                changed = true;
+            }
+            if intersect_candidate_set(&mut candidates.strings, constraint.string, string_allowed) {
+                changed = true;
+            }
+        }
     }
 
     candidates
 }
 
-fn intersect_constraints<T: Copy + Ord>(
+fn intersect_constraints<T: Clone + Ord>(
     candidates: &mut BTreeMap<SelectorVariableId, BTreeSet<T>>,
     variable: SelectorVariableId,
     constraints: &[usize],
@@ -1089,7 +1169,7 @@ fn intersect_constraints<T: Copy + Ord>(
     for constraint in constraints {
         let supported = supports.get(constraint).cloned().unwrap_or_default();
         intersection = Some(match intersection {
-            Some(existing) => existing.intersection(&supported).copied().collect(),
+            Some(existing) => existing.intersection(&supported).cloned().collect(),
             None => supported,
         });
     }
@@ -1098,13 +1178,13 @@ fn intersect_constraints<T: Copy + Ord>(
     }
 }
 
-fn intersect_candidate_set<T: Copy + Ord>(
+fn intersect_candidate_set<T: Clone + Ord>(
     candidates: &mut BTreeMap<SelectorVariableId, BTreeSet<T>>,
     variable: SelectorVariableId,
     allowed: BTreeSet<T>,
 ) -> bool {
     let current = candidates.entry(variable).or_default();
-    let next = current.intersection(&allowed).copied().collect();
+    let next = current.intersection(&allowed).cloned().collect();
     if *current == next {
         return false;
     }
@@ -1168,20 +1248,28 @@ fn resolved_claim(
     support: &ProgramSupport,
 ) -> Option<ResolvedClaim> {
     let statement_ordinal = facts.statement_ordinal_by_owner.get(&owner).copied()?;
+    let binding = support.binding_constraint_for(target.owner).or_else(|| {
+        support
+            .source_match_selector_for(target.owner)
+            .and_then(|selector_key| facts.source_match_binding_for_owner(&selector_key, owner))
+            .or_else(|| {
+                facts
+                    .single_binding_for_owner(owner)
+                    .map(ToString::to_string)
+            })
+    });
+    if matches!(
+        target.claim,
+        ClaimKind::Binding { .. } | ClaimKind::BindingGroupMember { .. }
+    ) && binding.is_none()
+    {
+        return None;
+    }
     Some(ResolvedClaim {
         chunk_id: target.chunk_id,
         owner,
         statement_ordinal,
-        binding: support.binding_constraint_for(target.owner).or_else(|| {
-            support
-                .source_match_selector_for(target.owner)
-                .and_then(|selector_key| facts.source_match_binding_for_owner(&selector_key, owner))
-                .or_else(|| {
-                    facts
-                        .single_binding_for_owner(owner)
-                        .map(ToString::to_string)
-                })
-        }),
+        binding,
         provenance: Vec::new(),
     })
 }
@@ -1226,6 +1314,7 @@ struct ProgramSupport {
     owner_ordinal_constraints: Vec<OwnerOrdinalConstraint>,
     node_node_constraints: Vec<NodeNodeConstraint>,
     node_ordinal_constraints: Vec<NodeOrdinalConstraint>,
+    node_string_constraints: Vec<NodeStringConstraint>,
     unary_constraints_by_var: BTreeMap<SelectorVariableId, Vec<usize>>,
     node_unary_constraints_by_var: BTreeMap<SelectorVariableId, Vec<usize>>,
     ordinal_unary_constraints_by_var: BTreeMap<SelectorVariableId, Vec<usize>>,
@@ -1304,6 +1393,13 @@ impl ProgramSupport {
                         .unsupported_atoms
                         .push("unsupported constant-only ast_kind assertion".to_string()),
                 },
+                SelectorAtom::AstChildCount { node, count } => match node {
+                    NodeTerm::Var { id } => support
+                        .add_node_unary(*id, NodeUnaryConstraintKind::ChildCount { count: *count }),
+                    NodeTerm::Const { .. } => support
+                        .unsupported_atoms
+                        .push("unsupported constant-only ast_child_count assertion".to_string()),
+                },
                 SelectorAtom::AstChild {
                     parent,
                     index,
@@ -1318,6 +1414,14 @@ impl ProgramSupport {
                         value: value.clone(),
                     },
                     "ast_string_literal",
+                ),
+                SelectorAtom::AstStringLiteral {
+                    node: NodeTerm::Var { id: node },
+                    value: StringTerm::Var { id: string },
+                } => support.add_node_string(
+                    *node,
+                    *string,
+                    NodeStringConstraintKind::AstStringLiteral,
                 ),
                 SelectorAtom::AstNumberLiteral {
                     node,
@@ -1646,6 +1750,24 @@ impl ProgramSupport {
         self.constraints_by_var.entry(ordinal).or_default().push(id);
     }
 
+    fn add_node_string(
+        &mut self,
+        node: SelectorVariableId,
+        string: SelectorVariableId,
+        kind: NodeStringConstraintKind,
+    ) {
+        let id = self.next_constraint_id;
+        self.next_constraint_id += 1;
+        self.node_string_constraints.push(NodeStringConstraint {
+            id,
+            node,
+            string,
+            kind,
+        });
+        self.constraints_by_var.entry(node).or_default().push(id);
+        self.constraints_by_var.entry(string).or_default().push(id);
+    }
+
     fn add_owner_statement_ordinal(&mut self, owner: &OwnerTerm, ordinal: &OrdinalTerm) {
         match (owner, ordinal) {
             (OwnerTerm::Var { id: owner }, OrdinalTerm::Const { ordinal }) => self.add_unary(
@@ -1835,6 +1957,7 @@ struct NodeUnaryConstraint {
 #[derive(Debug, Clone)]
 enum NodeUnaryConstraintKind {
     Kind { node_kind: String },
+    ChildCount { count: u32 },
     ChildParent { index: u32, child: u32 },
     ChildChild { parent: u32, index: u32 },
     StringLiteral { value: String },
@@ -1926,6 +2049,19 @@ enum NodeOrdinalConstraintKind {
     AstTopLevel,
 }
 
+#[derive(Debug, Clone)]
+struct NodeStringConstraint {
+    id: usize,
+    node: SelectorVariableId,
+    string: SelectorVariableId,
+    kind: NodeStringConstraintKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NodeStringConstraintKind {
+    AstStringLiteral,
+}
+
 fn optional_const_string(value: &Option<StringTerm>) -> Option<Option<String>> {
     match value {
         Some(StringTerm::Const { value }) => Some(Some(value.clone())),
@@ -1945,6 +2081,7 @@ fn atom_kind(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerAliasesOwner { .. } => "owner_aliases_owner",
         SelectorAtom::AstKind { .. } => "ast_kind",
         SelectorAtom::AstChild { .. } => "ast_child",
+        SelectorAtom::AstChildCount { .. } => "ast_child_count",
         SelectorAtom::AstStringLiteral { .. } => "ast_string_literal",
         SelectorAtom::AstNumberLiteral { .. } => "ast_number_literal",
         SelectorAtom::AstBoolLiteral { .. } => "ast_bool_literal",
@@ -1972,6 +2109,7 @@ struct FactIndex {
     all_owners: BTreeSet<OwnerId>,
     all_nodes: BTreeSet<u32>,
     all_statement_ordinals: BTreeSet<StatementOrdinal>,
+    all_strings: BTreeSet<String>,
     owner_facts: Vec<(OwnerId, StatementOrdinal, String)>,
     statement_ordinal_by_owner: BTreeMap<OwnerId, StatementOrdinal>,
     owner_by_statement_ordinal: BTreeMap<StatementOrdinal, OwnerId>,
@@ -1989,6 +2127,7 @@ struct FactIndex {
     source_match_candidates: Vec<(String, OwnerId, String)>,
     ast_kinds: Vec<(u32, String)>,
     ast_children: Vec<(u32, u32, u32)>,
+    ast_child_counts: Vec<(u32, u32)>,
     ast_string_literals: Vec<(u32, String)>,
     ast_string_wildcards: Vec<(u32, String)>,
     ast_number_literals: Vec<(u32, String)>,
@@ -2158,6 +2297,7 @@ impl FactIndex {
                 }
                 SelectorFact::AstStringLiteral { node, value, .. } => {
                     index.all_nodes.insert(*node);
+                    index.all_strings.insert(value.clone());
                     index.ast_string_literals.push((*node, value.clone()));
                 }
                 SelectorFact::AstStringWildcard { node, token, .. } => {
@@ -2215,6 +2355,12 @@ impl FactIndex {
                 }
             }
         }
+        let mut child_counts: BTreeMap<u32, u32> =
+            index.all_nodes.iter().map(|node| (*node, 0)).collect();
+        for (parent, _child_index, _child) in &index.ast_children {
+            *child_counts.entry(*parent).or_insert(0) += 1;
+        }
+        index.ast_child_counts = child_counts.into_iter().collect();
         index
     }
 
@@ -2273,15 +2419,15 @@ impl Error for SelectorIrSolverError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::ChunkId;
+    use analysis::{AnalysisHints, ChunkId, analyze_chunk, build_owner_graph};
     use selector_ir::{ClaimKind, ClaimOrigin, VariableDomain};
     use selector_ir_lowering::{
         MemberSelectorLoweringContext, MemberSelectorProgramBuilder, lower_member_selector,
     };
     use spec::{
-        BindingSelector, BindingSourceKind, CrossRefRelation, CrossRefTarget, IntrinsicAliasTarget,
-        MakesDecorateCallTarget, MemberOfModuleTarget, MemberSelectorSpec, PassedToCallTarget,
-        ReadsMemberTarget,
+        AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefRelation,
+        CrossRefTarget, IntrinsicAliasTarget, MakesDecorateCallTarget, MemberOfModuleTarget,
+        MemberSelectorSpec, PassedToCallTarget, ReadsMemberTarget,
     };
 
     fn fact_store() -> SelectorFactStore {
@@ -2353,6 +2499,90 @@ mod tests {
         }
     }
 
+    fn owner_for_binding(facts: &SelectorFactStore, binding: &str) -> OwnerId {
+        facts
+            .facts
+            .iter()
+            .find_map(|fact| match fact {
+                SelectorFact::DeclaredBinding {
+                    owner,
+                    binding: actual,
+                    ..
+                } if actual == binding => Some(*owner),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("binding {binding} should have an owner"))
+    }
+
+    fn statement_ordinal_for_owner(
+        facts: &SelectorFactStore,
+        target_owner: OwnerId,
+    ) -> StatementOrdinal {
+        facts
+            .facts
+            .iter()
+            .find_map(|fact| match fact {
+                SelectorFact::Owner {
+                    owner,
+                    statement_ordinal,
+                    ..
+                } if *owner == target_owner => Some(*statement_ordinal),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("owner {target_owner:?} should have an ordinal"))
+    }
+
+    fn fact_store_from_analyzed_source(source: &str) -> SelectorFactStore {
+        let module = js_ast::with_swc_globals(|| {
+            js_ast::parse_js_module_ast("<selector-ir-solver-test>", source).unwrap()
+        });
+        let analysis = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
+        let owner_graph = build_owner_graph(&analysis.facts).unwrap();
+        let mut facts = SelectorFactStore::default();
+        for node in owner_graph.iter_nodes() {
+            facts.push(SelectorFact::Owner {
+                chunk_id: ChunkId(0),
+                owner: node.id,
+                statement_ordinal: node.statement_ordinal,
+                statement_kind: node.kind.to_string(),
+            });
+            for binding in &node.declared {
+                facts.push(SelectorFact::DeclaredBinding {
+                    chunk_id: ChunkId(0),
+                    owner: node.id,
+                    binding: binding.0.as_str().to_string(),
+                    export_name: None,
+                });
+            }
+        }
+        for edge in owner_graph.iter_edges() {
+            if let Some(binding) = edge.reason.binding() {
+                facts.push(SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: edge.from,
+                    binding: binding.0.as_str().to_string(),
+                    edge_kind: edge.reason.kind().to_string(),
+                });
+            }
+        }
+        for call in chunk_facts::decorate_call_uses(&module) {
+            facts.push(SelectorFact::DecorateCallUse {
+                chunk_id: ChunkId(0),
+                callee: call.callee,
+                class_anchor: call.class_anchor,
+                member: call.member,
+            });
+        }
+        for alias in chunk_facts::intrinsic_alias_uses(&module) {
+            facts.push(SelectorFact::IntrinsicAliasUse {
+                chunk_id: ChunkId(0),
+                binding: alias.binding,
+                property: alias.property,
+            });
+        }
+        facts
+    }
+
     #[test]
     fn solves_lowered_binding_selector_uniquely() {
         let program = lowered_binding("a", None);
@@ -2381,6 +2611,34 @@ mod tests {
             result.outcome_for(SelectorTargetId(0)),
             Some(&ClaimOutcome::NoMatch)
         );
+    }
+
+    #[test]
+    fn binding_claim_without_projectable_binding_is_no_match() {
+        let mut program = SelectorProgram::default();
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            owner_var,
+            "runtime/widgets",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerKind {
+            owner: OwnerTerm::Var { id: owner_var },
+            statement_kind: StringTerm::Const {
+                value: "var_decl".to_string(),
+            },
+        });
+        let facts = SelectorFactStore {
+            facts: vec![owner(1, 1, "var_decl"), declared(1, "a"), declared(1, "b")],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert_eq!(result.outcome_for(target), Some(&ClaimOutcome::NoMatch));
     }
 
     #[test]
@@ -2553,6 +2811,255 @@ mod tests {
                     chunk_id: ChunkId(0),
                     node: 21,
                     value: "b".to_string(),
+                },
+            ],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert_eq!(
+            result.outcome_for(target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(2),
+                    statement_ordinal: StatementOrdinal(2),
+                    binding: Some("b".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn ast_child_count_prunes_structural_overmatches() {
+        let mut program = SelectorProgram::default();
+        let target_owner = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("target.ordinal".to_string()),
+        );
+        let root = program.add_variable(VariableDomain::AstNode, Some("target.root".to_string()));
+        let binding_node =
+            program.add_variable(VariableDomain::AstNode, Some("target.binding".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            target_owner,
+            "runtime/target",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: target_owner },
+            binding: StringTerm::Const {
+                value: "b".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerStatementOrdinal {
+            owner: OwnerTerm::Var { id: target_owner },
+            ordinal: selector_ir::OrdinalTerm::Var { id: ordinal },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: selector_ir::NodeTerm::Var { id: root },
+            ordinal: selector_ir::OrdinalTerm::Var { id: ordinal },
+        });
+        program.add_atom(SelectorAtom::AstChildCount {
+            node: selector_ir::NodeTerm::Var { id: root },
+            count: 1,
+        });
+        program.add_atom(SelectorAtom::AstChild {
+            parent: selector_ir::NodeTerm::Var { id: root },
+            index: 0,
+            child: selector_ir::NodeTerm::Var { id: binding_node },
+        });
+        program.add_atom(SelectorAtom::AstIdentifierName {
+            node: selector_ir::NodeTerm::Var { id: binding_node },
+            value: StringTerm::Const {
+                value: "b".to_string(),
+            },
+        });
+        let facts = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "var_decl"),
+                declared(1, "b"),
+                owner(2, 2, "var_decl"),
+                declared(2, "b"),
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    statement_ordinal: StatementOrdinal(1),
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 10,
+                    index: 0,
+                    child: 11,
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 10,
+                    index: 1,
+                    child: 12,
+                },
+                SelectorFact::AstIdentifierName {
+                    chunk_id: ChunkId(0),
+                    node: 11,
+                    value: "b".to_string(),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    statement_ordinal: StatementOrdinal(2),
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 20,
+                    index: 0,
+                    child: 21,
+                },
+                SelectorFact::AstIdentifierName {
+                    chunk_id: ChunkId(0),
+                    node: 21,
+                    value: "b".to_string(),
+                },
+            ],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        assert_eq!(
+            result.outcome_for(target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(2),
+                    statement_ordinal: StatementOrdinal(2),
+                    binding: Some("b".to_string()),
+                    provenance: Vec::new(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn shared_string_variable_prunes_inconsistent_wildcard_matches() {
+        let mut program = SelectorProgram::default();
+        let target_owner = program.add_variable(VariableDomain::Owner, Some("@Target".to_string()));
+        let ordinal = program.add_variable(
+            VariableDomain::StatementOrdinal,
+            Some("target.ordinal".to_string()),
+        );
+        let root = program.add_variable(VariableDomain::AstNode, Some("target.root".to_string()));
+        let left = program.add_variable(VariableDomain::AstNode, Some("target.left".to_string()));
+        let right = program.add_variable(VariableDomain::AstNode, Some("target.right".to_string()));
+        let wildcard =
+            program.add_variable(VariableDomain::String, Some("target.string".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            target_owner,
+            "runtime/target",
+            ClaimKind::Binding {
+                export_name: Some("Target".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: target_owner },
+            binding: StringTerm::Const {
+                value: "b".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerStatementOrdinal {
+            owner: OwnerTerm::Var { id: target_owner },
+            ordinal: selector_ir::OrdinalTerm::Var { id: ordinal },
+        });
+        program.add_atom(SelectorAtom::AstTopLevel {
+            node: selector_ir::NodeTerm::Var { id: root },
+            ordinal: selector_ir::OrdinalTerm::Var { id: ordinal },
+        });
+        program.add_atom(SelectorAtom::AstChildCount {
+            node: selector_ir::NodeTerm::Var { id: root },
+            count: 2,
+        });
+        program.add_atom(SelectorAtom::AstChild {
+            parent: selector_ir::NodeTerm::Var { id: root },
+            index: 0,
+            child: selector_ir::NodeTerm::Var { id: left },
+        });
+        program.add_atom(SelectorAtom::AstChild {
+            parent: selector_ir::NodeTerm::Var { id: root },
+            index: 1,
+            child: selector_ir::NodeTerm::Var { id: right },
+        });
+        program.add_atom(SelectorAtom::AstStringLiteral {
+            node: selector_ir::NodeTerm::Var { id: left },
+            value: StringTerm::Var { id: wildcard },
+        });
+        program.add_atom(SelectorAtom::AstStringLiteral {
+            node: selector_ir::NodeTerm::Var { id: right },
+            value: StringTerm::Var { id: wildcard },
+        });
+        let facts = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "var_decl"),
+                declared(1, "b"),
+                owner(2, 2, "var_decl"),
+                declared(2, "b"),
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 10,
+                    statement_ordinal: StatementOrdinal(1),
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 10,
+                    index: 0,
+                    child: 11,
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 10,
+                    index: 1,
+                    child: 12,
+                },
+                SelectorFact::AstStringLiteral {
+                    chunk_id: ChunkId(0),
+                    node: 11,
+                    value: "x".to_string(),
+                },
+                SelectorFact::AstStringLiteral {
+                    chunk_id: ChunkId(0),
+                    node: 12,
+                    value: "y".to_string(),
+                },
+                SelectorFact::AstTopLevel {
+                    chunk_id: ChunkId(0),
+                    node: 20,
+                    statement_ordinal: StatementOrdinal(2),
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 20,
+                    index: 0,
+                    child: 21,
+                },
+                SelectorFact::AstChild {
+                    chunk_id: ChunkId(0),
+                    parent: 20,
+                    index: 1,
+                    child: 22,
+                },
+                SelectorFact::AstStringLiteral {
+                    chunk_id: ChunkId(0),
+                    node: 21,
+                    value: "z".to_string(),
+                },
+                SelectorFact::AstStringLiteral {
+                    chunk_id: ChunkId(0),
+                    node: 22,
+                    value: "z".to_string(),
                 },
             ],
         };
@@ -2852,6 +3359,260 @@ mod tests {
             (helper, OwnerId(4)),
             (alias, OwnerId(5)),
             (module_consumer, OwnerId(6)),
+        ] {
+            assert!(
+                matches!(
+                    result.outcome_for(target),
+                    Some(ClaimOutcome::Unique { claim }) if claim.owner == owner
+                ),
+                "target {target:?} should resolve to {owner:?}: {:#?}",
+                result.outcome_for(target)
+            );
+        }
+    }
+
+    #[test]
+    fn solves_intrinsic_alias_chain_when_class_anchor_is_source_match_candidate() {
+        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+            ChunkId(0),
+            "features/widget",
+        ));
+        let define_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "defineProperty".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let descriptor_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "getOwnPropertyDescriptor".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let helper_selector = MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
+            class: "DecoratedClass".to_string(),
+            member: None,
+            kind: None,
+        });
+        let mut class_selector = AnonymousStatementSelector::exact(
+            "const DecoratedClass = class Widget { STMT_LIST; };",
+        );
+        class_selector.target_binding = Some("DecoratedClass".to_string());
+        let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector.clone());
+
+        let define_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "definePropertyAlias",
+                &define_alias_selector,
+            )
+            .unwrap();
+        let descriptor_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "descriptorAlias",
+                &descriptor_alias_selector,
+            )
+            .unwrap();
+        let helper = builder
+            .declare_member_target_in_module("features/widget", "applyDecorators", &helper_selector)
+            .unwrap();
+        let class = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "DecoratedClass",
+                &class_member_selector,
+            )
+            .unwrap();
+        for (export_name, selector) in [
+            ("definePropertyAlias", &define_alias_selector),
+            ("descriptorAlias", &descriptor_alias_selector),
+            ("applyDecorators", &helper_selector),
+            ("DecoratedClass", &class_member_selector),
+        ] {
+            builder
+                .lower_member_constraints_in_module("features/widget", export_name, selector)
+                .unwrap();
+        }
+        let program = builder.into_program().unwrap();
+        let class_owner = program.targets[class.0].owner;
+        let selector_key = program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                selector_ir::SelectorAtom::SourceMatchCandidate {
+                    owner: selector_ir::OwnerTerm::Var { id },
+                    selector_key: selector_ir::StringTerm::Const { value },
+                } if *id == class_owner => Some(value.clone()),
+                _ => None,
+            })
+            .expect("class source_match should lower to a candidate selector key");
+        let facts = SelectorFactStore {
+            facts: vec![
+                owner(1, 1, "var_decl"),
+                declared(1, "defineAlias"),
+                owner(2, 2, "var_decl"),
+                declared(2, "descriptorAlias"),
+                owner(3, 3, "var_decl"),
+                declared(3, "decorateHelper"),
+                owner(4, 4, "var_decl"),
+                declared(4, "targetClass"),
+                SelectorFact::IntrinsicAliasUse {
+                    chunk_id: ChunkId(0),
+                    binding: "defineAlias".to_string(),
+                    property: "defineProperty".to_string(),
+                },
+                SelectorFact::IntrinsicAliasUse {
+                    chunk_id: ChunkId(0),
+                    binding: "descriptorAlias".to_string(),
+                    property: "getOwnPropertyDescriptor".to_string(),
+                },
+                SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(3),
+                    binding: "defineAlias".to_string(),
+                    edge_kind: "eager_use".to_string(),
+                },
+                SelectorFact::OwnerReferencesBinding {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(3),
+                    binding: "descriptorAlias".to_string(),
+                    edge_kind: "eager_use".to_string(),
+                },
+                SelectorFact::DecorateCallUse {
+                    chunk_id: ChunkId(0),
+                    callee: "decorateHelper".to_string(),
+                    class_anchor: "targetClass".to_string(),
+                    member: None,
+                },
+                SelectorFact::SourceMatchCandidate {
+                    chunk_id: ChunkId(0),
+                    selector_key,
+                    statement_ordinal: StatementOrdinal(4),
+                    binding: "targetClass".to_string(),
+                },
+            ],
+        };
+
+        let result = solve(&program, &facts).unwrap();
+
+        for (target, owner) in [
+            (define_alias, OwnerId(1)),
+            (descriptor_alias, OwnerId(2)),
+            (helper, OwnerId(3)),
+            (class, OwnerId(4)),
+        ] {
+            assert!(
+                matches!(
+                    result.outcome_for(target),
+                    Some(ClaimOutcome::Unique { claim }) if claim.owner == owner
+                ),
+                "target {target:?} should resolve to {owner:?}: {:#?}",
+                result.outcome_for(target)
+            );
+        }
+    }
+
+    #[test]
+    fn solves_intrinsic_alias_chain_from_analyzed_decorate_trio() {
+        let mut builder = MemberSelectorProgramBuilder::new(MemberSelectorLoweringContext::new(
+            ChunkId(0),
+            "features/widget",
+        ));
+        let define_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "defineProperty".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let descriptor_alias_selector = MemberSelectorSpec::IntrinsicAlias(IntrinsicAliasTarget {
+            property: "getOwnPropertyDescriptor".to_string(),
+            referenced_by: "applyDecorators".to_string(),
+        });
+        let helper_selector = MemberSelectorSpec::MakesDecorateCall(MakesDecorateCallTarget {
+            class: "DecoratedClass".to_string(),
+            member: None,
+            kind: None,
+        });
+        let mut class_selector = AnonymousStatementSelector::exact(
+            "const DecoratedClass = class Widget { STMT_LIST; };",
+        );
+        class_selector.target_binding = Some("DecoratedClass".to_string());
+        let class_member_selector = MemberSelectorSpec::SourceMatch(class_selector);
+
+        let define_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "definePropertyAlias",
+                &define_alias_selector,
+            )
+            .unwrap();
+        let descriptor_alias = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "descriptorAlias",
+                &descriptor_alias_selector,
+            )
+            .unwrap();
+        let helper = builder
+            .declare_member_target_in_module("features/widget", "applyDecorators", &helper_selector)
+            .unwrap();
+        let class = builder
+            .declare_member_target_in_module(
+                "features/widget",
+                "DecoratedClass",
+                &class_member_selector,
+            )
+            .unwrap();
+        for (export_name, selector) in [
+            ("definePropertyAlias", &define_alias_selector),
+            ("descriptorAlias", &descriptor_alias_selector),
+            ("applyDecorators", &helper_selector),
+            ("DecoratedClass", &class_member_selector),
+        ] {
+            builder
+                .lower_member_constraints_in_module("features/widget", export_name, selector)
+                .unwrap();
+        }
+        let program = builder.into_program().unwrap();
+        let class_owner_var = program.targets[class.0].owner;
+        let selector_key = program
+            .atoms
+            .iter()
+            .find_map(|atom| match atom {
+                selector_ir::SelectorAtom::SourceMatchCandidate {
+                    owner: selector_ir::OwnerTerm::Var { id },
+                    selector_key: selector_ir::StringTerm::Const { value },
+                } if *id == class_owner_var => Some(value.clone()),
+                _ => None,
+            })
+            .expect("class source_match should lower to a candidate selector key");
+
+        let mut facts = fact_store_from_analyzed_source(
+            r#"
+var defineAlias = Object.defineProperty,
+  descriptorAlias = Object.getOwnPropertyDescriptor,
+  decorateHelper = (decorators, target, key, kind) => {
+    const desc = kind ? descriptorAlias(target, key) : target;
+    for (const decorator of decorators) decorator(target, key, desc);
+    defineAlias(target, key, desc);
+  };
+const targetClass = class LocalWidget {};
+decorateHelper([tag], targetClass.prototype, "greet", 1);
+"#,
+        );
+        let class_owner = owner_for_binding(&facts, "targetClass");
+        facts.push(SelectorFact::SourceMatchCandidate {
+            chunk_id: ChunkId(0),
+            selector_key,
+            statement_ordinal: statement_ordinal_for_owner(&facts, class_owner),
+            binding: "targetClass".to_string(),
+        });
+
+        let result = solve(&program, &facts).unwrap();
+
+        for (target, owner) in [
+            (define_alias, owner_for_binding(&facts, "defineAlias")),
+            (
+                descriptor_alias,
+                owner_for_binding(&facts, "descriptorAlias"),
+            ),
+            (helper, owner_for_binding(&facts, "decorateHelper")),
+            (class, class_owner),
         ] {
             assert!(
                 matches!(
