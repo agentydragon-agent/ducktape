@@ -47,6 +47,19 @@ spec:
             - "8081"
             - --set
             - confdir=/mitmproxy-data
+            # Passthrough (raw TCP, no TLS interception) for Anthropic's control
+            # plane. The haku-worker drives Managed Agents sessions over a
+            # long-lived HTTP/2 stream to api.anthropic.com; mitmproxy's
+            # interception buffers/breaks that stream, so the worker claims work
+            # but tool results never post and sessions deadlock at "idle". This
+            # traffic carries only the scoped environment key and needs no
+            # inspection. Egress still flows through the proxy (the CCNP
+            # chokepoint is unchanged); only TLS interception is skipped here.
+            # TODO(haku): tighten later — this passes ALL of api.anthropic.com
+            #   through untouched. Revisit whether only the session stream needs
+            #   passthrough (and whether to inspect the rest).
+            - --ignore-hosts
+            - api\.anthropic\.com
           ports:
             - name: proxy
               containerPort: 8080
