@@ -22,21 +22,51 @@ ERROR tool result send hit permanent 4xx; not retrying
 ```
 
 The 400 is treated as permanent → not retried → result never lands → the session
-deadlocks on that tool. **Any** empty-output tool call triggers it: `grep` with
-no match, `git log <range>` with no commits, a command that writes only stderr,
-`echo -n`, etc.
+deadlocks on that tool. **Any** tool call whose result text is empty triggers it:
+a command with empty stdout that exits 0 (`cd`, `… | head` with no input,
+`grep -q`), etc.
 
-- Present in `ant` **1.12.1**, which is the latest release (2026-06-10) — no
-  upgrade fixes it. It is an upstream `ant` bug; **report to Anthropic**.
+**Confirmed in source** (repos cloned in `~/code`: `anthropic-cli`,
+`anthropic-sdk-go`). `ant` 1.12.1 is a Go binary built on `anthropic-sdk-go`
+**v1.50.1** (`anthropic-cli/go.mod`); its worker is `pkg/cmd/worker.go`, using
+the SDK's `tools/agenttoolset`. The deadlock is the SDK's, not `ant`-CLI-specific:
+
+- `anthropic-sdk-go tools/agenttoolset/agenttoolset.go:145 textResult(s)` builds
+  `BetaTextBlockParam{Text: s}` with **no empty guard** — `s==""` → `Text:""` →
+  the 400 above. **Identical in `v1.50.1` (shipped) and `main`** (the
+  `v1.50.1..main` diff touches none of this) — so it is unfixed upstream, and the
+  Go SDK `EnvironmentWorker` would deadlock the same way. Cloud sandboxes must
+  guard empty results server-side; the self-hosted worker doesn't.
+- The bash tool (`tools/agenttoolset/bash.go`) is **not** at fault: it wraps each
+  command as `{ <cmd>\n} </dev/null 2>&1; printf '\n<sentinel>%d\n' $?` — it
+  merges stderr (`2>&1`) and captures the real exit code. So a stderr-only,
+  non-zero command yields non-empty output + `is_error=true` (no 400). Our empty
+  result was a **genuinely empty stdout, exit 0** — not a capture/PTY/egress
+  failure.
+
+**Exact trigger we hit** (base-sync, session `sesn_01U9fwo…`): the agent ran
+`git -C /workspace/ducktape log --oneline <pin>..HEAD -- haku/base haku/run.md 2>/dev/null | head -20`.
+The `--depth 1` clone lacked `<pin>` → git `fatal` → **suppressed by the agent's
+own `2>/dev/null`** → `head` got empty stdin → empty stdout, **exit 0** (head's
+code) → `is_error=false`, empty text → 400 → deadlock. So it was a real
+empty-output command, masked by the agent's `2>/dev/null | head`.
+
+- Present in `ant` **1.12.1** (latest release, 2026-06-10) — no upgrade fixes it.
+  **Report to Anthropic** (precise ask: `textResult`/worker must send a
+  placeholder like `(no output)` for empty results).
 - Diagnose by turning on `ANT_DEBUG=1` (worker Deployment env → global `ant
 --debug`); the `tool result send hit permanent 4xx` line is the tell. Without
   it the worker only logs `claimed work`.
-- **Mitigations (no clean fix while on the CLI, by the "ant-all-the-way"
-  decision):** reduce empty-output triggers (e.g. clone enough history that
-  base-sync's `git log <pin>..HEAD` resolves — see below) and/or instruct Haku to
-  never emit empty stdout (append `; echo "[rc=$?]"`, `grep … || echo '(none)'`).
-  A `/bin/bash` wrapper can't help cleanly: the bash tool drives a persistent
-  interactive PTY shell, not `bash -c`.
+- **Mitigations / fixes (in order of robustness):**
+  1. **Patch + build a custom `ant`** from `~/code/anthropic-cli` +
+     `anthropic-sdk-go` with the one-line empty guard in `textResult` — fully
+     robust; cost: maintenance + the repos are `no-license` (all rights
+     reserved).
+  2. **Reduce triggers**: full-enough clone so base-sync's `git log` resolves
+     (done: `--shallow-since="1 week ago"`); instruct Haku to never emit empty
+     stdout (`… || echo '(none)'`, avoid `2>/dev/null | head`). Fragile.
+  3. A `/bin/bash` wrapper can't help cleanly: the bash tool drives a persistent
+     interactive PTY shell, not `bash -c`.
 
 ## The full chain (all fixed unless noted)
 
