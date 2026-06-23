@@ -32,6 +32,11 @@ git -C "$state_dir" config user.email haku@allegedly.works
 
 # kubectl uses the pod's haku ServiceAccount token automatically (in-cluster);
 # no kubeconfig to materialize, unlike the Claude Code web home.
-exec ant beta:worker poll \
+#
+# ANT_DEBUG (set in the Deployment manifest) toggles ant's verbose logging: the
+# global --debug flag must precede the subcommand. Empty/unset = off. Useful for
+# diagnosing the worker's session-tool-runner stream (claim vs result-submission)
+# — e.g. when sessions stall at "idle" behind the mitmproxy egress.
+exec ant ${ANT_DEBUG:+--debug} beta:worker poll \
   --environment-id "$ANTHROPIC_ENVIRONMENT_ID" \
   --workdir "$workspace"

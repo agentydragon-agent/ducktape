@@ -51,6 +51,12 @@ spec:
             # login shell k8s won't set it, so pin it to haku's home.
             - name: HOME
               value: /home/haku
+            # Verbose ant worker logging (global --debug). Currently ON while we
+            # diagnose sessions stalling at "idle" (worker claims work but tool
+            # results never post — suspected mitmproxy interference with the
+            # session-tool-runner stream). Set to "" or remove to disable.
+            - name: ANT_DEBUG
+              value: "1"
             - name: ANTHROPIC_ENVIRONMENT_ID
               value: env_015uqL9WAMSDytQEWWmLG9zF # haku-selfhosted environment (not secret)
             - name: ANTHROPIC_ENVIRONMENT_KEY
