@@ -78,3 +78,54 @@ no match, `git log <range>` with no commits, a command that writes only stderr,
 - `ANT_DEBUG=1` in the worker Deployment; set to `""` once stable.
 - mitmproxy `ignore_hosts` is a keeper, but has a `TODO` to tighten (currently
   passes all of `api.anthropic.com`).
+
+## `ant` is an independent implementation (not Claude Code)
+
+Checked whether `ant beta:worker poll` delegates tool execution to the `claude`
+Claude Code CLI (whose bash harness guards empty output, captures stderr, etc.)
+or reimplements the toolset. **It reimplements it.** `ant` is a statically
+linked Go binary (`anthropic-sdk-go`); its strings show a native in-process tool
+runner (`session-tool-runner`, `agent_toolset_20260401`, its own `start bash
+pty` + `TERM=dumb` runner, `[output truncated]`, native `glob`/`grep`) and **no
+`claude` CLI invocation** anywhere.
+
+Implication for "switch to the SDK that runs Claude Code": there isn't one. The
+Managed Agents **SDK** `EnvironmentWorker` (Python/TS/Go) is _also_ an
+independent reimplementation of the same `agent_toolset_20260401` — not Claude
+Code. So switching SDKs does **not** buy Claude Code's harness. The only real
+"switch" options:
+
+- **Go SDK `EnvironmentWorker`** — a different impl of the toolset that _might_
+  guard the empty-result case better (the API requires `content.text` ≥ 1, so a
+  correct worker must send a placeholder; check the SDK source before betting on
+  it). Avoids the Python lockfile conflict, but means building/maintaining a
+  custom Go worker instead of the stock `ant` CLI.
+- **Python SDK `EnvironmentWorker`** — reopens the `anthropic` 0.103-vs-0.80
+  lockfile conflict that motivated "ant-all-the-way"; avoid.
+
+Neither is Claude Code. Recommended: stay on `ant`, mitigate triggers, and report
+the empty-result→400 deadlock upstream.
+
+## Current state & next steps (as of 2026-06-23)
+
+**Working:** worker runs the closure unprivileged; claims sessions; executes
+read/bash/kubectl/git with the agent on Sonnet v2; the mitmproxy passthrough
+fixed the session-stream deadlock; a full scan pass ran with 0 tool errors until
+it hit the empty-`git log` deadlock.
+
+**Landed on `devel`:** all 12 fixes above (image diffID, closure-direct runtime,
+`/bin/bash`, `/home/haku`, Forgejo mirror + `.netrc` host, mitmproxy passthrough,
+relative-path prompt, `--shallow-since="1 week ago"`). Agent updated to v2
+(Sonnet) and the deployment re-pinned to it via `ant`.
+
+**Pending / open:**
+
+- Deploy + verify the `--shallow-since` image (commit `1ac0930196`) — confirm
+  base-sync's `git log <pin>..HEAD` now returns non-empty and the session
+  completes (commits `haku-state`).
+- **Empty-result→400 deadlock is unfixed** (upstream `ant` gap). Mitigated by the
+  week-of-history clone; still bites any empty-output tool call. **Report to
+  Anthropic.**
+- Manual, non-turnkey prereqs: bump the Forgejo `agentydragon/ducktape` mirror;
+  keep the `haku` read-collaborator grant. (TODO: Terraform-manage both.)
+- Revert the temporary settings above once stable.
