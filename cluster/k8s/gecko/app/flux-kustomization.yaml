@@ -14,6 +14,8 @@ spec:
     name: flux-system
   decryption:
     provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: gecko-namespace
     - name: kubevirt
