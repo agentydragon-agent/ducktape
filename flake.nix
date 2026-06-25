@@ -296,9 +296,6 @@
       ];
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
-      # Present after the first debundle release has been published and
-      # sync-pins has added the artifact-pins entry.
-      optionalDebundlePackages = lib.optional (ducktapePkgs ? debundle) ducktapePkgs.debundle;
       # Common dev tools shared by both Python and Rust hook implementations.
       devToolsCommon = [
         ducktapePkgs.bb
@@ -332,8 +329,7 @@
         pkgs.sops
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
-      ]
-      ++ optionalDebundlePackages;
+      ];
       # Rust claude-hook is the active hook/shim implementation. The statusline
       # remains Python, exposed through a package that does not put the legacy
       # Python `claude-hook` on PATH.
