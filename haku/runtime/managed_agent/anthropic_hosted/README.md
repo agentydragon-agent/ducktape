@@ -7,7 +7,8 @@ out to own a class of runtime bugs (notably the empty-tool-result deadlock,
 [anthropic-sdk-go#377](https://github.com/anthropics/anthropic-sdk-go/issues/377),
 plus the whole image/closure/egress bring-up). Cloud sandboxes are operated by
 Anthropic and don't hit those — at the cost of moving tool execution off our
-infra. This doc is how we'd keep cluster access anyway.
+infra. This doc is how we'd keep cluster access anyway. **Build/test plan:**
+<PLAN.md>.
 
 ## The problem cloud mode creates
 
