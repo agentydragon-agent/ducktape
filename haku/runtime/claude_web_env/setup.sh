@@ -12,7 +12,7 @@
 # remotes); the haku profile above supplies the haku-specific kubeconfig + env so
 # Haku comes up as group `haku` against the `haku-sandbox` namespace.
 set -euo pipefail
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # Install Haku's agent closure (.#agent-haku), which composes the shared
 # `.#devtools` and adds the fastmcp MCP-client CLI — so Haku can talk to
 # in-cluster MCP facades (tana-mcp-ro) turnkey-ly via
