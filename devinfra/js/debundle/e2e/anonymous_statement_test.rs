@@ -582,324 +582,6 @@ export { RuntimeSubject, Existing };
 }
 
 #[test]
-fn alpha_anonymous_statement_target_statement_uses_context_but_claims_only_target() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeLeft = "left",
-  runtimeRight = "right";
-console.log(`${runtimeLeft}:${runtimeRight}`);
-const Existing = "existing";
-console.log(Existing);
-export { runtimeLeft, runtimeRight, Existing };
-"#,
-        vec![logical_module_with_anon_alpha_target_statement(
-            "selected_pair",
-            &[Member::new("runtimeLeft"), Member::new("runtimeRight")],
-            r#"const selectedLeft = "left",
-  selectedRight = "right";
-console.log(`${selectedLeft}:${selectedRight}`);"#,
-            1,
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_pair.js",
-        &[
-            "const runtimeLeft",
-            "const runtimeRight",
-            "console.log(`${runtimeLeft}:${runtimeRight}`)",
-        ],
-        &["const Existing"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["const Existing"],
-        &["runtimeLeft}:${runtimeRight"],
-    );
-    assert_entry_output(&fixture, "left:right\nexisting\n");
-}
-
-#[test]
-fn alpha_anonymous_statement_target_statements_claims_multiple_targets_from_one_selector() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeContext = "context";
-console.log("first selected");
-console.log("second selected");
-const Existing = "existing";
-console.log(Existing);
-export { runtimeContext, Existing };
-"#,
-        vec![logical_module_with_anon_alpha_target_statements(
-            "selected_logs",
-            &[],
-            r#"const selectorContext = "context";
-console.log("first selected");
-console.log("second selected");"#,
-            &[1, 2],
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_logs.js",
-        &[
-            r#"console.log("first selected")"#,
-            r#"console.log("second selected")"#,
-        ],
-        &["runtimeContext", "Existing"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["const runtimeContext", "const Existing"],
-        &["first selected", "second selected"],
-    );
-    assert_entry_output(&fixture, "first selected\nsecond selected\nexisting\n");
-}
-
-#[test]
-fn alpha_anonymous_statement_target_statements_match_assignment_targets_from_context() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let runtimeRecord, runtimeReplay;
-true && (runtimeReplay = "replay");
-false || (runtimeRecord = "record");
-console.log(`${runtimeReplay}:${runtimeRecord}`);
-export { runtimeRecord, runtimeReplay };
-"#,
-        vec![logical_module_with_anon_alpha_target_statements(
-            "bridge_slots",
-            &[Member::new("runtimeRecord"), Member::new("runtimeReplay")],
-            r#"let selectedRecord, selectedReplay;
-true && (selectedReplay = "replay");
-false || (selectedRecord = "record");"#,
-            &[1, 2],
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/bridge_slots.js",
-        &[
-            "let runtimeRecord",
-            "runtimeReplay = \"replay\"",
-            "runtimeRecord = \"record\"",
-        ],
-        &["selectedRecord", "selectedReplay"],
-    );
-    assert_entry_output(&fixture, "replay:record\n");
-}
-
-#[test]
-fn binding_group_target_statements_claims_assignments_from_same_template() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let runtimeRecord, runtimeReplay;
-true && (runtimeReplay = "replay");
-false || (runtimeRecord = "record");
-console.log(`${runtimeReplay}:${runtimeRecord}`);
-export { runtimeRecord, runtimeReplay };
-"#,
-        vec![logical_module_with_binding_groups(
-            "bridge_slots",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"let recordSlot, replaySlot;
-true && (replaySlot = "replay");
-false || (recordSlot = "record");"#,
-                &[
-                    ("recordSlot", "recordBridge"),
-                    ("replaySlot", "replayBridge"),
-                ],
-            )
-            .with_target_statements(&[1, 2])],
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/bridge_slots.js",
-        &[
-            "let recordBridge",
-            "replayBridge = \"replay\"",
-            "recordBridge = \"record\"",
-        ],
-        &["recordSlot", "replaySlot"],
-    );
-    assert_entry_output(&fixture, "replay:record\n");
-}
-
-#[test]
-fn binding_group_claims_decorated_class_and_decorator_statements_from_one_selector() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function applyPropertyDecorator(markers, target, property) {
-  target[`_${property}`] = markers.length;
-}
-class RuntimeModel {
-  report() {
-    return `${this._state}:${this._title}`;
-  }
-}
-applyPropertyDecorator(["observable"], RuntimeModel.prototype, "state");
-applyPropertyDecorator(["observable"], RuntimeModel.prototype, "title");
-console.log(new RuntimeModel().report());
-export { RuntimeModel };
-"#,
-        vec![logical_module_with_binding_groups(
-            "decorated_model",
-            &[],
-            &[BindingGroup::source_alpha_adopt_names(
-                r#"class DecoratedModel {
-  CLASS_REST;
-  report() {
-    STMT_LIST;
-  }
-  CLASS_REST;
-}
-decorate(["observable"], DecoratedModel.prototype, "state");
-decorate(["observable"], DecoratedModel.prototype, "title");"#,
-                &["DecoratedModel"],
-            )
-            .with_target_statements(&[1, 2])],
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/decorated_model.js",
-        &[
-            "class DecoratedModel",
-            "applyPropertyDecorator([",
-            "DecoratedModel.prototype",
-            r#""state""#,
-            r#""title""#,
-        ],
-        &["class RuntimeModel", "function applyPropertyDecorator"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["function applyPropertyDecorator"],
-        &["RuntimeModel.prototype", "DecoratedModel.prototype"],
-    );
-    assert_entry_output(&fixture, "1:1\n");
-}
-
-#[test]
-fn binding_group_target_statements_supports_stmt_list_context_gap() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let runtimeRecord, runtimeReplay;
-const ignoredContext = "setup";
-true && (runtimeReplay = "replay");
-false || (runtimeRecord = "record");
-console.log(`${runtimeReplay}:${runtimeRecord}`);
-export { runtimeRecord, runtimeReplay };
-"#,
-        vec![logical_module_with_binding_groups(
-            "bridge_slots",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"let recordSlot, replaySlot;
-STMT_LIST;
-true && (replaySlot = "replay");
-false || (recordSlot = "record");"#,
-                &[
-                    ("recordSlot", "recordBridge"),
-                    ("replaySlot", "replayBridge"),
-                ],
-            )
-            .with_target_statements(&[2, 3])],
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/bridge_slots.js",
-        &[
-            "let recordBridge",
-            "replayBridge = \"replay\"",
-            "recordBridge = \"record\"",
-        ],
-        &["ignoredContext", "STMT_LIST"],
-    );
-    assert_entry_output(&fixture, "replay:record\n");
-}
-
-#[test]
-fn binding_group_target_statements_still_rejects_ambiguous_ranges() {
-    let opts = FixtureOpts::new(
-        r#"let firstRecord, firstReplay;
-true && (firstReplay = "replay");
-false || (firstRecord = "record");
-let secondRecord, secondReplay;
-true && (secondReplay = "replay");
-false || (secondRecord = "record");
-export { firstRecord, firstReplay, secondRecord, secondReplay };
-"#,
-        vec![logical_module_with_binding_groups(
-            "bridge_slots",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"let recordSlot, replaySlot;
-true && (replaySlot = "replay");
-false || (recordSlot = "record");"#,
-                &[
-                    ("recordSlot", "recordBridge"),
-                    ("replaySlot", "replayBridge"),
-                ],
-            )
-            .with_target_statements(&[1, 2])],
-        )],
-    );
-
-    expect_rejection_containing_all(
-        opts,
-        &[
-            "static/app::bridge_slots",
-            "binding_groups[].source_match",
-            "ambiguous",
-            "target_binding `recordSlot`",
-        ],
-    );
-}
-
-#[test]
-fn alpha_anonymous_statement_target_statements_all_supports_top_level_stmt_list_hole() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"console.log("before selected");
-const skippedContext = "skip";
-console.log("after selected");
-const Existing = "existing";
-console.log(Existing);
-export { skippedContext, Existing };
-"#,
-        vec![logical_module_with_anon_alpha_target_statements_all(
-            "selected_logs",
-            &[],
-            r#"console.log("before selected");
-STMT_LIST;
-console.log("after selected");"#,
-        )],
-    ));
-
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected_logs.js",
-        &[
-            r#"console.log("before selected")"#,
-            r#"console.log("after selected")"#,
-        ],
-        &["skippedContext", "Existing", "STMT_LIST"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/residual/unhandled.js",
-        &["const skippedContext", "const Existing"],
-        &["before selected", "after selected"],
-    );
-    assert_entry_output(&fixture, "before selected\nafter selected\nexisting\n");
-}
-
-#[test]
 fn alpha_anonymous_statement_selector_keeps_member_properties_significant() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const selectedValue = "selected";
@@ -1016,18 +698,21 @@ export { runtimeBinding, siblingBinding, Existing };
 fn source_match_timing_env_reports_member_selector_resolution() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
-            r#"function runtimeFormat(value) {
-  return value.trim().toUpperCase();
+            r#"const runtimePrefix = "OK:";
+function runtimeFormat(value) {
+  return runtimePrefix + value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
-export { runtimeFormat };
+export { runtimePrefix, runtimeFormat };
 "#,
             vec![logical_module(
                 "format",
-                &[Member::source_alpha(
+                &[Member::source_alpha_target(
                     "formatValue",
-                    r#"function formatValue(value) {
-  return value.trim().toUpperCase();
+                    "formatValue",
+                    r#"const prefix = "OK:";
+function formatValue(value) {
+  return prefix + value.trim().toUpperCase();
 }"#,
                 )],
             )],
@@ -1035,16 +720,17 @@ export { runtimeFormat };
         &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
     );
 
-    assert_entry_output(&fixture, "OK\n");
+    assert_entry_output(&fixture, "OK:OK\n");
     for required in [
         "[debundle source_match]",
         "request=static/app::format",
         "kind=members[].selector.source_match export=`formatValue`",
         "selector_key=",
         "body_key=",
-        "body_indices=[0]",
+        "body_indices=[1]",
         "binding=runtimeFormat",
-        "selector=function formatValue(value) { return value.trim().toUpperCase(); }",
+        "target_binding=`formatValue`",
+        "selector=const prefix = \"OK:\"; function formatValue(value) { return prefix + value.trim().toUpperCase(); }",
     ] {
         assert!(
             fixture.stderr.contains(required),
@@ -1055,7 +741,7 @@ export { runtimeFormat };
 }
 
 #[test]
-fn exact_native_source_match_skips_legacy_resolver_timing() {
+fn alpha_all_native_source_match_skips_legacy_resolver_timing() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"function runtimeFormat(value) {
@@ -1066,7 +752,7 @@ export { runtimeFormat };
 "#,
             vec![logical_module(
                 "format",
-                &[Member::source_exact_target(
+                &[Member::source_alpha_target(
                     "formatValue",
                     "runtimeFormat",
                     r#"function runtimeFormat(value) {
@@ -1081,13 +767,13 @@ export { runtimeFormat };
     assert_entry_output(&fixture, "OK\n");
     assert!(
         !fixture.stderr.contains("[debundle source_match]"),
-        "native exact source_match should not call the legacy resolver\nstderr:\n{}",
+        "native alpha_all source_match should not call the legacy resolver\nstderr:\n{}",
         fixture.stderr,
     );
 }
 
 #[test]
-fn exact_native_source_match_with_extends_skips_legacy_resolver_timing() {
+fn alpha_all_native_source_match_with_extends_skips_legacy_resolver_timing() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
             r#"class RuntimeWidget extends Object {
@@ -1100,7 +786,7 @@ export { RuntimeWidget };
 "#,
             vec![logical_module(
                 "widget",
-                &[Member::source_exact_target(
+                &[Member::source_alpha_target(
                     "runtimeWidget",
                     "RuntimeWidget",
                     r#"class RuntimeWidget extends Object {
@@ -1117,7 +803,7 @@ export { RuntimeWidget };
     assert_entry_output(&fixture, "runtime\n");
     assert!(
         !fixture.stderr.contains("[debundle source_match]"),
-        "native exact source_match with extends should not call the legacy resolver\nstderr:\n{}",
+        "native alpha_all source_match with extends should not call the legacy resolver\nstderr:\n{}",
         fixture.stderr,
     );
 }
@@ -1126,18 +812,21 @@ export { RuntimeWidget };
 fn source_match_timing_preview_can_be_disabled() {
     let fixture = run_fixture_with_env(
         FixtureOpts::new(
-            r#"function runtimeNormalize(value) {
-  return value.trim().toLowerCase();
+            r#"const runtimePrefix = "ok:";
+function runtimeNormalize(value) {
+  return runtimePrefix + value.trim().toLowerCase();
 }
 console.log(runtimeNormalize(" OK "));
-export { runtimeNormalize };
+export { runtimePrefix, runtimeNormalize };
 "#,
             vec![logical_module(
                 "normalize",
-                &[Member::source_alpha(
+                &[Member::source_alpha_target(
                     "normalizeValue",
-                    r#"function normalizeValue(value) {
-  return value.trim().toLowerCase();
+                    "normalizeValue",
+                    r#"const prefix = "ok:";
+function normalizeValue(value) {
+  return prefix + value.trim().toLowerCase();
 }"#,
                 )],
             )],
@@ -1148,14 +837,16 @@ export { runtimeNormalize };
         ],
     );
 
-    assert_entry_output(&fixture, "ok\n");
+    assert_entry_output(&fixture, "ok:ok\n");
     for required in [
         "[debundle source_match]",
         "request=static/app::normalize",
+        "kind=members[].selector.source_match export=`normalizeValue`",
         "selector_key=",
         "body_key=",
-        "body_indices=[0]",
+        "body_indices=[1]",
         "binding=runtimeNormalize",
+        "target_binding=`normalizeValue`",
     ] {
         assert!(
             fixture.stderr.contains(required),
