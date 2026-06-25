@@ -59,6 +59,9 @@ spec:
               bootOrder: 1
               disk:
                 bus: virtio
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
           interfaces:
             - name: default
               masquerade: {}
@@ -72,3 +75,7 @@ spec:
         - name: rootdisk
           dataVolume:
             name: gecko-root
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            secretRef:
+              name: gecko-cloud-init

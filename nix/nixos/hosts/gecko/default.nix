@@ -24,7 +24,7 @@ in
 
   # Pull substituter for cache.allegedly.works/{main,gaffer}. Reader JWT is
   # auto-rotated by attic-jwt-rotation CronJob; the SOPS file is decryptable
-  # by the gecko host key + agentydragon user key.
+  # by gecko's cloud-init-persisted host key + agentydragon user key.
   ducktape.attic-substituter = {
     enable = true;
     sopsFile = ../../../../secrets/hosts/gecko-attic.yaml;
@@ -59,6 +59,12 @@ in
   };
 
   users.users.root.openssh.authorizedKeys.keys = sshKeys;
+  services.openssh.hostKeys = lib.mkForce [
+    {
+      type = "ed25519";
+      path = "/etc/ssh/ssh_host_ed25519_key";
+    }
+  ];
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   users.motd = "Gecko - headless KubeVirt agent VM\n";

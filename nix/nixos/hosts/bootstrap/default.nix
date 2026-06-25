@@ -31,6 +31,14 @@ in
     networkConfig.DHCP = "yes";
   };
 
+  # KubeVirt attaches a NoCloud seed for per-VM bootstrap data. Gecko uses this
+  # to install its persisted Ed25519 SSH host key before sshd starts.
+  services.cloud-init = {
+    enable = true;
+    network.enable = false;
+    settings.datasource_list = [ "NoCloud" ];
+  };
+
   # Don't vendor a nixpkgs source tree — this image only ever runs flake
   # commands by pinned URL, so the channel, NIX_PATH, and the flake registry
   # mapping for `nixpkgs` are all dead weight.
@@ -53,6 +61,12 @@ in
   };
 
   users.users.root.openssh.authorizedKeys.keys = sshKeys;
+  services.openssh.hostKeys = lib.mkForce [
+    {
+      type = "ed25519";
+      path = "/etc/ssh/ssh_host_ed25519_key";
+    }
+  ];
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   services.getty.autologinUser = username;

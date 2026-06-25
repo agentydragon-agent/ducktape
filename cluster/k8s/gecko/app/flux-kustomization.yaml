@@ -12,6 +12,8 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  decryption:
+    provider: sops
   dependsOn:
     - name: gecko-namespace
     - name: kubevirt

@@ -5,7 +5,7 @@ keys:
   - &rugged-host age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
   - &atlas-host age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
   - &iguana-host age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
-  - &gecko-host age180y753h0vzxm8a3y3rd7c3zykhrat8xlajczuxuk7dz0h82cdf2s0slmw5
+  - &gecko-host age1qx8tuzmy8dg7m9kdynsz6lfqkupt4xm64narx6lv9j25v6tfg4lsjcrq85
   # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
   - &wyrm2-agentydragon age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
   - &rugged-agentydragon age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
@@ -290,7 +290,7 @@ creation_rules:
       - age:
           - *admin
           - *atlas-agentydragon
-  # TODO: Revisit the security model before wiring persistent gecko host keys into NixOS.
+  # TODO: Revisit the security model for cluster-recoverable gecko host identity.
   - path_regex: ssh_keys/gecko-host-.*\.sops\.key$
     store_type: binary
     key_groups:
