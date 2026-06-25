@@ -123,25 +123,69 @@ in
       }
     ];
 
-    # Disable runtime-PM autosuspend on the modem PCI function. The MHI pci
-    # driver enables runtime PM with a 2s autosuspend delay by default, so an
+    # Disable runtime-PM autosuspend on the modem PCI function. The MHI PCI
+    # driver enables runtime PM with a 2s autosuspend delay after probe, so an
     # idle wwan0 (the normal case while on WiFi) gets sent to M3 every few
     # seconds. M3 is the SAME broken Foxconn firmware path that wedges this
-    # device on system suspend — but `--test-low-power-suspend-resume` only
+    # device on system suspend, but `--test-low-power-suspend-resume` only
     # covers MM's system sleep/wake handler, NOT kernel runtime PM. A runtime
     # autosuspend cycle dropped the firmware into SYS_ERR; the next runtime
     # resume hit `mhi_pci_recovery_work`, which can't reload the SBL (DW5934e
     # ships `.fw = NULL`), did an FLR, and wedged the modem into PBL with no
-    # channels — invisible to MM/GNOME until reboot.
-    #   Live trace: 2026-06-05 02:30:48 `mhi mhi0: Resuming from non M3 state
-    #   (SYS ERROR)` with NO `PM: suspend entry` nearby (nearest system sleep
-    #   was 20min later) — i.e. a runtime-PM resume, not a system resume.
-    # Keeping power/control=on pins the modem at M0 during normal operation;
-    # M3 only happens during real system suspend, where the MM flag handles it.
-    # See debug/rugged/hw/modem_suspend_research.md §"Runtime-PM autosuspend".
+    # channels, invisible to MM/GNOME until recovery.
+    #
+    # The first mitigation only matched PCI add; that was too early because
+    # mhi_pci_probe() later calls pm_runtime_set_autosuspend_delay(..., 2000)
+    # and re-allows runtime autosuspend. Keep the direct udev write for add,
+    # bind, and change, and also trigger a systemd verifier after wwan0 appears.
+    # See debug/rugged/hw/modem_suspend_research.md
+    # §"Runtime-PM recurrence after the udev rule".
     services.udev.extraRules = ''
-      ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x105b", ATTR{device}=="0xe11d", ATTR{power/control}="on"
+      ACTION=="add|bind|change", SUBSYSTEM=="pci", ATTR{vendor}=="0x105b", ATTR{device}=="0xe11d", TEST=="power/control", ATTR{power/control}="on"
+      ACTION=="add", SUBSYSTEM=="net", KERNEL=="wwan0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="foxconn-wwan-disable-runtime-pm.service"
     '';
+
+    systemd.services.foxconn-wwan-disable-runtime-pm = {
+      description = "Disable runtime PM for Foxconn DW5934e WWAN";
+      after = [ "sys-subsystem-net-devices-wwan0.device" ];
+      bindsTo = [ "sys-subsystem-net-devices-wwan0.device" ];
+      wantedBy = [ "sys-subsystem-net-devices-wwan0.device" ];
+      path = [ pkgs.coreutils ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = false;
+      };
+      script = ''
+        set -eu
+
+        matched=0
+        for dev in /sys/bus/pci/devices/*; do
+          [ -e "$dev/vendor" ] || continue
+          [ "$(cat "$dev/vendor")" = "0x105b" ] || continue
+          [ "$(cat "$dev/device")" = "0xe11d" ] || continue
+
+          matched=1
+          if [ ! -e "$dev/power/control" ]; then
+            echo "$dev has no power/control runtime-PM attribute" >&2
+            exit 1
+          fi
+
+          echo on > "$dev/power/control"
+          actual="$(cat "$dev/power/control")"
+          if [ "$actual" != "on" ]; then
+            echo "$dev power/control is '$actual', expected 'on'" >&2
+            exit 1
+          fi
+
+          echo "Pinned runtime PM off for $dev"
+        done
+
+        if [ "$matched" -eq 0 ]; then
+          echo "Foxconn DW5934e PCI device 105b:e11d not found" >&2
+          exit 1
+        fi
+      '';
+    };
 
     # Google Fi cellular connection profile.
     # IPv6 never-default: many WiFi networks only provide ULA IPv6 (no default

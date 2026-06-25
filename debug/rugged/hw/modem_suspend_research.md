@@ -71,15 +71,14 @@ at that timestamp). `power/runtime_suspended_time` had accumulated ~4.1h,
 confirming the modem had been autosuspending all along; `power/control`
 reads `on` only because `recovery_work` calls `pm_runtime_forbid()`.
 
-**Fix applied:** udev rule pins `power/control=on` for `105b:e11d` in
-`foxconn-wwan.nix`, disabling runtime autosuspend. The modem stays at M0
+**Intended fix, later found incomplete:** a udev rule pins
+`power/control=on` for `105b:e11d` in `foxconn-wwan.nix`, disabling
+runtime autosuspend. The intended steady state is: modem stays at M0
 during normal operation; M3 only happens during real system suspend, where
-the MM flag already handles it. This addresses the _cause_ (don't enter the
-broken M3 path while idle), complementary to the kernel-quirk P1 below
-(which would only defang the _symptom_ — the bad FLR — after a crash).
-Re-enumeration re-fires the `add` uevent so the rule re-applies each time.
-Verify post-reboot: `cat /sys/bus/pci/devices/0000:71:00.0/power/control`
-should read `on` with the modem healthy (channels enumerated).
+the MM flag already handles it. This addresses the _cause_ (don't enter
+the broken M3 path while idle), complementary to kernel recovery work below.
+However, the first version only matched `ACTION=="add"` and was not enough;
+see the 2026-06-24 recurrence below.
 
 **Non-reboot recovery DOES work (correction to earlier claim).** On
 2026-06-08 `modem.sh recover` cleared this exact wedge without a reboot:
@@ -95,6 +94,108 @@ SoC still in PBL). The earlier "only reboot recovers" claim was wrong —
 `recover` just _reported_ failure because of two script bugs (bare
 `FoxFlss` not on PATH under sudo + a premature `die()` before the modem
 finished enumerating), both fixed in `modem.sh` on 2026-06-08.
+
+## Runtime-PM recurrence after the udev rule (2026-06-24)
+
+**Symptom repeated on the previous boot.** Boot
+`077d589ceba045fab7316ec95d77b274` ran from 2026-06-22 22:45:18 PDT to
+2026-06-24 19:23:36 PDT. The modem enumerated, ModemManager created
+`modem0`, FCC unlock/RF calibration succeeded, and the Google Fi bearer
+connected at 2026-06-22 22:45:47 PDT. At 2026-06-22 23:13:18 PDT the
+same runtime-M3 failure fired:
+
+```
+2026-06-22T23:13:18 kernel: mhi mhi0: Resuming from non M3 state (SYS ERROR)
+2026-06-22T23:13:18 kernel: mhi-pci-generic 0000:71:00.0: failed to resume device: -22
+2026-06-22T23:13:18 kernel: mhi-pci-generic 0000:71:00.0: device recovery started
+2026-06-22T23:13:21 kernel: mhi-pci-generic 0000:71:00.0: reset failed
+2026-06-22T23:13:21 kernel: mhi-pci-generic 0000:71:00.0: Recovery failed: -25
+```
+
+There was no system sleep nearby; the first later `PM: suspend entry
+(s2idle)` in that boot was 2026-06-23 08:23:26 PDT. This was runtime PM,
+not laptop suspend/resume.
+
+**The declarative rule is installed, valid, but too early.** Current boot
+live state still shows runtime PM enabled:
+
+```
+/sys/bus/pci/devices/0000:71:00.0/power/control              auto
+/sys/bus/pci/devices/0000:71:00.0/power/runtime_status       active
+/sys/bus/pci/devices/0000:71:00.0/power/autosuspend_delay_ms 2000
+```
+
+`/etc/udev/rules.d/99-local.rules` and
+`/run/current-system/etc/udev/rules.d/99-local.rules` both contain:
+
+```
+ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x105b", ATTR{device}=="0xe11d", ATTR{power/control}="on"
+```
+
+`udevadm verify /etc/udev/rules.d/99-local.rules` succeeds, and
+`udevadm test --action=add /sys/bus/pci/devices/0000:71:00.0` reports it
+would write `power/control : on`. But `udevadm test --action=bind ...`
+does not match the rule because the rule is add-only.
+
+**Mechanism for the failure of the fix:** the PCI `add` event is early in
+device lifetime. Upstream `mhi_pci_probe()` powers up MHI first, then
+sets the device started, then enables runtime autosuspend if the device
+advertises PME from D3hot and `info->no_m3` is false:
+
+```c
+/* Allow runtime suspend only if both PME from D3Hot and M3 are supported */
+if (pci_pme_capable(pdev, PCI_D3hot) && !(info->no_m3)) {
+    pm_runtime_set_autosuspend_delay(&pdev->dev, 2000);
+    pm_runtime_use_autosuspend(&pdev->dev);
+    pm_runtime_mark_last_busy(&pdev->dev);
+    pm_runtime_put_noidle(&pdev->dev);
+}
+```
+
+That later driver code can undo the early udev `add` write. The fix should
+run after driver bind/probe, or after the `wwan0` net device appears, not
+only on the initial PCI add.
+
+### 2026-06-24 research bookmarks
+
+Use these to avoid redoing the search next time:
+
+- Linux MHI PCI runtime-autosuspend enable path:
+  <https://codebrowser.dev/linux/linux/drivers/bus/mhi/host/pci_generic.c.html>
+  - find `Allow runtime suspend only if both PME from D3Hot and M3 are supported`
+  - line area: `mhi_pci_probe()`, around `pm_runtime_set_autosuspend_delay(..., 2000)`
+- Linux MHI PCI runtime suspend/resume:
+  <https://codebrowser.dev/linux/linux/drivers/bus/mhi/host/pci_generic.c.html>
+  - find `mhi_pci_runtime_suspend`
+  - find `mhi_pci_runtime_resume`
+- Linux MHI resume state-machine failure:
+  <https://codebrowser.dev/linux/linux/drivers/bus/mhi/host/pm.c.html>
+  - find `mhi_pm_resume`
+  - find `MHI_PM_M3_EXIT`
+- Linux runtime PM sysfs contract:
+  <https://docs.kernel.org/power/runtime_pm.html>
+  - find `power/control`
+  - important claim: writing `on` disallows runtime PM by calling
+    `pm_runtime_forbid()`
+- udev rule syntax and service handoff:
+  <https://man7.org/linux/man-pages/man7/udev.7.html>
+  - `ATTR{key}` writes a sysfs attribute of the event device
+  - long-running work should use `SYSTEMD_WANTS`, not `RUN`
+- systemd device units and `SYSTEMD_WANTS`:
+  <https://man7.org/linux/man-pages/man5/systemd.device.5.html>
+  - `SYSTEMD_WANTS=` activates units when a tagged device first becomes active
+  - template units can be instantiated by escaped sysfs path
+
+Useful local probes:
+
+```
+cat /sys/bus/pci/devices/0000:71:00.0/power/{control,runtime_status,autosuspend_delay_ms}
+udevadm verify /etc/udev/rules.d/99-local.rules
+udevadm test --action=add /sys/bus/pci/devices/0000:71:00.0
+udevadm test --action=bind /sys/bus/pci/devices/0000:71:00.0
+udevadm info --attribute-walk --path=/sys/bus/pci/devices/0000:71:00.0
+journalctl -b -1 -k --grep='mhi|wwan|71:00.0|105b|e11d' --no-pager -o short-iso
+```
 
 ## Current status (2026-05-14, end of session 1)
 
@@ -115,7 +216,7 @@ finished enumerating), both fixed in `modem.sh` on 2026-06-08.
   doubles (2s → 60s cap) when `mmcli -w` exits within 5s, resets after
   a healthy run. Eliminates journal spam when modem is absent.
 
-**Staged, awaiting reboot (real-fix path)**:
+**Historical staged item, later disproven (see 2026-05-19 below)**:
 
 - ✅ `WwanAutoSense` BIOS attribute flipped `Disabled → Enabled` via
   dell-wmi-sysman (no admin password needed). **Hypothesis**: this is
@@ -124,6 +225,7 @@ finished enumerating), both fixed in `modem.sh` on 2026-06-08.
   methods. If correct, post-reboot `reset_method` will list `acpi flr
 bus` (gain of `acpi`) and `recovery_work`'s `pci_try_reset_function`
   will trigger the platform's actual slot power-cycle via FHRF+SHRF.
+  This hypothesis was wrong.
 
 **Capture tooling shipped**:
 
@@ -143,11 +245,10 @@ bus` (gain of `acpi`) and `recovery_work`'s `pci_try_reset_function`
   the candidate BIOS gate from Linux. Idempotent; `TARGET=Disabled`
   to revert.
 
-**Honest summary**: the workaround is in place. The real fix is staged
-but unproven (WwanAutoSense → WWEN connection is a hypothesis, not
-established). Next reboot tells us if the hypothesis is right. After
-that, we still need to run a controlled suspend/resume experiment
-matrix to validate whichever path works.
+**Historical summary, superseded by later findings**: at this point the
+system-suspend workaround was in place, and the BIOS WwanAutoSense theory
+was still pending. Later evidence disproved WwanAutoSense as the WWEN gate;
+runtime-PM autosuspend remained the unresolved failure path.
 
 ---
 
@@ -195,10 +296,10 @@ E3 separates deterministic from probabilistic triggers.
 
 **3. Outcome interpretation**
 
-- All three pass → wedge solved by P0 (MM flag) and/or BIOS-side P4
-  (WwanAutoSense → WWEN). Document, close the investigation.
+- All three pass → system-suspend wedge solved by P0 (MM flag). Document
+  that system suspend is healthy, but keep runtime-PM autosuspend separate.
 - E1 fails → the wedge is independent of host quiesce; P1 (kernel quirk
-  patch) is needed, or the WWEN fix is doing the heavy lifting.
+  patch) is needed.
 - E1 passes, E2 fails → pending packets are the trigger. Workaround:
   also force `nmcli connection down "Google Fi"` via a systemd pre-sleep
   hook before suspend.
@@ -206,8 +307,9 @@ E3 separates deterministic from probabilistic triggers.
   enable MHI ftrace events (see "Diagnostics still to add" below) for
   per-cycle state transitions.
 
-**4. If all of P0+P4 still aren't enough**, drop to P1 (kernel quirk
-patch); see "Avenues" below.
+**4. If P0 is not enough for system suspend**, drop to P1 (kernel quirk
+patch); see "Avenues" below. Runtime-PM autosuspend is a separate issue
+tracked in the 2026-06-24 recurrence section.
 
 ---
 
@@ -375,7 +477,7 @@ power-cycling the slot: modem boots fresh from NAND, no PBL trap.
 No `acpi` method discovered. `acpi_has_method(handle, "_RST")` returns
 false because `_RST` wasn't compiled into the namespace.
 
-### WWAN_AutoSense hypothesis (staged for next reboot)
+### WWAN_AutoSense hypothesis (later disproven)
 
 dell-wmi-sysman exposes 187 firmware attributes; the WWAN-related ones
 captured in the dump are:
@@ -388,12 +490,12 @@ captured in the dump are:
 | WWanBusMode       | PcieMode      | PcieMode/UsbMode          | WWAN Bus Mode          |
 | DisWWANRadio      | Enabled       | Disabled/Enabled          | Disable WWAN radio     |
 
-`WwanAutoSense` is the only WWAN-related setting currently **Disabled**.
-Display name suggests it controls runtime radio management (i.e.,
-platform-driven power state coordination), which is plausibly what
-flips `WWEN`. **No direct evidence** linking `WwanAutoSense` to `WWEN`;
-this is a name-and-elimination guess. Already flipped to `Enabled` via
-`flip_wwan_autosense.sh`; reboot pending.
+`WwanAutoSense` was the only WWAN-related setting captured as **Disabled**.
+Display name suggested it might control runtime radio management (i.e.,
+platform-driven power state coordination), plausibly what flips `WWEN`.
+This was a name-and-elimination guess. After flipping it to `Enabled` and
+rebooting, `reset_method` remained `flr bus` with no `acpi`, so this is not
+the WWEN gate.
 
 If it turns out NOT to be the gate, alternatives:
 
@@ -445,17 +547,57 @@ overloaded MM naming convention — these aren't unstable test stubs,
 they're "MM upstream hasn't picked a per-modem default yet, integrator
 chooses." Wired into mature `mm_base_manager_cleanup` paths.
 
-**P4 ✅ STAGED — BIOS WwanAutoSense flip** (real platform-level fix).
-Awaits reboot to validate WWEN gating hypothesis.
+**P0b ✅ APPLIED LOCALLY — Fix the runtime-PM pin timing in NixOS**. The
+old udev rule was installed and valid, but it only matched PCI
+`ACTION=="add"`, which can run before `mhi_pci_probe()` enables
+autosuspend. `nix/nixos/hosts/rugged/foxconn-wwan.nix` now applies both
+local variants:
 
-**P1 — Kernel quirk patch** (if P0+P4 both fail). Add
-`.no_recovery_reset = true` to `mhi_foxconn_dw5934e_info` (and other
-productized Foxconn variants); short-circuit the
-`pci_try_reset_function` call in `mhi_pci_recovery_work` when set.
+- Immediate udev fix: match `bind` and `change` too:
+  `ACTION=="add|bind|change", SUBSYSTEM=="pci", ATTR{vendor}=="0x105b",
+ATTR{device}=="0xe11d", TEST=="power/control", ATTR{power/control}="on"`.
+  Rationale: the bind event is after driver probe, so it should run after
+  the driver's `pm_runtime_set_autosuspend_delay(..., 2000)` path.
+- Robust verifier: when net device `wwan0` appears, udev starts
+  `foxconn-wwan-disable-runtime-pm.service`; the service discovers PCI
+  `105b:e11d`, writes `on` to `power/control`, then verifies the final value.
 
-- Effort: ~half-day (out-of-tree patch + NixOS plumbing + reboot/test).
-- Send upstream to `loic.poulain@linaro.org` / `mhi@lists.linux.dev`.
-  The current behavior is wrong for the productized-vendor class.
+Verification after rebuild/reboot:
+
+```
+cat /sys/bus/pci/devices/0000:71:00.0/power/control
+# expected: on
+```
+
+Then let the machine idle on WiFi for longer than the historical 28-minute
+failure window and confirm no `Resuming from non M3 state (SYS ERROR)`.
+
+**P1 — Kernel quirk patch for prevention, deferred**. Do not carry this
+locally unless the userspace timing fix above still fails. The upstream
+driver already has `mhi_foxconn_dw5934e_info.no_m3` and the
+runtime-autosuspend gate already checks it:
+`if (pci_pme_capable(... PCI_D3hot) && !(info->no_m3))`. This prevents the
+driver from enabling the broken runtime M3 path in the first place.
+
+- Possible local/upstream patch: set `.no_m3 = true` for PCI `105b:e11d`
+  in `mhi_foxconn_dw5934e_info`.
+- Upstream path: send the quirk to
+  `loic.poulain@linaro.org` / `mhi@lists.linux.dev` (and consider the sibling
+  productized Foxconn SDX72 IDs after checking them).
+  The current behavior is wrong for this productized-vendor module: the
+  device advertises M3/PME capability, but observed runtime M3 resume can put
+  it in SYS_ERR and the no-SBL recovery path cannot restore it.
+
+**P1b — Kernel quirk patch for failed recovery**. If upstream pushes back on
+declaring M3 unsupported, add a productized-device recovery quirk instead:
+avoid in-place `pci_try_reset_function()` after MHI runtime-resume failure and
+prefer full remove/rescan semantics, because local evidence shows FLR leaves
+this modem in PBL while remove/rescan re-probes cleanly. This is less direct
+than `.no_m3 = true` because it handles the aftermath, not the trigger.
+
+**P4 ❌ DISPROVEN — BIOS WwanAutoSense flip**. Reboot showed
+`reset_method` stayed `flr bus`, with no `acpi`; this did not expose the DSDT
+WWEN-gated power-cycle methods.
 
 **P2 — Obtain SBL firmware blob for SDX72**. Locate
 `qcom/sdx72m/foxconn/sbl1.mbn` (or `xbl.elf`) from a Windows driver,
@@ -475,6 +617,12 @@ Unbind `mhi-pci-generic` from `0000:71:00.0` via `systemd-sleep`
 pre-hook, re-bind in post-resume hook. Skips kernel's broken suspend
 path by removing the device from kernel view. Risk: rebind may still
 fail if modem state changed during sleep without host's knowledge.
+
+**P6 — Current non-reboot recovery path**. Keep `modem.sh recover`
+available for incident response: PCI remove + bus rescan has recovered this
+class after FLR failed. This is not prevention and should not be the final
+answer, but it is the practical way to recover without reboot if the modem
+has already disappeared.
 
 ---
 
@@ -534,7 +682,7 @@ Confidence: 🟢 verified from code/data · 🟡 plausible/partly-evidenced · �
 | 10  | `--test-low-power-suspend-resume` issues firmware-level LOW_POWER via QMI DMS                                                        | 🟢         | MM source `main.c:65-71` → `mm-base-manager.c:1026-1036` → `mm-broadband-modem-qmi.c:2592`              |
 | 11  | DSDT contains full WWAN slot power-cycle methods, gated by `WWEN`                                                                    | 🟢         | DSDT decompile, captured at `snapshots/20260514-144702/DSDT.dsl`                                        |
 | 12  | `WWEN == 0` currently                                                                                                                | 🟢         | `/sys/.../reset_method = flr bus`; no `acpi` means `_RST` isn't in namespace                            |
-| 13  | `WwanAutoSense=Enabled` will set `WWEN >= 1`                                                                                         | 🔴         | Pure guess from display name + process of elimination. **Next reboot validates.**                       |
+| 13  | `WwanAutoSense` was the `WWEN` gate                                                                                                  | 🔴         | Disproven post-reboot: `reset_method` stayed `flr bus`, no `acpi` method appeared.                      |
 | 14  | Windows uses an analogous firmware low-power sequence                                                                                | 🔴         | No Windows trace captured. Plausible by analogy to MBIM/QMI standards.                                  |
 | 15  | Upstream kernel has no fix for this wedge                                                                                            | 🟢         | Diff v6.19 vs torvalds master: zero changes to `mhi_pci_recovery_work`, `mhi_pci_runtime_*`, `mhi_pm_*` |
 

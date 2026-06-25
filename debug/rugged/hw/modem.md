@@ -12,13 +12,22 @@ survived without a wedge (2026-05-18/19). The
 Modem re-enumerates on each resume (modem0 → modem1 → modem2) but
 connects to Google Fi reliably. No MHI/SBL wedge observed. See
 `modem_suspend_research.md` for the full workaround history.
-**Runtime-PM wedge found (2026-06-08)**: the system-suspend workaround
-left a gap — kernel _runtime-PM_ autosuspend (2s idle delay) was driving
-the modem into the same broken M3 path independently of system sleep, and
-wedged it on 2026-06-05 (SBL/PBL trap, no channels, invisible to MM).
-Fixed by a udev rule pinning `power/control=on` for `105b:e11d` in
-`foxconn-wwan.nix`. See `modem_suspend_research.md` §"Runtime-PM
-autosuspend". Requires `nixos-rebuild switch` to take effect.
+**Runtime-PM wedge found (2026-06-08; recurred 2026-06-22)**: the
+system-suspend workaround left a gap — kernel _runtime-PM_ autosuspend
+(2s idle delay) was driving the modem into the same broken M3 path
+independently of system sleep, and wedged it on 2026-06-05 and again on
+2026-06-22 (SBL/PBL trap, no channels, invisible to MM). The first
+mitigation, a udev `ACTION=="add"` rule pinning `power/control=on`, was
+installed and valid but incomplete: current live state still showed
+`power/control=auto` because the MHI PCI driver enables runtime
+autosuspend after the early add event. Current local fix in
+`foxconn-wwan.nix`: broaden the direct udev write to add/bind/change and
+start a `foxconn-wwan-disable-runtime-pm.service` verifier when `wwan0`
+appears. This is intentionally userspace-only for now: no local kernel patch
+is carried. Remaining upstream-grade work would be teaching the Linux MHI
+driver not to enter M3 for this SKU. See
+`modem_suspend_research.md` §"Runtime-PM recurrence after the udev rule"
+and §"Avenues to attack".
 **Throttle appears lifted**: `curl --interface wwan0
 http://speedtest.tele2.net/1MB.zip` measured **~158 KB/s (~1.27 Mbps)**
 on LTE on 2026-05-02 with WiFi off — ~20× over the previously
