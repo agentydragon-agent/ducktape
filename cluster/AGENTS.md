@@ -82,6 +82,24 @@ Delegate complex diagnostics and independent workstreams to subagents via the Ta
 - **Talos CLI**: Run from cluster directory (direnv provides tools + config)
 - **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
 
+## Cilium Gateway Status
+
+The public `cluster-gateway` intentionally uses Cilium Gateway API in
+`gatewayAPI.hostNetwork.enabled` mode. Envoy binds ports 80/443 directly on the
+OVH Kubernetes nodes, and Route 53 wildcard/apex records point at those node IPs.
+There is no provider-managed `LoadBalancer`/VIP object for Cilium to report as a
+Gateway address.
+
+Because of that exposure model, `gateway-system/cluster-gateway` can report
+`Programmed=False` with `AddressNotAssigned` / `Address not ready yet` even while
+HTTPRoutes are accepted, Envoy listeners are serving traffic, and public probes
+succeed. Do not treat that condition alone as an outage or try to "fix" it by
+adding static `Gateway.spec.addresses`; that would not create provider-level
+failover. Check HTTPRoute `Accepted`/`ResolvedRefs`, Cilium/Envoy programming,
+and blackbox probes against the public node IPs instead. See <docs/plan.md>
+"Cilium Gateway API `Programmed=False`" for the full rationale and migration
+options.
+
 ## Key Files
 
 In `terraform/main/`:
