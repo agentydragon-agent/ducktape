@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import uvicorn
+from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
 from prometheus_client import start_http_server
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -74,6 +75,15 @@ def build_server(settings: FacadeSettings, *, auth_provider: Any | None = None) 
         server = build_proxy_server(settings, auth=auth)
     if settings.tools is not None:
         server.add_middleware(ToolFilterMiddleware(settings.tools))
+    if settings.logging.mcp_messages:
+        server.add_middleware(
+            StructuredLoggingMiddleware(
+                log_level=logging.getLevelNamesMapping()[settings.logging.mcp_message_level],
+                include_payloads=settings.logging.mcp_payloads,
+                include_payload_length=settings.logging.mcp_payload_length,
+                methods=settings.logging.mcp_methods,
+            )
+        )
     return server, client_storage
 
 

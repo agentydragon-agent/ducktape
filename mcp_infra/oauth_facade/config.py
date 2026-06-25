@@ -53,6 +53,24 @@ class StdioUpstream(BaseModel):
 
 Upstream = Annotated[HttpUpstream | StdioUpstream, Field(discriminator="kind")]
 
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+class FacadeLoggingConfig(BaseModel):
+    """Optional facade observability knobs."""
+
+    mcp_messages: bool = Field(
+        default=False, description="Install FastMCP structured middleware that logs MCP protocol messages."
+    )
+    mcp_message_level: LogLevel = Field(default="INFO", description="Log level for MCP protocol message logs.")
+    mcp_payloads: bool = Field(default=False, description="Whether to include full MCP payloads in protocol logs.")
+    mcp_payload_length: bool = Field(
+        default=True, description="Whether MCP protocol logs include serialized payload lengths."
+    )
+    mcp_methods: list[str] | None = Field(
+        default=None, description="Optional MCP method allowlist for protocol message logs; default logs every method."
+    )
+
 
 class StaticBearerClientAuth(BaseModel):
     """Cluster-internal client auth: every MCP request must carry a fixed bearer.
@@ -91,6 +109,7 @@ class FacadeSettings(BaseSettings):
     # HTTPRoute (which forwards every path on `port` to the internet).
     metrics_port: int = 9090
     persistence: PersistenceConfig = FilePersistence()
+    logging: FacadeLoggingConfig = Field(default_factory=FacadeLoggingConfig)
 
     probe_interval_seconds: float = Field(
         default=60.0, description="How often the background probe lists upstream tools to refresh /metrics and /readyz."

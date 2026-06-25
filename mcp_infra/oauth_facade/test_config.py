@@ -81,6 +81,24 @@ def test_static_bearer_client_auth_with_tool_filter(monkeypatch) -> None:
     assert settings.tools == ToolFilter(allow={"search_nodes", "read_node"})
 
 
+def test_logging_settings_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("MCP_FACADE_CLIENT_AUTH__STATIC_BEARER", "ro-token")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
+    monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp")
+    monkeypatch.setenv("MCP_FACADE_FACADE_NAME", "Tana MCP Facade")
+    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_MESSAGES", "true")
+    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_MESSAGE_LEVEL", "DEBUG")
+    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_PAYLOADS", "false")
+    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_PAYLOAD_LENGTH", "true")
+    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_METHODS", '["initialize","tools/list"]')
+    settings = FacadeSettings()
+    assert settings.logging.mcp_messages is True
+    assert settings.logging.mcp_message_level == "DEBUG"
+    assert settings.logging.mcp_payloads is False
+    assert settings.logging.mcp_payload_length is True
+    assert settings.logging.mcp_methods == ["initialize", "tools/list"]
+
+
 def test_requires_an_auth_mode() -> None:
     with pytest.raises(ValidationError):
         FacadeSettings(upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"), facade_name="x")

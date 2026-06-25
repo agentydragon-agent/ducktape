@@ -7,7 +7,8 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
-from mcp_infra.oauth_facade.server import _StaticBearerGuard
+from mcp_infra.oauth_facade.config import FacadeLoggingConfig, FacadeSettings, HttpUpstream, StaticBearerClientAuth
+from mcp_infra.oauth_facade.server import _StaticBearerGuard, build_server
 
 
 def _guarded_app() -> Starlette:
@@ -37,6 +38,39 @@ def test_correct_token_allowed() -> None:
     resp = TestClient(_guarded_app()).get("/mcp", headers={"Authorization": "Bearer sekret"})
     assert resp.status_code == 200
     assert resp.text == "ok"
+
+
+def test_mcp_message_logging_middleware_is_optional() -> None:
+    settings = FacadeSettings(
+        client_auth=StaticBearerClientAuth(static_bearer="sekret"),
+        upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
+        facade_name="Test Facade",
+    )
+    server, _client_storage = build_server(settings)
+    assert all(middleware.__class__.__name__ != "StructuredLoggingMiddleware" for middleware in server.middleware)
+
+
+def test_mcp_message_logging_middleware_can_be_enabled() -> None:
+    settings = FacadeSettings(
+        client_auth=StaticBearerClientAuth(static_bearer="sekret"),
+        upstream=HttpUpstream(url="http://upstream.svc:8263/mcp"),
+        facade_name="Test Facade",
+        logging=FacadeLoggingConfig(
+            mcp_messages=True,
+            mcp_message_level="DEBUG",
+            mcp_payloads=False,
+            mcp_payload_length=True,
+            mcp_methods=["initialize", "tools/list"],
+        ),
+    )
+    server, _client_storage = build_server(settings)
+    logging_middleware = [
+        middleware for middleware in server.middleware if middleware.__class__.__name__ == "StructuredLoggingMiddleware"
+    ]
+    assert len(logging_middleware) == 1
+    assert logging_middleware[0].include_payloads is False
+    assert logging_middleware[0].include_payload_length is True
+    assert logging_middleware[0].methods == ["initialize", "tools/list"]
 
 
 if __name__ == "__main__":

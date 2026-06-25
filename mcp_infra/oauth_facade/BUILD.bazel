@@ -84,6 +84,7 @@ py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     deps = [
+        ":config",
         ":server",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

@@ -12,3 +12,11 @@ data:
   MCP_FACADE_PERSISTENCE__KIND: "valkey"
   MCP_FACADE_PERSISTENCE__HOST: "mcp-valkey-ovh-master.tana-mcp.svc.cluster.local"
   MCP_FACADE_PERSISTENCE__DB: "0"
+  # Let Uvicorn's existing access log report the original client when requests
+  # arrive through trusted in-cluster Gateway/Envoy paths.
+  FORWARDED_ALLOW_IPS: "10.42.0.0/16,10.244.0.0/16,127.0.0.1"
+  FASTMCP_ENABLE_RICH_LOGGING: "false"
+  FASTMCP_LOG_LEVEL: "INFO"
+  MCP_FACADE_LOGGING__MCP_MESSAGES: "true"
+  MCP_FACADE_LOGGING__MCP_PAYLOADS: "false"
+  MCP_FACADE_LOGGING__MCP_PAYLOAD_LENGTH: "true"
