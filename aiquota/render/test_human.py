@@ -125,8 +125,8 @@ def test_error_only_when_no_data(snapshot: SnapshotAssertion) -> None:
 
 def test_error_with_last_success_falls_back_to_stale_windows() -> None:
     # Latest check failed and returned no windows; the prior successful
-    # snapshot is 1 day old. The renderer should show those windows with
-    # a `(stale 1d0h)` tag and a failed-check header so the user keeps
+    # snapshot is 1 day old. The renderer should show the failed-check header
+    # with a single provider-level `(stale 1d0h)` tag so the user keeps
     # seeing real numbers without mistaking them for a fresh update.
     out = human.render(
         _quotas(
@@ -155,8 +155,8 @@ def test_error_with_last_success_falls_back_to_stale_windows() -> None:
         now=_FETCHED_AT,
     )
     lines = out.split("\n")
-    assert lines[0] == "claude  check failed 2m ago: HTTP 503"
+    assert lines[0] == "claude  last refresh failed 2m ago: HTTP 503  (stale 1d0h)"
     assert lines[1].startswith("  5h:  35%  ↻ 2h12m")
-    assert lines[1].endswith("(stale 1d0h)")
+    assert "(stale" not in lines[1]
     assert lines[2].startswith("  7d:  72%  ↻ 5d3h")
-    assert lines[2].endswith("(stale 1d0h)")
+    assert "(stale" not in lines[2]

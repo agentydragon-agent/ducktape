@@ -104,10 +104,11 @@ function formatFreshness(lastFetch) {
   return `${isStaleFetch(lastFetch) ? "stale, " : ""}updated ${age} ago`;
 }
 
-function formatCheckFailure(error, lastCheck) {
-  if (lastCheck == null) return `check failed: ${error}`;
+function formatCheckFailure(error, lastCheck, haveWindows) {
+  const prefix = haveWindows ? "last refresh failed" : "check failed";
+  if (lastCheck == null) return `${prefix}: ${error}`;
   const ageSeconds = Math.max(0, (Date.now() - lastCheck) / 1000);
-  return `check failed ${formatAge(ageSeconds)} ago: ${error}`;
+  return `${prefix} ${formatAge(ageSeconds)} ago: ${error}`;
 }
 
 // Pure pace computation. See DESIGN.md ("Pace math") for derivation.
@@ -573,7 +574,7 @@ const QuotaIndicator = GObject.registerClass(
           const { short, long, staleAge } = effectiveState(p.state);
           p.shortRow.visible = true;
           p.longRow.visible = false;
-          this._renderExtraActiveRow(p.shortRow, short, long, staleAge);
+          this._renderExtraActiveRow(p.shortRow, short, long);
         } else {
           const { short, long, staleAge } = effectiveState(p.state);
           p.shortRow.visible = true;
@@ -588,27 +589,28 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-error");
       item.label.remove_style_class_name("quota-popup-header-stale");
 
-      const { extraUsage } = effectiveState(state);
+      const { short, long, extraUsage, staleAge } = effectiveState(state);
+      const haveWindows = short != null || long != null;
       const parts = [title];
       if (state.error) {
-        parts.push(formatCheckFailure(state.error, state.lastCheck));
+        parts.push(formatCheckFailure(state.error, state.lastCheck, haveWindows));
         item.label.add_style_class_name("quota-popup-header-error");
       } else if (isStaleFetch(state.lastFetch)) {
         item.label.add_style_class_name("quota-popup-header-stale");
       }
+      if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
       const extraStr = formatExtraUsage(extraUsage);
       if (extraStr) parts.push(extraStr);
       if (!state.error) parts.push(formatFreshness(state.lastFetch));
       item.label.set_text(parts.join(" · "));
     }
 
-    _renderExtraActiveRow(item, short, long, staleAgeSeconds) {
+    _renderExtraActiveRow(item, short, long) {
       item._bars.visible = false;
       this._setBarFill(item._timeFill, null);
       this._setBarFill(item._usageFill, null);
       this._setBarTint(item._usageFill, "unknown");
       const parts = [this._formatExtraActiveWindow("5h", short), this._formatExtraActiveWindow("7d", long)];
-      if (staleAgeSeconds != null) parts.push(`(stale ${formatAge(staleAgeSeconds)})`);
       item._summaryLabel.set_text(parts.join("  "));
     }
 
@@ -637,7 +639,6 @@ const QuotaIndicator = GObject.registerClass(
       const parts = [used, reset];
       if (paceStr) parts.push(`Δ${paceStr}`);
       if (forecast) parts.push(forecast);
-      if (staleAgeSeconds != null) parts.push(`(stale ${formatAge(staleAgeSeconds)})`);
       item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
 
       this._setBarFill(item._timeFill, elapsedFraction(liveState));

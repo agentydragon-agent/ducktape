@@ -43,6 +43,13 @@ class FetchError(BaseModel):
     kind: Literal["error"] = "error"
     error: str
 
+    @classmethod
+    def from_exception(cls, e: BaseException, context: str | None = None) -> "FetchError":
+        message = str(e).strip() or type(e).__name__
+        if context:
+            message = f"{context}: {message}"
+        return cls(error=message)
+
 
 _FetchResult = Annotated[FetchSuccess | FetchError, Field(discriminator="kind")]
 

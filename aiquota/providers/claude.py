@@ -190,7 +190,7 @@ class ClaudeProvider(Provider):
             resp.raise_for_status()
             usage = _UsageResponse.model_validate(resp.json())
         except Exception as e:
-            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+            return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 
         short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
         long = _to_window(usage.seven_day, LONG_WINDOW_SECS)

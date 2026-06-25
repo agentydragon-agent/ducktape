@@ -21,28 +21,28 @@ def _render_provider(pv: ProviderView, now: datetime) -> str:
     # If the latest call gave us nothing usable, fall back to the prior
     # successful snapshot — stale-but-real numbers beat "no data".
     if isinstance(out_result, FetchSuccess) and (out_result.short_window or out_result.long_window):
-        short, long, extra, stale = out_result.short_window, out_result.long_window, out_result.extra_usage, None
+        short, long, extra, stale_age = out_result.short_window, out_result.long_window, out_result.extra_usage, None
     elif pv.last_success is not None:
-        short, long, extra, stale = _stale_windows(pv.last_success, now)
+        short, long, extra, stale_age = _stale_windows(pv.last_success, now)
     else:
         short = long = extra = None
-        stale = None
+        stale_age = None
 
     if error and short is None and long is None:
-        return _header(pv.provider, error, pv.last_output.fetched_at, now)
+        return _header(pv.provider, error, pv.last_output.fetched_at, now, stale_age)
 
     if pv.currently_over_plan:
         # Mirror the GNOME popup's text-only active-extra view: while burning,
         # bars are noise, but both reset countdowns still matter.
         lines = [f"{pv.provider}  {_format_extra_active(extra)}"]
-        lines.append(_active_windows_line(short, long, stale))
+        lines.append(_active_windows_line(short, long))
         return "\n".join(lines)
 
-    lines = [_header(pv.provider, error, pv.last_output.fetched_at, now)]
+    lines = [_header(pv.provider, error, pv.last_output.fetched_at, now, stale_age)]
     if short is not None:
-        lines.append(_window_line("5h", short, stale))
+        lines.append(_window_line("5h", short))
     if long is not None:
-        lines.append(_window_line("7d", long, stale))
+        lines.append(_window_line("7d", long))
     if pv.extra_status == "informational" and extra is not None:
         # Prepaid still has room, but the user incurred extra-usage spend earlier
         # in the billing month. Surface it so the monthly bill doesn't sneak up.
@@ -71,11 +71,18 @@ def _refreshed_window(w: QuotaWindow | None, now: datetime) -> QuotaWindow | Non
     return w.model_copy(update={"reset_seconds": max(0.0, (w.reset_at - now).total_seconds())})
 
 
-def _header(provider: str, error: str | None, checked_at: datetime, now: datetime) -> str:
+def _header(provider: str, error: str | None, checked_at: datetime, now: datetime, stale_age: str | None) -> str:
+    parts = [provider]
     if error is None:
-        return provider
+        if stale_age is not None:
+            parts.append(f"(stale {stale_age})")
+        return "  ".join(parts)
     checked_age = format_age((now - checked_at).total_seconds())
-    return f"{provider}  check failed {checked_age} ago: {error}"
+    prefix = "last refresh failed" if stale_age is not None else "check failed"
+    parts.append(f"{prefix} {checked_age} ago: {error}")
+    if stale_age is not None:
+        parts.append(f"(stale {stale_age})")
+    return "  ".join(parts)
 
 
 def _format_extra_active(extra: ExtraUsage | None) -> str:
@@ -91,10 +98,8 @@ def _format_extra_informational(extra: ExtraUsage) -> str:
     return f"extra: ${extra.used_usd:.2f}/${extra.monthly_limit_usd:.0f} ({pct}%) spent this month"
 
 
-def _active_windows_line(short: QuotaWindow | None, long: QuotaWindow | None, stale_age: str | None) -> str:
+def _active_windows_line(short: QuotaWindow | None, long: QuotaWindow | None) -> str:
     parts = [_active_window_part("5h", short), _active_window_part("7d", long)]
-    if stale_age is not None:
-        parts.append(f"(stale {stale_age})")
     return "  " + "  ".join(parts)
 
 
@@ -104,7 +109,7 @@ def _active_window_part(label: str, w: QuotaWindow | None) -> str:
     return f"{label}: {round(w.used_percent):>3d}% ↻ {format_duration(w.reset_seconds)}"
 
 
-def _window_line(label: str, w: QuotaWindow, stale_age: str | None) -> str:
+def _window_line(label: str, w: QuotaWindow) -> str:
     used = f"{round(w.used_percent):>3d}%"
     reset = f"↻ {format_duration(w.reset_seconds)}"
     pace = compute_pace(w)
@@ -115,6 +120,4 @@ def _window_line(label: str, w: QuotaWindow, stale_age: str | None) -> str:
     forecast = format_pace_forecast(pace, w.reset_seconds)
     if forecast:
         parts.append(forecast)
-    if stale_age is not None:
-        parts.append(f"(stale {stale_age})")
     return "  " + "  ".join(parts)

@@ -144,3 +144,19 @@ async def test_refresh_failure_without_new_auth_returns_fetch_error(tmp_path: Pa
         output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
 
     assert isinstance(output.result, FetchError)
+
+
+async def test_usage_timeout_error_is_not_blank(tmp_path: Path) -> None:
+    token = _jwt(datetime.now(UTC) + timedelta(days=10))
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(token)))
+
+    def usage_timeout(request: httpx.Request) -> None:
+        raise httpx.ReadTimeout("", request=request)
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(USAGE_URL).mock(side_effect=usage_timeout)
+        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
+
+    assert isinstance(output.result, FetchError)
+    assert output.result.error == "codex usage fetch: ReadTimeout"

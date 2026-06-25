@@ -1,5 +1,5 @@
 {
-  "_comment": "Latest check for claude failed 2 minutes ago (HTTP 503) and returned no windows; the prior successful snapshot is 1 day old. Popup header shows 'check failed 2m ago: HTTP 503', the 5h/7d rows render the stale windows tagged '(stale 1d0h)', and the panel icon takes the 'stale' tint. codex shows normal data alongside; zai is untouched.",
+  "_comment": "Latest check for claude failed 2 minutes ago (HTTP 503) and returned no windows; the prior successful snapshot is 1 day old. Popup header shows 'last refresh failed 2m ago: HTTP 503' plus a single provider-level '(stale 1d0h)' tag, the 5h/7d rows render the stale windows without row-level stale tags, and the panel icon takes the 'stale' tint. codex shows normal data alongside; zai is untouched.",
   "claude": {
     "short": null,
     "long": null,

@@ -259,7 +259,7 @@ class CodexProvider(Provider):
                 try:
                     auth = await _refresh_or_reload(auth, client)
                 except Exception as e:
-                    return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+                    return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "codex token refresh"))
                 if not auth:
                     return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
 
@@ -267,16 +267,18 @@ class CodexProvider(Provider):
                 usage = await _fetch_usage(auth, client)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code != 401:
-                    return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+                    return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "codex usage fetch"))
                 try:
                     refreshed = await _refresh_or_reload(auth, client)
                     if not refreshed:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
                     usage = await _fetch_usage(refreshed, client)
                 except Exception as refresh_error:
-                    return ProviderFetch(fetched_at=now, result=FetchError(error=str(refresh_error)))
+                    return ProviderFetch(
+                        fetched_at=now, result=FetchError.from_exception(refresh_error, "codex token refresh")
+                    )
             except Exception as e:
-                return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+                return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "codex usage fetch"))
 
         rl = usage.rate_limit
         short = _to_window(rl.primary_window if rl else None)

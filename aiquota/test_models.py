@@ -36,6 +36,11 @@ def test_provider_quota_error() -> None:
     assert pq.last_success is None
 
 
+def test_fetch_error_from_exception_uses_type_when_message_is_blank() -> None:
+    err = FetchError.from_exception(TimeoutError(), "quota fetch")
+    assert err.error == "quota fetch: TimeoutError"
+
+
 def test_all_quotas_roundtrip() -> None:
     reset_at = datetime(2026, 1, 15, 13, 0, 0, tzinfo=UTC)
     payload = FetchSuccess(

@@ -82,7 +82,7 @@ class ZaiProvider(Provider):
         try:
             key = path.expanduser().read_text().strip()
         except OSError as e:
-            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+            return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "reading z.ai API key"))
         if not key:
             return ProviderFetch(fetched_at=now, result=FetchError(error="api key file is empty"))
 
@@ -92,7 +92,7 @@ class ZaiProvider(Provider):
             resp.raise_for_status()
             quota = _QuotaResponse.model_validate(resp.json())
         except Exception as e:
-            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+            return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "z.ai quota fetch"))
 
         limits = quota.data.limits if quota.data else []
         short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
