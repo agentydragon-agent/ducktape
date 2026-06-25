@@ -290,6 +290,17 @@ creation_rules:
       - age:
           - *admin
           - *atlas-agentydragon
+  # TODO: Revisit the security model before wiring persistent gecko host keys into NixOS.
+  - path_regex: ssh_keys/gecko-host-.*\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
   - path_regex: ssh_keys/gecko-.*\.sops\.key$
     store_type: binary
     key_groups:
