@@ -72,23 +72,22 @@ secrets stay in-cluster on the pod; vault credentials are only for the MCP beare
 
 ## Phases (de-risk the linchpin first)
 
-### P0 — spike: can a cloud session reach the cluster as `haku`?
+### P0 — spike: can a cloud session reach the cluster as `haku`? — **PASSED (2026-06-25)**
 
-The single biggest unknown. Minimal artifacts; throwaway.
+**Pivot during P0:** the k8s-MCP path needs a token with `aud=kubectl-sandbox-mcp`,
+but the existing haku token (`secrets/haku-k8s-jwt.yaml`) has
+`aud=kubectl-sandbox-client-credentials` + `groups=[haku]`. The MCP 401s it, but
+**kube-apiserver accepts it directly** (200 on `haku-sandbox` pods; same audience
+the Claude-web haku path uses). So v0 took **Path B: the cloud agent `curl`s
+`https://kubeapi.allegedly.works` directly** with the token — no MCP, no tunnel,
+no Authentik change. (MCP+second-aud stays a cleaner-tooling follow-up.)
 
-- Create a **cloud** environment (`ant beta:environments create`, default config
-  — not `self_hosted`).
-- Create a vault credential pointing at the k8s MCP
-  (`kubectl-passthrough-mcp.allegedly.works` is the bearer variant — likely the
-  clean fit) authed as `haku-k8s`.
-- A throwaway agent whose only tool is that MCP; prompt: "list pods in
-  `haku-sandbox`."
-- **Pass =** the session lists `haku-sandbox` pods (proves reachability +
-  auth + the `haku` RBAC scope from Anthropic's cloud). **If this fails, stop and
-  rethink** (tunnel, or a different credential path) before building anything.
-
-Resolves: vault credential type for an OAuth/bearer MCP; whether Anthropic's
-cloud egress can reach `*.allegedly.works`; haku-group RBAC actually applies.
+Built by `provision.sh` (committed): cloud env (`type: cloud`, unrestricted
+egress for v0), a vault `environment_variable` credential injecting the haku
+token as `KUBE_TOKEN` (substituted **only** for `kubeapi.allegedly.works`), and a
+bash-toolset agent. The deployment-run session ran
+`curl -H "Authorization: Bearer $KUBE_TOKEN" …/haku-sandbox/pods` and listed the
+pods. ✓ proves cloud egress + env-var substitution + `haku` RBAC scope.
 
 ### P1 — ephemeral compute
 
