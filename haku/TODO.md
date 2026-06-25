@@ -74,7 +74,7 @@ facade** in front (the Authentik OAuth facade is auth, not tool filtering — se
 
 ## Managed Agents runtime (Runtime B) — operator activation to go live
 
-Runtime B (`runtime/managed_agent/`) is built end-to-end and its control plane is
+Runtime B (`runtime/managed_agent/self_hosted/`) is built end-to-end and its control plane is
 provisioned (environment `env_015uqL9WAMSDytQEWWmLG9zF`, agent, vault +
 `tana-mcp-ro` credential, scheduled deployment `depl_011DSrUoXuhoDWJoPyDuePqR`;
 full IDs recorded on #2438). PR #2442 adds the worker image build+push and the
@@ -95,7 +95,7 @@ remains is operator activation (runbook in that dir's README):
 Settled (not blockers):
 
 - **Image build + push** — `nix build .#haku-worker-image` (full-NixOS,
-  `runtime/managed_agent/nixos.nix`) → `.github/workflows/haku-worker-image.yml`
+  `runtime/managed_agent/self_hosted/nixos.nix`) → `.github/workflows/haku-worker-image.yml`
   imports + pushes to `ghcr.io/agentydragon/haku-worker`; Flux tracks the tag via
   the `haku-worker` ImagePolicy.
 - **Egress** — `api.anthropic.com` is on the `haku-mitmproxy` allowlist
@@ -114,7 +114,7 @@ Settled (not blockers):
 ## Later (post-v0)
 
 - **In-cluster runtime** — realized as `runtime/agent` (Runtime C, MAF
-  self-hosted loop) and `runtime/managed_agent` (Runtime B, Managed Agents
+  self-hosted loop) and `runtime/managed_agent/self_hosted` (Runtime B, Managed Agents
   self-hosted worker; remaining wiring above). The old `haku-scanner` image +
   CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from

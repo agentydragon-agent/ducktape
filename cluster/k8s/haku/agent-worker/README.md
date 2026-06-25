@@ -3,13 +3,13 @@
 In-cluster worker for Haku on Anthropic Managed Agents. It long-polls
 Anthropic's work queue (`ant beta:worker poll`) and executes tool calls inside
 `haku-sandbox`. Design, trust split, and the control-plane provisioning live with
-the component: <../../../../haku/runtime/managed_agent/README.md>.
+the component: <../../../../haku/runtime/managed_agent/self_hosted/README.md>.
 
 The image is the full-NixOS `.#haku-worker-image`, built and pushed to
 `ghcr.io/agentydragon/haku-worker` by `.github/workflows/haku-worker-image.yml`;
 Flux tracks the tag via the `haku-worker` ImagePolicy. We don't boot the image
 (no systemd): the pod runs the worker closure directly as non-root `haku` —
-see `deployment.yaml` and `../../../../haku/runtime/managed_agent/nixos.nix`.
+see `deployment.yaml` and `../../../../haku/runtime/managed_agent/self_hosted/nixos.nix`.
 
 ## Manual prerequisites — NOT yet turnkey
 

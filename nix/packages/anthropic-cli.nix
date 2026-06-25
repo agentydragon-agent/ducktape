@@ -1,6 +1,6 @@
 # Anthropic CLI (`ant`): the Claude API / Managed Agents control-plane CLI.
 # Not in nixpkgs (and `pkgs.ant` is Apache Ant), so we vendor the upstream
-# statically-linked release binary. Used by haku/runtime/managed_agent
+# statically-linked release binary. Used by haku/runtime/managed_agent/self_hosted
 # (`ant beta:{environments,agents,vaults,deployments,worker} ...`).
 {
   lib,

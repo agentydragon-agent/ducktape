@@ -13,7 +13,7 @@ on:
   push:
     branches: [devel]
     paths:
-      - "haku/runtime/managed_agent/**"
+      - "haku/runtime/managed_agent/self_hosted/**"
       - "flake.nix"
       - "nix/packages/anthropic-cli.nix"
       - "nix/packages/fastmcp.nix"

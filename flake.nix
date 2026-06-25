@@ -273,7 +273,7 @@
       # Excluded from rbeToolPackages to keep the RBE image small.
       localOnlyPackages = [
         # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
-        # running `ant beta:*` (haku/runtime/managed_agent). Not needed on RBE.
+        # running `ant beta:*` (haku/runtime/managed_agent/self_hosted). Not needed on RBE.
         ducktapePkgs.anthropic-cli
         pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
         pkgs.ansible # 650MB
@@ -411,7 +411,7 @@
           # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
           nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
           # Full-NixOS container image for the Haku Managed Agents self-hosted
-          # worker (Runtime B, haku/runtime/managed_agent).
+          # worker (Runtime B, haku/runtime/managed_agent/self_hosted).
           # Build: nix build .#haku-worker-image
           # Load:  docker import result/tarball/*.tar haku-worker
           # Emit an UNCOMPRESSED rootfs tar: the CI step `podman import`s it and
@@ -563,7 +563,7 @@
           inherit system;
           specialArgs = { inherit (ducktapePkgs) anthropic-cli fastmcp; };
           modules = [
-            ./haku/runtime/managed_agent/nixos.nix
+            ./haku/runtime/managed_agent/self_hosted/nixos.nix
           ];
         };
 
