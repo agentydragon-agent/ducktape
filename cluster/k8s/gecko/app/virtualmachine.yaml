@@ -25,7 +25,7 @@ spec:
       spec:
         source:
           s3:
-            url: "https://s3.allegedly.works/vm-images/bootstrap/da37375538eb7da442add719d65dce838df2603b.qcow2"
+            url: "https://s3.allegedly.works/vm-images/bootstrap/f484cb3f043f7dab65528c4ad22330dace7b9fdb.qcow2"
             secretRef: gecko-vm-images-s3-reader
         pvc:
           accessModes:
