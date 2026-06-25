@@ -208,6 +208,12 @@ pub enum SelectorAtom {
         node: NodeTerm,
         value: StringTerm,
     },
+    AstBareProperty {
+        node: NodeTerm,
+        key: StringTerm,
+        identifier: StringTerm,
+        is_binding: bool,
+    },
     AstOperator {
         node: NodeTerm,
         value: StringTerm,
@@ -220,6 +226,15 @@ pub enum SelectorAtom {
     AstTopLevel {
         node: NodeTerm,
         ordinal: OrdinalTerm,
+    },
+    OrdinalOffset {
+        base: OrdinalTerm,
+        ordinal: OrdinalTerm,
+        offset: i32,
+    },
+    OrdinalBefore {
+        before: OrdinalTerm,
+        after: OrdinalTerm,
     },
     ReadsMember {
         owner: OwnerTerm,
@@ -458,6 +473,16 @@ impl SelectorProgram {
                 self.validate_node_term(node, "ast_label.node")?;
                 self.validate_string_term(value, "ast_label.value")
             }
+            SelectorAtom::AstBareProperty {
+                node,
+                key,
+                identifier,
+                ..
+            } => {
+                self.validate_node_term(node, "ast_bare_property.node")?;
+                self.validate_string_term(key, "ast_bare_property.key")?;
+                self.validate_string_term(identifier, "ast_bare_property.identifier")
+            }
             SelectorAtom::AstBoolLiteral { node, .. } => {
                 self.validate_node_term(node, "ast_bool_literal.node")
             }
@@ -473,6 +498,14 @@ impl SelectorProgram {
             SelectorAtom::AstTopLevel { node, ordinal } => {
                 self.validate_node_term(node, "ast_top_level.node")?;
                 self.validate_ordinal_term(ordinal, "ast_top_level.ordinal")
+            }
+            SelectorAtom::OrdinalOffset { base, ordinal, .. } => {
+                self.validate_ordinal_term(base, "ordinal_offset.base")?;
+                self.validate_ordinal_term(ordinal, "ordinal_offset.ordinal")
+            }
+            SelectorAtom::OrdinalBefore { before, after } => {
+                self.validate_ordinal_term(before, "ordinal_before.before")?;
+                self.validate_ordinal_term(after, "ordinal_before.after")
             }
             SelectorAtom::ReadsMember {
                 owner,
@@ -804,6 +837,13 @@ pub enum SelectorFact {
         node: NodeId,
         value: String,
     },
+    AstBareProperty {
+        chunk_id: ChunkId,
+        node: NodeId,
+        key: String,
+        identifier: String,
+        is_binding: bool,
+    },
     AstOperator {
         chunk_id: ChunkId,
         node: NodeId,
@@ -880,6 +920,7 @@ impl SelectorFact {
             Self::AstBoolLiteral { .. } => "ast_bool_literal",
             Self::AstIdentifierName { .. } => "ast_identifier_name",
             Self::AstPropertyName { .. } => "ast_property_name",
+            Self::AstBareProperty { .. } => "ast_bare_property",
             Self::AstOperator { .. } => "ast_operator",
             Self::AstRegexLiteral { .. } => "ast_regex_literal",
             Self::AstSuperClass { .. } => "ast_super_class",
@@ -1002,6 +1043,7 @@ impl SelectorFactStore {
                         value: value.clone(),
                     }),
             );
+        self.extend_ast_bare_property_facts(chunk_id, facts);
         self.facts.extend(
             facts
                 .operator
@@ -1037,6 +1079,112 @@ impl SelectorFactStore {
                     statement_ordinal: StatementOrdinal(*statement_ordinal),
                 }
             }));
+    }
+
+    fn extend_ast_bare_property_facts(&mut self, chunk_id: ChunkId, facts: &ChunkFacts) {
+        let node_kind: BTreeMap<NodeId, NodeKind> = facts.node_kind.iter().copied().collect();
+        let ident_name: BTreeMap<NodeId, &str> = facts
+            .ident_name
+            .iter()
+            .map(|(node, name)| (*node, name.as_str()))
+            .collect();
+        let prop_name: BTreeMap<NodeId, &str> = facts
+            .prop_name
+            .iter()
+            .map(|(node, name)| (*node, name.as_str()))
+            .collect();
+        let mut children_by_parent = BTreeMap::<NodeId, Vec<(u32, NodeId)>>::new();
+        for (parent, index, child) in &facts.child {
+            children_by_parent
+                .entry(*parent)
+                .or_default()
+                .push((*index, *child));
+        }
+        for children in children_by_parent.values_mut() {
+            children.sort_by_key(|(index, _child)| *index);
+        }
+
+        for (node, kind) in &node_kind {
+            match kind {
+                NodeKind::Shorthand => {
+                    if let Some(name) = ident_name.get(node).copied() {
+                        self.facts.push(SelectorFact::AstBareProperty {
+                            chunk_id,
+                            node: *node,
+                            key: name.to_string(),
+                            identifier: name.to_string(),
+                            is_binding: false,
+                        });
+                    }
+                }
+                NodeKind::KeyValue => {
+                    let Some(children) = children_by_parent.get(node) else {
+                        continue;
+                    };
+                    let [(_, key), (_, value)] = children.as_slice() else {
+                        continue;
+                    };
+                    if node_kind.get(value) != Some(&NodeKind::Ident) {
+                        continue;
+                    }
+                    if let Some((key, identifier)) = prop_name
+                        .get(key)
+                        .zip(ident_name.get(value))
+                        .map(|(k, i)| (*k, *i))
+                    {
+                        self.facts.push(SelectorFact::AstBareProperty {
+                            chunk_id,
+                            node: *node,
+                            key: key.to_string(),
+                            identifier: identifier.to_string(),
+                            is_binding: false,
+                        });
+                    }
+                }
+                NodeKind::PatAssign => {
+                    if children_by_parent
+                        .get(node)
+                        .is_some_and(|children| !children.is_empty())
+                    {
+                        continue;
+                    }
+                    if let Some(name) = ident_name.get(node).copied() {
+                        self.facts.push(SelectorFact::AstBareProperty {
+                            chunk_id,
+                            node: *node,
+                            key: name.to_string(),
+                            identifier: name.to_string(),
+                            is_binding: true,
+                        });
+                    }
+                }
+                NodeKind::PatKeyValue => {
+                    let Some(children) = children_by_parent.get(node) else {
+                        continue;
+                    };
+                    let [(_, key), (_, value)] = children.as_slice() else {
+                        continue;
+                    };
+                    if node_kind.get(value) != Some(&NodeKind::BindingIdent) {
+                        continue;
+                    }
+                    if let Some((key, identifier)) = prop_name
+                        .get(key)
+                        .zip(ident_name.get(value))
+                        .map(|(k, i)| (*k, *i))
+                    {
+                        self.facts.push(SelectorFact::AstBareProperty {
+                            chunk_id,
+                            node: *node,
+                            key: key.to_string(),
+                            identifier: identifier.to_string(),
+                            is_binding: true,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -1178,6 +1326,31 @@ mod tests {
             chunk_id: ChunkId(7),
             node: 1,
             statement_ordinal: StatementOrdinal(4),
+        }));
+    }
+
+    #[test]
+    fn imports_bare_property_chunk_facts() {
+        let mut chunk = ChunkFacts::default();
+        chunk.node_kind.push((1, NodeKind::Object));
+        chunk.node_kind.push((2, NodeKind::KeyValue));
+        chunk.node_kind.push((3, NodeKind::PropName));
+        chunk.node_kind.push((4, NodeKind::Ident));
+        chunk.child.push((1, 0, 2));
+        chunk.child.push((2, 0, 3));
+        chunk.child.push((2, 1, 4));
+        chunk.prop_name.push((3, "stable".to_string()));
+        chunk.ident_name.push((4, "runtimeValue".to_string()));
+
+        let mut store = SelectorFactStore::default();
+        store.extend_chunk_facts(ChunkId(7), &chunk);
+
+        assert!(store.facts.contains(&SelectorFact::AstBareProperty {
+            chunk_id: ChunkId(7),
+            node: 2,
+            key: "stable".to_string(),
+            identifier: "runtimeValue".to_string(),
+            is_binding: false,
         }));
     }
 

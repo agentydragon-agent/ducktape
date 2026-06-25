@@ -913,8 +913,9 @@ const styles = { first: firstClassName, second: secondClassName };"#,
 
 #[test]
 fn binding_group_source_match_range_ignores_comments_and_exports_subset() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeFirstClassName = "Widget-module_first__c0m";
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const runtimeFirstClassName = "Widget-module_first__c0m";
 // Deliberately between declarations; comments should not become selector anchors.
 const runtimeSecondClassName = "Widget-module_second__m3nt";
 /* Another ignored comment before the aggregate object. */
@@ -925,17 +926,24 @@ const runtimeStyles = {
 console.log(runtimeStyles.first, runtimeStyles.second);
 export { runtimeFirstClassName, runtimeSecondClassName, runtimeStyles };
 "#,
-        vec![logical_module_with_binding_groups(
-            "styles/commented-widget",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+            vec![logical_module_with_binding_groups(
+                "styles/commented-widget",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
 const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
 const styles = { first: firstClassName, second: secondClassName };"#,
-                &[("styles", "styles")],
+                    &[("styles", "styles")],
+                )],
             )],
-        )],
-    ));
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native multi-statement binding_group source_match should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
 
     assert_entry_output(
         &fixture,
@@ -955,6 +963,104 @@ const styles = { first: firstClassName, second: secondClassName };"#,
             "STR_LITERAL_MATCHING_RE",
             "Deliberately between declarations",
         ],
+    );
+}
+
+#[test]
+fn binding_group_source_match_range_with_outer_stmt_list_holes_stays_native() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const ignoredBefore = "before";
+const runtimeFirst = "alpha";
+function runtimeSecond() {
+  return `${runtimeFirst}:beta`;
+}
+const ignoredAfter = "after";
+console.log(runtimeSecond(), ignoredBefore, ignoredAfter);
+export { ignoredBefore, runtimeFirst, runtimeSecond, ignoredAfter };
+"#,
+            vec![logical_module_with_binding_groups(
+                "selected/range",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"STMT_LIST_HEAD;
+const first = "alpha";
+function second() {
+  return `${first}:beta`;
+}
+STMT_LIST_TAIL;"#,
+                    &[("first", "first"), ("second", "second")],
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native binding_group source_match with outer STMT_LIST holes should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
+
+    assert_entry_output(&fixture, "alpha:beta before after\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/selected/range.js",
+        &["first", "second"],
+        &["ignoredBefore", "ignoredAfter"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected/range.js",
+        &["const first", "function second", "alpha"],
+        &["ignoredBefore", "ignoredAfter", "STMT_LIST"],
+    );
+}
+
+#[test]
+fn binding_group_source_match_range_with_internal_stmt_list_hole_stays_native() {
+    let fixture = run_fixture_with_env(
+        FixtureOpts::new(
+            r#"const runtimeFirst = "alpha";
+const ignoredMiddle = "middle";
+function runtimeSecond() {
+  return `${runtimeFirst}:beta`;
+}
+console.log(runtimeSecond(), ignoredMiddle);
+export { runtimeFirst, ignoredMiddle, runtimeSecond };
+"#,
+            vec![logical_module_with_binding_groups(
+                "selected/gapped-range",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"const first = "alpha";
+STMT_LIST_MIDDLE;
+function second() {
+  return `${first}:beta`;
+}"#,
+                    &[("first", "first"), ("second", "second")],
+                )],
+            )],
+        ),
+        &[("DUCKTAPE_SOURCE_MATCH_TIMINGS", "1")],
+    );
+    assert!(
+        !fixture.stderr.contains("[debundle source_match]"),
+        "native binding_group source_match with internal STMT_LIST should not call the legacy resolver\nstderr:\n{}",
+        fixture.stderr
+    );
+
+    assert_entry_output(&fixture, "alpha:beta middle\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/selected/gapped-range.js",
+        &["first", "second"],
+        &["ignoredMiddle"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected/gapped-range.js",
+        &["const first", "function second", "alpha"],
+        &["ignoredMiddle", "STMT_LIST"],
     );
 }
 
