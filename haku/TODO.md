@@ -6,7 +6,8 @@ actionable checklist. Remove entries once done.
 ## New read-only sources to wire
 
 Each follows the same pattern: a read-only credential or filter facade reachable
-from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
+from `haku-sandbox`, plus a source guide in `base/sources/` (and any reusable
+technique as a recipe in `base/recipes.md`).
 
 - **CPAP data** — read-only access to daily summaries / AHI / compliance (see
   `cpap/`; WebDAV + EDF). Land scoped read creds as a `haku-sandbox` secret and
@@ -17,7 +18,7 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
   (callers never see it), and is gated by the static bearer `haku-tana-ro-token`
   (reflected into `haku-sandbox`). It's published at the bearer-gated route
   `tana-mcp-ro.allegedly.works`, Haku's closure carries the `fastmcp` client, and
-  the `tana_review` playbook + the `haku-tana-ro-token` credentials row use it.
+  the `tana` playbook + the `haku-tana-ro-token` credentials row use it.
   Remaining:
   - Confirm the read-only allowlist against the live `tools/list`; settle the
     `get_or_create_calendar_node` exclusion (it can create a daily node).
@@ -31,7 +32,7 @@ from `haku-sandbox`, plus an example playbook in `base/playbooks/`.
     not a blocker.
   - **Future (PLAN north star):** give Haku `mcp__tana_ro__*` tools natively via a
     `.mcp.json` `http` entry to the route (bearer threaded from the reflected
-    secret), so `tana_review` can drop its connection section and the explicit
+    secret), so `tana` can drop its connection section and the explicit
     `fastmcp` step entirely.
 - **Cluster Forgejo repos** — read access to `ducktape` and `gaffer-private`
   if/when they're migrated or mirrored to the cluster Forgejo: grant the `haku`
@@ -94,3 +95,9 @@ the runtimes differ in where the sandbox runs — see
   `haku-state` for replayability.
 - **tier-2 execution** — haku-owned execution behind stronger gating, only if
   handoff-via-prompt proves too slow for routine actions.
+- **Precise effort/cost model** — today effort budgeting is a rough heuristic
+  (operator value-of-time anchor in `memory/` vs. a hand-wavy "tokens loosely track
+  cost" proxy; see `instructions.md` → effort budgeting). Make it concrete: actual
+  per-run token/$ accounting (e.g. from LiteLLM/Langfuse), a real estimate of model
+  cost (e.g. Opus 4.8 per-token), and a defensible mapping from "agent effort" to
+  "value of the operator's time" so Haku can decide research depth on more than a vibe.

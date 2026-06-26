@@ -11,9 +11,14 @@ and letting the image rebuild (Flux image automation bumps the CronJob tag).
   and tone. Haku reads this as itself at run time.
 - `AGENTS.md` — instructions for agents that **edit** this directory (not
   Haku's runtime manual).
-- `playbooks/` — **example** playbooks (not a closed set); starting points Haku
-  adapts and grows from.
+- `sources/` — Haku's **information sources** (the operator-linked channels it reads:
+  gmail, calendar, drive, tasks, tana, plaid, ducktape) — what each channel tells you +
+  how to read it. Inputs/reference, not a checklist.
+- `recipes.md` — **source-agnostic techniques** (the process: what to do with what you
+  read) — reusable illustrations applied situationally, not a closed set.
 - `schema/item.json` — JSON Schema for items, validated at write time.
+
+(Source vs. recipe boundary, and the full "what lives where," are in `AGENTS.md`.)
 
 The step-by-step run procedure lives in `haku/run.md` (environment-neutral;
 per-environment entrypoints like `haku/runtime/claude_web_env/run.md` just layer setup
