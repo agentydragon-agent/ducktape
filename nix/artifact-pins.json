@@ -33,8 +33,8 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-aafc3b87b170/all_skills.skill",
-      "sha256": "qvw7h7FwzFnU2Z6ZuOE2mZUL2raXs3LnhBRYV6yi88g="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-235a8efe00a0/all_skills.skill",
+      "sha256": "I1qO/gCgI9TIxqbSKo7eWO6x1zsxYebyROf68BG6oZk="
     },
     "claude-hook-rs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-e1b58eb44584/claude_hook",
@@ -49,8 +49,8 @@
       "sha256": "8dMYu/V8az9czO6l9ET2q8C720LHwQ+5VDaS27dghLw="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-25fbb92d2b05/debundle",
-      "sha256": "Jfu5LSsFzrcVKhbkevTk6C/pMizOnMSEFICT5YsJM00="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-6a36f7273720/debundle",
+      "sha256": "ajb3Jzcgx0aFWQahcD6d+Xeof9FvfJSTkkVprKhq22A="
     }
   }
 }
