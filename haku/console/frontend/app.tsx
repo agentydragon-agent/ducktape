@@ -45,7 +45,10 @@ export default function App() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <Group justify="space-between" align="center" mb="xs">
-        <Title order={1}>Haku</Title>
+        <Group gap="sm" align="center">
+          <img src="./logo.svg" alt="" aria-hidden="true" className="h-10 w-10 shrink-0" />
+          <Title order={1}>Haku</Title>
+        </Group>
         <LaunchRoutineButton routineUrl={config.launch_routine_url} />
       </Group>
       <Text c="dimmed" mb="xl">

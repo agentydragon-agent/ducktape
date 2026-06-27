@@ -130,6 +130,12 @@ copy_file(
     out = "dist/index.html",
 )
 
+copy_file(
+    name = "bundle_logo_svg",
+    src = "//haku/console:logo.svg",
+    out = "dist/logo.svg",
+)
+
 # Tailwind v4 scans the `@source`-declared file for class names; concatenate every
 # source whose utility classes the stylesheet must keep into the one file it lists.
 filegroup(
@@ -185,11 +191,12 @@ js_run_binary(
     tool = ":tailwind_cli",
 )
 
-# Everything the backend serves as the SPA docroot (index.html + main.js + styles.css).
+# Everything the backend serves as the SPA docroot.
 filegroup(
     name = "bundle",
     srcs = [
         ":bundle_index_html",
+        ":bundle_logo_svg",
         ":main_bundle",
         ":styles_css",
     ],
