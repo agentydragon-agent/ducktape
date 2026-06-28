@@ -115,7 +115,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260628204746-652a1e2 # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: ghcr.io/agentydragon/haku-console-static:devel-20260628231926-1cb7cb6 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           env:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template
