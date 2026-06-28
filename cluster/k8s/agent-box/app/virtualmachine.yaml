@@ -49,8 +49,10 @@ spec:
         topology.kubernetes.io/region: hil
       domain:
         cpu:
-          cores: 1
+          cores: 4
         resources:
+          limits:
+            cpu: "4"
           requests:
             memory: 4Gi
         firmware:
