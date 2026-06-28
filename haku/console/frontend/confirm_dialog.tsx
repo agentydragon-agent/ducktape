@@ -1,5 +1,6 @@
+import type { PointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Button, Group, Text } from "@mantine/core";
+import { Button, Group, Stack, Text } from "@mantine/core";
 
 import { ACTION_COLOR } from "./theme.ts";
 
@@ -12,12 +13,18 @@ export interface ConfirmRequest {
 
 // Top-layer modal confirm — the only trustworthy surface at the moment of a privileged
 // action. Rendered with the native `<dialog>.showModal()` (the browser **top layer**)
-// so the cross-origin iframe cannot draw over it, read it, or intercept its clicks; the
-// `::backdrop` dims the agent UI so "the shell is talking now" is unambiguous. The
-// approve button stays disabled for a beat so a baited click-through can't land on a
-// freshly-rendered confirm. See plans/free_form_ui_iframe.md → "The shell as a thin
-// trusted layer".
+// so the cross-origin iframe cannot draw over it, read it, or intercept its clicks.
+// Mantine's Modal/Portal and CSS z-index can mimic the layout, but they cannot move an
+// arbitrary element into the browser top layer. The `::backdrop` dims the agent UI so
+// "the shell is talking now" is unambiguous. The approve button stays disabled for a
+// beat so a baited click-through can't land on a freshly-rendered confirm. See
+// plans/free_form_ui_iframe.md → "The shell as a thin trusted layer".
 const ARM_DELAY_MS = 400;
+
+function pointerDownOutsideDialog(e: PointerEvent<HTMLDialogElement>): boolean {
+  const rect = e.currentTarget.getBoundingClientRect();
+  return e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
+}
 
 export function ConfirmDialog({
   request,
@@ -46,6 +53,9 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={ref}
+      onPointerDown={(e) => {
+        if (pointerDownOutsideDialog(e)) onCancel();
+      }}
       onCancel={(e) => {
         e.preventDefault(); // route Esc through our handler so the iframe gets a result
         onCancel();
@@ -53,7 +63,7 @@ export function ConfirmDialog({
       className="haku-confirm-dialog max-w-md rounded-lg p-5 shadow-xl"
     >
       {request && (
-        <div className="flex flex-col gap-3">
+        <Stack gap="sm">
           <Text fw={600}>{request.title}</Text>
           {request.body && <Text size="sm">{request.body}</Text>}
           {request.url && (
@@ -69,7 +79,7 @@ export function ConfirmDialog({
               {request.approveLabel}
             </Button>
           </Group>
-        </div>
+        </Stack>
       )}
     </dialog>
   );
