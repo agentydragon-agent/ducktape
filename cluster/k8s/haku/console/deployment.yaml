@@ -44,7 +44,7 @@ spec:
         fsGroup: 1000
       initContainers:
         - name: copy-web
-          image: ghcr.io/agentydragon/haku-console:devel-20260627091822-6a05fbf # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260628000612-5c33640 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           command: ["/bin/sh", "-c"]
           args: ["cp -a /app/web/. /web/"]
@@ -57,7 +57,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260627091822-6a05fbf # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260628000612-5c33640 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
