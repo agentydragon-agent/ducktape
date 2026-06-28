@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: bootstrap
-          image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260504011152-2b39247 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+          image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260628022937-6ab4fd6 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
           command: ["/usr/bin/bash", "/scripts/bootstrap.sh"]
           securityContext:
             allowPrivilegeEscalation: false
