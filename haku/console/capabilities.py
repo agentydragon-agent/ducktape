@@ -17,7 +17,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi_csrf_protect import CsrfProtect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from haku.console.config import LaunchRoutineConfig
 from haku.console.deps import SettingsDep
@@ -39,6 +39,20 @@ class CsrfTokenResponse(BaseModel):
 
 class LaunchRoutineResult(BaseModel):
     session_url: str = Field(description="claude.ai/code URL of the launched Haku session")
+
+
+class LaunchRoutineRequest(BaseModel):
+    text: str | None = Field(
+        default=None, description="Optional per-fire routine text; omitted or blank uses the routine's saved default"
+    )
+
+    @field_validator("text")
+    @classmethod
+    def blank_text_is_absent(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 def _upstream_detail(resp: httpx.Response) -> str:
@@ -70,10 +84,14 @@ async def csrf_token(response: Response, csrf_protect: Csrf) -> CsrfTokenRespons
 
 @router.post("/launch-routine")
 async def launch_routine(
-    request: Request, csrf_protect: Csrf, config: Annotated[LaunchRoutineConfig, Depends(_launch_config)]
+    request: Request,
+    csrf_protect: Csrf,
+    config: Annotated[LaunchRoutineConfig, Depends(_launch_config)],
+    body: LaunchRoutineRequest | None = None,
 ) -> LaunchRoutineResult:
     """Fire the Haku claude-code-web routine. CSRF-gated; the bearer stays server-side."""
     await csrf_protect.validate_csrf(request)
+    payload = {"text": body.text} if body and body.text is not None else {}
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             config.fire_url,
@@ -81,6 +99,7 @@ async def launch_routine(
                 "Authorization": f"Bearer {config.token.get_secret_value()}",
                 "anthropic-version": ANTHROPIC_VERSION,
             },
+            json=payload,
         )
     # Audit to stdout in the haku-console namespace (Haku can't read these logs).
     logger.info("capability launch-routine fired: upstream status %s", resp.status_code)

@@ -33,11 +33,12 @@ export async function postTrace(text: string): Promise<void> {
 // Capability tier. Fetch a CSRF token (which also sets the signed double-submit
 // cookie), then fire the routine echoing the token in X-CSRF-Token. The bearer
 // stays server-side; this only triggers the action and returns the new session URL.
-export async function launchRoutine(): Promise<LaunchRoutineResult> {
+export async function launchRoutine(text?: string): Promise<LaunchRoutineResult> {
   const { data: csrf, error: csrfError } = await api.GET("/api/capabilities/csrf");
   if (csrfError || !csrf) throw new Error(errorDetail(csrfError, "Failed to get CSRF token"));
   const { data, error } = await api.POST("/api/capabilities/launch-routine", {
     headers: { "X-CSRF-Token": csrf.csrf_token },
+    body: text ? { text } : {},
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to launch routine"));
   return data;

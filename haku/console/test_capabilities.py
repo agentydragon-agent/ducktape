@@ -6,6 +6,7 @@ real transport, not TestClient's ASGI transport, so app calls still reach the ap
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -63,6 +64,35 @@ def test_launch_routine_fires_with_server_side_bearer(cap_client) -> None:
     sent = route.calls.last.request
     assert sent.headers["authorization"] == "Bearer sk-test-token"
     assert sent.headers["anthropic-version"] == "2023-06-01"
+    assert json.loads(sent.content) == {}
+
+
+@respx.mock
+def test_launch_routine_forwards_custom_text(cap_client) -> None:
+    session_url = "https://claude.ai/code/session_custom"
+    route = respx.post(FIRE_URL).mock(
+        return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
+    )
+    resp = cap_client.post(
+        "/api/capabilities/launch-routine",
+        headers={"X-CSRF-Token": _csrf(cap_client)},
+        json={"text": "scan CPAP and summarize anomalies"},
+    )
+    assert resp.status_code == 200
+    assert json.loads(route.calls.last.request.content) == {"text": "scan CPAP and summarize anomalies"}
+
+
+@respx.mock
+def test_launch_routine_blank_text_uses_routine_default(cap_client) -> None:
+    session_url = "https://claude.ai/code/session_default"
+    route = respx.post(FIRE_URL).mock(
+        return_value=httpx.Response(200, json={"claude_code_session_url": session_url, "type": "routine_fire"})
+    )
+    resp = cap_client.post(
+        "/api/capabilities/launch-routine", headers={"X-CSRF-Token": _csrf(cap_client)}, json={"text": "   "}
+    )
+    assert resp.status_code == 200
+    assert json.loads(route.calls.last.request.content) == {}
 
 
 @respx.mock

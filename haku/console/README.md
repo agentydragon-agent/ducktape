@@ -50,7 +50,8 @@ no real operator behind it** (see `haku/PLAN.md` → _The agent-authored console
     Haku has no RBAC to read.
   - **Tiny, PR-gated allowlist.** Today one capability: `POST
 /api/capabilities/launch-routine` fires the Haku claude-code-web routine via its
-    public Anthropic fire URL. Adding a verb is a ducktape PR, never runtime data.
+    public Anthropic fire URL, optionally with per-run `text`. Adding a verb is a
+    ducktape PR, never runtime data.
 
   The split is legible in the code: a search for what touches a privileged secret
   returns `capabilities.py` and never the trace router.
@@ -70,16 +71,16 @@ and decides. See `console/plans/free_form_ui_iframe.md`.
 
 ## Layout
 
-| Path               | Role                                                                                                                                                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app.py`           | FastAPI `create_app` + lifespan (clone). `GET /api/config`, `GET /healthz`, CSRF config, mounts the trace + capability routers. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set. |
-| `trace.py`         | Trace-tier router (`/api/trace`): a single `POST` that records an opaque operator note to haku-state. Low-privilege haku-state write; reads `git_state` off `app.state`.                                              |
-| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer; `GET /csrf` issues the double-submit token.             |
-| `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `append_trace` (the single write path). Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed).          |
-| `models.py`        | Pydantic `TraceRequest` and `ConfigResponse` — the `/api` request/response models.                                                                                                                                    |
-| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                      |
-| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                       |
-| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                |
+| Path               | Role                                                                                                                                                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app.py`           | FastAPI `create_app` + lifespan (clone). `GET /api/config`, `GET /healthz`, CSRF config, mounts the trace + capability routers. It can serve the SPA for local/direct fallback when `HAKU_CONSOLE_STATIC_DIR` is set.               |
+| `trace.py`         | Trace-tier router (`/api/trace`): a single `POST` that records an opaque operator note to haku-state. Low-privilege haku-state write; reads `git_state` off `app.state`.                                                            |
+| `capabilities.py`  | Capability-tier router (`/api/capabilities/*`): CSRF-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text; `GET /csrf` issues the double-submit token. |
+| `git_state.py`     | pygit2 clone of haku-state; `reconcile` (fetch + hard-reset), `commit_push` with retry, `append_trace` (the single write path). Talks to the cluster-internal **plaintext-HTTP** Forgejo (no TLS/CA needed).                        |
+| `models.py`        | Pydantic `TraceRequest` and `ConfigResponse` — the `/api` request/response models.                                                                                                                                                  |
+| `config.py`        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                    |
+| `export_schema.py` | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                     |
+| `frontend/`        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                              |
 
 ## Perimeter / deploy
 

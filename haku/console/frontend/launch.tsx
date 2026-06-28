@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Anchor, Button, Group, Modal, Text } from "@mantine/core";
+import { Anchor, Button, Group, Modal, Text, Textarea } from "@mantine/core";
 
 import { launchRoutine } from "./client.ts";
 import { CAPABILITY_COLOR } from "./theme.ts";
@@ -15,12 +15,15 @@ type State = { status: "idle" } | { status: "confirming" } | { status: "launchin
 // set, deep-links to the routine's claude.ai/code page to review past runs (no listing API).
 export function LaunchRoutineButton({ routineUrl }: { routineUrl?: string | null }) {
   const [state, setState] = useState<State>({ status: "idle" });
+  const [promptText, setPromptText] = useState("");
   const launching = state.status === "launching";
 
   function confirm() {
     setState({ status: "launching" });
-    void launchRoutine()
+    const text = promptText.trim();
+    void launchRoutine(text || undefined)
       .then((result) => {
+        setPromptText("");
         setState({ status: "launched" });
         toastSuccess(
           "Haku run launched",
@@ -63,6 +66,16 @@ export function LaunchRoutineButton({ routineUrl }: { routineUrl?: string | null
         <Text size="sm" mb="md">
           This starts a new Claude Code web session running Haku now.
         </Text>
+        <Textarea
+          label="Custom prompt"
+          placeholder="Optional instructions for this run"
+          autosize
+          minRows={4}
+          mb="md"
+          value={promptText}
+          onChange={(event) => setPromptText(event.currentTarget.value)}
+          disabled={launching}
+        />
         <Group justify="flex-end">
           <Button variant="default" disabled={launching} onClick={() => setState({ status: "idle" })}>
             Cancel
