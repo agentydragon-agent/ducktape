@@ -113,7 +113,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260628000612-5c33640 # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: ghcr.io/agentydragon/haku-console-static:devel-20260628020338-ff7fab7 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           ports:
             - name: http
