@@ -45,6 +45,7 @@ pub struct Member {
     makes_decorate_call: Option<FixtureMakesDecorateCallSelector>,
     intrinsic_alias: Option<FixtureIntrinsicAliasSelector>,
     pub comment: Option<String>,
+    pub note: Option<String>,
 }
 
 pub struct BindingGroup {
@@ -161,6 +162,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -177,6 +179,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -198,6 +201,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -223,6 +227,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -250,6 +255,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -271,6 +277,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -301,6 +308,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -331,6 +339,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -365,6 +374,7 @@ impl Member {
             makes_decorate_call: None,
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -396,6 +406,7 @@ impl Member {
             }),
             intrinsic_alias: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -425,6 +436,7 @@ impl Member {
                 referenced_by,
             }),
             comment: None,
+            note: None,
         }
     }
 
@@ -432,6 +444,13 @@ impl Member {
     /// statement in the lowered module body. See `spec::Member::comment`.
     pub fn with_comment(mut self, comment: impl Into<String>) -> Self {
         self.comment = Some(comment.into());
+        self
+    }
+
+    /// Attach a YAML-only author note. Unlike [`Self::with_comment`], this is
+    /// preserved in the spec but never emitted into generated JavaScript.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
         self
     }
 }
@@ -442,6 +461,8 @@ struct FixtureMember {
     selector: FixtureMemberSelector,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -526,6 +547,8 @@ struct FixtureIntrinsicAliasSelector {
 struct LogicalModuleBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
     members: Vec<FixtureMember>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     binding_groups: Vec<FixtureBindingGroup>,
@@ -562,6 +585,8 @@ struct FixtureAnonymousStatement {
     source_match: Option<FixtureSourceMatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -579,6 +604,7 @@ impl FixtureAnonymousStatement {
             match_source: Some(match_source.into()),
             source_match: None,
             comment: None,
+            note: None,
         }
     }
 
@@ -591,11 +617,17 @@ impl FixtureAnonymousStatement {
                 match_source: match_source.into(),
             }),
             comment: None,
+            note: None,
         }
     }
 
     fn with_comment(mut self, comment: impl Into<String>) -> Self {
         self.comment = Some(comment.into());
+        self
+    }
+
+    fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
         self
     }
 }
@@ -658,6 +690,7 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
                 intrinsic_alias: m.intrinsic_alias.clone(),
             },
             comment: m.comment.clone(),
+            note: m.note.clone(),
         })
         .collect()
 }
@@ -686,10 +719,29 @@ fn logical_module_entry(
     anonymous_statements: Vec<FixtureAnonymousStatement>,
     comment: Option<String>,
 ) -> LogicalModuleEntry {
+    logical_module_entry_with_note(
+        path,
+        members,
+        binding_groups,
+        anonymous_statements,
+        comment,
+        None,
+    )
+}
+
+fn logical_module_entry_with_note(
+    path: &str,
+    members: &[Member],
+    binding_groups: &[BindingGroup],
+    anonymous_statements: Vec<FixtureAnonymousStatement>,
+    comment: Option<String>,
+    note: Option<String>,
+) -> LogicalModuleEntry {
     (
         path.to_string(),
         serde_json::to_value(LogicalModuleBody {
             comment,
+            note,
             members: fixture_members(members),
             binding_groups: fixture_binding_groups(binding_groups),
             anonymous_statements,
@@ -719,6 +771,22 @@ pub fn logical_module_with_comment(
     comment: impl Into<String>,
 ) -> LogicalModuleEntry {
     logical_module_entry(path, members, &[], Vec::new(), Some(comment.into()))
+}
+
+/// Like [`logical_module`] but attaches a module-level YAML-only `note:` block.
+pub fn logical_module_with_note(
+    path: &str,
+    members: &[Member],
+    note: impl Into<String>,
+) -> LogicalModuleEntry {
+    logical_module_entry_with_note(
+        path,
+        members,
+        &[],
+        Vec::new(),
+        None,
+        Some(note.into()),
+    )
 }
 
 /// Like [`logical_module`] but also emits an `anonymous_statements:`
@@ -770,6 +838,21 @@ pub fn logical_module_with_anon_comment(
         members,
         &[],
         vec![FixtureAnonymousStatement::exact(anon_match).with_comment(comment)],
+        None,
+    )
+}
+
+pub fn logical_module_with_anon_note(
+    path: &str,
+    members: &[Member],
+    anon_match: &str,
+    note: impl Into<String>,
+) -> LogicalModuleEntry {
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        vec![FixtureAnonymousStatement::exact(anon_match).with_note(note)],
         None,
     )
 }
