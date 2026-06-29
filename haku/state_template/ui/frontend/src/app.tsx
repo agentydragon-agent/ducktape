@@ -1,25 +1,32 @@
+import { Container, Tabs, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
-import { UP_NEXT } from "./constants.ts";
-import { FeedbackForm } from "./feedback.tsx";
-import { TaskCard, clickKey } from "./task.tsx";
-import type { DashboardResponse, Item } from "./types.ts";
+import { ImprovementsPage } from "./improvements.tsx";
+import { InboxView } from "./inbox.tsx";
+import { clickKey } from "./task.tsx";
+import type { DashboardResponse } from "./types.ts";
 
-function statusCounts(items: Item[]): string {
-  const counts: Record<string, number> = {};
-  for (const item of items) counts[item.status] = (counts[item.status] ?? 0) + 1;
-  return Object.keys(counts)
-    .sort()
-    .map((status) => `${status}: ${counts[status]}`)
-    .join(" · ");
-}
+// haku-ui is a multi-surface app Haku owns and evolves — NOT a fixed dashboard. The starter
+// ships two person-agnostic surfaces: the **Inbox** (the items board) and **Improvements**
+// (Haku's self-backlog). Haku adds more tabs as bespoke surfaces for its operator's life
+// (e.g. a Kitchen/shopping board, a one-off decision page) by writing a new `*.tsx`, a
+// backend endpoint, and a `View` entry here. Those operator-specific surfaces live in that
+// operator's haku-state, not in this generic starter.
+type View = "inbox" | "improvements";
 
 export default function App() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("inbox");
+  // Ticks the live deadline countdowns; 30s is fine at minute granularity.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -54,54 +61,38 @@ export default function App() {
     });
   }
 
-  // A failed initial load leaves nothing to render, so it gets a persistent page-level
-  // message rather than an inline one.
-  if (error) return <p className="page-error">Failed to load: {error}</p>;
-  if (!data) return <p className="loading">Loading…</p>;
-
-  const open = data.items.filter((item) => item.status === "open").sort((a, b) => b.value - a.value);
-  const upNext = open.slice(0, UP_NEXT);
-  const backlog = open.slice(UP_NEXT);
+  const tabs: [View, string][] = [
+    ["inbox", "Inbox"],
+    ["improvements", "💡 Improvements"],
+  ];
 
   return (
-    <div className="app">
-      <header>
-        <h1>Haku</h1>
-        <p className="dimmed">Your value-ranked backlog</p>
-      </header>
-
-      {actionError && <p className="action-error">Action failed: {actionError}</p>}
-
-      <h2>Up next</h2>
-      {upNext.length > 0 ? (
-        upNext.map((item) => <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />)
-      ) : (
-        <p>No open items.</p>
-      )}
-
-      {backlog.length > 0 && (
-        <details className="backlog">
-          <summary>Backlog — {backlog.length} more open item(s)</summary>
-          {backlog.map((item) => (
-            <TaskCard key={item.id} item={item} clicked={clicked} onToggle={onToggle} />
+    <Container size={760} px="md" py="xl">
+      <Title order={1} mb="sm">
+        Haku
+      </Title>
+      <Tabs value={view} onChange={(value) => value && setView(value as View)} mb="md">
+        <Tabs.List>
+          {tabs.map(([id, label]) => (
+            <Tabs.Tab key={id} value={id}>
+              {label}
+            </Tabs.Tab>
           ))}
-        </details>
-      )}
+        </Tabs.List>
+      </Tabs>
 
-      <section className="note">
-        <h2>Note to Haku</h2>
-        <FeedbackForm
-          minRows={3}
-          placeholder="Anything for Haku to fold into its next run…"
-          submitLabel="Send to Haku"
+      {view === "improvements" ? (
+        <ImprovementsPage />
+      ) : (
+        <InboxView
+          data={data}
+          error={error}
+          clicked={clicked}
+          onToggle={onToggle}
+          actionError={actionError}
+          now={now}
         />
-      </section>
-
-      <footer className="dimmed">
-        {open.length} open · {statusCounts(data.items)}
-        <br />
-        Last scan: {data.scan_time}
-      </footer>
-    </div>
+      )}
+    </Container>
   );
 }
