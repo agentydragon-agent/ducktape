@@ -52,6 +52,7 @@ pub struct BindingGroup {
     adopt_names: Option<FixtureAdoptNames>,
     exports: BTreeMap<&'static str, &'static str>,
     comments: BTreeMap<&'static str, &'static str>,
+    notes: BTreeMap<&'static str, &'static str>,
 }
 
 impl BindingGroup {
@@ -71,6 +72,7 @@ impl BindingGroup {
             adopt_names: None,
             exports: exports.iter().copied().collect(),
             comments: BTreeMap::new(),
+            notes: BTreeMap::new(),
         }
     }
 
@@ -84,6 +86,7 @@ impl BindingGroup {
             adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: BTreeMap::new(),
             comments: BTreeMap::new(),
+            notes: BTreeMap::new(),
         }
     }
 
@@ -100,6 +103,7 @@ impl BindingGroup {
             adopt_names: Some(FixtureAdoptNames::Names(names.to_vec())),
             exports: BTreeMap::new(),
             comments: BTreeMap::new(),
+            notes: BTreeMap::new(),
         }
     }
 
@@ -116,11 +120,17 @@ impl BindingGroup {
             adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: exports.iter().copied().collect(),
             comments: BTreeMap::new(),
+            notes: BTreeMap::new(),
         }
     }
 
     pub fn with_comments(mut self, comments: &[(&'static str, &'static str)]) -> Self {
         self.comments = comments.iter().copied().collect();
+        self
+    }
+
+    pub fn with_notes(mut self, notes: &[(&'static str, &'static str)]) -> Self {
+        self.notes = notes.iter().copied().collect();
         self
     }
 }
@@ -532,6 +542,8 @@ struct FixtureBindingGroup {
     exports: BTreeMap<&'static str, &'static str>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     comments: BTreeMap<&'static str, &'static str>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    notes: BTreeMap<&'static str, &'static str>,
 }
 
 #[derive(Clone, Serialize)]
@@ -658,6 +670,7 @@ fn fixture_binding_groups(binding_groups: &[BindingGroup]) -> Vec<FixtureBinding
             adopt_names: group.adopt_names.clone(),
             exports: group.exports.clone(),
             comments: group.comments.clone(),
+            notes: group.notes.clone(),
         })
         .collect()
 }

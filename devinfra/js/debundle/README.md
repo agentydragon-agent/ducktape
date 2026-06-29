@@ -175,7 +175,9 @@ module top, `members:`, `binding_groups:`, and `anonymous_statements:`
 — also accept a `note:` field: YAML-only scratch metadata that never
 emits (debt rationale, provenance; `modules merge` writes its
 `merged from: <sources>` provenance into the module-level `note:`,
-composing with any existing note). Edit module and member comments via
+composing with any existing note). `binding_groups:` additionally
+accepts per-export `comments:` (emitting) and `notes:` (non-emitting)
+maps keyed by selector-local binding name. Edit module and member comments via
 `debundle bindings comment` / `debundle modules comment`. See
 `docs/spec_editing.md` → "Workflow: authoring `comment:` fields" for the
 YAML schema, worked CLI examples, and the comment/`note:` move semantics.
