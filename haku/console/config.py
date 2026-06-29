@@ -38,16 +38,6 @@ class Settings(BaseSettings):
     # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
     model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_", env_nested_delimiter="__")
 
-    # haku-state git access. The repo_url is the cluster-internal plaintext-HTTP
-    # Forgejo (no TLS, so no CA bundle needed); credentials come from the
-    # haku-state-git-write secret.
-    git_repo_url: str
-    git_username: str
-    git_password: SecretStr
-    branch: str = "main"
-
-    clone_dir: Path = Path("/data/haku-state")
-
     # Optional directory holding the built React SPA (index.html + assets), served
     # same-origin by FastAPI for direct local/dev fallback. Production leaves this
     # unset and serves the SPA from the haku-console-static nginx image.
@@ -61,11 +51,10 @@ class Settings(BaseSettings):
     launch_routine: LaunchRoutineConfig | None = None
     csrf_secret: SecretStr | None = None
 
-    # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI service
-    # (runs in haku-sandbox), embedded in the console as a sandboxed cross-origin
-    # iframe. When set, the dashboard surfaces the embed and the CSP allows framing
-    # that origin plus Authentik's origin for the in-iframe SSO redirect; unset →
-    # the feature is dormant. The console never renders Haku's UI itself. See
-    # haku/console/plans/free_form_ui_iframe.md.
-    haku_ui_url: str | None = None
+    # The Authentik-gated origin of Haku's own UI service (runs in haku-sandbox), which the
+    # console frames full-page as a sandboxed cross-origin iframe; the CSP allows framing it
+    # plus Authentik's origin for the in-iframe SSO redirect. Required — framing haku-ui is
+    # the console's whole job; set it to `about:blank` if there is genuinely no UI to frame.
+    # The console never renders Haku's UI itself. See plans/free_form_ui_iframe.md.
+    haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"
