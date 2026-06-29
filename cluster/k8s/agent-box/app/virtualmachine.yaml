@@ -54,7 +54,7 @@ spec:
           limits:
             cpu: "4"
           requests:
-            memory: 4Gi
+            memory: 6Gi
         firmware:
           bootloader:
             efi:

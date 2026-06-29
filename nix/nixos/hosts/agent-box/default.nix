@@ -51,6 +51,14 @@ in
   # Passwordless sudo for read-only system inspection commands used by agents.
   ducktape.systemInspectionSudo.enable = true;
 
+  zramSwap = {
+    enable = true;
+    algorithm = "zstd";
+    memoryPercent = 200;
+    memoryMax = 8 * 1024 * 1024 * 1024;
+    priority = 100;
+  };
+
   environment.systemPackages = with pkgs; [
     neovim
     tmux
