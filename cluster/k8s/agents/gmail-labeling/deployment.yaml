@@ -7,13 +7,7 @@ metadata:
     app.kubernetes.io/name: gmail-labeling
   annotations:
     description: >-
-      Namespace-scoped Gmail label MCP server for the Haku background agent. Manages
-      only labels under the `haku/` prefix (enforced in-process), creating/applying/
-      removing/renaming/deleting them. Holds the Airlock-provisioned gmail.modify
-      access token (mounted, read-only); callers authenticate with a static bearer
-      (haku-gmail-labeling-token, reflected into haku-sandbox). Exposed publicly via a
-      bearer-gated HTTPRoute (gmail-labeling.allegedly.works) so Haku's Claude Code web
-      home can reach it with fastmcp.
+      Namespace-scoped Gmail label MCP server for the Haku background agent. Manages only labels under the `haku/` prefix (enforced in-process), creating/applying/ removing/renaming/deleting them. Holds the Airlock-provisioned gmail.modify access token (mounted, read-only); callers authenticate with a static bearer (haku-gmail-labeling-token, reflected into haku-sandbox). Exposed publicly via a bearer-gated HTTPRoute (gmail-labeling.allegedly.works) so Haku's Claude Code web home can reach it with fastmcp.
     # Restart only when the bearer rotates — NOT on gmail.modify token rotation, which
     # the server picks up by re-reading the mounted secret (google-auth refresh_handler).
     secret.reloader.stakater.com/reload: "haku-gmail-labeling-token"
@@ -31,7 +25,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/gmail-labeling:latest # {"$imagepolicy": "flux-system:gmail-labeling"}
+          image: ghcr.io/agentydragon/gmail-labeling:devel-20260629234300-77ace87 # {"$imagepolicy": "flux-system:gmail-labeling"}
           imagePullPolicy: Always
           ports:
             - name: http
