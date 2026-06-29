@@ -417,6 +417,20 @@ creation_rules:
           - *claude-web
           - *codex-cloud-agent
 
+  # --- Anthropic Admin API key (org usage/cost reporting + org management) ---
+  # Highly privileged: this key can manage the whole org. Decryptable only by
+  # agentydragon's user ssh keys (+ admin break-glass) — deliberately NOT
+  # readable by any agent/host/CI recipient.
+  - path_regex: secrets/anthropic-admin-key\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *gecko-agentydragon
+
   # --- Talos machine secrets (admin-only, state recovery backup) ---
   - path_regex: secrets/talos-machine-secrets\.sops\.yaml$
     key_groups:
