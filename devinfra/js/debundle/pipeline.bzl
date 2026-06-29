@@ -14,6 +14,7 @@ def _debundle_pipeline_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     selector_request_proto = ctx.actions.declare_file(ctx.label.name + ".selector_cpsat_request.pb")
     selector_summary_json = ctx.actions.declare_file(ctx.label.name + ".selector_cpsat_summary.json")
+    selector_problem_log = ctx.actions.declare_file(ctx.label.name + ".selector_problem.log")
     selector_problem_scratch = ctx.actions.declare_directory(ctx.label.name + ".selector_problem.out")
     bin_dir = ctx.bin_dir.path
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
@@ -58,11 +59,16 @@ def _debundle_pipeline_impl(ctx):
     selector_request_proto_path = _shell_execroot_path(selector_request_proto.path)
     selector_summary_json_path = _shell_execroot_path(selector_summary_json.path)
     selector_problem_scratch_path = _shell_execroot_path(selector_problem_scratch.path)
-    selector_problem_log_path = _shell_execroot_path(paths.join(selector_problem_scratch.path, "selector_problem.log"))
+    selector_problem_log_path = _shell_execroot_path(selector_problem_log.path)
     ctx.actions.run_shell(
         inputs = selector_problem_plan.inputs,
         tools = tools,
-        outputs = [selector_request_proto, selector_summary_json, selector_problem_scratch],
+        outputs = [
+            selector_request_proto,
+            selector_summary_json,
+            selector_problem_log,
+            selector_problem_scratch,
+        ],
         command = """
 cd "${{BAZEL_BINDIR}}"
 mkdir -p {selector_problem_scratch}
@@ -94,7 +100,11 @@ exit 1
 
     return [
         DefaultInfo(files = depset([out_dir])),
-        OutputGroupInfo(selector_problem = depset([selector_request_proto, selector_summary_json])),
+        OutputGroupInfo(selector_problem = depset([
+            selector_request_proto,
+            selector_summary_json,
+            selector_problem_log,
+        ])),
     ]
 
 def _selector_solver_env(ctx, request_proto_path, summary_json_path, dump_only = False):

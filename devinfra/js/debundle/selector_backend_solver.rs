@@ -347,24 +347,33 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
     let domain_sizes = problem
         .variables
         .iter()
-        .map(|variable| problem.variable_domain_values(variable).len())
+        .map(|variable| problem.variable_domain_value_count(variable))
         .collect::<Vec<_>>();
     let allowed_table_rows = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| constraint.tuples.len())
+        .map(|constraint| problem.allowed_tuple_rows(constraint).len())
         .collect::<Vec<_>>();
     let allowed_table_cells = problem
         .allowed_tuples
         .iter()
-        .map(|constraint| {
-            constraint
-                .tuples
-                .iter()
-                .map(|tuple| tuple.len())
-                .sum::<usize>()
-        })
+        .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count())
         .collect::<Vec<_>>();
+    let shared_allowed_row_count = problem
+        .allowed_tuple_row_sets
+        .iter()
+        .map(|row_set| row_set.rows.len())
+        .sum::<usize>();
+    let shared_allowed_cell_count = problem
+        .allowed_tuple_row_sets
+        .iter()
+        .map(|row_set| row_set.rows.cell_count())
+        .sum::<usize>();
+    let shared_sparse_domain_value_count = problem
+        .shared_variable_domains
+        .iter()
+        .map(|domain| domain.values.len())
+        .sum::<usize>();
 
     serde_json::json!({
         "known_unsat": problem.known_unsat.is_some(),
@@ -373,6 +382,7 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
         "variable_domain_representation_count_by_kind": keyed_count(problem.variables.iter().map(|variable| match &variable.values {
             selector_constraint_backend::CompiledVariableDomain::Full(_) => "full",
             selector_constraint_backend::CompiledVariableDomain::Sparse(_) => "sparse",
+            selector_constraint_backend::CompiledVariableDomain::SharedSparse(_) => "shared_sparse",
         })),
         "domain_size_histogram": usize_histogram(domain_sizes.iter().copied()),
         "max_domain_values": domain_sizes.into_iter().max().unwrap_or(0),
@@ -383,13 +393,18 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
             "statement_ordinal": problem.full_domains.statement_ordinals.len(),
         },
         "value_dictionary_count": problem.value_dictionary.total_len(),
+        "shared_sparse_domain_count": problem.shared_variable_domains.len(),
+        "shared_sparse_domain_value_count": shared_sparse_domain_value_count,
         "constraint_count_by_kind": constraint_count_by_kind,
         "allowed_table_count": problem.allowed_tuples.len(),
+        "allowed_row_set_count": problem.allowed_tuple_row_sets.len(),
         "allowed_table_arity_histogram": usize_histogram(problem.allowed_tuples.iter().map(|constraint| constraint.variables.len())),
         "allowed_table_row_count_histogram": usize_histogram(allowed_table_rows.iter().copied()),
         "allowed_table_cell_count_histogram": usize_histogram(allowed_table_cells.iter().copied()),
         "allowed_row_count": allowed_table_rows.into_iter().sum::<usize>(),
         "allowed_cell_count": allowed_table_cells.into_iter().sum::<usize>(),
+        "shared_allowed_row_count": shared_allowed_row_count,
+        "shared_allowed_cell_count": shared_allowed_cell_count,
         "binary_constraint_count": problem.binary_constraints.len(),
         "binary_constraint_count_by_kind": keyed_count(problem.binary_constraints.iter().map(|constraint| binary_constraint_kind_name(constraint.kind))),
         "linear_constraint_count": problem.linear_constraints.len(),
