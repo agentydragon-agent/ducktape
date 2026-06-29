@@ -466,6 +466,31 @@ fn problem_summary(
             .iter()
             .map(|constraint| problem.allowed_tuple_rows(constraint).cell_count()),
     );
+    let mut allowed_table_count_by_shape = BTreeMap::new();
+    let mut allowed_table_logical_row_count_by_shape = BTreeMap::new();
+    let mut allowed_table_logical_cell_count_by_shape = BTreeMap::new();
+    let mut allowed_table_count_by_domain_signature = BTreeMap::new();
+    let mut allowed_table_logical_cell_count_by_domain_signature = BTreeMap::new();
+    for constraint in &problem.allowed_tuples {
+        let shape = allowed_table_shape(problem, constraint);
+        let row_count = problem.allowed_tuple_rows(constraint).len();
+        let cell_count = problem.allowed_tuple_rows(constraint).cell_count();
+        *allowed_table_count_by_shape.entry(shape).or_insert(0) += 1;
+        *allowed_table_logical_row_count_by_shape
+            .entry(shape)
+            .or_insert(0) += row_count;
+        *allowed_table_logical_cell_count_by_shape
+            .entry(shape)
+            .or_insert(0) += cell_count;
+
+        let domain_signature = allowed_table_domain_signature(problem, constraint);
+        *allowed_table_count_by_domain_signature
+            .entry(domain_signature.clone())
+            .or_insert(0) += 1;
+        *allowed_table_logical_cell_count_by_domain_signature
+            .entry(domain_signature)
+            .or_insert(0) += cell_count;
+    }
     let binary_constraint_count_by_kind = keyed_count(
         problem
             .binary_constraints
@@ -548,6 +573,23 @@ fn problem_summary(
         "allowed_table_row_count_histogram",
         allowed_table_row_count_histogram
     );
+    field!("allowed_table_count_by_shape", allowed_table_count_by_shape);
+    field!(
+        "allowed_table_logical_row_count_by_shape",
+        allowed_table_logical_row_count_by_shape
+    );
+    field!(
+        "allowed_table_logical_cell_count_by_shape",
+        allowed_table_logical_cell_count_by_shape
+    );
+    field!(
+        "allowed_table_count_by_domain_signature",
+        allowed_table_count_by_domain_signature
+    );
+    field!(
+        "allowed_table_logical_cell_count_by_domain_signature",
+        allowed_table_logical_cell_count_by_domain_signature
+    );
     field!("allowed_row_count", allowed_row_count);
     field!("allowed_table_count", problem.allowed_tuples.len());
     field!("binary_constraint_count", problem.binary_constraints.len());
@@ -616,6 +658,92 @@ fn problem_summary(
     serde_json::Value::Object(summary)
 }
 
+fn allowed_table_shape(
+    problem: &CompiledSelectorProblem,
+    constraint: &CompiledAllowedTupleConstraint,
+) -> &'static str {
+    let mut source_matchish = false;
+    let mut child_list_segment = false;
+    let mut has_ast_node = false;
+    let mut all_ast_node = true;
+    let mut has_owner = false;
+    let mut has_string = false;
+    let mut has_statement_ordinal = false;
+
+    for variable_id in &constraint.variables {
+        let Some(variable) = problem.variables.get(variable_id.0) else {
+            return "invalid_variable_reference";
+        };
+        let debug_name = variable.debug_name.as_deref().unwrap_or_default();
+        source_matchish |= debug_name.contains("source_match")
+            || debug_name.contains("anonymous_statement")
+            || debug_name.starts_with("ast_child_list.segment");
+        child_list_segment |= debug_name.starts_with("ast_child_list.segment");
+        match variable.domain {
+            VariableDomain::AstNode => has_ast_node = true,
+            VariableDomain::Owner => {
+                has_owner = true;
+                all_ast_node = false;
+            }
+            VariableDomain::String => {
+                has_string = true;
+                all_ast_node = false;
+            }
+            VariableDomain::StatementOrdinal => {
+                has_statement_ordinal = true;
+                all_ast_node = false;
+            }
+        }
+    }
+
+    if source_matchish {
+        if child_list_segment {
+            "source_match_child_list_segment"
+        } else if has_owner {
+            "source_match_owner_projection"
+        } else if has_statement_ordinal {
+            "source_match_statement_ordinal"
+        } else if has_string {
+            "source_match_string_relation"
+        } else if all_ast_node && has_ast_node {
+            "source_match_ast_node_relation"
+        } else {
+            "source_match_other"
+        }
+    } else if has_owner && has_ast_node {
+        "owner_ast_node_relation"
+    } else if has_owner && has_string {
+        "owner_string_relation"
+    } else if has_owner {
+        "owner_relation"
+    } else if has_ast_node && has_string {
+        "ast_node_string_relation"
+    } else if all_ast_node && has_ast_node {
+        "ast_node_relation"
+    } else {
+        "non_source_match_other"
+    }
+}
+
+fn allowed_table_domain_signature(
+    problem: &CompiledSelectorProblem,
+    constraint: &CompiledAllowedTupleConstraint,
+) -> String {
+    let mut signature = String::new();
+    for (index, variable_id) in constraint.variables.iter().enumerate() {
+        if index > 0 {
+            signature.push(',');
+        }
+        let domain = problem
+            .variables
+            .get(variable_id.0)
+            .map(|variable| variable_domain_name(variable.domain))
+            .unwrap_or("invalid");
+        signature.push_str(domain);
+    }
+    signature
+}
+
 fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_json::Value {
     let mut domain_use_counts: BTreeMap<
         (&'static str, VariableDomainUseKey),
@@ -654,8 +782,8 @@ fn variable_domain_sharing_summary(problem: &CompiledSelectorProblem) -> serde_j
                 *domain,
                 domain_sharing_stats(
                     counts
-                        .iter()
-                        .map(|(_key, stats)| (stats.value_count, stats.use_count)),
+                        .values()
+                        .map(|stats| (stats.value_count, stats.use_count)),
                 ),
             )
         })

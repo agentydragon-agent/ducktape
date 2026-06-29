@@ -54,8 +54,8 @@ where
     let problem = compiled.problem;
     write_selector_build_summary(program, facts, Some(&compiled.summary), Some(&problem))
         .map_err(SelectorBackendSolveError::Summary)?;
-    if problem.known_unsat.is_some() {
-        return Ok(no_match_result(program));
+    if let Some(reason) = problem.known_unsat {
+        return Err(SelectorBackendSolveError::KnownUnsat { reason });
     }
     let result = backend
         .solve(&problem)
@@ -68,6 +68,9 @@ pub enum SelectorBackendSolveError<E> {
     Build(CompiledSelectorProblemBuildError),
     Backend(E),
     Summary(SelectorBuildSummaryError),
+    KnownUnsat {
+        reason: String,
+    },
     Assignment(BackendAssignmentError),
     MissingTargetProjection {
         target: SelectorTargetId,
@@ -95,6 +98,10 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
             Self::Build(err) => write!(f, "{err}"),
             Self::Backend(err) => write!(f, "selector backend failed: {err}"),
             Self::Summary(err) => write!(f, "{err}"),
+            Self::KnownUnsat { reason } => write!(
+                f,
+                "selector backend problem is unsatisfiable before backend solve: {reason}"
+            ),
             Self::Assignment(err) => {
                 write!(f, "selector backend returned invalid assignment: {err}")
             }
@@ -150,6 +157,7 @@ where
             Self::Backend(err) => Some(err),
             Self::Summary(err) => Some(err),
             Self::Assignment(err) => Some(err),
+            Self::KnownUnsat { .. } => None,
             Self::MissingTargetProjection { .. }
             | Self::MissingAssignmentVariable { .. }
             | Self::DecodedAssignmentDomainMismatch { .. }
@@ -325,6 +333,7 @@ fn model_build_summary_json(summary: &SelectorModelBuildSummary) -> serde_json::
         "domain_value_counts": summary.domain_value_counts,
         "stored_relation_counts": summary.stored_relation_counts,
         "derived_relation_counts": summary.derived_relation_counts,
+        "timings_ms": summary.timings_ms,
     })
 }
 
@@ -377,6 +386,7 @@ fn compiled_problem_summary_json(problem: &CompiledSelectorProblem) -> serde_jso
 
     serde_json::json!({
         "known_unsat": problem.known_unsat.is_some(),
+        "known_unsat_reason": problem.known_unsat.as_deref(),
         "variable_count": problem.variables.len(),
         "variable_count_by_domain": keyed_count(problem.variables.iter().map(|variable| variable_domain_name(variable.domain))),
         "variable_domain_representation_count_by_kind": keyed_count(problem.variables.iter().map(|variable| match &variable.values {
@@ -455,6 +465,7 @@ fn selector_atom_kind_name(atom: &SelectorAtom) -> &'static str {
         SelectorAtom::OwnerStatementOrdinal { .. } => "owner_statement_ordinal",
         SelectorAtom::OwnerTopLevelRoot { .. } => "owner_top_level_root",
         SelectorAtom::OwnerDeclaresBinding { .. } => "owner_declares_binding",
+        SelectorAtom::ProjectedAllowedTuples { .. } => "projected_allowed_tuples",
         SelectorAtom::OwnerExportName { .. } => "owner_export_name",
         SelectorAtom::OwnerReferencesBinding { .. } => "owner_references_binding",
         SelectorAtom::OwnerReferencesOwner { .. } => "owner_references_owner",

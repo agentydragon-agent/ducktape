@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::error::Error;
 use std::fmt;
+use std::time::Instant;
 
 use analysis::{OwnerId, StatementOrdinal};
 use chunk_facts::NodeId;
@@ -14,7 +15,8 @@ use selector_constraint_backend::{
 };
 use selector_ir::{
     ClaimKind, NodeTerm, OrdinalTerm, OwnerTerm, SelectorAtom, SelectorFact, SelectorFactStore,
-    SelectorProgram, SelectorProgramError, SelectorVariableId, StringTerm, VariableDomain,
+    SelectorProgram, SelectorProgramError, SelectorProjectedValue, SelectorVariableId, StringTerm,
+    VariableDomain,
 };
 
 pub fn compile_selector_problem(
@@ -35,18 +37,30 @@ pub struct SelectorModelBuildSummary {
     pub domain_value_counts: BTreeMap<&'static str, usize>,
     pub stored_relation_counts: BTreeMap<&'static str, usize>,
     pub derived_relation_counts: BTreeMap<&'static str, usize>,
+    pub timings_ms: BTreeMap<&'static str, u128>,
 }
 
 pub fn compile_selector_problem_with_summary(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
 ) -> Result<CompiledSelectorProblemWithSummary, CompiledSelectorProblemBuildError> {
+    let total_start = Instant::now();
+
+    let validate_start = Instant::now();
     program
         .validate()
         .map_err(CompiledSelectorProblemBuildError::InvalidProgram)?;
+    let validate_ms = validate_start.elapsed().as_millis();
 
+    let fact_domains_start = Instant::now();
     let mut domains = FactDomains::from_program_and_facts(program, facts);
-    let summary = domains.summary();
+    let fact_domains_ms = fact_domains_start.elapsed().as_millis();
+
+    let domain_summary_start = Instant::now();
+    let mut summary = domains.summary();
+    let domain_summary_ms = domain_summary_start.elapsed().as_millis();
+
+    let setup_start = Instant::now();
     domains.discard_unneeded_raw_relations();
     let target_binding_projections = TargetBindingProjections::from_program(program)?;
 
@@ -82,31 +96,53 @@ pub fn compile_selector_problem_with_summary(
         };
         model.add_target_projection(target.id, owner_variable, binding_projection)?;
     }
+    let variables_and_targets_ms = setup_start.elapsed().as_millis();
 
+    let atom_lowering_start = Instant::now();
     let mut support_cache = EncodedSupportCache::default();
     for atom in &program.atoms {
         lower_atom_constraint(atom, &domains, &variables, &mut model, &mut support_cache)?;
+        if model.known_unsat_reason().is_some() {
+            break;
+        }
     }
+    let atom_lowering_ms = atom_lowering_start.elapsed().as_millis();
 
-    for targets in &program.all_different {
-        model.require_target_all_different(targets.clone())?;
+    let all_different_start = Instant::now();
+    if model.known_unsat_reason().is_none() {
+        for targets in &program.all_different {
+            model.require_target_all_different(targets.clone())?;
+        }
+        for variable_set in &program.all_different_variables {
+            model.add_all_different(
+                variable_set
+                    .variables
+                    .iter()
+                    .map(|variable| model_variable(&variables, *variable))
+                    .collect::<Result<Vec<_>, _>>()?,
+                AllDifferentReason::SelectorSemantics {
+                    label: variable_set.label.clone(),
+                },
+            )?;
+        }
     }
-    for variable_set in &program.all_different_variables {
-        model.add_all_different(
-            variable_set
-                .variables
-                .iter()
-                .map(|variable| model_variable(&variables, *variable))
-                .collect::<Result<Vec<_>, _>>()?,
-            AllDifferentReason::SelectorSemantics {
-                label: variable_set.label.clone(),
-            },
-        )?;
-    }
+    let all_different_ms = all_different_start.elapsed().as_millis();
 
+    let finish_start = Instant::now();
     let problem = model
         .finish()
         .map_err(CompiledSelectorProblemBuildError::from)?;
+    let finish_ms = finish_start.elapsed().as_millis();
+    summary.timings_ms = BTreeMap::from([
+        ("validate", validate_ms),
+        ("fact_domains", fact_domains_ms),
+        ("domain_summary", domain_summary_ms),
+        ("variables_and_targets", variables_and_targets_ms),
+        ("atom_lowering", atom_lowering_ms),
+        ("all_different", all_different_ms),
+        ("finish", finish_ms),
+        ("total", total_start.elapsed().as_millis()),
+    ]);
     Ok(CompiledSelectorProblemWithSummary { problem, summary })
 }
 
@@ -229,6 +265,11 @@ fn lower_atom_constraint(
                 support_cache,
             )
         }
+        SelectorAtom::ProjectedAllowedTuples {
+            variables: projected_variables,
+            rows,
+            reason: _,
+        } => add_projected_allowed_tuples(model, variables, projected_variables, rows),
         SelectorAtom::OwnerExportName { owner, export_name } => {
             add_cached_owner_string_indexed_allowed_tuples(
                 model,
@@ -704,7 +745,7 @@ struct EncodedSupportCache {
     node_unary_u32: BTreeMap<(&'static str, u32), SharedVariableDomainId>,
     ast_child_binary_by_index: BTreeMap<u32, AllowedTupleRowsId>,
     child_list_segment: BTreeMap<ChildListSegmentCacheKey, AllowedTupleRowsId>,
-    child_list_index_domains: BTreeMap<ChildListIndexDomainCacheKey, Vec<BackendValueId>>,
+    child_list_index_domains: BTreeMap<ChildListIndexDomainCacheKey, SharedVariableDomainId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -722,6 +763,7 @@ enum ChildListIndexDomainParent {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum ChildListSegmentCacheKey {
     Generic(ChildListGenericSegmentCacheKey),
+    Filtered(ChildListFilteredSegmentCacheKey),
     Repeated(ChildListRepeatedSegmentCacheKey),
 }
 
@@ -742,6 +784,22 @@ struct ChildListRepeatedSegmentCacheKey {
     anchored_right: bool,
     parent: ChildListRepeatedTerm,
     segment: Vec<ChildListRepeatedTerm>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ChildListFilteredSegmentCacheKey {
+    start_index: u32,
+    has_position: bool,
+    anchored_left: bool,
+    anchored_right: bool,
+    parent: ChildListFilteredTerm,
+    segment: Vec<ChildListFilteredTerm>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ChildListFilteredTerm {
+    Const(NodeId),
+    Var(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1131,6 +1189,7 @@ fn add_node_indexed_allowed_tuples(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_cached_node_indexed_allowed_tuples(
     model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
@@ -2021,21 +2080,23 @@ fn add_child_list_segment_position_variables(
     support_cache: &mut EncodedSupportCache,
 ) -> Result<Vec<ChildListSegmentPosition>, CompiledSelectorProblemBuildError> {
     let cache_key = child_list_index_domain_cache_key(pattern);
-    let index_values = if let Some(values) = support_cache.child_list_index_domains.get(&cache_key)
-    {
-        values.clone()
-    } else {
-        let values = child_list_index_domain_values(pattern, domains);
-        support_cache
-            .child_list_index_domains
-            .insert(cache_key, values.clone());
-        values
-    };
+    let index_domain =
+        if let Some(domain_id) = support_cache.child_list_index_domains.get(&cache_key) {
+            *domain_id
+        } else {
+            let values = child_list_index_domain_values(pattern, domains);
+            let domain_id =
+                model.intern_internal_statement_ordinal_shared_sparse_variable_domain(values)?;
+            support_cache
+                .child_list_index_domains
+                .insert(cache_key, domain_id);
+            domain_id
+        };
     let mut positions = Vec::with_capacity(pattern.segments.len());
     for segment_index in 0..pattern.segments.len() {
-        let start = model.add_internal_integer_variable_from_normalized_values(
+        let start = model.add_internal_shared_sparse_variable(
+            index_domain,
             Some(format!("ast_child_list.segment{segment_index}.start")),
-            index_values.clone(),
         )?;
         positions.push(ChildListSegmentPosition { start });
     }
@@ -2102,7 +2163,7 @@ fn add_child_list_segment_constraint(
     ));
 
     if let Some((cache_key, cache_variables)) =
-        child_list_segment_cache_entry(model, pattern, segment_index, position, segment)?
+        child_list_segment_cache_entry(pattern, segment_index, position, segment)?
     {
         let row_set = if let Some(row_set) = support_cache.child_list_segment.get(&cache_key) {
             *row_set
@@ -2191,7 +2252,6 @@ fn add_child_list_segment_constraint(
 }
 
 fn child_list_segment_cache_entry(
-    model: &mut CompiledSelectorProblemBuilder,
     pattern: &LoweredChildListPattern,
     segment_index: usize,
     position: Option<ChildListSegmentPosition>,
@@ -2218,27 +2278,28 @@ fn child_list_segment_cache_entry(
         let mut variables = position
             .map(|position| vec![position.start])
             .unwrap_or_default();
-        let mut used_variables = variables.iter().copied().collect::<BTreeSet<_>>();
-        variables.push(child_list_generic_term_variable(
-            model,
-            pattern.parent,
-            &mut used_variables,
-        )?);
-        for term in segment.iter().copied() {
-            variables.push(child_list_generic_term_variable(
-                model,
-                term,
-                &mut used_variables,
-            )?);
-        }
+        let mut variable_columns = variables
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, variable)| (variable, index))
+            .collect::<BTreeMap<_, _>>();
+        let parent =
+            child_list_filtered_term(pattern.parent, &mut variables, &mut variable_columns);
+        let segment = segment
+            .iter()
+            .copied()
+            .map(|term| child_list_filtered_term(term, &mut variables, &mut variable_columns))
+            .collect::<Vec<_>>();
         return Ok(Some((
-            ChildListSegmentCacheKey::Generic(ChildListGenericSegmentCacheKey {
+            ChildListSegmentCacheKey::Filtered(ChildListFilteredSegmentCacheKey {
                 start_index: pattern.start_index,
-                segment_len: segment.len(),
                 has_position: position.is_some(),
                 anchored_left: segment_index == 0 && pattern.anchored_left,
                 anchored_right: segment_index == pattern.segments.len() - 1
                     && pattern.anchored_right,
+                parent,
+                segment,
             }),
             variables,
         )));
@@ -2288,33 +2349,23 @@ fn child_list_segment_cache_entry(
     )))
 }
 
-fn child_list_generic_term_variable(
-    model: &mut CompiledSelectorProblemBuilder,
+fn child_list_filtered_term(
     term: LoweredNodeTerm,
-    used_variables: &mut BTreeSet<ConstraintVariableId>,
-) -> Result<ConstraintVariableId, CompiledSelectorProblemBuildError> {
+    variables: &mut Vec<ConstraintVariableId>,
+    variable_columns: &mut BTreeMap<ConstraintVariableId, usize>,
+) -> ChildListFilteredTerm {
     match term {
-        LoweredNodeTerm::Const(node) => {
-            let value = model.intern_ast_node(node)?;
-            let variable = model.add_internal_sparse_variable(
-                VariableDomain::AstNode,
-                Some("ast_child_list.const".to_string()),
-                [value],
-            )?;
-            used_variables.insert(variable);
-            Ok(variable)
-        }
+        LoweredNodeTerm::Const(node) => ChildListFilteredTerm::Const(node),
         LoweredNodeTerm::Var(variable) => {
-            if used_variables.insert(variable) {
-                return Ok(variable);
-            }
-            let alias = model.add_internal_variable(
-                VariableDomain::AstNode,
-                Some("ast_child_list.alias".to_string()),
-            )?;
-            model.add_binary_constraint(alias, variable, BinaryConstraintKind::Equal)?;
-            used_variables.insert(alias);
-            Ok(alias)
+            let column = if let Some(column) = variable_columns.get(&variable) {
+                *column
+            } else {
+                let column = variables.len();
+                variables.push(variable);
+                variable_columns.insert(variable, column);
+                column
+            };
+            ChildListFilteredTerm::Var(column)
         }
     }
 }
@@ -2350,10 +2401,13 @@ fn build_child_list_segment_row_set(
 ) -> Result<AllowedTupleRowsId, CompiledSelectorProblemBuildError> {
     match cache_key {
         ChildListSegmentCacheKey::Generic(cache_key) => {
-            return build_generic_child_list_segment_row_set(model, cache_key, variables, domains);
+            build_generic_child_list_segment_row_set(model, cache_key, variables, domains)
+        }
+        ChildListSegmentCacheKey::Filtered(cache_key) => {
+            build_filtered_child_list_segment_row_set(model, cache_key, variables, domains)
         }
         ChildListSegmentCacheKey::Repeated(cache_key) => {
-            return build_repeated_child_list_segment_row_set(model, cache_key, variables, domains);
+            build_repeated_child_list_segment_row_set(model, cache_key, variables, domains)
         }
     }
 }
@@ -2397,6 +2451,70 @@ fn build_generic_child_list_segment_row_set(
             values.push(model.intern_ast_node(candidate_parent)?);
             for offset in 0..cache_key.segment_len {
                 values.push(model.intern_ast_node(subject_children[start + offset].1)?);
+            }
+        }
+    }
+    model
+        .intern_flat_encoded_allowed_row_set_for_variables(variables, values)
+        .map_err(Into::into)
+}
+
+fn build_filtered_child_list_segment_row_set(
+    model: &mut CompiledSelectorProblemBuilder,
+    cache_key: &ChildListFilteredSegmentCacheKey,
+    variables: &[ConstraintVariableId],
+    domains: &FactDomains,
+) -> Result<AllowedTupleRowsId, CompiledSelectorProblemBuildError> {
+    let mut values = Vec::new();
+    for candidate_parent in
+        filtered_child_list_candidate_parents(cache_key.parent, &domains.ast_children_by_parent)
+    {
+        let subject_children = child_list_subject_children(
+            &domains.ast_children_by_parent,
+            candidate_parent,
+            cache_key.start_index,
+        );
+        let Some(latest_start) = subject_children.len().checked_sub(cache_key.segment.len()) else {
+            continue;
+        };
+        let mut lo = 0;
+        let mut hi = latest_start;
+        if cache_key.anchored_left {
+            hi = 0;
+        }
+        if cache_key.anchored_right {
+            lo = latest_start;
+        }
+        if lo > hi {
+            continue;
+        }
+
+        for start in lo..=hi {
+            let mut row = vec![None; variables.len()];
+            if cache_key.has_position {
+                row[0] = Some(BackendValueId(i64::from(subject_children[start].0)));
+            }
+            if !bind_child_list_filtered_term(model, cache_key.parent, candidate_parent, &mut row)?
+            {
+                continue;
+            }
+            let mut segment_matches = true;
+            for (offset, term) in cache_key.segment.iter().copied().enumerate() {
+                if !bind_child_list_filtered_term(
+                    model,
+                    term,
+                    subject_children[start + offset].1,
+                    &mut row,
+                )? {
+                    segment_matches = false;
+                    break;
+                }
+            }
+            if !segment_matches {
+                continue;
+            }
+            if row.iter().all(Option::is_some) {
+                values.extend(row.into_iter().flatten());
             }
         }
     }
@@ -2512,6 +2630,30 @@ fn bind_child_list_repeated_term(
     }
 }
 
+fn bind_child_list_filtered_term(
+    model: &mut CompiledSelectorProblemBuilder,
+    term: ChildListFilteredTerm,
+    actual: NodeId,
+    row: &mut [Option<BackendValueId>],
+) -> Result<bool, CompiledSelectorProblemError> {
+    match term {
+        ChildListFilteredTerm::Const(expected) => Ok(expected == actual),
+        ChildListFilteredTerm::Var(column) => {
+            let value = model.intern_ast_node(actual)?;
+            let Some(current) = row.get_mut(column) else {
+                return Ok(false);
+            };
+            match current {
+                Some(existing) => Ok(*existing == value),
+                None => {
+                    *current = Some(value);
+                    Ok(true)
+                }
+            }
+        }
+    }
+}
+
 fn child_list_constraint_variables<I>(terms: I) -> Vec<ConstraintVariableId>
 where
     I: IntoIterator<Item = LoweredNodeTerm>,
@@ -2545,6 +2687,16 @@ fn child_list_candidate_parents(
     match parent {
         LoweredNodeTerm::Const(node) => Box::new(std::iter::once(node)),
         LoweredNodeTerm::Var(_) => Box::new(ast_children_by_parent.keys().copied()),
+    }
+}
+
+fn filtered_child_list_candidate_parents(
+    parent: ChildListFilteredTerm,
+    ast_children_by_parent: &BTreeMap<NodeId, Vec<(u32, NodeId)>>,
+) -> Box<dyn Iterator<Item = NodeId> + '_> {
+    match parent {
+        ChildListFilteredTerm::Const(node) => Box::new(std::iter::once(node)),
+        ChildListFilteredTerm::Var(_) => Box::new(ast_children_by_parent.keys().copied()),
     }
 }
 
@@ -2608,6 +2760,7 @@ fn finish_child_list_tuple(
     tuples.push(tuple);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_ast_bare_property_allowed_tuples(
     model: &mut CompiledSelectorProblemBuilder,
     variables: &[ConstraintVariableId],
@@ -2847,6 +3000,35 @@ fn add_encoded_allowed_tuple_set(
         .add_encoded_allowed_tuples(variables, tuples)
         .map(|_| ())
         .map_err(Into::into)
+}
+
+fn add_projected_allowed_tuples(
+    model: &mut CompiledSelectorProblemBuilder,
+    variables: &[ConstraintVariableId],
+    projected_variables: &[SelectorVariableId],
+    rows: &[Vec<SelectorProjectedValue>],
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    let constraint_variables = projected_variables
+        .iter()
+        .map(|variable| model_variable(variables, *variable))
+        .collect::<Result<Vec<_>, _>>()?;
+    let tuples = rows
+        .iter()
+        .map(|row| row.iter().cloned().map(projected_value).collect())
+        .collect::<Vec<Vec<_>>>();
+    model
+        .add_allowed_tuples(constraint_variables, tuples)
+        .map(|_| ())
+        .map_err(Into::into)
+}
+
+fn projected_value(value: SelectorProjectedValue) -> ConstraintValue {
+    match value {
+        SelectorProjectedValue::Owner(value) => ConstraintValue::Owner(value),
+        SelectorProjectedValue::AstNode(value) => ConstraintValue::AstNode(value),
+        SelectorProjectedValue::String(value) => ConstraintValue::String(value),
+        SelectorProjectedValue::StatementOrdinal(value) => ConstraintValue::StatementOrdinal(value),
+    }
 }
 
 fn add_encoded_allowed_binary_tuple_set(
@@ -3494,6 +3676,7 @@ impl DerivedFactRequirements {
                 SelectorAtom::OwnerKind { .. }
                 | SelectorAtom::OwnerStatementOrdinal { .. }
                 | SelectorAtom::OwnerDeclaresBinding { .. }
+                | SelectorAtom::ProjectedAllowedTuples { .. }
                 | SelectorAtom::OwnerExportName { .. }
                 | SelectorAtom::AstKind { .. }
                 | SelectorAtom::AstChild { .. }
@@ -3706,6 +3889,7 @@ impl FactDomains {
                     self.intrinsic_alias_referenced_by.len(),
                 ),
             ]),
+            timings_ms: BTreeMap::new(),
         }
     }
 
@@ -4408,6 +4592,17 @@ impl FactDomains {
                 self.add_owner_term(owner);
                 self.add_string_term(binding);
             }
+            SelectorAtom::ProjectedAllowedTuples {
+                variables: _,
+                rows,
+                reason: _,
+            } => {
+                for row in rows {
+                    for value in row {
+                        self.add_projected_value(value);
+                    }
+                }
+            }
             SelectorAtom::OwnerExportName { owner, export_name } => {
                 self.add_owner_term(owner);
                 self.add_string_term(export_name);
@@ -4605,6 +4800,15 @@ impl FactDomains {
     fn add_ordinal_term(&mut self, term: &OrdinalTerm) {
         if let OrdinalTerm::Const { ordinal } = term {
             self.add_ordinal(*ordinal);
+        }
+    }
+
+    fn add_projected_value(&mut self, value: &SelectorProjectedValue) {
+        match value {
+            SelectorProjectedValue::Owner(value) => self.add_owner(*value),
+            SelectorProjectedValue::AstNode(value) => self.add_node(*value),
+            SelectorProjectedValue::String(value) => self.add_string(value),
+            SelectorProjectedValue::StatementOrdinal(value) => self.add_ordinal(*value),
         }
     }
 

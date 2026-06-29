@@ -572,6 +572,22 @@ impl SharedVariableDomainIntersectionKey {
 }
 
 impl CompiledSelectorProblemBuilder {
+    pub fn known_unsat_reason(&self) -> Option<&str> {
+        self.known_unsat.as_deref()
+    }
+
+    fn variable_empty_domain_reason(&self, variable: ConstraintVariableId) -> String {
+        match self.variables.get(variable.0) {
+            Some(variable) => format!(
+                "variable restriction has empty domain for {:?} ({:?}, debug_name={})",
+                variable.id,
+                variable.domain,
+                variable.debug_name.as_deref().unwrap_or("<none>")
+            ),
+            None => format!("variable restriction has empty domain for unknown {variable:?}"),
+        }
+    }
+
     pub fn add_full_domain_values(
         &mut self,
         domain: VariableDomain,
@@ -688,6 +704,29 @@ impl CompiledSelectorProblemBuilder {
             domain,
             debug_name,
             values: CompiledVariableDomain::Sparse(values),
+        });
+        Ok(id)
+    }
+
+    pub fn add_internal_shared_sparse_variable(
+        &mut self,
+        domain_id: SharedVariableDomainId,
+        debug_name: Option<String>,
+    ) -> Result<ConstraintVariableId, CompiledSelectorProblemError> {
+        let Some(shared_domain) = self.shared_variable_domains.get(domain_id.0) else {
+            return Err(CompiledSelectorProblemError::UnknownSharedVariableDomain { domain_id });
+        };
+        if shared_domain.values.is_empty() {
+            self.known_unsat
+                .get_or_insert_with(|| "internal sparse variable has empty domain".to_string());
+        }
+        let id = ConstraintVariableId(self.variables.len());
+        self.variables.push(CompiledVariableBuilder {
+            id,
+            source: None,
+            domain: shared_domain.domain,
+            debug_name,
+            values: CompiledVariableDomain::SharedSparse(domain_id),
         });
         Ok(id)
     }
@@ -987,10 +1026,9 @@ impl CompiledSelectorProblemBuilder {
         if matches!(
             self.require_variable(variable)?.values,
             CompiledVariableDomain::Full(_)
-        ) {
-            if values.len() == full_domain_len {
-                return Ok(());
-            }
+        ) && values.len() == full_domain_len
+        {
+            return Ok(());
         }
         let restricted = match self.require_variable(variable)?.values.clone() {
             CompiledVariableDomain::Full(_) => values,
@@ -1006,8 +1044,8 @@ impl CompiledSelectorProblemBuilder {
         let replacement = self.compiled_sparse_variable_domain(domain, restricted);
         self.require_variable_mut(variable)?.values = replacement;
         if empty_domain {
-            self.known_unsat
-                .get_or_insert_with(|| "variable restriction has empty domain".to_string());
+            let reason = self.variable_empty_domain_reason(variable);
+            self.known_unsat.get_or_insert(reason);
         }
         Ok(())
     }
@@ -1274,6 +1312,32 @@ impl CompiledSelectorProblemBuilder {
         Ok(self.intern_normalized_shared_sparse_variable_domain(domain, values))
     }
 
+    pub fn intern_internal_statement_ordinal_shared_sparse_variable_domain(
+        &mut self,
+        values: impl IntoIterator<Item = BackendValueId>,
+    ) -> Result<SharedVariableDomainId, CompiledSelectorProblemError> {
+        let mut values = values.into_iter().collect::<Vec<_>>();
+        values.sort_unstable();
+        values.dedup();
+        if values.is_empty() {
+            self.known_unsat
+                .get_or_insert_with(|| "internal sparse variable has empty domain".to_string());
+            values.push(BackendValueId(0));
+        }
+        for value in values.iter().copied() {
+            if value.0 < 0 {
+                return Err(
+                    CompiledSelectorProblemError::InternalVariableValueOutOfDomain { value },
+                );
+            }
+            self.ensure_full_domain_contains(VariableDomain::StatementOrdinal, value);
+        }
+        Ok(self.intern_normalized_shared_sparse_variable_domain(
+            VariableDomain::StatementOrdinal,
+            values,
+        ))
+    }
+
     pub fn restrict_variable_to_shared_sparse_domain(
         &mut self,
         variable: ConstraintVariableId,
@@ -1298,8 +1362,8 @@ impl CompiledSelectorProblemBuilder {
                 self.require_variable_mut(variable)?.values =
                     CompiledVariableDomain::SharedSparse(domain_id);
                 if shared_domain_is_empty {
-                    self.known_unsat
-                        .get_or_insert_with(|| "variable restriction has empty domain".to_string());
+                    let reason = self.variable_empty_domain_reason(variable);
+                    self.known_unsat.get_or_insert(reason);
                 }
                 return Ok(());
             }
@@ -1322,8 +1386,8 @@ impl CompiledSelectorProblemBuilder {
                 let empty_domain = self.compiled_variable_domain_is_empty(&replacement);
                 self.require_variable_mut(variable)?.values = replacement;
                 if empty_domain {
-                    self.known_unsat
-                        .get_or_insert_with(|| "variable restriction has empty domain".to_string());
+                    let reason = self.variable_empty_domain_reason(variable);
+                    self.known_unsat.get_or_insert(reason);
                 }
                 return Ok(());
             }
@@ -1337,8 +1401,8 @@ impl CompiledSelectorProblemBuilder {
             self.require_variable_mut(variable)?.values = replacement;
         }
         if empty_domain {
-            self.known_unsat
-                .get_or_insert_with(|| "variable restriction has empty domain".to_string());
+            let reason = self.variable_empty_domain_reason(variable);
+            self.known_unsat.get_or_insert(reason);
         }
         Ok(())
     }

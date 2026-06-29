@@ -114,9 +114,10 @@ the CP-SAT search:
 bazel build //path/to:debundle --output_groups=selector_problem
 ```
 
-This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` and
-`bazel-bin/path/to/debundle.selector_cpsat_summary.json` after the same selector
-lowering step the full pipeline uses.
+This emits `bazel-bin/path/to/debundle.selector_cpsat_request.pb` after the
+same selector lowering step the full pipeline uses. The protobuf is the replay
+artifact for the C++ sidecar; human-readable selector summaries remain in the
+full pipeline's `debug/selector_cpsat_summary.json` output when available.
 
 ## Profiling
 
