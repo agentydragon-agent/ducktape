@@ -58,3 +58,68 @@ export interface ImprovementsBoard {
   ideas: ImprovementIdea[];
   friction: Friction[];
 }
+
+// --- Runs surface (runs/<date>/<ulid>.{yaml,md}) ---
+// Per-run propagation record: each source processed + how each change reached every surface.
+// A source was either scanned (bookmarks + count) or skipped (reason) — a discriminated union
+// (mirrors the backend's ScannedSource | SkippedSource); discriminate on the `skipped` key.
+export interface ScannedSource {
+  source: string;
+  bookmark_before: string | number | null;
+  bookmark_after: string | number | null;
+  changes_seen: number;
+}
+
+export interface SkippedSource {
+  source: string;
+  skipped: string;
+}
+
+export type RunSource = ScannedSource | SkippedSource;
+
+export interface RunChecklist {
+  checklist: string;
+  ref: string;
+  walked: boolean;
+}
+
+export interface PropagationTarget {
+  surface: string;
+  action: "updated" | "no_change" | "n/a";
+  note: string;
+}
+
+export interface PropagationEntry {
+  change: string;
+  source: string;
+  surfaces: PropagationTarget[];
+}
+
+export interface RunManifest {
+  run_id: string;
+  date: string;
+  started: string;
+  finished: string;
+  sources: RunSource[];
+  checklists: RunChecklist[];
+  propagation: PropagationEntry[];
+  notes_md: string;
+}
+
+export interface RunsResponse {
+  runs: RunManifest[];
+}
+
+// --- Knowledge garden (arbitrary repo markdown under whitelisted dirs) ---
+export interface GardenEntry {
+  path: string; // repo-relative, e.g. "memory/situational-awareness.md"
+}
+
+export interface GardenIndex {
+  entries: GardenEntry[];
+}
+
+export interface GardenFile {
+  path: string;
+  markdown: string; // raw .md/.mdx source; rendered client-side as MDX
+}

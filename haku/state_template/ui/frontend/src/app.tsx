@@ -2,8 +2,10 @@ import { Container, Tabs, Title } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { clickAction, fetchDashboard, unclickAction } from "./client.ts";
+import { GardenPage } from "./garden.tsx";
 import { ImprovementsPage } from "./improvements.tsx";
 import { InboxView } from "./inbox.tsx";
+import { RunsPage } from "./runs.tsx";
 import { clickKey } from "./task.tsx";
 import type { DashboardResponse } from "./types.ts";
 
@@ -13,7 +15,7 @@ import type { DashboardResponse } from "./types.ts";
 // (e.g. a Kitchen/shopping board, a one-off decision page) by writing a new `*.tsx`, a
 // backend endpoint, and a `View` entry here. Those operator-specific surfaces live in that
 // operator's haku-state, not in this generic starter.
-type View = "inbox" | "improvements";
+type View = "inbox" | "improvements" | "runs" | "garden";
 
 export default function App() {
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -21,6 +23,13 @@ export default function App() {
   const [clicked, setClicked] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
   const [view, setView] = useState<View>("inbox");
+  // The garden file currently open (null = the index). Lifted here so any surface can deep-link
+  // into a garden note (a run note → the procedure it cites, etc.).
+  const [gardenPath, setGardenPath] = useState<string | null>(null);
+  function openInGarden(path: string) {
+    setGardenPath(path);
+    setView("garden");
+  }
   // Ticks the live deadline countdowns; 30s is fine at minute granularity.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -64,6 +73,8 @@ export default function App() {
   const tabs: [View, string][] = [
     ["inbox", "Inbox"],
     ["improvements", "💡 Improvements"],
+    ["runs", "🔁 Runs"],
+    ["garden", "🌱 Garden"],
   ];
 
   return (
@@ -83,6 +94,10 @@ export default function App() {
 
       {view === "improvements" ? (
         <ImprovementsPage />
+      ) : view === "runs" ? (
+        <RunsPage openInGarden={openInGarden} />
+      ) : view === "garden" ? (
+        <GardenPage path={gardenPath} onSelect={setGardenPath} />
       ) : (
         <InboxView
           data={data}

@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Discriminator, Field, Tag
 
 
 class ItemStatus(StrEnum):
@@ -135,3 +135,94 @@ class ImprovementsBoard(BaseModel):
     updated: str = ""
     ideas: list[ImprovementIdea] = Field(default_factory=list)
     friction: list[Friction] = Field(default_factory=list)
+
+
+# --- Runs surface (runs/<date>/<ulid>.{yaml,md}) -------------------------------
+# Per-run propagation record: proves every source was processed and shows how each change
+# propagated to every surface. The .yaml is the machine-checkable spine; the sibling .md is
+# free-form reasoning (rendered as markdown). See procedures/propagation/ + the base
+# "Propagation discipline" obligation.
+
+
+class ScannedSource(BaseModel):
+    """A source read this run: where its bookmark moved and how many changes it yielded."""
+
+    source: str
+    # Bookmarks are opaque resume tokens and differ by source (epoch string, integer id, …),
+    # so accept either an int or a string.
+    bookmark_before: int | str | None = None
+    bookmark_after: int | str | None = None
+    changes_seen: int = 0  # a real count (0 = scanned, nothing new), not absence
+
+
+class SkippedSource(BaseModel):
+    """A source NOT read this run, with the reason — so a coverage gap is loud, not silent."""
+
+    source: str
+    skipped: str
+
+
+def _source_kind(value: Any) -> str:
+    """Discriminate a run source: a row carrying a ``skipped`` reason is the skipped variant."""
+    skipped = value.get("skipped") if isinstance(value, dict) else getattr(value, "skipped", None)
+    return "skipped" if skipped else "scanned"
+
+
+# Either-or by construction: a source was scanned (bookmarks + count) XOR skipped (reason). The
+# manifest YAML stays lean (no explicit `kind` tag) — the variant is inferred from `skipped`.
+RunSource = Annotated[
+    Annotated[ScannedSource, Tag("scanned")] | Annotated[SkippedSource, Tag("skipped")], Discriminator(_source_kind)
+]
+
+
+class RunChecklist(BaseModel):
+    checklist: str  # filename stem under procedures/propagation/
+    ref: str = ""
+    walked: bool = False
+
+
+class PropagationTarget(BaseModel):
+    surface: str
+    # "n/a" = this surface never applies to this change; "no_change" = considered, didn't apply.
+    action: Literal["updated", "no_change", "n/a"]
+    note: str = ""
+
+
+class PropagationEntry(BaseModel):
+    change: str
+    source: str = ""  # which source the change came from
+    surfaces: list[PropagationTarget] = Field(default_factory=list)
+
+
+class RunManifest(BaseModel):
+    run_id: str
+    date: str = ""
+    started: str = ""
+    finished: str = ""
+    sources: list[RunSource] = Field(default_factory=list)
+    checklists: list[RunChecklist] = Field(default_factory=list)
+    propagation: list[PropagationEntry] = Field(default_factory=list)
+    notes_md: str = ""  # the sibling .md (raw markdown), attached by reads.read_runs
+
+
+class RunsResponse(BaseModel):
+    runs: list[RunManifest] = Field(default_factory=list)
+
+
+# --- Knowledge garden (arbitrary repo markdown under whitelisted dirs) ----------
+# A general primitive: browse + render any .md/.mdx Haku keeps under a small set of
+# garden dirs (memory/, procedures/, runs/). The UI renders it as MDX so notes can
+# embed the standard widgets; plain markdown is valid MDX, so most render unchanged.
+
+
+class GardenEntry(BaseModel):
+    path: str  # repo-relative, e.g. "memory/situational-awareness.md"
+
+
+class GardenIndex(BaseModel):
+    entries: list[GardenEntry] = Field(default_factory=list)
+
+
+class GardenFile(BaseModel):
+    path: str
+    markdown: str  # raw .md/.mdx source; rendered client-side
