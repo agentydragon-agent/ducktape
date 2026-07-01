@@ -49,11 +49,12 @@ spec:
         topology.kubernetes.io/region: hil
       domain:
         cpu:
-          cores: 4
+          cores: 8
         resources:
           limits:
-            cpu: "4"
+            cpu: "8"
           requests:
+            cpu: "2"
             memory: 6Gi
         firmware:
           bootloader:
