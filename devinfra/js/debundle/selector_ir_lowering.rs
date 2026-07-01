@@ -11,8 +11,8 @@ use analysis::{ChunkId, StatementKind};
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use selector_ir::{
     ClaimKind, ClaimOrigin, NodeTerm, OrdinalTerm, OwnerTerm, RelationalPrimitive, SelectorAtom,
-    SelectorProgram, SelectorProjectedValue, SelectorTargetId, SelectorVariableId, StringTerm,
-    VariableDomain,
+    SelectorProgram, SelectorProjectedValue, SelectorSourceMatchProjectionEvent, SelectorTargetId,
+    SelectorVariableId, StringTerm, VariableDomain,
 };
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
@@ -235,6 +235,40 @@ impl MemberSelectorProgramBuilder {
         Ok(target)
     }
 
+    pub fn declare_projected_anonymous_statement_target_in_module(
+        &mut self,
+        logical_module: impl Into<String>,
+        statement_index: usize,
+        candidate_owners: Vec<analysis::OwnerId>,
+    ) -> SelectorTargetId {
+        let logical_module = logical_module.into();
+        let owner = self.program.add_variable(
+            VariableDomain::Owner,
+            Some(format!(
+                "{logical_module}::anonymous_statement.projected.{statement_index}"
+            )),
+        );
+        self.program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![owner],
+            rows: candidate_owners
+                .into_iter()
+                .map(|owner| vec![SelectorProjectedValue::Owner(owner)])
+                .collect(),
+            reason: format!(
+                "{logical_module}::anonymous_statement.source_match.projected.{statement_index}"
+            ),
+        });
+        self.program.add_target(
+            self.context.chunk_id,
+            owner,
+            logical_module,
+            ClaimKind::AnonymousStatement,
+            ClaimOrigin::AnonymousStatement {
+                index: statement_index,
+            },
+        )
+    }
+
     pub fn lower_member_constraints_in_module(
         &mut self,
         logical_module: &str,
@@ -288,6 +322,13 @@ impl MemberSelectorProgramBuilder {
                 .collect(),
             reason: format!("{logical_module}::source_match.projected.{export_name}"),
         });
+    }
+
+    pub fn record_source_match_projection_event(
+        &mut self,
+        event: SelectorSourceMatchProjectionEvent,
+    ) {
+        self.program.add_source_match_projection_event(event);
     }
 
     pub fn lower_projected_source_match_group_candidates(

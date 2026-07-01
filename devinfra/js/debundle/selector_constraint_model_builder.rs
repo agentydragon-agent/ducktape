@@ -108,6 +108,12 @@ pub fn compile_selector_problem_with_summary(
     }
     let atom_lowering_ms = atom_lowering_start.elapsed().as_millis();
 
+    let allowed_tuple_simplification_start = Instant::now();
+    if model.known_unsat_reason().is_none() {
+        model.simplify_allowed_tuples_against_current_domains()?;
+    }
+    let allowed_tuple_simplification_ms = allowed_tuple_simplification_start.elapsed().as_millis();
+
     let all_different_start = Instant::now();
     if model.known_unsat_reason().is_none() {
         for targets in &program.all_different {
@@ -139,6 +145,10 @@ pub fn compile_selector_problem_with_summary(
         ("domain_summary", domain_summary_ms),
         ("variables_and_targets", variables_and_targets_ms),
         ("atom_lowering", atom_lowering_ms),
+        (
+            "allowed_tuple_simplification",
+            allowed_tuple_simplification_ms,
+        ),
         ("all_different", all_different_ms),
         ("finish", finish_ms),
         ("total", total_start.elapsed().as_millis()),
@@ -3016,10 +3026,38 @@ fn add_projected_allowed_tuples(
         .iter()
         .map(|row| row.iter().cloned().map(projected_value).collect())
         .collect::<Vec<Vec<_>>>();
+    if let [row] = tuples.as_slice() {
+        for (variable, value) in constraint_variables.iter().zip(row) {
+            let value = intern_constraint_value(model, value.clone())?;
+            model.restrict_variable_to_encoded_values(*variable, [value])?;
+        }
+        return Ok(());
+    }
+    let mut column_values = vec![Vec::new(); constraint_variables.len()];
+    for row in &tuples {
+        for (column, value) in row.iter().enumerate() {
+            column_values[column].push(intern_constraint_value(model, value.clone())?);
+        }
+    }
+    for (variable, values) in constraint_variables.iter().zip(column_values) {
+        model.restrict_variable_to_encoded_values(*variable, values)?;
+    }
     model
         .add_allowed_tuples(constraint_variables, tuples)
         .map(|_| ())
         .map_err(Into::into)
+}
+
+fn intern_constraint_value(
+    model: &mut CompiledSelectorProblemBuilder,
+    value: ConstraintValue,
+) -> Result<BackendValueId, CompiledSelectorProblemError> {
+    match value {
+        ConstraintValue::Owner(value) => model.intern_owner(value),
+        ConstraintValue::AstNode(value) => model.intern_ast_node(value),
+        ConstraintValue::String(value) => model.intern_string(&value),
+        ConstraintValue::StatementOrdinal(value) => model.intern_statement_ordinal(value),
+    }
 }
 
 fn projected_value(value: SelectorProjectedValue) -> ConstraintValue {
@@ -4842,12 +4880,12 @@ mod tests {
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
     use chunk_facts::NodeKind;
     use selector_constraint_backend::{
-        AllDifferentConstraintId, AllDifferentReason, AllowedTupleConstraintId, BackendValueId,
-        BinaryConstraintKind, CompiledAllDifferentConstraint as AllDifferentConstraint,
+        AllowedTupleConstraintId, BackendValueId, BinaryConstraintKind,
+        CompiledAllDifferentConstraint as AllDifferentConstraint,
         CompiledBinaryConstraint as BinaryConstraint, CompiledLinearConstraint as LinearConstraint,
         ConstraintValue,
     };
-    use selector_ir::{ClaimOrigin, SelectorTargetId};
+    use selector_ir::ClaimOrigin;
     use selector_ir_lowering::{MemberSelectorLoweringContext, MemberSelectorProgramBuilder};
     use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 
@@ -5196,7 +5234,73 @@ mod tests {
     }
 
     #[test]
-    fn target_injectivity_preserves_broad_specific_shape() {
+    fn single_row_projected_allowed_tuples_restricts_domains_without_table() {
+        let mut program = SelectorProgram::default();
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let binding_var = program.add_variable(VariableDomain::String, Some("binding".to_string()));
+        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![owner_var, binding_var],
+            rows: vec![vec![
+                SelectorProjectedValue::Owner(OwnerId(7)),
+                SelectorProjectedValue::String("actual".to_string()),
+            ]],
+            reason: "projected singleton test".to_string(),
+        });
+
+        let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
+
+        assert_eq!(model.allowed_tuples, vec![]);
+        assert_eq!(
+            decoded_variable_domain(&model, ConstraintVariableId(0)),
+            vec![owner(7)]
+        );
+        assert_eq!(
+            decoded_variable_domain(&model, ConstraintVariableId(1)),
+            vec![string("actual")]
+        );
+    }
+
+    #[test]
+    fn multi_row_projected_allowed_tuples_preserves_correlation() {
+        let mut program = SelectorProgram::default();
+        let owner_var = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let binding_var = program.add_variable(VariableDomain::String, Some("binding".to_string()));
+        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![owner_var, binding_var],
+            rows: vec![
+                vec![
+                    SelectorProjectedValue::Owner(OwnerId(7)),
+                    SelectorProjectedValue::String("actual".to_string()),
+                ],
+                vec![
+                    SelectorProjectedValue::Owner(OwnerId(8)),
+                    SelectorProjectedValue::String("other".to_string()),
+                ],
+            ],
+            reason: "projected correlation test".to_string(),
+        });
+
+        let model = compile_selector_problem(&program, &fact_store(vec![])).unwrap();
+
+        assert_eq!(
+            decoded_variable_domain(&model, ConstraintVariableId(0)),
+            vec![owner(7), owner(8)]
+        );
+        assert_eq!(
+            decoded_variable_domain(&model, ConstraintVariableId(1)),
+            vec![string("actual"), string("other")]
+        );
+        assert_eq!(
+            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
+            vec![
+                vec![owner(7), string("actual")],
+                vec![owner(8), string("other")]
+            ]
+        );
+    }
+
+    #[test]
+    fn target_injectivity_prunes_fixed_values_from_broad_targets() {
         let mut program = SelectorProgram::default();
         let broad_owner = program.add_variable(VariableDomain::Owner, Some("broad".to_string()));
         let strict_owner = program.add_variable(VariableDomain::Owner, Some("strict".to_string()));
@@ -5262,20 +5366,11 @@ mod tests {
             Some(TargetBindingProjection::Const("specific".to_string()))
         );
         assert_eq!(model.binary_constraints, Vec::<BinaryConstraint>::new());
-        assert_eq!(
-            model.all_different,
-            vec![AllDifferentConstraint {
-                id: AllDifferentConstraintId(0),
-                variables: vec![ConstraintVariableId(0), ConstraintVariableId(1)],
-                reason: AllDifferentReason::TargetInjectivity {
-                    targets: vec![SelectorTargetId(0), SelectorTargetId(1)],
-                },
-            }]
-        );
+        assert_eq!(model.all_different, Vec::<AllDifferentConstraint>::new());
 
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(0)),
-            vec![owner(10), owner(20)]
+            vec![owner(10)]
         );
         assert_eq!(
             decoded_variable_domain(&model, ConstraintVariableId(1)),
@@ -5326,15 +5421,14 @@ mod tests {
 
         let model = compile_selector_problem(&program, &facts).unwrap();
 
+        assert_eq!(model.all_different, Vec::<AllDifferentConstraint>::new());
         assert_eq!(
-            model.all_different,
-            vec![AllDifferentConstraint {
-                id: AllDifferentConstraintId(0),
-                variables: vec![ConstraintVariableId(1), ConstraintVariableId(2)],
-                reason: AllDifferentReason::SelectorSemantics {
-                    label: "module::source_match.alpha_all.frame".to_string(),
-                },
-            }]
+            decoded_variable_domain(&model, ConstraintVariableId(1)),
+            vec![string("a")]
+        );
+        assert_eq!(
+            decoded_variable_domain(&model, ConstraintVariableId(2)),
+            vec![string("b")]
         );
     }
 
@@ -5498,23 +5592,23 @@ mod tests {
         let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]).tuples,
-            vec![vec![owner(1), ast_node(100)], vec![owner(2), ast_node(200)]]
+            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
+            vec![vec![owner(1), ast_node(100)]]
         );
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(1), ConstraintVariableId(2)]).tuples,
+            satisfying_tuples_for(&model, &[ConstraintVariableId(1), ConstraintVariableId(2)]),
             vec![vec![ast_node(100), ast_node(110)]]
         );
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(8)]).tuples,
+            satisfying_tuples_for(&model, &[ConstraintVariableId(2), ConstraintVariableId(8)]),
             vec![vec![ast_node(110), string("selectedIdent")]]
         );
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(4), ConstraintVariableId(8)]).tuples,
+            satisfying_tuples_for(&model, &[ConstraintVariableId(4), ConstraintVariableId(8)]),
             vec![vec![ast_node(130), string("selectedIdent")]]
         );
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(4), ConstraintVariableId(9)]).tuples,
+            satisfying_tuples_for(&model, &[ConstraintVariableId(4), ConstraintVariableId(9)]),
             vec![vec![ast_node(130), string("^x")]]
         );
         assert_eq!(
@@ -5720,12 +5814,8 @@ mod tests {
         let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            &AllowedTupleConstraint {
-                id: AllowedTupleConstraintId(0),
-                variables: vec![ConstraintVariableId(0), ConstraintVariableId(1)],
-                tuples: vec![vec![ast_node(100), ast_node(20)]],
-            }
+            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
+            vec![vec![ast_node(100), ast_node(20)]]
         );
     }
 
@@ -5825,12 +5915,8 @@ mod tests {
         let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
-            &AllowedTupleConstraint {
-                id: AllowedTupleConstraintId(0),
-                variables: vec![ConstraintVariableId(0), ConstraintVariableId(1)],
-                tuples: vec![vec![ast_node(100), ast_node(10)]],
-            }
+            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(1)]),
+            vec![vec![ast_node(100), ast_node(10)]]
         );
     }
 
@@ -6159,7 +6245,7 @@ mod tests {
         let model = compile_selector_problem(&program, &facts).unwrap();
 
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(8)]).tuples,
+            satisfying_tuples_for(&model, &[ConstraintVariableId(0), ConstraintVariableId(8)]),
             vec![
                 vec![owner(20), string("target")],
                 vec![owner(90), string("define")],
@@ -6174,7 +6260,7 @@ mod tests {
             vec![owner(10)]
         );
         assert_eq!(
-            allowed_tuples_for(&model, &[ConstraintVariableId(3), ConstraintVariableId(9)]).tuples,
+            satisfying_tuples_for(&model, &[ConstraintVariableId(3), ConstraintVariableId(9)]),
             vec![
                 vec![owner(40), string("size")],
                 vec![owner(40), string("value")],

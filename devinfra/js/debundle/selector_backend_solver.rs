@@ -25,7 +25,8 @@ use selector_constraint_model_builder::{
 };
 use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore,
-    SelectorProgram, SelectorTargetId, SolverClaim, SolverResult,
+    SelectorProgram, SelectorSourceMatchProjectionEvent, SelectorSourceMatchProjectionOutcome,
+    SelectorTargetId, SolverClaim, SolverResult,
 };
 
 const SUMMARY_JSON_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON";
@@ -54,8 +55,19 @@ where
     let problem = compiled.problem;
     write_selector_build_summary(program, facts, Some(&compiled.summary), Some(&problem))
         .map_err(SelectorBackendSolveError::Summary)?;
-    if let Some(reason) = problem.known_unsat {
-        return Err(SelectorBackendSolveError::KnownUnsat { reason });
+    if let Some(reason) = problem.known_unsat.as_ref() {
+        return decode_backend_result(
+            program,
+            facts,
+            &problem,
+            BackendSolveResult {
+                status: BackendSolveStatus::Unsatisfiable,
+                assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
+                assignments: Vec::new(),
+                diagnostic: Some(reason.clone()),
+                solver_response_stats: None,
+            },
+        );
     }
     let result = backend
         .solve(&problem)
@@ -68,9 +80,6 @@ pub enum SelectorBackendSolveError<E> {
     Build(CompiledSelectorProblemBuildError),
     Backend(E),
     Summary(SelectorBuildSummaryError),
-    KnownUnsat {
-        reason: String,
-    },
     Assignment(BackendAssignmentError),
     MissingTargetProjection {
         target: SelectorTargetId,
@@ -98,10 +107,6 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
             Self::Build(err) => write!(f, "{err}"),
             Self::Backend(err) => write!(f, "selector backend failed: {err}"),
             Self::Summary(err) => write!(f, "{err}"),
-            Self::KnownUnsat { reason } => write!(
-                f,
-                "selector backend problem is unsatisfiable before backend solve: {reason}"
-            ),
             Self::Assignment(err) => {
                 write!(f, "selector backend returned invalid assignment: {err}")
             }
@@ -157,7 +162,6 @@ where
             Self::Backend(err) => Some(err),
             Self::Summary(err) => Some(err),
             Self::Assignment(err) => Some(err),
-            Self::KnownUnsat { .. } => None,
             Self::MissingTargetProjection { .. }
             | Self::MissingAssignmentVariable { .. }
             | Self::DecodedAssignmentDomainMismatch { .. }
@@ -316,6 +320,7 @@ fn selector_program_summary_json(program: &SelectorProgram) -> serde_json::Value
         "target_count_by_claim_kind": keyed_count(program.targets.iter().map(|target| claim_kind_name(&target.claim))),
         "atom_count": program.atoms.len(),
         "atom_count_by_kind": keyed_count(program.atoms.iter().map(selector_atom_kind_name)),
+        "source_match_projection": source_match_projection_summary_json(&program.source_match_projection),
         "all_different_count": program.all_different.len(),
         "all_different_variables_count": program.all_different_variables.len(),
         "all_different_arity_histogram": usize_histogram(program.all_different.iter().map(Vec::len)),
@@ -326,6 +331,49 @@ fn selector_program_summary_json(program: &SelectorProgram) -> serde_json::Value
                 .map(|group| group.variables.len())
         ),
     })
+}
+
+fn source_match_projection_summary_json(
+    events: &[SelectorSourceMatchProjectionEvent],
+) -> serde_json::Value {
+    let mut count_by_outcome = BTreeMap::<&'static str, usize>::new();
+    let mut count_by_selector_kind = BTreeMap::<String, usize>::new();
+    let mut count_by_reason_category = BTreeMap::<String, usize>::new();
+    let mut candidate_count_by_outcome = BTreeMap::<&'static str, usize>::new();
+    let mut projected_row_count_by_outcome = BTreeMap::<&'static str, usize>::new();
+    for event in events {
+        let outcome = source_match_projection_outcome_name(&event.outcome);
+        *count_by_outcome.entry(outcome).or_insert(0) += 1;
+        *count_by_selector_kind
+            .entry(event.selector_kind.clone())
+            .or_insert(0) += 1;
+        *count_by_reason_category
+            .entry(event.reason_category.clone())
+            .or_insert(0) += 1;
+        *candidate_count_by_outcome.entry(outcome).or_insert(0) +=
+            event.candidate_count.unwrap_or(0);
+        *projected_row_count_by_outcome.entry(outcome).or_insert(0) +=
+            event.projected_row_count.unwrap_or(0);
+    }
+    serde_json::json!({
+        "event_count": events.len(),
+        "count_by_outcome": count_by_outcome,
+        "count_by_selector_kind": count_by_selector_kind,
+        "count_by_reason_category": count_by_reason_category,
+        "candidate_count_by_outcome": candidate_count_by_outcome,
+        "projected_row_count_by_outcome": projected_row_count_by_outcome,
+        "events": events,
+    })
+}
+
+fn source_match_projection_outcome_name(
+    outcome: &SelectorSourceMatchProjectionOutcome,
+) -> &'static str {
+    match outcome {
+        SelectorSourceMatchProjectionOutcome::Projected => "projected",
+        SelectorSourceMatchProjectionOutcome::NativeFallback => "native_fallback",
+        SelectorSourceMatchProjectionOutcome::NativeUnsupported => "native_unsupported",
+    }
 }
 
 fn model_build_summary_json(summary: &SelectorModelBuildSummary) -> serde_json::Value {

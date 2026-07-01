@@ -928,6 +928,20 @@ impl ChunkResolver<'_> {
         self.collect_member_candidates(request_id, selector)
     }
 
+    /// Candidate top-level body-index groups for an anonymous statement selector.
+    ///
+    /// The current public anonymous selector form validates to one parsed statement,
+    /// so each group contains one body index. The grouped shape mirrors the older
+    /// graph-backed resolver API and keeps this reusable if anonymous ranges grow a
+    /// multi-statement form later.
+    pub fn anonymous_group_candidates(
+        &self,
+        request_id: &str,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Vec<Vec<usize>>> {
+        self.resolve_anonymous_groups(request_id, selector)
+    }
+
     fn member_group_candidates_impl(
         &self,
         request_id: &str,

@@ -1210,30 +1210,61 @@ impl CompiledSelectorProblemBuilder {
         }
     }
 
+    pub fn simplify_allowed_tuples_against_current_domains(
+        &mut self,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        while self.simplify_allowed_tuple_constraints_once()? && self.known_unsat.is_none() {}
+        Ok(())
+    }
+
     pub fn add_all_different(
         &mut self,
         variables: Vec<ConstraintVariableId>,
         reason: AllDifferentReason,
-    ) -> Result<AllDifferentConstraintId, CompiledSelectorProblemError> {
+    ) -> Result<Option<AllDifferentConstraintId>, CompiledSelectorProblemError> {
         let id = AllDifferentConstraintId(self.all_different.len());
         self.validate_all_different_constraint(id, &variables, &reason)?;
+        let variables = self.simplify_all_different_entries(variables, |variable| *variable)?;
+        if variables.len() < 2 {
+            return Ok(None);
+        }
         self.all_different.push(CompiledAllDifferentConstraint {
             id,
             variables,
             reason,
         });
-        Ok(id)
+        Ok(Some(id))
     }
 
     pub fn require_target_all_different(
         &mut self,
         targets: Vec<SelectorTargetId>,
-    ) -> Result<AllDifferentConstraintId, CompiledSelectorProblemError> {
+    ) -> Result<Option<AllDifferentConstraintId>, CompiledSelectorProblemError> {
         let variables = targets
             .iter()
             .map(|target| self.target_owner_projection_variable(*target))
             .collect::<Result<Vec<_>, _>>()?;
-        self.add_all_different(variables, AllDifferentReason::TargetInjectivity { targets })
+        let id = AllDifferentConstraintId(self.all_different.len());
+        self.validate_all_different_constraint(
+            id,
+            &variables,
+            &AllDifferentReason::TargetInjectivity {
+                targets: targets.clone(),
+            },
+        )?;
+        let entries = variables.into_iter().zip(targets).collect::<Vec<_>>();
+        let entries =
+            self.simplify_all_different_entries(entries, |(variable, _target)| *variable)?;
+        if entries.len() < 2 {
+            return Ok(None);
+        }
+        let (variables, targets): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+        self.all_different.push(CompiledAllDifferentConstraint {
+            id,
+            variables,
+            reason: AllDifferentReason::TargetInjectivity { targets },
+        });
+        Ok(Some(id))
     }
 
     pub fn finish(self) -> Result<CompiledSelectorProblem, CompiledSelectorProblemError> {
@@ -1443,6 +1474,166 @@ impl CompiledSelectorProblemBuilder {
         intersection
     }
 
+    fn simplify_allowed_tuple_constraints_once(
+        &mut self,
+    ) -> Result<bool, CompiledSelectorProblemError> {
+        let old_constraints = std::mem::take(&mut self.allowed_tuples);
+        let old_row_sets = std::mem::take(&mut self.allowed_tuple_row_sets);
+        self.allowed_tuple_row_sets_by_fingerprint.clear();
+
+        let mut changed = false;
+        for constraint in old_constraints {
+            let Some(row_set) = old_row_sets.get(constraint.row_set.0) else {
+                return Err(CompiledSelectorProblemError::UnknownAllowedTupleRowSet {
+                    row_set: constraint.row_set,
+                });
+            };
+            let Some((variables, rows, constraint_changed)) =
+                self.simplified_allowed_tuple_constraint(&constraint.variables, &row_set.rows)?
+            else {
+                changed = true;
+                continue;
+            };
+            changed |= constraint_changed;
+            let row_set = self.intern_allowed_tuple_rows(rows);
+            let id = AllowedTupleConstraintId(self.allowed_tuples.len());
+            self.allowed_tuples.push(CompiledAllowedTupleConstraint {
+                id,
+                variables,
+                row_set,
+            });
+        }
+        Ok(changed)
+    }
+
+    fn simplified_allowed_tuple_constraint(
+        &mut self,
+        variables: &[ConstraintVariableId],
+        rows: &CompiledAllowedTupleRows,
+    ) -> Result<
+        Option<(Vec<ConstraintVariableId>, CompiledAllowedTupleRows, bool)>,
+        CompiledSelectorProblemError,
+    > {
+        let arity = variables.len();
+        let mut kept_rows = Vec::new();
+        for row in rows.iter() {
+            let mut row_matches_domains = true;
+            for (variable, value) in variables.iter().copied().zip(row.iter().copied()) {
+                if !self.encoded_value_matches_variable_domain(variable, value)? {
+                    row_matches_domains = false;
+                    break;
+                }
+            }
+            if row_matches_domains {
+                kept_rows.extend_from_slice(row);
+            }
+        }
+        if kept_rows.is_empty() {
+            self.known_unsat.get_or_insert_with(|| {
+                format!(
+                    "allowed tuple constraint over {:?} has no rows after domain pruning",
+                    variables
+                )
+            });
+            return Ok(None);
+        }
+
+        let mut changed = kept_rows.len() != rows.cell_count();
+        let kept_row_count = kept_rows.len() / arity;
+        let mut keep_columns = Vec::new();
+        let mut column_can_restrict = vec![false; arity];
+        let mut column_values = vec![Vec::new(); arity];
+        for row in kept_rows.chunks_exact(arity) {
+            for (column, value) in row.iter().copied().enumerate() {
+                column_values[column].push(value);
+            }
+        }
+        for (column, values) in column_values.iter_mut().enumerate() {
+            values.sort_unstable();
+            values.dedup();
+            let can_restrict =
+                self.can_restrict_variable_to_encoded_values(variables[column], values)?;
+            column_can_restrict[column] = can_restrict;
+            if can_restrict {
+                changed |= self.restrict_variable_to_encoded_values_changed(
+                    variables[column],
+                    values.iter().copied(),
+                )?;
+            }
+            if can_restrict && values.len() == 1 {
+                changed = true;
+            } else {
+                keep_columns.push(column);
+            }
+        }
+
+        if keep_columns.is_empty() {
+            return Ok(None);
+        }
+        if keep_columns.len() == 1 {
+            let column = keep_columns[0];
+            if column_can_restrict[column] {
+                self.restrict_variable_to_encoded_values_changed(
+                    variables[column],
+                    column_values[column].iter().copied(),
+                )?;
+                return Ok(None);
+            }
+        }
+
+        let reduced_variables = keep_columns
+            .iter()
+            .map(|column| variables[*column])
+            .collect::<Vec<_>>();
+        let mut reduced_values =
+            Vec::with_capacity(kept_row_count.saturating_mul(reduced_variables.len()));
+        for row in kept_rows.chunks_exact(arity) {
+            for column in &keep_columns {
+                reduced_values.push(row[*column]);
+            }
+        }
+        let reduced_rows =
+            CompiledAllowedTupleRows::from_flat_rows(reduced_variables.len(), reduced_values);
+        changed |= reduced_variables.len() != variables.len()
+            || reduced_rows.arity() != rows.arity()
+            || reduced_rows.values() != rows.values();
+        Ok(Some((reduced_variables, reduced_rows, changed)))
+    }
+
+    fn can_restrict_variable_to_encoded_values(
+        &self,
+        variable: ConstraintVariableId,
+        values: &[BackendValueId],
+    ) -> Result<bool, CompiledSelectorProblemError> {
+        let variable_ref = self.require_variable(variable)?;
+        let domain = variable_ref.domain;
+        if variable_ref.source.is_none() && domain == VariableDomain::StatementOrdinal {
+            return Ok(false);
+        }
+        for value in values {
+            if value.0 < 0 {
+                return Ok(false);
+            }
+            let Ok(index) = usize::try_from(value.0) else {
+                return Ok(false);
+            };
+            if index >= self.value_dictionary.domain_len(domain) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn restrict_variable_to_encoded_values_changed(
+        &mut self,
+        variable: ConstraintVariableId,
+        values: impl IntoIterator<Item = BackendValueId>,
+    ) -> Result<bool, CompiledSelectorProblemError> {
+        let before = self.variable_domain_values(variable)?;
+        self.restrict_variable_to_encoded_values(variable, values)?;
+        Ok(self.variable_domain_values(variable)? != before)
+    }
+
     fn compiled_variable_domain_is_empty(&self, values: &CompiledVariableDomain) -> bool {
         match values {
             CompiledVariableDomain::Full(domain) => self.full_domains.get(*domain).is_empty(),
@@ -1451,6 +1642,50 @@ impl CompiledSelectorProblemBuilder {
                 self.shared_variable_domains[id.0].values.is_empty()
             }
         }
+    }
+
+    fn simplify_all_different_entries<T>(
+        &mut self,
+        entries: Vec<T>,
+        variable_for_entry: impl Fn(&T) -> ConstraintVariableId,
+    ) -> Result<Vec<T>, CompiledSelectorProblemError> {
+        let mut entries = entries;
+        let mut fixed_values = BTreeSet::new();
+        loop {
+            let mut next_entries = Vec::new();
+            let mut learned_fixed_value = false;
+            for entry in entries {
+                let variable = variable_for_entry(&entry);
+                let mut values = self.variable_domain_values(variable)?;
+                if !fixed_values.is_empty() {
+                    values.retain(|value| !fixed_values.contains(value));
+                    self.restrict_variable_to_encoded_values(variable, values.iter().copied())?;
+                }
+                match values.as_slice() {
+                    [] => {
+                        let reason = self.variable_empty_domain_reason(variable);
+                        self.known_unsat.get_or_insert(reason);
+                    }
+                    [value] => {
+                        if !fixed_values.insert(*value) {
+                            self.known_unsat.get_or_insert_with(|| {
+                                format!(
+                                    "all_different has duplicate fixed value {:?} for variable {:?}",
+                                    value, variable
+                                )
+                            });
+                        }
+                        learned_fixed_value = true;
+                    }
+                    _ => next_entries.push(entry),
+                }
+            }
+            entries = next_entries;
+            if !learned_fixed_value || self.known_unsat.is_some() {
+                break;
+            }
+        }
+        Ok(entries)
     }
 
     fn intern_normalized_shared_sparse_variable_domain(
