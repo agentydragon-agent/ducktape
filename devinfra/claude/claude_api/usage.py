@@ -19,15 +19,39 @@ class UsageBucket(BaseModel):
     resets_at: datetime | None = None
 
 
-class ExtraUsage(BaseModel):
+class MoneyAmount(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    is_enabled: bool
-    monthly_limit: float
-    used_credits: float
-    utilization: float
-    currency: str
+    amount_minor: float
+    exponent: int = 2
+    currency: str | None = None
+
+    @property
+    def major_units(self) -> float:
+        return self.amount_minor / (10**self.exponent)
+
+
+class Spend(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool | None = None
+    limit: MoneyAmount | None = None
+    used: MoneyAmount | None = None
+    percent: float | None = None
+    severity: str | None = None
     disabled_reason: str | None = None
+
+    @property
+    def has_usage_totals(self) -> bool:
+        return self.enabled is True and self.limit is not None and self.used is not None
+
+    @property
+    def utilization_percent(self) -> float:
+        if self.percent is not None:
+            return self.percent
+        if self.limit is None or self.used is None or self.limit.amount_minor <= 0:
+            return 0.0
+        return self.used.amount_minor / self.limit.amount_minor * 100
 
 
 class UsageResponse(BaseModel):
@@ -37,7 +61,7 @@ class UsageResponse(BaseModel):
     seven_day: UsageBucket | None = None
     seven_day_opus: UsageBucket | None = None
     seven_day_sonnet: UsageBucket | None = None
-    extra_usage: ExtraUsage | None = None
+    spend: Spend | None = None
 
 
 def fetch_usage(token: str) -> UsageResponse:
