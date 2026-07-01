@@ -74,6 +74,39 @@ jobs:
               python3 devinfra/ci/bb_runner_probe.py finalize --upload || true
             }
             trap finalize_bb_runner_probe EXIT
+
+            # Shadow mode (informational only): on PRs, compute the
+            # target-determinator affected set and print it. Not used for gating.
+            # Once the set is proven sane over several PRs, gating flips to only
+            # test/build affected targets on PRs; devel keeps `//...`.
+            # Gracefully skips when TD is missing from the RBE image (pin lag
+            # after devtools/rbetools#2679).
+            #
+            # `set +e` inside the block: any failure in git fetch, merge-base,
+            # rev-parse, or target-determinator itself must NOT abort the CI
+            # script under the outer `set -euo pipefail`. Restored after the
+            # block so the real test/build stages still fail fast.
+            if [ "${{ github.event_name }}" = "pull_request" ] && command -v target-determinator >/dev/null 2>&1; then
+              set +e
+              echo "::group::target-determinator (shadow)"
+              mkdir -p /tmp/td-cache
+              git fetch --no-tags origin devel
+              BASE=$(git merge-base origin/devel HEAD)
+              HEAD_SHA=$(git rev-parse HEAD)
+              if [ -n "$BASE" ] && [ -n "$HEAD_SHA" ]; then
+                echo "before-revision: $BASE"
+                echo "head:            $HEAD_SHA"
+                target-determinator \
+                  -cache-dir=/tmp/td-cache \
+                  -before-revision="$BASE" \
+                  //...
+              else
+                echo "could not resolve merge-base (BASE=$BASE HEAD=$HEAD_SHA); skipping"
+              fi
+              echo "::endgroup::"
+              set -e
+            fi
+
             probe_bb_runner before-test
             bazel test --keep_going $RBE_FLAGS //... && \
               probe_bb_runner after-test && \
