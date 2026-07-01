@@ -1,0 +1,33 @@
+digraph desk_wiring {
+    graph [fontname="Helvetica", nodesep=0.6, ranksep=1.0];
+    node  [shape=Mrecord, fontname="Helvetica", fontsize=10];
+    edge  [fontname="Helvetica", fontsize=9, penwidth=1.8, dir=none];
+
+    monitor [label="{ AORUS FV43U — 43″ 4K@144 monitor | optical S/PDIF out | 3.5 mm audio jack | HDMI 2.1 · #1 | HDMI 2.1 · #2 | DP 1.4 | <usbc> USB-C in — video + hub + PD | USB-B uplink | <hi> USB-A upper | <lo> USB-A lower }"];
+
+    // KVM: header row, then two vertical columns side by side (peripheral / host)
+    kvm [label="{ Sabrent SB-TB4K — TB4 KVM · on top of atlas | { { power in | <ds_a> downstream TB4 A | downstream TB4 B | downstream TB4 C | <usba1> USB-A 1 | USB-A 2 } | { <pc1> host PC1 (TB4) | <pc2> host PC2 (TB4) | USB-A 3 | USB-A 4 } } }"];
+
+    atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top | mobo TB4 · middle }"];
+
+    laptop [label="Laptop slot"];
+
+    g_backright [shape=circle, style=dashed, label="back-right\ngrommet", fontsize=9, width=1.2, height=1.2];
+    g_drawer    [shape=circle, style=dashed, label="drawer\ngrommet",    fontsize=9, width=1.2, height=1.2];
+
+    cam [label="USB-A camera\natop monitor"];
+    kbd [label="TEX Shura\nkeyboard"];
+    hub [label="Under-desk USB-A hub"];
+
+    // xlabel keeps labels near edges without forcing the router to bend
+    // cables around them.
+    atlas:tb_top -> kvm:pc1 [xlabel="Sabrent tag '4'\nTB-class USB-C, short", color="#333333"];
+    laptop -> g_drawer      [xlabel="USB 3.2 20 Gb/s 8K", color="#c62828"];
+    g_drawer -> kvm:pc2     [color="#c62828"];
+    kvm:ds_a -> g_backright [xlabel="Silkland\n40 Gb/s · 200 W", color="#1976d2"];
+    g_backright -> monitor:usbc [color="#1976d2"];
+    kvm:usba1 -> hub        [xlabel="direct\nUSB-A", color="#f57c00"];
+    monitor:hi -> g_backright [xlabel="USB-A → USB-C", color="#388e3c"];
+    g_backright -> kbd      [color="#388e3c"];
+    monitor:lo -> cam       [xlabel="direct\nUSB-A", color="#7b1fa2"];
+}
