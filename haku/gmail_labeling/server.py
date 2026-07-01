@@ -2,7 +2,9 @@
 
 The whole tool surface is closed over `allowed_prefix` (enforced in `LabelClient`),
 so the server is safe to attach to an autonomous agent without a human-in-the-loop
-gate. Cluster-internal access is gated by a static bearer (see `StaticBearerGuard`).
+gate. `/mcp` accepts two credentials on one endpoint: a static bearer (Haku's machine
+path) and, when configured, an Authentik OAuth flow (an interactive operator, e.g.
+claude.ai) — both ride one FastMCP `MultiAuth` (see `build_app`).
 """
 
 import asyncio
@@ -13,12 +15,13 @@ from typing import Annotated
 
 import uvicorn
 from fastmcp import FastMCP
+from fastmcp.server.auth import MultiAuth
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from pydantic import Field
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
-from starlette.types import ASGIApp
 
 from gmail_api.service import build_gmail_service_from_token_dir
 from haku.gmail_labeling.backend import GmailLabelBackend
@@ -26,7 +29,8 @@ from haku.gmail_labeling.client import LabelClient
 from haku.gmail_labeling.config import Settings
 from haku.gmail_labeling.models import Label
 from haku.gmail_labeling.namespace import LabelNamespace
-from mcp_infra.static_bearer import StaticBearerGuard
+from mcp_infra.authentik_auth.auth import build_authentik_auth
+from mcp_infra.persistence import build_client_storage
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +88,30 @@ def build_mcp(client: LabelClient) -> FastMCP:
 def build_app(settings: Settings) -> Starlette:
     service = build_gmail_service_from_token_dir(settings.gmail_token_dir)
     client = LabelClient(GmailLabelBackend(service), LabelNamespace(settings.allowed_prefix))
-    mcp_app = build_mcp(client).http_app(path="/mcp")
+    mcp = build_mcp(client)
+
+    # One endpoint, up to two accepted credentials, always composed with FastMCP's
+    # MultiAuth. MultiAuth is asymmetric: one `server` owns the OAuth routes/metadata
+    # (the Authentik OIDCProxy) and the `verifiers` are token validators tried after
+    # it — so Haku's static bearer rides as a verifier alongside the OAuth flow (there
+    # can only be one OAuth server). With no Authentik config, the static bearer is the
+    # sole verifier and there's no OAuth flow.
+    verifiers = [StaticTokenVerifier({settings.static_bearer: {"client_id": "haku"}})] if settings.static_bearer else []
+    if settings.authentik:
+        mcp.auth = build_authentik_auth(
+            settings.authentik, client_storage=build_client_storage(settings.persistence), extra_verifiers=verifiers
+        )
+    elif verifiers:
+        mcp.auth = MultiAuth(verifiers=verifiers)
+    else:
+        logger.warning("no auth configured — /mcp is unauthenticated (local/dev only)")
+
+    mcp_app = mcp.http_app(path="/mcp")
 
     async def healthz(request: Request) -> JSONResponse:
         return JSONResponse({"ok": True})
 
-    mounted: ASGIApp = mcp_app
-    if settings.static_bearer:
-        mounted = StaticBearerGuard(mcp_app, token=settings.static_bearer)
-    else:
-        logger.warning("no static_bearer configured — /mcp is unauthenticated (local/dev only)")
-    return Starlette(routes=[Route("/healthz", healthz), Mount("/", app=mounted)], lifespan=mcp_app.lifespan)
+    return Starlette(routes=[Route("/healthz", healthz), Mount("/", app=mcp_app)], lifespan=mcp_app.lifespan)
 
 
 def main() -> None:
