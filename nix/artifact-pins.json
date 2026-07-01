@@ -13,8 +13,8 @@
       "sha256": "DPy+y9o0pLMMUgP7/PbapYMz9xEz7LRy0LotSmc8kFs="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-fd6d432268bc/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "/W1DImi8kpP8HJftugZ2LgIJyiMkyXvN/uCtw8iTdxU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-956484346c37/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "lWSENGw3lO/DcEFgzrXXLF8UZpZpRP8TZX+64LuSgLI="
     },
     "ducktape-git-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-37dabea9ccc9/ducktape_git_hooks-0.1.0-py3-none-any.whl",
@@ -41,12 +41,12 @@
       "sha256": "I3XGbSmd++yvu+0DNmAlykhn8kHohWFzAb7Sf/eFMS0="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-a507bd724439/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-9bb6547d2338/aiquota.zip",
       "sha256": "UP/LeEOP0YAUsId1rx3chZsUMfWmc1L0NuwxvEygiMs="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-a507bd724439/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "pQe9ckQ5XdjYVKpF+JaimdXYy4RurLAMwPd+wCVZi9A="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-9bb6547d2338/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "m7ZUfSM4MmQrYPxJfym22CVmhfzw7qOygtI5S6qKX+s="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-157e46afbffe/debundle",
