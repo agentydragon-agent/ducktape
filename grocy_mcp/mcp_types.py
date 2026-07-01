@@ -87,7 +87,7 @@ PRICE_DESC = "Per-unit price. Omit to use the last recorded price."
 DETAIL_DESC = "`brief` returns only `id` + `name`. `full` returns every column."
 DEFAULT_BBD_DESC = (
     "Auto-fill best-before date when `stock_add` omits it. "
-    "-1 = never expires, 0 (default) = today, N > 0 = today + N days."
+    "-1 = never expires, 0 = best-before today, N > 0 = today + N days."
 )
 DUE_TYPE_DESC = (
     "How to treat the best-before date. "
@@ -248,6 +248,14 @@ class StockOpOk(BaseModel):
     location_name: str = Field(
         description="Name of the storage location. For `stock_transfer`, formatted as `from -> to`."
     )
+    best_before_date: date | None = Field(
+        default=None,
+        description=(
+            "The best-before date applied to the new stock entry — whichever you passed explicitly, "
+            "or the one computed from `default_best_before_days` when you omitted it. `stock_add` "
+            "only; null for `stock_consume`/`stock_set`/`stock_transfer`, which don't create dated entries."
+        ),
+    )
 
 
 class StockOpError(BaseModel):
@@ -358,7 +366,14 @@ class CreateProductItem(BaseModel):
     consume_qu: int | str | None = Field(
         default=None, description="Consume quantity unit. Name or ID. Defaults to `stock_qu`."
     )
-    default_best_before_days: int = Field(default=0, description=DEFAULT_BBD_DESC)
+    default_best_before_days: int = Field(
+        description=(
+            f"{DEFAULT_BBD_DESC} Required — there is no default. A caller that hasn't "
+            "considered this product's shelf life must still pick a value (e.g. `0` for "
+            "consciously same-day, `-1` for shelf-stable) rather than silently getting one; "
+            "0 is not a fallback here, only a valid, deliberate choice."
+        )
+    )
     due_type: Literal[1, 2] = Field(default=1, description=DUE_TYPE_DESC)
     parent_product: int | str | None = Field(default=None, description=PARENT_PRODUCT_DESC)
     product_group: int | str | None = Field(default=None, description="Product group / category. Name or ID.")
