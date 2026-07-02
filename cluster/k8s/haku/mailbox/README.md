@@ -30,6 +30,10 @@ deliberately tiny (its documented declarative-deployments workflow):
   applies it against a temporary recovery-mode instance, then execs the
   normal server. Every pod start reconciles config; the reloader annotation
   makes cert-manager renewals trigger exactly such a restart.
+- `app/fetch-cli.sh` — `fetch-cli` initContainer: downloads the pinned,
+  checksum-verified static `stalwart-cli` into the shared `/cli` volume
+  (neither Stalwart image can provide it — the CLI image is distroless, the
+  server image lacks `xz`).
 
 **Deviation** from stock Stalwart: no setup wizard, no WebUI-managed state —
 the plan is the single source of truth. Interactive admin (rarely needed)
@@ -77,11 +81,9 @@ TOK=$(kubectl -n haku-sandbox get secret haku-mail-token -o jsonpath='{.data.jwt
 curl -s -H "Authorization: Bearer $TOK" https://haku-mailbox.allegedly.works/.well-known/jmap | head
 ```
 
-First-deploy items to watch: the `fetch-cli` initContainer assumes
-`ghcr.io/stalwartlabs/cli` has a shell + `cp` (swap for a copy-compatible
-approach if it's distroless), and the plan's object shapes were authored
-against the v0.16 docs — `stalwart-cli apply` errors name the offending
-field if the schema drifts.
+First-deploy item to watch: the plan's object shapes were authored against
+the v0.16 docs — `stalwart-cli apply` errors name the offending field if the
+schema drifts.
 
 ## Future
 

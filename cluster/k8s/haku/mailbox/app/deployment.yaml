@@ -41,12 +41,18 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       initContainers:
-        # The provisioning plan is applied with stalwart-cli, which ships as a
-        # separate image; copy the binary into a shared volume for the wrapper.
+        # The provisioning plan is applied with stalwart-cli. Neither Stalwart
+        # image can put it in place itself (ghcr.io/stalwartlabs/cli is
+        # distroless — no shell to copy the binary out with; the server image
+        # has no xz for the release tarball), so alpine downloads the pinned,
+        # checksum-verified static musl binary into the shared volume.
         - name: fetch-cli
-          image: ghcr.io/stalwartlabs/cli:1.0.10
-          command: ["/bin/sh", "-c", 'cp "$(command -v stalwart-cli)" /cli/stalwart-cli']
+          image: alpine:3.21
+          command: ["/bin/sh", "/etc/stalwart/fetch-cli.sh"]
           volumeMounts:
+            - name: config
+              mountPath: /etc/stalwart
+              readOnly: true
             - name: cli
               mountPath: /cli
           securityContext:
