@@ -15,6 +15,14 @@ mkdir -p "$RUN"
 # stalwart-cli caches the server schema under $HOME.
 export HOME="$RUN"
 
+# The upstream image setcaps cap_net_bind_service on the server binary (for
+# :25/:443 as non-root). Under this pod's no-new-privs securityContext
+# (allowPrivilegeEscalation: false) the kernel refuses to exec ANY
+# capability-bearing file — EPERM before main() ("Operation not permitted").
+# We bind only unprivileged ports (2525/8080), so run a cap-less copy: cp
+# does not preserve the security.capability xattr.
+cp /usr/local/bin/stalwart "$RUN/stalwart"
+
 # JSON-escape a PEM file as a single \n-joined line. The PEM alphabet
 # (base64 + header dashes/spaces) contains no character that needs further
 # JSON escaping and none special to the sed replacement below. awk emits
@@ -33,14 +41,17 @@ sed -e "s|@@TLS_CERT@@|$(pem_json /tls/tls.crt)|" \
 # (pods/log here is operator-only; that tail is the agent-visible channel).
 STALWART_RECOVERY_MODE=1 \
   STALWART_RECOVERY_ADMIN="admin:${STALWART_ADMIN_PASSWORD}" \
-  stalwart --config /etc/stalwart/config.json >"$RUN/recovery.log" 2>&1 &
+  "$RUN/stalwart" --config /etc/stalwart/config.json >"$RUN/recovery.log" 2>&1 &
 recovery_pid=$!
 
 fail() {
   {
     echo "$1"
     echo "--- recovery server log (tail) ---"
-    tail -c 1600 "$RUN/recovery.log"
+    # Non-fatal + explicit newline: a tail failure or a cut-off last line must
+    # not truncate the failure report this function exists to emit.
+    tail -c 1600 "$RUN/recovery.log" || true
+    echo
   } >&2
   exit 1
 }
@@ -57,7 +68,8 @@ until stalwart-cli apply --file "$RUN/plan.ndjson" --quiet >"$RUN/apply.log" 2>&
   if [ "$tries" -ge 30 ]; then
     {
       echo "--- last apply output (tail) ---"
-      tail -c 400 "$RUN/apply.log"
+      tail -c 400 "$RUN/apply.log" || true
+      echo
     } >&2
     fail "provisioning apply did not succeed after ${tries} attempts"
   fi
@@ -70,4 +82,4 @@ kill "$recovery_pid"
 wait "$recovery_pid" || true
 rm -f "$RUN/plan.ndjson"
 
-exec stalwart --config /etc/stalwart/config.json
+exec "$RUN/stalwart" --config /etc/stalwart/config.json
