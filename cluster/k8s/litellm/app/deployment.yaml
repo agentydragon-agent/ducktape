@@ -15,12 +15,28 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
-  replicas: 1
-  # RWO PVC (litellm-chatgpt-auth) can only be mounted by one pod; a RollingUpdate
-  # would deadlock the new pod on volume attach and briefly run two writers of the
-  # token file. Recreate guarantees a single writer.
+  replicas: 2
+  # 2 replicas for HA. Ollama/z.ai/Langfuse are all remote, so those are cleanly
+  # stateless. The one exception is the chatgpt provider's auth.json on the RWX
+  # chatgpt-auth PVC: both replicas share it and either may refresh+rewrite it.
+  #
+  # TODO(chatgpt-token-race): shared-token concurrency hazard. LiteLLM rewrites
+  # auth.json in place on refresh; with >1 replica two pods can refresh the same
+  # account concurrently and, because OpenAI rotates refresh tokens, invalidate
+  # each other's token — taking chatgpt models down until the seed is refreshed.
+  # Accepted for now: access tokens last ~10 days so the race window is a few
+  # seconds per refresh. Proper fix if it bites: move the chatgpt provider into a
+  # dedicated single-replica proxy and route chatgpt models to it from here.
+  #
+  # maxSurge:0/maxUnavailable:1 keeps >=1 pod serving during rollout and caps
+  # concurrent pods (writers) at replicas. type:Recreate is avoided because
+  # server-side apply rejects transitioning the already-RollingUpdate live
+  # Deployment to Recreate while the API-defaulted rollingUpdate block is present.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: litellm
