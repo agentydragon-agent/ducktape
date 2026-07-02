@@ -30,10 +30,10 @@ deliberately tiny (its documented declarative-deployments workflow):
   applies it against a temporary recovery-mode instance, then execs the
   normal server. Every pod start reconciles config; the reloader annotation
   makes cert-manager renewals trigger exactly such a restart.
-- `app/fetch-cli.sh` — `fetch-cli` initContainer: downloads the pinned,
-  checksum-verified static `stalwart-cli` into the shared `/cli` volume
-  (neither Stalwart image can provide it — the CLI image is distroless, the
-  server image lacks `xz`).
+- The `stalwart-cli` binary comes from its official (distroless) image:
+  initContainers plant a static busybox, then run it inside the CLI image to
+  copy the binary into the shared `/cli` volume — image pulls only, no
+  runtime downloads.
 
 **Deviation** from stock Stalwart: no setup wizard, no WebUI-managed state —
 the plan is the single source of truth. Interactive admin (rarely needed)

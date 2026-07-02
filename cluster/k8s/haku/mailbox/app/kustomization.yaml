@@ -27,4 +27,3 @@ configMapGenerator:
       - config.json
       - mailbox-plan.ndjson.tmpl
       - bootstrap-and-run.sh
-      - fetch-cli.sh

@@ -41,18 +41,27 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       initContainers:
-        # The provisioning plan is applied with stalwart-cli. Neither Stalwart
-        # image can put it in place itself (ghcr.io/stalwartlabs/cli is
-        # distroless — no shell to copy the binary out with; the server image
-        # has no xz for the release tarball), so alpine downloads the pinned,
-        # checksum-verified static musl binary into the shared volume.
-        - name: fetch-cli
-          image: alpine:3.21
-          command: ["/bin/sh", "/etc/stalwart/fetch-cli.sh"]
+        # The provisioning plan is applied with stalwart-cli, which ships only
+        # as a distroless image (a bare static binary, no shell to copy it out
+        # with — and the server image doesn't carry the CLI at all). Plant a
+        # static busybox (the musl variant is statically linked), then run it
+        # *inside* the CLI image to copy the binary into the shared volume.
+        # Image pulls only — no runtime downloads, so pod restarts keep
+        # working from the node image cache during registry/GitHub outages.
+        - name: seed-busybox
+          image: busybox:1.37.0-musl
+          command: ["/bin/cp", "/bin/busybox", "/cli/busybox"]
           volumeMounts:
-            - name: config
-              mountPath: /etc/stalwart
-              readOnly: true
+            - name: cli
+              mountPath: /cli
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: extract-cli
+          image: ghcr.io/stalwartlabs/cli:1.0.10
+          command: ["/cli/busybox", "cp", "/usr/local/bin/stalwart-cli", "/cli/stalwart-cli"]
+          volumeMounts:
             - name: cli
               mountPath: /cli
           securityContext:
