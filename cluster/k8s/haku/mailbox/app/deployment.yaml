@@ -40,22 +40,14 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
-      initContainers:
-        # The provisioning plan is applied with stalwart-cli, which ships as a
-        # separate image; copy the binary into a shared volume for the wrapper.
-        - name: fetch-cli
-          image: ghcr.io/stalwartlabs/cli:1.0.10
-          command: ["/bin/sh", "-c", 'cp "$(command -v stalwart-cli)" /cli/stalwart-cli']
-          volumeMounts:
-            - name: cli
-              mountPath: /cli
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
       containers:
         - name: stalwart
-          image: stalwartlabs/stalwart:v0.16.11
+          # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered
+          # in (//cluster/k8s/haku/mailbox/image) — upstream ships the CLI
+          # only as a distroless image, unusable from the pod. Published by
+          # the push-images workflow; Flux image automation tracks the tag
+          # (the initial placeholder resolves after the first devel push).
+          image: ghcr.io/agentydragon/stalwart:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:stalwart"}
           command: ["/bin/sh", "/etc/stalwart/bootstrap-and-run.sh"]
           ports:
             - name: smtp
@@ -81,9 +73,6 @@ spec:
               readOnly: true
             - name: tls
               mountPath: /tls
-              readOnly: true
-            - name: cli
-              mountPath: /cli
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -124,7 +113,5 @@ spec:
         - name: tls
           secret:
             secretName: mx-allegedly-works-tls
-        - name: cli
-          emptyDir: {}
         - name: tmp
           emptyDir: {}
