@@ -6,10 +6,11 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 
 ## Layout
 
-| Path   | Role                                                                                           |
-| ------ | ---------------------------------------------------------------------------------------------- |
-| `db/`  | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store; no PVC on the app |
-| `app/` | Stalwart Deployment + provisioning plan + Service/HTTPRoute/Certificate/secrets                |
+| Path     | Role                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------- |
+| `db/`    | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store; no PVC on the app     |
+| `app/`   | Stalwart Deployment + provisioning plan + Service/HTTPRoute/Certificate/secrets                    |
+| `image/` | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`ghcr.io/agentydragon/stalwart`) |
 
 ## Configuration model
 
@@ -30,10 +31,13 @@ deliberately tiny (its documented declarative-deployments workflow):
   applies it against a temporary recovery-mode instance, then execs the
   normal server. Every pod start reconciles config; the reloader annotation
   makes cert-manager renewals trigger exactly such a restart.
-- The `stalwart-cli` binary comes from its official (distroless) image:
-  initContainers plant a static busybox, then run it inside the CLI image to
-  copy the binary into the shared `/cli` volume — image pulls only, no
-  runtime downloads.
+- The pod image is the in-repo repack from `image/BUILD.bazel` — upstream
+  server + the pinned static `stalwart-cli` (upstream ships the CLI only as
+  a distroless image, unusable from the pod). Published as
+  `ghcr.io/agentydragon/stalwart` by the push-images workflow, tag tracked
+  by Flux image automation. Upgrading Stalwart = bumping the `stalwart`
+  `oci.pull` (tag + digest) and, on CLI releases, the `stalwart_cli`
+  `http_archive` sha in `MODULE.bazel`.
 
 **Deviation** from stock Stalwart: no setup wizard, no WebUI-managed state —
 the plan is the single source of truth. Interactive admin (rarely needed)

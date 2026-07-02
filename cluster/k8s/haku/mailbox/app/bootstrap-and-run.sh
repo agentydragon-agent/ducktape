@@ -39,7 +39,7 @@ export STALWART_URL=http://127.0.0.1:8080
 export STALWART_USER=admin
 export STALWART_PASSWORD="${STALWART_ADMIN_PASSWORD}"
 tries=0
-until /cli/stalwart-cli apply --file "$RUN/plan.ndjson" --quiet; do
+until stalwart-cli apply --file "$RUN/plan.ndjson" --quiet; do
   tries=$((tries + 1))
   if [ "$tries" -ge 30 ]; then
     echo "provisioning apply did not succeed after ${tries} attempts" >&2
