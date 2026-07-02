@@ -31,7 +31,7 @@ spec:
       containers:
         - name: provisioner
           # Script baked in via Bazel (//cluster/k8s/grocy/sf/user-perms:image).
-          image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260626195242-4cbec4e # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
+          image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260702043158-66d9a31 # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
           imagePullPolicy: Always
           args:
             - --policy

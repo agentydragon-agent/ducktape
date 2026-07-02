@@ -5,10 +5,7 @@ metadata:
   namespace: grocy-sf
   annotations:
     description: >-
-      Daily drift correction for the user→permission policy in policy.yaml. The
-      one-shot provisioner Job converges at bootstrap and on policy changes;
-      this CronJob re-asserts the same policy so manual permission edits in the
-      Grocy UI (e.g. elevating haku) converge back within a day.
+      Daily drift correction for the user→permission policy in policy.yaml. The one-shot provisioner Job converges at bootstrap and on policy changes; this CronJob re-asserts the same policy so manual permission edits in the Grocy UI (e.g. elevating haku) converge back within a day.
 spec:
   schedule: "40 4 * * *"
   concurrencyPolicy: Forbid
@@ -40,7 +37,7 @@ spec:
           containers:
             - name: reconciler
               # Script baked in via Bazel (//cluster/k8s/grocy/sf/user-perms:image).
-              image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260626195242-4cbec4e # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
+              image: ghcr.io/agentydragon/grocy-sf-user-perms-provisioner:devel-20260702043158-66d9a31 # {"$imagepolicy": "flux-system:grocy-sf-user-perms-provisioner"}
               imagePullPolicy: Always
               args:
                 - --policy
