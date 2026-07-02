@@ -47,7 +47,7 @@ spec:
           # only as a distroless image, unusable from the pod. Published by
           # the push-images workflow; Flux image automation tracks the tag
           # (the initial placeholder resolves after the first devel push).
-          image: ghcr.io/agentydragon/stalwart:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:stalwart"}
+          image: ghcr.io/agentydragon/stalwart:devel-20260702101457-150370a # {"$imagepolicy": "flux-system:stalwart"}
           command: ["/bin/sh", "/etc/stalwart/bootstrap-and-run.sh"]
           ports:
             - name: smtp
