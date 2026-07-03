@@ -1,5 +1,10 @@
 # SPICE Audio Choppiness Investigation
 
+> **Status (2026-07-02)**: Fix options 2 and 3 applied — VM 110 switched to
+> `vga: virtio-gl` and the `nvidia-drm.modeset` conflict fixed in the wyrm2
+> NixOS config. Both pending a wyrm2 reboot. See
+> `../gpu-strategy.md` (Current State + post-reboot checklist).
+
 ## Problem
 
 Audio over SPICE on wyrm2 has choppiness ranging from slight (~1 glitch every

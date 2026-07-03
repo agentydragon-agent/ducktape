@@ -46,24 +46,26 @@ intended:
 
 ### Future desiderata (not blocking Plan A)
 
-- **Play games with the RTX 5090s.** Out-of-scope for the desk
-  wiring itself but a real constraint on the atlas software config
-  (VFIO passthrough, wyrm2 vs. host GPU allocation, whether one card
-  stays for the host, etc.). Whatever solution is picked has to
-  coexist with the current one-switch KVM setup — the display path
-  is atlas TB4-OUT → KVM → monitor, so games either run on the
-  atlas side of the KVM or the desk needs a different display
-  routing.
+- **Play games with the RTX 5090s.** Plan rev 2 (2026-07-02): direct
+  output — 5090 DP-OUT → FV43U DP 1.4 input, keyboard via the FV43U's
+  spare USB-B hub uplink → atlas USB port passed through to wyrm2,
+  monitor's dual-KVM OSD binding to switch video + hub together.
+  Sunshine/Moonlight streaming (built the same day) stays as the
+  casual/desktop path — it turned out to be software-encode-only in
+  this architecture. Plan, rationale, and remaining work:
+  `debug/atlas/gpu-strategy.md`. Cables (Ivanky 8K DP m-m, USB A→B)
+  are on hand; wiring not yet done — update the cable plan +
+  schematic when it happens.
 
 ## Devices on hand
 
 | Device              | Notes                                                                                                                                                                                                                                                            |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| atlas               | Proxmox host, 2× RTX 5090 (per `plans/atlas_proxmox_to_nixos.md`). One GPU DP-OUT → mobo DP-IN feeds TB4-OUT (internal).                                                                                                                                         |
+| atlas               | Proxmox host, 2× RTX 5090 (per `plans/atlas_proxmox_to_nixos.md`). Display from the iGPU via TB4-OUT; the GPU DP-OUT → mobo DP-IN loopback was removed 2026-07-01 (see `debug/build_log.md`) and the 5090s are VFIO-bound to wyrm2.                              |
 | AORUS FV43U         | 43" 4K@144 monitor. Inputs: 1× DP 1.4, 2× HDMI 2.1 (24 Gb/s), 1× USB-C (DP-Alt + USB data + PD). USB hub: 1× USB-B uplink, 2× USB-A downstream. 2× 3.5 mm jacks (headphone, line-out). Internal "dual-KVM" toggles which uplink (USB-B vs. USB-C) feeds the hub. |
 | Sabrent SB-TB4K     | TB4 KVM. 2× TB4 host (PC1, PC2) + 3× TB4 downstream (40 Gb/s, 60 W PD per port) + 4× USB-A 3.2 Gen 2 (10 Gb/s, 5 V / 2.4 A). **No standalone DP output** — video goes over TB4 downstream USB-C.                                                                 |
 | TEX Shura           | 60% mech with trackpoint, USB-C jack at the back. Detachable cable ships in box (USB-C → USB-A, 1.5 m). BT-LE module on board (BT4+). Planned: wired USB.                                                                                                        |
-| USB-A camera        | Model TBD. Sits atop the FV43U, plugged into the monitor's **lower** USB-A downstream port. USB-A plug on the camera end.                                                                                                                                        |
+| USB-A camera        | Logitech C920 HD Pro. Sits atop the FV43U, plugged into the monitor's **lower** USB-A downstream port. USB-A plug on the camera end.                                                                                                                             |
 | Underdesk USB-A hub | Mounted left-underside of the desk. USB-A uplink plug — plugs directly into a KVM USB-A port.                                                                                                                                                                    |
 | USB WiFi adapter    | Model TBD. Spare; could go into atlas as a temporary wireless NIC.                                                                                                                                                                                               |
 
@@ -74,7 +76,7 @@ listed in the next section so we don't accidentally plan around it.
 
 | Qty | Cable                               | Vendor   | Current state                                                                                                 |
 | --- | ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
-| 1   | DP male-male                        | —        | In use: atlas GPU DP-OUT → mobo DP-IN.                                                                        |
+| 1   | DP male-male                        | —        | Spare. Was the GPU DP-OUT → mobo DP-IN loopback until removed 2026-07-01.                                     |
 | 1   | DP male-male, 8K                    | Ivanky   | Spare.                                                                                                        |
 | 1   | USB A → USB B                       | —        | Spare.                                                                                                        |
 | 1   | USB-C, 40 Gb/s, 200 W (TB-class)    | Silkland | In use: KVM downstream TB4 → FV43U USB-C (video + hub + PD).                                                  |
@@ -123,7 +125,7 @@ Each row is one physical link.
 
 | Link                     | Source port                                | Destination port                  | Cable          | Have?                                                                                                                                                                                         |
 | ------------------------ | ------------------------------------------ | --------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| atlas internal video     | atlas RTX 5090 DP-OUT (slot ?)             | atlas mobo DP-IN                  | DP m-m         | Yes (already wired).                                                                                                                                                                          |
+| atlas internal video     | atlas RTX 5090 DP-OUT (slot ?)             | atlas mobo DP-IN                  | DP m-m         | Removed 2026-07-01; display comes from the iGPU. Not needed for the gaming plan (Sunshine streaming — see `debug/atlas/gpu-strategy.md`).                                                     |
 | atlas → KVM              | atlas mobo TB4-OUT (**middle** port)       | SB-TB4K host PC1                  | USB-C TB-class | Cabled — Sabrent-looking 2 ft, tag "4". Atlas's top TB port carries BIOS video but not kernel DP-Alt; middle port works after kernel takeover, so the cable belongs there.                    |
 | Laptop → KVM             | Laptop TB4 (USB-C) — right-drawer position | SB-TB4K host PC2                  | USB-C          | In use — 20 Gb/s USB 3.2 Gen 2×2 cable, currently plugged into rugged as laptop stand-in. Not TB4, but the SB-TB4K accepts it and switches cleanly.                                           |
 | KVM → monitor (combined) | SB-TB4K downstream TB4 (USB-C)             | FV43U USB-C in (video + hub + PD) | USB-C TB-class | In use — Silkland 40 Gb/s 200 W. Replaces the visibly damaged 20 Gb/s cable that was flaky under strain.                                                                                      |

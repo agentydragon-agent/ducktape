@@ -55,17 +55,22 @@ in
 
   # NVIDIA GPU (2x RTX 5090 via VFIO passthrough)
   # Open nvidia module allowlists GPUs by subsystem-ID; Gigabyte RTX 5090 (1458:416f) isn't listed.
-  # nvidia-drm modeset=0: Workaround for Blackwell (RTX 5090) VFIO FLR bug — the GPU
-  # fails Function Level Reset after VM shutdown, causing host soft lockups. Disabling
-  # nvidia-drm modesetting prevents the driver from taking a KMS master reference that
-  # complicates FLR teardown. See debug/atlas/black_screen_lockup.md.
+  # nvidia-drm modeset HISTORY: modeset=0 was a workaround for the Blackwell
+  # VFIO FLR bug (host soft lockups on VM shutdown, see
+  # debug/atlas/black_screen_lockup.md). It was accidentally overridden to =1
+  # for the entire 28-day host-stable streak (modesetting.enable appended
+  # modeset=1 after it, last-wins), so =1 + the other mitigations is the
+  # empirically host-stable config. modeset=1 is REQUIRED for the
+  # direct-display gaming plan (5090 → monitor DP needs NVIDIA KMS) — see
+  # debug/atlas/gpu-strategy.md "Plan: direct display output". A brief
+  # deliberate modeset=0 experiment ran 2026-07-02 (guest-lockup hypothesis),
+  # abandoned in favor of the display.
   boot.kernelParams = [
     "nvidia.NVreg_OpenRmEnableUnsupportedGpus=1"
-    "nvidia-drm.modeset=0"
   ];
   services.xserver.videoDrivers = [ "nvidia" ];
   hardware.nvidia = {
-    modesetting.enable = true;
+    modesetting.enable = true; # adds nvidia-drm.modeset=1 (+ fbdev)
     open = true; # Required for Blackwell (RTX 5090) — proprietary module refuses these GPUs
     nvidiaSettings = false; # No X settings app for headless GPU compute
   };
@@ -132,6 +137,132 @@ in
   # GNOME 49 dropped X11 sessions — Wayland is the only option.
   # NixOS auto-disables Wayland for NVIDIA, but the display is QXL (not NVIDIA).
   services.displayManager.gdm.wayland = true;
+  # Verbose GDM logging while debugging the seat-game session launch
+  # (sessions die without their Exec ever running). Remove when solved.
+  services.displayManager.gdm.debug = true;
+  # Greeter must never blank/DPMS-off: a dark DP output makes the FV43U's KVM
+  # auto-revert to USB-C before the seat-game keyboard can wake anything
+  # (see debug/atlas/direct_display_bringup.md).
+  programs.dconf.profiles.gdm.databases = [
+    {
+      settings."org/gnome/desktop/session".idle-delay = lib.gvariant.mkUint32 0;
+      # No greeter animations: the seat-game greeter's login fade stalls
+      # (frame clock hangs → the animation-completion callback that calls
+      # StartSession never fires → "frozen greeter" instead of session
+      # start). With animations off the callback runs immediately.
+      settings."org/gnome/desktop/interface".enable-animations = false;
+    }
+  ];
+
+  # Steam — games run on the RTX 5090s (direct display via seat-game, or
+  # streamed to atlas via Sunshine/Moonlight).
+  programs.steam.enable = true;
+  # "Steam (gamescope)" session in the greeter — the intended session for
+  # seat-game: gamescope owns the display 5090's KMS directly (no desktop
+  # compositor between game and monitor).
+  programs.steam.gamescopeSession = {
+    enable = true;
+    # Device-selection quirk exploitation (gamescope 3.16.17,
+    # src/rendervulkan.cpp): gamescope picks the FIRST Vulkan device unless
+    # --prefer-vk-device matches, in which case the LAST matching device
+    # wins. Both 5090s match 10de:2b85, Vulkan enumerates in PCI order
+    # (01:00.0 compute, 02:00.0 display) → this selects 02:00.0, the
+    # display GPU, whose primary DRM node gamescope then opens for KMS
+    # (it derives the node from the Vulkan device; WLR_DRM_DEVICES is
+    # ignored). Without this it opens the seat0-owned compute card and
+    # dies on logind's TakeDevice denial.
+    args = [
+      "--prefer-vk-device"
+      "10de:2b85"
+      # NVIDIA direct scan-out produced flicker, corruption, and wrong
+      # colors (verified live 2026-07-03: `gamescopectl composite_force 1`
+      # fixed all three; gamescope-internal screenshots were always clean).
+      "--force-composition"
+    ];
+  };
+  # Debug variant: same payload but with stdout/stderr + xtrace captured to
+  # /tmp/steam-session.log — the stock session dies silently under GDM
+  # (~60s, zero journal output). Remove once the session works.
+  services.displayManager.sessionPackages = [
+    (
+      (pkgs.writeTextDir "share/wayland-sessions/steam-debug.desktop" ''
+        [Desktop Entry]
+        Name=Steam (debug)
+        Comment=steam-gamescope with logging to /tmp/steam-session.log
+        Exec=${pkgs.writeShellScript "steam-gamescope-debug" ''
+          exec > /tmp/steam-session.log 2>&1
+          set -x
+          date
+          id
+          # Restrict wlroots/gamescope DRM discovery to the display 5090:
+          # gamescope naively opens the first card node (card0 = the compute
+          # GPU, owned by seat0) and dies when logind refuses it.
+          export WLR_DRM_DEVICES=/dev/dri/by-path/pci-0000:02:00.0-card
+          exec steam-gamescope
+        ''}
+        Type=Application
+      '').overrideAttrs
+      (_: {
+        passthru.providedSessions = [ "steam-debug" ];
+      })
+    )
+  ];
+
+  # Game streaming host: Moonlight client on atlas connects here; games render
+  # + NVENC-encode on a 5090. capSysAdmin for KMS capture under Wayland.
+  # See <debug/atlas/gpu-strategy.md>.
+  services.sunshine = {
+    enable = true;
+    # Default package has no CUDA → only software x264. NVENC on the 5090s
+    # needs the CUDA build.
+    package = pkgs.sunshine.override { cudaSupport = true; };
+    capSysAdmin = true;
+    openFirewall = true;
+  };
+  # Rule 1: upstream's 60-sunshine.rules — the nixpkgs sunshine package ships
+  # no udev rules, so the module's `services.udev.packages = [ package ]` is
+  # a no-op and Sunshine gets "Permission denied" creating virtual
+  # keyboard/mouse.
+  # Rules 2+3: multiseat for the direct-display gaming plan — see
+  # debug/atlas/direct_display_bringup.md.
+  # - The display 5090 (guest 02:00.0 = hostpci1; DP cable to the FV43U)
+  #   belongs to logind seat "seat-game": GDM spawns a separate greeter
+  #   there, independent of the seat0 SPICE desktop. Do NOT
+  #   mutter-device-ignore this card — the seat-game greeter must use it.
+  # - The other 5090 (01:00.0, headless compute) stays on seat0 but is
+  #   hidden from mutter: multi-GPU mutter with NVIDIA cards crash-looped
+  #   (SIGSEGV) as primary and rendered black as copy target (2026-07-02).
+  # Gotcha: udev TAGS persist in the udev db — removing/changing these
+  # rules needs a VM reboot to fully take effect.
+  services.udev.extraRules = ''
+    KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
+    SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", TAG+="mutter-device-ignore"
+  '';
+  # seat-game device assignments must run at priority 72 — BEFORE systemd's
+  # 73-seat-late.rules finalizes seat bookkeeping (extraRules lands in
+  # 99-local.rules, which is too late: libinput saw ID_SEAT there but logind
+  # denied TakeDevice to the seat-game greeter). Same slot loginctl-attach
+  # uses. Devices: the display 5090 (guest 02:00.0), and the TEX Shura
+  # (04d9:0532), which arrives via QEMU port-path passthrough ONLY when the
+  # monitor's KVM routes its hub to USB-B — in this guest it is unambiguously
+  # the seat-game keyboard. See debug/atlas/direct_display_bringup.md.
+  services.udev.packages = [
+    (pkgs.writeTextFile {
+      name = "seat-game-udev-rules";
+      destination = "/lib/udev/rules.d/72-seat-game.rules";
+      text = ''
+        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", ENV{ID_SEAT}="seat-game"
+        # No KERNEL=="event*" filter: logind resolves an evdev node's seat via
+        # its PARENT input-class device, so inputNN needs ID_SEAT too (event-
+        # only assignment = libinput claims it but logind denies TakeDevice).
+        SUBSYSTEM=="input", ATTRS{idVendor}=="04d9", ATTRS{idProduct}=="0532", TAG+="seat", ENV{ID_SEAT}="seat-game"
+      '';
+    })
+  ];
+  # Composite the cursor into frames instead of the hardware cursor plane —
+  # Sunshine's KMS capture can't grab the cursor plane on virtio-gpu, so the
+  # Moonlight stream has no cursor otherwise.
+  environment.sessionVariables.MUTTER_DEBUG_DISABLE_HW_CURSORS = "1";
 
   # SPICE audio: increase PipeWire quantum to 2048 to eliminate xruns on the
   # virtual ich9-intel-hda device. Adds ~42ms audio latency (vs ~21ms default),

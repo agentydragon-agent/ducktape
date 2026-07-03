@@ -492,9 +492,11 @@ gi/PIL + installs openai)
    (~117ms adjusted), flat. No further improvement over videostreaming=off.
 3. **Try non-compositing WM** — Install xfce4 or i3 to eliminate Mutter's
    ~59ms compositor overhead. Expected to close remaining gap to VT latency.
-4. **Sunshine/Moonlight** — NVIDIA driver works (580.82.09, CUDA 13.0).
-   Could replace SPICE entirely. Looking Glass is not viable (no Linux
-   guest support).
+4. **Sunshine/Moonlight** — deployed 2026-07-02, works but **software x264
+   only** (NVENC needs capture+CUDA on one device; display is on virtio,
+   CUDA on the 5090s). Kept as casual/desktop transport; gaming pivoted to
+   a direct 5090 → monitor DP output. See `../gpu-strategy.md`. Looking
+   Glass is not viable (no Linux guest support).
 
 ## Session Notes
 

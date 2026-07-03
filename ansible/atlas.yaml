@@ -98,6 +98,31 @@
         install_recommends: false
       tags: [packages, desktop, virtualization]
 
+    # Moonlight (game stream client) — pairs with Sunshine on wyrm2, which
+    # renders + NVENC-encodes on a passed-through RTX 5090. Not in Debian,
+    # and upstream's Cloudsmith apt repo ships no amd64 builds (Raspberry Pi
+    # arches only) — Flathub is the supported x86_64 path.
+    # See debug/atlas/gpu-strategy.md.
+    - name: Install flatpak
+      ansible.builtin.apt:
+        name: flatpak
+        state: present
+        install_recommends: false
+      tags: [packages, moonlight]
+
+    - name: Add Flathub remote
+      community.general.flatpak_remote:
+        name: flathub
+        flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+        state: present
+      tags: [moonlight]
+
+    - name: Install Moonlight (Flathub)
+      community.general.flatpak:
+        name: com.moonlight_stream.Moonlight
+        state: present
+      tags: [packages, desktop, moonlight]
+
     - name: Create primary user
       ansible.builtin.user:
         name: "{{ my_user }}"

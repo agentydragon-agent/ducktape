@@ -557,3 +557,26 @@ Workaround for the docked laptop: plug its own AC adapter alongside
 the KVM cable when it needs to charge while atlas is active. If
 this ever needs to be a hard requirement, we'd need a different
 switch (probably a non-TB-certified USB-C dock).
+
+## 2026-07-02 — remote recheck from wyrm2; gaming display path decided
+
+**Remote verification** (SSH from a wyrm2 session, no physical changes):
+
+- Sabrent KVM authorized on atlas as USB4 peripheral, 40 Gb/s both
+  directions (`boltctl`).
+- Full downstream chain enumerates on atlas (`lsusb`): SSI TBT4 KVM
+  HUB, monitor hub (RTS5411), keyboard (Holtek), camera — identified
+  as a **Logitech C920 HD Pro** (was "model TBD").
+- Active display: amdgpu iGPU `DP-1`, **3840×2160 @ 60 Hz** (DRM
+  state). Not yet diagnosed whether 60 Hz is a GNOME default or a
+  link cap (FV43U USB-C shares lanes with USB data; 2-lane DP-Alt
+  tops out ~4K60 without DSC). No action — the gaming plan targets
+  60 fps.
+- 5090s confirmed vfio-bound, no host output; consistent with the
+  2026-07-01 loopback removal.
+
+**Decision.** Games will render on a 5090 in wyrm2 and stream via
+Sunshine → Moonlight (on atlas) over the existing iGPU → TB4 → KVM
+display path at 4K60. No desk rewiring needed; the direct-DP /
+monitor-dual-KVM option is shelved unless >60 Hz or VRR is ever
+wanted. Plan + post-reboot checklist: `debug/atlas/gpu-strategy.md`.
