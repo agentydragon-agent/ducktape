@@ -1,9 +1,14 @@
 # Managed by Ansible (nebula role)
-# Nebula lighthouse DNS for mesh hostname resolution
+# Don't read /etc/resolv.conf for upstream — we specify servers explicitly
+# and resolv.conf points to 127.0.0.1 (dnsmasq itself).
+no-resolv
+
+# Only route nebula.allegedly.works queries to lighthouse DNS
 {% for host in nebula_lighthouses %}
-server={{ host }}
+server=/nebula.allegedly.works/{{ host }}
 {% endfor %}
-# Upstream DNS for non-mesh queries
+
+# Upstream DNS for everything else
 {% for dns in nebula_upstream_dns %}
 server={{ dns }}
 {% endfor %}

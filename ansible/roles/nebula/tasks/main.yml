@@ -205,6 +205,20 @@
     mode: "0644"
   tags: [nebula, dns]
 
+- name: Prevent dhclient from overwriting resolv.conf
+  ansible.builtin.copy:
+    content: |
+      #!/bin/sh
+      # Managed by Ansible (nebula role)
+      # Prevent DHCP lease renewal from overwriting resolv.conf —
+      # dnsmasq handles DNS forwarding.
+      make_resolv_conf() { :; }
+    dest: /etc/dhcp/dhclient-enter-hooks.d/nodnsupdate
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [nebula, dns]
+
 - name: Remove resolvconf package (replaced by dnsmasq)
   ansible.builtin.apt:
     name: resolvconf
