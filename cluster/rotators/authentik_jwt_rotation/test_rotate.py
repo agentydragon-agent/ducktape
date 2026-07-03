@@ -1,12 +1,14 @@
 import base64
 import json
+import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
-from rotate import (
+
+from cluster.rotators.authentik_jwt_rotation.rotate import (
     Config,
     K8sSecretOutput,
     Rotation,
@@ -15,6 +17,7 @@ from rotate import (
     mint_jwt,
     remaining_hours,
     stamped_audiences,
+    stamped_claims,
     token_audiences,
 )
 
@@ -62,7 +65,12 @@ def test_remaining_hours_unstamped_file_is_none(tmp_path: Path):
 def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
     expires = datetime.now(UTC) + timedelta(hours=10)
     f = tmp_path / "t.yaml"
-    f.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\njwt: abc\n')
+    f.write_text(
+        textwrap.dedent(f"""\
+            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
+            jwt: abc
+            """)
+    )
     remaining = remaining_hours(f)
     assert remaining is not None
     assert 9 < remaining < 11
@@ -76,7 +84,15 @@ def test_token_audiences_normalizes_string_list_and_missing():
 
 def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
     f = tmp_path / "t.yaml"
-    f.write_text('expires_unencrypted: "2030-01-01T00:00:00Z"\naudiences_unencrypted:\n  - a\n  - b\njwt: abc\n')
+    f.write_text(
+        textwrap.dedent("""\
+            expires_unencrypted: "2030-01-01T00:00:00Z"
+            audiences_unencrypted:
+              - a
+              - b
+            jwt: abc
+            """)
+    )
     assert stamped_audiences(f) == ["a", "b"]
 
 
@@ -85,6 +101,26 @@ def test_stamped_audiences_absent_is_none(tmp_path: Path):
     f.write_text("jwt: abc\n")
     assert stamped_audiences(f) is None
     assert stamped_audiences(tmp_path / "absent.yaml") is None
+
+
+def test_stamped_claims_reads_yaml_dict(tmp_path: Path):
+    f = tmp_path / "t.yaml"
+    f.write_text(
+        textwrap.dedent("""\
+            expires_unencrypted: "2030-01-01T00:00:00Z"
+            claims_unencrypted:
+              email: haku@allegedly.works
+            jwt: abc
+            """)
+    )
+    assert stamped_claims(f) == {"email": "haku@allegedly.works"}
+
+
+def test_stamped_claims_absent_is_none(tmp_path: Path):
+    f = tmp_path / "t.yaml"
+    f.write_text("jwt: abc\n")
+    assert stamped_claims(f) is None
+    assert stamped_claims(tmp_path / "absent.yaml") is None
 
 
 def test_rotation_expected_audiences_defaults_none_and_parses_list():
@@ -101,6 +137,20 @@ def test_rotation_expected_audiences_defaults_none_and_parses_list():
         base | {"expected_audiences": ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]}
     )
     assert with_aud.expected_audiences == ["kubectl-sandbox-client-credentials", "kubectl-passthrough-mcp"]
+
+
+def test_rotation_expected_claims_defaults_none_and_parses_dict():
+    base = {
+        "name": "haku-mail",
+        "provider_slug": "stalwart-haku",
+        "scopes": "openid profile email",
+        "credentials_dir": "/creds",
+        "sops_file": "secrets/haku-mail-jwt.yaml",
+        "token_field": "jwt",
+    }
+    assert Rotation.model_validate(base).expected_claims is None
+    with_claims = Rotation.model_validate(base | {"expected_claims": {"email": "haku@allegedly.works"}})
+    assert with_claims.expected_claims == {"email": "haku@allegedly.works"}
 
 
 def test_rotation_k8s_secret_defaults_none_and_parses():
