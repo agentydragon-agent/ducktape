@@ -633,3 +633,42 @@ resource "talos_machine_configuration_apply" "kimsufi_cp" {
 
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_cp_to_talos]
 }
+
+# ============================================================================
+# KS-GAME GAME SHIELD — Nebula port 4242 passthrough
+# ============================================================================
+#
+# OVH KS-GAME servers run the OVH Game Shield (anti-DDoS) which by default
+# drops UDP traffic that doesn't match a known game protocol signature.
+# Nebula's ix_psk0 handshake is not a known game protocol, so it gets dropped,
+# making these worker nodes unreachable via Nebula from external IPs (e.g.
+# atlas at home). OVH→OVH traffic bypasses the Game Shield so k8s works fine.
+#
+# Fix: add a port 4242 / "other" rule to the game mitigation for each worker IP.
+# The rule survives node reinstalls since it's a network-level OVH configuration.
+#
+# The OVH TF provider has no ovh_ip_game_mitigation resource, so we call the
+# OVH API via Python script. The script is idempotent (no-ops if rule exists).
+#
+# Requires OVH token to include GET/POST /ip/*/game/* — see
+# secrets/ovh-credentials.sops.yaml for the full permission list. Rotate the
+# token via https://api.us.ovhcloud.com/createToken/ before running apply.
+
+resource "null_resource" "ks_game_nebula_mitigation" {
+  for_each = {
+    for k, v in local.active_kimsufi_servers : k => data.ovh_dedicated_server.kimsufi[k].ip
+    if v.role == "worker"
+  }
+
+  # Re-run if the server IP changes (rare) or on taint.
+  triggers = { ip = each.value }
+
+  provisioner "local-exec" {
+    environment = {
+      OVH_APP_KEY      = data.sops_file.ovh_credentials.data["application_key"]
+      OVH_APP_SECRET   = data.sops_file.ovh_credentials.data["application_secret"]
+      OVH_CONSUMER_KEY = data.sops_file.ovh_credentials.data["consumer_key"]
+    }
+    command = "python3 ${path.module}/../../scripts/configure_game_mitigation.py ${each.value}"
+  }
+}
