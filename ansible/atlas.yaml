@@ -165,6 +165,60 @@
       vars:
         nix_trusted_users: "root {{ my_user }}"
 
+    # Proxmox network bridges (ifupdown2). Both bridges ride the same physical
+    # NIC. The cable is in enp11s0; enp12s0 is the other onboard NIC (no cable).
+    # If the cable ever moves to enp12s0, swap bridge-ports enp11s0 -> enp12s0
+    # and the VLAN parent enp11s0.4 -> enp12s0.4.
+    - name: Configure Proxmox network interfaces (bridges + k8s VLAN)
+      ansible.builtin.copy:
+        dest: /etc/network/interfaces
+        content: |
+          # network interface settings — managed by Ansible (see atlas.yaml)
+          #
+          # vmbr0: Home LAN bridge (DHCP from router) — host internet uplink
+          # vmbr4: Kubernetes VLAN 4 bridge (static IPs, isolated network)
+          #
+          # Active NIC: enp11s0 (cable is in this port). enp12s0 has no cable.
+
+          auto lo
+          iface lo inet loopback
+
+          iface enp11s0 inet manual
+
+          iface enp12s0 inet manual
+
+          # VLAN 4 interface for Kubernetes cluster network
+          auto enp11s0.4
+          iface enp11s0.4 inet manual
+
+          # Home LAN bridge - gets IP via DHCP from home router
+          auto vmbr0
+          iface vmbr0 inet dhcp
+              bridge-ports enp11s0
+              bridge-stp off
+              bridge-fd 0
+
+          # Kubernetes VLAN 4 bridge
+          # Static IP for Proxmox API access from Kubernetes VMs.
+          # Used by Proxmox CSI driver to manage VM disks.
+          # Network allocation (see cluster/README.md):
+          #   10.2.0.1    - Home router (gateway)
+          #   10.2.0.2    - Atlas (Proxmox host) <- this interface
+          #   10.2.1.x    - Control plane nodes
+          #   10.2.2.x    - Worker nodes
+          auto vmbr4
+          iface vmbr4 inet static
+              address 10.2.0.2/16
+              bridge-ports enp11s0.4
+              bridge-stp off
+              bridge-fd 0
+
+          source /etc/network/interfaces.d/*
+        mode: "0644"
+        backup: true
+      notify: Reload network interfaces
+      tags: [network, bridges]
+
     # GPU Passthrough Configuration
     #
     # Atlas boots via systemd-boot (UEFI), NOT GRUB. Kernel cmdline lives in
@@ -407,6 +461,12 @@
     # will enable this. After upgrade, install: wireless-tools, wpasupplicant, iw
 
   handlers:
+    - name: Reload network interfaces
+      ansible.builtin.command:
+        cmd: ifreload -a
+      register: ifreload_result
+      changed_when: ifreload_result.rc == 0
+
     - name: Refresh proxmox boot
       ansible.builtin.command:
         cmd: proxmox-boot-tool refresh
