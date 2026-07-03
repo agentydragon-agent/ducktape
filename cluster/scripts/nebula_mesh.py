@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Role = Literal["control-plane", "worker", "laptop", "non-k8s"]
-ManagedBy = Literal["tofu-ovh", "tofu-proxmox", "nixos", "mobile"]
+ManagedBy = Literal["tofu-ovh", "tofu-proxmox", "nixos", "ansible", "mobile"]
 
 
 class Host(BaseModel):

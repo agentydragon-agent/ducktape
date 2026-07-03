@@ -25,7 +25,7 @@ Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
   "role":         "control-plane" | "worker" | "laptop" | "non-k8s",
   "lighthouse":   true | false,         // default false
   "relay":        true | false,         // default false
-  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "nixos" | "mobile",
+  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "nixos" | "ansible" | "mobile",
   "cert_groups":  [...]                 // optional; embedded in the Nebula cert
 }
 ```
@@ -50,18 +50,21 @@ any TF apply.
 5. Restart Nebula on roaming/NixOS hosts (or wait for next `nixos-rebuild
 switch`) so they pick up the new `static_host_map`.
 
-### NixOS / laptop / mobile (manual cert)
+### NixOS / Ansible / laptop / mobile (manual cert)
 
-For nodes not provisioned by TF (atlas, wyrm2, rugged, iguana, pixel6).
+For nodes not provisioned by TF: `wyrm2`/`rugged`/`iguana` (`nixos`), `atlas`
+(`ansible` — Debian/Proxmox, provisioned by `ansible/atlas.yaml`), `pixel6`
+(`mobile`).
 
 1. Generate the cert under `secrets/nebula/<host>.crt` /
    `secrets/nebula/<host>.sops.key` — see <secrets.md> "Nebula Certs for
    Non-Talos Nodes".
 2. Edit `nebula-mesh.json`: add the host with `nebula_ip` (matching the cert),
-   role, `managed_by: "nixos"` (or `"mobile"`). No endpoint, no lighthouse
-   (unless you really mean to serve as one).
-3. Deploy on the host (`nixos-rebuild switch` / mobile import). Other hosts
-   don't need to know about behind-NAT hosts.
+   role, `managed_by: "nixos"` / `"ansible"` / `"mobile"`. No endpoint, no
+   lighthouse (unless you really mean to serve as one).
+3. Deploy on the host — `nixos-rebuild switch` (nixos),
+   `ansible-playbook <host>.yaml --tags nebula` (ansible), or mobile import.
+   Other hosts don't need to know about behind-NAT hosts.
 
 ## Remove a host
 

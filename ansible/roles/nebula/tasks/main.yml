@@ -1,15 +1,31 @@
 ---
 # Install and configure Nebula mesh network + dnsmasq for hostname resolution
 
-- name: Load mesh topology from nebula-mesh.json
+# Roster schema (SSOT): nebula-mesh.json is a {"hosts": {name: {...}}} map.
+# We derive the same two values the Nix/TF consumers do (see
+# nix/nixos/modules/nebula.nix, cluster/terraform/main/nebula.tf):
+#   - lighthouses:      nebula_ip of every host with lighthouse=true
+#   - static_host_map:  nebula_ip -> [endpoint] for every host with an endpoint
+- name: Load mesh roster from nebula-mesh.json
   ansible.builtin.set_fact:
-    nebula_mesh_config: "{{ lookup('file', nebula_mesh_config_file) | from_json }}"
+    nebula_mesh_hosts: "{{ (lookup('file', nebula_mesh_config_file) | from_json).hosts }}"
   tags: [nebula, config]
 
-- name: Set lighthouse vars from mesh config
+- name: Derive lighthouse IPs from mesh roster
   ansible.builtin.set_fact:
-    nebula_lighthouses: "{{ nebula_mesh_config.lighthouse_ips }}"
-    nebula_static_host_map: "{{ nebula_mesh_config.static_host_map }}"
+    nebula_lighthouses: >-
+      {{ nebula_mesh_hosts.values()
+         | selectattr('lighthouse', 'defined') | selectattr('lighthouse')
+         | map(attribute='nebula_ip') | list }}
+    nebula_static_host_map: {}
+  tags: [nebula, config]
+
+- name: Build static_host_map (nebula_ip -> [endpoint]) from mesh roster
+  ansible.builtin.set_fact:
+    nebula_static_host_map: "{{ nebula_static_host_map | combine({item.nebula_ip: [item.endpoint]}) }}"
+  loop: "{{ nebula_mesh_hosts.values() | selectattr('endpoint', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.nebula_ip }} -> {{ item.endpoint }}"
   tags: [nebula, config]
 
 - name: Remove Debian nebula package (dfsg build lacks v2 cert support)

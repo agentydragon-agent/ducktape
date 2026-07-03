@@ -49,7 +49,7 @@
     "atlas": {
       "nebula_ip": "10.42.0.5",
       "role": "non-k8s",
-      "managed_by": "nixos"
+      "managed_by": "ansible"
     },
     "wyrm2": {
       "nebula_ip": "10.42.0.20",
