@@ -18,6 +18,18 @@
   services.gnome.gnome-keyring.enable = true;
   programs.dconf.enable = true;
 
+  # Show the machine name on the GDM greeter before login, so it's always
+  # obvious which host a login screen belongs to (multiseat, streamed, and
+  # picture-in-picture setups otherwise look identical).
+  programs.dconf.profiles.gdm.databases = [
+    {
+      settings."org/gnome/login-screen" = {
+        banner-message-enable = true;
+        banner-message-text = config.networking.hostName;
+      };
+    }
+  ];
+
   # GSConnect — phone integration via GNOME Shell extension.
   # Default programs.kdeconnect to the gsconnect package to open the required
   # firewall ports (TCP+UDP 1714-1764). Desktop-manager modules such as Plasma

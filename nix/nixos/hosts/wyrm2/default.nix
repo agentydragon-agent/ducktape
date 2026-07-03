@@ -180,6 +180,17 @@ in
       "--force-composition"
     ];
   };
+  # Let gamescope renice itself for smoother frame pacing (the session UI felt
+  # laggy without it). The module installs the cap_sys_nice-wrapped gamescope at
+  # /run/wrappers/bin/gamescope; the steam-gamescope session script picks it up
+  # from PATH, and the steam module auto-adds the setuid bwrap wrapper this needs.
+  programs.gamescope.capSysNice = true;
+  # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
+  # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
+  # the Steam FHS env. Only helps if the failing binary runs in the outer FHS,
+  # not deep inside the pressure-vessel container — if a game still fails in the
+  # SLR sandbox, force Proton on it instead.
+  programs.steam.extraPackages = [ pkgs.libselinux ];
   # Debug variant: same payload but with stdout/stderr + xtrace captured to
   # /tmp/steam-session.log — the stock session dies silently under GDM
   # (~60s, zero journal output). Remove once the session works.
