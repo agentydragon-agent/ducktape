@@ -11,6 +11,7 @@ use analysis::cross_module_purity::{
     resolve_asserted_member_purities, resolve_imported_purities,
 };
 use analysis::purity::Purity;
+use anyhow::{Context, Result};
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ExportAliasRecord, ImportRecord, ImportSpecifierKind,
 };
@@ -61,6 +62,63 @@ pub(super) struct CrossModulePurities {
     pub(super) fluent: BTreeMap<String, BTreeSet<String>>,
 }
 
+/// Static-import chunk closure for program-level purity analysis.
+///
+/// Starts from the user-selected chunks and follows each retained chunk's
+/// shallow-analysis import records through the same artifact-index resolver used
+/// by emission. Excluded chunks are opacity boundaries: they are neither added
+/// to the closure nor traversed.
+pub(super) fn selected_static_import_closure(
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    selected_chunk_ids: &[String],
+    excluded_chunks: &BTreeSet<ChunkId>,
+) -> Result<BTreeSet<ChunkId>> {
+    let mut closure = BTreeSet::new();
+    let mut pending = Vec::new();
+    for chunk_id in selected_chunk_ids {
+        let interned = artifact
+            .chunk_table
+            .get(chunk_id)
+            .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
+        if excluded_chunks.contains(&interned) {
+            continue;
+        }
+        if closure.insert(interned) {
+            pending.push(interned);
+        }
+    }
+
+    while let Some(chunk_id) = pending.pop() {
+        let Some(chunk_artifact) = artifact.find_chunk(chunk_id) else {
+            continue;
+        };
+        let entry_file = &chunk_artifact.analysis.entry_file;
+        for import in &chunk_artifact.analysis.imports {
+            let Some(target) = indexes.resolve_runtime_import_reference(
+                &import.source,
+                chunk_id,
+                entry_file,
+                &artifact.chunk_table,
+            ) else {
+                continue;
+            };
+            if excluded_chunks.contains(&target.target_chunk_id) {
+                continue;
+            }
+            if closure.insert(target.target_chunk_id) {
+                pending.push(target.target_chunk_id);
+            }
+        }
+    }
+
+    Ok(closure)
+}
+
+fn chunk_allowed(chunk_id: ChunkId, chunk_filter: Option<&BTreeSet<ChunkId>>) -> bool {
+    chunk_filter.is_none_or(|filter| filter.contains(&chunk_id))
+}
+
 /// Per-chunk-name imported-binding purity maps for the whole artifact.
 /// A chunk whose entry can neither be reused (retained AST) nor re-parsed
 /// stays opaque: its exports get no verdicts and imports of it stay
@@ -76,6 +134,7 @@ pub(super) fn collect_cross_module_imported_purities(
     indexes: &ArtifactIndexes,
     chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
     excluded_chunks: &BTreeSet<ChunkId>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> CrossModulePurities {
     // Pass 1: re-parse entries stored as raw source so every chunk's body is
     // analyzable. Parse failures only warn — the pass is an analysis
@@ -83,6 +142,9 @@ pub(super) fn collect_cross_module_imported_purities(
     // behavior rather than failing the build.
     let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
+        if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
+            continue;
+        }
         if excluded_chunks.contains(&chunk_artifact.chunk_id) {
             continue;
         }
@@ -122,6 +184,9 @@ pub(super) fn collect_cross_module_imported_purities(
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
     for chunk_artifact in &artifact.chunks {
+        if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
+            continue;
+        }
         if excluded_chunks.contains(&chunk_artifact.chunk_id) {
             continue;
         }
@@ -158,6 +223,11 @@ pub(super) fn collect_cross_module_imported_purities(
             ) else {
                 continue;
             };
+            if excluded_chunks.contains(&target.target_chunk_id)
+                || !chunk_allowed(target.target_chunk_id, chunk_filter)
+            {
+                continue;
+            }
             let target_chunk_name = artifact.chunk_table.name(target.target_chunk_id);
             for specifier in &import.specifiers {
                 let export = match specifier.kind {
@@ -211,22 +281,176 @@ pub(super) fn collect_cross_module_imported_purities(
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_exports.is_empty())
+        .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_exports.clone()))
         .collect();
     let asserted_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> =
         chunk_export_purity
             .iter()
             .filter(|(_, assertion)| !assertion.pure_members.is_empty())
+            .filter(|(chunk, _)| modules.contains_key(*chunk))
             .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_members.clone()))
             .collect();
     let asserted_fluent: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.fluent_exports.is_empty())
+        .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.fluent_exports.clone()))
         .collect();
     CrossModulePurities {
         bindings: resolve_imported_purities(&modules, &asserted_pure),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use artifact::{
+        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkFileRecord, ChunkMetadata,
+        ChunkTable, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
+    };
+
+    fn test_bundle(chunks: &[(&str, &str)]) -> ChunkBundle {
+        js_ast::with_swc_globals(|| {
+            let mut chunk_table = ChunkTable::default();
+            let mut chunk_artifacts = Vec::new();
+            for (chunk_name, source) in chunks {
+                let chunk_id = chunk_table.intern((*chunk_name).to_string());
+                let entry_file = format!(
+                    "{}.js",
+                    chunk_name
+                        .rsplit('/')
+                        .next()
+                        .expect("test chunk names are non-empty")
+                );
+                let source_path = format!("{chunk_name}.js");
+                let parsed = js_ast::parse_js_module(&format!("{chunk_name}/{entry_file}"), source)
+                    .expect("test source parses");
+                let analysis = analyze_program_shallow(&parsed);
+                chunk_artifacts.push(ChunkArtifact {
+                    chunk_id,
+                    js: JsChunk {
+                        entry_file: entry_file.clone(),
+                        files: vec![JsFile {
+                            path: entry_file.clone(),
+                            body: JsFileBody::Source((*source).to_string()),
+                            header_lines: Vec::new(),
+                            binding_comments: BTreeMap::new(),
+                            leading_item_comments: BTreeMap::new(),
+                            metadata: FileMetadata {
+                                chunk_id: (*chunk_name).to_string(),
+                                chunk_file: entry_file.clone(),
+                                role: FileRole::Entry,
+                                source_path: source_path.clone(),
+                            },
+                        }],
+                        metadata: ChunkMetadata {
+                            source_path: source_path.clone(),
+                        },
+                    },
+                    analysis: ChunkAnalysisReport {
+                        chunk_id: (*chunk_name).to_string(),
+                        source_path,
+                        parser: Default::default(),
+                        entry_file: entry_file.clone(),
+                        counts: Default::default(),
+                        files: vec![ChunkFileRecord {
+                            file: entry_file,
+                            role: FileRole::Entry,
+                        }],
+                        imports: analysis.imports,
+                        export_aliases: analysis.export_aliases,
+                        unresolved_exports: Vec::new(),
+                        kept_top_level_declarations: Vec::new(),
+                    },
+                });
+            }
+            ChunkBundle {
+                chunks: chunk_artifacts,
+                chunk_table,
+            }
+        })
+    }
+
+    fn closure_names(artifact: &ChunkBundle, closure: &BTreeSet<ChunkId>) -> BTreeSet<String> {
+        closure
+            .iter()
+            .map(|chunk_id| artifact.chunk_table.name(*chunk_id).to_string())
+            .collect()
+    }
+
+    #[test]
+    fn selected_static_import_closure_follows_transitive_imports() {
+        let artifact = test_bundle(&[
+            (
+                "static/app",
+                "import { callWrap } from \"./adapter.js\";\ncallWrap(() => 1);\n",
+            ),
+            (
+                "static/adapter",
+                "import { wrap } from \"./vendorlib.js\";\n\
+export function callWrap(f) { return wrap(f); }\n",
+            ),
+            (
+                "static/vendorlib",
+                "export function wrap(f) { return { impl: f }; }\n",
+            ),
+            ("static/unrelated", "export const unused = 1;\n"),
+        ]);
+        let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+        let closure = selected_static_import_closure(
+            &artifact,
+            &indexes,
+            &["static/app".to_string()],
+            &BTreeSet::new(),
+        )
+        .expect("closure");
+
+        assert_eq!(
+            closure_names(&artifact, &closure),
+            BTreeSet::from([
+                "static/app".to_string(),
+                "static/adapter".to_string(),
+                "static/vendorlib".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn selected_static_import_closure_stops_at_excluded_chunks() {
+        let artifact = test_bundle(&[
+            (
+                "static/app",
+                "import { callWrap } from \"./adapter.js\";\ncallWrap(() => 1);\n",
+            ),
+            (
+                "static/adapter",
+                "import { wrap } from \"./vendorlib.js\";\n\
+export function callWrap(f) { return wrap(f); }\n",
+            ),
+            (
+                "static/vendorlib",
+                "export function wrap(f) { return { impl: f }; }\n",
+            ),
+        ]);
+        let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+        let excluded = BTreeSet::from([artifact
+            .chunk_table
+            .get("static/adapter")
+            .expect("adapter chunk")]);
+        let closure = selected_static_import_closure(
+            &artifact,
+            &indexes,
+            &["static/app".to_string()],
+            &excluded,
+        )
+        .expect("closure");
+
+        assert_eq!(
+            closure_names(&artifact, &closure),
+            BTreeSet::from(["static/app".to_string()])
+        );
     }
 }

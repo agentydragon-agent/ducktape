@@ -1,7 +1,8 @@
 use std::fs;
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, logical_module, logical_module_with_anon,
+    BindingGroup, FixtureOpts, Member, logical_module, logical_module_with_anon,
+    logical_module_with_anon_alpha_many, logical_module_with_binding_groups,
     run_keep_going_dry_run_rejection_fixture,
 };
 use serde_json::Value;
@@ -167,11 +168,270 @@ export { renderCard, decoratePrimary, decorateSecondary };
     );
 }
 
+#[test]
+fn keep_going_marks_known_unsat_roots_and_cascades() {
+    let missing_selector = r#"function missingFormatter(value) {
+  return value.toLowerCase();
+}"#;
+    let valid_selector = r#"function keepMe(value) {
+  return value.trim();
+}"#;
+    let opts = FixtureOpts::new(
+        r#"function keepMe(value) {
+  return value.trim();
+}
+console.log(keepMe(" ok "));
+export { keepMe };
+"#,
+        vec![
+            logical_module(
+                "diagnostics/root",
+                &[Member::source_alpha("MissingFormatter", missing_selector)],
+            ),
+            logical_module(
+                "diagnostics/cascade",
+                &[Member::source_alpha("KeepMe", valid_selector)],
+            ),
+        ],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    assert!(
+        rejected.stderr.contains("root_unsat_candidate"),
+        "human diagnostics must mark root candidates:\n{}",
+        rejected.stderr
+    );
+    assert!(
+        rejected.stderr.contains("cascaded_from_known_unsat"),
+        "human diagnostics must mark cascaded targets:\n{}",
+        rejected.stderr
+    );
+
+    let report_path = rejected
+        .report_root
+        .join("static")
+        .join("app")
+        .join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap();
+    let diagnostics = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics must be an array");
+
+    let root = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
+    assert_eq!(
+        root["root_isolation"]["classification"], "root_unsat_candidate",
+        "{root:#}"
+    );
+    assert!(
+        root["root_isolation"]["known_unsat_reason"]
+            .as_str()
+            .unwrap()
+            .contains("variable restriction has empty domain"),
+        "{root:#}"
+    );
+    assert!(
+        root["root_isolation"]["implicated_debug_name"]
+            .as_str()
+            .unwrap()
+            .contains("diagnostics/root::source_match.MissingFormatter."),
+        "{root:#}"
+    );
+
+    let cascade = find_entry(diagnostics, "selector_resolution_error", "KeepMe");
+    assert_eq!(
+        cascade["root_isolation"]["classification"], "cascaded_from_known_unsat",
+        "{cascade:#}"
+    );
+    assert!(
+        cascade["root_isolation"]["known_unsat_reason"]
+            .as_str()
+            .unwrap()
+            .contains("variable restriction has empty domain"),
+        "{cascade:#}"
+    );
+}
+
+#[test]
+fn keep_going_matches_known_unsat_anonymous_roots_by_index() {
+    let opts = FixtureOpts::new(
+        r#"console.log("present");
+"#,
+        vec![logical_module_with_anon_alpha_many(
+            "diagnostics/anon",
+            &[],
+            &[r#"console.warn("missing");"#, r#"console.log("present");"#],
+        )],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let report_path = rejected
+        .report_root
+        .join("static")
+        .join("app")
+        .join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap();
+    let diagnostics = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics must be an array");
+
+    let root = find_anon_entry(diagnostics, "console.warn");
+    assert_eq!(
+        root["root_isolation"]["classification"], "root_unsat_candidate",
+        "{root:#}"
+    );
+    assert!(
+        root["root_isolation"]["implicated_debug_name"]
+            .as_str()
+            .unwrap()
+            .contains("diagnostics/anon::anonymous_statement.0.source_match."),
+        "{root:#}"
+    );
+
+    let cascade = find_anon_entry(diagnostics, "console.log");
+    assert_eq!(
+        cascade["root_isolation"]["classification"], "cascaded_from_known_unsat",
+        "{cascade:#}"
+    );
+}
+
+#[test]
+fn keep_going_matches_known_unsat_binding_group_roots_by_target_binding() {
+    let opts = FixtureOpts::new(
+        r#"const presentLeft = 1, presentRight = 2;
+console.log(presentLeft, presentRight);
+export { presentLeft, presentRight };
+"#,
+        vec![logical_module_with_binding_groups(
+            "diagnostics/group",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"const missingLeft = "missing-left", missingRight = "missing-right";"#,
+                &[
+                    ("missingLeft", "ExportedLeft"),
+                    ("missingRight", "ExportedRight"),
+                ],
+            )],
+        )],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    let report_path = rejected
+        .report_root
+        .join("static")
+        .join("app")
+        .join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap();
+    let diagnostics = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics must be an array");
+
+    let left = find_entry(diagnostics, "selector_resolution_error", "ExportedLeft");
+    assert_eq!(left["selector_kind"], "binding_groups.source_match");
+    assert_eq!(
+        left["root_isolation"]["classification"], "root_unsat_candidate",
+        "{left:#}"
+    );
+    assert!(
+        left["root_isolation"]["implicated_debug_name"]
+            .as_str()
+            .unwrap()
+            .contains("diagnostics/group::binding_group.source_match.missingLeft,missingRight."),
+        "{left:#}"
+    );
+
+    let right = find_entry(diagnostics, "selector_resolution_error", "ExportedRight");
+    assert_eq!(right["selector_kind"], "binding_groups.source_match");
+    assert_eq!(
+        right["root_isolation"]["classification"], "root_unsat_candidate",
+        "{right:#}"
+    );
+}
+
+#[test]
+fn keep_going_reports_unsupported_binding_group_source_match() {
+    let opts = FixtureOpts::new(
+        r#"const present = 1;
+console.log(present);
+export { present };
+"#,
+        vec![logical_module_with_binding_groups(
+            "diagnostics/unsupported-group",
+            &[],
+            &[BindingGroup::source_alpha(
+                "STMT_LIST;",
+                &[("left", "ExportedLeft"), ("right", "ExportedRight")],
+            )],
+        )],
+    );
+
+    let rejected = run_keep_going_dry_run_rejection_fixture(opts);
+    assert!(
+        rejected
+            .stderr
+            .contains("binding_groups[].source_match for target bindings [left, right]"),
+        "human diagnostics should report the unsupported group:\n{}",
+        rejected.stderr
+    );
+    let report_path = rejected
+        .report_root
+        .join("static")
+        .join("app")
+        .join("selector_diagnostics.json");
+    let report: Value = serde_json::from_str(
+        &fs::read_to_string(&report_path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", report_path.display())),
+    )
+    .unwrap();
+    let diagnostics = report["diagnostics"]
+        .as_array()
+        .expect("diagnostics must be an array");
+
+    let left = find_entry(diagnostics, "selector_resolution_error", "ExportedLeft");
+    assert_eq!(left["selector_kind"], "binding_groups.source_match");
+    assert_eq!(left["target_binding"], "left");
+    assert!(
+        left["message"]
+            .as_str()
+            .unwrap()
+            .contains("cannot be lowered into native selector IR"),
+        "{left:#}"
+    );
+    let right = find_entry(diagnostics, "selector_resolution_error", "ExportedRight");
+    assert_eq!(right["selector_kind"], "binding_groups.source_match");
+    assert_eq!(right["target_binding"], "right");
+}
+
 fn find_entry<'a>(diagnostics: &'a [Value], category: &str, export_name: &str) -> &'a Value {
     diagnostics
         .iter()
         .find(|entry| entry["category"] == category && entry["export_name"] == export_name)
         .unwrap_or_else(|| {
             panic!("missing {category} entry for export {export_name}: {diagnostics:#?}")
+        })
+}
+
+fn find_anon_entry<'a>(diagnostics: &'a [Value], preview_needle: &str) -> &'a Value {
+    diagnostics
+        .iter()
+        .find(|entry| {
+            entry["selector_kind"] == "anonymous_statements.source_match"
+                && entry["source_match_preview"]
+                    .as_str()
+                    .is_some_and(|preview| preview.contains(preview_needle))
+        })
+        .unwrap_or_else(|| {
+            panic!("missing anonymous entry containing {preview_needle}: {diagnostics:#?}")
         })
 }

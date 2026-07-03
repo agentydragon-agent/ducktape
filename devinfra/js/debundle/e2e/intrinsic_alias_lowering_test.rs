@@ -460,6 +460,61 @@ fn intrinsic_alias_fails_closed_when_no_alias_matches() {
     );
 }
 
+#[test]
+fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
+    let source = format!(
+        "{}{}console.log(new DecoratedClassC().greet(), new DecoratedClassD().title());\n\
+         export {{ DecoratedClassC, DecoratedClassD }};\n",
+        trio("0", "DecoratedClassC", "greet", "hi", "!"),
+        trio("1", "DecoratedClassD", "title", "ok", "?")
+    );
+    let rejected = run_keep_going_dry_run_rejection_fixture(FixtureOpts::new(
+        &source,
+        vec![
+            logical_module("model/c", &[Member::new("DecoratedClassC")]),
+            logical_module("model/d", &[Member::new("DecoratedClassD")]),
+            logical_module(
+                "decorate_runtime/c",
+                &[
+                    Member::makes_decorate_call(
+                        "decorateClassMemberC",
+                        "DecoratedClassC",
+                        None,
+                        None,
+                    ),
+                    Member::intrinsic_alias("absentC", "getPrototypeOf", "decorateClassMemberC"),
+                ],
+            ),
+            logical_module(
+                "decorate_runtime/d",
+                &[
+                    Member::makes_decorate_call(
+                        "decorateClassMemberD",
+                        "DecoratedClassD",
+                        None,
+                        None,
+                    ),
+                    Member::intrinsic_alias("absentD", "getPrototypeOf", "decorateClassMemberD"),
+                ],
+            ),
+        ],
+    ));
+    for required in [
+        "Selector resolution diagnostic report:",
+        "decorate_runtime/c",
+        "absentC",
+        "decorate_runtime/d",
+        "absentD",
+        "members[].selector.intrinsic_alias",
+    ] {
+        assert!(
+            rejected.stderr.contains(required),
+            "stderr missing {required:?}\nstderr:\n{}",
+            rejected.stderr
+        );
+    }
+}
+
 /// **Fail-closed: ambiguous referencer.** When one helper reads two *distinct*
 /// `defineProperty` aliases (a contrived shape that does not occur in real esbuild
 /// output), the relation picks out two owners — ambiguous, so the spec is rejected.

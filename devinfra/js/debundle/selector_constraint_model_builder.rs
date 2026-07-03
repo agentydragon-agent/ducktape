@@ -4599,7 +4599,7 @@ impl FactDomains {
                 ClaimKind::Binding {
                     export_name: Some(export_name),
                 }
-                | ClaimKind::BindingGroupMember { export_name } => self.add_string(export_name),
+                | ClaimKind::BindingGroupMember { export_name, .. } => self.add_string(export_name),
                 ClaimKind::Binding { export_name: None } | ClaimKind::AnonymousStatement => {}
             }
         }

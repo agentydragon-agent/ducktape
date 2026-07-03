@@ -37,6 +37,7 @@ def _debundle_pipeline_impl(ctx):
             command = plan.command,
         ),
         env = {"BAZEL_BINDIR": bin_dir},
+        use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
         # canonicalizes to a location within the package root. Inside
         # Bazel's linux-sandbox, package-dir entries are real directories
@@ -85,6 +86,7 @@ exit 1
             selector_problem_scratch = selector_problem_scratch_path,
         ),
         env = {"BAZEL_BINDIR": bin_dir},
+        use_default_shell_env = True,
         execution_requirements = {"no-sandbox": "1"},
         progress_message = "Dumping selector CP-SAT request for %{label}",
         mnemonic = "DebundleSelectorProblem",

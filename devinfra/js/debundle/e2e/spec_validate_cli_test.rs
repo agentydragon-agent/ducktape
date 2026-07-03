@@ -3,8 +3,13 @@
 //! `selector_diagnostics_report_test`; this test pins the CLI verb: that one
 //! pass surfaces the selector diagnostics on stdout in each `--format`.
 
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+
 use debundle_e2e_support::{
-    FixtureOpts, Member, logical_module, run_spec_validate, write_validate_fixture_spec,
+    CommandResult, FixtureOpts, Member, debundler_path, logical_module, run_spec_validate,
+    write_validate_fixture_spec,
 };
 use serde_json::Value;
 
@@ -173,6 +178,473 @@ export { renderCard };
         "{}",
         text.stdout
     );
+}
+
+#[test]
+fn validate_spec_ignores_source_only_environment_defaults() {
+    let opts = FixtureOpts::new(
+        r#"function renderCard(value) {
+  return value.trim();
+}
+export { renderCard };
+"#,
+        vec![logical_module("owners/card", &[Member::new("renderCard")])],
+    );
+    let fixture = write_validate_fixture_spec(opts);
+    let bin = debundler_path();
+    let output = Command::new(&bin)
+        .arg("spec")
+        .arg("validate")
+        .arg("--spec")
+        .arg(&fixture.spec_path)
+        .arg("--format")
+        .arg("json")
+        .env("DEBUNDLE_MODULES", "/definitely/not/source/modules")
+        .env("DEBUNDLE_SOURCE_ROOT", "/definitely/not/source/root")
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    let out = CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    };
+
+    assert!(
+        out.status.success(),
+        "spec validate should ignore source-only env defaults\nstdout:\n{}\nstderr:\n{}",
+        out.stdout,
+        out.stderr,
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["total"], 0, "{report:#}");
+}
+
+#[test]
+fn validate_source_only_json_reports_every_source_selector_failure_without_ortools() {
+    let fixture = write_source_only_validate_fixture();
+    let out = run_source_only_validate(
+        &fixture.modules_root,
+        &fixture.source_file,
+        &["--format", "json"],
+    );
+    assert!(
+        out.status.success(),
+        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
+        out.stdout,
+        out.stderr,
+    );
+
+    let report: Value = serde_json::from_str(&out.stdout)
+        .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout));
+    assert_eq!(report["total"], 2, "{report:#}");
+    assert_eq!(report["counts"]["unresolved_selector"], 1, "{report:#}");
+    assert_eq!(report["counts"]["ambiguous_selector"], 1, "{report:#}");
+
+    let chunk = report["chunks"]
+        .as_array()
+        .expect("chunks array")
+        .first()
+        .expect("one source chunk report");
+    let diagnostics = chunk["diagnostics"].as_array().expect("diagnostics array");
+    let missing = find_entry(diagnostics, "unresolved_selector", "MissingWidget");
+    assert_eq!(missing["module_path"], "ui/missing");
+    assert_eq!(missing["selector_kind"], "members.source_match");
+    assert_eq!(missing["body_indices"], serde_json::json!([]));
+    assert!(
+        missing["claim_origin"]
+            .as_str()
+            .unwrap()
+            .contains("missing.yaml#members[0]"),
+        "{missing:#}",
+    );
+
+    let ambiguous = find_entry(diagnostics, "ambiguous_selector", "AmbiguousPanel");
+    assert_eq!(ambiguous["module_path"], "ui/ambiguous");
+    assert_eq!(ambiguous["body_indices"], serde_json::json!([0, 1]));
+    assert!(ambiguous["source_match_hash"].is_string(), "{ambiguous:#}");
+    assert!(
+        chunk["coverage_notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|note| note
+                .as_str()
+                .unwrap()
+                .contains("source-only validation covers")),
+        "{chunk:#}",
+    );
+}
+
+#[test]
+fn validate_source_only_ndjson_is_one_line_per_queue_item_plus_summary() {
+    let fixture = write_source_only_validate_fixture();
+    let out = run_source_only_validate(
+        &fixture.modules_root,
+        &fixture.source_file,
+        &["--format", "ndjson"],
+    );
+    assert!(out.status.success(), "stderr={}", out.stderr);
+
+    let lines: Vec<&str> = out.stdout.trim_end().split('\n').collect();
+    assert_eq!(lines.len(), 3, "stdout:\n{}", out.stdout);
+    let parsed: Vec<Value> = lines
+        .iter()
+        .map(|line| serde_json::from_str(line).expect("ndjson line is valid json"))
+        .collect();
+    for line in &parsed[..2] {
+        assert_eq!(line["section"], "diagnostic");
+        assert!(line["module_path"].is_string(), "{line:#}");
+        assert!(line["export_name"].is_string(), "{line:#}");
+        assert!(line["claim_origin"].is_string(), "{line:#}");
+    }
+    assert_eq!(parsed[2]["section"], "summary");
+    assert_eq!(parsed[2]["total"], 2);
+}
+
+#[test]
+fn validate_source_only_clean_modules_report_no_problems() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"const widget = makeWidget("ok");
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write(
+        &modules_root.join("ui/widget.yaml"),
+        r#"members:
+  - name: Widget
+    selector:
+      source_match:
+        target_binding: w
+        match: 'const w = makeWidget("ok");'
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["total"], 0, "{report:#}");
+    assert!(
+        report["chunks"].as_array().unwrap().is_empty(),
+        "{report:#}"
+    );
+}
+
+#[test]
+fn validate_source_only_reports_anonymous_statement_failures() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"sideEffect("shared");
+sideEffect("shared");
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write(
+        &modules_root.join("effects/ambiguous.yaml"),
+        r#"anonymous_statements:
+  - source_match:
+      match: 'sideEffect("shared");'
+"#,
+    );
+    write(
+        &modules_root.join("effects/missing.yaml"),
+        r#"anonymous_statements:
+  - source_match:
+      match: 'sideEffect("missing");'
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(
+        out.status.success(),
+        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
+        out.stdout,
+        out.stderr,
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["total"], 2, "{report:#}");
+    assert_eq!(report["counts"]["unresolved_selector"], 1, "{report:#}");
+    assert_eq!(report["counts"]["ambiguous_selector"], 1, "{report:#}");
+
+    let diagnostics = report["chunks"][0]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    let missing = diagnostics
+        .iter()
+        .find(|entry| {
+            entry["category"] == "unresolved_selector" && entry["module_path"] == "effects/missing"
+        })
+        .expect("missing anonymous diagnostic");
+    assert_eq!(
+        missing["selector_kind"],
+        "anonymous_statements.source_match"
+    );
+    assert_eq!(missing["export_name"], serde_json::Value::Null);
+
+    let ambiguous = diagnostics
+        .iter()
+        .find(|entry| {
+            entry["category"] == "ambiguous_selector" && entry["module_path"] == "effects/ambiguous"
+        })
+        .expect("ambiguous anonymous diagnostic");
+    assert_eq!(ambiguous["body_indices"], serde_json::json!([0, 1]));
+}
+
+#[test]
+fn validate_source_only_reports_native_lowerability_failures_without_ortools() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"setup();
+start();
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write(
+        &modules_root.join("effects/startup.yaml"),
+        r#"anonymous_statements:
+  - source_match:
+      match: |
+        setup();
+        start();
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(
+        out.status.success(),
+        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
+        out.stdout,
+        out.stderr,
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["total"], 2, "{report:#}");
+    assert_eq!(
+        report["counts"]["selector_resolution_error"], 1,
+        "{report:#}"
+    );
+    assert_eq!(
+        report["counts"]["native_source_match_lowering_unsupported"], 1,
+        "{report:#}"
+    );
+
+    let diagnostics = report["chunks"][0]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    let entry = diagnostics
+        .iter()
+        .find(|entry| entry["category"] == "native_source_match_lowering_unsupported")
+        .expect("native lowering diagnostic");
+    assert_eq!(entry["module_path"], "effects/startup");
+    assert_eq!(entry["selector_kind"], "anonymous_statements.source_match");
+    assert_eq!(entry["export_name"], serde_json::Value::Null);
+    assert!(
+        entry["message"]
+            .as_str()
+            .unwrap()
+            .contains("native selector IR"),
+        "{entry:#}",
+    );
+    assert!(
+        entry["claim_origin"]
+            .as_str()
+            .unwrap()
+            .contains("startup.yaml#anonymous_statements[0]"),
+        "{entry:#}",
+    );
+}
+
+#[test]
+fn validate_source_only_reports_member_native_lowering_unsupported_not_capability_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"setup();
+const widget = makeWidget();
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write(
+        &modules_root.join("ui/widget.yaml"),
+        r#"members:
+  - name: Widget
+    selector:
+      source_match:
+        match: |
+          setup();
+          const widget = makeWidget();
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(
+        out.status.success(),
+        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
+        out.stdout,
+        out.stderr,
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(
+        report["counts"]["native_source_match_lowering_unsupported"], 1,
+        "{report:#}"
+    );
+    assert!(
+        report["counts"]
+            .get("native_source_match_capability_error")
+            .is_none(),
+        "{report:#}"
+    );
+
+    let diagnostics = report["chunks"][0]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    let entry = find_entry(
+        diagnostics,
+        "native_source_match_lowering_unsupported",
+        "Widget",
+    );
+    assert_eq!(entry["selector_kind"], "members.source_match");
+}
+
+#[test]
+fn validate_source_only_reports_binding_group_failures_per_export() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"const leftOne = renderPanel("shared"), rightOne = renderPanel("shared");
+const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write(
+        &modules_root.join("ui/panels.yaml"),
+        r#"binding_groups:
+  - source_match:
+      match: 'const left = renderPanel("shared"), right = renderPanel("shared");'
+    exports:
+      left: LeftPanel
+      right: RightPanel
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(
+        out.status.success(),
+        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
+        out.stdout,
+        out.stderr,
+    );
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["total"], 2, "{report:#}");
+    assert_eq!(report["counts"]["ambiguous_selector"], 2, "{report:#}");
+
+    let diagnostics = report["chunks"][0]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    let left = find_entry(diagnostics, "ambiguous_selector", "LeftPanel");
+    assert_eq!(left["selector_kind"], "binding_groups.source_match");
+    assert_eq!(left["target_binding"], "left");
+    assert_eq!(left["body_indices"], serde_json::json!([0, 1]));
+
+    let right = find_entry(diagnostics, "ambiguous_selector", "RightPanel");
+    assert_eq!(right["selector_kind"], "binding_groups.source_match");
+    assert_eq!(right["target_binding"], "right");
+    assert_eq!(right["body_indices"], serde_json::json!([0, 1]));
+}
+
+struct SourceOnlyValidateFixture {
+    _root: tempfile::TempDir,
+    modules_root: std::path::PathBuf,
+    source_file: std::path::PathBuf,
+}
+
+fn write_source_only_validate_fixture() -> SourceOnlyValidateFixture {
+    let root = tempfile::tempdir().unwrap();
+    let source_file = root.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"const leftPanel = renderPanel("shared");
+const rightPanel = renderPanel("shared");
+const widget = makeWidget("ok");
+"#,
+    );
+    let modules_root = root.path().join("modules");
+    write(
+        &modules_root.join("ui/ok.yaml"),
+        r#"members:
+  - name: Widget
+    selector:
+      source_match:
+        target_binding: w
+        match: 'const w = makeWidget("ok");'
+"#,
+    );
+    write(
+        &modules_root.join("ui/missing.yaml"),
+        r#"members:
+  - name: MissingWidget
+    selector:
+      source_match:
+        target_binding: w
+        match: 'const w = makeWidget("missing");'
+"#,
+    );
+    write(
+        &modules_root.join("ui/ambiguous.yaml"),
+        r#"members:
+  - name: AmbiguousPanel
+    selector:
+      source_match:
+        target_binding: panel
+        match: 'const panel = renderPanel("shared");'
+"#,
+    );
+    SourceOnlyValidateFixture {
+        _root: root,
+        modules_root,
+        source_file,
+    }
+}
+
+fn run_source_only_validate(
+    modules_root: &Path,
+    source_file: &Path,
+    extra_args: &[&str],
+) -> CommandResult {
+    let bin = debundler_path();
+    let output = Command::new(&bin)
+        .arg("spec")
+        .arg("validate")
+        .arg("--modules")
+        .arg(modules_root)
+        .arg("--source-file")
+        .arg(source_file)
+        .args(extra_args)
+        .env(
+            "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SOLVER",
+            "/definitely/missing/selector_cpsat_solver",
+        )
+        .output()
+        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status,
+    }
+}
+
+fn write(path: &Path, body: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, body).unwrap();
 }
 
 fn find_entry<'a>(diagnostics: &'a [Value], category: &str, export_name: &str) -> &'a Value {

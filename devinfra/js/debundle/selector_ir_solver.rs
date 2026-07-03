@@ -1247,7 +1247,10 @@ pub fn solve(
         });
     }
 
-    Ok(SolverResult { claims })
+    Ok(SolverResult {
+        claims,
+        global_diagnostic: None,
+    })
 }
 
 fn unsupported_result(program: &SelectorProgram, message: String) -> SolverResult {
@@ -1262,6 +1265,7 @@ fn unsupported_result(program: &SelectorProgram, message: String) -> SolverResul
                 },
             })
             .collect(),
+        global_diagnostic: None,
     }
 }
 

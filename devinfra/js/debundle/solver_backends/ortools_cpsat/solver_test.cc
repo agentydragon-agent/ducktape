@@ -1,6 +1,8 @@
 #include "devinfra/js/debundle/solver_backends/ortools_cpsat/solver.h"
 
+#include <cstdlib>
 #include <string>
+#include <utility>
 
 #include "google/protobuf/text_format.h"
 #include "gtest/gtest.h"
@@ -26,6 +28,34 @@ bool RowHas(const cpsat::AssignmentRow& row, uint32_t variable_id,
   }
   return false;
 }
+
+class ScopedEnv {
+ public:
+  ScopedEnv(std::string name, std::string value) : name_(std::move(name)) {
+    const char* old_value = std::getenv(name_.c_str());
+    if (old_value != nullptr) {
+      had_old_value_ = true;
+      old_value_ = old_value;
+    }
+    setenv(name_.c_str(), value.c_str(), /*overwrite=*/1);
+  }
+
+  ScopedEnv(const ScopedEnv&) = delete;
+  ScopedEnv& operator=(const ScopedEnv&) = delete;
+
+  ~ScopedEnv() {
+    if (had_old_value_) {
+      setenv(name_.c_str(), old_value_.c_str(), /*overwrite=*/1);
+    } else {
+      unsetenv(name_.c_str());
+    }
+  }
+
+ private:
+  std::string name_;
+  bool had_old_value_ = false;
+  std::string old_value_;
+};
 
 TEST(SelectorCpSatSolverTest, AllDifferentPropagatesBroadSpecificFixture) {
   const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
@@ -309,6 +339,53 @@ TEST(SelectorCpSatSolverTest, ConstantBindingProjectionDoesNotAddVariable) {
   ASSERT_EQ(response.assignments_size(), 1);
   EXPECT_TRUE(RowHas(response.assignments(0), 0, 0));
   EXPECT_EQ(response.assignments(0).values_size(), 1);
+}
+
+TEST(SelectorCpSatSolverTest, NumSearchWorkersEnvAcceptsPositiveOverride) {
+  ScopedEnv env("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_NUM_SEARCH_WORKERS", "2");
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 1 } }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_SATISFIABLE);
+  EXPECT_EQ(response.assignment_coverage(),
+            cpsat::ASSIGNMENT_COVERAGE_TARGET_SUPPORT_COMPLETE);
+}
+
+TEST(SelectorCpSatSolverTest, InvalidNumSearchWorkersEnvIsInvalidResponse) {
+  ScopedEnv env("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_NUM_SEARCH_WORKERS", "0");
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 1 } }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_INVALID);
+  EXPECT_NE(response.diagnostic().find(
+                "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_NUM_SEARCH_WORKERS"),
+            std::string::npos);
+}
+
+TEST(SelectorCpSatSolverTest, InvalidMaxTimeSecondsEnvIsInvalidResponse) {
+  ScopedEnv env("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS", "not-time");
+  const cpsat::SelectorCpSatRequest request = ParseRequest(R"pb(
+    variables { id: 0 debug_name: "owner" dense_domain { value_count: 1 } }
+    target_projections { target_id: 0 owner_variable_id: 0 }
+  )pb");
+
+  const cpsat::SelectorCpSatResponse response =
+      cpsat::SolveSelectorCpSat(request);
+
+  EXPECT_EQ(response.status(), cpsat::SOLVER_STATUS_INVALID);
+  EXPECT_NE(response.diagnostic().find(
+                "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS"),
+            std::string::npos);
 }
 
 }  // namespace

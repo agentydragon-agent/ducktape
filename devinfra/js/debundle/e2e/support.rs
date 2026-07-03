@@ -820,6 +820,23 @@ pub fn logical_module_with_anon_alpha(
     )
 }
 
+pub fn logical_module_with_anon_alpha_many(
+    path: &str,
+    members: &[Member],
+    anon_matches: &[&str],
+) -> LogicalModuleEntry {
+    logical_module_entry(
+        path,
+        members,
+        &[],
+        anon_matches
+            .iter()
+            .map(|m| FixtureAnonymousStatement::alpha_all(*m))
+            .collect(),
+        None,
+    )
+}
+
 pub fn logical_module_with_anon_comment(
     path: &str,
     members: &[Member],

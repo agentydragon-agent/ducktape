@@ -38,7 +38,7 @@ use source_match_holes::{
     DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
     STMT_LIST_HOLE_KEYWORD, hole_name_for, labeled_hole_name_for,
 };
-use spec::{MemberSelectorSpec, SourceMatch, SourceMatchIdentifierMode};
+use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class, ClassMember, ClassProp, Decl, Expr,
@@ -114,21 +114,14 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
         config.source_root.as_deref(),
         config.chunk.as_deref(),
     )?;
-    let source = std::fs::read_to_string(&source_file)
-        .with_context(|| format!("reading source file {}", source_file.display()))?;
-    let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
-        .with_context(|| format!("parsing source file {}", source_file.display()))?;
-
-    let facts = selector_fact_store_for_module(&parsed.module)
-        .with_context(|| format!("building selector facts for {}", source_file.display()))?;
-    let resolve = |match_source: String| -> Result<Vec<SolverMatch>> {
-        resolve_match_selector(
-            &facts,
-            &parsed.module.body,
+    let probe = SourceSelectorProbe::from_source_file(&source_file)?;
+    let resolve = |match_source: String| -> Result<Vec<SourceSelectorMatch>> {
+        let selector = AnonymousStatementSelector {
             match_source,
-            config.target_binding.clone(),
-            "<match-selector>",
-        )
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: config.target_binding.clone(),
+        };
+        probe.resolve_source_match(&selector, "<match-selector>")
     };
 
     let baseline = resolve(config.match_source.clone())?;
@@ -160,27 +153,47 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     })
 }
 
+pub(crate) struct SourceSelectorProbe {
+    module: Module,
+    facts: SelectorFactStore,
+}
+
+impl SourceSelectorProbe {
+    pub(crate) fn from_source_file(source_file: &Path) -> Result<Self> {
+        let source = std::fs::read_to_string(source_file)
+            .with_context(|| format!("reading source file {}", source_file.display()))?;
+        let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+            .with_context(|| format!("parsing source file {}", source_file.display()))?;
+        let facts = selector_fact_store_for_module(&parsed.module)
+            .with_context(|| format!("building selector facts for {}", source_file.display()))?;
+        Ok(Self {
+            module: parsed.module,
+            facts,
+        })
+    }
+
+    pub(crate) fn resolve_source_match(
+        &self,
+        selector: &AnonymousStatementSelector,
+        logical_module: &str,
+    ) -> Result<Vec<SourceSelectorMatch>> {
+        resolve_match_selector(&self.facts, &self.module.body, selector, logical_module)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SolverMatch {
-    body_idx: usize,
-    binding_name: String,
+pub(crate) struct SourceSelectorMatch {
+    pub body_idx: usize,
+    pub binding_name: String,
 }
 
 fn resolve_match_selector(
     facts: &SelectorFactStore,
     module_body: &[ModuleItem],
-    match_source: String,
-    target_binding: Option<String>,
+    selector: &AnonymousStatementSelector,
     logical_module: &str,
-) -> Result<Vec<SolverMatch>> {
-    let selector = MemberSelectorSpec::SourceMatch(
-        SourceMatch {
-            match_source,
-            identifiers: SourceMatchIdentifierMode::AlphaAll,
-            target_binding,
-        }
-        .selector(),
-    );
+) -> Result<Vec<SourceSelectorMatch>> {
+    let selector = MemberSelectorSpec::SourceMatch(selector.clone());
     let lowered = lower_member_selector(
         &MemberSelectorLoweringContext::new(ChunkId(0), logical_module),
         "candidate",
@@ -215,7 +228,7 @@ fn resolve_match_selector(
 fn solver_match_from_claim(
     claim: &ResolvedClaim,
     module_body: &[ModuleItem],
-) -> Result<SolverMatch> {
+) -> Result<SourceSelectorMatch> {
     let body_idx = body_index_for_statement_ordinal(module_body, claim.statement_ordinal.0)
         .with_context(|| {
             format!(
@@ -229,7 +242,7 @@ fn solver_match_from_claim(
              use --target-binding or a single-binding selector",
         )
     })?;
-    Ok(SolverMatch {
+    Ok(SourceSelectorMatch {
         body_idx,
         binding_name,
     })
@@ -274,7 +287,7 @@ fn compute_slack(
     target_body_idx: usize,
     target_binding_name: &str,
     selector_target_binding: Option<&str>,
-    resolve: &impl Fn(String) -> Result<Vec<SolverMatch>>,
+    resolve: &impl Fn(String) -> Result<Vec<SourceSelectorMatch>>,
 ) -> Result<Vec<SlackRelaxation>> {
     let mut selector_module =
         js_ast::parse_js_module_consuming("<match-selector slack>", match_source.to_string())

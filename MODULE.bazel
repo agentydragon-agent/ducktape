@@ -30,6 +30,14 @@ bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
+# aspect_rules_lint's lint actions create empty output files with `touch`, but
+# some actions run with a narrow PATH. Use POSIX shell redirection instead.
+single_version_override(
+    module_name = "aspect_rules_lint",
+    patch_strip = 1,
+    patches = ["//patches:aspect_rules_lint_no_external_touch.patch"],
+)
+
 # Conda epoch versions (e.g. "1!164.3095") contain '!' which is invalid in Bazel
 # repo names. Patch _package_repo_name to sanitize.
 single_version_override(

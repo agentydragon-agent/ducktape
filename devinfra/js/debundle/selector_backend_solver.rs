@@ -16,8 +16,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use analysis::{OwnerId, StatementOrdinal};
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
-    BackendSolveStatus, CompiledSelectorProblem, ConstraintValue, ConstraintVariableId,
-    SelectorProblemBackend, TargetBindingProjection,
+    BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
+    ConstraintVariableId, SelectorProblemBackend, TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
     CompiledSelectorProblemBuildError, SelectorModelBuildSummary, compile_selector_problem,
@@ -26,7 +26,7 @@ use selector_constraint_model_builder::{
 use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore,
     SelectorProgram, SelectorSourceMatchProjectionEvent, SelectorSourceMatchProjectionOutcome,
-    SelectorTargetId, SolverClaim, SolverResult,
+    SelectorTargetId, SolverClaim, SolverGlobalDiagnostic, SolverResult,
 };
 
 const SUMMARY_JSON_ENV: &str = "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_SUMMARY_JSON";
@@ -69,10 +69,75 @@ where
             },
         );
     }
+    if let Some(result) = singleton_no_constraint_backend_result(&problem) {
+        return decode_backend_result(program, facts, &problem, result);
+    }
     let result = backend
         .solve(&problem)
         .map_err(SelectorBackendSolveError::Backend)?;
     decode_backend_result(program, facts, &problem, result)
+}
+
+fn singleton_no_constraint_backend_result(
+    problem: &CompiledSelectorProblem,
+) -> Option<BackendSolveResult> {
+    // This is not a second exact-assignment backend. It is only the terminal case
+    // where model compilation/simplification has already proven that no
+    // constraints remain and every variable has exactly one possible value.
+    if problem.known_unsat.is_some()
+        || !problem.allowed_tuples.is_empty()
+        || !problem.binary_constraints.is_empty()
+        || !problem.linear_constraints.is_empty()
+        || !problem.all_different.is_empty()
+    {
+        return None;
+    }
+
+    if problem
+        .variables
+        .iter()
+        .any(|variable| problem.variable_domain_value_count(variable) != 1)
+    {
+        return None;
+    }
+
+    let mut singleton_values = BTreeMap::new();
+    for variable in &problem.variables {
+        let domain_values = problem.variable_domain_values(variable);
+        let [value] = domain_values.as_slice() else {
+            unreachable!()
+        };
+        singleton_values.insert(variable.id, *value);
+    }
+
+    let mut projected_variables = BTreeSet::new();
+    for projection in &problem.target_projections {
+        projected_variables.insert(projection.owner_variable);
+        if let Some(TargetBindingProjection::Variable(variable)) =
+            projection.binding_projection.as_ref()
+        {
+            projected_variables.insert(*variable);
+        }
+    }
+    // The synthetic backend assignment is intentionally partial. The decoder
+    // consumes only target owner variables plus optional target binding variables.
+    let values = projected_variables
+        .into_iter()
+        .map(|variable| {
+            Some(BackendVariableAssignment {
+                variable,
+                value: *singleton_values.get(&variable)?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(BackendSolveResult {
+        status: BackendSolveStatus::Satisfiable,
+        assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
+        assignments: vec![BackendAssignment { values }],
+        diagnostic: None,
+        solver_response_stats: None,
+    })
 }
 
 #[derive(Debug)]
@@ -582,7 +647,7 @@ fn decode_backend_result<E>(
             if !result.assignments.is_empty() {
                 return Err(SelectorBackendSolveError::UnsatReturnedAssignments);
             }
-            Ok(no_match_result(program))
+            Ok(no_match_result(program, result.diagnostic))
         }
         BackendSolveStatus::Unknown => Ok(unsupported_result(
             program,
@@ -677,6 +742,7 @@ fn decode_satisfying_assignments<E>(
                 outcome: claims_to_outcome(claims_by_target.remove(&target.id).unwrap_or_default()),
             })
             .collect(),
+        global_diagnostic: None,
     })
 }
 
@@ -720,7 +786,7 @@ fn claims_to_outcome(claims: Vec<ResolvedClaim>) -> ClaimOutcome {
     }
 }
 
-fn no_match_result(program: &SelectorProgram) -> SolverResult {
+fn no_match_result(program: &SelectorProgram, diagnostic: Option<String>) -> SolverResult {
     SolverResult {
         claims: program
             .targets
@@ -730,6 +796,10 @@ fn no_match_result(program: &SelectorProgram) -> SolverResult {
                 outcome: ClaimOutcome::NoMatch,
             })
             .collect(),
+        global_diagnostic: diagnostic.map(|reason| SolverGlobalDiagnostic {
+            category: "known_unsat".to_string(),
+            reason,
+        }),
     }
 }
 
@@ -745,6 +815,7 @@ fn unsupported_result(program: &SelectorProgram, message: String) -> SolverResul
                 },
             })
             .collect(),
+        global_diagnostic: None,
     }
 }
 
@@ -790,6 +861,7 @@ impl MaterializationFacts {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::convert::Infallible;
 
     use analysis::{ChunkId, OwnerId, StatementOrdinal};
@@ -799,7 +871,7 @@ mod tests {
         BackendValueId, BackendVariableAssignment,
     };
     use selector_constraint_model_builder::compile_selector_problem_with_summary;
-    use selector_ir::{ClaimOrigin, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
+    use selector_ir::{ClaimOrigin, NodeTerm, OwnerTerm, SelectorAtom, StringTerm, VariableDomain};
     use serde_json::json;
 
     use super::*;
@@ -818,6 +890,58 @@ mod tests {
             &self,
             problem: &CompiledSelectorProblem,
         ) -> Result<BackendSolveResult, Self::Error> {
+            let mut assignments = Vec::new();
+            for assignment in &self.assignments {
+                assignments.push(BackendAssignment {
+                    values: assignment
+                        .iter()
+                        .map(|(variable, value)| BackendVariableAssignment {
+                            variable: *variable,
+                            value: backend_value_for(problem, value),
+                        })
+                        .collect(),
+                });
+            }
+            Ok(BackendSolveResult {
+                status: self.status.clone(),
+                assignment_coverage: self.coverage,
+                assignments,
+                diagnostic: None,
+                solver_response_stats: None,
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct PanickingBackend;
+
+    impl SelectorProblemBackend for PanickingBackend {
+        type Error = Infallible;
+
+        fn solve(
+            &self,
+            _problem: &CompiledSelectorProblem,
+        ) -> Result<BackendSolveResult, Self::Error> {
+            panic!("singleton/no-constraint selector should not invoke backend")
+        }
+    }
+
+    #[derive(Debug)]
+    struct CountingBackend {
+        calls: Cell<usize>,
+        assignments: Vec<Vec<(ConstraintVariableId, ConstraintValue)>>,
+        coverage: BackendAssignmentCoverage,
+        status: BackendSolveStatus,
+    }
+
+    impl SelectorProblemBackend for CountingBackend {
+        type Error = Infallible;
+
+        fn solve(
+            &self,
+            problem: &CompiledSelectorProblem,
+        ) -> Result<BackendSolveResult, Self::Error> {
+            self.calls.set(self.calls.get() + 1);
             let mut assignments = Vec::new();
             for assignment in &self.assignments {
                 assignments.push(BackendAssignment {
@@ -876,6 +1000,14 @@ mod tests {
         }
     }
 
+    fn ast_identifier_name_fact(node: u32, value: &str) -> SelectorFact {
+        SelectorFact::AstIdentifierName {
+            chunk_id: ChunkId(0),
+            node,
+            value: value.to_string(),
+        }
+    }
+
     fn binding_program() -> (SelectorProgram, SelectorTargetId) {
         let mut program = SelectorProgram::default();
         let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
@@ -923,12 +1055,85 @@ mod tests {
         (program, target)
     }
 
+    fn singleton_with_binary_constraint_program() -> (SelectorProgram, SelectorTargetId) {
+        let mut program = SelectorProgram::default();
+        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let left = program.add_variable(VariableDomain::String, Some("left".to_string()));
+        let right = program.add_variable(VariableDomain::String, Some("right".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Readable".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: owner },
+            binding: StringTerm::Const {
+                value: "minA".to_string(),
+            },
+        });
+        program.add_atom(SelectorAtom::AstIdentifierName {
+            node: NodeTerm::Const { node: 100 },
+            value: StringTerm::Var { id: left },
+        });
+        program.add_atom(SelectorAtom::AstIdentifierName {
+            node: NodeTerm::Const { node: 200 },
+            value: StringTerm::Var { id: right },
+        });
+        program.add_atom(SelectorAtom::Equal { left, right });
+        (program, target)
+    }
+
+    fn duplicate_fixed_target_program() -> (SelectorProgram, SelectorTargetId, SelectorTargetId) {
+        let mut program = SelectorProgram::default();
+        let first_owner = program.add_variable(VariableDomain::Owner, Some("first".to_string()));
+        let second_owner = program.add_variable(VariableDomain::Owner, Some("second".to_string()));
+        let first_target = program.add_target(
+            ChunkId(0),
+            first_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("First".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        let second_target = program.add_target(
+            ChunkId(0),
+            second_owner,
+            "module",
+            ClaimKind::Binding {
+                export_name: Some("Second".to_string()),
+            },
+            ClaimOrigin::Synthetic,
+        );
+        for owner in [first_owner, second_owner] {
+            program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+                owner: OwnerTerm::Var { id: owner },
+                binding: StringTerm::Const {
+                    value: "minA".to_string(),
+                },
+            });
+        }
+        program.require_all_different(vec![first_target, second_target]);
+        (program, first_target, second_target)
+    }
+
     fn facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
         facts.push(owner_fact(OwnerId(1), 10, "function"));
         facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
         facts.push(owner_fact(OwnerId(2), 20, "function"));
         facts.push(binding_fact(OwnerId(2), "minB", "Readable"));
+        facts
+    }
+
+    fn single_binding_facts() -> SelectorFactStore {
+        let mut facts = SelectorFactStore::default();
+        facts.push(owner_fact(OwnerId(1), 10, "function"));
+        facts.push(binding_fact(OwnerId(1), "minA", "Readable"));
         facts
     }
 
@@ -1169,5 +1374,109 @@ mod tests {
             }
             other => panic!("expected unsupported sample backend result, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn singleton_no_constraint_problem_decodes_without_backend() {
+        let (program, target) = const_binding_program();
+
+        let result = solve_with_backend(&program, &facts(), &PanickingBackend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(1),
+                    statement_ordinal: StatementOrdinal(10),
+                    binding: Some("minA".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn singleton_variable_binding_projection_decodes_without_backend() {
+        let (program, target) = binding_program();
+
+        let result =
+            solve_with_backend(&program, &single_binding_facts(), &PanickingBackend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(1),
+                    statement_ordinal: StatementOrdinal(10),
+                    binding: Some("minA".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn known_unsat_diagnostic_wins_over_singleton_fast_path() {
+        let (program, first_target, second_target) = duplicate_fixed_target_program();
+
+        let result =
+            solve_with_backend(&program, &single_binding_facts(), &PanickingBackend).unwrap();
+
+        assert_eq!(
+            result.outcome_for(first_target),
+            Some(&ClaimOutcome::NoMatch)
+        );
+        assert_eq!(
+            result.outcome_for(second_target),
+            Some(&ClaimOutcome::NoMatch)
+        );
+        let diagnostic = result
+            .global_diagnostic
+            .as_ref()
+            .expect("known-unsat result should preserve diagnostic");
+        assert_eq!(diagnostic.category, "known_unsat");
+        assert!(
+            diagnostic
+                .reason
+                .contains("variable restriction has empty domain"),
+            "{}",
+            diagnostic.reason
+        );
+    }
+
+    #[test]
+    fn singleton_problem_with_remaining_constraint_still_uses_backend() {
+        let (program, target) = singleton_with_binary_constraint_program();
+        let mut facts = facts();
+        facts.push(ast_identifier_name_fact(100, "same"));
+        facts.push(ast_identifier_name_fact(200, "same"));
+        let backend = CountingBackend {
+            calls: Cell::new(0),
+            status: BackendSolveStatus::Satisfiable,
+            coverage: BackendAssignmentCoverage::TargetSupportComplete,
+            assignments: vec![vec![
+                (ConstraintVariableId(0), owner(1)),
+                (ConstraintVariableId(1), string("same")),
+                (ConstraintVariableId(2), string("same")),
+            ]],
+        };
+
+        let result = solve_with_backend(&program, &facts, &backend).unwrap();
+
+        assert_eq!(backend.calls.get(), 1);
+        assert_eq!(
+            result.outcome_for(target),
+            Some(&ClaimOutcome::Unique {
+                claim: ResolvedClaim {
+                    chunk_id: ChunkId(0),
+                    owner: OwnerId(1),
+                    statement_ordinal: StatementOrdinal(10),
+                    binding: Some("minA".to_string()),
+                    provenance: Vec::new(),
+                }
+            })
+        );
     }
 }

@@ -170,6 +170,41 @@ impl MemberSelectorProgramBuilder {
         export_name: &str,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        self.declare_target_in_module_ref(
+            logical_module,
+            export_name,
+            selector,
+            ClaimKind::Binding {
+                export_name: Some(export_name.to_string()),
+            },
+        )
+    }
+
+    pub fn declare_binding_group_member_target_in_module_ref(
+        &mut self,
+        logical_module: impl Into<String>,
+        export_name: &str,
+        target_binding: &str,
+        selector: MemberSelectorSpecRef<'_>,
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        self.declare_target_in_module_ref(
+            logical_module,
+            export_name,
+            selector,
+            ClaimKind::BindingGroupMember {
+                export_name: export_name.to_string(),
+                target_binding: target_binding.to_string(),
+            },
+        )
+    }
+
+    fn declare_target_in_module_ref(
+        &mut self,
+        logical_module: impl Into<String>,
+        export_name: &str,
+        selector: MemberSelectorSpecRef<'_>,
+        claim: ClaimKind,
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let logical_module = logical_module.into();
         let owner = self.owner_for_local_export(&logical_module, export_name);
         self.targeted_owners
@@ -189,9 +224,7 @@ impl MemberSelectorProgramBuilder {
             self.context.chunk_id,
             owner,
             logical_module.clone(),
-            ClaimKind::Binding {
-                export_name: Some(export_name.to_string()),
-            },
+            claim,
             selector_origin_ref(selector),
         ))
     }
@@ -216,7 +249,8 @@ impl MemberSelectorProgramBuilder {
                 "{logical_module}::anonymous_statement.{statement_index}"
             )),
         );
-        if !scratch.try_lower_native_source_match(&logical_module, owner, selector)? {
+        let debug_label = format!("anonymous_statement.{statement_index}.source_match");
+        if !scratch.try_lower_native_source_match(&logical_module, &debug_label, owner, selector)? {
             return Err(SelectorIrLoweringError::unsupported(
                 "anonymous_statements.source_match",
                 "selector shape is not yet supported by native selector IR",
@@ -289,7 +323,7 @@ impl MemberSelectorProgramBuilder {
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<(), SelectorIrLoweringError> {
         let owner = self.owner_for_local_export(logical_module, export_name);
-        self.lower_selector_atoms(logical_module, owner, selector)
+        self.lower_selector_atoms(logical_module, export_name, owner, selector)
     }
 
     pub fn lower_projected_source_match_candidates(
@@ -469,17 +503,27 @@ impl MemberSelectorProgramBuilder {
     fn lower_selector_atoms(
         &mut self,
         logical_module: &str,
+        export_name: &str,
         owner: SelectorVariableId,
         selector: MemberSelectorSpecRef<'_>,
     ) -> Result<(), SelectorIrLoweringError> {
         match selector {
             MemberSelectorSpecRef::Binding(binding) => self.lower_binding_selector(owner, binding),
             MemberSelectorSpecRef::SourceMatch(selector) => {
-                if !self.try_lower_native_source_match(logical_module, owner, selector)? {
-                    return Err(SelectorIrLoweringError::unsupported(
-                        "source_match",
-                        "selector shape is not yet supported by native selector IR",
-                    ));
+                let debug_label = format!("source_match.{export_name}");
+                if !self.try_lower_native_source_match(
+                    logical_module,
+                    &debug_label,
+                    owner,
+                    selector,
+                )? {
+                    return Err(SelectorIrLoweringError::UnsupportedSourceMatch {
+                        selector_kind: "source_match",
+                        reason: format!(
+                            "selector shape is not yet supported by native selector IR in \
+                             logical_module {logical_module} for export {export_name}"
+                        ),
+                    });
                 }
                 Ok(())
             }
@@ -597,6 +641,7 @@ impl MemberSelectorProgramBuilder {
     fn try_lower_native_source_match(
         &mut self,
         logical_module: &str,
+        debug_label: &str,
         owner: SelectorVariableId,
         selector: &AnonymousStatementSelector,
     ) -> Result<bool, SelectorIrLoweringError> {
@@ -611,7 +656,7 @@ impl MemberSelectorProgramBuilder {
         })
         .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
             selector_kind: "source_match",
-            reason: error.to_string(),
+            reason: format!("logical_module {logical_module} {debug_label}: {error}"),
         })?;
         if parsed.body.is_empty() {
             return Ok(false);
@@ -710,7 +755,7 @@ impl MemberSelectorProgramBuilder {
                 *node,
                 self.program.add_variable(
                     VariableDomain::AstNode,
-                    Some(format!("{logical_module}::source_match.node{node}")),
+                    Some(format!("{logical_module}::{debug_label}.node{node}")),
                 ),
             );
         }
@@ -724,6 +769,7 @@ impl MemberSelectorProgramBuilder {
         if top_level_roots.len() > 1 {
             self.lower_native_top_level_window(
                 logical_module,
+                debug_label,
                 &node_vars,
                 &top_level_roots,
                 target_root_index,
@@ -740,7 +786,7 @@ impl MemberSelectorProgramBuilder {
                 let target_binding_var = self.program.add_variable(
                     VariableDomain::String,
                     Some(format!(
-                        "{logical_module}::source_match.target_binding.{target_binding}"
+                        "{logical_module}::{debug_label}.target_binding.{target_binding}"
                     )),
                 );
                 exact_identifier_projection_vars.insert(target_binding_node, target_binding_var);
@@ -837,6 +883,7 @@ impl MemberSelectorProgramBuilder {
     fn lower_native_top_level_window(
         &mut self,
         logical_module: &str,
+        debug_label: &str,
         node_vars: &BTreeMap<NodeId, SelectorVariableId>,
         top_level_roots: &[NodeId],
         target_root_index: usize,
@@ -844,7 +891,7 @@ impl MemberSelectorProgramBuilder {
         let target_ordinal = self.program.add_variable(
             VariableDomain::StatementOrdinal,
             Some(format!(
-                "{logical_module}::source_match.window.target_ordinal"
+                "{logical_module}::{debug_label}.window.target_ordinal"
             )),
         );
         for (index, root) in top_level_roots.iter().enumerate() {
@@ -857,7 +904,7 @@ impl MemberSelectorProgramBuilder {
                 self.program.add_variable(
                     VariableDomain::StatementOrdinal,
                     Some(format!(
-                        "{logical_module}::source_match.window.ordinal.{index}"
+                        "{logical_module}::{debug_label}.window.ordinal.{index}"
                     )),
                 )
             };
@@ -900,7 +947,11 @@ impl MemberSelectorProgramBuilder {
         })
         .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
             selector_kind: "binding_group.source_match",
-            reason: error.to_string(),
+            reason: format!(
+                "logical_module {logical_module} {}: {}",
+                binding_group_source_match_debug_label(exports_by_target),
+                error
+            ),
         })?;
         if parsed.body.is_empty() {
             return Ok(false);
@@ -943,6 +994,7 @@ impl MemberSelectorProgramBuilder {
         if facts.top_level.len() != parsed.body.len() {
             return Ok(false);
         }
+        let group_debug_label = binding_group_source_match_debug_label(exports_by_target);
 
         let mut target_binding_nodes = BTreeMap::<String, NodeId>::new();
         let index = AlphaIdentifierIndex::new(&facts);
@@ -964,9 +1016,7 @@ impl MemberSelectorProgramBuilder {
                 *node,
                 self.program.add_variable(
                     VariableDomain::AstNode,
-                    Some(format!(
-                        "{logical_module}::binding_group.source_match.node{node}"
-                    )),
+                    Some(format!("{logical_module}::{group_debug_label}.node{node}")),
                 ),
             );
         }
@@ -991,7 +1041,7 @@ impl MemberSelectorProgramBuilder {
             for (segment_index, segment_roots) in top_level_segments.iter().enumerate() {
                 let ordinals = self.lower_native_top_level_fixed_sequence(
                     logical_module,
-                    &format!("binding_group.source_match.segment.{segment_index}"),
+                    &format!("{group_debug_label}.segment.{segment_index}"),
                     &node_vars,
                     segment_roots,
                 )?;
@@ -1048,7 +1098,7 @@ impl MemberSelectorProgramBuilder {
                     let binding_var = self.program.add_variable(
                         VariableDomain::String,
                         Some(format!(
-                            "{logical_module}::binding_group.source_match.target_binding.{target_binding}"
+                            "{logical_module}::{group_debug_label}.target_binding.{target_binding}"
                         )),
                     );
                     exact_identifier_projection_vars.insert(target_binding_node, binding_var);
@@ -3000,6 +3050,15 @@ fn binding_group_owner_injectivity_class(
     )
 }
 
+fn binding_group_source_match_debug_label(exports_by_target: &BTreeMap<String, String>) -> String {
+    let target_bindings = exports_by_target
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("binding_group.source_match.{target_bindings}")
+}
+
 fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
     let statement_kind = match kind {
         BindingSourceKind::VariableDeclarator => StatementKind::VarDecl,
@@ -4518,13 +4577,22 @@ function second() {
         )
         .unwrap_err();
 
-        assert!(matches!(
-            error,
+        match error {
             SelectorIrLoweringError::Unsupported {
                 selector_kind: "source_match",
                 reason: "selector shape is not yet supported by native selector IR",
+            } => {}
+            SelectorIrLoweringError::UnsupportedSourceMatch {
+                selector_kind: "source_match",
+                reason,
+            } => {
+                assert!(
+                    reason.contains("logical_module runtime/widgets for export Widget"),
+                    "{reason}"
+                );
             }
-        ));
+            error => panic!("unexpected error: {error}"),
+        }
     }
 
     #[test]

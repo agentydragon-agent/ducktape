@@ -1003,6 +1003,7 @@ rust_library(
         ":selector_codemod",
         ":selector_debt",
         ":selector_diagnostics",
+        ":selector_ir_lowering",
         ":selector_solve",
         ":source_match",
         ":spec",

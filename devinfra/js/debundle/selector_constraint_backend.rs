@@ -588,6 +588,28 @@ impl CompiledSelectorProblemBuilder {
         }
     }
 
+    fn variable_debug_summary(&self, variable: ConstraintVariableId) -> String {
+        match self.variables.get(variable.0) {
+            Some(variable) => format!(
+                "{:?} ({:?}, source={:?}, debug_name={})",
+                variable.id,
+                variable.domain,
+                variable.source,
+                variable.debug_name.as_deref().unwrap_or("<none>")
+            ),
+            None => format!("unknown {variable:?}"),
+        }
+    }
+
+    fn variables_debug_summary(&self, variables: &[ConstraintVariableId]) -> String {
+        variables
+            .iter()
+            .copied()
+            .map(|variable| self.variable_debug_summary(variable))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     pub fn add_full_domain_values(
         &mut self,
         domain: VariableDomain,
@@ -1529,11 +1551,12 @@ impl CompiledSelectorProblemBuilder {
             }
         }
         if kept_rows.is_empty() {
-            self.known_unsat.get_or_insert_with(|| {
-                format!(
-                    "allowed tuple constraint over {variables:?} has no rows after domain pruning"
-                )
-            });
+            if self.known_unsat.is_none() {
+                let variables = self.variables_debug_summary(variables);
+                self.known_unsat = Some(format!(
+                    "allowed tuple constraint over [{variables}] has no rows after domain pruning"
+                ));
+            }
             return Ok(None);
         }
 

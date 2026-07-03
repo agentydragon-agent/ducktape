@@ -61,16 +61,24 @@ pub struct ChunkResolver<'m> {
     /// spellings (the discriminator that removes the `O(selectors × statements)`
     /// scan for identifier-only `const NAME = …;` selectors); an alpha-mode needle
     /// never queries an `Ident` token, so its candidate set is unchanged. Needles
-    /// that require no token (pure-structural / alpha with no literal, or a bare
-    /// regex predicate) fall back to the root-kind-prefiltered full scan.
+    /// that require no token (pure-structural / alpha with no literal, or a regex
+    /// predicate without a usable literal prefix) fall back to the
+    /// root-kind-prefiltered full scan.
     body_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
+    /// String-literal value → body indices carrying that value. Regex-predicate
+    /// needles with a conservative literal prefix use this to build candidate
+    /// postings before the full matcher verifies the aligned predicate.
+    body_string_literals: StringLiteralPostings,
     /// Like `body_tokens`, but keyed to indices into `var_declarator_subjects`:
     /// a single-declarator member/group needle only matches a declarator that
     /// carries its tokens, so the declarator scan visits just the rarest token's
     /// postings. Exact-mode `const NAME = …;` needles now prune by identifier
-    /// spelling; CSS-module regex-predicate (alpha) needles pin no token and fall
-    /// back to the init-kind-prefiltered scan (cheap now that the regex is precompiled).
+    /// spelling; CSS-module regex-predicate (alpha) needles additionally use
+    /// `declarator_string_literals` when their pattern has a literal prefix.
     declarator_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>>,
+    /// String-literal value → indices into `var_declarator_subjects`, used to avoid
+    /// scanning every string-literal declarator for anchored regex predicates.
+    declarator_string_literals: StringLiteralPostings,
 }
 
 /// A var-decl owner's single declarator, projected once to a synthetic
@@ -83,6 +91,48 @@ struct VarDeclaratorSubject {
     /// The declarator's init-expression kind, cached for the sound init-kind
     /// prefilter (most var-decl member scans reject on init kind without a match).
     init_kind: Option<&'static str>,
+}
+
+/// Postings over subject string-literal values. The key order lets a predicate
+/// with required prefix `p` visit only values in the contiguous `p..` range that
+/// still start with `p`; each returned posting list is sorted and deduplicated so
+/// it can be intersected with token postings by binary search.
+#[derive(Default)]
+struct StringLiteralPostings {
+    by_value: BTreeMap<String, Vec<usize>>,
+}
+
+impl StringLiteralPostings {
+    fn insert_subject(&mut self, subject_idx: usize, index: &selector_match::Index) {
+        for value in selector_match::subject_string_literals(index) {
+            self.by_value
+                .entry(value.to_string())
+                .or_default()
+                .push(subject_idx);
+        }
+    }
+
+    fn predicate_postings(
+        &self,
+        predicate: &selector_match::StringLiteralPredicate<'_>,
+    ) -> Option<Vec<usize>> {
+        if !predicate.is_valid() {
+            return Some(Vec::new());
+        }
+        let prefix = predicate.literal_prefix()?;
+        let mut postings = Vec::new();
+        for (value, value_postings) in self.by_value.range(prefix.to_string()..) {
+            if !value.starts_with(prefix) {
+                break;
+            }
+            if predicate.is_match(value) {
+                postings.extend(value_postings.iter().copied());
+            }
+        }
+        postings.sort_unstable();
+        postings.dedup();
+        Some(postings)
+    }
 }
 
 impl<'m> ChunkResolver<'m> {
@@ -102,14 +152,17 @@ impl<'m> ChunkResolver<'m> {
             .collect();
         let mut body_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>> =
             std::collections::HashMap::new();
+        let mut body_string_literals = StringLiteralPostings::default();
         for (body_idx, index) in body_indices.iter().enumerate() {
             for token in selector_match::subject_tokens(index) {
                 body_tokens.entry(token).or_default().push(body_idx);
             }
+            body_string_literals.insert_subject(body_idx, index);
         }
         let mut var_declarator_subjects = Vec::new();
         let mut declarator_tokens: std::collections::HashMap<selector_match::Token, Vec<usize>> =
             std::collections::HashMap::new();
+        let mut declarator_string_literals = StringLiteralPostings::default();
         for (body_idx, item) in module.body.iter().enumerate() {
             let Some(var) = item_var_decl(item) else {
                 continue;
@@ -124,6 +177,7 @@ impl<'m> ChunkResolver<'m> {
                             .or_default()
                             .push(subject_idx);
                     }
+                    declarator_string_literals.insert_subject(subject_idx, &index);
                     var_declarator_subjects.push(VarDeclaratorSubject {
                         body_idx,
                         declarator_idx,
@@ -139,76 +193,113 @@ impl<'m> ChunkResolver<'m> {
             body_indices,
             var_declarator_subjects,
             body_tokens,
+            body_string_literals,
             declarator_tokens,
+            declarator_string_literals,
         }
     }
 
     /// Indices into `var_declarator_subjects` a single-declarator needle could
-    /// match — the intersection of every required token's postings (sound
-    /// superset), or all declarators when the needle pins no required token.
-    /// Mirrors [`Self::candidate_bodies`] for the declarator scan. `mode` /
-    /// `allow_exact_ident` gate the exact-mode identifier discriminator (see
-    /// [`selector_match::needle_required_tokens`]).
+    /// match — the intersection of every required token plus every usable
+    /// regex-predicate prefix posting (sound superset), or all declarators when
+    /// the needle pins no candidate constraint. Mirrors [`Self::candidate_bodies`]
+    /// for the declarator scan. `mode` / `allow_exact_ident` gate the exact-mode
+    /// identifier discriminator (see [`selector_match::needle_required_tokens`]).
     fn candidate_declarators(
         &self,
         needle_index: &selector_match::Index,
         mode: selector_match::Mode,
         allow_exact_ident: bool,
     ) -> Vec<usize> {
-        intersect_postings(
+        intersect_candidate_postings(
             &self.declarator_tokens,
+            &self.declarator_string_literals,
             &selector_match::needle_required_tokens(needle_index, mode, allow_exact_ident),
+            &selector_match::needle_required_string_literal_predicates(needle_index),
             self.var_declarator_subjects.len(),
         )
     }
 
     /// Body indices a needle could match: the **intersection** of every required
-    /// token's postings (a sound superset — every match carries every token), or
-    /// every body index when the needle pins no required token. Intersecting
-    /// (not just taking the rarest list) is what shrinks the candidate set for
-    /// needles whose tokens are individually common but jointly rare. `mode` /
-    /// `allow_exact_ident` gate the exact-mode identifier discriminator (see
-    /// [`selector_match::needle_required_tokens`]); a prebind path must pass
-    /// `allow_exact_ident = false`.
+    /// token's postings plus every usable regex-predicate prefix posting (a sound
+    /// superset), or every body index when the needle pins no candidate
+    /// constraint. Intersecting (not just taking the rarest list) is what shrinks
+    /// the candidate set for needles whose constraints are individually common
+    /// but jointly rare. `mode` / `allow_exact_ident` gate the exact-mode
+    /// identifier discriminator (see [`selector_match::needle_required_tokens`]);
+    /// a prebind path must pass `allow_exact_ident = false`.
     fn candidate_bodies(
         &self,
         needle_index: &selector_match::Index,
         mode: selector_match::Mode,
         allow_exact_ident: bool,
     ) -> Vec<usize> {
-        intersect_postings(
+        intersect_candidate_postings(
             &self.body_tokens,
+            &self.body_string_literals,
             &selector_match::needle_required_tokens(needle_index, mode, allow_exact_ident),
+            &selector_match::needle_required_string_literal_predicates(needle_index),
             self.body_indices.len(),
         )
     }
 }
 
-/// Intersect the postings lists of every `token` (each a sorted, ascending index
-/// list) into the candidate set. Empty `tokens` ⟹ scan everything (`0..total`);
-/// a token absent from `index` ⟹ no candidate can match. Postings are intersected
-/// smallest-first via binary search, so the cost is bounded by the rarest token.
-fn intersect_postings(
+/// Intersect token postings and usable regex-predicate string-literal postings
+/// into the candidate set. Empty constraints ⟹ scan everything (`0..total`); an
+/// absent token or invalid predicate ⟹ no candidate can match. Postings are
+/// intersected smallest-first via binary search, so the cost is bounded by the
+/// rarest constraint.
+fn intersect_candidate_postings(
     index: &std::collections::HashMap<selector_match::Token, Vec<usize>>,
+    string_literals: &StringLiteralPostings,
     tokens: &[selector_match::Token],
+    predicates: &[selector_match::StringLiteralPredicate<'_>],
     total: usize,
 ) -> Vec<usize> {
-    if tokens.is_empty() {
-        return (0..total).collect();
+    enum CandidatePosting<'a> {
+        Borrowed(&'a [usize]),
+        Owned(Vec<usize>),
     }
-    let mut postings: Vec<&Vec<usize>> = Vec::with_capacity(tokens.len());
+
+    impl CandidatePosting<'_> {
+        fn as_slice(&self) -> &[usize] {
+            match self {
+                Self::Borrowed(list) => list,
+                Self::Owned(list) => list,
+            }
+        }
+
+        fn len(&self) -> usize {
+            self.as_slice().len()
+        }
+
+        fn contains(&self, candidate: usize) -> bool {
+            self.as_slice().binary_search(&candidate).is_ok()
+        }
+    }
+
+    let mut postings: Vec<CandidatePosting<'_>> =
+        Vec::with_capacity(tokens.len() + predicates.len());
     for token in tokens {
         match index.get(token) {
-            Some(list) => postings.push(list),
+            Some(list) => postings.push(CandidatePosting::Borrowed(list)),
             None => return Vec::new(),
         }
     }
+    for predicate in predicates {
+        if let Some(list) = string_literals.predicate_postings(predicate) {
+            postings.push(CandidatePosting::Owned(list));
+        }
+    }
+    if postings.is_empty() {
+        return (0..total).collect();
+    }
     postings.sort_by_key(|list| list.len());
-    let mut candidates = postings[0].clone();
-    for list in &postings[1..] {
-        candidates.retain(|candidate| list.binary_search(candidate).is_ok());
-        if candidates.is_empty() {
-            break;
+    let (rarest, rest) = postings.split_first().expect("postings is non-empty");
+    let mut candidates = Vec::new();
+    for candidate in rarest.as_slice().iter().copied() {
+        if rest.iter().all(|list| list.contains(candidate)) {
+            candidates.push(candidate);
         }
     }
     candidates
@@ -1268,6 +1359,102 @@ mod tests {
                 .resolve_member("test", "C", &selector)
                 .expect("datalog resolves the declarator-hole target");
             assert_eq!(datalog.binding_name, "theClass");
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_regex_prefix_predicate_prunes_declarator_candidates() {
+        js_ast::with_swc_globals(|| {
+            let chunk = module(
+                "const offPrefix = \"Token-secondary-202\";\n\
+                 const wrongTail = \"Token-primary-abc\";\n\
+                 const target = \"Token-primary-101\";\n\
+                 const numeric = 42;\n",
+            );
+            let selector = member(
+                "const x = STR_LITERAL_MATCHING_RE(\"^Token-primary-[0-9]+$\");",
+                Some("x"),
+            );
+            let resolver = ChunkResolver::new(&chunk);
+            let needles = parse_needles("test", &selector).expect("selector parses");
+            let needle_facts =
+                needle_item_facts(&needles[0], &selector).expect("needle projects to facts");
+            let needle_index = selector_match::Index::build(&needle_facts);
+
+            let candidates =
+                resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
+            let candidate_body_indices: Vec<usize> = candidates
+                .iter()
+                .map(|idx| resolver.var_declarator_subjects[*idx].body_idx)
+                .collect();
+            assert_eq!(candidate_body_indices, vec![2]);
+
+            let datalog = resolver
+                .resolve_member("test", "Target", &selector)
+                .expect("datalog resolves the regex-prefixed declarator");
+            assert_eq!(datalog.binding_name, "target");
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_unanchored_regex_predicate_keeps_fallback_scan() {
+        js_ast::with_swc_globals(|| {
+            let chunk = module(
+                "const decoy = \"abcx\";\n\
+                 const target = \"zzabc\";\n\
+                 const numeric = 42;\n",
+            );
+            let selector = member("const x = STR_LITERAL_MATCHING_RE(\"abc$\");", Some("x"));
+            let resolver = ChunkResolver::new(&chunk);
+            let needles = parse_needles("test", &selector).expect("selector parses");
+            let needle_facts =
+                needle_item_facts(&needles[0], &selector).expect("needle projects to facts");
+            let needle_index = selector_match::Index::build(&needle_facts);
+
+            let candidates =
+                resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
+            assert_eq!(
+                candidates.len(),
+                3,
+                "unanchored regex has no safe prefix and must not prune candidates"
+            );
+
+            let datalog = resolver
+                .resolve_member("test", "Target", &selector)
+                .expect("datalog resolves through fallback candidate scan");
+            assert_eq!(datalog.binding_name, "target");
+        });
+    }
+
+    #[test]
+    fn datalog_resolver_regex_alternation_keeps_fallback_scan() {
+        js_ast::with_swc_globals(|| {
+            let chunk = module(
+                "const target = \"bar\";\n\
+                 const numeric = 42;\n",
+            );
+            let selector = member(
+                "const x = STR_LITERAL_MATCHING_RE(\"^foo$|^bar$\");",
+                Some("x"),
+            );
+            let resolver = ChunkResolver::new(&chunk);
+            let needles = parse_needles("test", &selector).expect("selector parses");
+            let needle_facts =
+                needle_item_facts(&needles[0], &selector).expect("needle projects to facts");
+            let needle_index = selector_match::Index::build(&needle_facts);
+
+            let candidates =
+                resolver.candidate_declarators(&needle_index, selector_mode(&selector), true);
+            assert_eq!(
+                candidates.len(),
+                2,
+                "alternation has no globally safe literal prefix and must not prune candidates"
+            );
+
+            let datalog = resolver
+                .resolve_member("test", "Target", &selector)
+                .expect("datalog resolves alternation through fallback candidate scan");
+            assert_eq!(datalog.binding_name, "target");
         });
     }
 

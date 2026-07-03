@@ -4,7 +4,7 @@
 //! This module gives `source_match` lowering, relational selector lowering, the
 //! Ascent solver, and materialization one shared vocabulary.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -82,7 +82,10 @@ pub enum ClaimKind {
     /// An anonymous top-level statement claim. The owner may declare no binding.
     AnonymousStatement,
     /// One target in a `binding_groups[].source_match` selector.
-    BindingGroupMember { export_name: String },
+    BindingGroupMember {
+        export_name: String,
+        target_binding: String,
+    },
 }
 
 /// Where a target came from in the spec/lowering pipeline.
@@ -299,6 +302,571 @@ pub enum SelectorAtom {
     },
 }
 
+impl SelectorAtom {
+    fn variable_ids(&self) -> BTreeSet<SelectorVariableId> {
+        let mut variables = BTreeSet::new();
+        match self {
+            Self::OwnerKind {
+                owner,
+                statement_kind,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_string_term_variables(statement_kind, &mut variables);
+            }
+            Self::OwnerStatementOrdinal { owner, ordinal } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_ordinal_term_variables(ordinal, &mut variables);
+            }
+            Self::OwnerTopLevelRoot { owner, root } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_node_term_variables(root, &mut variables);
+            }
+            Self::OwnerDeclaresBinding { owner, binding }
+            | Self::OwnerExportName {
+                owner,
+                export_name: binding,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_string_term_variables(binding, &mut variables);
+            }
+            Self::ProjectedAllowedTuples {
+                variables: projected,
+                ..
+            } => {
+                variables.extend(projected.iter().copied());
+            }
+            Self::OwnerReferencesBinding {
+                owner,
+                binding,
+                edge_kind,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_string_term_variables(binding, &mut variables);
+                if let Some(edge_kind) = edge_kind {
+                    collect_string_term_variables(edge_kind, &mut variables);
+                }
+            }
+            Self::OwnerReferencesOwner { owner, referenced }
+            | Self::OwnerAliasesOwner {
+                owner,
+                aliased: referenced,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_owner_term_variables(referenced, &mut variables);
+            }
+            Self::AstKind { node, .. } | Self::AstChildCount { node, .. } => {
+                collect_node_term_variables(node, &mut variables);
+            }
+            Self::AstChild { parent, child, .. } => {
+                collect_node_term_variables(parent, &mut variables);
+                collect_node_term_variables(child, &mut variables);
+            }
+            Self::AstChildListPattern {
+                parent, segments, ..
+            } => {
+                collect_node_term_variables(parent, &mut variables);
+                for segment in segments {
+                    for node in segment {
+                        collect_node_term_variables(node, &mut variables);
+                    }
+                }
+            }
+            Self::AstSuperClass {
+                class_node,
+                super_class,
+            } => {
+                collect_node_term_variables(class_node, &mut variables);
+                collect_node_term_variables(super_class, &mut variables);
+            }
+            Self::AstStringLiteral { node, value }
+            | Self::AstStringLiteralMatchingRegex {
+                node,
+                pattern: value,
+            }
+            | Self::AstNumberLiteral { node, value }
+            | Self::AstIdentifierName { node, value }
+            | Self::AstPropertyName { node, value }
+            | Self::AstOperator { node, value } => {
+                collect_node_term_variables(node, &mut variables);
+                collect_string_term_variables(value, &mut variables);
+            }
+            Self::AstBoolLiteral { node, .. } => {
+                collect_node_term_variables(node, &mut variables);
+            }
+            Self::AstBareProperty {
+                node,
+                key,
+                identifier,
+                ..
+            } => {
+                collect_node_term_variables(node, &mut variables);
+                collect_string_term_variables(key, &mut variables);
+                collect_string_term_variables(identifier, &mut variables);
+            }
+            Self::AstRegexLiteral {
+                node,
+                pattern,
+                flags,
+            } => {
+                collect_node_term_variables(node, &mut variables);
+                collect_string_term_variables(pattern, &mut variables);
+                collect_string_term_variables(flags, &mut variables);
+            }
+            Self::AstTopLevel { node, ordinal } => {
+                collect_node_term_variables(node, &mut variables);
+                collect_ordinal_term_variables(ordinal, &mut variables);
+            }
+            Self::OrdinalOffset { base, ordinal, .. } => {
+                collect_ordinal_term_variables(base, &mut variables);
+                collect_ordinal_term_variables(ordinal, &mut variables);
+            }
+            Self::OrdinalBefore { before, after } => {
+                collect_ordinal_term_variables(before, &mut variables);
+                collect_ordinal_term_variables(after, &mut variables);
+            }
+            Self::ReadsMember {
+                owner,
+                object,
+                member,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                if let Some(object) = object {
+                    collect_string_term_variables(object, &mut variables);
+                }
+                collect_string_term_variables(member, &mut variables);
+            }
+            Self::ReadsMemberOfOwner {
+                owner,
+                object,
+                member,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_owner_term_variables(object, &mut variables);
+                collect_string_term_variables(member, &mut variables);
+            }
+            Self::ConsumesModuleMember {
+                owner,
+                module,
+                member,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_string_term_variables(module, &mut variables);
+                collect_string_term_variables(member, &mut variables);
+            }
+            Self::PassedToCall {
+                owner,
+                callee_object,
+                callee_member,
+                ..
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                if let Some(callee_object) = callee_object {
+                    collect_string_term_variables(callee_object, &mut variables);
+                }
+                collect_string_term_variables(callee_member, &mut variables);
+            }
+            Self::PassedToCallOfOwner {
+                owner,
+                callee_object,
+                callee_member,
+                ..
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_owner_term_variables(callee_object, &mut variables);
+                collect_string_term_variables(callee_member, &mut variables);
+            }
+            Self::MakesDecorateCall {
+                owner,
+                class_anchor,
+                member,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_string_term_variables(class_anchor, &mut variables);
+                if let Some(member) = member {
+                    collect_string_term_variables(member, &mut variables);
+                }
+            }
+            Self::MakesDecorateCallForOwner {
+                owner,
+                class_anchor,
+                member,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_owner_term_variables(class_anchor, &mut variables);
+                if let Some(member) = member {
+                    collect_string_term_variables(member, &mut variables);
+                }
+            }
+            Self::IntrinsicAlias {
+                owner,
+                property,
+                referenced_by,
+            } => {
+                collect_owner_term_variables(owner, &mut variables);
+                collect_string_term_variables(property, &mut variables);
+                collect_owner_term_variables(referenced_by, &mut variables);
+            }
+            Self::Equal { left, right } | Self::NotEqual { left, right } => {
+                variables.insert(*left);
+                variables.insert(*right);
+            }
+        }
+        variables
+    }
+
+    fn remap_variables(
+        &self,
+        variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
+    ) -> Self {
+        match self {
+            Self::OwnerKind {
+                owner,
+                statement_kind,
+            } => Self::OwnerKind {
+                owner: remap_owner_term(owner, variable_map),
+                statement_kind: remap_string_term(statement_kind, variable_map),
+            },
+            Self::OwnerStatementOrdinal { owner, ordinal } => Self::OwnerStatementOrdinal {
+                owner: remap_owner_term(owner, variable_map),
+                ordinal: remap_ordinal_term(ordinal, variable_map),
+            },
+            Self::OwnerTopLevelRoot { owner, root } => Self::OwnerTopLevelRoot {
+                owner: remap_owner_term(owner, variable_map),
+                root: remap_node_term(root, variable_map),
+            },
+            Self::OwnerDeclaresBinding { owner, binding } => Self::OwnerDeclaresBinding {
+                owner: remap_owner_term(owner, variable_map),
+                binding: remap_string_term(binding, variable_map),
+            },
+            Self::ProjectedAllowedTuples {
+                variables,
+                rows,
+                reason,
+            } => Self::ProjectedAllowedTuples {
+                variables: variables
+                    .iter()
+                    .map(|variable| remap_variable_id(*variable, variable_map))
+                    .collect(),
+                rows: rows.clone(),
+                reason: reason.clone(),
+            },
+            Self::OwnerExportName { owner, export_name } => Self::OwnerExportName {
+                owner: remap_owner_term(owner, variable_map),
+                export_name: remap_string_term(export_name, variable_map),
+            },
+            Self::OwnerReferencesBinding {
+                owner,
+                binding,
+                edge_kind,
+            } => Self::OwnerReferencesBinding {
+                owner: remap_owner_term(owner, variable_map),
+                binding: remap_string_term(binding, variable_map),
+                edge_kind: edge_kind
+                    .as_ref()
+                    .map(|edge_kind| remap_string_term(edge_kind, variable_map)),
+            },
+            Self::OwnerReferencesOwner { owner, referenced } => Self::OwnerReferencesOwner {
+                owner: remap_owner_term(owner, variable_map),
+                referenced: remap_owner_term(referenced, variable_map),
+            },
+            Self::OwnerAliasesOwner { owner, aliased } => Self::OwnerAliasesOwner {
+                owner: remap_owner_term(owner, variable_map),
+                aliased: remap_owner_term(aliased, variable_map),
+            },
+            Self::AstKind { node, node_kind } => Self::AstKind {
+                node: remap_node_term(node, variable_map),
+                node_kind: *node_kind,
+            },
+            Self::AstChild {
+                parent,
+                index,
+                child,
+            } => Self::AstChild {
+                parent: remap_node_term(parent, variable_map),
+                index: *index,
+                child: remap_node_term(child, variable_map),
+            },
+            Self::AstChildListPattern {
+                parent,
+                start_index,
+                segments,
+                anchored_left,
+                anchored_right,
+            } => Self::AstChildListPattern {
+                parent: remap_node_term(parent, variable_map),
+                start_index: *start_index,
+                segments: segments
+                    .iter()
+                    .map(|segment| {
+                        segment
+                            .iter()
+                            .map(|node| remap_node_term(node, variable_map))
+                            .collect()
+                    })
+                    .collect(),
+                anchored_left: *anchored_left,
+                anchored_right: *anchored_right,
+            },
+            Self::AstSuperClass {
+                class_node,
+                super_class,
+            } => Self::AstSuperClass {
+                class_node: remap_node_term(class_node, variable_map),
+                super_class: remap_node_term(super_class, variable_map),
+            },
+            Self::AstChildCount { node, count } => Self::AstChildCount {
+                node: remap_node_term(node, variable_map),
+                count: *count,
+            },
+            Self::AstStringLiteral { node, value } => Self::AstStringLiteral {
+                node: remap_node_term(node, variable_map),
+                value: remap_string_term(value, variable_map),
+            },
+            Self::AstStringLiteralMatchingRegex { node, pattern } => {
+                Self::AstStringLiteralMatchingRegex {
+                    node: remap_node_term(node, variable_map),
+                    pattern: remap_string_term(pattern, variable_map),
+                }
+            }
+            Self::AstNumberLiteral { node, value } => Self::AstNumberLiteral {
+                node: remap_node_term(node, variable_map),
+                value: remap_string_term(value, variable_map),
+            },
+            Self::AstBoolLiteral { node, value } => Self::AstBoolLiteral {
+                node: remap_node_term(node, variable_map),
+                value: *value,
+            },
+            Self::AstIdentifierName { node, value } => Self::AstIdentifierName {
+                node: remap_node_term(node, variable_map),
+                value: remap_string_term(value, variable_map),
+            },
+            Self::AstPropertyName { node, value } => Self::AstPropertyName {
+                node: remap_node_term(node, variable_map),
+                value: remap_string_term(value, variable_map),
+            },
+            Self::AstBareProperty {
+                node,
+                key,
+                identifier,
+                is_binding,
+            } => Self::AstBareProperty {
+                node: remap_node_term(node, variable_map),
+                key: remap_string_term(key, variable_map),
+                identifier: remap_string_term(identifier, variable_map),
+                is_binding: *is_binding,
+            },
+            Self::AstOperator { node, value } => Self::AstOperator {
+                node: remap_node_term(node, variable_map),
+                value: remap_string_term(value, variable_map),
+            },
+            Self::AstRegexLiteral {
+                node,
+                pattern,
+                flags,
+            } => Self::AstRegexLiteral {
+                node: remap_node_term(node, variable_map),
+                pattern: remap_string_term(pattern, variable_map),
+                flags: remap_string_term(flags, variable_map),
+            },
+            Self::AstTopLevel { node, ordinal } => Self::AstTopLevel {
+                node: remap_node_term(node, variable_map),
+                ordinal: remap_ordinal_term(ordinal, variable_map),
+            },
+            Self::OrdinalOffset {
+                base,
+                ordinal,
+                offset,
+            } => Self::OrdinalOffset {
+                base: remap_ordinal_term(base, variable_map),
+                ordinal: remap_ordinal_term(ordinal, variable_map),
+                offset: *offset,
+            },
+            Self::OrdinalBefore { before, after } => Self::OrdinalBefore {
+                before: remap_ordinal_term(before, variable_map),
+                after: remap_ordinal_term(after, variable_map),
+            },
+            Self::ReadsMember {
+                owner,
+                object,
+                member,
+            } => Self::ReadsMember {
+                owner: remap_owner_term(owner, variable_map),
+                object: object
+                    .as_ref()
+                    .map(|object| remap_string_term(object, variable_map)),
+                member: remap_string_term(member, variable_map),
+            },
+            Self::ReadsMemberOfOwner {
+                owner,
+                object,
+                member,
+            } => Self::ReadsMemberOfOwner {
+                owner: remap_owner_term(owner, variable_map),
+                object: remap_owner_term(object, variable_map),
+                member: remap_string_term(member, variable_map),
+            },
+            Self::ConsumesModuleMember {
+                owner,
+                module,
+                member,
+            } => Self::ConsumesModuleMember {
+                owner: remap_owner_term(owner, variable_map),
+                module: remap_string_term(module, variable_map),
+                member: remap_string_term(member, variable_map),
+            },
+            Self::PassedToCall {
+                owner,
+                callee_object,
+                callee_member,
+                arg_index,
+            } => Self::PassedToCall {
+                owner: remap_owner_term(owner, variable_map),
+                callee_object: callee_object
+                    .as_ref()
+                    .map(|callee_object| remap_string_term(callee_object, variable_map)),
+                callee_member: remap_string_term(callee_member, variable_map),
+                arg_index: *arg_index,
+            },
+            Self::PassedToCallOfOwner {
+                owner,
+                callee_object,
+                callee_member,
+                arg_index,
+            } => Self::PassedToCallOfOwner {
+                owner: remap_owner_term(owner, variable_map),
+                callee_object: remap_owner_term(callee_object, variable_map),
+                callee_member: remap_string_term(callee_member, variable_map),
+                arg_index: *arg_index,
+            },
+            Self::MakesDecorateCall {
+                owner,
+                class_anchor,
+                member,
+            } => Self::MakesDecorateCall {
+                owner: remap_owner_term(owner, variable_map),
+                class_anchor: remap_string_term(class_anchor, variable_map),
+                member: member
+                    .as_ref()
+                    .map(|member| remap_string_term(member, variable_map)),
+            },
+            Self::MakesDecorateCallForOwner {
+                owner,
+                class_anchor,
+                member,
+            } => Self::MakesDecorateCallForOwner {
+                owner: remap_owner_term(owner, variable_map),
+                class_anchor: remap_owner_term(class_anchor, variable_map),
+                member: member
+                    .as_ref()
+                    .map(|member| remap_string_term(member, variable_map)),
+            },
+            Self::IntrinsicAlias {
+                owner,
+                property,
+                referenced_by,
+            } => Self::IntrinsicAlias {
+                owner: remap_owner_term(owner, variable_map),
+                property: remap_string_term(property, variable_map),
+                referenced_by: remap_owner_term(referenced_by, variable_map),
+            },
+            Self::Equal { left, right } => Self::Equal {
+                left: remap_variable_id(*left, variable_map),
+                right: remap_variable_id(*right, variable_map),
+            },
+            Self::NotEqual { left, right } => Self::NotEqual {
+                left: remap_variable_id(*left, variable_map),
+                right: remap_variable_id(*right, variable_map),
+            },
+        }
+    }
+}
+
+fn collect_owner_term_variables(term: &OwnerTerm, variables: &mut BTreeSet<SelectorVariableId>) {
+    if let OwnerTerm::Var { id } = term {
+        variables.insert(*id);
+    }
+}
+
+fn collect_node_term_variables(term: &NodeTerm, variables: &mut BTreeSet<SelectorVariableId>) {
+    if let NodeTerm::Var { id } = term {
+        variables.insert(*id);
+    }
+}
+
+fn collect_string_term_variables(term: &StringTerm, variables: &mut BTreeSet<SelectorVariableId>) {
+    if let StringTerm::Var { id } = term {
+        variables.insert(*id);
+    }
+}
+
+fn collect_ordinal_term_variables(
+    term: &OrdinalTerm,
+    variables: &mut BTreeSet<SelectorVariableId>,
+) {
+    if let OrdinalTerm::Var { id } = term {
+        variables.insert(*id);
+    }
+}
+
+fn remap_variable_id(
+    variable: SelectorVariableId,
+    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
+) -> SelectorVariableId {
+    *variable_map
+        .get(&variable)
+        .expect("slice atom variable must be present in remap")
+}
+
+fn remap_owner_term(
+    term: &OwnerTerm,
+    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
+) -> OwnerTerm {
+    match term {
+        OwnerTerm::Var { id } => OwnerTerm::Var {
+            id: remap_variable_id(*id, variable_map),
+        },
+        OwnerTerm::Const { owner } => OwnerTerm::Const { owner: *owner },
+    }
+}
+
+fn remap_node_term(
+    term: &NodeTerm,
+    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
+) -> NodeTerm {
+    match term {
+        NodeTerm::Var { id } => NodeTerm::Var {
+            id: remap_variable_id(*id, variable_map),
+        },
+        NodeTerm::Const { node } => NodeTerm::Const { node: *node },
+    }
+}
+
+fn remap_string_term(
+    term: &StringTerm,
+    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
+) -> StringTerm {
+    match term {
+        StringTerm::Var { id } => StringTerm::Var {
+            id: remap_variable_id(*id, variable_map),
+        },
+        StringTerm::Const { value } => StringTerm::Const {
+            value: value.clone(),
+        },
+    }
+}
+
+fn remap_ordinal_term(
+    term: &OrdinalTerm,
+    variable_map: &BTreeMap<SelectorVariableId, SelectorVariableId>,
+) -> OrdinalTerm {
+    match term {
+        OrdinalTerm::Var { id } => OrdinalTerm::Var {
+            id: remap_variable_id(*id, variable_map),
+        },
+        OrdinalTerm::Const { ordinal } => OrdinalTerm::Const { ordinal: *ordinal },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SelectorProjectedValue {
@@ -371,6 +939,18 @@ pub struct SelectorVariableAllDifferent {
     pub label: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectorProgramSlice {
+    pub program: SelectorProgram,
+    pub old_to_new_targets: BTreeMap<SelectorTargetId, SelectorTargetId>,
+    pub new_to_old_targets: BTreeMap<SelectorTargetId, SelectorTargetId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectorProgramSliceOptions {
+    pub include_target_all_different: bool,
+}
+
 impl SelectorProgram {
     pub fn add_variable(
         &mut self,
@@ -428,6 +1008,126 @@ impl SelectorProgram {
                 variables,
                 label: label.into(),
             });
+    }
+
+    pub fn slice_for_targets(
+        &self,
+        targets: &BTreeSet<SelectorTargetId>,
+        options: SelectorProgramSliceOptions,
+    ) -> Result<SelectorProgramSlice, SelectorProgramError> {
+        for target in targets {
+            self.require_target(*target)?;
+        }
+
+        let mut kept_variables = BTreeSet::<SelectorVariableId>::new();
+        for target in targets {
+            kept_variables.insert(self.targets[target.0].owner);
+        }
+
+        let mut kept_atoms = BTreeSet::<usize>::new();
+        loop {
+            let mut changed = false;
+            for (idx, atom) in self.atoms.iter().enumerate() {
+                let atom_variables = atom.variable_ids();
+                if atom_variables.is_empty()
+                    || !atom_variables
+                        .iter()
+                        .any(|variable| kept_variables.contains(variable))
+                {
+                    continue;
+                }
+                if kept_atoms.insert(idx) {
+                    changed = true;
+                }
+                for variable in atom_variables {
+                    changed |= kept_variables.insert(variable);
+                }
+            }
+            for constraint in &self.all_different_variables {
+                if !constraint
+                    .variables
+                    .iter()
+                    .any(|variable| kept_variables.contains(variable))
+                {
+                    continue;
+                }
+                for variable in &constraint.variables {
+                    changed |= kept_variables.insert(*variable);
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let mut program = SelectorProgram::default();
+        let mut variable_map = BTreeMap::<SelectorVariableId, SelectorVariableId>::new();
+        for variable in &self.variables {
+            if kept_variables.contains(&variable.id) {
+                let remapped = program.add_variable(variable.domain, variable.debug_name.clone());
+                variable_map.insert(variable.id, remapped);
+            }
+        }
+
+        let mut old_to_new_targets = BTreeMap::<SelectorTargetId, SelectorTargetId>::new();
+        let mut new_to_old_targets = BTreeMap::<SelectorTargetId, SelectorTargetId>::new();
+        for target in &self.targets {
+            if !targets.contains(&target.id) {
+                continue;
+            }
+            let owner = *variable_map
+                .get(&target.owner)
+                .expect("selected target owner variable must be kept");
+            let remapped = program.add_target(
+                target.chunk_id,
+                owner,
+                target.logical_module.clone(),
+                target.claim.clone(),
+                target.origin.clone(),
+            );
+            old_to_new_targets.insert(target.id, remapped);
+            new_to_old_targets.insert(remapped, target.id);
+        }
+
+        for idx in kept_atoms {
+            program.add_atom(self.atoms[idx].remap_variables(&variable_map));
+        }
+
+        if options.include_target_all_different {
+            for target_set in &self.all_different {
+                let remapped = target_set
+                    .iter()
+                    .filter_map(|target| old_to_new_targets.get(target).copied())
+                    .collect::<Vec<_>>();
+                if remapped.len() >= 2 {
+                    program.require_all_different(remapped);
+                }
+            }
+        }
+        for constraint in &self.all_different_variables {
+            if !constraint
+                .variables
+                .iter()
+                .any(|variable| variable_map.contains_key(variable))
+            {
+                continue;
+            }
+            let remapped = constraint
+                .variables
+                .iter()
+                .filter_map(|variable| variable_map.get(variable).copied())
+                .collect::<Vec<_>>();
+            if remapped.len() >= 2 {
+                program.require_variables_all_different(remapped, constraint.label.clone());
+            }
+        }
+
+        program.validate()?;
+        Ok(SelectorProgramSlice {
+            program,
+            old_to_new_targets,
+            new_to_old_targets,
+        })
     }
 
     pub fn validate(&self) -> Result<(), SelectorProgramError> {
@@ -1365,6 +2065,8 @@ impl SelectorFactStore {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SolverResult {
     pub claims: Vec<SolverClaim>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_diagnostic: Option<SolverGlobalDiagnostic>,
 }
 
 impl SolverResult {
@@ -1374,6 +2076,13 @@ impl SolverResult {
             .find(|claim| claim.target == target)
             .map(|claim| &claim.outcome)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SolverGlobalDiagnostic {
+    pub category: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1420,6 +2129,8 @@ pub struct ProvenanceFact {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     fn const_str(value: &str) -> StringTerm {
@@ -1555,6 +2266,211 @@ mod tests {
     }
 
     #[test]
+    fn slice_for_targets_remaps_dense_variable_and_target_ids() {
+        let mut program = SelectorProgram::default();
+        let ignored_owner =
+            program.add_variable(VariableDomain::Owner, Some("ignored".to_string()));
+        let kept_owner = program.add_variable(VariableDomain::Owner, Some("kept".to_string()));
+        let referenced_owner =
+            program.add_variable(VariableDomain::Owner, Some("referenced".to_string()));
+        let ignored_target = program.add_target(
+            ChunkId(0),
+            ignored_owner,
+            "ignored/module",
+            ClaimKind::Binding {
+                export_name: Some("Ignored".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        let kept_target = program.add_target(
+            ChunkId(0),
+            kept_owner,
+            "kept/module",
+            ClaimKind::Binding {
+                export_name: Some("Kept".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: ignored_owner },
+            binding: const_str("ignored"),
+        });
+        program.add_atom(SelectorAtom::OwnerReferencesOwner {
+            owner: OwnerTerm::Var { id: kept_owner },
+            referenced: OwnerTerm::Var {
+                id: referenced_owner,
+            },
+        });
+        program.add_atom(SelectorAtom::OwnerKind {
+            owner: OwnerTerm::Var {
+                id: referenced_owner,
+            },
+            statement_kind: const_str("function"),
+        });
+        program.require_all_different(vec![ignored_target, kept_target]);
+
+        let slice = program
+            .slice_for_targets(
+                &BTreeSet::from([kept_target]),
+                SelectorProgramSliceOptions {
+                    include_target_all_different: false,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(slice.program.variables.len(), 2);
+        assert_eq!(slice.program.variables[0].id, SelectorVariableId(0));
+        assert_eq!(
+            slice.program.variables[0].debug_name.as_deref(),
+            Some("kept")
+        );
+        assert_eq!(slice.program.variables[1].id, SelectorVariableId(1));
+        assert_eq!(
+            slice.program.variables[1].debug_name.as_deref(),
+            Some("referenced")
+        );
+        assert_eq!(slice.program.targets.len(), 1);
+        assert_eq!(slice.program.targets[0].id, SelectorTargetId(0));
+        assert_eq!(slice.program.targets[0].owner, SelectorVariableId(0));
+        assert_eq!(
+            slice.old_to_new_targets.get(&kept_target),
+            Some(&SelectorTargetId(0))
+        );
+        assert_eq!(
+            slice.new_to_old_targets.get(&SelectorTargetId(0)),
+            Some(&kept_target)
+        );
+        assert_eq!(slice.program.atoms.len(), 2);
+        assert!(slice.program.all_different.is_empty());
+        assert!(slice.program.validate().is_ok());
+    }
+
+    #[test]
+    fn slice_for_targets_preserves_projected_allowed_tuples() {
+        let mut program = SelectorProgram::default();
+        let owner = program.add_variable(VariableDomain::Owner, Some("owner".to_string()));
+        let binding = program.add_variable(VariableDomain::String, Some("binding".to_string()));
+        let target = program.add_target(
+            ChunkId(0),
+            owner,
+            "projected/module",
+            ClaimKind::BindingGroupMember {
+                export_name: "Projected".to_string(),
+                target_binding: "projected".to_string(),
+            },
+            ClaimOrigin::BindingGroup { group_index: 0 },
+        );
+        program.add_atom(SelectorAtom::ProjectedAllowedTuples {
+            variables: vec![owner, binding],
+            rows: vec![vec![
+                SelectorProjectedValue::Owner(OwnerId(7)),
+                SelectorProjectedValue::String("minified".to_string()),
+            ]],
+            reason: "projected source_match group".to_string(),
+        });
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: owner },
+            binding: StringTerm::Var { id: binding },
+        });
+
+        let slice = program
+            .slice_for_targets(
+                &BTreeSet::from([target]),
+                SelectorProgramSliceOptions {
+                    include_target_all_different: false,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(slice.program.variables.len(), 2);
+        assert!(slice.program.atoms.iter().any(|atom| {
+            matches!(
+                atom,
+                SelectorAtom::ProjectedAllowedTuples {
+                    variables,
+                    rows,
+                    reason,
+                } if variables == &vec![SelectorVariableId(0), SelectorVariableId(1)]
+                    && rows
+                        == &vec![vec![
+                            SelectorProjectedValue::Owner(OwnerId(7)),
+                            SelectorProjectedValue::String("minified".to_string())
+                        ]]
+                    && reason == "projected source_match group"
+            )
+        }));
+        assert!(slice.program.validate().is_ok());
+    }
+
+    #[test]
+    fn slice_for_targets_handles_variable_and_target_all_different() {
+        let mut program = SelectorProgram::default();
+        let left_owner = program.add_variable(VariableDomain::Owner, Some("left".to_string()));
+        let right_owner = program.add_variable(VariableDomain::Owner, Some("right".to_string()));
+        let left_name = program.add_variable(VariableDomain::String, Some("left_name".to_string()));
+        let right_name =
+            program.add_variable(VariableDomain::String, Some("right_name".to_string()));
+        let left_target = program.add_target(
+            ChunkId(0),
+            left_owner,
+            "left/module",
+            ClaimKind::Binding {
+                export_name: Some("Left".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        let right_target = program.add_target(
+            ChunkId(0),
+            right_owner,
+            "right/module",
+            ClaimKind::Binding {
+                export_name: Some("Right".to_string()),
+            },
+            ClaimOrigin::MemberSelector,
+        );
+        program.add_atom(SelectorAtom::OwnerDeclaresBinding {
+            owner: OwnerTerm::Var { id: left_owner },
+            binding: StringTerm::Var { id: left_name },
+        });
+        program.require_variables_all_different(
+            vec![left_name, right_name],
+            "source_match alpha frame",
+        );
+        program.require_all_different(vec![left_target, right_target]);
+
+        let root_slice = program
+            .slice_for_targets(
+                &BTreeSet::from([left_target]),
+                SelectorProgramSliceOptions {
+                    include_target_all_different: false,
+                },
+            )
+            .unwrap();
+        assert_eq!(root_slice.program.variables.len(), 3);
+        assert_eq!(root_slice.program.all_different_variables.len(), 1);
+        assert_eq!(
+            root_slice.program.all_different_variables[0].variables,
+            vec![SelectorVariableId(1), SelectorVariableId(2)]
+        );
+        assert!(root_slice.program.all_different.is_empty());
+
+        let coupled_slice = program
+            .slice_for_targets(
+                &BTreeSet::from([left_target, right_target]),
+                SelectorProgramSliceOptions {
+                    include_target_all_different: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(coupled_slice.program.targets.len(), 2);
+        assert_eq!(
+            coupled_slice.program.all_different,
+            vec![vec![SelectorTargetId(0), SelectorTargetId(1)]]
+        );
+        assert!(coupled_slice.program.validate().is_ok());
+    }
+
+    #[test]
     fn serde_round_trips_program_and_result() {
         let mut program = SelectorProgram::default();
         let owner = program.add_variable(VariableDomain::Owner, Some("@Class".to_string()));
@@ -1596,6 +2512,7 @@ mod tests {
                     },
                 },
             }],
+            global_diagnostic: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         let decoded: SolverResult = serde_json::from_str(&json).unwrap();

@@ -1,8 +1,12 @@
 #include "devinfra/js/debundle/solver_backends/ortools_cpsat/solver.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <cstdint>
+#include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -24,6 +28,11 @@ namespace sat = ::operations_research::sat;
 using VariableMap = std::map<uint32_t, sat::IntVar>;
 using AllowedRowSetMap = std::map<uint32_t, const AllowedRowSet*>;
 using SharedSparseDomainMap = std::map<uint32_t, const SharedSparseDomain*>;
+
+constexpr char kNumSearchWorkersEnv[] =
+    "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_NUM_SEARCH_WORKERS";
+constexpr char kMaxTimeSecondsEnv[] =
+    "DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS";
 
 struct ProjectionRow {
   std::vector<std::pair<uint32_t, int64_t>> values;
@@ -66,6 +75,72 @@ SelectorCpSatResponse InvalidModelResponse(
 absl::Status MissingVariableStatus(uint32_t variable_id) {
   return absl::InvalidArgumentError(
       absl::StrCat("unknown variable id ", variable_id));
+}
+
+std::optional<std::string> EnvValue(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0') {
+    return std::nullopt;
+  }
+  return std::string(value);
+}
+
+absl::StatusOr<int> ParsePositiveIntEnv(const char* name) {
+  const std::optional<std::string> raw = EnvValue(name);
+  if (!raw.has_value()) {
+    return 0;
+  }
+
+  errno = 0;
+  char* end = nullptr;
+  const long value = std::strtol(raw->c_str(), &end, 10);
+  if (errno != 0 || end == raw->c_str() || *end != '\0' || value <= 0 ||
+      value > std::numeric_limits<int>::max()) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(name, " must be a positive integer, got `", *raw, "`"));
+  }
+  return static_cast<int>(value);
+}
+
+absl::StatusOr<double> ParsePositiveDoubleEnv(const char* name) {
+  const std::optional<std::string> raw = EnvValue(name);
+  if (!raw.has_value()) {
+    return 0.0;
+  }
+
+  errno = 0;
+  char* end = nullptr;
+  const double value = std::strtod(raw->c_str(), &end);
+  if (errno != 0 || end == raw->c_str() || *end != '\0' || value <= 0.0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(name, " must be a positive number, got `", *raw, "`"));
+  }
+  return value;
+}
+
+absl::StatusOr<sat::SatParameters> BuildSatParameters() {
+  sat::SatParameters parameters;
+  parameters.set_num_search_workers(1);
+
+  absl::StatusOr<int> num_search_workers =
+      ParsePositiveIntEnv(kNumSearchWorkersEnv);
+  if (!num_search_workers.ok()) {
+    return num_search_workers.status();
+  }
+  if (*num_search_workers != 0) {
+    parameters.set_num_search_workers(*num_search_workers);
+  }
+
+  absl::StatusOr<double> max_time_seconds =
+      ParsePositiveDoubleEnv(kMaxTimeSecondsEnv);
+  if (!max_time_seconds.ok()) {
+    return max_time_seconds.status();
+  }
+  if (*max_time_seconds != 0.0) {
+    parameters.set_max_time_in_seconds(*max_time_seconds);
+  }
+
+  return parameters;
 }
 
 absl::StatusOr<SharedSparseDomainMap> BuildSharedSparseDomainMap(
@@ -524,14 +599,16 @@ SelectorCpSatResponse SolveSelectorCpSat(const SelectorCpSatRequest& request) {
   if (!projection_variables.ok()) {
     return InvalidResponse(projection_variables.status());
   }
+  absl::StatusOr<sat::SatParameters> parameters = BuildSatParameters();
+  if (!parameters.ok()) {
+    return InvalidResponse(parameters.status());
+  }
 
   std::set<ProjectionRow> projection_rows;
   sat::CpSolverResponse solver_response;
   for (;;) {
     sat::Model solver_model;
-    sat::SatParameters parameters;
-    parameters.set_num_search_workers(1);
-    solver_model.Add(sat::NewSatParameters(parameters));
+    solver_model.Add(sat::NewSatParameters(*parameters));
 
     const sat::CpModelProto& model_proto = model.Build();
     solver_response = sat::SolveCpModel(model_proto, &solver_model);

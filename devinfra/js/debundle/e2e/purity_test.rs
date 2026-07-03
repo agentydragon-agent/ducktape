@@ -1177,6 +1177,41 @@ export { A, B, C };
 }
 
 #[test]
+fn cross_module_pure_import_follows_transitive_static_import_closure() {
+    // The selected app imports `callWrap` from an adapter chunk, and the
+    // adapter imports the actual pure HOF from a third chunk. A direct-import
+    // only purity pass leaves `callWrap` opaque; the static import closure must
+    // include both the adapter and its vendor dependency.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { callWrap as wrap } from "./adapter.js";
+const A = wrap(function () { return "a"; });
+const B = wrap(function () { return "b"; });
+const C = wrap(function () { return "c"; });
+console.log(A, B, C);
+export { A, B, C };
+"#,
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_extra_chunks(&[
+            (
+                "static/adapter",
+                "import { wrap } from \"./vendorlib.js\";\n\
+export function callWrap(f) { return wrap(f); }\n",
+            ),
+            (
+                "static/vendorlib",
+                "export function wrap(f) { return { kind: \"wrapped\", impl: f }; }\n",
+            ),
+        ]),
+    );
+    assert!(fixture.entry_path.exists());
+}
+
+#[test]
 fn cross_module_impure_import_still_emits_s_cycle() {
     // Same shape, but the imported `wrap` writes a global — impure. The oracle
     // must propagate that impurity back to the call sites, so the interleaved
