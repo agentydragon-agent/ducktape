@@ -1,5 +1,6 @@
-"""SSOT drift guard: the Haku agent fields duplicated across the cloud (TF) and
-self-hosted (`ant` YAML) surfaces must match haku/base/agent_shared.yaml.
+"""SSOT guard: both Haku managed-agent surfaces — cloud (TF/HCL) and self-hosted
+(`ant` YAML) — must match haku/base/agent_shared.yaml on model + full toolset.
+Matching a shared SSOT is what keeps the two identical ("one brain, two substrates").
 
 Both surfaces are parsed structurally — the self-hosted YAML with PyYAML, the
 cloud HCL with pygohcl (HashiCorp's parser) — not by regex over the text. Edit
@@ -7,6 +8,7 @@ agent_shared.yaml, then update both surfaces, or this fails.
 """
 
 import pygohcl
+import pytest
 import pytest_bazel
 import yaml
 
@@ -20,32 +22,27 @@ _CLOUD = pygohcl.loads(get_required_path("_main/tf/gitops/haku-cloud-agent/main.
     "claude-managed-agents_agent"
 ]["haku_cloud"]
 
-
-def _urls(agent: dict) -> dict[str, str]:
-    return {s["name"]: s["url"] for s in agent["mcp_servers"]}
+_SURFACES = {"self_hosted": _SELF_HOSTED, "cloud": _CLOUD}
 
 
-def _toolset_policies(agent: dict) -> dict[str, str]:
+def _normalize(surface: dict) -> dict:
+    """Re-express a parsed surface (YAML or HCL) in agent_shared.yaml's shape. An
+    mcp_toolset is keyed by its MCP server name, the built-in toolset by its type."""
     return {
-        t["mcp_server_name"]: t["default_config"]["permission_policy"]["type"]
-        for t in agent["tools"]
-        if t["type"] == "mcp_toolset"
+        "model": surface["model"],
+        "toolset_policies": {
+            (t["mcp_server_name"] if t["type"] == "mcp_toolset" else t["type"]): t["default_config"][
+                "permission_policy"
+            ]["type"]
+            for t in surface["tools"]
+        },
+        "mcp_urls": {s["name"]: s["url"] for s in surface["mcp_servers"]},
     }
 
 
-def test_model_matches_ssot():
-    assert _SELF_HOSTED["model"] == _SHARED["model"]
-    assert _CLOUD["model"] == _SHARED["model"]
-
-
-def test_shared_mcp_servers_match_ssot():
-    self_hosted_urls, cloud_urls = _urls(_SELF_HOSTED), _urls(_CLOUD)
-    self_hosted_pol, cloud_pol = _toolset_policies(_SELF_HOSTED), _toolset_policies(_CLOUD)
-    for name, spec in _SHARED["mcp_servers"].items():
-        assert self_hosted_urls[name] == spec["url"]
-        assert cloud_urls[name] == spec["url"]
-        assert self_hosted_pol[name] == spec["toolset_permission_policy"]
-        assert cloud_pol[name] == spec["toolset_permission_policy"]
+@pytest.mark.parametrize("surface", _SURFACES.values(), ids=list(_SURFACES))
+def test_surface_matches_ssot(surface):
+    assert _normalize(surface) == _SHARED
 
 
 if __name__ == "__main__":
