@@ -1,10 +1,19 @@
 # Forgejo repo access for agentydragon-owned source mirrors.
 #
-# Provisions `agent-box-codex` and `agent-box-zai` service users, attaches their
-# SSH push keys (agent-box-{codex,zai}-forgejo), adopts the existing
-# `agentydragon/{ducktape,gaffer-private}` repos under Terraform, grants each
-# agent-box user write collaboration, and grants Haku read access to those same
-# source mirrors. Provider wiring mirrors tf/gitops/forgejo-claude.
+# Provisions the AI-agent service users (`agent-box-codex`, `agent-box-zai`,
+# `codex-pod`, …), attaches their SSH push keys, adopts the existing
+# `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and grants Haku
+# read access. Provider wiring mirrors tf/gitops/forgejo-claude.
+#
+# CONVENTION — agents are READ-only and open PRs via AGit. No agent gets write on
+# the upstream repos, so none can advance `devel`/`main` (branch protection can't
+# help here: Forgejo has no force-push allowlist, and the GitHub→Forgejo mirror
+# force-pushes those branches, so they must stay unprotected — see the note at the
+# bottom). Instead each agent proposes changes with Forgejo's AGit flow —
+# `git push origin HEAD:refs/for/<branch> -o topic=<t>` over its SSH key — which
+# opens/updates a PR with only read access, no fork and no API token (the SSH key
+# they already have is the only credential). Every future on-box AI provider
+# follows this pattern.
 
 data "kubernetes_secret" "forgejo_admin" {
   metadata {
@@ -80,21 +89,20 @@ import {
   id = "agentydragon/gaffer-private"
 }
 
-# --- agent-box-codex write collaboration ---
-# Write (not read) so agent-box-codex can push topic branches for PRs.
+# --- agent-box-codex read collaboration (fork model) ---
 resource "forgejo_collaborator" "agent_box_codex_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.agent_box_codex.login
-  permission    = "write"
+  permission    = "read"
 }
 
 resource "forgejo_collaborator" "agent_box_codex_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
   user          = forgejo_user.agent_box_codex.login
-  permission    = "write"
+  permission    = "read"
 }
 
-# --- agent-box-zai service user + write collaboration ---
+# --- agent-box-zai service user + read collaboration (fork model) ---
 # Same shape as agent-box-codex above: the zai agent authenticates to Forgejo
 # over SSH (key below), so the password is never delivered anywhere.
 resource "random_password" "agent_box_zai" {
@@ -119,17 +127,47 @@ resource "forgejo_ssh_key" "agent_box_zai" {
   title = "agent-box-zai-forgejo"
 }
 
-# Write (not read) so agent-box-zai can push topic branches for PRs.
 resource "forgejo_collaborator" "agent_box_zai_ducktape" {
   repository_id = forgejo_repository.ducktape.id
   user          = forgejo_user.agent_box_zai.login
-  permission    = "write"
+  permission    = "read"
 }
 
 resource "forgejo_collaborator" "agent_box_zai_gaffer" {
   repository_id = forgejo_repository.gaffer_private.id
   user          = forgejo_user.agent_box_zai.login
-  permission    = "write"
+  permission    = "read"
+}
+
+# --- codex-pod (in-cluster Nix-image codex agent) ---
+# Same shape as agent-box-codex: read-only + fork model, authenticating over SSH.
+resource "random_password" "codex_pod" {
+  length  = 48
+  special = false
+}
+
+# Authenticates over SSH (key below); the password just satisfies the required field.
+resource "forgejo_user" "codex_pod" {
+  login                = "codex-pod"
+  email                = "codex-pod@allegedly.works"
+  password             = random_password.codex_pod.result
+  must_change_password = false
+  visibility           = "private"
+}
+
+# codex-pod's git push key — the same id_ed25519 planted into the pod from the
+# codex-bootstrap-identity Secret (cluster/k8s/agents/codex-pod). Inlined because
+# the tofu-controller runs only this module path, so file() cannot read repo-root.
+resource "forgejo_ssh_key" "codex_pod" {
+  user  = forgejo_user.codex_pod.login
+  key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHc/XFJXzEigh9Y7K70CcQHCpuQLDvAK5UsAFU/aPaFE codex-pod"
+  title = "codex-pod"
+}
+
+resource "forgejo_collaborator" "codex_pod_ducktape" {
+  repository_id = forgejo_repository.ducktape.id
+  user          = forgejo_user.codex_pod.login
+  permission    = "read"
 }
 
 # --- haku read collaboration ---

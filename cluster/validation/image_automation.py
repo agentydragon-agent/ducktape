@@ -26,6 +26,11 @@ _HAKU_STATE_IMAGE_REPOS = {"haku-ui"}
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
+    # Only GHCR images get push-time reconcile via the GitHub `registry_package`
+    # webhook; images in other registries (e.g. our own Forgejo, git.allegedly.works)
+    # can't, so they're not required in the GitHub Receiver — they use the 5m poll
+    # (or their own registry webhook).
+    ghcr_repos: set[str] = set()
     policy_refs: dict[str, str] = {}
     webhook_repos: set[str] = set()
 
@@ -33,6 +38,11 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
         for resource in result.resources:
             if isinstance(resource, ImageRepositoryResource):
                 image_repos.add(resource.name)
+                # The registry host is the first path component of the OCI ref.
+                # Compare it exactly (not a substring/prefix match) so a repo like
+                # `git.allegedly.works/…` can't be mistaken for GHCR.
+                if resource.spec.image.split("/", 1)[0] == "ghcr.io":
+                    ghcr_repos.add(resource.name)
             elif isinstance(resource, ImagePolicyResource):
                 policy_refs[resource.name] = resource.spec.image_repository_ref.name
             elif isinstance(resource, ReceiverResource):
@@ -44,7 +54,7 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
         *(
             f"ImageRepository '{name}' is not listed in flux-webhook/github-webhook-receiver.yaml; "
             "new GHCR tags will only be picked up on the 5m poll, not on push. Add it to the Receiver's resources."
-            for name in sorted(image_repos - webhook_repos)
+            for name in sorted(ghcr_repos - webhook_repos)
         ),
         *(
             f"flux-webhook/github-webhook-receiver.yaml references ImageRepository '{name}', "

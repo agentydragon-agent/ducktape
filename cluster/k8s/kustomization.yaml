@@ -8,6 +8,7 @@ resources:
   - flux-monitoring/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml
+  - flux-image-automation-forgejo/flux-kustomization.yaml
   - gaffer-private-source/flux-kustomization.yaml
   - gaffer-private-ghcr-pull/flux-kustomization.yaml
 
@@ -66,6 +67,7 @@ resources:
   - agents/attic-jwt-rotation/flux-kustomization.yaml
   - agents/claude-sandbox-firecracker/flux-kustomization.yaml
   - agents/claude-zai-key/flux-kustomization.yaml
+  - agents/codex-pod/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml
   - agents/google-workspace-mcp/flux-kustomization.yaml
@@ -195,6 +197,7 @@ resources:
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
   - forgejo/props/flux-kustomization.yaml
+  - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
   - forgejo/augur-evidence/flux-kustomization.yaml
   - forgejo/cpap-data/flux-kustomization.yaml
