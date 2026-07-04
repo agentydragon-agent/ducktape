@@ -54,7 +54,7 @@ spec:
               # Initial placeholder matching the ImagePolicy filterTags regex
               # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field to the
               # latest published tag on first reconcile after a push-images.yml run.
-              image: ghcr.io/agentydragon/authentik-jwt-rotation:devel-20260702204732-7e870c0 # {"$imagepolicy": "flux-system:authentik-jwt-rotation"}
+              image: ghcr.io/agentydragon/authentik-jwt-rotation:devel-20260704000408-b37cedf # {"$imagepolicy": "flux-system:authentik-jwt-rotation"}
               args: ["--config", "/config/rotations.yaml"]
               securityContext:
                 allowPrivilegeEscalation: false
