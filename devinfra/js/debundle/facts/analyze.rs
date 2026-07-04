@@ -68,7 +68,7 @@ impl Visit for TopLevelAwaitFinder {
 /// the redundant-hint diagnostics — runs in
 /// [`analyze_chunk_with_policy`].
 ///
-/// **Cross-pass sharing**: this layer is NOT shareable across the two
+/// **Cross-callsite sharing**: this layer is NOT shareable across the two
 /// `analyze_chunk` call sites (chunk-analysis composer vs `vendor::strip`)
 /// because they analyze different `Module` values. Vendor strip
 /// reparses the emitted chunk file from disk and then mutates it
@@ -78,7 +78,7 @@ impl Visit for TopLevelAwaitFinder {
 /// `ExportNamed` items and folds `ExportDecl` into `Stmt::Decl`, which
 /// changes the body view that `top_level_item_views` produces. So this
 /// split exists for code-shape clarity, not as a perf optimization.
-pub(crate) fn analyze_chunk_structural<'a, F>(
+pub fn analyze_chunk_structural<'a, F>(
     module: &'a Module,
     source_path: Option<&str>,
     mut line_range_for_span: F,
@@ -154,7 +154,7 @@ where
 /// per-statement purity classification, and the redundant-hint
 /// diagnostics. Folds the policy-independent facts in to produce the
 /// full [`ChunkFactAnalysis`].
-pub(crate) fn analyze_chunk_with_policy<F>(
+pub fn analyze_chunk_with_policy<F>(
     structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisHints,
     source_path: Option<&str>,

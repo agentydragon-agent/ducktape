@@ -42,7 +42,7 @@ use serde::Serialize;
 use serde_yaml::Value;
 use spec::ModulePath;
 
-use crate::binding::resolve_unambiguous;
+use crate::binding::{BindingLocation, resolve_unambiguous};
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// Args for `debundle bindings comment <sym> [...]`.
@@ -255,7 +255,16 @@ pub fn apply_binding_comment(
     // Same `<sym>` resolution (and refusal shape on zero/ambiguous
     // matches) as `bindings assign` / `bindings rename`.
     let hit = resolve_unambiguous(modules_root, sym)?;
-    let (file, member_index) = (hit.file, hit.member_index);
+    let member_index = match &hit.location {
+        BindingLocation::Member { member_index } => *member_index,
+        BindingLocation::SourceMatch { .. } => bail!(
+            "bindings comment does not support canonical source_matches[] bindings; `{sym}` \
+             resolved to {}#{}. Use annotations.<name>.comment instead.",
+            hit.file.display(),
+            hit.location.describe()
+        ),
+    };
+    let file = hit.file;
     let mut doc = read_yaml(&file)?;
     let current: Option<String> = current_member_comment(&doc, member_index)?;
 

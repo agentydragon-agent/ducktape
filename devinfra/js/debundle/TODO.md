@@ -111,6 +111,12 @@ parallel dispatch queue.
   milestones realized by the read-off work; repair-report, version-port, and
   bootstrap flows should consume the solver-backed validation/diagnostic
   contract rather than cloning selector resolution logic.
+- <plans/spec_yaml_language_cleanup.md> — **not started.** Atomic Ducktape +
+  gaffer-private migration to replace source-match members and binding groups
+  with `source_matches[]`, separate binding-keyed annotations, and remove
+  `identifiers`. Temporary old-shape parsing is allowed only for the migration
+  window; the final state removes inline member metadata, binding groups, and the
+  partial-`Member` schema reused by `chunk_renames`.
 - <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
   identifier bijection so one selector both locates a declaration and adopts
   readable names onto its params/locals/nested bindings.

@@ -23,8 +23,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatement, AnonymousStatementSelector, BindingGroup, BindingSourceKind, Member,
-    MemberSelectorSpec, ModulePath,
+    AnonymousStatement, AnonymousStatementSelector, BindingAnnotation, BindingGroup,
+    BindingSourceKind, Member, MemberSelectorSpec, ModulePath, SourceMatchClaim,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,6 +42,10 @@ pub struct ModuleFile {
     pub note: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
+    #[serde(default)]
+    pub source_matches: Vec<SourceMatchClaim>,
+    #[serde(default)]
+    pub annotations: BTreeMap<String, BindingAnnotation>,
     #[serde(default)]
     pub binding_groups: Vec<BindingGroup>,
     #[serde(default)]
@@ -65,6 +69,10 @@ pub struct ModuleClaims {
     /// resolution (the run pipeline's `resolve_source_match` /
     /// the edit gate's `resolve_member_selector_claims`).
     pub member_selectors: BTreeSet<AnonymousStatementSelector>,
+    /// Canonical grouped source-match entries. Expanded by
+    /// `source_match::source_match_claim_member_selectors` by consumers
+    /// that need per-binding selectors.
+    pub source_matches: Vec<SourceMatchClaim>,
     /// Raw `binding_groups:` entries — sugar for several member
     /// `source_match` selectors. Expanded by
     /// `source_match::binding_group_member_selectors` (the same
@@ -82,6 +90,7 @@ impl ModuleClaims {
         !self.bindings.is_empty()
             || !self.anonymous_selectors.is_empty()
             || !self.member_selectors.is_empty()
+            || !self.source_matches.is_empty()
             || !self.binding_groups.is_empty()
     }
 
@@ -89,6 +98,7 @@ impl ModuleClaims {
         self.bindings.extend(other.bindings);
         self.anonymous_selectors.extend(other.anonymous_selectors);
         self.member_selectors.extend(other.member_selectors);
+        self.source_matches.extend(other.source_matches);
         self.binding_groups.extend(other.binding_groups);
     }
 }
@@ -175,6 +185,7 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             }
         }
     }
+    claims.source_matches = module.source_matches;
     claims.binding_groups = module.binding_groups;
     for statement in module.anonymous_statements {
         claims.anonymous_selectors.insert(statement.selector()?);

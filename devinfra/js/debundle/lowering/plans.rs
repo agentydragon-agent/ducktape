@@ -24,6 +24,7 @@ pub(super) struct LogicalRequest {
 #[derive(Debug, Clone)]
 pub(super) struct AnonymousStatementRequest {
     pub(super) selector: spec::AnonymousStatementSelector,
+    pub(super) parsed_selector: source_match::ParsedSourceMatchSelector,
     /// Optional `comment:` text from the anonymous statement spec
     /// entry. `note:` is not emitted; it remains YAML scratch
     /// metadata.
@@ -70,6 +71,7 @@ pub(super) struct MemberRequest {
     pub(super) export_name: String,
     pub(super) binding_selector: Option<spec::BindingSelector>,
     pub(super) source_match: Option<spec::AnonymousStatementSelector>,
+    pub(super) source_match_parsed: Option<source_match::ParsedSourceMatchSelector>,
     /// The relational selector pinning this member's target, if any. Mutually
     /// exclusive with `binding`/`source_match`: a member carrying one has an empty
     /// `binding` until the global selector solver resolves the target. See
@@ -107,6 +109,9 @@ pub(super) struct MemberRequest {
     /// `// ...` block above the binding's owner statement in the
     /// generated module body. See [`spec::Member::comment`].
     pub(super) comment: Option<String>,
+    /// YAML-only note carried through request expansion for conflict checks
+    /// and diagnostics. It never emits into generated JS.
+    pub(super) note: Option<String>,
     /// Short spec-facing description of how this member claim was authored.
     /// Used only in diagnostics after source-match selectors have resolved to
     /// concrete source bindings.
@@ -134,28 +139,42 @@ impl MemberRequest {
     /// not ownership claims; binding patches routed through
     /// chunk_renames still do not force factorizer grouping.
     pub(super) fn collect_hints(&self, hints: &mut AnalysisHints) {
+        if self.binding.is_empty() {
+            return;
+        }
+        self.collect_hints_for_binding(hints, &self.binding);
+    }
+
+    pub(super) fn has_analysis_hints(&self) -> bool {
+        self.purity != MemberPurity::Default
+            || self.effect != MemberEffect::Default
+            || !self.pure_members.is_empty()
+            || !self.no_sync_callback_members.is_empty()
+    }
+
+    pub(super) fn collect_hints_for_binding(&self, hints: &mut AnalysisHints, binding: &str) {
         if self.purity == MemberPurity::Pure {
-            hints.declared_pure.insert(self.binding.clone());
+            hints.declared_pure.insert(binding.to_string());
         }
         if self.purity == MemberPurity::PureNew {
-            hints.declared_pure_new.insert(self.binding.clone());
+            hints.declared_pure_new.insert(binding.to_string());
         }
         if !self.pure_members.is_empty() {
             hints
                 .declared_pure_members
-                .entry(self.binding.clone())
+                .entry(binding.to_string())
                 .or_default()
                 .extend(self.pure_members.iter().cloned());
         }
         if !self.no_sync_callback_members.is_empty() {
             hints
                 .no_sync_callback_members
-                .entry(self.binding.clone())
+                .entry(binding.to_string())
                 .or_default()
                 .extend(self.no_sync_callback_members.iter().cloned());
         }
         if let Some(effect) = known_effect_from_member_effect(self.effect) {
-            hints.known_effects.insert(self.binding.clone(), effect);
+            hints.known_effects.insert(binding.to_string(), effect);
         }
     }
 }
@@ -219,15 +238,30 @@ pub(super) fn logical_requests_for_chunk(
     if let Some(by_target_path) = chunk_logical_modules {
         for (target_path, module) in by_target_path {
             let id = format!("{chunk_id}::{target_path}");
-            let members = build_members(&module.members, &module.binding_groups, &id)?;
+            let members = build_members(
+                &module.members,
+                &module.source_matches,
+                &module.binding_groups,
+                &module.annotations,
+                &id,
+            )?;
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
             let anonymous_statements = module
                 .anonymous_statements
                 .iter()
                 .map(|stmt| {
+                    let selector = stmt.selector()?;
+                    let parsed_selector = source_match::ParsedSourceMatchSelector::parse(
+                        &id,
+                        "source_match",
+                        format!("<anonymous source_match in {id}>"),
+                        &selector,
+                        "source_match",
+                    )?;
                     Ok(AnonymousStatementRequest {
-                        selector: stmt.selector()?,
+                        selector,
+                        parsed_selector,
                         comment: stmt.comment.clone(),
                     })
                 })
@@ -292,7 +326,9 @@ pub(super) fn logical_requests_for_chunk(
 
 pub(super) fn build_members(
     members: &[spec::Member],
+    source_matches: &[spec::SourceMatchClaim],
     binding_groups: &[spec::BindingGroup],
+    annotations: &BTreeMap<String, spec::BindingAnnotation>,
     request_id: &str,
 ) -> Result<Vec<MemberRequest>> {
     let mut requests = members
@@ -411,6 +447,18 @@ pub(super) fn build_members(
             // `source_match` with an explicit `target_binding` and a plain `binding`
             // get richer origins; every other (relational / bare source_match) form
             // is just its selector-kind label.
+            let source_match_parsed = source_match
+                .as_ref()
+                .map(|selector| {
+                    source_match::ParsedSourceMatchSelector::parse(
+                        request_id,
+                        "source_match",
+                        format!("<source_match selector in {request_id}>"),
+                        selector,
+                        "source_match",
+                    )
+                })
+                .transpose()?;
             let claim_origin = if relational.is_some() {
                 format!(
                     "members[].selector.{kind_label} as `{}`",
@@ -439,6 +487,7 @@ pub(super) fn build_members(
                 export_name,
                 binding_selector,
                 source_match,
+                source_match_parsed,
                 relational,
                 is_import_specifier,
                 purity: m.purity,
@@ -446,26 +495,68 @@ pub(super) fn build_members(
                 pure_members: m.pure_members.clone(),
                 no_sync_callback_members: m.no_sync_callback_members.clone(),
                 comment: m.comment.clone(),
+                note: m.note.clone(),
                 claim_origin,
             })
         })
         .collect::<Result<Vec<_>>>()?;
 
-    for group in binding_groups {
-        for expanded in source_match::binding_group_member_selectors(request_id, group)? {
-            let target_binding = expanded.selector.target_binding.clone();
+    for claim in source_matches {
+        for expanded in source_match::source_match_claim_member_selectors(request_id, claim)? {
+            let source_match::BindingGroupMemberSelector {
+                export_name,
+                selector,
+                parsed_selector,
+                comment,
+                note,
+            } = expanded;
+            let target_binding = selector.target_binding.clone();
             requests.push(MemberRequest {
                 binding: String::new(),
-                export_name: expanded.export_name,
+                export_name,
                 binding_selector: None,
-                source_match: Some(expanded.selector),
+                source_match: Some(selector),
+                source_match_parsed: Some(parsed_selector),
                 relational: None,
                 is_import_specifier: false,
                 purity: MemberPurity::Default,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
                 no_sync_callback_members: Vec::new(),
-                comment: expanded.comment,
+                comment,
+                note,
+                claim_origin: match target_binding {
+                    Some(target) => format!("source_matches[].bindings[`{target}`]"),
+                    None => "source_matches[]".to_string(),
+                },
+            });
+        }
+    }
+
+    for group in binding_groups {
+        for expanded in source_match::binding_group_member_selectors(request_id, group)? {
+            let source_match::BindingGroupMemberSelector {
+                export_name,
+                selector,
+                parsed_selector,
+                comment,
+                note,
+            } = expanded;
+            let target_binding = selector.target_binding.clone();
+            requests.push(MemberRequest {
+                binding: String::new(),
+                export_name,
+                binding_selector: None,
+                source_match: Some(selector),
+                source_match_parsed: Some(parsed_selector),
+                relational: None,
+                is_import_specifier: false,
+                purity: MemberPurity::Default,
+                effect: MemberEffect::Default,
+                pure_members: Vec::new(),
+                no_sync_callback_members: Vec::new(),
+                comment,
+                note,
                 claim_origin: match target_binding {
                     Some(target) => format!("binding_groups[].exports[`{target}`]"),
                     None => "binding_groups[]".to_string(),
@@ -474,7 +565,109 @@ pub(super) fn build_members(
         }
     }
 
+    apply_binding_annotations(request_id, &mut requests, annotations)?;
     Ok(requests)
+}
+
+fn apply_binding_annotations(
+    request_id: &str,
+    requests: &mut [MemberRequest],
+    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+) -> Result<()> {
+    let mut by_export_name = BTreeMap::<String, Vec<usize>>::new();
+    for (idx, request) in requests.iter().enumerate() {
+        by_export_name
+            .entry(request.export_name.clone())
+            .or_default()
+            .push(idx);
+    }
+
+    for (export_name, annotation) in annotations {
+        let Some(indices) = by_export_name.get(export_name) else {
+            bail!(
+                "logical_module {request_id}: annotations key `{export_name}` does not match \
+                 any member name or source_matches[].bindings name"
+            );
+        };
+        if indices.len() != 1 {
+            bail!(
+                "logical_module {request_id}: annotations key `{export_name}` is ambiguous \
+                 because that readable binding name is claimed {} times",
+                indices.len()
+            );
+        }
+        merge_binding_annotation(
+            request_id,
+            export_name,
+            &mut requests[indices[0]],
+            annotation,
+        )?;
+    }
+    Ok(())
+}
+
+fn merge_binding_annotation(
+    request_id: &str,
+    export_name: &str,
+    request: &mut MemberRequest,
+    annotation: &spec::BindingAnnotation,
+) -> Result<()> {
+    if annotation.purity != MemberPurity::Default {
+        if request.purity != MemberPurity::Default && request.purity != annotation.purity {
+            bail_annotation_conflict(request_id, export_name, "purity")?;
+        }
+        request.purity = annotation.purity;
+    }
+
+    if annotation.effect != MemberEffect::Default {
+        if request.effect != MemberEffect::Default && request.effect != annotation.effect {
+            bail_annotation_conflict(request_id, export_name, "effect")?;
+        }
+        request.effect = annotation.effect;
+    }
+
+    if !annotation.pure_members.is_empty() {
+        if !request.pure_members.is_empty() && request.pure_members != annotation.pure_members {
+            bail_annotation_conflict(request_id, export_name, "pure_members")?;
+        }
+        request.pure_members = annotation.pure_members.clone();
+    }
+
+    if !annotation.no_sync_callback_members.is_empty() {
+        if !request.no_sync_callback_members.is_empty()
+            && request.no_sync_callback_members != annotation.no_sync_callback_members
+        {
+            bail_annotation_conflict(request_id, export_name, "no_sync_callback_members")?;
+        }
+        request.no_sync_callback_members = annotation.no_sync_callback_members.clone();
+    }
+
+    if let Some(comment) = &annotation.comment {
+        if let Some(existing) = &request.comment
+            && existing != comment
+        {
+            bail_annotation_conflict(request_id, export_name, "comment")?;
+        }
+        request.comment = Some(comment.clone());
+    }
+
+    if let Some(note) = &annotation.note {
+        if let Some(existing) = &request.note
+            && existing != note
+        {
+            bail_annotation_conflict(request_id, export_name, "note")?;
+        }
+        request.note = Some(note.clone());
+    }
+
+    Ok(())
+}
+
+fn bail_annotation_conflict(request_id: &str, export_name: &str, field: &str) -> Result<()> {
+    bail!(
+        "logical_module {request_id}: annotations.{export_name}.{field} conflicts with \
+         metadata already declared on the member"
+    )
 }
 
 pub(super) fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffect> {

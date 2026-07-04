@@ -456,8 +456,7 @@ proptest! {
                     member_index,
                     export_name: format!("Export{member_index}"),
                     binding_name: binding.clone(),
-                    comment: None,
-                    note: None,
+                    annotation_fields: Vec::new(),
                 })
                 .collect();
 

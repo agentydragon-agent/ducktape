@@ -4,6 +4,7 @@
 //! emitted file tree.
 
 use debundle_e2e_support::*;
+use serde_json::json;
 
 // --- Behavior preservation -------------------------------------------------
 
@@ -168,6 +169,52 @@ export { a };
         &["const a = (globalThis.log"],
         &[],
     );
+}
+
+#[test]
+fn canonical_source_matches_annotations_materialize_comments_and_notes_stay_yaml_only() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function selected(value) {
+  return value.trim();
+}
+const output = selected("  hi  ");
+console.log(output);
+export { selected, output };
+"#,
+        vec![(
+            "format".to_string(),
+            json!({
+                "source_matches": [
+                    {
+                        "match": "function selected(value) {\n  return value.trim();\n}",
+                        "bindings": [
+                            { "local": "selected", "name": "FormatValue" },
+                        ],
+                    },
+                ],
+                "annotations": {
+                    "FormatValue": {
+                        "comment": "Formats display text.",
+                        "note": "YAML-only migration note.",
+                    },
+                },
+            }),
+        )],
+    ));
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["FormatValue"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/format.js",
+        &["// Formats display text."],
+        &["YAML-only migration note."],
+    );
+    assert_entry_output(&fixture, "hi\n");
 }
 
 #[test]

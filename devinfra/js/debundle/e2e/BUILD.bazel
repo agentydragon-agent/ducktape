@@ -58,7 +58,10 @@ rust_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     edition = "2024",
-    deps = [":support"],
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
 )
 
 rust_test(
@@ -1039,6 +1042,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":support",
+        "@crates//:serde_json",
     ],
 )
 

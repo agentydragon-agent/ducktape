@@ -25,7 +25,7 @@ pub(crate) use std::collections::{BTreeMap, BTreeSet};
 pub(crate) use anyhow::{Context, Result, bail};
 pub(crate) use spec::{
     AnonymousStatementSelector, BindingGroup, BindingGroupAdoptNames, BindingSourceKind,
-    SourceMatch, SourceMatchIdentifierMode,
+    SourceMatch, SourceMatchClaim, SourceMatchIdentifierMode,
 };
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
@@ -77,11 +77,15 @@ pub mod legacy_resolver {
 }
 
 // Public API for selector parsing, normalization, and diagnostics.
-pub use binding_resolution::{binding_group_member_selectors, source_match_declared_binding_names};
+pub use binding_resolution::{
+    binding_group_member_selectors, source_match_claim_member_selectors,
+    source_match_declared_binding_names,
+};
 pub use fact_near_miss::fact_source_match_body_debt;
 pub use identity::{selector_body_key, selector_key, source_match_preview};
 pub use parse_validate::parse_selector_module_with_capability_check;
 pub use types::{
-    BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch, ResolvedMemberBinding,
-    ResolvedMemberBindingGroup, SourceMatchBodyDebt, SourceMatchNearMiss,
+    BindingGroupMemberSelector, MemberBindingGroupMatch, MemberBindingMatch,
+    ParsedSourceMatchSelector, ResolvedMemberBinding, ResolvedMemberBindingGroup,
+    SourceMatchBodyDebt, SourceMatchNearMiss,
 };

@@ -380,7 +380,7 @@ export { present };
     assert!(
         rejected
             .stderr
-            .contains("binding_groups[].source_match for target bindings [left, right]"),
+            .contains("binding_groups.source_match for target bindings [left, right]"),
         "human diagnostics should report the unsupported group:\n{}",
         rejected.stderr
     );

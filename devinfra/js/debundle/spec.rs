@@ -679,6 +679,17 @@ pub enum WrapperShape {
 pub struct LogicalModule {
     #[serde(default)]
     pub members: Vec<Member>,
+    /// Compact source-backed ownership claims. Each entry describes one source
+    /// shape and names the selector-local bindings this module owns from that
+    /// shape. Semantic metadata for the claimed readable names lives in
+    /// [`LogicalModule::annotations`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_matches: Vec<SourceMatchClaim>,
+    /// Module-level semantic annotations keyed by the final readable binding
+    /// name. This keeps shared metadata out of repeated selector entries and
+    /// lets source-match binding claims stay focused on ownership.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub annotations: BTreeMap<String, BindingAnnotation>,
     /// Compact form for several bindings selected from the same source
     /// context, usually one multi-declarator statement. Each `exports` key is
     /// a selector-local binding name inside `source_match.match`; each value
@@ -781,6 +792,106 @@ pub struct BindingGroup {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct BindingAnnotation {
+    /// Spec-level purity annotation. Same contract as [`Member::purity`].
+    #[serde(default, skip_serializing_if = "is_default_member_purity")]
+    pub purity: MemberPurity,
+    /// Spec-level local-effect annotation. Same contract as [`Member::effect`].
+    #[serde(default, skip_serializing_if = "is_default_member_effect")]
+    pub effect: MemberEffect,
+    /// Property names whose member calls are author-asserted pure. Same
+    /// contract as [`Member::pure_members`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pure_members: Vec<String>,
+    /// Property names whose calls do not synchronously invoke callback
+    /// arguments. Same contract as [`Member::no_sync_callback_members`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub no_sync_callback_members: Vec<String>,
+    /// Optional human-readable comment emitted above the matched binding's
+    /// owner statement in generated JS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    /// Optional YAML-only note. Preserved by spec edits but never emitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SourceMatchClaim {
+    /// Identifier matching mode for this source-backed claim. Omitted means
+    /// alpha-equivalent identifier matching, matching [`SourceMatch`].
+    #[serde(
+        default = "default_source_match_identifier_mode",
+        skip_serializing_if = "is_default_source_match_identifier_mode",
+        deserialize_with = "deserialize_supported_source_match_identifier_mode"
+    )]
+    pub identifiers: SourceMatchIdentifierMode,
+    /// JS source pattern to match against one top-level source statement.
+    #[serde(rename = "match")]
+    pub match_source: String,
+    /// Selector-local bindings to claim from the matched source pattern.
+    /// String shorthand means `{ local: <name>, name: <name> }`; object entries
+    /// can override the final readable binding name with `name:`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<SourceMatchBinding>,
+    /// Optional YAML-only note about the selector shape as a whole. Per-binding
+    /// semantic notes live in [`LogicalModule::annotations`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl SourceMatchClaim {
+    pub fn source_match(&self) -> SourceMatch {
+        SourceMatch {
+            identifiers: self.identifiers,
+            target_binding: None,
+            match_source: self.match_source.clone(),
+        }
+    }
+
+    pub fn selector_for_local(&self, local: String) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            match_source: self.match_source.clone(),
+            identifiers: self.identifiers,
+            target_binding: Some(local),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(untagged)]
+pub enum SourceMatchBinding {
+    Local(String),
+    Detailed(SourceMatchBindingDetail),
+}
+
+impl SourceMatchBinding {
+    pub fn local(&self) -> &str {
+        match self {
+            Self::Local(local) => local,
+            Self::Detailed(detail) => &detail.local,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Local(local) => local,
+            Self::Detailed(detail) => detail.name.as_deref().unwrap_or(&detail.local),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SourceMatchBindingDetail {
+    pub local: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
 #[serde(untagged)]
 pub enum BindingGroupAdoptNames {
     #[default]
@@ -864,6 +975,21 @@ struct SourceMatchWire {
     match_source: String,
     #[serde(flatten)]
     unsupported_fields: BTreeMap<String, serde::de::IgnoredAny>,
+}
+
+fn deserialize_supported_source_match_identifier_mode<'de, D>(
+    deserializer: D,
+) -> Result<SourceMatchIdentifierMode, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match SourceMatchIdentifierMode::deserialize(deserializer)? {
+        SourceMatchIdentifierMode::AlphaAll => Ok(SourceMatchIdentifierMode::AlphaAll),
+        SourceMatchIdentifierMode::Exact => Err(serde::de::Error::custom(
+            "source_match identifiers: exact is no longer supported; omit `identifiers` \
+             or use `alpha_all`",
+        )),
+    }
 }
 
 impl<'de> Deserialize<'de> for SourceMatch {

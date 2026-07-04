@@ -1251,6 +1251,11 @@ fn expanded_member_selectors(
     js_ast::with_swc_globals(|| {
         let mut selectors = claims.member_selectors.clone();
         let request_id = module_path.to_string_lossy();
+        for claim in &claims.source_matches {
+            for expanded in source_match::source_match_claim_member_selectors(&request_id, claim)? {
+                selectors.insert(expanded.selector);
+            }
+        }
         for group in &claims.binding_groups {
             for expanded in source_match::binding_group_member_selectors(&request_id, group)? {
                 selectors.insert(expanded.selector);
@@ -1866,6 +1871,25 @@ mod tests {
 
     fn fixture() -> (TempDir, CommonArgs) {
         fixture_with_graph(graph_fixture())
+    }
+
+    #[test]
+    fn expanded_member_selectors_include_canonical_source_matches() {
+        let mut claims = spec_modules::ModuleClaims::default();
+        claims.source_matches.push(
+            serde_yaml::from_str(
+                r#"match: "const local = 1;"
+bindings: [local]
+"#,
+            )
+            .unwrap(),
+        );
+
+        let selectors = expanded_member_selectors(Path::new("ui/widget.yaml"), &claims).unwrap();
+        assert_eq!(selectors.len(), 1);
+        let selector = selectors.iter().next().unwrap();
+        assert_eq!(selector.target_binding.as_deref(), Some("local"));
+        assert_eq!(selector.match_source, "const local = 1;");
     }
 
     #[test]

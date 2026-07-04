@@ -7,7 +7,7 @@
 use super::super::ordinal::body_index_for_statement_ordinal;
 use super::*;
 use crate::plans::{AnonymousStatementRequest, RelationalSelector};
-use analysis::{OwnerId, StatementOrdinal};
+use analysis::{DepKind, OwnerId, StatementOrdinal};
 use anyhow::anyhow;
 
 const HUMAN_DIAGNOSTIC_REPORT_LIMIT: usize = 200;
@@ -66,7 +66,6 @@ use selector_ir_lowering::{
     MemberSelectorLoweringContext, MemberSelectorProgramBuilder, MemberSelectorSpecRef,
 };
 use selector_runtime::solve_global_selector_program;
-use source_match::legacy_resolver::SelectorResolver;
 
 impl From<&DuplicateClaimSite> for DuplicateClaimSiteReport {
     fn from(site: &DuplicateClaimSite) -> Self {
@@ -237,35 +236,99 @@ fn binding_selector_has_fact_candidate(
 fn selector_fact_store_for_chunk(
     program: &SelectorProgram,
     chunk_id: ChunkId,
-    owner_graph: &analysis::OwnerGraph,
+    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
     module: &swc_ecma_ast::Module,
     import_sources: &HashMap<String, String>,
 ) -> Result<SelectorFactStore> {
     let mut store = SelectorFactStore::default();
-    for node in owner_graph.iter_nodes() {
+    let binding_owner = structural_binding_owner(structural);
+    let statement_by_owner: HashMap<OwnerId, &analysis::facts::StructuralStatementFacts> =
+        structural
+            .per_statement
+            .iter()
+            .map(|statement| (OwnerId(statement.ordinal.0), statement))
+            .collect();
+    let target_is_hoisted = |id: &swc_ecma_ast::Id| -> bool {
+        binding_owner
+            .get(id)
+            .and_then(|owner| statement_by_owner.get(owner))
+            .is_some_and(|statement| statement.kind == analysis::StatementKind::FnDecl)
+    };
+
+    for statement in &structural.per_statement {
+        let owner = OwnerId(statement.ordinal.0);
         store.push(SelectorFact::Owner {
             chunk_id,
-            owner: node.id,
-            statement_ordinal: node.statement_ordinal,
-            statement_kind: node.kind.to_string(),
+            owner,
+            statement_ordinal: statement.ordinal,
+            statement_kind: statement.kind.to_string(),
         });
-        for binding in &node.declared {
+        for binding in &statement.declared {
             store.push(SelectorFact::DeclaredBinding {
                 chunk_id,
-                owner: node.id,
+                owner,
                 binding: binding.0.as_str().to_string(),
                 export_name: None,
             });
         }
     }
-    for edge in owner_graph.iter_edges() {
-        if let Some(binding) = edge.reason.binding() {
-            store.push(SelectorFact::OwnerReferencesBinding {
+
+    for statement in &structural.per_statement {
+        let owner = OwnerId(statement.ordinal.0);
+        for binding in &statement.reads.eager {
+            if !target_is_hoisted(binding) {
+                push_structural_selector_reference(
+                    &mut store,
+                    chunk_id,
+                    owner,
+                    binding,
+                    DepKind::EagerUse,
+                    &binding_owner,
+                );
+            }
+        }
+        for binding in &statement.reads.lazy {
+            push_structural_selector_reference(
+                &mut store,
                 chunk_id,
-                owner: edge.from,
-                binding: binding.0.as_str().to_string(),
-                edge_kind: edge.reason.kind().to_string(),
-            });
+                owner,
+                binding,
+                DepKind::LazyUse,
+                &binding_owner,
+            );
+        }
+        for binding in &statement.rebinds.eager {
+            push_structural_selector_reference(
+                &mut store,
+                chunk_id,
+                owner,
+                binding,
+                DepKind::EagerRebind,
+                &binding_owner,
+            );
+        }
+        for binding in &statement.rebinds.first_order_lazy {
+            push_structural_selector_reference(
+                &mut store,
+                chunk_id,
+                owner,
+                binding,
+                DepKind::LazyRebind,
+                &binding_owner,
+            );
+        }
+        for binding in &statement.rebinds.lazy {
+            if statement.rebinds.first_order_lazy.contains(binding) {
+                continue;
+            }
+            push_structural_selector_reference(
+                &mut store,
+                chunk_id,
+                owner,
+                binding,
+                DepKind::DeferredRebind,
+                &binding_owner,
+            );
         }
     }
 
@@ -335,6 +398,41 @@ fn selector_fact_store_for_chunk(
         }
     }
     Ok(store)
+}
+
+fn structural_binding_owner(
+    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
+) -> HashMap<swc_ecma_ast::Id, OwnerId> {
+    let mut binding_owner = HashMap::new();
+    for statement in &structural.per_statement {
+        let owner = OwnerId(statement.ordinal.0);
+        for binding in &statement.declared {
+            binding_owner.insert(binding.clone(), owner);
+        }
+    }
+    binding_owner
+}
+
+fn push_structural_selector_reference(
+    store: &mut SelectorFactStore,
+    chunk_id: ChunkId,
+    owner: OwnerId,
+    binding: &swc_ecma_ast::Id,
+    edge_kind: DepKind,
+    binding_owner: &HashMap<swc_ecma_ast::Id, OwnerId>,
+) {
+    let Some(target_owner) = binding_owner.get(binding) else {
+        return;
+    };
+    if owner == *target_owner {
+        return;
+    }
+    store.push(SelectorFact::OwnerReferencesBinding {
+        chunk_id,
+        owner,
+        binding: binding.0.as_str().to_string(),
+        edge_kind: edge_kind.to_string(),
+    });
 }
 
 fn selector_program_needs_ast_edb(program: &SelectorProgram) -> bool {
@@ -682,8 +780,20 @@ fn recommended_source_match_action(category: &str) -> &'static str {
 }
 
 fn source_match_selector_kind(claim_origin: &str) -> &'static str {
+    if claim_origin.starts_with("source_matches[]") {
+        "source_matches"
+    } else if claim_origin.starts_with("binding_groups[]") {
+        "binding_groups.source_match"
+    } else {
+        "members.source_match"
+    }
+}
+
+fn source_match_projection_kind(claim_origin: &str) -> &'static str {
     if claim_origin.starts_with("binding_groups[]") {
         "binding_groups.source_match"
+    } else if claim_origin.starts_with("source_matches[]") {
+        "source_matches"
     } else {
         "members.source_match"
     }
@@ -839,8 +949,10 @@ impl SourceMatchGroupCacheKey {
 #[derive(Debug, Clone)]
 struct SourceMatchGroupAssignment {
     selector: spec::AnonymousStatementSelector,
+    parsed_selector: source_match::ParsedSourceMatchSelector,
     exports_by_target: BTreeMap<String, String>,
     members_by_target: BTreeMap<String, usize>,
+    selector_kind: &'static str,
 }
 
 fn source_match_group_assignments(
@@ -870,9 +982,11 @@ fn source_match_group_assignments(
         }
         let mut exports_by_target = BTreeMap::new();
         let mut members_by_target = BTreeMap::new();
+        let mut selector_kind = None;
         let mut has_duplicate_target = false;
         for idx in &member_indices {
             let member = &request.members[*idx];
+            selector_kind.get_or_insert_with(|| source_match_projection_kind(&member.claim_origin));
             let target_binding = member
                 .source_match
                 .as_ref()
@@ -889,10 +1003,17 @@ fn source_match_group_assignments(
         if has_duplicate_target {
             continue;
         }
+        let parsed_selector = request.members[member_indices[0]]
+            .source_match_parsed
+            .as_ref()
+            .expect("grouped source_match member should carry parsed selector")
+            .with_target_binding(None);
         let assignment = SourceMatchGroupAssignment {
             selector,
+            parsed_selector,
             exports_by_target,
             members_by_target,
+            selector_kind: selector_kind.unwrap_or("members.source_match"),
         };
         for idx in member_indices {
             assignments.insert(idx, assignment.clone());
@@ -936,11 +1057,18 @@ fn binding_group_member_diagnostics(
         .map(|(target_binding, export_name)| {
             let mut selector = group.selector.clone();
             selector.target_binding = Some(target_binding.clone());
+            let claim_origin = match group.selector_kind {
+                "source_matches" => format!("source_matches[].bindings[`{target_binding}`]"),
+                "binding_groups.source_match" => {
+                    format!("binding_groups[].exports[`{target_binding}`]")
+                }
+                _ => group.selector_kind.to_string(),
+            };
             SourceMatchDiagnostic::from_selector(
                 &request.id,
                 &request.target_path,
                 export_name.clone(),
-                format!("binding_groups[].exports[`{target_binding}`]"),
+                claim_origin,
                 selector,
                 Vec::new(),
                 message.clone(),
@@ -950,38 +1078,39 @@ fn binding_group_member_diagnostics(
 }
 
 fn owner_by_body_index_and_binding(
-    owner_graph: &analysis::OwnerGraph,
+    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
     module: &swc_ecma_ast::Module,
 ) -> BTreeMap<(usize, String), OwnerId> {
     let mut owners = BTreeMap::new();
-    for node in owner_graph.iter_nodes() {
-        let Some(body_idx) =
-            body_index_for_statement_ordinal(&module.body, node.statement_ordinal.0)
+    for statement in &structural.per_statement {
+        let Some(body_idx) = body_index_for_statement_ordinal(&module.body, statement.ordinal.0)
         else {
             continue;
         };
-        for binding in &node.declared {
-            owners.insert((body_idx, binding.0.as_str().to_string()), node.id);
+        for binding in &statement.declared {
+            owners.insert(
+                (body_idx, binding.0.as_str().to_string()),
+                OwnerId(statement.ordinal.0),
+            );
         }
     }
     owners
 }
 
 fn anonymous_owner_by_body_index(
-    owner_graph: &analysis::OwnerGraph,
+    structural: &analysis::facts::StructuralChunkAnalysis<'_>,
     module: &swc_ecma_ast::Module,
 ) -> BTreeMap<usize, OwnerId> {
     let mut owners = BTreeMap::new();
-    for node in owner_graph.iter_nodes() {
-        if !node.declared.is_empty() {
+    for statement in &structural.per_statement {
+        if !statement.declared.is_empty() {
             continue;
         }
-        let Some(body_idx) =
-            body_index_for_statement_ordinal(&module.body, node.statement_ordinal.0)
+        let Some(body_idx) = body_index_for_statement_ordinal(&module.body, statement.ordinal.0)
         else {
             continue;
         };
-        owners.insert(body_idx, node.id);
+        owners.insert(body_idx, OwnerId(statement.ordinal.0));
     }
     owners
 }
@@ -1534,7 +1663,7 @@ impl ChunkPlanBuilder {
     pub(super) fn resolve_and_claim_global_selectors(
         &mut self,
         explicit_requests: &[LogicalRequest],
-        owner_graph: &analysis::OwnerGraph,
+        structural: &analysis::facts::StructuralChunkAnalysis<'_>,
         module: &swc_ecma_ast::Module,
         import_sources: &HashMap<String, String>,
         runtime_import_facts: &RuntimeImportFacts,
@@ -1626,8 +1755,8 @@ impl ChunkPlanBuilder {
             (has_pending_source_match || has_anonymous_statements).then(|| {
                 (
                     source_match::legacy_resolver::ChunkResolver::new(module),
-                    owner_by_body_index_and_binding(owner_graph, module),
-                    anonymous_owner_by_body_index(owner_graph, module),
+                    owner_by_body_index_and_binding(structural, module),
+                    anonymous_owner_by_body_index(structural, module),
                 )
             });
         for (request_index, request) in explicit_requests.iter().enumerate() {
@@ -1638,7 +1767,9 @@ impl ChunkPlanBuilder {
                 let mut reason_category = "projection_not_attempted";
                 let mut reason = "anonymous source_match projection was not attempted".to_string();
                 if let Some((resolver, _, owner_by_body_index)) = &source_match_projection {
-                    match resolver.anonymous_group_candidates(&request.id, &statement.selector) {
+                    match resolver
+                        .anonymous_group_candidates_parsed(&request.id, &statement.parsed_selector)
+                    {
                         Ok(candidates) => {
                             candidate_count = Some(candidates.len());
                             match projected_anonymous_statement_candidate_rows(
@@ -1701,10 +1832,10 @@ impl ChunkPlanBuilder {
                 if projected {
                     continue;
                 }
-                match builder.declare_native_anonymous_statement_target_in_module(
+                match builder.declare_native_anonymous_statement_target_in_module_parsed(
                     &request.id,
                     statement_index,
-                    &statement.selector,
+                    &statement.parsed_selector,
                 ) {
                     Ok(target) => {
                         builder.record_source_match_projection_event(
@@ -1765,9 +1896,9 @@ impl ChunkPlanBuilder {
             let mut projected_row_count = None;
             let reason_category;
             let reason;
-            match resolver.member_group_candidates(
+            match resolver.member_group_candidates_parsed(
                 logical_module,
-                &group.selector,
+                &group.parsed_selector,
                 &group.exports_by_target,
             ) {
                 Ok(candidates) => {
@@ -1788,7 +1919,7 @@ impl ChunkPlanBuilder {
                                 builder.record_source_match_projection_event(
                                     source_match_projection_event(
                                         logical_module,
-                                        "binding_groups.source_match",
+                                        group.selector_kind,
                                         None,
                                         group.exports_by_target.clone(),
                                         &group.selector,
@@ -1826,9 +1957,9 @@ impl ChunkPlanBuilder {
                     reason = source_match_projection_error_reason(reason_category, &error);
                 }
             }
-            if builder.try_lower_native_source_match_group(
+            if builder.try_lower_native_source_match_group_parsed(
                 logical_module,
-                &group.selector,
+                &group.parsed_selector,
                 &group.exports_by_target,
             )? {
                 declare_source_match_group_targets(
@@ -1840,7 +1971,7 @@ impl ChunkPlanBuilder {
                 )?;
                 builder.record_source_match_projection_event(source_match_projection_event(
                     logical_module,
-                    "binding_groups.source_match",
+                    group.selector_kind,
                     None,
                     group.exports_by_target.clone(),
                     &group.selector,
@@ -1860,7 +1991,7 @@ impl ChunkPlanBuilder {
                 .join(", ");
             builder.record_source_match_projection_event(source_match_projection_event(
                 logical_module,
-                "binding_groups.source_match",
+                group.selector_kind,
                 None,
                 group.exports_by_target.clone(),
                 &group.selector,
@@ -1874,10 +2005,11 @@ impl ChunkPlanBuilder {
                 projected_row_count,
             ));
             let message = format!(
-                "logical_module {}: binding_groups[].source_match for target bindings [{}] cannot \
+                "logical_module {}: {} for target bindings [{}] cannot \
                  be lowered into native selector IR after projection failed ({reason_category}: \
                  {reason}; candidates: {}; projected rows: {}). Selector:\n{}",
                 request.id,
+                group.selector_kind,
                 target_bindings,
                 candidate_count
                     .map(|count| count.to_string())
@@ -1894,7 +2026,7 @@ impl ChunkPlanBuilder {
             }
             return Err(
                 selector_ir_lowering::SelectorIrLoweringError::UnsupportedSourceMatch {
-                    selector_kind: "binding_group.source_match",
+                    selector_kind: group.selector_kind,
                     reason: format!(
                         "selector shape is not yet supported by native selector IR in \
                      logical_module {logical_module} for target bindings [{target_bindings}] after \
@@ -1915,11 +2047,11 @@ impl ChunkPlanBuilder {
             let request = &explicit_requests[request_index];
             let member = &request.members[member_index];
             let mut projection_event = None;
-            if let Some(selector) = &member.source_match {
+            if let Some(parsed_selector) = &member.source_match_parsed {
                 let Some((resolver, owner_by_binding, _)) = &source_match_projection else {
                     continue;
                 };
-                match resolver.member_candidates(&request.id, selector) {
+                match resolver.member_candidates_parsed(&request.id, parsed_selector) {
                     Ok(candidates) => {
                         let candidate_len = candidates.len();
                         let candidate_count = Some(candidate_len);
@@ -1930,10 +2062,10 @@ impl ChunkPlanBuilder {
                                     builder.record_source_match_projection_event(
                                         source_match_projection_event(
                                             &request.id,
-                                            "members.source_match",
+                                            source_match_projection_kind(&member.claim_origin),
                                             Some(&member.export_name),
                                             BTreeMap::new(),
-                                            selector,
+                                            parsed_selector.selector(),
                                             SelectorSourceMatchProjectionOutcome::Projected,
                                             "projected_candidates",
                                             format!(
@@ -1984,13 +2116,21 @@ impl ChunkPlanBuilder {
                     }
                 }
             }
-            let selector = member_selector_ref_for_global_solver(member)
-                .expect("pending selector constraint should still be lowerable");
-            builder.lower_member_constraints_in_module_ref(
-                &request.id,
-                &member.export_name,
-                selector,
-            )?;
+            if let Some(parsed_selector) = &member.source_match_parsed {
+                builder.lower_source_match_constraints_in_module_parsed(
+                    &request.id,
+                    &member.export_name,
+                    parsed_selector,
+                )?;
+            } else {
+                let selector = member_selector_ref_for_global_solver(member)
+                    .expect("pending selector constraint should still be lowerable");
+                builder.lower_member_constraints_in_module_ref(
+                    &request.id,
+                    &member.export_name,
+                    selector,
+                )?;
+            }
             if let Some(selector) = &member.source_match {
                 let (reason_category, reason, candidate_count, projected_row_count) =
                     projection_event.unwrap_or((
@@ -2001,7 +2141,7 @@ impl ChunkPlanBuilder {
                     ));
                 builder.record_source_match_projection_event(source_match_projection_event(
                     &request.id,
-                    "members.source_match",
+                    source_match_projection_kind(&member.claim_origin),
                     Some(&member.export_name),
                     BTreeMap::new(),
                     selector,
@@ -2020,7 +2160,7 @@ impl ChunkPlanBuilder {
         let facts = selector_fact_store_for_chunk(
             &program,
             chunk_id_interned,
-            owner_graph,
+            structural,
             module,
             import_sources,
         )?;
@@ -2487,6 +2627,40 @@ impl ChunkPlanBuilder {
                 .insert(binding.to_string(), comment.clone());
         }
         Ok(())
+    }
+
+    pub(super) fn resolved_binding_for_member(
+        &self,
+        request_index: usize,
+        member: &MemberRequest,
+    ) -> Option<String> {
+        if !member.binding.is_empty() {
+            return Some(member.binding.clone());
+        }
+        let plan = self.module_plans.get(request_index)?;
+        if let Some((binding, _)) = plan
+            .bindings
+            .iter()
+            .find(|(_, export_name)| *export_name == &member.export_name)
+        {
+            return Some(binding.clone());
+        }
+        self.bindings_catalogue
+            .iter()
+            .find_map(|(binding, kind)| match kind {
+                BindingKind::Imported {
+                    re_exporter: ModuleId(LogicalModuleIndex(index)),
+                    public_name,
+                    ..
+                } if *index == request_index && public_name.as_ref() == member.export_name => {
+                    Some(binding.0.as_str().to_string())
+                }
+                _ => None,
+            })
+    }
+
+    pub(super) fn keep_going(&self) -> bool {
+        self.keep_going
     }
 
     /// Drop the name-keyed catalogue scratch index now that the

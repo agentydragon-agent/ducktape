@@ -586,6 +586,51 @@ export { A, B, C, pureWrap, impureWrap };
 }
 
 #[test]
+fn canonical_source_match_purity_annotation_contributes_to_analysis_hints() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function pureWrap(x) { return { val: x }; }
+function impureWrap(x) { globalThis.lastWrap = x; return { val: x }; }
+const A = pureWrap("a");
+const B = pureWrap("b");
+const C = pureWrap("c");
+console.log(A.val, B.val, C.val);
+export { A, B, C, pureWrap, impureWrap };
+"#,
+        vec![
+            (
+                "mod_a".to_string(),
+                json!({
+                    "members": [
+                        { "name": "A", "selector": { "binding": { "name": "A" } } },
+                        { "name": "C", "selector": { "binding": { "name": "C" } } },
+                    ],
+                    "source_matches": [
+                        {
+                            "match": "function pureWrap(x) { return { val: x }; }",
+                            "bindings": ["pureWrap"],
+                        },
+                    ],
+                    "annotations": {
+                        "pureWrap": {
+                            "purity": "pure",
+                        },
+                    },
+                }),
+            ),
+            (
+                "mod_b".to_string(),
+                json!({
+                    "members": [
+                        { "name": "B", "selector": { "binding": { "name": "B" } } },
+                    ],
+                }),
+            ),
+        ],
+    ));
+    assert_entry_output(&fixture, "a b c\n");
+}
+
+#[test]
 fn declared_pure_annotation_applies_only_to_annotated_member_negative() {
     // Same chunk shape as the `..._positive` companion (two
     // HOFs, `pureWrap` annotated pure, `impureWrap` not), but

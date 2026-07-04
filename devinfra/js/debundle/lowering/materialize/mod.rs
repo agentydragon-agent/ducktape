@@ -212,8 +212,64 @@ pub(super) fn materialize_logical_chunk(
         .get(chunk_id)
         .copied()
         .unwrap_or_default();
+    let line_index = runtime_ast.line_index();
+    // The structural half is hint-free. Selector resolution runs over this
+    // source-level fact layer so semantic annotations can be projected to
+    // concrete bindings before the final, hint-sensitive owner graph is built.
+    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "start");
+    let structural_analysis = analysis::facts::analyze_chunk_structural(
+        &runtime_ast.module,
+        Some(&source_path),
+        |span| line_index.line_range_for_span(span),
+    );
+    emit_debundle_progress(chunk_id, "analyze_chunk_structural", "end");
+    // A3 admission resolver: where does a dynamic-import specifier in
+    // this chunk's entry land? Same artifact resolution the specifier
+    // rewriter uses; `SameChunk` marks a debundled internal module.
+    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
+        .resolve_runtime_import_reference(
+            specifier,
+            chunk_id_interned,
+            &target_file,
+            &artifact.chunk_table,
+        ) {
+        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
+            DynamicImportTarget::SameChunk
+        }
+        Some(_) => DynamicImportTarget::OtherChunk,
+        None => DynamicImportTarget::External,
+    };
+    // Global selector resolution: `add_explicit_request` left deferred selector
+    // members unclaimed. Compile binding anchors, source_match constraints, and
+    // relational selectors into one IR program and solve over hint-free
+    // structural facts plus chunk AST relation facts.
+    let import_sources: HashMap<String, String> = runtime_import_facts
+        .iter_local_sources()
+        .map(|(local, src)| (local.to_string(), src.to_string()))
+        .collect();
+    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
+    let result = builder.resolve_and_claim_global_selectors(
+        &explicit_requests,
+        &structural_analysis,
+        &runtime_ast.module,
+        &import_sources,
+        &runtime_import_facts,
+        &mut imported_binding_resolver,
+        &mut imported_from_by_src,
+        chunk_top_level_mark,
+        chunk_id,
+        &target_file,
+        chunk_id_interned,
+        &declaration_by_name,
+    );
+    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
+    result?;
+    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
+    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
+    drop(imported_binding_resolver);
     let analysis_hints: AnalysisHints = {
-        let mut hints = collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id));
+        let mut hints =
+            collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id), &builder)?;
         hints.imported_purities = cross_module_purities
             .bindings
             .get(chunk_id)
@@ -242,29 +298,13 @@ pub(super) fn materialize_logical_chunk(
         hints.trusted_dataflow_summaries = owner_graph_options.trusted_dataflow_summaries;
         hints
     };
-    let line_index = runtime_ast.line_index();
-    // Chunk analysis: spec-independent facts, owner graph, and structural
+    // Chunk analysis: hint-sensitive facts, owner graph, and structural
     // atomic units. See `stage_one/mod.rs` for the current implementation.
-    // A3 admission resolver: where does a dynamic-import specifier in
-    // this chunk's entry land? Same artifact resolution the specifier
-    // rewriter uses; `SameChunk` marks a debundled internal module.
-    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
-        .resolve_runtime_import_reference(
-            specifier,
-            chunk_id_interned,
-            &target_file,
-            &artifact.chunk_table,
-        ) {
-        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
-            DynamicImportTarget::SameChunk
-        }
-        Some(_) => DynamicImportTarget::OtherChunk,
-        None => DynamicImportTarget::External,
-    };
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let chunk_analysis = compute_chunk_analysis(
+    let chunk_analysis = compute_chunk_analysis_from_structural(
         chunk_id,
         &runtime_ast.module,
+        structural_analysis,
         &analysis_hints,
         Some(&source_path),
         |span| line_index.line_range_for_span(span),
@@ -276,34 +316,6 @@ pub(super) fn materialize_logical_chunk(
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = chunk_analysis;
-    // Global selector resolution: `add_explicit_request` left deferred selector
-    // members unclaimed. Compile binding anchors, source_match constraints, and
-    // relational selectors into one IR program and solve over the owner graph +
-    // chunk AST relation facts.
-    let import_sources: HashMap<String, String> = runtime_import_facts
-        .iter_local_sources()
-        .map(|(local, src)| (local.to_string(), src.to_string()))
-        .collect();
-    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "start");
-    let result = builder.resolve_and_claim_global_selectors(
-        &explicit_requests,
-        &precomputed.owner_graph,
-        &runtime_ast.module,
-        &import_sources,
-        &runtime_import_facts,
-        &mut imported_binding_resolver,
-        &mut imported_from_by_src,
-        chunk_top_level_mark,
-        chunk_id,
-        &target_file,
-        chunk_id_interned,
-        &declaration_by_name,
-    );
-    emit_debundle_progress(chunk_id, "resolve_global_selector_members", "end");
-    result?;
-    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
-    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
-    drop(imported_binding_resolver);
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
@@ -568,21 +580,48 @@ fn project_factorization_modules_with_sentinel(
 fn collect_analysis_hints(
     explicit_requests: &[LogicalRequest],
     chunk_renames: Option<&ChunkRenames>,
-) -> AnalysisHints {
+    builder: &ChunkPlanBuilder,
+) -> Result<AnalysisHints> {
     let mut hints = AnalysisHints::default();
-    for req in explicit_requests {
+    for (request_index, req) in explicit_requests.iter().enumerate() {
         for m in &req.members {
-            m.collect_hints(&mut hints);
+            collect_member_analysis_hints(request_index, req, m, builder, &mut hints)?;
         }
     }
     if let Some(cr) = chunk_renames {
-        for m in super::plans::build_members(&cr.members, &[], "<chunk_renames>")
-            .expect("chunk_renames members must use binding selectors")
+        for m in
+            super::plans::build_members(&cr.members, &[], &[], &BTreeMap::new(), "<chunk_renames>")
+                .expect("chunk_renames members must use binding selectors")
         {
             m.collect_hints(&mut hints);
         }
     }
-    hints
+    Ok(hints)
+}
+
+fn collect_member_analysis_hints(
+    request_index: usize,
+    request: &LogicalRequest,
+    member: &MemberRequest,
+    builder: &ChunkPlanBuilder,
+    hints: &mut AnalysisHints,
+) -> Result<()> {
+    if !member.has_analysis_hints() {
+        return Ok(());
+    }
+    if let Some(binding) = builder.resolved_binding_for_member(request_index, member) {
+        member.collect_hints_for_binding(hints, &binding);
+        return Ok(());
+    }
+    if builder.keep_going() {
+        return Ok(());
+    }
+    bail!(
+        "logical_module {}: semantic annotations on selector member `{}` could not be applied \
+         because selector resolution did not produce a concrete binding",
+        request.id,
+        member.export_name,
+    )
 }
 
 /// Write per-chunk validation reports (owner graph, atomic-unit

@@ -23,6 +23,7 @@
 //! emitted tree runs under Node with decoration semantics intact.
 
 use debundle_e2e_support::*;
+use serde_json::json;
 
 /// **The decorate-helper copy, end to end.** A `__decorate`-style helper (here
 /// `d0`) reads the `Object.getOwnPropertyDescriptor` / `Object.defineProperty`
@@ -87,6 +88,72 @@ export { C };
         &[],
     );
     // The decorator ran at module-init and appended "!" to the method value.
+    assert_entry_output(&fixture, "hi!\n");
+}
+
+#[test]
+fn makes_decorate_call_annotation_is_applied_after_selector_resolution() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var g0 = Object.getOwnPropertyDescriptor;
+var p0 = Object.defineProperty;
+var d0 = (decorators, target, key) => {
+  const desc = g0(target, key);
+  for (const decorator of decorators) decorator(target, key, desc);
+  p0(target, key, desc);
+};
+const tag = (target, key, desc) => {
+  const original = desc.value;
+  desc.value = function () { return original.call(this) + "!"; };
+};
+class C {
+  greet() { return "hi"; }
+}
+d0([tag], C.prototype, "greet", 1);
+console.log(new C().greet());
+export { C };
+"#,
+        vec![
+            logical_module_with_anon(
+                "model",
+                &[Member::source_alpha(
+                    "DecoratedClass",
+                    r#"class C {
+  greet() {
+    STMT_LIST;
+  }
+}"#,
+                )],
+                &["d0([tag], C.prototype, \"greet\", 1);"],
+            ),
+            (
+                "decorate_helper".to_string(),
+                json!({
+                    "members": [
+                        {
+                            "name": "applyDecorators",
+                            "selector": {
+                                "makes_decorate_call": {
+                                    "class": "DecoratedClass"
+                                }
+                            }
+                        }
+                    ],
+                    "annotations": {
+                        "applyDecorators": {
+                            "effect": "typescript_decorate_helper"
+                        }
+                    }
+                }),
+            ),
+        ],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/decorate_helper.js",
+        &["source bindings: d0", "applyDecorators"],
+        &[],
+    );
     assert_entry_output(&fixture, "hi!\n");
 }
 

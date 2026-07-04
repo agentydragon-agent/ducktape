@@ -540,18 +540,27 @@ fn member_matches_declarator_hole(
 /// `ANYTHING` hole in an object property *key* errors here before any match is
 /// attempted, so the diagnostic names the bad construct rather than a generic
 /// "did not match" (mirrors the deleted matcher's selector capability gate).
+fn parse_source_match_selector(
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+) -> Result<ParsedSourceMatchSelector> {
+    ParsedSourceMatchSelector::parse(
+        request_id,
+        "source_match",
+        format!("<datalog needle in {request_id}>"),
+        selector,
+        "source_match",
+    )
+}
+
+#[cfg(test)]
 fn parse_needles(
     request_id: &str,
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<ModuleItem>> {
-    Ok(parse_selector_module_with_capability_check(
-        request_id,
-        "source_match",
-        format!("<datalog needle in {request_id}>"),
-        &selector.match_source,
-        "source_match",
-    )?
-    .body)
+    Ok(parse_source_match_selector(request_id, selector)?
+        .body()
+        .to_vec())
 }
 
 /// Collect every multi-statement member match whose target item is a
@@ -986,16 +995,16 @@ fn member_matches_single_statement(
 }
 
 impl ChunkResolver<'_> {
-    fn collect_member_candidates(
+    fn collect_member_candidates_parsed(
         &self,
         request_id: &str,
-        selector: &AnonymousStatementSelector,
+        export_name: &str,
+        parsed: &ParsedSourceMatchSelector,
     ) -> Result<Vec<MemberBindingMatch>> {
-        // Diagnostics-only: the matcher free fn takes no export name either.
-        let export_name = "candidate";
-        let needles = parse_needles(request_id, selector)?;
-        let [needle] = needles.as_slice() else {
-            return member_matches_multi(self, &needles, request_id, selector);
+        let selector = parsed.selector();
+        let needles = parsed.body();
+        let [needle] = needles else {
+            return member_matches_multi(self, needles, request_id, selector);
         };
         if selector_var_decl_has_declarator_holes(needle) {
             return member_matches_declarator_hole(self, needle, request_id, export_name, selector);
@@ -1016,7 +1025,17 @@ impl ChunkResolver<'_> {
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<MemberBindingMatch>> {
-        self.collect_member_candidates(request_id, selector)
+        let parsed = parse_source_match_selector(request_id, selector)?;
+        self.member_candidates_parsed(request_id, &parsed)
+    }
+
+    pub fn member_candidates_parsed(
+        &self,
+        request_id: &str,
+        parsed: &ParsedSourceMatchSelector,
+    ) -> Result<Vec<MemberBindingMatch>> {
+        // Diagnostics-only: the matcher free fn takes no export name either.
+        self.collect_member_candidates_parsed(request_id, "candidate", parsed)
     }
 
     /// Candidate top-level body-index groups for an anonymous statement selector.
@@ -1030,23 +1049,33 @@ impl ChunkResolver<'_> {
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>> {
-        self.resolve_anonymous_groups(request_id, selector)
+        let parsed = parse_source_match_selector(request_id, selector)?;
+        self.anonymous_group_candidates_parsed(request_id, &parsed)
     }
 
-    fn member_group_candidates_impl(
+    pub fn anonymous_group_candidates_parsed(
         &self,
         request_id: &str,
-        selector: &AnonymousStatementSelector,
+        parsed: &ParsedSourceMatchSelector,
+    ) -> Result<Vec<Vec<usize>>> {
+        self.resolve_anonymous_groups_parsed(request_id, parsed)
+    }
+
+    fn member_group_candidates_impl_parsed(
+        &self,
+        request_id: &str,
+        parsed: &ParsedSourceMatchSelector,
         exports_by_target: &BTreeMap<String, String>,
     ) -> Result<Vec<MemberBindingGroupMatch>> {
+        let selector = parsed.selector();
         if selector.target_binding.is_some() {
             bail!(
                 "datalog resolver: binding-group selector for {request_id} unexpectedly has \
                  target_binding set"
             );
         }
-        let needles = parse_needles(request_id, selector)?;
-        let [first, ..] = needles.as_slice() else {
+        let needles = parsed.body();
+        let [first, ..] = needles else {
             bail!(
                 "logical_module {request_id}: binding_groups[].source_match parsed to zero \
                  statements"
@@ -1072,7 +1101,16 @@ impl ChunkResolver<'_> {
                 exports_by_target,
             );
         }
-        group_matches_general(self, &needles, request_id, selector, exports_by_target)
+        group_matches_general(self, needles, request_id, selector, exports_by_target)
+    }
+
+    pub fn member_group_candidates_parsed(
+        &self,
+        request_id: &str,
+        parsed: &ParsedSourceMatchSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<Vec<MemberBindingGroupMatch>> {
+        self.member_group_candidates_impl_parsed(request_id, parsed, exports_by_target)
     }
 
     fn collapse_member_match(
@@ -1120,24 +1158,8 @@ impl SelectorResolver for ChunkResolver<'_> {
         selector: &AnonymousStatementSelector,
         selector_label: &'static str,
     ) -> Result<ResolvedMemberBinding> {
-        let needles = parse_needles(request_id, selector)?;
-        let matches = match needles.as_slice() {
-            [needle] if selector_var_decl_has_declarator_holes(needle) => {
-                // Declarator-hole var-decls need alignment-aware extraction: a
-                // DECLARATORS run hole absorbs declarators, so the owner's binding
-                // index no longer lines up with the needle's. Resolve via the
-                // greedy-leftmost declarator alignment.
-                member_matches_declarator_hole(self, needle, request_id, export_name, selector)
-            }
-            // A single-declarator var-decl resolves at declarator granularity (so a
-            // match inside a multi-declarator owner is counted).
-            [needle] if selector_single_var_declarator(needle).is_some() => {
-                member_matches_var_declarator(self, needle, request_id, export_name, selector)
-            }
-            [needle] => member_matches_single_statement(self, needle, request_id, selector),
-            _ => member_matches_multi(self, &needles, request_id, selector),
-        };
-        let matches = matches?;
+        let parsed = parse_source_match_selector(request_id, selector)?;
+        let matches = self.collect_member_candidates_parsed(request_id, export_name, &parsed)?;
         self.collapse_member_match(matches, request_id, export_name, selector, selector_label)
     }
 
@@ -1147,7 +1169,8 @@ impl SelectorResolver for ChunkResolver<'_> {
         _export_name: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<MemberBindingMatch>> {
-        self.collect_member_candidates(request_id, selector)
+        let parsed = parse_source_match_selector(request_id, selector)?;
+        self.member_candidates_parsed(request_id, &parsed)
     }
 
     fn member_group_candidates(
@@ -1156,7 +1179,8 @@ impl SelectorResolver for ChunkResolver<'_> {
         selector: &AnonymousStatementSelector,
         exports_by_target: &BTreeMap<String, String>,
     ) -> Result<Vec<MemberBindingGroupMatch>> {
-        self.member_group_candidates_impl(request_id, selector, exports_by_target)
+        let parsed = parse_source_match_selector(request_id, selector)?;
+        self.member_group_candidates_parsed(request_id, &parsed, exports_by_target)
     }
 
     fn resolve_member_group(
@@ -1171,41 +1195,9 @@ impl SelectorResolver for ChunkResolver<'_> {
                  target_binding set"
             );
         }
-        let needles = parse_needles(request_id, selector)?;
-        let [first, ..] = needles.as_slice() else {
-            bail!(
-                "logical_module {request_id}: binding_groups[].source_match parsed to zero \
-                 statements"
-            );
-        };
-        // Branch order: single-declarator before declarator-holes (a lone hole
-        // declarator is single-declarator too), then the general sequence path.
-        if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
-            return one_group_match(
-                group_matches_single_declarator(
-                    self,
-                    first,
-                    request_id,
-                    selector,
-                    exports_by_target,
-                )?,
-                request_id,
-            );
-        }
-        if needles.len() == 1 && selector_var_decl_has_declarator_holes(first) {
-            return one_group_match(
-                group_matches_declarator_holes(
-                    self,
-                    first,
-                    request_id,
-                    selector,
-                    exports_by_target,
-                )?,
-                request_id,
-            );
-        }
+        let parsed = parse_source_match_selector(request_id, selector)?;
         one_group_match(
-            group_matches_general(self, &needles, request_id, selector, exports_by_target)?,
+            self.member_group_candidates_impl_parsed(request_id, &parsed, exports_by_target)?,
             request_id,
         )
     }
@@ -1215,9 +1207,21 @@ impl SelectorResolver for ChunkResolver<'_> {
         request_id: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<Vec<Vec<usize>>> {
-        let needles = parse_needles(request_id, selector)?;
-        anonymous_selector_statement_indices(request_id, selector, &needles)?;
-        let [needle] = needles.as_slice() else {
+        let parsed = parse_source_match_selector(request_id, selector)?;
+        self.resolve_anonymous_groups_parsed(request_id, &parsed)
+    }
+}
+
+impl ChunkResolver<'_> {
+    fn resolve_anonymous_groups_parsed(
+        &self,
+        request_id: &str,
+        parsed: &ParsedSourceMatchSelector,
+    ) -> Result<Vec<Vec<usize>>> {
+        let selector = parsed.selector();
+        let needles = parsed.body();
+        anonymous_selector_statement_indices(request_id, selector, needles)?;
+        let [needle] = needles else {
             unreachable!("anonymous selector validation requires one parsed statement")
         };
         let needle_facts = needle_item_facts(needle, selector)

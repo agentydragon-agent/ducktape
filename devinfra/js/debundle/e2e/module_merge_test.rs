@@ -118,6 +118,33 @@ fn duplicate_member_name_across_sources_errors_and_keeps_sources() {
 }
 
 #[test]
+fn duplicate_member_name_between_member_and_source_match_binding_errors() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+
+    write_file(
+        root,
+        "target.yaml",
+        "members:\n  - name: Widget\n    selector: { binding: { name: minifiedWidget } }\n",
+    );
+    write_file(
+        root,
+        "src.yaml",
+        "source_matches:\n  - match: 'const selected = makeWidget();'\n    bindings:\n      - local: selected\n        name: Widget\n",
+    );
+
+    let err = merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")])
+        .expect_err("collision must error");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("duplicate member name \"Widget\""),
+        "msg={msg}"
+    );
+
+    assert!(root.join("src.yaml").exists());
+}
+
+#[test]
 fn modules_merge_new_subcommand_path_works_through_binary() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();

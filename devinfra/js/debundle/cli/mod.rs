@@ -231,8 +231,10 @@ pub enum SelectorCodemodRewriteArg {
     SingleTargetBinding,
     /// Replace anonymous typed source_match holes with universal ANYTHING holes.
     AnythingHoles,
-    /// Convert name-only binding members to source_match / binding_groups selectors.
+    /// Convert name-only binding members to source_matches selectors.
     NameBindingToSourceMatch,
+    /// Migrate legacy source_match members and binding_groups to source_matches / annotations.
+    MigrateToSourceMatches,
 }
 
 impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
@@ -241,6 +243,7 @@ impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
             SelectorCodemodRewriteArg::SingleTargetBinding => Self::SingleTargetBinding,
             SelectorCodemodRewriteArg::AnythingHoles => Self::AnythingHoles,
             SelectorCodemodRewriteArg::NameBindingToSourceMatch => Self::NameBindingToSourceMatch,
+            SelectorCodemodRewriteArg::MigrateToSourceMatches => Self::MigrateToSourceMatches,
         }
     }
 }
@@ -1139,19 +1142,28 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
         let module = read_module_file(&file)?;
         let path = module_path_from_file(&file, &args.modules_root);
         let residual = is_residual_module_path(&path);
+        let source_match_binding_count = module
+            .source_matches
+            .iter()
+            .map(|claim| claim.bindings.len())
+            .sum::<usize>();
+        let member_count = module.members.len() + source_match_binding_count;
+        let claim_count = member_count + module.source_matches.len() + module.binding_groups.len();
         let entry = ModuleListEntry {
             path,
-            member_count: module.members.len(),
+            member_count,
             anonymous_statement_count: module.anonymous_statements.len(),
             residual,
             has_comment: module.comment.is_some(),
         };
-        // `--empty` matches the `modules delete` definition: no
-        // members AND no anonymous_statements. A module that carries
-        // anonymous statements is not deletable-without-`--force`
-        // and isn't empty in any meaningful sense — its rebuild
-        // side-effects are still part of the spec.
-        let is_truly_empty = entry.member_count == 0 && entry.anonymous_statement_count == 0;
+        // `--empty` matches the `modules delete` definition: no claims,
+        // annotations, or anonymous statements. A module that carries
+        // anonymous statements is not deletable-without-`--force` and isn't
+        // empty in any meaningful sense — its rebuild side-effects are still
+        // part of the spec.
+        let is_truly_empty = claim_count == 0
+            && module.annotations.is_empty()
+            && entry.anonymous_statement_count == 0;
         let is_auto_deletable = is_truly_empty && !entry.has_comment;
         let keep = (!args.empty || is_truly_empty)
             && (!args.residual || entry.residual)

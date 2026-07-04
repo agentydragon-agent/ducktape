@@ -60,7 +60,9 @@ use swc_ecma_ast::Module;
 
 use analysis::AnalysisHints;
 use analysis::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
-use analysis::facts::{ChunkFactAnalysis, analyze_chunk};
+use analysis::facts::{
+    ChunkFactAnalysis, StructuralChunkAnalysis, analyze_chunk_structural, analyze_chunk_with_policy,
+};
 use analysis::graph::OwnerGraphOptions;
 use analysis::purity::{RedundantPureMemberReason, RedundantPurityReason};
 
@@ -96,6 +98,36 @@ pub fn compute_chunk_analysis<F>(
     module: &Module,
     hints: &AnalysisHints,
     source_path: Option<&str>,
+    mut line_range_for_span: F,
+    owner_graph_options: OwnerGraphOptions,
+    resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
+) -> Result<ChunkAnalysis>
+where
+    F: FnMut(Span) -> Option<(usize, usize)>,
+{
+    let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
+    compute_chunk_analysis_from_structural(
+        chunk_id,
+        module,
+        structural,
+        hints,
+        source_path,
+        line_range_for_span,
+        owner_graph_options,
+        resolve_dynamic_import,
+    )
+}
+
+/// Finish chunk analysis from a precomputed structural layer. Selector
+/// resolution uses that same structural layer before semantic member
+/// annotations can be projected to concrete bindings; this entry point lets
+/// materialization keep one source-text walk and one final owner graph.
+pub fn compute_chunk_analysis_from_structural<F>(
+    chunk_id: &str,
+    module: &Module,
+    structural: StructuralChunkAnalysis<'_>,
+    hints: &AnalysisHints,
+    source_path: Option<&str>,
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
@@ -103,7 +135,8 @@ pub fn compute_chunk_analysis<F>(
 where
     F: FnMut(Span) -> Option<(usize, usize)>,
 {
-    let fact_analysis = analyze_chunk(module, hints, source_path, line_range_for_span);
+    let fact_analysis =
+        analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span);
     report_redundant_hints_to_stderr(chunk_id, &fact_analysis);
     if let Some(ord) = fact_analysis.top_level_await {
         bail!(

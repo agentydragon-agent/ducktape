@@ -107,18 +107,28 @@ pub fn compute_spec_stats(modules_root: &Path) -> Result<SpecStats> {
     for file in &files {
         let module: ModuleFile = read_module_file(file)?;
         let path = module_path_from_file(file, modules_root);
-        let member_count = module.members.len();
+        let source_match_binding_count = module
+            .source_matches
+            .iter()
+            .map(|claim| claim.bindings.len())
+            .sum::<usize>();
+        let member_count = module.members.len() + source_match_binding_count;
         let is_residual = is_residual_module_path(&path);
 
         modules.total += 1;
         if is_residual {
             modules.residual += 1;
         }
-        // "Empty" matches the `modules delete` predicate: no
-        // members AND no anonymous_statements. A module with
-        // anonymous_statements only is not deletable without
-        // `--force` and not "empty" in any meaningful sense.
-        if member_count == 0 && module.anonymous_statements.is_empty() {
+        // "Empty" matches the `modules delete` predicate: no claims,
+        // annotations, or anonymous_statements. A module with
+        // anonymous_statements only is not deletable without `--force` and not
+        // "empty" in any meaningful sense.
+        if member_count == 0
+            && module.source_matches.is_empty()
+            && module.binding_groups.is_empty()
+            && module.annotations.is_empty()
+            && module.anonymous_statements.is_empty()
+        {
             modules.empty += 1;
         }
         if module.comment.is_some() {
@@ -139,6 +149,27 @@ pub fn compute_spec_stats(modules_root: &Path) -> Result<SpecStats> {
             }
             if member.comment.is_some() {
                 bindings.with_comment += 1;
+            }
+        }
+        for claim in &module.source_matches {
+            for binding in &claim.bindings {
+                bindings.total += 1;
+                if binding.name() == binding.local() {
+                    bindings.unrenamed += 1;
+                } else {
+                    bindings.renamed += 1;
+                }
+                if member_count <= 1 {
+                    bindings.orphan += 1;
+                }
+                if module
+                    .annotations
+                    .get(binding.name())
+                    .and_then(|annotation| annotation.comment.as_ref())
+                    .is_some()
+                {
+                    bindings.with_comment += 1;
+                }
             }
         }
     }

@@ -65,8 +65,8 @@ fn delete_non_empty_module_without_force_refuses() {
     assert!(!out.status.success(), "expected non-zero exit");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("1 member(s)") && stderr.contains("--force"),
-        "expected refusal naming member count + --force, got stderr: {stderr}",
+        stderr.contains("1 claim(s)") && stderr.contains("--force"),
+        "expected refusal naming claim count + --force, got stderr: {stderr}",
     );
     // File must still be on disk.
     assert!(root.join("ui/full.yaml").exists());

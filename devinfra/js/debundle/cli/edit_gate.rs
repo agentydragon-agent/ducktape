@@ -406,6 +406,13 @@ pub fn gate_post_edit_partition(
                 .map(|module| {
                     let mut selectors = module.claims.member_selectors.clone();
                     let request_id = module.path.to_string_lossy();
+                    for claim in &module.claims.source_matches {
+                        for expanded in
+                            source_match::source_match_claim_member_selectors(&request_id, claim)?
+                        {
+                            selectors.insert(expanded.selector);
+                        }
+                    }
                     for group in &module.claims.binding_groups {
                         for expanded in
                             source_match::binding_group_member_selectors(&request_id, group)?

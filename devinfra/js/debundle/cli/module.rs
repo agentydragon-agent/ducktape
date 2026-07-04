@@ -313,8 +313,9 @@ fn preview_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Resul
 /// `target` and each entry in `sources` are interpreted relative to
 /// `modules_root` unless already absolute.
 ///
-/// Returns an error if any source declares a `members:` entry whose
-/// `name:` collides with the target or another source.
+/// Returns an error if any source declares a member/source-match readable name
+/// or a `selector.binding.name` that collides with the target or another
+/// source.
 pub fn merge_modules(
     modules_root: &Path,
     target: &Path,
@@ -327,14 +328,25 @@ pub fn merge_modules(
         .collect();
 
     let mut target_module = read_module_or_default(&target_abs)?;
-    let mut existing_names = binding_names(&target_module, &target_abs)?;
+    let mut existing_names = claim_names(&target_module, &target_abs)?;
     let mut merged_source_labels: Vec<String> = Vec::new();
     let mut merged_comments: Vec<String> = Vec::new();
 
     for src in &source_abs {
         let src_module = read_module(src)?;
-        for name in binding_names(&src_module, src)? {
-            if !existing_names.insert(name.clone()) {
+        let src_names = claim_names(&src_module, src)?;
+        for name in src_names.selector_bindings {
+            if !existing_names.selector_bindings.insert(name.clone()) {
+                bail!(
+                    "duplicate member name \"{}\" in {} and {}",
+                    name,
+                    target_abs.display(),
+                    src.display()
+                );
+            }
+        }
+        for name in src_names.readable_names {
+            if !existing_names.readable_names.insert(name.clone()) {
                 bail!(
                     "duplicate member name \"{}\" in {} and {}",
                     name,
@@ -355,10 +367,29 @@ pub fn merge_modules(
         {
             merged_comments.push(format!("--- from {label}:\n{comment}"));
         }
-        // `members:`, `anonymous_statements:`, and `binding_groups:` are all
-        // claims; dropping any of them with the deleted source would silently
-        // unclaim their owners on the next `debundle run`.
+        // `members:`, `source_matches:`, `anonymous_statements:`, and
+        // `binding_groups:` are all claims; dropping any of them with the
+        // deleted source would silently unclaim their owners on the next
+        // `debundle run`. `annotations:` are keyed by readable binding name,
+        // so conflicting duplicate metadata must be rejected rather than
+        // overwritten.
         target_module.members.extend(src_module.members);
+        target_module
+            .source_matches
+            .extend(src_module.source_matches);
+        for (name, annotation) in src_module.annotations {
+            if let Some(existing) = target_module.annotations.get(&name)
+                && existing != &annotation
+            {
+                bail!(
+                    "conflicting annotation for \"{}\" in {} and {}",
+                    name,
+                    target_abs.display(),
+                    src.display()
+                );
+            }
+            target_module.annotations.insert(name, annotation);
+        }
         target_module
             .anonymous_statements
             .extend(src_module.anonymous_statements);
@@ -451,18 +482,21 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
         }
     }
 
-    // Classify each module: empty (no members, no anonymous
-    // statements) vs non-empty. Required for the `--force` check and
-    // the empty-fast-path gate.
+    // Classify each module: empty (no claims, annotations, or anonymous
+    // statements) vs non-empty. Required for the `--force` check and the
+    // empty-fast-path gate.
     let mut non_empty: Vec<(PathBuf, usize, bool)> = Vec::new();
     let mut all_empty = true;
     for p in &paths_abs {
         let module = read_module(p)?;
-        let member_count = module.members.len();
+        let claim_count = module.members.len()
+            + module.source_matches.len()
+            + module.binding_groups.len()
+            + module.annotations.len();
         let has_anon = !module.anonymous_statements.is_empty();
-        if member_count > 0 || has_anon {
+        if claim_count > 0 || has_anon {
             all_empty = false;
-            non_empty.push((p.clone(), member_count, has_anon));
+            non_empty.push((p.clone(), claim_count, has_anon));
         }
     }
 
@@ -470,16 +504,16 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
         // Render a single-line refusal naming the first offender so
         // the user can see why; the additional non-empty paths fall
         // through `--force` once the user opts in.
-        let (path, members, has_anon) = &non_empty[0];
+        let (path, claims, has_anon) = &non_empty[0];
         let anon_msg = if *has_anon {
             " (plus anonymous_statements)"
         } else {
             ""
         };
         bail!(
-            "module {} has {} member(s){}; pass --force to delete anyway",
+            "module {} has {} claim(s){}; pass --force to delete anyway",
             path.display(),
-            members,
+            claims,
             anon_msg,
         );
     }
@@ -579,6 +613,12 @@ fn read_module(path: &Path) -> Result<LogicalModule> {
     serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
+#[derive(Default)]
+struct ModuleClaimNames {
+    selector_bindings: BTreeSet<String>,
+    readable_names: BTreeSet<String>,
+}
+
 /// Like [`read_module`] but a missing file is the empty module — the merge
 /// apply path creates the target from the merged source claims.
 fn read_module_or_default(path: &Path) -> Result<LogicalModule> {
@@ -595,23 +635,57 @@ fn display_relative(root: &Path, abs: &Path) -> String {
         .unwrap_or_else(|_| abs.to_string_lossy().into_owned())
 }
 
-/// Minified binding names pinned by `selector.binding.name` across a module's
-/// members. Members selected structurally (`source_match`, `cross_ref`, …)
-/// carry no `binding.name` and don't participate in the collision check.
-/// Errors on an intra-file duplicate.
-fn binding_names(module: &LogicalModule, path: &Path) -> Result<BTreeSet<String>> {
-    let mut names = BTreeSet::new();
+/// Authored names that `modules merge` can compare without resolving selectors.
+///
+/// `selector.binding.name` still participates separately so duplicate concrete
+/// source-binding claims are rejected even when two members have distinct
+/// readable names. Readable names cover `members[].name` (defaulting to the
+/// binding name) and canonical `source_matches[].bindings[].name` (defaulting to
+/// the selector-local binding).
+fn claim_names(module: &LogicalModule, path: &Path) -> Result<ModuleClaimNames> {
+    let mut names = ModuleClaimNames::default();
     for (idx, member) in module.members.iter().enumerate() {
-        let Some(binding) = member.selector.binding.as_ref() else {
-            continue;
-        };
-        if !names.insert(binding.name.clone()) {
+        if let Some(binding) = member.selector.binding.as_ref() {
+            if !names.selector_bindings.insert(binding.name.clone()) {
+                return Err(anyhow!(
+                    "duplicate member name \"{}\" within {} (entry {})",
+                    binding.name,
+                    path.display(),
+                    idx
+                ));
+            }
+            let readable_name = member.name.as_deref().unwrap_or(&binding.name);
+            if !names.readable_names.insert(readable_name.to_string()) {
+                return Err(anyhow!(
+                    "duplicate member name \"{}\" within {} (entry {})",
+                    readable_name,
+                    path.display(),
+                    idx
+                ));
+            }
+        } else if let Some(readable_name) = member.name.as_deref()
+            && !names.readable_names.insert(readable_name.to_string())
+        {
             return Err(anyhow!(
                 "duplicate member name \"{}\" within {} (entry {})",
-                binding.name,
+                readable_name,
                 path.display(),
                 idx
             ));
+        }
+    }
+    for (claim_idx, claim) in module.source_matches.iter().enumerate() {
+        for (binding_idx, binding) in claim.bindings.iter().enumerate() {
+            let readable_name = binding.name();
+            if !names.readable_names.insert(readable_name.to_string()) {
+                return Err(anyhow!(
+                    "duplicate member name \"{}\" within {} (source_matches[{}].bindings[{}])",
+                    readable_name,
+                    path.display(),
+                    claim_idx,
+                    binding_idx
+                ));
+            }
         }
     }
     Ok(names)

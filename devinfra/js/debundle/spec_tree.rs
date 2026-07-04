@@ -7,12 +7,12 @@ use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
 use spec::{
-    AnonymousStatement, BindingGroup, BundledPartialSwapBundle, BundledPartialSwapMark,
-    BundledPartialSwapPackage, ChunkExportPurity, ChunkRenames, EmitBrowserHarnessConfig,
-    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect,
-    MemberPurity, OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol,
-    SwapMark, SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark,
-    VendorRole, WrapperShape,
+    AnonymousStatement, BindingAnnotation, BindingGroup, BundledPartialSwapBundle,
+    BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity, ChunkRenames,
+    EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig,
+    Member, MemberEffect, MemberPurity, OwnerGraphOptions, PartialSwapMark, PartialSwapPackage,
+    PartialSwapSymbol, SourceMatchClaim, SwapMark, SwapVendorChunksConfig, TransformSpec,
+    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
 use spec_modules::{
     collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
@@ -133,6 +133,10 @@ struct ModuleSource {
     #[serde(default)]
     members: Vec<Member>,
     #[serde(default)]
+    source_matches: Vec<SourceMatchClaim>,
+    #[serde(default)]
+    annotations: BTreeMap<String, BindingAnnotation>,
+    #[serde(default)]
     binding_groups: Vec<BindingGroup>,
     #[serde(default)]
     anonymous_statements: Vec<AnonymousStatement>,
@@ -235,6 +239,8 @@ fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<V
             chunk_id: main_chunk_id.to_string(),
             path: module_path,
             members: data.members,
+            source_matches: data.source_matches,
+            annotations: data.annotations,
             binding_groups: data.binding_groups,
             anonymous_statements: data.anonymous_statements,
             comment: data.comment,
@@ -479,6 +485,8 @@ fn logical_modules_map(
                 source.path.clone(),
                 LogicalModule {
                     members: source.members,
+                    source_matches: source.source_matches,
+                    annotations: source.annotations,
                     binding_groups: source.binding_groups,
                     anonymous_statements: source.anonymous_statements,
                     comment: source.comment,

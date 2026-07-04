@@ -37,8 +37,9 @@ pub use factor_assembly::{
 };
 pub use facts::{
     ChunkFactAnalysis, ChunkFactsReport, EffectCell, IdReport, PositionBucketed,
-    StatementEffectSummary, StatementFacts, StatementFactsReport, StatementKind, analyze_chunk,
-    find_top_level_await, local_namespace_iife_target,
+    StatementEffectSummary, StatementFacts, StatementFactsReport, StatementKind,
+    StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk, analyze_chunk_structural,
+    analyze_chunk_with_policy, find_top_level_await, local_namespace_iife_target,
 };
 pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, DuplicateTopLevelDeclaration, EdgeMetadata, EdgeReason,

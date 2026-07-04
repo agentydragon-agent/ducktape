@@ -16,7 +16,26 @@ fn assert_no_trailing_whitespace(text: &str) {
     );
 }
 
+fn source_match_claim(doc: &serde_yaml::Value, index: usize) -> &serde_yaml::Value {
+    &doc["source_matches"].as_sequence().unwrap()[index]
+}
+
+fn source_match_source(doc: &serde_yaml::Value, index: usize) -> &str {
+    source_match_claim(doc, index)["match"].as_str().unwrap()
+}
+
 fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
+    let out = run_codemod_raw(modules, extra);
+    assert!(
+        out.status.success(),
+        "non-zero exit\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out
+}
+
+fn run_codemod_raw(modules: &Path, extra: &[&str]) -> std::process::Output {
     let mut args = vec![
         "spec",
         "selector-codemod",
@@ -28,12 +47,6 @@ fn run_codemod(modules: &Path, extra: &[&str]) -> std::process::Output {
         .args(&args)
         .output()
         .expect("spawn debundle");
-    assert!(
-        out.status.success(),
-        "non-zero exit\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
     out
 }
 
@@ -179,6 +192,12 @@ fn synthesis_fixture(root: &Path) -> (PathBuf, PathBuf) {
         name: runtimeSecondary
   - name: FormatValue
     note: Format value note
+    purity: pure
+    effect: typescript_decorate_helper
+    pure_members:
+      - memo
+    no_sync_callback_members:
+      - subscribe
     selector:
       binding:
         name: runtimeFormatter
@@ -459,9 +478,7 @@ fn synthesize_selectors_emits_regex_literal_anchor_for_volatile_suffix() {
 
     let rewritten = fs::read_to_string(modules.join("app/assets.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
-    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
-        .as_str()
-        .unwrap();
+    let match_source = source_match_source(&doc, 0);
 
     // The minimizer pinned the volatile literal with a regex predicate rather
     // than the exact spelling.
@@ -596,9 +613,9 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_structure()
     // The apply path now loads, mutates, and dumps the whole document with
     // serde_yaml, so it intentionally does NOT preserve `#` comments or author
     // formatting. Assert the resulting structure/content rather than bytes:
-    // explicit `comment:`/value fields survive, the unrelated member and
-    // `anonymous_statements` are untouched, and only the selected member is
-    // rewritten to a `source_match`.
+    // explicit `comment:`/value fields survive as annotations, the unrelated
+    // member and `anonymous_statements` are untouched, and only the selected
+    // member is rewritten to a canonical `source_matches[]` claim.
     let rewritten = fs::read_to_string(modules.join("app/bootstrap.yaml")).unwrap();
     assert_no_trailing_whitespace(&rewritten);
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
@@ -607,7 +624,7 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_structure()
         "Keep this module grouped with startup."
     );
     let members = doc["members"].as_sequence().unwrap();
-    assert_eq!(members.len(), 2, "{doc:?}");
+    assert_eq!(members.len(), 1, "{doc:?}");
 
     // Unrelated member is byte-for-byte the same shape: still a name-binding.
     assert_eq!(members[0]["name"], "UntouchedBinding");
@@ -616,17 +633,16 @@ fn synthesize_selectors_apply_single_member_preserves_unrelated_yaml_structure()
         "untouchedBinding"
     );
 
-    // Selected member is rewritten to a source_match, keeping its `comment:`
-    // value field (a real YAML key, not a `#` comment).
-    assert_eq!(members[1]["name"], "FormatValue");
-    assert_eq!(members[1]["comment"], "Keep readable comment field.");
-    let source_match = &members[1]["selector"]["source_match"];
-    assert_eq!(source_match["identifiers"], "alpha_all");
-    assert_eq!(source_match["target_binding"], "FormatValue");
+    let source_match = source_match_claim(&doc, 0);
+    assert_eq!(source_match["bindings"][0], "FormatValue");
     let match_source = source_match["match"].as_str().unwrap();
     assert!(
         match_source.contains("function FormatValue("),
         "{match_source}"
+    );
+    assert_eq!(
+        doc["annotations"]["FormatValue"]["comment"],
+        "Keep readable comment field."
     );
 
     assert_eq!(
@@ -668,9 +684,7 @@ fn synthesize_selectors_minimizes_function_body_by_default() {
 
     let rewritten = fs::read_to_string(modules.join("app/format.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
-    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
-        .as_str()
-        .unwrap();
+    let match_source = source_match_source(&doc, 0);
     assert!(
         match_source.contains("function FormatValue(ANYTHING)"),
         "{match_source}"
@@ -718,9 +732,7 @@ fn synthesize_selectors_keeps_object_key_anchor_when_erasing_it_is_ambiguous() {
 
     let rewritten = fs::read_to_string(modules.join("app/config.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
-    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
-        .as_str()
-        .unwrap();
+    let match_source = source_match_source(&doc, 0);
     // Re-baselined for the unified keep-shallow policy: the single-target var now
     // routes through the group path, which seeds direct shallow literals (here
     // `count: 3`) and escalates to the whole structural (object-key) tier, so the
@@ -788,9 +800,9 @@ fn synthesize_selectors_minimizes_binding_group_to_needed_slot_anchors() {
     let rewritten = fs::read_to_string(modules.join("app/group.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
     assert_eq!(doc["members"].as_sequence().unwrap().len(), 0, "{doc:?}");
-    let groups = doc["binding_groups"].as_sequence().unwrap();
-    assert_eq!(groups.len(), 1, "{doc:?}");
-    let match_source = groups[0]["source_match"]["match"].as_str().unwrap();
+    let source_matches = doc["source_matches"].as_sequence().unwrap();
+    assert_eq!(source_matches.len(), 1, "{doc:?}");
+    let match_source = source_matches[0]["match"].as_str().unwrap();
     // Re-baselined for the unified keep-shallow policy: with no direct shallow
     // literal in either target slot, the group escalates to the whole structural
     // (object-key) tier, so both slots keep their `stableX`/`volatileX` keys
@@ -849,9 +861,7 @@ fn synthesize_selectors_var_object_keys_resolve_uniquely() {
 
     let rewritten = fs::read_to_string(modules.join("app/search.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
-    let match_source = doc["members"][0]["selector"]["source_match"]["match"]
-        .as_str()
-        .unwrap();
+    let match_source = source_match_source(&doc, 0);
     // One discriminating `key: value` with a globally-unique string value is the
     // minimal read-off anchor; the rest collapse to the object-property run hole,
     // emitted as `ANYTHING` (the run-absorber form the minimizer now prefers in
@@ -1007,24 +1017,12 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
     assert_no_trailing_whitespace(&rewritten);
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
     let members = doc["members"].as_sequence().unwrap();
-    assert_eq!(members.len(), 1, "{doc:?}");
-    assert_eq!(members[0]["name"], "FormatValue");
-    assert_eq!(members[0]["note"], "Format value note");
-    assert_eq!(
-        members[0]["selector"]["source_match"]["target_binding"],
-        "FormatValue"
-    );
-    assert!(
-        members[0]["selector"]["source_match"]["match"]
-            .as_str()
-            .unwrap()
-            .contains("function FormatValue")
-    );
+    assert_eq!(members.len(), 0, "{doc:?}");
 
-    let groups = doc["binding_groups"].as_sequence().unwrap();
-    assert_eq!(groups.len(), 1, "{doc:?}");
-    let group = &groups[0];
-    let match_source = group["source_match"]["match"].as_str().unwrap();
+    let source_matches = doc["source_matches"].as_sequence().unwrap();
+    assert_eq!(source_matches.len(), 2, "{doc:?}");
+    let group = &source_matches[0];
+    let match_source = group["match"].as_str().unwrap();
     assert!(match_source.contains("DECLARATORS"), "{match_source}");
     // The bare `buildConfig` callee holes to ANYTHING (a minified name the matcher
     // alpha-wildcards); each slot is still kept as its own named declarator.
@@ -1036,15 +1034,43 @@ fn synthesize_selectors_apply_groups_multideclarator_and_preserves_comments() {
         match_source.contains("SecondaryConfig = ANYTHING("),
         "{match_source}"
     );
-    assert_eq!(group["exports"]["PrimaryConfig"], "PrimaryConfig");
-    assert_eq!(group["exports"]["SecondaryConfig"], "SecondaryConfig");
-    assert_eq!(group["comments"]["PrimaryConfig"], "Primary config comment");
+    assert_eq!(group["bindings"][0], "PrimaryConfig");
+    assert_eq!(group["bindings"][1], "SecondaryConfig");
+
+    let singleton = &source_matches[1];
+    assert_eq!(singleton["bindings"][0], "FormatValue");
+    assert!(
+        singleton["match"]
+            .as_str()
+            .unwrap()
+            .contains("function FormatValue")
+    );
+
+    let annotations = &doc["annotations"];
     assert_eq!(
-        group["comments"]["SecondaryConfig"],
+        annotations["PrimaryConfig"]["comment"],
+        "Primary config comment"
+    );
+    assert_eq!(
+        annotations["SecondaryConfig"]["comment"],
         "Secondary config comment"
     );
-    assert_eq!(group["notes"]["PrimaryConfig"], "Primary config note");
-    assert_eq!(group["notes"]["SecondaryConfig"], "Secondary config note");
+    assert_eq!(annotations["PrimaryConfig"]["note"], "Primary config note");
+    assert_eq!(
+        annotations["SecondaryConfig"]["note"],
+        "Secondary config note"
+    );
+    assert_eq!(annotations["FormatValue"]["note"], "Format value note");
+    assert_eq!(annotations["FormatValue"]["purity"], "pure");
+    assert_eq!(
+        annotations["FormatValue"]["effect"],
+        "typescript_decorate_helper"
+    );
+    assert_eq!(annotations["FormatValue"]["pure_members"][0], "memo");
+    assert_eq!(
+        annotations["FormatValue"]["no_sync_callback_members"][0],
+        "subscribe"
+    );
 }
 
 #[test]
@@ -1254,6 +1280,226 @@ fn apply_rewrites_anonymous_typed_holes_to_anything() {
     assert!(
         rewritten.contains("OBJECT_PROPS_GENERATED"),
         "labeled object-property holes should stay readable:\n{rewritten}"
+    );
+}
+
+#[test]
+fn migrate_to_source_matches_dry_run_reports_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let target = modules.join("app/legacy.yaml");
+    write_legacy_source_match_migration_fixture(&target);
+    let before = fs::read_to_string(&target).unwrap();
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "migrate-to-source-matches",
+            "--module",
+            "app/legacy",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["rewrite"], "migrate_to_source_matches", "{parsed}");
+    assert_eq!(parsed["action"], "dry_run", "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 3, "{parsed}");
+    assert_eq!(parsed["summary"]["source_match_members"], 2, "{parsed}");
+    assert_eq!(parsed["summary"]["synthesized_groups"], 1, "{parsed}");
+    assert_eq!(
+        parsed["summary"]["files_written"].as_array().unwrap().len(),
+        0,
+        "{parsed}"
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), before);
+}
+
+#[test]
+fn migrate_to_source_matches_applies_members_groups_and_annotations() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let target = modules.join("app/legacy.yaml");
+    write_legacy_source_match_migration_fixture(&target);
+
+    let out = run_codemod(
+        &modules,
+        &[
+            "--rewrite",
+            "migrate-to-source-matches",
+            "--module",
+            "app/legacy",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["action"], "applied", "{parsed}");
+    assert_eq!(parsed["summary"]["changed_candidates"], 3, "{parsed}");
+    assert_eq!(
+        parsed["summary"]["files_written"].as_array().unwrap().len(),
+        1,
+        "{parsed}"
+    );
+
+    let rewritten = fs::read_to_string(&target).unwrap();
+    assert_no_trailing_whitespace(&rewritten);
+    assert!(
+        !rewritten.contains("binding_groups:"),
+        "legacy binding_groups should be removed:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains("identifiers: alpha_all"),
+        "default source_match identifier mode should be omitted:\n{rewritten}"
+    );
+
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    let members = doc["members"].as_sequence().unwrap();
+    assert_eq!(members.len(), 1, "{doc:?}");
+    assert_eq!(members[0]["name"], "ExistingBinding");
+
+    let source_matches = doc["source_matches"].as_sequence().unwrap();
+    assert_eq!(source_matches.len(), 3, "{doc:?}");
+    assert_eq!(source_matches[0]["bindings"][0]["local"], "localThing");
+    assert_eq!(source_matches[0]["bindings"][0]["name"], "RenamedThing");
+    assert_eq!(source_matches[1]["bindings"][0], "sameLocal");
+    assert_eq!(source_matches[2]["bindings"][0], "Adopted");
+    assert_eq!(source_matches[2]["bindings"][1]["local"], "AliasLocal");
+    assert_eq!(source_matches[2]["bindings"][1]["name"], "PublicAlias");
+    assert_eq!(source_matches[2]["bindings"][2]["local"], "ExplicitOnly");
+    assert_eq!(source_matches[2]["bindings"][2]["name"], "ExplicitPublic");
+    assert_eq!(source_matches[2]["note"], "Group selector note.");
+
+    let annotations = &doc["annotations"];
+    assert_eq!(
+        annotations["ExistingBinding"]["comment"],
+        "Existing annotation."
+    );
+    assert_eq!(annotations["RenamedThing"]["comment"], "Source comment.");
+    assert_eq!(annotations["RenamedThing"]["note"], "Source note.");
+    assert_eq!(annotations["RenamedThing"]["purity"], "pure");
+    assert_eq!(
+        annotations["RenamedThing"]["effect"],
+        "typescript_decorate_helper"
+    );
+    assert_eq!(annotations["RenamedThing"]["pure_members"][0], "memo");
+    assert_eq!(
+        annotations["RenamedThing"]["no_sync_callback_members"][0],
+        "subscribe"
+    );
+    assert_eq!(annotations["Adopted"]["comment"], "Adopted comment.");
+    assert_eq!(annotations["PublicAlias"]["comment"], "Alias comment.");
+    assert_eq!(annotations["PublicAlias"]["note"], "Alias note.");
+    assert_eq!(
+        annotations["ExplicitPublic"]["comment"],
+        "Explicit comment."
+    );
+}
+
+#[test]
+fn migrate_to_source_matches_rejects_annotation_conflicts() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    let target = modules.join("app/conflict.yaml");
+    write_text_file(
+        &target,
+        r#"annotations:
+  RenamedThing:
+    comment: Existing annotation.
+members:
+  - name: RenamedThing
+    comment: New source comment.
+    selector:
+      source_match:
+        target_binding: localThing
+        match: |
+          const localThing = makeThing();
+"#,
+    );
+    let before = fs::read_to_string(&target).unwrap();
+
+    let out = run_codemod_raw(
+        &modules,
+        &[
+            "--rewrite",
+            "migrate-to-source-matches",
+            "--module",
+            "app/conflict",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        !out.status.success(),
+        "expected conflict failure\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("conflicts with annotations.RenamedThing.comment"),
+        "{stderr}"
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), before);
+}
+
+fn write_legacy_source_match_migration_fixture(target: &Path) {
+    write_text_file(
+        target,
+        r#"annotations:
+  ExistingBinding:
+    comment: Existing annotation.
+  RenamedThing:
+    note: Source note.
+members:
+  - name: ExistingBinding
+    selector:
+      binding:
+        name: existingBinding
+  - name: RenamedThing
+    comment: Source comment.
+    note: Source note.
+    purity: pure
+    effect: typescript_decorate_helper
+    pure_members:
+      - memo
+    no_sync_callback_members:
+      - subscribe
+    selector:
+      source_match:
+        identifiers: alpha_all
+        target_binding: localThing
+        match: |
+          const localThing = makeThing();
+  - name: sameLocal
+    selector:
+      source_match:
+        match: |
+          function sameLocal() {
+            return 1;
+          }
+binding_groups:
+  - source_match:
+      identifiers: alpha_all
+      match: |
+        const Adopted = makeA(), AliasLocal = makeB(), ExplicitOnly = makeC();
+    adopt_names:
+      - Adopted
+      - AliasLocal
+    exports:
+      AliasLocal: PublicAlias
+      ExplicitOnly: ExplicitPublic
+    comments:
+      Adopted: Adopted comment.
+      AliasLocal: Alias comment.
+      ExplicitOnly: Explicit comment.
+    notes:
+      AliasLocal: Alias note.
+    note: Group selector note.
+"#,
     );
 }
 

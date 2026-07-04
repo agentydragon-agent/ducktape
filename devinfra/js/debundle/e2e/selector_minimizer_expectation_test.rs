@@ -145,7 +145,40 @@ fn collect_selector_outputs(doc: &serde_yaml::Value) -> Vec<SelectorOutput> {
             });
         }
     }
+    if let Some(source_matches) = doc["source_matches"].as_sequence() {
+        for claim in source_matches {
+            let Some(match_source) = claim["match"].as_str() else {
+                continue;
+            };
+            let exports = source_match_binding_names(&claim["bindings"]);
+            if exports.is_empty() {
+                continue;
+            }
+            outputs.push(SelectorOutput {
+                exports,
+                match_source: match_source.trim().to_string(),
+            });
+        }
+    }
     outputs
+}
+
+fn source_match_binding_names(value: &serde_yaml::Value) -> BTreeSet<String> {
+    let Some(bindings) = value.as_sequence() else {
+        return BTreeSet::new();
+    };
+    bindings
+        .iter()
+        .filter_map(|binding| match binding {
+            serde_yaml::Value::String(local) => Some(local.to_string()),
+            serde_yaml::Value::Mapping(mapping) => mapping
+                .get(&serde_yaml::Value::String("name".to_string()))
+                .or_else(|| mapping.get(&serde_yaml::Value::String("local".to_string())))
+                .and_then(serde_yaml::Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        })
+        .collect()
 }
 
 fn mapping_string_keys(value: &serde_yaml::Value) -> BTreeSet<String> {

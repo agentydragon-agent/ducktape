@@ -159,6 +159,25 @@ pub fn parse_selector_module_with_capability_check(
     Ok(parsed)
 }
 
+impl ParsedSourceMatchSelector {
+    pub fn parse(
+        request_id: &str,
+        selector_kind: &str,
+        file_label: String,
+        selector: &AnonymousStatementSelector,
+        parse_label: &str,
+    ) -> Result<Self> {
+        let parsed = parse_selector_module_with_capability_check(
+            request_id,
+            selector_kind,
+            file_label,
+            &selector.match_source,
+            parse_label,
+        )?;
+        Ok(Self::new(selector.clone(), parsed))
+    }
+}
+
 pub(crate) fn validate_selector_capabilities(
     request_id: &str,
     selector_kind: &str,

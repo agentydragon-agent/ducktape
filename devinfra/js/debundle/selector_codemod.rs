@@ -60,6 +60,7 @@ pub enum SelectorCodemodRewrite {
     SingleTargetBinding,
     AnythingHoles,
     NameBindingToSourceMatch,
+    MigrateToSourceMatches,
 }
 
 impl SelectorCodemodRewrite {
@@ -68,6 +69,7 @@ impl SelectorCodemodRewrite {
             Self::SingleTargetBinding => "single_target_binding",
             Self::AnythingHoles => "anything_holes",
             Self::NameBindingToSourceMatch => "name_binding_to_source_match",
+            Self::MigrateToSourceMatches => "migrate_to_source_matches",
         }
     }
 }
@@ -173,6 +175,14 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
         .map(|item| parse_synthesis_item(item))
         .collect::<Result<BTreeSet<_>>>()?;
     let selected_item_exports = selected_item_exports_by_module(&selected_items);
+    if config.rewrite == SelectorCodemodRewrite::MigrateToSourceMatches
+        && !selected_item_exports.is_empty()
+    {
+        bail!(
+            "migrate-to-source-matches does not support --item; scope with --file, --module, or \
+             --module-prefix"
+        );
+    }
     let selected_files = config
         .files
         .iter()
@@ -255,6 +265,28 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                 }
                 candidates.push(candidate);
             }
+        } else if config.rewrite == SelectorCodemodRewrite::MigrateToSourceMatches {
+            let outcomes = rewrite_legacy_source_selectors_to_source_matches(
+                &module,
+                &file,
+                root,
+                config.apply,
+            )?;
+            summary.members_scanned += outcomes.members_scanned;
+            summary.source_match_members += outcomes.source_match_members;
+            summary.synthesized_groups += outcomes.binding_groups_seen;
+            for candidate in outcomes.candidates {
+                if matches!(
+                    candidate.action,
+                    SelectorCodemodAction::WouldChange | SelectorCodemodAction::Changed
+                ) {
+                    file_changed = true;
+                    summary.changed_candidates += 1;
+                } else {
+                    summary.skipped_candidates += 1;
+                }
+                candidates.push(candidate);
+            }
         } else {
             let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
                 continue;
@@ -273,6 +305,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                         rewrite_anything_holes(&module, &file, member_index, member, config.apply)
                     }
                     SelectorCodemodRewrite::NameBindingToSourceMatch => unreachable!(),
+                    SelectorCodemodRewrite::MigrateToSourceMatches => unreachable!(),
                 };
                 let Some(candidate) = candidate? else {
                     continue;
@@ -562,14 +595,27 @@ struct NameBindingMember {
     member_index: usize,
     export_name: String,
     binding_name: String,
-    comment: Option<String>,
-    note: Option<String>,
+    annotation_fields: Vec<(&'static str, Value)>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct NameBindingRewriteOptions {
     apply: bool,
     candidates: usize,
+}
+
+#[derive(Debug)]
+struct SourceMatchMigrationOutcomes {
+    candidates: Vec<SelectorCodemodCandidate>,
+    members_scanned: usize,
+    source_match_members: usize,
+    binding_groups_seen: usize,
+}
+
+#[derive(Debug, Clone)]
+struct MigratedSourceBinding {
+    local: String,
+    name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -647,6 +693,9 @@ fn rewrite_name_bindings_to_source_match(
     selected_exports: Option<&BTreeSet<String>>,
     options: NameBindingRewriteOptions,
 ) -> Result<NameBindingRewriteOutcomes> {
+    ensure_optional_sequence(root, "source_matches", module)?;
+    let original_annotations = existing_annotations_mapping(root, module)?;
+    let mut annotations = original_annotations.clone();
     let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
         return Ok(NameBindingRewriteOutcomes {
             candidates: Vec::new(),
@@ -710,8 +759,7 @@ fn rewrite_name_bindings_to_source_match(
                 member_index,
                 export_name,
                 binding_name,
-                comment: mapping_get(member, "comment").and_then(value_as_string),
-                note: mapping_get(member, "note").and_then(value_as_string),
+                annotation_fields: synthesized_member_annotation_fields(member),
             });
     }
 
@@ -760,17 +808,16 @@ fn rewrite_name_bindings_to_source_match(
 
     // Anti-unification grouping: collapse
     // maximal runs of adjacent, same-shape single-target declarations (any kind:
-    // function, class, var) into one run-based binding_group. Multi-declarator var
+    // function, class, var) into one run-based source_matches[] claim. Multi-declarator var
     // groups (already grouped by shared declaration) and lone groups pass through
     // unchanged.
     let prepared_groups = merge_adjacent_same_shape_runs(index, synthesized_groups);
 
-    // `Some(value)` replaces the member in place (singleton group rewrites to a
-    // `source_match` member); `None` removes it (grouped members move into a
-    // `binding_groups` entry). The borrow of `members` is released before we
-    // touch `root` again to add `binding_groups`.
+    // Successful rewrites become canonical `source_matches[]` claims. Rewritten
+    // members are removed from `members`, and explicit member note/comment fields
+    // move into module-level `annotations`.
     let mut replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
-    let mut binding_groups = Vec::new();
+    let mut source_matches = Vec::new();
     let groups_changed = prepared_groups.len();
     for (group_id, prepared) in prepared_groups.into_iter().enumerate() {
         let SynthesizedDeclGroup {
@@ -792,14 +839,16 @@ fn rewrite_name_bindings_to_source_match(
                 target_binding: Some(target.export_name.clone()),
             }));
             if options.apply {
-                let replacement = member_with_source_match(
-                    &member.export_name,
-                    member.comment.clone(),
-                    member.note.clone(),
+                add_synthesized_member_annotations(module, member, &mut annotations)?;
+                source_matches.push(source_match_claim_value(
                     &synthesized.match_source,
-                    &target.export_name,
-                );
-                replacements.insert(member.member_index, Some(replacement));
+                    vec![MigratedSourceBinding {
+                        local: target.export_name.clone(),
+                        name: member.export_name.clone(),
+                    }],
+                    None,
+                ));
+                replacements.insert(member.member_index, None);
             }
         } else {
             for member in &group_members {
@@ -814,25 +863,29 @@ fn rewrite_name_bindings_to_source_match(
                     target_binding: None,
                 }));
                 if options.apply {
+                    add_synthesized_member_annotations(module, member, &mut annotations)?;
                     replacements.insert(member.member_index, None);
                 }
             }
             if options.apply {
-                binding_groups.push(binding_group_value(&synthesized, &group_members));
+                source_matches.push(synthesized_source_match_claim_value(&synthesized));
             }
         }
     }
 
     if options.apply {
         apply_member_replacements(members, replacements);
-        if !binding_groups.is_empty() {
+        if !source_matches.is_empty() {
             let entry = root
-                .entry(yk("binding_groups"))
+                .entry(yk("source_matches"))
                 .or_insert_with(|| Value::Sequence(Vec::new()));
             match entry {
-                Value::Sequence(existing) => existing.extend(binding_groups),
-                _ => bail!("binding_groups exists but is not a sequence"),
+                Value::Sequence(existing) => existing.extend(source_matches),
+                _ => bail!("{module}: source_matches exists but is not a sequence"),
             }
+        }
+        if annotations != original_annotations {
+            root.insert(yk("annotations"), Value::Mapping(annotations));
         }
     }
 
@@ -842,6 +895,755 @@ fn rewrite_name_bindings_to_source_match(
         members_seen,
         groups_changed,
     })
+}
+
+fn add_synthesized_member_annotations(
+    module: &str,
+    member: &NameBindingMember,
+    annotations: &mut serde_yaml::Mapping,
+) -> Result<()> {
+    for (field, value) in &member.annotation_fields {
+        merge_annotation_field(
+            module,
+            &format!("members[{}].{field}", member.member_index),
+            annotations,
+            &member.export_name,
+            field,
+            value,
+        )?;
+    }
+    Ok(())
+}
+
+fn synthesized_member_annotation_fields(member: &Value) -> Vec<(&'static str, Value)> {
+    let Some(member) = member.as_mapping() else {
+        return Vec::new();
+    };
+    [
+        "purity",
+        "effect",
+        "pure_members",
+        "no_sync_callback_members",
+        "comment",
+        "note",
+    ]
+    .into_iter()
+    .filter_map(|field| member.get(yk(field)).map(|value| (field, value.clone())))
+    .collect()
+}
+
+fn rewrite_legacy_source_selectors_to_source_matches(
+    module: &str,
+    file: &Path,
+    root: &mut serde_yaml::Mapping,
+    apply: bool,
+) -> Result<SourceMatchMigrationOutcomes> {
+    ensure_optional_sequence(root, "source_matches", module)?;
+    let original_annotations = existing_annotations_mapping(root, module)?;
+    let mut annotations = original_annotations.clone();
+    let mut candidates = Vec::new();
+    let mut new_source_matches = Vec::new();
+    let mut member_replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
+    let mut members_scanned = 0;
+    let mut source_match_members = 0;
+    let mut binding_groups_seen = 0;
+
+    if let Some(members_value) = root.get(yk("members")) {
+        let Value::Sequence(members) = members_value else {
+            bail!("{module}: members exists but is not a sequence");
+        };
+        for (member_index, member) in members.iter().enumerate() {
+            members_scanned += 1;
+            let Some(source_match_value) = mapping_get_path(member, &["selector", "source_match"])
+            else {
+                continue;
+            };
+            if matches!(source_match_value, Value::Null) {
+                continue;
+            }
+            source_match_members += 1;
+            let (claim, export_name, target_binding) = migrate_member_source_match(
+                module,
+                member_index,
+                member,
+                source_match_value,
+                &mut annotations,
+            )?;
+            candidates.push(SelectorCodemodCandidate {
+                module: module.to_string(),
+                file: file.display().to_string(),
+                member_index,
+                export_name: Some(export_name),
+                action: if apply {
+                    SelectorCodemodAction::Changed
+                } else {
+                    SelectorCodemodAction::WouldChange
+                },
+                target_binding: Some(target_binding.clone()),
+                declared_bindings: vec![target_binding],
+                group_id: None,
+                matched_body_index: None,
+                candidate_count: None,
+                match_source: claim
+                    .as_mapping()
+                    .and_then(|mapping| mapping.get(yk("match")))
+                    .and_then(value_as_string),
+                rewritten_holes: Vec::new(),
+                replacement_count: 0,
+                alternatives: Vec::new(),
+                reason: None,
+            });
+            new_source_matches.push(claim);
+            member_replacements.insert(member_index, None);
+        }
+    }
+
+    let mut remove_binding_groups = false;
+    if let Some(groups_value) = root.get(yk("binding_groups")) {
+        let Value::Sequence(groups) = groups_value else {
+            bail!("{module}: binding_groups exists but is not a sequence");
+        };
+        if !groups.is_empty() {
+            remove_binding_groups = true;
+        }
+        for (group_index, group) in groups.iter().enumerate() {
+            binding_groups_seen += 1;
+            let (claim, bindings) =
+                migrate_binding_group(module, group_index, group, &mut annotations)?;
+            candidates.push(SelectorCodemodCandidate {
+                module: module.to_string(),
+                file: file.display().to_string(),
+                member_index: group_index,
+                export_name: None,
+                action: if apply {
+                    SelectorCodemodAction::Changed
+                } else {
+                    SelectorCodemodAction::WouldChange
+                },
+                target_binding: None,
+                declared_bindings: bindings
+                    .iter()
+                    .map(|binding| binding.local.clone())
+                    .collect(),
+                group_id: Some(group_index),
+                matched_body_index: None,
+                candidate_count: Some(bindings.len()),
+                match_source: claim
+                    .as_mapping()
+                    .and_then(|mapping| mapping.get(yk("match")))
+                    .and_then(value_as_string),
+                rewritten_holes: Vec::new(),
+                replacement_count: 0,
+                alternatives: Vec::new(),
+                reason: None,
+            });
+            new_source_matches.push(claim);
+        }
+    }
+
+    if apply && !new_source_matches.is_empty() {
+        if !member_replacements.is_empty() {
+            let Some(Value::Sequence(members)) = root.get_mut(yk("members")) else {
+                bail!("{module}: members disappeared during source_matches migration");
+            };
+            apply_member_replacements(members, member_replacements);
+        }
+
+        let source_matches = root
+            .entry(yk("source_matches"))
+            .or_insert_with(|| Value::Sequence(Vec::new()));
+        match source_matches {
+            Value::Sequence(existing) => existing.extend(new_source_matches),
+            _ => bail!("{module}: source_matches exists but is not a sequence"),
+        }
+
+        if annotations != original_annotations {
+            root.insert(yk("annotations"), Value::Mapping(annotations));
+        }
+        if remove_binding_groups {
+            root.remove(yk("binding_groups"));
+        }
+    }
+
+    Ok(SourceMatchMigrationOutcomes {
+        candidates,
+        members_scanned,
+        source_match_members,
+        binding_groups_seen,
+    })
+}
+
+fn migrate_member_source_match(
+    module: &str,
+    member_index: usize,
+    member: &Value,
+    source_match_value: &Value,
+    annotations: &mut serde_yaml::Mapping,
+) -> Result<(Value, String, String)> {
+    let member_mapping = value_mapping(member)
+        .with_context(|| format!("{module}: members[{member_index}] is not a mapping"))?;
+    ensure_migratable_member_keys(module, member_index, member_mapping)?;
+    ensure_source_match_only_selector(module, member_index, member_mapping)?;
+
+    let source_match: SourceMatch = serde_yaml::from_value(source_match_value.clone())
+        .with_context(|| format!("{module}: members[{member_index}].selector.source_match"))?;
+    let target_binding =
+        selector_local_for_member_source_match(module, member_index, &source_match)?;
+    let export_name = optional_string_field(member_mapping, "name", || {
+        format!("{module}: members[{member_index}].name")
+    })?
+    .unwrap_or_else(|| target_binding.clone());
+    move_member_annotations(
+        module,
+        &format!("members[{member_index}]"),
+        member_mapping,
+        &export_name,
+        annotations,
+    )?;
+    Ok((
+        source_match_claim_value(
+            &source_match.match_source,
+            vec![MigratedSourceBinding {
+                local: target_binding.clone(),
+                name: export_name.clone(),
+            }],
+            None,
+        ),
+        export_name,
+        target_binding,
+    ))
+}
+
+fn migrate_binding_group(
+    module: &str,
+    group_index: usize,
+    group: &Value,
+    annotations: &mut serde_yaml::Mapping,
+) -> Result<(Value, Vec<MigratedSourceBinding>)> {
+    let group_mapping = value_mapping(group)
+        .with_context(|| format!("{module}: binding_groups[{group_index}] is not a mapping"))?;
+    ensure_binding_group_keys(module, group_index, group_mapping)?;
+    let source_match_value = group_mapping
+        .get(yk("source_match"))
+        .with_context(|| format!("{module}: binding_groups[{group_index}].source_match missing"))?;
+    let source_match: SourceMatch = serde_yaml::from_value(source_match_value.clone())
+        .with_context(|| format!("{module}: binding_groups[{group_index}].source_match"))?;
+    if source_match.target_binding.is_some() {
+        bail!(
+            "{module}: binding_groups[{group_index}].source_match target_binding is unsupported; \
+             binding_groups choose targets through adopt_names/exports"
+        );
+    }
+    let declared = declared_selector_bindings_for_migration(
+        module,
+        &format!("binding_groups[{group_index}].source_match"),
+        &source_match,
+    )?;
+    let bindings = migrated_bindings_for_group(module, group_index, group_mapping, &declared)?;
+    move_binding_group_annotation_map(
+        module,
+        group_index,
+        group_mapping,
+        "comments",
+        "comment",
+        &bindings,
+        annotations,
+    )?;
+    move_binding_group_annotation_map(
+        module,
+        group_index,
+        group_mapping,
+        "notes",
+        "note",
+        &bindings,
+        annotations,
+    )?;
+    let note = optional_string_field(group_mapping, "note", || {
+        format!("{module}: binding_groups[{group_index}].note")
+    })?;
+
+    Ok((
+        source_match_claim_value(&source_match.match_source, bindings.clone(), note),
+        bindings,
+    ))
+}
+
+fn ensure_optional_sequence(root: &serde_yaml::Mapping, key: &str, module: &str) -> Result<()> {
+    if let Some(value) = root.get(yk(key))
+        && !matches!(value, Value::Sequence(_))
+    {
+        bail!("{module}: {key} exists but is not a sequence");
+    }
+    Ok(())
+}
+
+fn existing_annotations_mapping(
+    root: &serde_yaml::Mapping,
+    module: &str,
+) -> Result<serde_yaml::Mapping> {
+    match root.get(yk("annotations")) {
+        None => Ok(serde_yaml::Mapping::new()),
+        Some(Value::Mapping(mapping)) => Ok(mapping.clone()),
+        Some(_) => bail!("{module}: annotations exists but is not a mapping"),
+    }
+}
+
+fn ensure_migratable_member_keys(
+    module: &str,
+    member_index: usize,
+    mapping: &serde_yaml::Mapping,
+) -> Result<()> {
+    const ALLOWED: &[&str] = &[
+        "name",
+        "selector",
+        "purity",
+        "effect",
+        "pure_members",
+        "no_sync_callback_members",
+        "note",
+        "comment",
+    ];
+    ensure_mapping_keys(
+        mapping,
+        ALLOWED,
+        &format!("{module}: members[{member_index}]"),
+    )
+}
+
+fn ensure_binding_group_keys(
+    module: &str,
+    group_index: usize,
+    mapping: &serde_yaml::Mapping,
+) -> Result<()> {
+    const ALLOWED: &[&str] = &[
+        "source_match",
+        "adopt_names",
+        "exports",
+        "comments",
+        "notes",
+        "note",
+    ];
+    ensure_mapping_keys(
+        mapping,
+        ALLOWED,
+        &format!("{module}: binding_groups[{group_index}]"),
+    )
+}
+
+fn ensure_mapping_keys(
+    mapping: &serde_yaml::Mapping,
+    allowed: &[&str],
+    origin: &str,
+) -> Result<()> {
+    for key in mapping.keys() {
+        let Some(key) = yaml_key_as_str(key) else {
+            bail!("{origin} contains a non-string key");
+        };
+        if !allowed.contains(&key) {
+            bail!("{origin} contains unsupported field `{key}`");
+        }
+    }
+    Ok(())
+}
+
+fn ensure_source_match_only_selector(
+    module: &str,
+    member_index: usize,
+    member_mapping: &serde_yaml::Mapping,
+) -> Result<()> {
+    let selector = member_mapping
+        .get(yk("selector"))
+        .with_context(|| format!("{module}: members[{member_index}].selector missing"))?;
+    let selector_mapping = value_mapping(selector)
+        .with_context(|| format!("{module}: members[{member_index}].selector is not a mapping"))?;
+    for key in selector_mapping.keys() {
+        let Some(key) = yaml_key_as_str(key) else {
+            bail!("{module}: members[{member_index}].selector contains a non-string key");
+        };
+        if key != "source_match" {
+            bail!(
+                "{module}: members[{member_index}].selector mixes source_match with `{key}`; \
+                 migrate this member manually"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn selector_local_for_member_source_match(
+    module: &str,
+    member_index: usize,
+    source_match: &SourceMatch,
+) -> Result<String> {
+    let declared = declared_selector_bindings_for_migration(
+        module,
+        &format!("members[{member_index}].selector.source_match"),
+        source_match,
+    )?;
+    if let Some(target) = &source_match.target_binding {
+        if !declared.iter().any(|declared| declared == target) {
+            bail!(
+                "{module}: members[{member_index}].selector.source_match target_binding \
+                 `{target}` is not declared by its match body"
+            );
+        }
+        return Ok(target.clone());
+    }
+    let [target] = declared.as_slice() else {
+        let reason = match declared.len() {
+            0 => "declares no top-level bindings".to_string(),
+            n => format!("declares {n} top-level bindings and has no target_binding"),
+        };
+        bail!(
+            "{module}: members[{member_index}].selector.source_match {reason}; \
+             run single-target-binding first or add target_binding manually"
+        );
+    };
+    Ok(target.clone())
+}
+
+fn declared_selector_bindings_for_migration(
+    module: &str,
+    origin: &str,
+    source_match: &SourceMatch,
+) -> Result<Vec<String>> {
+    let declared = source_match::source_match_declared_binding_names(module, source_match)
+        .with_context(|| format!("{module}: parsing {origin}"))?;
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for name in &declared {
+        if !seen.insert(name.clone()) {
+            duplicates.insert(name.clone());
+        }
+    }
+    if !duplicates.is_empty() {
+        bail!(
+            "{module}: {origin} declares duplicate selector-local binding names: {}",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(declared)
+}
+
+fn migrated_bindings_for_group(
+    module: &str,
+    group_index: usize,
+    group_mapping: &serde_yaml::Mapping,
+    declared: &[String],
+) -> Result<Vec<MigratedSourceBinding>> {
+    let declared_set = declared.iter().cloned().collect::<BTreeSet<_>>();
+    let mut bindings = Vec::new();
+    let mut positions = BTreeMap::<String, usize>::new();
+
+    match group_mapping.get(yk("adopt_names")) {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => {
+            if declared.is_empty() {
+                bail!(
+                    "{module}: binding_groups[{group_index}].adopt_names found no declared \
+                     bindings in source_match.match"
+                );
+            }
+            for local in declared {
+                add_migrated_binding(
+                    module,
+                    group_index,
+                    &mut bindings,
+                    &mut positions,
+                    local,
+                    local,
+                    false,
+                )?;
+            }
+        }
+        Some(Value::Sequence(names)) => {
+            for name in names {
+                let local = value_string(name).with_context(|| {
+                    format!(
+                        "{module}: binding_groups[{group_index}].adopt_names entries must be strings"
+                    )
+                })?;
+                if !declared_set.contains(&local) {
+                    bail!(
+                        "{module}: binding_groups[{group_index}].adopt_names entry `{local}` \
+                         is not declared by source_match.match"
+                    );
+                }
+                add_migrated_binding(
+                    module,
+                    group_index,
+                    &mut bindings,
+                    &mut positions,
+                    &local,
+                    &local,
+                    false,
+                )?;
+            }
+        }
+        Some(_) => bail!(
+            "{module}: binding_groups[{group_index}].adopt_names must be true, false, or a list"
+        ),
+    }
+
+    if let Some(exports_value) = group_mapping.get(yk("exports")) {
+        let exports = value_mapping(exports_value).with_context(|| {
+            format!("{module}: binding_groups[{group_index}].exports is not a mapping")
+        })?;
+        for (local_value, name_value) in exports {
+            let local = value_string(local_value).with_context(|| {
+                format!("{module}: binding_groups[{group_index}].exports keys must be strings")
+            })?;
+            if !declared_set.contains(&local) {
+                bail!(
+                    "{module}: binding_groups[{group_index}].exports key `{local}` is not \
+                     declared by source_match.match"
+                );
+            }
+            let name = value_string(name_value).with_context(|| {
+                format!("{module}: binding_groups[{group_index}].exports values must be strings")
+            })?;
+            add_migrated_binding(
+                module,
+                group_index,
+                &mut bindings,
+                &mut positions,
+                &local,
+                &name,
+                true,
+            )?;
+        }
+    }
+
+    if bindings.is_empty() {
+        bail!(
+            "{module}: binding_groups[{group_index}] must include non-empty exports or adopt_names"
+        );
+    }
+    ensure_unique_migrated_binding_names(module, group_index, &bindings)?;
+    Ok(bindings)
+}
+
+fn ensure_unique_migrated_binding_names(
+    module: &str,
+    group_index: usize,
+    bindings: &[MigratedSourceBinding],
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for binding in bindings {
+        if !seen.insert(binding.name.clone()) {
+            duplicates.insert(binding.name.clone());
+        }
+    }
+    if !duplicates.is_empty() {
+        bail!(
+            "{module}: binding_groups[{group_index}] would produce source_matches[].bindings \
+             with duplicate readable names: {}",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn add_migrated_binding(
+    module: &str,
+    group_index: usize,
+    bindings: &mut Vec<MigratedSourceBinding>,
+    positions: &mut BTreeMap<String, usize>,
+    local: &str,
+    name: &str,
+    allow_rename_override: bool,
+) -> Result<()> {
+    if let Some(existing) = positions.get(local).copied() {
+        if allow_rename_override {
+            bindings[existing].name = name.to_string();
+            return Ok(());
+        }
+        bail!("{module}: binding_groups[{group_index}] repeats selector-local binding `{local}`");
+    }
+    positions.insert(local.to_string(), bindings.len());
+    bindings.push(MigratedSourceBinding {
+        local: local.to_string(),
+        name: name.to_string(),
+    });
+    Ok(())
+}
+
+fn move_member_annotations(
+    module: &str,
+    origin: &str,
+    member_mapping: &serde_yaml::Mapping,
+    export_name: &str,
+    annotations: &mut serde_yaml::Mapping,
+) -> Result<()> {
+    for field in [
+        "purity",
+        "effect",
+        "pure_members",
+        "no_sync_callback_members",
+        "comment",
+        "note",
+    ] {
+        if let Some(value) = member_mapping.get(yk(field)) {
+            merge_annotation_field(module, origin, annotations, export_name, field, value)?;
+        }
+    }
+    Ok(())
+}
+
+fn move_binding_group_annotation_map(
+    module: &str,
+    group_index: usize,
+    group_mapping: &serde_yaml::Mapping,
+    old_field: &str,
+    annotation_field: &str,
+    bindings: &[MigratedSourceBinding],
+    annotations: &mut serde_yaml::Mapping,
+) -> Result<()> {
+    let Some(value) = group_mapping.get(yk(old_field)) else {
+        return Ok(());
+    };
+    let mapping = value_mapping(value).with_context(|| {
+        format!("{module}: binding_groups[{group_index}].{old_field} is not a mapping")
+    })?;
+    let names_by_local = bindings
+        .iter()
+        .map(|binding| (binding.local.as_str(), binding.name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    for (local_value, annotation_value) in mapping {
+        let local = value_string(local_value).with_context(|| {
+            format!("{module}: binding_groups[{group_index}].{old_field} keys must be strings")
+        })?;
+        let Some(export_name) = names_by_local.get(local.as_str()) else {
+            bail!(
+                "{module}: binding_groups[{group_index}].{old_field} key `{local}` is not \
+                 exported by the group"
+            );
+        };
+        let annotation_text = value_string(annotation_value).with_context(|| {
+            format!("{module}: binding_groups[{group_index}].{old_field}.{local} must be a string")
+        })?;
+        merge_annotation_field(
+            module,
+            &format!("binding_groups[{group_index}].{old_field}.{local}"),
+            annotations,
+            export_name,
+            annotation_field,
+            &Value::String(annotation_text),
+        )?;
+    }
+    Ok(())
+}
+
+fn merge_annotation_field(
+    module: &str,
+    origin: &str,
+    annotations: &mut serde_yaml::Mapping,
+    export_name: &str,
+    field: &str,
+    value: &Value,
+) -> Result<()> {
+    if annotation_field_is_empty(field, value) {
+        return Ok(());
+    }
+    validate_annotation_field_value(module, origin, field, value)?;
+    let annotation = annotations
+        .entry(Value::String(export_name.to_string()))
+        .or_insert_with(|| Value::Mapping(serde_yaml::Mapping::new()));
+    let Value::Mapping(annotation_mapping) = annotation else {
+        bail!("{module}: annotations.{export_name} exists but is not a mapping");
+    };
+    match annotation_mapping.get(yk(field)) {
+        Some(existing) if existing == value => Ok(()),
+        Some(_) => bail!("{module}: {origin} conflicts with annotations.{export_name}.{field}"),
+        None => {
+            annotation_mapping.insert(yk(field), value.clone());
+            Ok(())
+        }
+    }
+}
+
+fn annotation_field_is_empty(field: &str, value: &Value) -> bool {
+    match (field, value) {
+        (_, Value::Null) => true,
+        ("purity" | "effect", Value::String(value)) => value == "default",
+        ("pure_members" | "no_sync_callback_members", Value::Sequence(values)) => values.is_empty(),
+        _ => false,
+    }
+}
+
+fn validate_annotation_field_value(
+    module: &str,
+    origin: &str,
+    field: &str,
+    value: &Value,
+) -> Result<()> {
+    match field {
+        "comment" | "note" | "purity" | "effect" => {
+            if !matches!(value, Value::String(_)) {
+                bail!("{module}: {origin}.{field} must be a string");
+            }
+        }
+        "pure_members" | "no_sync_callback_members" => {
+            let Value::Sequence(values) = value else {
+                bail!("{module}: {origin}.{field} must be a string list");
+            };
+            for item in values {
+                if !matches!(item, Value::String(_)) {
+                    bail!("{module}: {origin}.{field} entries must be strings");
+                }
+            }
+        }
+        _ => bail!("{module}: unsupported annotation field `{field}`"),
+    }
+    Ok(())
+}
+
+fn source_match_claim_value(
+    match_source: &str,
+    bindings: Vec<MigratedSourceBinding>,
+    note: Option<String>,
+) -> Value {
+    let mut claim = serde_yaml::Mapping::new();
+    claim.insert(yk("match"), Value::String(match_source.to_string()));
+    claim.insert(
+        yk("bindings"),
+        Value::Sequence(
+            bindings
+                .into_iter()
+                .map(source_match_binding_value)
+                .collect(),
+        ),
+    );
+    if let Some(note) = note {
+        claim.insert(yk("note"), Value::String(note));
+    }
+    Value::Mapping(claim)
+}
+
+fn source_match_binding_value(binding: MigratedSourceBinding) -> Value {
+    if binding.local == binding.name {
+        return Value::String(binding.local);
+    }
+    let mut detail = serde_yaml::Mapping::new();
+    detail.insert(yk("local"), Value::String(binding.local));
+    detail.insert(yk("name"), Value::String(binding.name));
+    Value::Mapping(detail)
+}
+
+fn synthesized_source_match_claim_value(synthesized: &SynthesizedSelectorGroup) -> Value {
+    source_match_claim_value(
+        &synthesized.match_source,
+        synthesized
+            .target_bindings
+            .iter()
+            .map(|target| MigratedSourceBinding {
+                local: target.export_name.clone(),
+                name: target.export_name.clone(),
+            })
+            .collect(),
+        None,
+    )
 }
 
 fn load_synthesis_index(config: &SelectorCodemodConfig) -> Result<ChunkSelectorIndex> {
@@ -1113,7 +1915,7 @@ fn synthesize_simplest_selector_for_group(
 // trigger — "minimal selectors overlap beyond a threshold" — collapses a run of
 // adjacent, near-identical *single-target declarations* whose individually-
 // minimized selectors share the bulk of their shape into one run-based
-// binding_group, instead of N standalone source_match selectors. This started
+// grouped source_match, instead of N standalone source_match selectors. This started
 // function-only (four context-accessor hooks each `function useX() { return
 // ANYTHING.…; }`) and now generalizes to any single-target declaration kind:
 // sibling class declarations, statement-run functions, object/var declarations,
@@ -1129,7 +1931,7 @@ fn synthesize_simplest_selector_for_group(
 // ===========================================================================
 
 /// Collapse maximal runs of adjacent, same-shape single-target declaration
-/// groups into one run-based binding_group. Other groups (multi-declarator var
+/// groups into one run-based grouped source_match. Other groups (multi-declarator var
 /// groups, lone declarations, anything whose merged run fails the matcher gate)
 /// pass through unchanged, preserving source order.
 fn merge_adjacent_same_shape_runs(
@@ -1151,7 +1953,7 @@ fn merge_adjacent_same_shape_runs(
     merged
 }
 
-/// Emit a candidate run: merge it into one binding_group when it holds ≥2 groups
+/// Emit a candidate run: merge it into one grouped source_match when it holds ≥2 groups
 /// and the merged selector proves unique, else emit each group individually.
 fn flush_same_shape_run(
     index: &ChunkSelectorIndex,
@@ -1204,8 +2006,8 @@ fn single_target_decl_kind(
     (kind != IndexedDeclarationKind::Other).then_some(kind)
 }
 
-/// Build one run-based binding_group from `run`: the source_match is the run's
-/// declarations concatenated in source order, `exports` maps every target. The
+/// Build one run-based grouped source_match from `run`: the selector is the run's
+/// declarations concatenated in source order and binds every target. The
 /// merged selector is re-proven through the matcher gate; `None` (proof failed)
 /// leaves the run to be emitted individually.
 fn merge_same_shape_run(
@@ -1739,77 +2541,6 @@ fn synthesized_candidate(input: SynthesizedCandidateInput<'_>) -> SelectorCodemo
     }
 }
 
-fn member_with_source_match(
-    export_name: &str,
-    comment: Option<String>,
-    note: Option<String>,
-    match_source: &str,
-    target_binding: &str,
-) -> Value {
-    let mut member = serde_yaml::Mapping::new();
-    member.insert(yk("name"), Value::String(export_name.to_string()));
-    if let Some(comment) = comment {
-        member.insert(yk("comment"), Value::String(comment));
-    }
-    if let Some(note) = note {
-        member.insert(yk("note"), Value::String(note));
-    }
-    let mut source_match = serde_yaml::Mapping::new();
-    source_match.insert(yk("identifiers"), Value::String("alpha_all".to_string()));
-    source_match.insert(
-        yk("target_binding"),
-        Value::String(target_binding.to_string()),
-    );
-    source_match.insert(yk("match"), Value::String(match_source.to_string()));
-    let mut selector = serde_yaml::Mapping::new();
-    selector.insert(yk("source_match"), Value::Mapping(source_match));
-    member.insert(yk("selector"), Value::Mapping(selector));
-    Value::Mapping(member)
-}
-
-fn binding_group_value(
-    synthesized: &SynthesizedSelectorGroup,
-    members: &[NameBindingMember],
-) -> Value {
-    let mut source_match = serde_yaml::Mapping::new();
-    source_match.insert(yk("identifiers"), Value::String("alpha_all".to_string()));
-    source_match.insert(yk("match"), Value::String(synthesized.match_source.clone()));
-
-    let mut exports = serde_yaml::Mapping::new();
-    for target in &synthesized.target_bindings {
-        exports.insert(
-            Value::String(target.export_name.clone()),
-            Value::String(target.export_name.clone()),
-        );
-    }
-    let mut comments = serde_yaml::Mapping::new();
-    let mut notes = serde_yaml::Mapping::new();
-    for member in members {
-        if let Some(comment) = &member.comment {
-            comments.insert(
-                Value::String(member.export_name.clone()),
-                Value::String(comment.clone()),
-            );
-        }
-        if let Some(note) = &member.note {
-            notes.insert(
-                Value::String(member.export_name.clone()),
-                Value::String(note.clone()),
-            );
-        }
-    }
-    let mut group = serde_yaml::Mapping::new();
-    group.insert(yk("source_match"), Value::Mapping(source_match));
-    group.insert(yk("exports"), Value::Mapping(exports));
-    if !comments.is_empty() {
-        group.insert(yk("comments"), Value::Mapping(comments));
-    }
-    if !notes.is_empty() {
-        group.insert(yk("notes"), Value::Mapping(notes));
-    }
-    Value::Mapping(group)
-}
-
 fn apply_member_replacements(
     members: &mut Vec<Value>,
     replacements: BTreeMap<usize, Option<Value>>,
@@ -1915,9 +2646,42 @@ fn mapping_get_mut_path<'a>(value: &'a mut Value, path: &[&str]) -> Option<&'a m
     Some(current)
 }
 
+fn value_mapping(value: &Value) -> Option<&serde_yaml::Mapping> {
+    match value {
+        Value::Mapping(mapping) => Some(mapping),
+        _ => None,
+    }
+}
+
 fn value_as_string(value: &Value) -> Option<String> {
     match value {
         Value::String(value) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn value_string(value: &Value) -> Option<String> {
+    value_as_string(value)
+}
+
+fn optional_string_field<F>(
+    mapping: &serde_yaml::Mapping,
+    key: &str,
+    origin: F,
+) -> Result<Option<String>>
+where
+    F: FnOnce() -> String,
+{
+    match mapping.get(yk(key)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => bail!("{} must be a string", origin()),
+    }
+}
+
+fn yaml_key_as_str(key: &Value) -> Option<&str> {
+    match key {
+        Value::String(value) => Some(value.as_str()),
         _ => None,
     }
 }
@@ -2212,6 +2976,36 @@ fn is_zero(value: &usize) -> bool {
 
 #[cfg(test)]
 mod selector_minimizer_proptest;
+
+#[cfg(test)]
+mod source_match_migration_tests {
+    use super::*;
+
+    #[test]
+    fn binding_group_migration_rejects_duplicate_readable_names() {
+        js_ast::with_swc_globals(|| {
+            let group: Value = serde_yaml::from_str(
+                r#"source_match:
+  match: 'const left = 1, right = 2;'
+adopt_names:
+  - left
+  - right
+exports:
+  right: left
+"#,
+            )
+            .unwrap();
+            let mut annotations = serde_yaml::Mapping::new();
+            let err = migrate_binding_group("app/dupe", 0, &group, &mut annotations)
+                .expect_err("duplicate readable names should be rejected");
+            let message = format!("{err:#}");
+            assert!(
+                message.contains("duplicate readable names: left"),
+                "unexpected error: {message}"
+            );
+        });
+    }
+}
 
 #[cfg(test)]
 mod adjacent_function_grouping_tests {

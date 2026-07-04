@@ -235,23 +235,23 @@ pub enum StatementKind {
 /// [`StatementFacts`]. See the doc comment on
 /// [`analyze_chunk_structural`] for why this layer exists.
 #[derive(Debug, Clone)]
-pub(crate) struct StructuralStatementFacts {
-    pub(crate) ordinal: StatementOrdinal,
-    pub(crate) source_location: Option<SourceLocation>,
-    pub(crate) kind: StatementKind,
-    pub(crate) declared: BTreeSet<Id>,
-    pub(crate) reads: PositionBucketed<BTreeSet<Id>>,
-    pub(crate) rebinds: PositionBucketed<BTreeSet<Id>>,
-    pub(crate) calls: PositionBucketed<BTreeSet<Id>>,
-    pub(crate) at_init_unresolved_sources: BTreeSet<Id>,
-    pub(crate) at_init_unresolved_inline_fn: bool,
-    pub(crate) first_order_unresolved_sources: BTreeSet<Id>,
-    pub(crate) first_order_unresolved_inline_fn: bool,
-    pub(crate) declares_direct_function: bool,
-    pub(crate) global_writes: BTreeSet<String>,
-    pub(crate) global_reads: BTreeSet<String>,
-    pub(crate) cell_writes_summarizable: bool,
-    pub(crate) dataflow_summarizable: bool,
+pub struct StructuralStatementFacts {
+    pub ordinal: StatementOrdinal,
+    pub source_location: Option<SourceLocation>,
+    pub kind: StatementKind,
+    pub declared: BTreeSet<Id>,
+    pub reads: PositionBucketed<BTreeSet<Id>>,
+    pub rebinds: PositionBucketed<BTreeSet<Id>>,
+    pub calls: PositionBucketed<BTreeSet<Id>>,
+    pub at_init_unresolved_sources: BTreeSet<Id>,
+    pub at_init_unresolved_inline_fn: bool,
+    pub first_order_unresolved_sources: BTreeSet<Id>,
+    pub first_order_unresolved_inline_fn: bool,
+    pub declares_direct_function: bool,
+    pub global_writes: BTreeSet<String>,
+    pub global_reads: BTreeSet<String>,
+    pub cell_writes_summarizable: bool,
+    pub dataflow_summarizable: bool,
 }
 
 /// The policy-independent half of [`analyze_chunk`]'s output: the
@@ -262,9 +262,9 @@ pub(crate) struct StructuralStatementFacts {
 /// Owns its top-level item view by lifetime-tying to the source
 /// module, so the policy-dependent pass can re-traverse the same views
 /// without re-running the multi-declarator split.
-pub(crate) struct StructuralChunkAnalysis<'a> {
-    pub(crate) body: Vec<TopLevelItemView<'a>>,
-    pub(crate) shadowed: BTreeSet<&'static str>,
-    pub(crate) per_statement: Vec<StructuralStatementFacts>,
-    pub(crate) top_level_await: Option<StatementOrdinal>,
+pub struct StructuralChunkAnalysis<'a> {
+    pub body: Vec<TopLevelItemView<'a>>,
+    pub shadowed: BTreeSet<&'static str>,
+    pub per_statement: Vec<StructuralStatementFacts>,
+    pub top_level_await: Option<StatementOrdinal>,
 }

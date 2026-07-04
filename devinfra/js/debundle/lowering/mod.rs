@@ -15,7 +15,8 @@ use analysis::{
 };
 use gate::{ChunkFactorization, render_atomic_unit_conflict_summary, render_cycle_summary};
 use stage_one::{
-    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis, compute_rebind_folds,
+    ChunkAnalysis, DynamicImportTarget, RebindFold, compute_chunk_analysis_from_structural,
+    compute_rebind_folds,
 };
 
 use artifact::{
@@ -130,6 +131,19 @@ pub struct MaterializeLogicalModulesResult {
     /// name), then fails at the end with the full list. See
     /// [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
+}
+
+pub fn validate_logical_module_claims(
+    id: &str,
+    members: &[spec::Member],
+    source_matches: &[spec::SourceMatchClaim],
+    binding_groups: &[spec::BindingGroup],
+    annotations: &BTreeMap<String, spec::BindingAnnotation>,
+) -> Result<()> {
+    let members = plans::build_members(members, source_matches, binding_groups, annotations, id)?;
+    exports::reject_duplicate_export_names("logical_module", id, &members)?;
+    exports::reject_duplicate_member_bindings("logical_module", id, &members)?;
+    Ok(())
 }
 
 /// A `define_logical_module` member whose `binding.name` did not

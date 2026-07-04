@@ -235,6 +235,35 @@ impl MemberSelectorProgramBuilder {
         statement_index: usize,
         selector: &AnonymousStatementSelector,
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        let logical_module = logical_module.into();
+        let debug_label = format!("anonymous_statement.{statement_index}.source_match");
+        let parsed = js_ast::with_swc_globals(|| {
+            source_match::ParsedSourceMatchSelector::parse(
+                &logical_module,
+                "source_match",
+                format!("<selector ir source_match in {logical_module}>"),
+                selector,
+                "source_match",
+            )
+        })
+        .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
+            selector_kind: "source_match",
+            reason: format!("logical_module {logical_module} {debug_label}: {error}"),
+        })?;
+        self.declare_native_anonymous_statement_target_in_module_parsed(
+            logical_module,
+            statement_index,
+            &parsed,
+        )
+    }
+
+    pub fn declare_native_anonymous_statement_target_in_module_parsed(
+        &mut self,
+        logical_module: impl Into<String>,
+        statement_index: usize,
+        parsed: &source_match::ParsedSourceMatchSelector,
+    ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
+        let selector = parsed.selector();
         if !native_anonymous_source_match_supported(selector) {
             return Err(SelectorIrLoweringError::unsupported(
                 "anonymous_statements.source_match",
@@ -250,7 +279,12 @@ impl MemberSelectorProgramBuilder {
             )),
         );
         let debug_label = format!("anonymous_statement.{statement_index}.source_match");
-        if !scratch.try_lower_native_source_match(&logical_module, &debug_label, owner, selector)? {
+        if !scratch.try_lower_native_source_match_parsed(
+            &logical_module,
+            &debug_label,
+            owner,
+            parsed,
+        )? {
             return Err(SelectorIrLoweringError::unsupported(
                 "anonymous_statements.source_match",
                 "selector shape is not yet supported by native selector IR",
@@ -324,6 +358,31 @@ impl MemberSelectorProgramBuilder {
     ) -> Result<(), SelectorIrLoweringError> {
         let owner = self.owner_for_local_export(logical_module, export_name);
         self.lower_selector_atoms(logical_module, export_name, owner, selector)
+    }
+
+    pub fn lower_source_match_constraints_in_module_parsed(
+        &mut self,
+        logical_module: &str,
+        export_name: &str,
+        parsed: &source_match::ParsedSourceMatchSelector,
+    ) -> Result<(), SelectorIrLoweringError> {
+        let owner = self.owner_for_local_export(logical_module, export_name);
+        let debug_label = format!("source_match.{export_name}");
+        if !self.try_lower_native_source_match_parsed(
+            logical_module,
+            &debug_label,
+            owner,
+            parsed,
+        )? {
+            return Err(SelectorIrLoweringError::UnsupportedSourceMatch {
+                selector_kind: "source_match",
+                reason: format!(
+                    "selector shape is not yet supported by native selector IR in \
+                     logical_module {logical_module} for export {export_name}"
+                ),
+            });
+        }
+        Ok(())
     }
 
     pub fn lower_projected_source_match_candidates(
@@ -646,11 +705,11 @@ impl MemberSelectorProgramBuilder {
         selector: &AnonymousStatementSelector,
     ) -> Result<bool, SelectorIrLoweringError> {
         let parsed = js_ast::with_swc_globals(|| {
-            source_match::parse_selector_module_with_capability_check(
+            source_match::ParsedSourceMatchSelector::parse(
                 logical_module,
                 "source_match",
                 format!("<selector ir source_match in {logical_module}>"),
-                &selector.match_source,
+                selector,
                 "source_match",
             )
         })
@@ -658,16 +717,27 @@ impl MemberSelectorProgramBuilder {
             selector_kind: "source_match",
             reason: format!("logical_module {logical_module} {debug_label}: {error}"),
         })?;
-        if parsed.body.is_empty() {
+        self.try_lower_native_source_match_parsed(logical_module, debug_label, owner, &parsed)
+    }
+
+    fn try_lower_native_source_match_parsed(
+        &mut self,
+        logical_module: &str,
+        debug_label: &str,
+        owner: SelectorVariableId,
+        parsed: &source_match::ParsedSourceMatchSelector,
+    ) -> Result<bool, SelectorIrLoweringError> {
+        let selector = parsed.selector();
+        if parsed.body().is_empty() {
             return Ok(false);
         }
-        if parsed.body.len() > 1 && selector.target_binding.is_none() {
+        if parsed.body().len() > 1 && selector.target_binding.is_none() {
             return Ok(false);
         }
-        let Ok(facts) = chunk_facts::extract_facts_items(&parsed.body) else {
+        let Ok(facts) = chunk_facts::extract_facts_items(parsed.body()) else {
             return Ok(false);
         };
-        if parsed.body.len() > 1 && !native_module_stmt_list_hole_roots(&facts).is_empty() {
+        if parsed.body().len() > 1 && !native_module_stmt_list_hole_roots(&facts).is_empty() {
             return Ok(false);
         }
         let regex_predicates = native_string_literal_regex_predicates(&facts);
@@ -687,7 +757,7 @@ impl MemberSelectorProgramBuilder {
         } else {
             BTreeMap::new()
         };
-        if facts.top_level.len() != parsed.body.len() {
+        if facts.top_level.len() != parsed.body().len() {
             return Ok(false);
         }
         let top_level_roots = facts
@@ -937,11 +1007,11 @@ impl MemberSelectorProgramBuilder {
             return Ok(false);
         }
         let parsed = js_ast::with_swc_globals(|| {
-            source_match::parse_selector_module_with_capability_check(
+            source_match::ParsedSourceMatchSelector::parse(
                 logical_module,
                 "binding_group.source_match",
                 format!("<selector ir binding_group source_match in {logical_module}>"),
-                &selector.match_source,
+                selector,
                 "binding_group.source_match",
             )
         })
@@ -953,10 +1023,23 @@ impl MemberSelectorProgramBuilder {
                 error
             ),
         })?;
-        if parsed.body.is_empty() {
+        self.try_lower_native_source_match_group_parsed(logical_module, &parsed, exports_by_target)
+    }
+
+    pub fn try_lower_native_source_match_group_parsed(
+        &mut self,
+        logical_module: &str,
+        parsed: &source_match::ParsedSourceMatchSelector,
+        exports_by_target: &BTreeMap<String, String>,
+    ) -> Result<bool, SelectorIrLoweringError> {
+        let selector = parsed.selector();
+        if selector.target_binding.is_some() || exports_by_target.is_empty() {
             return Ok(false);
         }
-        let Ok(facts) = chunk_facts::extract_facts_items(&parsed.body) else {
+        if parsed.body().is_empty() {
+            return Ok(false);
+        }
+        let Ok(facts) = chunk_facts::extract_facts_items(parsed.body()) else {
             return Ok(false);
         };
         let module_stmt_list_hole_roots = native_module_stmt_list_hole_roots(&facts);
@@ -991,7 +1074,7 @@ impl MemberSelectorProgramBuilder {
         } else {
             BTreeMap::new()
         };
-        if facts.top_level.len() != parsed.body.len() {
+        if facts.top_level.len() != parsed.body().len() {
             return Ok(false);
         }
         let group_debug_label = binding_group_source_match_debug_label(exports_by_target);

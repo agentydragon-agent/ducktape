@@ -61,6 +61,43 @@ fn list_filters_unrenamed_and_orphan() {
 }
 
 #[test]
+fn list_includes_canonical_source_match_bindings() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "m.yaml",
+        r#"source_matches:
+  - match: "const XOe = makePluginSettings();"
+    bindings:
+      - XOe
+      - local: YOe
+        name: PluginSettings
+annotations:
+  PluginSettings:
+    comment: emitted comment
+"#,
+    );
+
+    let all = run_bindings_list(root, &BindingsListFilters::default()).unwrap();
+    assert_eq!(all.bindings.len(), 2);
+    assert_eq!(all.bindings[0].name.minified(), "XOe");
+    assert_eq!(all.bindings[1].name.minified(), "YOe");
+    assert_eq!(all.bindings[1].name.readable(), Some("PluginSettings"));
+
+    let unrenamed = run_bindings_list(
+        root,
+        &BindingsListFilters {
+            unrenamed: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(unrenamed.bindings.len(), 1);
+    assert_eq!(unrenamed.bindings[0].name.minified(), "XOe");
+}
+
+#[test]
 fn rename_round_trip_validates_then_writes() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();
@@ -74,6 +111,139 @@ fn rename_round_trip_validates_then_writes() {
     let body = read(root, "m.yaml");
     let doc: Value = serde_yaml::from_str(&body).unwrap();
     assert_eq!(doc["members"][0]["name"].as_str(), Some("PluginSettings"));
+}
+
+#[test]
+fn rename_source_match_binding_rekeys_annotation_and_expands_shorthand() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "m.yaml",
+        r#"source_matches:
+  - match: "const XOe = makePluginSettings();"
+    bindings:
+      - XOe
+annotations:
+  XOe:
+    note: stable selector debt
+"#,
+    );
+
+    let out = rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
+    assert_eq!(out.new_readable, "PluginSettings");
+    let doc: Value = serde_yaml::from_str(&read(root, "m.yaml")).unwrap();
+    assert_eq!(
+        doc["source_matches"][0]["bindings"][0]["local"].as_str(),
+        Some("XOe")
+    );
+    assert_eq!(
+        doc["source_matches"][0]["bindings"][0]["name"].as_str(),
+        Some("PluginSettings")
+    );
+    assert!(doc["annotations"]["XOe"].is_null(), "{doc:?}");
+    assert_eq!(
+        doc["annotations"]["PluginSettings"]["note"].as_str(),
+        Some("stable selector debt")
+    );
+}
+
+#[test]
+fn rename_rejects_collision_with_canonical_source_match_binding() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "a.yaml",
+        r#"source_matches:
+  - match: "const AOe = makeExisting();"
+    bindings:
+      - local: AOe
+        name: Existing
+"#,
+    );
+    write(
+        root,
+        "b.yaml",
+        "members:\n  - selector: { binding: { name: XOe } }\n",
+    );
+
+    let err = rename_binding(root, "XOe", "Existing", false, false).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("name collision"), "got {msg}");
+    assert!(msg.contains("source_matches[0].bindings[0]"), "got {msg}");
+}
+
+#[test]
+fn rename_rekeys_matching_annotation() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "m.yaml",
+        r#"members:
+  - selector: { binding: { name: XOe } }
+annotations:
+  XOe:
+    note: stable selector debt
+"#,
+    );
+    rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
+    let doc: Value = serde_yaml::from_str(&read(root, "m.yaml")).unwrap();
+    assert!(doc["annotations"]["XOe"].is_null(), "{doc:?}");
+    assert_eq!(
+        doc["annotations"]["PluginSettings"]["note"].as_str(),
+        Some("stable selector debt")
+    );
+}
+
+#[test]
+fn assign_and_unassign_reject_canonical_source_match_bindings() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "m.yaml",
+        r#"source_matches:
+  - match: "const XOe = makePluginSettings();"
+    bindings:
+      - XOe
+"#,
+    );
+
+    let assign_err = run_bindings_assign(
+        root,
+        vec![Move {
+            sym: "XOe".into(),
+            module: "dest".into(),
+            readable: None,
+        }],
+        false,
+        Gate::NamesOnly,
+    )
+    .unwrap_err();
+    let assign_msg = format!("{assign_err}");
+    assert!(
+        assign_msg.contains("does not yet support"),
+        "got {assign_msg}"
+    );
+    assert!(
+        assign_msg.contains("source_matches[0].bindings[0]"),
+        "got {assign_msg}"
+    );
+    assert!(!root.join("dest.yaml").exists(), "assign must not write");
+
+    let unassign_err =
+        run_bindings_unassign(root, vec!["XOe".into()], false, Gate::Skip).unwrap_err();
+    let unassign_msg = format!("{unassign_err}");
+    assert!(
+        unassign_msg.contains("does not yet support"),
+        "got {unassign_msg}"
+    );
+    assert!(
+        unassign_msg.contains("source_matches[0].bindings[0]"),
+        "got {unassign_msg}"
+    );
 }
 
 #[test]
@@ -152,6 +322,35 @@ fn assign_atomic_batch_creates_destinations_and_drains_sources() {
         .map(|m| m["name"].as_str())
         .collect();
     assert!(readables.contains(&Some("ButtonRegistry")));
+}
+
+#[test]
+fn assign_moves_matching_annotation_to_destination_name() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "src.yaml",
+        r#"members:
+  - selector: { binding: { name: XOe } }
+annotations:
+  XOe:
+    note: stable selector debt
+"#,
+    );
+    let moves = vec![Move {
+        sym: "XOe".into(),
+        module: "dest".into(),
+        readable: Some("PluginSettings".into()),
+    }];
+    run_bindings_assign(root, moves, false, Gate::NamesOnly).unwrap();
+    assert!(!root.join("src.yaml").exists(), "drained source is deleted");
+    let doc: Value = serde_yaml::from_str(&read(root, "dest.yaml")).unwrap();
+    assert_eq!(
+        doc["annotations"]["PluginSettings"]["note"].as_str(),
+        Some("stable selector debt")
+    );
+    assert!(doc["annotations"]["XOe"].is_null(), "{doc:?}");
 }
 
 #[test]
@@ -348,6 +547,27 @@ fn unassign_preserves_unrelated_empty_module() {
         "unrelated pre-existing empty module must survive an unassign"
     );
     assert!(!root.join("src.yaml").exists(), "drained source is deleted");
+}
+
+#[test]
+fn unassign_removes_matching_annotation_with_member() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "src.yaml",
+        r#"members:
+  - selector: { binding: { name: XOe } }
+annotations:
+  XOe:
+    note: stable selector debt
+"#,
+    );
+    run_bindings_unassign(root, vec!["XOe".into()], false, Gate::Skip).unwrap();
+    assert!(
+        !root.join("src.yaml").exists(),
+        "annotation moved with the removed member, so the drained module can be deleted"
+    );
 }
 
 #[test]

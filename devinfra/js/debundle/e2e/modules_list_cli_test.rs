@@ -103,6 +103,53 @@ fn modules_list_empty_filter() {
 }
 
 #[test]
+fn modules_list_empty_filter_excludes_canonical_source_claims_and_annotations() {
+    let dir = tempfile::tempdir().unwrap();
+    let modules = dir.path().join("modules");
+    write_text_file(&modules.join("ui/empty.yaml"), "members: []\n");
+    write_text_file(
+        &modules.join("ui/source_claim.yaml"),
+        r#"source_matches:
+  - match: "const claimed = 1;"
+    bindings: [claimed]
+"#,
+    );
+    write_text_file(
+        &modules.join("ui/annotation_only.yaml"),
+        r#"annotations:
+  stale:
+    note: preserved diagnostic debt
+"#,
+    );
+
+    let output = Command::new(debundler_path())
+        .args([
+            "modules",
+            "list",
+            "--modules",
+            modules.to_str().unwrap(),
+            "--empty",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        output.status.success(),
+        "non-zero exit: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let paths: Vec<&str> = parsed["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(paths, vec!["ui/empty"]);
+}
+
+#[test]
 fn modules_list_picks_up_modules_env_var() {
     // CLI flags override env vars (per docs/cli.md); both pointing at
     // the same dir is enough to prove env-var plumbing parses.

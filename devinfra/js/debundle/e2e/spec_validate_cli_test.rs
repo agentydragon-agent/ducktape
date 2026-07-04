@@ -333,6 +333,46 @@ fn validate_source_only_clean_modules_report_no_problems() {
 }
 
 #[test]
+fn validate_source_only_reports_stale_annotations() {
+    let dir = tempfile::tempdir().unwrap();
+    let source_file = dir.path().join("chunk.js");
+    write(
+        &source_file,
+        r#"const claimed = makeWidget("ok");
+"#,
+    );
+    let modules_root = dir.path().join("modules");
+    write(
+        &modules_root.join("ui/widget.yaml"),
+        r#"source_matches:
+  - match: 'const selected = makeWidget("ok");'
+    bindings:
+      - local: selected
+        name: Widget
+annotations:
+  StaleWidget:
+    note: no matching claim
+"#,
+    );
+
+    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
+    assert!(out.status.success(), "stderr={}", out.stderr);
+    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["total"], 1, "{report:#}");
+    let diagnostic = &report["chunks"][0]["diagnostics"][0];
+    assert_eq!(diagnostic["category"], "selector_resolution_error");
+    assert_eq!(diagnostic["selector_kind"], "annotations");
+    assert_eq!(diagnostic["module_path"], "ui/widget");
+    assert!(
+        diagnostic["message"]
+            .as_str()
+            .unwrap()
+            .contains("annotations key `StaleWidget` does not match"),
+        "{diagnostic:#}"
+    );
+}
+
+#[test]
 fn validate_source_only_reports_anonymous_statement_failures() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
