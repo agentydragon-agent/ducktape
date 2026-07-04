@@ -94,17 +94,27 @@ this non-root image pod has not) and no boot-time render script:
 
 ## Follow-ups
 
-- **Attic** — `~/.config/attic/config.toml` + `~/.config/nix/netrc` from a minted
-  token. The static parts belong in `home.nix`; the token would come from k8s via
-  an ESO `ExternalSecret` `spec.target.template` that renders the netrc (precedent:
-  `cluster/k8s/props/app/registry-pull-secret.yaml`) — not wired yet.
-- **Push-time reconcile** — a Forgejo `package`-webhook receiver (copy
-  `cluster/k8s/haku/ui-image-webhook/receiver.yaml`) to replace the 5m
-  `ImageRepository` poll.
+- **Attic cache (auto-rotated)** — wire `cache.allegedly.works/{main,gaffer}` as
+  substituters so the pod's nix/bazel builds reuse our closures. Both caches need a
+  reader JWT (`main:r,gaffer:r`); neither is public-read. Do it _right_: extend
+  `cluster/rotators/attic_jwt_rotation` (`rotate.py` + `rotators.yaml`) to emit a
+  **k8s Secret / netrc** target (today it only writes sops-nix host files and
+  overwrites rather than merges), so the pod's reader token auto-rotates. A
+  hand-minted static token works but silently expires in ~1 year — rejected. Pod
+  side once the rotated secret exists: mount it, add the substituters +
+  `trusted-public-keys` (`main:owYQ…`, `gaffer:78zV…`, SSOT `nix/attic-pubkeys.json`)
+  - `netrc-file` to the baked `~/.config/nix/nix.conf`.
+- **Push-time reconcile — not wired (5m poll is fine)** — a Forgejo `package`
+  webhook would give instant pickup instead of the 5m `ImageRepository` poll, but
+  there's no clean path: the `svalabs/forgejo` provider only has
+  `forgejo_repository_webhook`, while codex-pod's image is a `ducktape-ci` **user**
+  package with no repo — so the right primitive (a user/org `package` webhook) has
+  no resource. The workarounds are bespoke/fragile: a raw-API `data http` POST
+  creating a `ducktape-ci` user webhook (no provider resource ⇒ no drift detection
+  or clean delete), or giving `ducktape-ci` a repo + linking the package to it
+  (haku's painful path — `cluster/k8s/haku/ui-image-webhook` +
+  `tf/gitops/haku-state`, incl. the out-of-band package-link). Not worth it for a
+  dev pod; revisit if the provider gains a user/org webhook resource.
 - **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to
   Forgejo image-by-image (weigh the per-image pull-availability tradeoff — an
   in-cluster registry outage means those pods can't pull), and retire Harbor.
-- **Bring-up watch** — the `forgejo-images` Terraform reads the credential in the
-  new `forgejo-images` namespace; if the first apply errors on RBAC, widen the
-  `tf-runner` role (`forgejo-props` reads the `forgejo` ns, so cross-ns reads
-  work, but the new ns wasn't verified).
