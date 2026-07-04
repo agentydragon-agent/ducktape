@@ -36,7 +36,7 @@ spec:
           containers:
             - name: reconciler
               # Script baked in via Bazel (//cluster/provisioners/grocy_user_perms:image).
-              image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260702062831-ae8ee8a # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
+              image: ghcr.io/agentydragon/grocy-user-perms-provisioner:devel-20260704000514-b37cedf # {"$imagepolicy": "flux-system:grocy-user-perms-provisioner"}
               imagePullPolicy: Always
               args:
                 - --policy
