@@ -53,6 +53,24 @@
     '';
   };
 
+  # Steam defaults "GPU accelerated rendering in web views" OFF on NVIDIA +
+  # Wayland (Valve driver-detection bug, ValveSoftware/steam-for-linux#13151).
+  # That forces the Big Picture web UI (CEF) to rasterize on the CPU — ~5 FPS
+  # scrolling at 4K on the gaming seat (debug/atlas/direct_display_bringup.md).
+  # Enabling it (registry key GPUAccelWebViewsV3=1, via Steam → Settings →
+  # Interface) renders on the 5090.
+  #
+  # Steam owns registry.vdf and rewrites it, so we do NOT edit it — this only
+  # *warns* on activation if the key isn't enabled, leaving the fix to the
+  # in-Steam toggle. (Enabling GPU web views on NVIDIA can also corrupt some
+  # Big Picture panels, #11843 — a separate, cosmetic Steam-side bug.)
+  home.activation.steamGpuWebViews = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    reg="$HOME/.steam/registry.vdf"
+    if [ -f "$reg" ] && ! grep -qE '"GPUAccelWebViewsV3"[[:space:]]*"1"' "$reg"; then
+      echo "warning: Steam 'GPU accelerated rendering in web views' is not enabled (registry.vdf GPUAccelWebViewsV3 != 1). Big Picture will render on CPU (~5 FPS at 4K on the seat). Enable it in Steam → Settings → Interface. See debug/atlas/direct_display_bringup.md." >&2
+    fi
+  '';
+
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
