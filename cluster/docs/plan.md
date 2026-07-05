@@ -117,20 +117,6 @@ returns (not independently parked):
       etcd-on-NVMe move — Stage 2 of <plans/ovh_storage_tiering.md>, whose SeaweedFS
       volume-tiering foundation landed 2026-07. Full RCA + remediation tracking:
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>.
-- [ ] **haku-ci Docker Hub pull-through cache** (replace the external-CDN egress
-      allows). The haku-ci runner's rootless dind pulls base images from Docker
-      Hub, which 307-redirects config/layer blob GETs to `production.cloudfront.docker.com`
-      (AWS CloudFront). The egress policy now allowlists that host explicitly
-      (root cause was a `cloudflare` vs `cloudfront` hostname mix-up — only the
-      Cloudflare front was allowed). It works but couples the runner to Docker's
-      CDN hostnames. Replace with an in-cluster `registry:2` configured as a Docker
-      Hub pull-through cache: transparent via the dind `--registry-mirror` (Harbor's
-      proxy-cache can't act as a root mirror, and Harbor is currently down anyway),
-      then drop the docker.com CDN allows. Bonus: caching + Docker Hub rate-limit
-      relief. Update 2026-07: the in-cluster mirror now exists — `oci-cache` (Zot),
-      phase 1, see <../k8s/oci-cache/README.md>. Remaining work here is pointing the
-      haku-ci dind `--registry-mirror` at its ClusterIP, adding a NetworkPolicy egress
-      allow to `oci-cache`, and dropping the docker.com CDN FQDNs (phase 2, item 4 there).
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in

@@ -33,12 +33,26 @@ adversarial (containment = cross-origin iframe isolation + the capability gate +
 scheme-gate). A CI-built image vs committed files doesn't widen that — it only changes _how_
 Haku produces the image, and the runner can't escape its perimeter.
 
-## ⚠️ Paving — validate a real build
+## Validated build path
 
-The dind daemon now starts (privileged-pod rootless, after the non-privileged path dead-ended
-on the mount masks). What's left is an end-to-end check: trigger a `.forgejo/workflows/` build
-on the runner and confirm it builds + pushes an image. Check
-`kubectl -n haku-ci logs deploy/haku-runner -c dind` (daemon up) and the runner's job logs.
+The dind daemon runs as privileged-pod rootless Docker (after the non-privileged path
+dead-ended on the mount masks). Its Docker Hub pulls go through `oci-cache` with Docker's
+Hub-only `--registry-mirror`; rootless dind listens on `tcp://127.0.0.1:2375`, not
+`/var/run/docker.sock`.
+
+The current end-to-end validation is a real haku-state `validate-state` workflow on Forgejo.
+As of 2026-07-05, the default branch is green after a push-triggered run (`/haku/haku-state`
+Actions run 336). A quick daemon-side mirror smoke test is:
+
+```bash
+kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
+  docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
+```
+
+If this regresses, check the job log first. The Docker Hub symptom before the 2026-07-05 fix
+was dockerd timing out against `https://registry-1.docker.io/v2/` after the mirror rejected a
+Docker schema2 child manifest; the owning fix is `oci-cache`'s Zot `http.compat:
+["docker2s2"]` setting.
 
 ## What's here
 

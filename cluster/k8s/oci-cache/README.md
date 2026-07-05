@@ -35,6 +35,13 @@ so it works with Docker's `--registry-mirror` (which is Hub-only and can't take 
 prefix). Note the root is a catch-all — it's listed last so the prefixed registries match
 first.
 
+Because that root endpoint is used by classic dockerd as a Docker Hub mirror, keep Zot's
+`http.compat: ["docker2s2"]` setting. Docker Hub's multi-arch indexes can reference child
+manifests with media type `application/vnd.docker.distribution.manifest.v2+json`; without
+`docker2s2`, Zot rejects those children as `invalid manifest content`, returns a failed
+mirror response, and dockerd falls back to `https://registry-1.docker.io/v2/`. In haku-ci
+that fallback is intentionally not a reliable path through the egress fence.
+
 ## Consumers
 
 - **haku-ci dind** pulls Docker Hub base images via `--registry-mirror` (see
@@ -87,7 +94,7 @@ The public, authenticated endpoint and node-level pull-through are deliberately 
    force-proxy policy had to allow the **backend** port 5000 for the mirror (Cilium enforces
    on targetPort, not the Service port).
 
-## Verified working (2026-07-04)
+## Verified working (2026-07-05)
 
 Confirmed live end-to-end: image tag `v2.1.11` runs with the `sync` extension, the S3
 `storageDriver` keys are correct, the `prefix`/`destination` routing resolves
@@ -109,3 +116,15 @@ kubectl -n oci-cache run probe --rm -it --image=curlimages/curl --restart=Never 
 
 Known cosmetic quirk: `GET /v2/_catalog` lists empty even for cached repos (clients pull by
 name, not via the catalog, so pulls are unaffected).
+
+Root-mirror validation for haku-ci's dockerd path:
+
+```bash
+kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
+  docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
+```
+
+This path was last checked with haku-state's push-triggered `validate-state` workflow after
+the `docker2s2` fix. A manual `workflow_dispatch` proves the job can pass, but it does not
+replace a failed push status on the commit Forgejo shows in the branch badge; use a real
+push-triggered run when clearing red default-branch CI.
