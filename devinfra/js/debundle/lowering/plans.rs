@@ -105,9 +105,9 @@ pub(super) struct MemberRequest {
     /// synchronously invoke callback arguments. The call may still be
     /// impure; this only narrows callback-body at-init promotion.
     pub(super) no_sync_callback_members: Vec<String>,
-    /// Per-member human-readable comment from the spec. Emitted as a
-    /// `// ...` block above the binding's owner statement in the
-    /// generated module body. See [`spec::Member::comment`].
+    /// Per-binding human-readable comment from `annotations:`. Emitted as a
+    /// `// ...` block above the binding's owner statement in the generated
+    /// module body.
     pub(super) comment: Option<String>,
     /// YAML-only note carried through request expansion for conflict checks
     /// and diagnostics. It never emits into generated JS.
@@ -138,13 +138,6 @@ impl MemberRequest {
     /// propagate the same way — they are semantic trust assertions,
     /// not ownership claims; binding patches routed through
     /// chunk_renames still do not force factorizer grouping.
-    pub(super) fn collect_hints(&self, hints: &mut AnalysisHints) {
-        if self.binding.is_empty() {
-            return;
-        }
-        self.collect_hints_for_binding(hints, &self.binding);
-    }
-
     pub(super) fn has_analysis_hints(&self) -> bool {
         self.purity != MemberPurity::Default
             || self.effect != MemberEffect::Default
@@ -241,7 +234,6 @@ pub(super) fn logical_requests_for_chunk(
             let members = build_members(
                 &module.members,
                 &module.source_matches,
-                &module.binding_groups,
                 &module.annotations,
                 &id,
             )?;
@@ -327,7 +319,6 @@ pub(super) fn logical_requests_for_chunk(
 pub(super) fn build_members(
     members: &[spec::Member],
     source_matches: &[spec::SourceMatchClaim],
-    binding_groups: &[spec::BindingGroup],
     annotations: &BTreeMap<String, spec::BindingAnnotation>,
     request_id: &str,
 ) -> Result<Vec<MemberRequest>> {
@@ -355,7 +346,7 @@ pub(super) fn build_members(
                 source_match,
                 relational,
                 is_import_specifier,
-            ) = match selected {
+            ) = match selected.clone() {
                 spec::MemberSelectorSpec::Binding(binding) => {
                     let export_name = m.name.clone().unwrap_or_else(|| binding.name.clone());
                     let is_import_specifier =
@@ -444,9 +435,6 @@ pub(super) fn build_members(
                     )
                 }
             };
-            // `source_match` with an explicit `target_binding` and a plain `binding`
-            // get richer origins; every other (relational / bare source_match) form
-            // is just its selector-kind label.
             let source_match_parsed = source_match
                 .as_ref()
                 .map(|selector| {
@@ -459,28 +447,29 @@ pub(super) fn build_members(
                     )
                 })
                 .transpose()?;
-            let claim_origin = if relational.is_some() {
-                format!(
-                    "members[].selector.{kind_label} as `{}`",
-                    m.name.as_deref().unwrap_or("<unnamed>")
-                )
-            } else {
-                match &m.selector.source_match {
-                    Some(selector) => match selector.target_binding.as_deref() {
+            let claim_origin = match selected {
+                spec::MemberSelectorSpec::Binding(_) => {
+                    format!(
+                        "members[].selector.binding as `{}`",
+                        m.name.as_deref().unwrap_or(&binding)
+                    )
+                }
+                spec::MemberSelectorSpec::SourceMatch(selector) => {
+                    match selector.target_binding.as_deref() {
                         Some(target) => format!(
-                            "members[].selector.source_match target_binding `{target}` as `{}`",
+                            "source_matches[].bindings[`{target}`] as `{}`",
                             m.name.as_deref().unwrap_or("<unnamed>")
                         ),
                         None => format!(
-                            "members[].selector.source_match as `{}`",
+                            "source_matches[] as `{}`",
                             m.name.as_deref().unwrap_or("<unnamed>")
                         ),
-                    },
-                    None => format!(
-                        "members[].selector.binding as `{}`",
-                        m.name.as_deref().unwrap_or(&binding)
-                    ),
+                    }
                 }
+                _ => format!(
+                    "members[].selector.{kind_label} as `{}`",
+                    m.name.as_deref().unwrap_or("<unnamed>")
+                ),
             };
             Ok(MemberRequest {
                 binding,
@@ -490,12 +479,12 @@ pub(super) fn build_members(
                 source_match_parsed,
                 relational,
                 is_import_specifier,
-                purity: m.purity,
-                effect: m.effect,
-                pure_members: m.pure_members.clone(),
-                no_sync_callback_members: m.no_sync_callback_members.clone(),
-                comment: m.comment.clone(),
-                note: m.note.clone(),
+                purity: MemberPurity::Default,
+                effect: MemberEffect::Default,
+                pure_members: Vec::new(),
+                no_sync_callback_members: Vec::new(),
+                comment: None,
+                note: None,
                 claim_origin,
             })
         })
@@ -528,38 +517,6 @@ pub(super) fn build_members(
                 claim_origin: match target_binding {
                     Some(target) => format!("source_matches[].bindings[`{target}`]"),
                     None => "source_matches[]".to_string(),
-                },
-            });
-        }
-    }
-
-    for group in binding_groups {
-        for expanded in source_match::binding_group_member_selectors(request_id, group)? {
-            let source_match::BindingGroupMemberSelector {
-                export_name,
-                selector,
-                parsed_selector,
-                comment,
-                note,
-            } = expanded;
-            let target_binding = selector.target_binding.clone();
-            requests.push(MemberRequest {
-                binding: String::new(),
-                export_name,
-                binding_selector: None,
-                source_match: Some(selector),
-                source_match_parsed: Some(parsed_selector),
-                relational: None,
-                is_import_specifier: false,
-                purity: MemberPurity::Default,
-                effect: MemberEffect::Default,
-                pure_members: Vec::new(),
-                no_sync_callback_members: Vec::new(),
-                comment,
-                note,
-                claim_origin: match target_binding {
-                    Some(target) => format!("binding_groups[].exports[`{target}`]"),
-                    None => "binding_groups[]".to_string(),
                 },
             });
         }

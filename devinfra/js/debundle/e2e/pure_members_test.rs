@@ -65,9 +65,13 @@ export {{ a, b, c }};
                                 "kind": "import_specifier",
                             },
                         },
-                        "pure_members": pure_members,
                     },
                 ],
+                "annotations": {
+                    "React": {
+                        "pure_members": pure_members,
+                    },
+                },
             }),
         }
     }
@@ -156,9 +160,13 @@ fn pure_members_member_call_does_not_promote_callback_body_reads() {
                         "kind": "import_specifier",
                     },
                 },
-                "pure_members": ["forwardRef"],
             },
         ],
+        "annotations": {
+            "ReactLike": {
+                "pure_members": ["forwardRef"],
+            },
+        },
     });
     let fixture = run_fixture(
         FixtureOpts::new(

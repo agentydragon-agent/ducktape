@@ -11,8 +11,8 @@
 //! - `identity` — selector identity keys and log-safe previews.
 //! - `parse_validate` — selector/module parsing and capability validation.
 //! - `types` — shared result/selector types.
-//! - `binding_resolution` — binding-group selector expansion and declared-binding
-//!   extraction.
+//! - `binding_resolution` — canonical source-match claim expansion and
+//!   declared-binding extraction.
 //! - `declared_bindings` — declared-binding extraction from AST items.
 //! - `datalog_resolver` — the legacy fact-based resolver retained as an oracle.
 //! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
@@ -24,8 +24,8 @@ pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) use anyhow::{Context, Result, bail};
 pub(crate) use spec::{
-    AnonymousStatementSelector, BindingGroup, BindingGroupAdoptNames, BindingSourceKind,
-    SourceMatch, SourceMatchClaim, SourceMatchIdentifierMode,
+    AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchClaim,
+    SourceMatchIdentifierMode,
 };
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
@@ -78,8 +78,7 @@ pub mod legacy_resolver {
 
 // Public API for selector parsing, normalization, and diagnostics.
 pub use binding_resolution::{
-    binding_group_member_selectors, source_match_claim_member_selectors,
-    source_match_declared_binding_names,
+    source_match_claim_member_selectors, source_match_declared_binding_names,
 };
 pub use fact_near_miss::fact_source_match_body_debt;
 pub use identity::{selector_body_key, selector_key, source_match_preview};

@@ -321,8 +321,8 @@ fn deprecated_module_merge_alias_still_works_with_warning() {
 }
 
 #[test]
-fn merge_carries_binding_groups_into_target() {
-    // `binding_groups:` entries are claims just like `members:` —
+fn merge_carries_source_matches_into_target() {
+    // `source_matches:` entries are claims just like `members:` —
     // destroying them with the source file silently unclaims their
     // owners on the next `debundle run`.
     let dir = TempDir::new().unwrap();
@@ -335,19 +335,19 @@ fn merge_carries_binding_groups_into_target() {
     write_file(
         root,
         "src.yaml",
-        "binding_groups:\n  - source_match:\n      match: 'const x = 1;'\n    exports: { x: ExportedX }\nmembers: []\n",
+        "source_matches:\n  - match: 'const x = 1;'\n    bindings:\n      - local: x\n        name: ExportedX\nmembers: []\n",
     );
 
     merge_modules(root, Path::new("target.yaml"), &[Path::new("src.yaml")]).unwrap();
 
     let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
     let doc: Value = serde_yaml::from_str(&merged).unwrap();
-    let groups = doc["binding_groups"]
+    let groups = doc["source_matches"]
         .as_sequence()
-        .unwrap_or_else(|| panic!("binding_groups must be carried into the target: {merged}"));
+        .unwrap_or_else(|| panic!("source_matches must be carried into the target: {merged}"));
     assert_eq!(groups.len(), 1, "merged={merged}");
     assert_eq!(
-        groups[0]["exports"]["x"].as_str(),
+        groups[0]["bindings"][0]["name"].as_str(),
         Some("ExportedX"),
         "merged={merged}"
     );

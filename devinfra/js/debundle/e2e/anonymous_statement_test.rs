@@ -620,7 +620,7 @@ export { selectedValue, existingValue };
 }
 
 #[test]
-fn member_source_match_variable_declarator_survives_binding_name_drift() {
+fn source_matches_single_declarator_survives_binding_name_drift() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeBinding = { kind: "selected", enabled: true },
   siblingBinding = { kind: "other", enabled: false };
@@ -703,7 +703,7 @@ export { runtimeFormat };
 }
 
 #[test]
-fn alpha_all_function_source_match_without_target_binding_resolves() {
+fn alpha_all_function_source_match_without_projection_resolves() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function runtimeFormat(value) {
   return value.trim().toUpperCase();
@@ -780,7 +780,7 @@ function normalizeValue(value) {
 }
 
 #[test]
-fn member_source_match_target_binding_uses_multideclarator_context() {
+fn source_matches_binding_projection_uses_multideclarator_context() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeLocalPart = "primary",
   runtimeDomain = "example.test",
@@ -817,7 +817,7 @@ export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
 }
 
 #[test]
-fn binding_group_source_match_extracts_multiple_bindings_from_multideclarator() {
+fn source_matches_extract_multiple_bindings_from_multideclarator() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"let runtimeA = 100,
   runtimeB = null,
@@ -826,7 +826,7 @@ const Existing = "existing";
 console.log(runtimeA, runtimeB === null, runtimeC, Existing);
 export { runtimeA, runtimeB, runtimeC, Existing };
 "#,
-        vec![logical_module_with_binding_groups(
+        vec![logical_module_with_source_matches(
             "selected_values",
             &[],
             &[BindingGroup::source_alpha(
@@ -863,7 +863,7 @@ export { runtimeA, runtimeB, runtimeC, Existing };
 }
 
 #[test]
-fn member_source_match_target_binding_can_select_single_declarator_from_comma_list() {
+fn source_matches_binding_projection_selects_single_declarator_from_comma_list() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const siblingBinding = { kind: "other", enabled: false },
   runtimeBinding = { kind: "selected", enabled: true };
@@ -897,7 +897,7 @@ export { siblingBinding, runtimeBinding, Existing };
 }
 
 #[test]
-fn member_source_match_target_binding_context_selects_single_declarator_from_comma_list() {
+fn source_matches_binding_projection_context_selects_single_declarator_from_comma_list() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const helperBinding = { kind: "helper" },
   runtimeBinding = { kind: "selected", enabled: true },
@@ -937,7 +937,7 @@ function readConfig() {
 }
 
 #[test]
-fn binding_group_source_match_still_rejects_ambiguous_multideclarator_matches() {
+fn source_matches_reject_ambiguous_multideclarator_matches() {
     let opts = FixtureOpts::new(
         r#"let firstA = 100,
   firstB = null,
@@ -947,7 +947,7 @@ let secondA = 100,
   secondC = `${secondA}:${secondB === null}:bar`;
 export { firstA, firstB, firstC, secondA, secondB, secondC };
 "#,
-        vec![logical_module_with_binding_groups(
+        vec![logical_module_with_source_matches(
             "selected_values",
             &[],
             &[BindingGroup::source_alpha(
@@ -965,14 +965,14 @@ export { firstA, firstB, firstC, secondA, secondB, secondC };
             "static/app::selected_values",
             "NameA",
             "ambiguous",
-            "target_binding",
+            "source_matches[].bindings[`a`]",
             "a",
         ],
     );
 }
 
 #[test]
-fn member_source_match_target_binding_uses_following_statement_context() {
+fn source_matches_binding_projection_uses_following_statement_context() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const traceContexts = ["load"];
 const selectedRegistry = {};
@@ -1010,7 +1010,7 @@ for (const context of traceContexts)
 }
 
 #[test]
-fn member_source_match_target_binding_uses_adjacent_function_consumers_as_context() {
+fn source_matches_binding_projection_uses_adjacent_function_consumers_as_context() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeRecordSessions = new Map([["main", "record"]]);
 function closeRecordSessions() {
@@ -1082,7 +1082,7 @@ export { firstRuntime, secondRuntime };
 }
 
 #[test]
-fn member_source_match_target_binding_still_rejects_ambiguous_matches() {
+fn source_matches_binding_projection_rejects_ambiguous_matches() {
     let opts = FixtureOpts::new(
         r#"const firstLocalPart = "primary",
   firstDomain = "example.test",
@@ -1110,14 +1110,14 @@ export { firstLocalPart, firstDomain, firstAddress, secondLocalPart, secondDomai
             "static/app::selected_config",
             "selectedLocalPart",
             "ambiguous",
-            "target_binding",
+            "source_matches[].bindings[`localPart`]",
             "localPart",
         ],
     );
 }
 
 #[test]
-fn member_source_match_target_binding_context_still_rejects_ambiguous_matches() {
+fn source_matches_binding_projection_context_rejects_ambiguous_matches() {
     let opts = FixtureOpts::new(
         r#"const traceContexts = ["load"];
 const firstRegistry = {};
@@ -1146,7 +1146,7 @@ for (const context of traceContexts)
             "static/app::selected_registry",
             "traceCommandRegistry",
             "ambiguous",
-            "target_binding",
+            "source_matches[].bindings[`registry`]",
             "registry",
         ],
     );

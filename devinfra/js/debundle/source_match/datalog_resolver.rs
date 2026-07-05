@@ -398,12 +398,12 @@ fn member_matches_var_declarator(
             match indices.as_slice() {
                 [single] => *single,
                 [] => bail!(
-                    "logical_module {request_id}: target_binding `{target_binding}` is not \
-                     declared by the selector source"
+                    "logical_module {request_id}: source_matches[].bindings local \
+                     `{target_binding}` is not declared by the selector source"
                 ),
                 _ => bail!(
-                    "logical_module {request_id}: target_binding `{target_binding}` is \
-                     ambiguous within the selector source"
+                    "logical_module {request_id}: source_matches[].bindings local \
+                     `{target_binding}` is ambiguous within the selector source"
                 ),
             }
         }
@@ -440,7 +440,8 @@ fn member_matches_var_declarator(
         if selector.target_binding.is_none() && declared.len() != 1 {
             bail!(
                 "datalog resolver: export `{export_name}` matched a declarator binding {} \
-                 names; needs a single-binding declarator or target_binding",
+                 names; needs a single-binding declarator or source_matches[].bindings \
+                 projection",
                 declared.len(),
             );
         }
@@ -516,9 +517,9 @@ fn member_matches_declarator_hole(
         };
         let Some(Some(candidate_decl_idx)) = alignment.get(target_decl_idx) else {
             bail!(
-                "logical_module {request_id}: members[].selector.source_match for export \
-                 `{export_name}` target_binding `{target_binding}` was matched by a DECLARATORS \
-                 hole, not a pinned declarator"
+                "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] for \
+                 export `{export_name}` was matched by a DECLARATORS hole, not a pinned \
+                 declarator"
             );
         };
         let Some(candidate_declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
@@ -738,8 +739,8 @@ fn group_matches_declarator_holes(
         for (target, (target_decl_idx, target_binding_idx)) in &target_locations {
             let Some(Some(candidate_decl_idx)) = alignment.get(*target_decl_idx) else {
                 bail!(
-                    "logical_module {request_id}: binding_groups[].source_match target_binding \
-                     `{target}` was matched by a DECLARATORS hole, not a pinned declarator"
+                    "logical_module {request_id}: source_matches[].bindings[`{target}`] was \
+                     matched by a DECLARATORS hole, not a pinned declarator"
                 );
             };
             let Some(declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
@@ -783,12 +784,12 @@ fn group_matches_single_declarator(
             match indices.as_slice() {
                 [single] => Ok((target.clone(), *single)),
                 [] => bail!(
-                    "logical_module {request_id}: binding_groups[].source_match target_binding \
-                     `{target}` is not declared by the selector source"
+                    "logical_module {request_id}: source_matches[].bindings[`{target}`] is not \
+                     declared by the selector source"
                 ),
                 _ => bail!(
-                    "logical_module {request_id}: binding_groups[].source_match target_binding \
-                     `{target}` is ambiguous within the selector source"
+                    "logical_module {request_id}: source_matches[].bindings[`{target}`] is \
+                     ambiguous within the selector source"
                 ),
             }
         })
@@ -875,8 +876,8 @@ fn group_matches_general(
         for (target, (target_item_idx, target_binding_idx)) in &target_locations {
             let Some(Some(body_idx)) = alignment.get(*target_item_idx) else {
                 bail!(
-                    "logical_module {request_id}: binding_groups[].source_match target_binding \
-                     `{target}` was matched by a STMT_LIST hole, not a pinned statement"
+                    "logical_module {request_id}: source_matches[].bindings[`{target}`] was \
+                     matched by a STMT_LIST hole, not a pinned statement"
                 );
             };
             let Some(binding) = declared_bindings(&chunk.module.body[*body_idx])
@@ -920,12 +921,8 @@ fn one_group_match(
                 .collect();
             Ok(ResolvedMemberBindingGroup { body_idx, bindings })
         }
-        0 => bail!(
-            "logical_module {request_id}: binding_groups[].source_match did not match any owner"
-        ),
-        n => bail!(
-            "logical_module {request_id}: binding_groups[].source_match is ambiguous — {n} owners"
-        ),
+        0 => bail!("logical_module {request_id}: source_matches[] did not match any owner"),
+        n => bail!("logical_module {request_id}: source_matches[] is ambiguous — {n} owners"),
     }
 }
 
@@ -963,9 +960,9 @@ fn member_matches_single_statement(
                 let declared = declared_bindings(&chunk.module.body[body_idx]);
                 let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
                     bail!(
-                        "logical_module {request_id}: members[].selector.source_match \
-                         target_binding `{target_binding}` matched top-level statement at body \
-                         index {body_idx}, but that statement declares too few bindings"
+                        "logical_module {request_id}: source_matches[].bindings[`{target_binding}`] \
+                         matched top-level statement at body index {body_idx}, but that statement \
+                         declares too few bindings"
                     );
                 };
                 matches.push(MemberBindingMatch { body_idx, binding });
@@ -981,7 +978,7 @@ fn member_matches_single_statement(
                     }),
                     [] => {}
                     multiple => bail!(
-                        "logical_module {request_id}: members[].selector.source_match matched \
+                        "logical_module {request_id}: source_matches[] matched \
                          top-level statement at body index {body_idx}, but that statement \
                          declares {} bindings. Use a single-declarator selector or refine the \
                          match.",
@@ -1076,10 +1073,7 @@ impl ChunkResolver<'_> {
         }
         let needles = parsed.body();
         let [first, ..] = needles else {
-            bail!(
-                "logical_module {request_id}: binding_groups[].source_match parsed to zero \
-                 statements"
-            );
+            bail!("logical_module {request_id}: source_matches[] parsed to zero statements");
         };
         // Branch order mirrors `resolve_member_group`: single-declarator before
         // declarator-holes, then the general sequence path.
@@ -1121,23 +1115,23 @@ impl ChunkResolver<'_> {
         selector: &AnonymousStatementSelector,
         selector_label: &'static str,
     ) -> Result<ResolvedMemberBinding> {
-        let target_binding_hint = selector
+        let projection_hint = selector
             .target_binding
             .as_deref()
-            .map(|target| format!(" target_binding `{target}`"))
+            .map(|target| format!(".bindings[`{target}`]"))
             .unwrap_or_default();
         let match_source = &selector.match_source;
         match matches.as_slice() {
             [single] => Ok(single.binding.clone()),
             [] => bail!(
-                "logical_module {request_id}: {selector_label} for export `{export_name}`\
-                 {target_binding_hint} did not match any top-level declaration in the chunk. \
+                "logical_module {request_id}: {selector_label}{projection_hint} for export \
+                 `{export_name}` did not match any top-level declaration in the chunk. \
                  Selector:\n{match_source}"
             ),
             multiple => bail!(
-                "logical_module {request_id}: {selector_label} for export `{export_name}`\
-                 {target_binding_hint} is ambiguous — matched {} top-level statements at body \
-                 indices {:?} (bindings: {}). Refine the selector. Source:\n{match_source}",
+                "logical_module {request_id}: {selector_label}{projection_hint} for export \
+                 `{export_name}` is ambiguous — matched {} top-level statements at body indices \
+                 {:?} (bindings: {}). Refine the selector. Source:\n{match_source}",
                 multiple.len(),
                 multiple.iter().map(|m| m.body_idx).collect::<Vec<_>>(),
                 multiple

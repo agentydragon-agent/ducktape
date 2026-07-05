@@ -31,10 +31,7 @@ use selector_ir_lowering::{
 };
 use serde::Serialize;
 use source_match::legacy_resolver::{ChunkResolver, SelectorResolver};
-use source_match::{
-    binding_group_member_selectors, selector_body_key, selector_key,
-    source_match_claim_member_selectors,
-};
+use source_match::{selector_body_key, selector_key, source_match_claim_member_selectors};
 use spec::{MemberSelectorSpec, SourceMatchClaim};
 
 /// Args for `debundle spec validate`. The spec source and package-root flags
@@ -221,7 +218,6 @@ fn validate_modules_against_source(
             &module_path,
             &module.members,
             &module.source_matches,
-            &module.binding_groups,
             &module.annotations,
         ) {
             diagnostics.push(selector_error_diagnostic(
@@ -267,22 +263,6 @@ fn validate_modules_against_source(
                     error.to_string(),
                 )),
             }
-        }
-        for (group_index, group) in module.binding_groups.into_iter().enumerate() {
-            let origin = format!("{}#binding_groups[{group_index}]", path.display());
-            diagnostics.extend(validate_binding_group_source_match(
-                &resolver,
-                &chunk_id,
-                &module_path,
-                origin.clone(),
-                &group,
-            )?);
-            diagnostics.extend(validate_native_binding_group_source_match(
-                &chunk_id,
-                &module_path,
-                origin,
-                &group,
-            ));
         }
         for (claim_index, claim) in module.source_matches.into_iter().enumerate() {
             let origin = format!("{}#source_matches[{claim_index}]", path.display());
@@ -408,83 +388,6 @@ fn validate_native_member_source_match(
             claim_origin,
             error,
         )],
-    }
-}
-
-fn validate_native_binding_group_source_match(
-    chunk_id: &str,
-    module_path: &str,
-    claim_origin: String,
-    group: &spec::BindingGroup,
-) -> Vec<SelectorDiagnosticEntry> {
-    let selectors = match binding_group_member_selectors(module_path, group) {
-        Ok(selectors) => selectors,
-        Err(_) => return Vec::new(),
-    };
-    let mut exports_by_target = std::collections::BTreeMap::new();
-    for selector in &selectors {
-        let Some(target_binding) = selector.selector.target_binding.as_deref() else {
-            return Vec::new();
-        };
-        exports_by_target.insert(target_binding.to_string(), selector.export_name.clone());
-    }
-
-    let context = MemberSelectorLoweringContext::new(ChunkId(0), module_path);
-    let mut builder = MemberSelectorProgramBuilder::new(context);
-    for selector in &selectors {
-        let selector_spec = MemberSelectorSpec::SourceMatch(selector.selector.clone());
-        if let Err(error) = builder.declare_member_target_in_module(
-            module_path,
-            &selector.export_name,
-            &selector_spec,
-        ) {
-            return selectors
-                .into_iter()
-                .map(|selector| {
-                    native_lowering_error_diagnostic(
-                        chunk_id,
-                        module_path,
-                        Some(&selector.export_name),
-                        "binding_groups.source_match",
-                        selector.selector,
-                        claim_origin.clone(),
-                        error.clone(),
-                    )
-                })
-                .collect();
-        }
-    }
-
-    let group_selector = group.source_match.selector();
-    let result = builder
-        .try_lower_native_source_match_group(module_path, &group_selector, &exports_by_target)
-        .and_then(|lowered| {
-            if lowered {
-                builder.into_program().map(|_| ())
-            } else {
-                Err(SelectorIrLoweringError::Unsupported {
-                    selector_kind: "binding_group.source_match",
-                    reason: "selector shape is not yet supported by native selector IR",
-                })
-            }
-        });
-
-    match result {
-        Ok(()) => Vec::new(),
-        Err(error) => selectors
-            .into_iter()
-            .map(|selector| {
-                native_lowering_error_diagnostic(
-                    chunk_id,
-                    module_path,
-                    Some(&selector.export_name),
-                    "binding_groups.source_match",
-                    selector.selector,
-                    claim_origin.clone(),
-                    error.clone(),
-                )
-            })
-            .collect(),
     }
 }
 
@@ -701,112 +604,6 @@ fn validate_member_source_match(
             "ambiguous_selector",
             matches.iter().map(|matched| matched.body_idx).collect(),
         )]),
-    }
-}
-
-fn validate_binding_group_source_match(
-    resolver: &ChunkResolver<'_>,
-    chunk_id: &str,
-    module_path: &str,
-    claim_origin: String,
-    group: &spec::BindingGroup,
-) -> Result<Vec<SelectorDiagnosticEntry>> {
-    let selectors = match binding_group_member_selectors(module_path, group) {
-        Ok(selectors) => selectors,
-        Err(error) => {
-            return Ok(vec![selector_error_diagnostic(
-                chunk_id,
-                module_path,
-                None,
-                "binding_groups.source_match",
-                Some(group.source_match.selector()),
-                claim_origin,
-                error.to_string(),
-            )]);
-        }
-    };
-
-    let mut exports_by_target = std::collections::BTreeMap::new();
-    for selector in &selectors {
-        let Some(target_binding) = selector.selector.target_binding.as_deref() else {
-            bail!(
-                "binding_groups.source_match expansion for {module_path} did not set \
-                 target_binding"
-            );
-        };
-        exports_by_target.insert(target_binding.to_string(), selector.export_name.clone());
-    }
-
-    let group_selector = group.source_match.selector();
-    let matches =
-        match resolver.member_group_candidates(module_path, &group_selector, &exports_by_target) {
-            Ok(matches) => matches,
-            Err(error) => {
-                return Ok(selectors
-                    .into_iter()
-                    .map(|selector| {
-                        selector_error_diagnostic(
-                            chunk_id,
-                            module_path,
-                            Some(&selector.export_name),
-                            "binding_groups.source_match",
-                            Some(selector.selector),
-                            claim_origin.clone(),
-                            format!("{error:#}"),
-                        )
-                    })
-                    .collect());
-            }
-        };
-
-    match matches.len() {
-        1 => Ok(Vec::new()),
-        0 => Ok(selectors
-            .into_iter()
-            .map(|selector| {
-                selector_resolution_diagnostic(
-                    chunk_id,
-                    module_path,
-                    Some(&selector.export_name),
-                    "binding_groups.source_match",
-                    &selector.selector,
-                    claim_origin.clone(),
-                    "unresolved_selector",
-                    Vec::new(),
-                )
-            })
-            .collect()),
-        _ => Ok(selectors
-            .into_iter()
-            .map(|selector| {
-                let target_binding = selector
-                    .selector
-                    .target_binding
-                    .as_deref()
-                    .expect("binding group expansion sets target_binding");
-                let mut body_indices = matches
-                    .iter()
-                    .filter_map(|matched| {
-                        matched
-                            .bindings
-                            .get(target_binding)
-                            .map(|binding| binding.body_idx)
-                    })
-                    .collect::<Vec<_>>();
-                body_indices.sort_unstable();
-                body_indices.dedup();
-                selector_resolution_diagnostic(
-                    chunk_id,
-                    module_path,
-                    Some(&selector.export_name),
-                    "binding_groups.source_match",
-                    &selector.selector,
-                    claim_origin.clone(),
-                    "ambiguous_selector",
-                    body_indices,
-                )
-            })
-            .collect()),
     }
 }
 

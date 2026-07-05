@@ -48,15 +48,17 @@ fn annotated_effect_module(
     binding: &str,
     effect: &str,
 ) -> debundle_e2e_support::LogicalModuleEntry {
+    let mut annotations = serde_json::Map::new();
+    annotations.insert(binding.to_string(), json!({ "effect": effect }));
     (
         path.to_string(),
         json!({
             "members": [
                 {
                     "selector": { "binding": { "name": binding } },
-                    "effect": effect
                 }
-            ]
+            ],
+            "annotations": annotations,
         }),
     )
 }

@@ -51,9 +51,13 @@ export { a, b, c };
                             "kind": "import_specifier",
                         },
                     },
-                    "purity": "pure",
                 },
             ],
+            "annotations": {
+                "getMobxGlobalState": {
+                    "purity": "pure",
+                },
+            },
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_catchall_file(None),

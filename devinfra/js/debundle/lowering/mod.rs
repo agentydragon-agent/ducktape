@@ -94,7 +94,10 @@ use plan_references::{
     ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeImportLookup,
     collect_imported_reexports_by_module, plan_module_reference_needs,
 };
-use plans::{LogicalRequest, MemberRequest, ModulePlan, logical_requests_for_chunk};
+use plans::{
+    LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
+    logical_requests_for_chunk,
+};
 use rename_ledger::{
     RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
     SealedRenames, merge_module_renames,
@@ -137,10 +140,9 @@ pub fn validate_logical_module_claims(
     id: &str,
     members: &[spec::Member],
     source_matches: &[spec::SourceMatchClaim],
-    binding_groups: &[spec::BindingGroup],
     annotations: &BTreeMap<String, spec::BindingAnnotation>,
 ) -> Result<()> {
-    let members = plans::build_members(members, source_matches, binding_groups, annotations, id)?;
+    let members = plans::build_members(members, source_matches, annotations, id)?;
     exports::reject_duplicate_export_names("logical_module", id, &members)?;
     exports::reject_duplicate_member_bindings("logical_module", id, &members)?;
     Ok(())

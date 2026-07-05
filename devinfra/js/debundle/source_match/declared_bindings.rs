@@ -83,11 +83,10 @@ pub(crate) fn target_binding_candidate_names(
         .collect()
 }
 
-/// A `target_binding` rejection: the shared `logical_module … target_binding
-/// `{target_binding}` ` prefix and the `:\n{match_source}` selector-source suffix
-/// written once, with `problem` carrying the varying middle (why this binding is
-/// unusable). Both the statement-level and declarator-level resolvers report
-/// through here.
+/// A selector-local binding projection rejection: the shared prefix and the
+/// `:\n{match_source}` selector-source suffix are written once, with `problem`
+/// carrying the varying middle. Both the statement-level and declarator-level
+/// resolvers report through here.
 fn target_binding_error(
     request_id: &str,
     selector: &AnonymousStatementSelector,
@@ -95,13 +94,13 @@ fn target_binding_error(
     problem: &str,
 ) -> anyhow::Error {
     anyhow::anyhow!(
-        "logical_module {request_id}: members[].selector.source_match target_binding \
-         `{target_binding}` {problem}:\n{match_source}",
+        "logical_module {request_id}: source_matches[].bindings local `{target_binding}` \
+         {problem}:\n{match_source}",
         match_source = selector.match_source,
     )
 }
 
-/// `target_binding` names a binding the selector source never declares.
+/// The projected local binding names a binding the selector source never declares.
 fn target_binding_not_declared(
     request_id: &str,
     selector: &AnonymousStatementSelector,
@@ -115,7 +114,7 @@ fn target_binding_not_declared(
     )
 }
 
-/// `target_binding` is declared more than once in the selector source.
+/// The projected local binding is declared more than once in the selector source.
 /// `index_kind` names what the reported `indices` count (e.g.
 /// `"statement/binding"`, `"declarator/binding"`), the only detail that varies
 /// between the resolvers.
@@ -137,7 +136,7 @@ fn target_binding_ambiguous(
     )
 }
 
-/// Locate the selector-local `target_binding` among the statements' declared
+/// Locate the selector-local projected binding among the statements' declared
 /// bindings as `(statement index, declared-binding index)`, requiring it to be
 /// declared exactly once across the selector source.
 pub(crate) fn selector_binding_location(
@@ -174,7 +173,7 @@ pub(crate) fn selector_binding_location(
     }
 }
 
-/// Locate the selector-local `target_binding` within a single var-decl needle's
+/// Locate the selector-local projected binding within a single var-decl needle's
 /// declarators as `(declarator index, declared-binding index)`, requiring it to be
 /// declared exactly once.
 pub(crate) fn selector_var_declarator_binding_location(

@@ -23,8 +23,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatement, AnonymousStatementSelector, BindingAnnotation, BindingGroup,
-    BindingSourceKind, Member, MemberSelectorSpec, ModulePath, SourceMatchClaim,
+    AnonymousStatement, AnonymousStatementSelector, BindingAnnotation, BindingSourceKind, Member,
+    MemberSelectorSpec, ModulePath, SourceMatchClaim,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,8 +47,6 @@ pub struct ModuleFile {
     #[serde(default)]
     pub annotations: BTreeMap<String, BindingAnnotation>,
     #[serde(default)]
-    pub binding_groups: Vec<BindingGroup>,
-    #[serde(default)]
     pub anonymous_statements: Vec<AnonymousStatement>,
 }
 
@@ -63,22 +61,10 @@ pub struct BindingPatchesFile {
 pub struct ModuleClaims {
     pub bindings: BTreeSet<String>,
     pub anonymous_selectors: BTreeSet<AnonymousStatementSelector>,
-    /// Member-form `selector.source_match` selectors. These claim a
-    /// chunk-top binding the same way `bindings` entries do, but
-    /// the binding name is only known after source-backed
-    /// resolution (the run pipeline's `resolve_source_match` /
-    /// the edit gate's `resolve_member_selector_claims`).
-    pub member_selectors: BTreeSet<AnonymousStatementSelector>,
     /// Canonical grouped source-match entries. Expanded by
     /// `source_match::source_match_claim_member_selectors` by consumers
     /// that need per-binding selectors.
     pub source_matches: Vec<SourceMatchClaim>,
-    /// Raw `binding_groups:` entries — sugar for several member
-    /// `source_match` selectors. Expanded by
-    /// `source_match::binding_group_member_selectors` (the same
-    /// expansion the run pipeline applies) by consumers that need
-    /// the per-binding claims.
-    pub binding_groups: Vec<BindingGroup>,
 }
 
 impl ModuleClaims {
@@ -89,17 +75,13 @@ impl ModuleClaims {
     pub fn has_claims(&self) -> bool {
         !self.bindings.is_empty()
             || !self.anonymous_selectors.is_empty()
-            || !self.member_selectors.is_empty()
             || !self.source_matches.is_empty()
-            || !self.binding_groups.is_empty()
     }
 
     pub fn extend(&mut self, other: ModuleClaims) {
         self.bindings.extend(other.bindings);
         self.anonymous_selectors.extend(other.anonymous_selectors);
-        self.member_selectors.extend(other.member_selectors);
         self.source_matches.extend(other.source_matches);
-        self.binding_groups.extend(other.binding_groups);
     }
 }
 
@@ -170,9 +152,7 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
             MemberSelectorSpec::Binding(binding) => {
                 claims.bindings.insert(binding.name);
             }
-            MemberSelectorSpec::SourceMatch(selector) => {
-                claims.member_selectors.insert(selector);
-            }
+            MemberSelectorSpec::SourceMatch(_) => {}
             MemberSelectorSpec::CrossRef(_)
             | MemberSelectorSpec::ReadsMember(_)
             | MemberSelectorSpec::MemberOfModule(_)
@@ -186,7 +166,6 @@ pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
         }
     }
     claims.source_matches = module.source_matches;
-    claims.binding_groups = module.binding_groups;
     for statement in module.anonymous_statements {
         claims.anonymous_selectors.insert(statement.selector()?);
     }
@@ -339,7 +318,6 @@ anonymous_statements:
   - match: 'decorate(Co);'
     note: "decorator on Co"
   - source_match:
-      identifiers: alpha_all
       match: 'register(Co);'
     comment: |
       Registers Co before registry consumers run.
@@ -363,11 +341,10 @@ anonymous_statements:
     }
 
     #[test]
-    fn read_module_file_round_trips_comment_fields_on_module_and_member() {
-        // Module-level `comment:` and per-member `comment:` both
-        // deserialize via the optional `Option<String>` fields. The
-        // lowering pass renders them as JS `// ...` blocks; here we
-        // only assert the parser round-trips the YAML shape.
+    fn read_module_file_round_trips_comment_fields_on_module_and_annotations() {
+        // Module-level `comment:` is emitted above the generated module.
+        // Per-binding prose lives in `annotations:` so it can be shared by
+        // binding selectors and canonical `source_matches[]` claims.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
         fs::write(
@@ -377,6 +354,8 @@ anonymous_statements:
   spans two lines.
 members:
   - selector: { binding: { name: a } }
+annotations:
+  a:
     comment: |
       Per-member comment
       across two lines.
@@ -390,7 +369,7 @@ members:
         );
         assert_eq!(module.members.len(), 1);
         assert_eq!(
-            module.members[0].comment.as_deref(),
+            module.annotations["a"].comment.as_deref(),
             Some("Per-member comment\nacross two lines.\n"),
         );
     }
@@ -421,55 +400,26 @@ members:
     }
 
     #[test]
-    fn read_module_file_accepts_binding_group_comments_and_notes() {
+    fn read_module_file_rejects_legacy_binding_groups() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
         fs::write(
             &path,
             r#"binding_groups:
   - source_match:
-      identifiers: alpha_all
       match: "const primary = EXPR_PRIMARY, secondary = EXPR_SECONDARY;"
-    adopt_names: true
-    comments:
-      primary: |
-        Primary selected value.
-      secondary: Secondary selected value.
-    notes:
-      primary: |
-        TODO: minimize primary selector.
-      secondary: Secondary selector debt.
+    exports:
+      primary: Primary
 "#,
         )
         .unwrap();
 
-        let module = read_module_file(&path).unwrap();
-        assert_eq!(module.binding_groups.len(), 1);
-        assert_eq!(
-            module.binding_groups[0].comments,
-            BTreeMap::from([
-                (
-                    "primary".to_string(),
-                    "Primary selected value.\n".to_string()
-                ),
-                (
-                    "secondary".to_string(),
-                    "Secondary selected value.".to_string()
-                ),
-            ]),
-        );
-        assert_eq!(
-            module.binding_groups[0].notes,
-            BTreeMap::from([
-                (
-                    "primary".to_string(),
-                    "TODO: minimize primary selector.\n".to_string()
-                ),
-                (
-                    "secondary".to_string(),
-                    "Secondary selector debt.".to_string()
-                ),
-            ]),
+        let err = read_module_file(&path).expect_err("must reject legacy binding_groups");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("binding_groups"), "{msg}");
+        assert!(
+            msg.contains("unknown field") || msg.contains("expected one of"),
+            "{msg}"
         );
     }
 

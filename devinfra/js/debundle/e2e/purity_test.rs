@@ -457,9 +457,13 @@ export { A, B, C, dispatcher };
                             //   have no observable side effects. Both
                             //   call sites in mod_a (A, C) and the
                             //   one in mod_b (B) drop their `S` edges.
-                            "purity": "pure",
                         },
                     ],
+                    "annotations": {
+                        "dispatcher": {
+                            "purity": "pure",
+                        },
+                    },
                 }),
             ),
             (
@@ -504,9 +508,13 @@ export { A, B, D, wrap };
                                 "selector": { "binding": { "name": "wrap" } },
                                 // Author asserts purity — `S` edges
                                 // through `wrap(...)` calls go away.
-                                "purity": "pure",
                             },
                         ],
+                        "annotations": {
+                            "wrap": {
+                                "purity": "pure",
+                            },
+                        },
                     }),
                 ),
                 (
@@ -561,7 +569,6 @@ export { A, B, C, pureWrap, impureWrap };
                         {
                             "name": "pureWrap",
                             "selector": { "binding": { "name": "pureWrap" } },
-                            "purity": "pure",
                         },
                         {
                             "name": "impureWrap",
@@ -570,6 +577,11 @@ export { A, B, C, pureWrap, impureWrap };
                             // (impure) classification applies.
                         },
                     ],
+                    "annotations": {
+                        "pureWrap": {
+                            "purity": "pure",
+                        },
+                    },
                 }),
             ),
             (
@@ -661,7 +673,6 @@ export { A, B, C, pureWrap, impureWrap };
                             {
                                 "name": "pureWrap",
                                 "selector": { "binding": { "name": "pureWrap" } },
-                                "purity": "pure",
                             },
                             {
                                 "name": "impureWrap",
@@ -669,6 +680,11 @@ export { A, B, C, pureWrap, impureWrap };
                                 // Deliberately unannotated.
                             },
                         ],
+                        "annotations": {
+                            "pureWrap": {
+                                "purity": "pure",
+                            },
+                        },
                     }),
                 ),
                 (
@@ -709,9 +725,13 @@ export { A, B, C, PureBox };
                         {
                             "name": "PureBox",
                             "selector": { "binding": { "name": "PureBox" } },
-                            "purity": "pure_new",
                         },
                     ],
+                    "annotations": {
+                        "PureBox": {
+                            "purity": "pure_new",
+                        },
+                    },
                 }),
             ),
             (
@@ -756,9 +776,13 @@ export { A, B, C, PureBox };
                             {
                                 "name": "PureBox",
                                 "selector": { "binding": { "name": "PureBox" } },
-                                "purity": "pure_new",
                             },
                         ],
+                        "annotations": {
+                            "PureBox": {
+                                "purity": "pure_new",
+                            },
+                        },
                     }),
                 ),
                 (
@@ -995,9 +1019,13 @@ export { a, b, c };
                             "kind": "import_specifier",
                         },
                     },
-                    "purity": "pure",
                 },
             ],
+            "annotations": {
+                "getMobxGlobalState": {
+                    "purity": "pure",
+                },
+            },
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_catchall_file(None),

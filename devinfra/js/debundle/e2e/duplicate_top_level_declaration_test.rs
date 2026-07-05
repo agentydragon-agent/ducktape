@@ -19,7 +19,7 @@ export { dup };
 "#,
             vec![logical_module("mod_a", &[Member::new("dup")])],
         ),
-        &["duplicate top-level declaration", "dup"],
+        &["global selector solver found 2 candidates", "dup"],
     );
 }
 
@@ -34,7 +34,7 @@ export { pick };
 "#,
             vec![logical_module("mod_a", &[Member::new("pick")])],
         ),
-        &["duplicate top-level declaration", "pick"],
+        &["global selector solver found 2 candidates", "pick"],
     );
 }
 

@@ -227,23 +227,14 @@ pub struct SelectorDebtArgs {
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 #[value(rename_all = "kebab-case")]
 pub enum SelectorCodemodRewriteArg {
-    /// Add target_binding to member source_match selectors that declare exactly one binding.
-    SingleTargetBinding,
-    /// Replace anonymous typed source_match holes with universal ANYTHING holes.
-    AnythingHoles,
     /// Convert name-only binding members to source_matches selectors.
     NameBindingToSourceMatch,
-    /// Migrate legacy source_match members and binding_groups to source_matches / annotations.
-    MigrateToSourceMatches,
 }
 
 impl From<SelectorCodemodRewriteArg> for SelectorCodemodRewrite {
     fn from(value: SelectorCodemodRewriteArg) -> Self {
         match value {
-            SelectorCodemodRewriteArg::SingleTargetBinding => Self::SingleTargetBinding,
-            SelectorCodemodRewriteArg::AnythingHoles => Self::AnythingHoles,
             SelectorCodemodRewriteArg::NameBindingToSourceMatch => Self::NameBindingToSourceMatch,
-            SelectorCodemodRewriteArg::MigrateToSourceMatches => Self::MigrateToSourceMatches,
         }
     }
 }
@@ -255,8 +246,9 @@ pub struct SelectorCodemodArgs {
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub modules_root: PathBuf,
 
-    /// Rewrite to run. Defaults to the highest-value safe codemod.
-    #[arg(long = "rewrite", value_enum, default_value_t = SelectorCodemodRewriteArg::SingleTargetBinding)]
+    /// Rewrite to run. Only canonical source_matches[] synthesis remains after
+    /// legacy selector shapes were removed.
+    #[arg(long = "rewrite", value_enum, default_value_t = SelectorCodemodRewriteArg::NameBindingToSourceMatch)]
     pub rewrite: SelectorCodemodRewriteArg,
 
     /// Apply edits. Without this flag the command is a dry run.
@@ -322,8 +314,8 @@ pub struct MatchSelectorArgs {
     #[arg(long = "match")]
     pub match_source: String,
 
-    /// Selector-local binding to claim (sets `target_binding`) when the match
-    /// declares more than one binding.
+    /// Probe one selector-local binding when the match declares more than one
+    /// binding. YAML claim projection lives in `source_matches[].bindings[]`.
     #[arg(long = "target-binding")]
     pub target_binding: Option<String>,
 
@@ -1148,7 +1140,7 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
             .map(|claim| claim.bindings.len())
             .sum::<usize>();
         let member_count = module.members.len() + source_match_binding_count;
-        let claim_count = member_count + module.source_matches.len() + module.binding_groups.len();
+        let claim_count = member_count + module.source_matches.len();
         let entry = ModuleListEntry {
             path,
             member_count,

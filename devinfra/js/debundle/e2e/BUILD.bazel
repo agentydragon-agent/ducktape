@@ -598,19 +598,6 @@ rust_test(
 )
 
 rust_test(
-    name = "binding_group_adopt_names_test",
-    size = "small",
-    srcs = ["binding_group_adopt_names_test.rs"],
-    crate_root = "binding_group_adopt_names_test.rs",
-    data = [
-        "//devinfra/js/debundle",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    edition = "2024",
-    deps = [":support"],
-)
-
-rust_test(
     name = "cross_module_emission_test",
     size = "small",
     srcs = ["cross_module_emission_test.rs"],
@@ -1246,23 +1233,6 @@ rust_test(
     deps = [
         ":support",
         "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
-)
-
-# `debundle spec selector-codemod`: dry-run-by-default reporting and
-# explicit `--apply` mutation of member-form source_match selectors.
-rust_test(
-    name = "selector_codemod_cli_test",
-    size = "small",
-    srcs = ["selector_codemod_cli_test.rs"],
-    crate_root = "selector_codemod_cli_test.rs",
-    data = ["//devinfra/js/debundle"],
-    edition = "2024",
-    deps = [
-        ":support",
-        "@crates//:regex",
-        "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
 )

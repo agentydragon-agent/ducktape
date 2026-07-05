@@ -250,10 +250,12 @@ For what to put in `comment:` vs. `note:`, see <../README.md> →
 
 ```yaml
 anonymous_statements:
-  - match: "Foo.prototype.bar = true;"
+  - source_match:
+      match: "Foo.prototype.bar = true;"
     comment: |
       Enables Foo.bar before consumers import Foo.
-  - match: "registerFoo(foo);"
+  - source_match:
+      match: "registerFoo(foo);"
     note: "uncertain: looks like a registration side effect"
 ```
 
@@ -268,9 +270,9 @@ the familiar spelling shouldn't hit a cryptic parse error.
 debundle modules merge --target <T> <source1> [<source2> ...]
 ```
 
-Splices `members:` + `anonymous_statements:` from each source YAML
-into `<T>`; creates `<T>` if needed, then deletes the source YAML
-files.
+Splices `members:`, `source_matches:`, `annotations:`, and
+`anonymous_statements:` from each source YAML into `<T>`; creates `<T>` if
+needed, then deletes the source YAML files.
 Module-file args may include or omit `.yaml`, so `runtime/plugins`
 and `runtime/plugins.yaml` name the same module file.
 
@@ -295,8 +297,8 @@ refactors where an intermediate state is intentionally invalid).
 
 ## Workflow: authoring `comment:` fields
 
-Module YAMLs and `members:` entries carry the same optional
-`comment:` field as `anonymous_statements:` entries (see above):
+Module YAMLs and binding annotations carry the same optional `comment:` field as
+`anonymous_statements:` entries (see above):
 
 ```yaml
 # Module YAML
@@ -307,6 +309,9 @@ members:
   - name: FooAccessor
     selector:
       binding: { name: a, kind: variable_declarator }
+
+annotations:
+  FooAccessor:
     comment: |
       Reads the active foo registry without mutating it.
 ```
@@ -336,8 +341,8 @@ relative to `$DEBUNDLE_MODULES`.
 
 Move semantics (CLI surface, not a separate feature):
 
-- `bindings assign` carries a member's `comment:` with the member as
-  it moves between modules.
+- `bindings assign` carries a binding's `annotations.<export_name>` entry with
+  the binding as it moves between modules.
 - `bindings assign` auto-deletes a drained source module only when its
   module-level `comment:` is empty/absent.
 - `modules merge` concatenates source-module comments into the target's
@@ -350,28 +355,35 @@ CLI editing is live for module and member comments; anonymous
 statement comments are authored directly in YAML.
 
 When a binding cannot yet be stabilized because the selector language lacks a
-concise matcher, leave a member `note:` recording the concrete matcher/tooling
-blocker and the desired future feature instead of silently keeping minified
-binding debt. Use `note:`, **not** `comment:`: `note:` is inert (YAML-only, never
-emitted to generated JS), so it annotates the debt without changing byte-identical
-output, and the keep-going selector report surfaces noted name-pins as
-`annotated_debt` for a repair flow to route:
+concise matcher, leave `annotations.<export_name>.note` recording the concrete
+matcher/tooling blocker and the desired future feature instead of silently
+keeping minified binding debt. Use `note:`, **not** `comment:`: `note:` is inert
+(YAML-only, never emitted to generated JS), so it annotates the debt without
+changing byte-identical output, and the keep-going selector report surfaces
+noted name-pins as `annotated_debt` for a repair flow to route:
 
 ```yaml
-note: |
-  blocked on Ducktape support for <specific matcher/tooling capability needed here>
+annotations:
+  ExportName:
+    note: |
+      blocked on Ducktape support for <specific matcher/tooling capability needed here>
 ```
 
-For grouped selectors, put per-export debt under `binding_groups[].notes`, keyed
-the same way as `binding_groups[].comments`. `comments` emits into generated JS;
-`notes` does not.
+For grouped selectors, put per-export debt under
+`annotations.<export_name>.note`. `comment` emits into generated JS; `note` does
+not.
 
 ```yaml
-binding_groups:
-  - source_match: { match: "const x = EXPR_X, y = EXPR_Y;" }
-    exports: { x: exportedX, y: exportedY }
-    notes:
-      x: "TODO: minimize selector once this helper has a narrower anchor."
+source_matches:
+  - match: "const x = EXPR_X, y = EXPR_Y;"
+    bindings:
+      - local: x
+        name: exportedX
+      - local: y
+        name: exportedY
+annotations:
+  exportedX:
+    note: "TODO: minimize selector once this helper has a narrower anchor."
 ```
 
 Do not leave blocker notes for selector patterns Ducktape now supports, such

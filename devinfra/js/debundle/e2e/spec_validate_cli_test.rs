@@ -85,7 +85,7 @@ fn validate_json_reports_every_failure_class_in_one_pass() {
 
     let missing = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
     assert_eq!(missing["module_path"], "diagnostics/missing");
-    assert_eq!(missing["selector_kind"], "members.source_match");
+    assert_eq!(missing["selector_kind"], "source_matches");
     assert!(
         missing["recommended_next_action"]
             .as_str()
@@ -248,13 +248,13 @@ fn validate_source_only_json_reports_every_source_selector_failure_without_ortoo
     let diagnostics = chunk["diagnostics"].as_array().expect("diagnostics array");
     let missing = find_entry(diagnostics, "unresolved_selector", "MissingWidget");
     assert_eq!(missing["module_path"], "ui/missing");
-    assert_eq!(missing["selector_kind"], "members.source_match");
+    assert_eq!(missing["selector_kind"], "source_matches");
     assert_eq!(missing["body_indices"], serde_json::json!([]));
     assert!(
         missing["claim_origin"]
             .as_str()
             .unwrap()
-            .contains("missing.yaml#members[0]"),
+            .contains("missing.yaml#source_matches[0]"),
         "{missing:#}",
     );
 
@@ -313,12 +313,11 @@ fn validate_source_only_clean_modules_report_no_problems() {
     let modules_root = dir.path().join("modules");
     write(
         &modules_root.join("ui/widget.yaml"),
-        r#"members:
-  - name: Widget
-    selector:
-      source_match:
-        target_binding: w
-        match: 'const w = makeWidget("ok");'
+        r#"source_matches:
+  - match: 'const w = makeWidget("ok");'
+    bindings:
+      - local: w
+        name: Widget
 "#,
     );
 
@@ -500,60 +499,7 @@ start();
 }
 
 #[test]
-fn validate_source_only_reports_member_native_lowering_unsupported_not_capability_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let source_file = dir.path().join("chunk.js");
-    write(
-        &source_file,
-        r#"setup();
-const widget = makeWidget();
-"#,
-    );
-    let modules_root = dir.path().join("modules");
-    write(
-        &modules_root.join("ui/widget.yaml"),
-        r#"members:
-  - name: Widget
-    selector:
-      source_match:
-        match: |
-          setup();
-          const widget = makeWidget();
-"#,
-    );
-
-    let out = run_source_only_validate(&modules_root, &source_file, &["--format", "json"]);
-    assert!(
-        out.status.success(),
-        "source-only validate exited non-zero\nstdout:\n{}\nstderr:\n{}",
-        out.stdout,
-        out.stderr,
-    );
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
-    assert_eq!(
-        report["counts"]["native_source_match_lowering_unsupported"], 1,
-        "{report:#}"
-    );
-    assert!(
-        report["counts"]
-            .get("native_source_match_capability_error")
-            .is_none(),
-        "{report:#}"
-    );
-
-    let diagnostics = report["chunks"][0]["diagnostics"]
-        .as_array()
-        .expect("diagnostics array");
-    let entry = find_entry(
-        diagnostics,
-        "native_source_match_lowering_unsupported",
-        "Widget",
-    );
-    assert_eq!(entry["selector_kind"], "members.source_match");
-}
-
-#[test]
-fn validate_source_only_reports_binding_group_failures_per_export() {
+fn validate_source_only_reports_source_match_failures_per_export() {
     let dir = tempfile::tempdir().unwrap();
     let source_file = dir.path().join("chunk.js");
     write(
@@ -565,12 +511,13 @@ const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
     let modules_root = dir.path().join("modules");
     write(
         &modules_root.join("ui/panels.yaml"),
-        r#"binding_groups:
-  - source_match:
-      match: 'const left = renderPanel("shared"), right = renderPanel("shared");'
-    exports:
-      left: LeftPanel
-      right: RightPanel
+        r#"source_matches:
+  - match: 'const left = renderPanel("shared"), right = renderPanel("shared");'
+    bindings:
+      - local: left
+        name: LeftPanel
+      - local: right
+        name: RightPanel
 "#,
     );
 
@@ -589,12 +536,12 @@ const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
         .as_array()
         .expect("diagnostics array");
     let left = find_entry(diagnostics, "ambiguous_selector", "LeftPanel");
-    assert_eq!(left["selector_kind"], "binding_groups.source_match");
+    assert_eq!(left["selector_kind"], "source_matches");
     assert_eq!(left["target_binding"], "left");
     assert_eq!(left["body_indices"], serde_json::json!([0, 1]));
 
     let right = find_entry(diagnostics, "ambiguous_selector", "RightPanel");
-    assert_eq!(right["selector_kind"], "binding_groups.source_match");
+    assert_eq!(right["selector_kind"], "source_matches");
     assert_eq!(right["target_binding"], "right");
     assert_eq!(right["body_indices"], serde_json::json!([0, 1]));
 }
@@ -618,32 +565,29 @@ const widget = makeWidget("ok");
     let modules_root = root.path().join("modules");
     write(
         &modules_root.join("ui/ok.yaml"),
-        r#"members:
-  - name: Widget
-    selector:
-      source_match:
-        target_binding: w
-        match: 'const w = makeWidget("ok");'
+        r#"source_matches:
+  - match: 'const w = makeWidget("ok");'
+    bindings:
+      - local: w
+        name: Widget
 "#,
     );
     write(
         &modules_root.join("ui/missing.yaml"),
-        r#"members:
-  - name: MissingWidget
-    selector:
-      source_match:
-        target_binding: w
-        match: 'const w = makeWidget("missing");'
+        r#"source_matches:
+  - match: 'const w = makeWidget("missing");'
+    bindings:
+      - local: w
+        name: MissingWidget
 "#,
     );
     write(
         &modules_root.join("ui/ambiguous.yaml"),
-        r#"members:
-  - name: AmbiguousPanel
-    selector:
-      source_match:
-        target_binding: panel
-        match: 'const panel = renderPanel("shared");'
+        r#"source_matches:
+  - match: 'const panel = renderPanel("shared");'
+    bindings:
+      - local: panel
+        name: AmbiguousPanel
 "#,
     );
     SourceOnlyValidateFixture {

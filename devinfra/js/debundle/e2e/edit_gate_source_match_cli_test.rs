@@ -1,13 +1,12 @@
-//! End-to-end coverage for the edit gate's view of source_match
-//! member selectors and binding_groups.
+//! End-to-end coverage for the edit gate's view of canonical
+//! source-match claims.
 //!
 //! The CLI edit gate (`gate_post_edit_partition`) must see the SAME
-//! claims `debundle run` materializes. A module whose member is
-//! selected via `selector.source_match` (or via a `binding_groups`
-//! entry) still owns that binding's owner; treating it as residual
-//! lets the gate green-light edits the run pipeline's authoritative
-//! gate rejects (atom-split between the source_match-claimed owner
-//! and a moved/unassigned sibling).
+//! claims `debundle run` materializes. A module whose binding is selected
+//! via `source_matches[]` still owns that binding's owner; treating it as
+//! residual lets the gate green-light edits the run pipeline's authoritative
+//! gate rejects (atom-split between the source-match-claimed owner and a
+//! moved/unassigned sibling).
 //!
 //! Shells out to the built `debundle` binary against synthetic
 //! `owner_graph.json` + source-file fixtures, mirroring
@@ -101,22 +100,24 @@ fn graph_with_atomic_unit_and_sources() -> String {
 
 const CHUNK_SOURCE: &str = "const alpha = 1;\nconst beta = 2;\nconst gamma = 3;\n";
 
-/// Module spec where `alpha` is claimed via a `source_match` member
-/// selector (not a binding selector) and `beta` via a plain binding
-/// selector — both co-located, so the pre-edit spec is realizable.
+/// Module spec where `alpha` is claimed via a canonical source-match
+/// selector and `beta` via a plain binding selector — both co-located,
+/// so the pre-edit spec is realizable.
 const ATOM_YAML_SOURCE_MATCH: &str = r#"members:
-  - name: Alpha
-    selector:
-      source_match:
-        match: 'const alpha = 1;'
   - selector: { binding: { name: beta } }
+source_matches:
+  - match: 'const alpha = 1;'
+    bindings:
+      - local: alpha
+        name: Alpha
 "#;
 
-/// Same claim set, but `alpha` arrives via a `binding_groups` entry.
-const ATOM_YAML_BINDING_GROUP: &str = r#"binding_groups:
-  - source_match:
-      match: 'const alpha = 1;'
-    exports: { alpha: Alpha }
+/// Same claim set, with the canonical source-match claim ordered first.
+const ATOM_YAML_BINDING_GROUP: &str = r#"source_matches:
+  - match: 'const alpha = 1;'
+    bindings:
+      - local: alpha
+        name: Alpha
 members:
   - selector: { binding: { name: beta } }
 "#;
@@ -184,7 +185,7 @@ fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_match() {
 }
 
 #[test]
-fn unassign_rejects_atom_split_when_sibling_is_claimed_via_binding_group() {
+fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_matches() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let (modules, graph) = write_fixture(root, ATOM_YAML_BINDING_GROUP);
@@ -194,7 +195,7 @@ fn unassign_rejects_atom_split_when_sibling_is_claimed_via_binding_group() {
 
     assert!(
         !out.status.success(),
-        "unassigning beta must be rejected (atom split with binding_group-claimed alpha); \
+        "unassigning beta must be rejected (atom split with source-match-claimed alpha); \
          stdout: {}; stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),

@@ -402,7 +402,24 @@ pub struct EmitBrowserHarnessConfig {
 #[serde(deny_unknown_fields)]
 pub struct ChunkRenames {
     #[serde(default)]
-    pub members: Vec<Member>,
+    pub members: Vec<ChunkRenameMember>,
+    /// Semantic hints keyed by the final readable name in `members`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub annotations: BTreeMap<String, BindingAnnotation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChunkRenameMember {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub selector: ChunkRenameSelector,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChunkRenameSelector {
+    pub binding: BindingSelector,
 }
 
 fn default_true() -> bool {
@@ -690,15 +707,6 @@ pub struct LogicalModule {
     /// lets source-match binding claims stay focused on ownership.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub annotations: BTreeMap<String, BindingAnnotation>,
-    /// Compact form for several bindings selected from the same source
-    /// context, usually one multi-declarator statement. Each `exports` key is
-    /// a selector-local binding name inside `source_match.match`; each value
-    /// is the public export name to give the matched runtime binding.
-    ///
-    /// This is sugar for several `members[].selector.source_match` entries
-    /// with identical `match` and different `target_binding` values.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub binding_groups: Vec<BindingGroup>,
     /// Anonymous (empty-`declared_bindings`) top-level statements
     /// the materializer must co-move into this module's body.
     /// Required when a peel proposal's closure includes side-effect
@@ -719,9 +727,8 @@ pub struct LogicalModule {
     /// rationale (e.g. `merged from: …` provenance written by
     /// `modules merge`) that survives spec edits without appearing in
     /// generated JS. Ignored by the lowering pass — unlike `comment:`,
-    /// which emits a `//` block. The module-level counterpart of
-    /// `Member.note` / `BindingGroup.note`; same non-emitting contract
-    /// and STYLE.md local exemption (see AGENTS.md "Spec `note:` field").
+    /// which emits a `//` block. Same non-emitting contract and STYLE.md local
+    /// exemption (see AGENTS.md "Spec `note:` field").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -753,59 +760,26 @@ pub struct AnonymousStatement {
     /// Optional human-readable comment. Preserved on round-trip and
     /// emitted immediately above the matched anonymous statement in
     /// generated JS. Accepted for symmetry with the top-level
-    /// [`LogicalModule::comment`] and per-[`Member::comment`] fields.
+    /// [`LogicalModule::comment`] field and binding `annotations:` comments.
     /// Prefer `note:` for scratch text that should stay YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct BindingGroup {
-    pub source_match: SourceMatch,
-    /// Selector-local names from `source_match.match` to export under the
-    /// same readable names. This is only sugar for filling `exports`; it does
-    /// not adopt transitive ownership or co-move unnamed statements.
-    #[serde(default, skip_serializing_if = "BindingGroupAdoptNames::is_none")]
-    pub adopt_names: BindingGroupAdoptNames,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub exports: BTreeMap<String, String>,
-    /// Optional per-binding comments keyed by selector-local binding name.
-    /// These are equivalent to `members[].comment` after the binding group is
-    /// expanded, but stay attached to the structural binding selected by the
-    /// group even when `exports` renames it.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub comments: BTreeMap<String, String>,
-    /// Optional per-binding YAML-only notes keyed by selector-local binding
-    /// name. These are the non-emitting counterpart to `comments`: use them for
-    /// per-export debt/provenance that should survive spec rewrites without
-    /// appearing in generated JS.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub notes: BTreeMap<String, String>,
-    /// Optional YAML-only note: provenance / honest-debt rationale (e.g. why a
-    /// binding group's selector has no forward-stable anchor yet) that survives
-    /// spec edits without appearing in generated JS. Ignored by the materializer
-    /// — unlike `comments`, which emit. Same non-emitting contract and STYLE.md
-    /// local exemption as `Member.note`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct BindingAnnotation {
-    /// Spec-level purity annotation. Same contract as [`Member::purity`].
+    /// Spec-level purity annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_purity")]
     pub purity: MemberPurity,
-    /// Spec-level local-effect annotation. Same contract as [`Member::effect`].
+    /// Spec-level local-effect annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_effect")]
     pub effect: MemberEffect,
-    /// Property names whose member calls are author-asserted pure. Same
-    /// contract as [`Member::pure_members`].
+    /// Property names whose member calls are author-asserted pure.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pure_members: Vec<String>,
     /// Property names whose calls do not synchronously invoke callback
-    /// arguments. Same contract as [`Member::no_sync_callback_members`].
+    /// arguments.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub no_sync_callback_members: Vec<String>,
     /// Optional human-readable comment emitted above the matched binding's
@@ -822,11 +796,7 @@ pub struct BindingAnnotation {
 pub struct SourceMatchClaim {
     /// Identifier matching mode for this source-backed claim. Omitted means
     /// alpha-equivalent identifier matching, matching [`SourceMatch`].
-    #[serde(
-        default = "default_source_match_identifier_mode",
-        skip_serializing_if = "is_default_source_match_identifier_mode",
-        deserialize_with = "deserialize_supported_source_match_identifier_mode"
-    )]
+    #[serde(skip, default = "default_source_match_identifier_mode")]
     pub identifiers: SourceMatchIdentifierMode,
     /// JS source pattern to match against one top-level source statement.
     #[serde(rename = "match")]
@@ -891,24 +861,6 @@ pub struct SourceMatchBindingDetail {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
-#[serde(untagged)]
-pub enum BindingGroupAdoptNames {
-    #[default]
-    None,
-    All(bool),
-    Names(Vec<String>),
-}
-
-impl BindingGroupAdoptNames {
-    pub fn is_none(&self) -> bool {
-        matches!(
-            self,
-            BindingGroupAdoptNames::None | BindingGroupAdoptNames::All(false)
-        )
-    }
-}
-
 impl AnonymousStatement {
     pub fn selector(
         &self,
@@ -950,16 +902,12 @@ impl std::error::Error for AnonymousStatementSelectorError {}
 
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct SourceMatch {
-    #[serde(
-        default = "default_source_match_identifier_mode",
-        skip_serializing_if = "is_default_source_match_identifier_mode"
-    )]
+    #[serde(default = "default_source_match_identifier_mode", skip_serializing)]
     pub identifiers: SourceMatchIdentifierMode,
-    /// Selector-local binding name to export when this source match is used as
-    /// a `members[].selector.source_match`. This lets a selector use a whole
-    /// multi-declarator statement as readable context while choosing one
-    /// binding from it. Invalid on `anonymous_statements[].source_match`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Internal selector-local binding name to project after parsing a
+    /// canonical `source_matches[].bindings` claim. Public YAML selector bodies
+    /// do not accept this field; claim projection lives outside the selector.
+    #[serde(default, skip_serializing)]
     pub target_binding: Option<String>,
     #[serde(rename = "match")]
     pub match_source: String,
@@ -967,29 +915,10 @@ pub struct SourceMatch {
 
 #[derive(Deserialize)]
 struct SourceMatchWire {
-    #[serde(default)]
-    identifiers: Option<SourceMatchIdentifierMode>,
-    #[serde(default)]
-    target_binding: Option<String>,
     #[serde(rename = "match")]
     match_source: String,
     #[serde(flatten)]
     unsupported_fields: BTreeMap<String, serde::de::IgnoredAny>,
-}
-
-fn deserialize_supported_source_match_identifier_mode<'de, D>(
-    deserializer: D,
-) -> Result<SourceMatchIdentifierMode, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    match SourceMatchIdentifierMode::deserialize(deserializer)? {
-        SourceMatchIdentifierMode::AlphaAll => Ok(SourceMatchIdentifierMode::AlphaAll),
-        SourceMatchIdentifierMode::Exact => Err(serde::de::Error::custom(
-            "source_match identifiers: exact is no longer supported; omit `identifiers` \
-             or use `alpha_all`",
-        )),
-    }
 }
 
 impl<'de> Deserialize<'de> for SourceMatch {
@@ -1010,18 +939,9 @@ impl<'de> Deserialize<'de> for SourceMatch {
                  supported by this debundler; upgrade the debundler or remove the field(s)"
             )));
         }
-        let identifiers = match wire.identifiers {
-            None | Some(SourceMatchIdentifierMode::AlphaAll) => SourceMatchIdentifierMode::AlphaAll,
-            Some(SourceMatchIdentifierMode::Exact) => {
-                return Err(serde::de::Error::custom(
-                    "source_match identifiers: exact is no longer supported; omit `identifiers` \
-                     or use `alpha_all`",
-                ));
-            }
-        };
         Ok(Self {
-            identifiers,
-            target_binding: wire.target_binding,
+            identifiers: SourceMatchIdentifierMode::AlphaAll,
+            target_binding: None,
             match_source: wire.match_source,
         })
     }
@@ -1067,10 +987,6 @@ pub enum SourceMatchIdentifierMode {
 
 fn default_source_match_identifier_mode() -> SourceMatchIdentifierMode {
     SourceMatchIdentifierMode::AlphaAll
-}
-
-fn is_default_source_match_identifier_mode(mode: &SourceMatchIdentifierMode) -> bool {
-    *mode == default_source_match_identifier_mode()
 }
 
 /// Default value the [`UnassignedMode::CatchallFile`] target path
@@ -1219,55 +1135,6 @@ pub struct Member {
     #[serde(default)]
     pub name: Option<String>,
     pub selector: MemberSelector,
-    #[serde(skip_serializing_if = "is_default_member_purity")]
-    #[serde(default)]
-    pub purity: MemberPurity,
-    #[serde(skip_serializing_if = "is_default_member_effect")]
-    #[serde(default)]
-    pub effect: MemberEffect,
-    /// Property names on the bound value whose calls (`<binding>.<name>(args)`)
-    /// the author asserts have no observable side effects when their arguments
-    /// classify pure. Targets the vendor-namespace shape — a star-import or
-    /// renamed binding standing in for a vendor module like React, where
-    /// member calls (`React.forwardRef`, `React.memo`, `React.lazy`,
-    /// `React.createContext`) are pure under the same author-trust contract
-    /// as `purity: pure` extends to direct calls of the bound Ident.
-    ///
-    /// Static identifier-property access only — `<binding>.<name>(...)` and
-    /// `<binding>?.<name>(...)`. Computed access (`<binding>[expr](...)`),
-    /// chained property access (`<binding>.x.y(...)`), shadowed bindings, and
-    /// non-Ident receivers fall through to the regular classifier path.
-    ///
-    /// See AGENTS.md "Declared purity" for the soundness contract — the
-    /// validator does not re-verify; soundness shifts to the spec author.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(default)]
-    pub pure_members: Vec<String>,
-    /// Property names on the bound value whose calls may receive callback-like
-    /// arguments but do not synchronously invoke them. The call remains an
-    /// opaque side-effecting member call for purity / S-chain purposes; this
-    /// only narrows at-init call promotion by not treating inline functions,
-    /// object literals containing functions, or first-order argument callbacks
-    /// as synchronously reachable fallback roots for audited callback-storing
-    /// APIs.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(default)]
-    pub no_sync_callback_members: Vec<String>,
-    /// Optional YAML-only note: provenance / honest-debt rationale (e.g. why a
-    /// name pin has no forward-stable anchor yet) that survives spec edits
-    /// without appearing in generated JS. Ignored by the materializer — unlike
-    /// `comment:`, which emits. Use for annotations that must NOT change
-    /// byte-identical output. (Ratified STYLE.md exemption — see AGENTS.md
-    /// "Spec `note:` field".)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// Optional human-readable comment emitted as a `// ...` block
-    /// immediately above the binding's owner statement in the
-    /// generated JS. Per-line literal `// ` prefix; empty input
-    /// lines emit as `//`. See `CLI.md` § "per-member and
-    /// module-level `comment:` fields".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1275,8 +1142,6 @@ pub struct Member {
 pub struct MemberSelector {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingSelector>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_match: Option<SourceMatch>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cross_ref: Option<CrossRefSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1614,7 +1479,6 @@ impl MemberSelector {
     pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
         match (
             &self.binding,
-            &self.source_match,
             &self.cross_ref,
             &self.reads_member,
             &self.member_of_module,
@@ -1622,38 +1486,35 @@ impl MemberSelector {
             &self.makes_decorate_call,
             &self.intrinsic_alias,
         ) {
-            (Some(binding), None, None, None, None, None, None, None) => {
+            (Some(binding), None, None, None, None, None, None) => {
                 Ok(MemberSelectorSpec::Binding(binding.clone()))
             }
-            (None, Some(source_match), None, None, None, None, None, None) => {
-                Ok(MemberSelectorSpec::SourceMatch(source_match.selector()))
-            }
-            (None, None, Some(cross_ref), None, None, None, None, None) => {
+            (None, Some(cross_ref), None, None, None, None, None) => {
                 cross_ref.target().map(MemberSelectorSpec::CrossRef)
             }
-            (None, None, None, Some(reads_member), None, None, None, None) => {
+            (None, None, Some(reads_member), None, None, None, None) => {
                 Ok(MemberSelectorSpec::ReadsMember(reads_member.target()))
             }
-            (None, None, None, None, Some(member_of_module), None, None, None) => Ok(
+            (None, None, None, Some(member_of_module), None, None, None) => Ok(
                 MemberSelectorSpec::MemberOfModule(member_of_module.target()),
             ),
-            (None, None, None, None, None, Some(passed_to_call), None, None) => {
+            (None, None, None, None, Some(passed_to_call), None, None) => {
                 Ok(MemberSelectorSpec::PassedToCall(passed_to_call.target()))
             }
-            (None, None, None, None, None, None, Some(makes_decorate_call), None) => Ok(
+            (None, None, None, None, None, Some(makes_decorate_call), None) => Ok(
                 MemberSelectorSpec::MakesDecorateCall(makes_decorate_call.target()),
             ),
-            (None, None, None, None, None, None, None, Some(intrinsic_alias)) => {
+            (None, None, None, None, None, None, Some(intrinsic_alias)) => {
                 Ok(MemberSelectorSpec::IntrinsicAlias(intrinsic_alias.target()))
             }
-            (None, None, None, None, None, None, None, None) => Err(MemberSelectorError {
-                message: "members[].selector must include one of `binding`, `source_match`, \
-                          `cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`, \
+            (None, None, None, None, None, None, None) => Err(MemberSelectorError {
+                message: "members[].selector must include one of `binding`, `cross_ref`, \
+                          `reads_member`, `member_of_module`, `passed_to_call`, \
                           `makes_decorate_call`, or `intrinsic_alias`",
             }),
             _ => Err(MemberSelectorError {
-                message: "members[].selector must use exactly one of `binding`, `source_match`, \
-                          `cross_ref`, `reads_member`, `member_of_module`, `passed_to_call`, \
+                message: "members[].selector must use exactly one of `binding`, `cross_ref`, \
+                          `reads_member`, `member_of_module`, `passed_to_call`, \
                           `makes_decorate_call`, or `intrinsic_alias`",
             }),
         }
@@ -1790,7 +1651,6 @@ mod tests {
     fn source_match_unknown_field_reports_unsupported_selector_capability() {
         let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
             r#"{
-              "identifiers": "alpha_all",
               "match": "const readable = 1;",
               "object_props": true
             }"#,
@@ -1811,7 +1671,6 @@ mod tests {
     fn source_match_rejects_legacy_wildcard_string_literals() {
         let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
             r#"{
-              "identifiers": "alpha_all",
               "match": "const readable = \"TOKEN\";",
               "wildcard_string_literals": ["TOKEN"]
             }"#,
@@ -1839,18 +1698,49 @@ mod tests {
     }
 
     #[test]
-    fn source_match_rejects_exact_identifier_mode() {
+    fn source_match_rejects_public_identifiers_field() {
         let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
             r#"{
-              "identifiers": "exact",
+              "identifiers": "alpha_all",
               "match": "const readable = runtime;"
             }"#,
         )
         .unwrap_err();
         let message = error.to_string();
         assert!(
-            message.contains("identifiers: exact is no longer supported"),
+            message.contains("unsupported selector capability") && message.contains("identifiers"),
             "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn source_match_rejects_public_target_binding_field() {
+        let error: serde_json::Error = serde_json::from_str::<SourceMatch>(
+            r#"{
+              "match": "const readable = runtime;",
+              "target_binding": "readable"
+            }"#,
+        )
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("unsupported selector capability")
+                && message.contains("target_binding"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn source_match_serializes_only_public_match_field() {
+        let source_match = SourceMatch {
+            identifiers: SourceMatchIdentifierMode::Exact,
+            target_binding: Some("readable".to_string()),
+            match_source: "const readable = runtime;".to_string(),
+        };
+        let serialized = serde_json::to_value(source_match).unwrap();
+        assert_eq!(
+            serialized,
+            serde_json::json!({ "match": "const readable = runtime;" })
         );
     }
 
@@ -1976,66 +1866,25 @@ mod tests {
     }
 
     #[test]
-    fn member_accepts_and_round_trips_note() {
-        // `note:` is a YAML-only annotation that must survive `deny_unknown_fields`
-        // and round-trip intact (see `Member.note` for the non-emitting contract).
-        let member: Member = serde_json::from_str(
+    fn member_rejects_legacy_inline_note_and_comment() {
+        for body in [
             r#"{ "selector": { "binding": { "name": "x" } }, "note": "no forward-stable anchor yet" }"#,
-        )
-        .unwrap();
-        assert_eq!(member.note.as_deref(), Some("no forward-stable anchor yet"));
-        assert!(member.comment.is_none());
-        let round_tripped = serde_json::to_string(&member).unwrap();
-        assert!(
-            round_tripped.contains(r#""note":"no forward-stable anchor yet""#),
-            "note must survive round-trip: {round_tripped}",
-        );
-    }
-
-    #[test]
-    fn binding_group_accepts_and_round_trips_note() {
-        // `note:` on a binding group is the same non-emitting annotation as
-        // `Member.note`: it must survive `deny_unknown_fields` and round-trip.
-        let group: BindingGroup = serde_json::from_str(
-            r#"{ "source_match": { "match": "const x = 1;" }, "note": "no stable anchor yet" }"#,
-        )
-        .unwrap();
-        assert_eq!(group.note.as_deref(), Some("no stable anchor yet"));
-        let round_tripped = serde_json::to_string(&group).unwrap();
-        assert!(
-            round_tripped.contains(r#""note":"no stable anchor yet""#),
-            "note must survive round-trip: {round_tripped}",
-        );
-    }
-
-    #[test]
-    fn binding_group_accepts_and_round_trips_per_export_notes() {
-        // `notes:` is the per-export counterpart of a binding group's emitting
-        // `comments:` map. Both maps are keyed by selector-local binding name,
-        // but notes must stay YAML-only metadata.
-        let group: BindingGroup = serde_json::from_str(
-            r#"{ "source_match": { "match": "const x = 1, y = 2;" }, "exports": { "x": "X" }, "notes": { "x": "minimize this selector" } }"#,
-        )
-        .unwrap();
-        assert_eq!(
-            group.notes.get("x").map(String::as_str),
-            Some("minimize this selector")
-        );
-        assert!(group.comments.is_empty());
-        let round_tripped = serde_json::to_string(&group).unwrap();
-        assert!(
-            round_tripped.contains(r#""notes":{"x":"minimize this selector"}"#),
-            "per-export notes must survive round-trip: {round_tripped}",
-        );
+            r#"{ "selector": { "binding": { "name": "x" } }, "comment": "emitted prose" }"#,
+        ] {
+            let result: std::result::Result<Member, _> = serde_json::from_str(body);
+            assert!(
+                result.is_err(),
+                "legacy inline member metadata must be rejected: {body}"
+            );
+        }
     }
 
     #[test]
     fn logical_module_accepts_and_round_trips_note() {
-        // Module-level `note:` is the same non-emitting annotation as
-        // `Member.note` / `BindingGroup.note` (`modules merge` writes its
-        // `merged from:` provenance here): it must survive
-        // `deny_unknown_fields`, round-trip intact, and — being absent from
-        // every lowering plan struct — never reach generated JS.
+        // Module-level `note:` is the remaining non-emitting annotation
+        // (`modules merge` writes its `merged from:` provenance here): it must
+        // survive `deny_unknown_fields`, round-trip intact, and — being absent
+        // from every lowering plan struct — never reach generated JS.
         let module: LogicalModule =
             serde_json::from_str(r#"{ "members": [], "note": "merged from: src.yaml" }"#).unwrap();
         assert_eq!(module.note.as_deref(), Some("merged from: src.yaml"));

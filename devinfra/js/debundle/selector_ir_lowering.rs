@@ -433,7 +433,7 @@ impl MemberSelectorProgramBuilder {
         let mut variables = Vec::new();
         let mut target_bindings = Vec::new();
         let injectivity_class = format!(
-            "{logical_module}|binding_group.source_match.projected|{}",
+            "{logical_module}|source_matches.projected|{}",
             exports_by_target
                 .keys()
                 .cloned()
@@ -447,7 +447,7 @@ impl MemberSelectorProgramBuilder {
             let binding = self.program.add_variable(
                 VariableDomain::String,
                 Some(format!(
-                    "{logical_module}::binding_group.source_match.projected_binding.{target_binding}"
+                    "{logical_module}::source_matches.projected_binding.{target_binding}"
                 )),
             );
             self.program.add_atom(SelectorAtom::OwnerDeclaresBinding {
@@ -477,7 +477,7 @@ impl MemberSelectorProgramBuilder {
                         .collect::<Vec<_>>()
                 })
                 .collect(),
-            reason: format!("{logical_module}::binding_group.source_match.projected"),
+            reason: format!("{logical_module}::source_matches.projected"),
         });
     }
 
@@ -1009,17 +1009,17 @@ impl MemberSelectorProgramBuilder {
         let parsed = js_ast::with_swc_globals(|| {
             source_match::ParsedSourceMatchSelector::parse(
                 logical_module,
-                "binding_group.source_match",
+                "source_matches",
                 format!("<selector ir binding_group source_match in {logical_module}>"),
                 selector,
-                "binding_group.source_match",
+                "source_matches",
             )
         })
         .map_err(|error| SelectorIrLoweringError::UnsupportedSourceMatch {
-            selector_kind: "binding_group.source_match",
+            selector_kind: "source_matches",
             reason: format!(
                 "logical_module {logical_module} {}: {}",
-                binding_group_source_match_debug_label(exports_by_target),
+                grouped_source_matches_debug_label(exports_by_target),
                 error
             ),
         })?;
@@ -1077,7 +1077,7 @@ impl MemberSelectorProgramBuilder {
         if facts.top_level.len() != parsed.body().len() {
             return Ok(false);
         }
-        let group_debug_label = binding_group_source_match_debug_label(exports_by_target);
+        let group_debug_label = grouped_source_matches_debug_label(exports_by_target);
 
         let mut target_binding_nodes = BTreeMap::<String, NodeId>::new();
         let index = AlphaIdentifierIndex::new(&facts);
@@ -3128,18 +3128,18 @@ fn binding_group_owner_injectivity_class(
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "{logical_module}|binding_group.source_match|{}|{target_bindings}|root:{root}",
+        "{logical_module}|source_matches|{}|{target_bindings}|root:{root}",
         selector.match_source
     )
 }
 
-fn binding_group_source_match_debug_label(exports_by_target: &BTreeMap<String, String>) -> String {
+fn grouped_source_matches_debug_label(exports_by_target: &BTreeMap<String, String>) -> String {
     let target_bindings = exports_by_target
         .keys()
         .map(String::as_str)
         .collect::<Vec<_>>()
         .join(",");
-    format!("binding_group.source_match.{target_bindings}")
+    format!("source_matches.{target_bindings}")
 }
 
 fn statement_kind_str_for_spec(kind: BindingSourceKind) -> &'static str {
@@ -3676,7 +3676,7 @@ mod tests {
     }
 
     #[test]
-    fn alpha_all_binding_group_source_match_lowers_to_one_shared_root() {
+    fn alpha_all_grouped_source_matches_lowers_to_one_shared_root() {
         let mut group_selector = AnonymousStatementSelector::exact(
             r#"const first = build("a"), second = build(first);"#,
         );
@@ -3749,7 +3749,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_statement_binding_group_source_match_lowers_to_native_sequence() {
+    fn multi_statement_grouped_source_matches_lowers_to_native_sequence() {
         let mut group_selector = AnonymousStatementSelector::exact(
             r#"const first = makeFirst();
 function second() {
@@ -3825,7 +3825,7 @@ function second() {
     }
 
     #[test]
-    fn binding_group_source_match_with_outer_stmt_list_holes_lowers_to_native_sequence() {
+    fn grouped_source_matches_with_outer_stmt_list_holes_lowers_to_native_sequence() {
         let mut group_selector = AnonymousStatementSelector::exact(
             r#"STMT_LIST_HEAD;
 const first = makeFirst();
@@ -3890,7 +3890,7 @@ STMT_LIST_TAIL;"#,
     }
 
     #[test]
-    fn binding_group_source_match_with_internal_stmt_list_hole_lowers_to_native_sequence() {
+    fn grouped_source_matches_with_internal_stmt_list_hole_lowers_to_native_sequence() {
         let mut group_selector = AnonymousStatementSelector::exact(
             r#"const first = makeFirst();
 STMT_LIST_MIDDLE;

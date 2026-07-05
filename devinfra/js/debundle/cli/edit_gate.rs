@@ -390,32 +390,22 @@ pub fn gate_post_edit_partition(
         &claim_sets,
     )?;
 
-    // Member-form `source_match` claims. `binding_groups:` entries
-    // expand into per-binding member selectors through the same
-    // expansion the run pipeline's member assembly applies
-    // (`source_match::binding_group_member_selectors`), then resolve
-    // source-backed to the chunk-top binding names they claim. A
-    // selector the gate cannot resolve (missing chunk source,
-    // unmatched/ambiguous selector) is a hard error — the claimed
-    // owner must never silently fall to residual.
+    // Canonical `source_matches:` entries expand into per-binding internal
+    // selectors, then resolve source-backed to the chunk-top binding names
+    // they claim. A selector the gate cannot resolve (missing chunk source,
+    // unmatched/ambiguous selector) is a hard error — the claimed owner must
+    // never silently fall to residual.
     let expanded_member_selectors: Vec<BTreeSet<AnonymousStatementSelector>> =
         js_ast::with_swc_globals(|| {
             post_spec
                 .modules
                 .iter()
                 .map(|module| {
-                    let mut selectors = module.claims.member_selectors.clone();
+                    let mut selectors = BTreeSet::new();
                     let request_id = module.path.to_string_lossy();
                     for claim in &module.claims.source_matches {
                         for expanded in
                             source_match::source_match_claim_member_selectors(&request_id, claim)?
-                        {
-                            selectors.insert(expanded.selector);
-                        }
-                    }
-                    for group in &module.claims.binding_groups {
-                        for expanded in
-                            source_match::binding_group_member_selectors(&request_id, group)?
                         {
                             selectors.insert(expanded.selector);
                         }

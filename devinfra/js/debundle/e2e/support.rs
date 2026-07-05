@@ -37,7 +37,7 @@ static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
-    source_match: Option<FixtureSourceMatch>,
+    source_match: Option<MemberSourceMatch>,
     cross_ref: Option<FixtureCrossRefSelector>,
     reads_member: Option<FixtureReadsMemberSelector>,
     member_of_module: Option<FixtureMemberOfModuleSelector>,
@@ -49,7 +49,7 @@ pub struct Member {
 }
 
 pub struct BindingGroup {
-    source_match: FixtureSourceMatch,
+    match_source: String,
     adopt_names: Option<FixtureAdoptNames>,
     exports: BTreeMap<&'static str, &'static str>,
     comments: BTreeMap<&'static str, &'static str>,
@@ -65,11 +65,7 @@ impl BindingGroup {
         exports: &[(&'static str, &'static str)],
     ) -> Self {
         Self {
-            source_match: FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                match_source: match_source.into(),
-            },
+            match_source: match_source.into(),
             adopt_names: None,
             exports: exports.iter().copied().collect(),
             comments: BTreeMap::new(),
@@ -79,11 +75,7 @@ impl BindingGroup {
 
     pub fn source_alpha_adopt_all(match_source: impl Into<String>) -> Self {
         Self {
-            source_match: FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                match_source: match_source.into(),
-            },
+            match_source: match_source.into(),
             adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: BTreeMap::new(),
             comments: BTreeMap::new(),
@@ -96,11 +88,7 @@ impl BindingGroup {
         names: &[&'static str],
     ) -> Self {
         Self {
-            source_match: FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                match_source: match_source.into(),
-            },
+            match_source: match_source.into(),
             adopt_names: Some(FixtureAdoptNames::Names(names.to_vec())),
             exports: BTreeMap::new(),
             comments: BTreeMap::new(),
@@ -113,11 +101,7 @@ impl BindingGroup {
         exports: &[(&'static str, &'static str)],
     ) -> Self {
         Self {
-            source_match: FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                match_source: match_source.into(),
-            },
+            match_source: match_source.into(),
             adopt_names: Some(FixtureAdoptNames::All(true)),
             exports: exports.iter().copied().collect(),
             comments: BTreeMap::new(),
@@ -189,8 +173,7 @@ impl Member {
         Self {
             name,
             binding: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
+            source_match: Some(MemberSourceMatch {
                 target_binding: None,
                 match_source: match_source.into(),
             }),
@@ -215,8 +198,7 @@ impl Member {
         Self {
             name,
             binding: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
+            source_match: Some(MemberSourceMatch {
                 target_binding: Some(target_binding.into()),
                 match_source: match_source.into(),
             }),
@@ -459,18 +441,12 @@ impl Member {
 struct FixtureMember {
     name: &'static str,
     selector: FixtureMemberSelector,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    comment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
 }
 
 #[derive(Serialize)]
 struct FixtureMemberSelector {
     #[serde(skip_serializing_if = "Option::is_none")]
     binding: Option<FixtureBindingSelector>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_match: Option<FixtureSourceMatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     cross_ref: Option<FixtureCrossRefSelector>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -551,22 +527,37 @@ struct LogicalModuleBody {
     note: Option<String>,
     members: Vec<FixtureMember>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    binding_groups: Vec<FixtureBindingGroup>,
+    source_matches: Vec<FixtureSourceMatchClaim>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    annotations: BTreeMap<String, FixtureBindingAnnotation>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     anonymous_statements: Vec<FixtureAnonymousStatement>,
 }
 
 #[derive(Serialize)]
-struct FixtureBindingGroup {
-    source_match: FixtureSourceMatch,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    adopt_names: Option<FixtureAdoptNames>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    exports: BTreeMap<&'static str, &'static str>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    comments: BTreeMap<&'static str, &'static str>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    notes: BTreeMap<&'static str, &'static str>,
+struct FixtureSourceMatchClaim {
+    #[serde(rename = "match")]
+    match_source: String,
+    bindings: Vec<FixtureSourceMatchBinding>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum FixtureSourceMatchBinding {
+    Local(String),
+    Detailed { local: String, name: String },
+}
+
+impl FixtureSourceMatchBinding {
+    fn new(local: impl Into<String>, name: impl Into<String>) -> Self {
+        let local = local.into();
+        let name = name.into();
+        if local == name {
+            Self::Local(local)
+        } else {
+            Self::Detailed { local, name }
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -591,11 +582,24 @@ struct FixtureAnonymousStatement {
 
 #[derive(Clone, Serialize)]
 struct FixtureSourceMatch {
-    identifiers: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "match")]
+    match_source: String,
+}
+
+#[derive(Clone, Serialize)]
+struct MemberSourceMatch {
+    #[serde(skip)]
     target_binding: Option<String>,
     #[serde(rename = "match")]
     match_source: String,
+}
+
+#[derive(Default, Serialize)]
+struct FixtureBindingAnnotation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 impl FixtureAnonymousStatement {
@@ -612,8 +616,6 @@ impl FixtureAnonymousStatement {
         Self {
             match_source: None,
             source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
                 match_source: match_source.into(),
             }),
             comment: None,
@@ -674,6 +676,7 @@ struct WriteJsTreeFixture<'a> {
 fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
     members
         .iter()
+        .filter(|m| m.source_match.is_none())
         .map(|m| FixtureMember {
             name: m.name,
             selector: FixtureMemberSelector {
@@ -681,7 +684,6 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
                     .binding
                     .or_else(|| (!m.has_selector()).then_some(m.name))
                     .map(|name| FixtureBindingSelector { name }),
-                source_match: m.source_match.clone(),
                 cross_ref: m.cross_ref.clone(),
                 reads_member: m.reads_member.clone(),
                 member_of_module: m.member_of_module.clone(),
@@ -689,23 +691,104 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
                 makes_decorate_call: m.makes_decorate_call.clone(),
                 intrinsic_alias: m.intrinsic_alias.clone(),
             },
-            comment: m.comment.clone(),
-            note: m.note.clone(),
         })
         .collect()
 }
 
-fn fixture_binding_groups(binding_groups: &[BindingGroup]) -> Vec<FixtureBindingGroup> {
-    binding_groups
+fn fixture_member_source_matches(members: &[Member]) -> Vec<FixtureSourceMatchClaim> {
+    members
         .iter()
-        .map(|group| FixtureBindingGroup {
-            source_match: group.source_match.clone(),
-            adopt_names: group.adopt_names.clone(),
-            exports: group.exports.clone(),
-            comments: group.comments.clone(),
-            notes: group.notes.clone(),
+        .filter_map(|member| {
+            let source_match = member.source_match.as_ref()?;
+            let local = match source_match.target_binding.as_deref() {
+                Some(target_binding) => target_binding.to_string(),
+                None => {
+                    let declared = declared_bindings_in_source_match(&source_match.match_source);
+                    if declared.len() == 1 {
+                        declared[0].clone()
+                    } else {
+                        member.name.to_string()
+                    }
+                }
+            };
+            Some(FixtureSourceMatchClaim {
+                match_source: source_match.match_source.clone(),
+                bindings: vec![FixtureSourceMatchBinding::new(local, member.name)],
+            })
         })
         .collect()
+}
+
+fn fixture_grouped_source_matches(binding_groups: &[BindingGroup]) -> Vec<FixtureSourceMatchClaim> {
+    binding_groups
+        .iter()
+        .map(|group| {
+            let locals = match &group.adopt_names {
+                None => group
+                    .exports
+                    .keys()
+                    .map(|name| (*name).to_string())
+                    .collect(),
+                Some(FixtureAdoptNames::Names(names)) => {
+                    names.iter().map(|name| (*name).to_string()).collect()
+                }
+                Some(FixtureAdoptNames::All(true)) => {
+                    declared_bindings_in_source_match(&group.match_source)
+                }
+                Some(FixtureAdoptNames::All(false)) => Vec::new(),
+            };
+            FixtureSourceMatchClaim {
+                match_source: group.match_source.clone(),
+                bindings: locals
+                    .into_iter()
+                    .map(|local| {
+                        let public = group
+                            .exports
+                            .get(local.as_str())
+                            .copied()
+                            .unwrap_or(local.as_str())
+                            .to_string();
+                        FixtureSourceMatchBinding::new(local, public)
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+fn fixture_annotations(
+    members: &[Member],
+    binding_groups: &[BindingGroup],
+) -> BTreeMap<String, FixtureBindingAnnotation> {
+    let mut annotations = BTreeMap::new();
+    for member in members {
+        if member.comment.is_some() || member.note.is_some() {
+            annotations.insert(
+                member.name.to_string(),
+                FixtureBindingAnnotation {
+                    comment: member.comment.clone(),
+                    note: member.note.clone(),
+                },
+            );
+        }
+    }
+    for group in binding_groups {
+        for (local, comment) in &group.comments {
+            let public = group.exports.get(local).copied().unwrap_or(local);
+            annotations
+                .entry(public.to_string())
+                .or_insert_with(FixtureBindingAnnotation::default)
+                .comment = Some((*comment).to_string());
+        }
+        for (local, note) in &group.notes {
+            let public = group.exports.get(local).copied().unwrap_or(local);
+            annotations
+                .entry(public.to_string())
+                .or_insert_with(FixtureBindingAnnotation::default)
+                .note = Some((*note).to_string());
+        }
+    }
+    annotations
 }
 
 /// One entry of the spec's `logical_modules[chunk_id]` map: the target path
@@ -737,17 +820,20 @@ fn logical_module_entry_with_note(
     comment: Option<String>,
     note: Option<String>,
 ) -> LogicalModuleEntry {
-    (
-        path.to_string(),
+    (path.to_string(), {
+        let mut source_matches = fixture_member_source_matches(members);
+        source_matches.extend(fixture_grouped_source_matches(binding_groups));
+        let annotations = fixture_annotations(members, binding_groups);
         serde_json::to_value(LogicalModuleBody {
             comment,
             note,
             members: fixture_members(members),
-            binding_groups: fixture_binding_groups(binding_groups),
+            source_matches,
+            annotations,
             anonymous_statements,
         })
-        .expect("logical module fixture must serialize"),
-    )
+        .expect("logical module fixture must serialize")
+    })
 }
 
 pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
@@ -760,6 +846,14 @@ pub fn logical_module_with_binding_groups(
     binding_groups: &[BindingGroup],
 ) -> LogicalModuleEntry {
     logical_module_entry(path, members, binding_groups, Vec::new(), None)
+}
+
+pub fn logical_module_with_source_matches(
+    path: &str,
+    members: &[Member],
+    source_matches: &[BindingGroup],
+) -> LogicalModuleEntry {
+    logical_module_entry(path, members, source_matches, Vec::new(), None)
 }
 
 /// Like [`logical_module`] but attaches a module-level `comment:` block,
@@ -1919,6 +2013,70 @@ pub fn parse_module(source: &str) -> Module {
     Parser::new_from(lexer)
         .parse_module()
         .unwrap_or_else(|err| panic!("entry must parse, got {err:?}; source:\n{source}"))
+}
+
+fn declared_bindings_in_source_match(source: &str) -> Vec<String> {
+    let module = parse_module(source);
+    let mut names = Vec::new();
+    for item in &module.body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(decl)) => {
+                collect_declared_bindings_from_decl(decl, &mut names)
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                collect_declared_bindings_from_decl(&export.decl, &mut names)
+            }
+            _ => {}
+        }
+    }
+    names
+        .into_iter()
+        .filter(|name| !is_declarator_list_hole_name(name))
+        .collect()
+}
+
+fn is_declarator_list_hole_name(name: &str) -> bool {
+    name == "DECLARATORS" || name.starts_with("DECLARATORS_")
+}
+
+fn collect_declared_bindings_from_decl(decl: &Decl, names: &mut Vec<String>) {
+    match decl {
+        Decl::Class(class) => names.push(class.ident.sym.to_string()),
+        Decl::Fn(function) => names.push(function.ident.sym.to_string()),
+        Decl::Var(var) => {
+            for declarator in &var.decls {
+                collect_declared_bindings_from_pat(&declarator.name, names);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_declared_bindings_from_pat(pat: &Pat, names: &mut Vec<String>) {
+    match pat {
+        Pat::Ident(ident) => names.push(ident.id.sym.to_string()),
+        Pat::Array(array) => {
+            for elem in array.elems.iter().flatten() {
+                collect_declared_bindings_from_pat(elem, names);
+            }
+        }
+        Pat::Rest(rest) => collect_declared_bindings_from_pat(&rest.arg, names),
+        Pat::Object(object) => {
+            for prop in &object.props {
+                match prop {
+                    ObjectPatProp::KeyValue(kv) => {
+                        collect_declared_bindings_from_pat(&kv.value, names)
+                    }
+                    ObjectPatProp::Assign(assign) => names.push(assign.key.sym.to_string()),
+                    ObjectPatProp::Rest(rest) => {
+                        collect_declared_bindings_from_pat(&rest.arg, names)
+                    }
+                }
+            }
+        }
+        Pat::Assign(assign) => collect_declared_bindings_from_pat(&assign.left, names),
+        Pat::Expr(_) | Pat::Invalid(_) => {}
+    }
 }
 
 /// Parse `source` and assert that every named import specifier binds a

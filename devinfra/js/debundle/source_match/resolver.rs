@@ -27,12 +27,7 @@ pub trait SelectorResolver {
         export_name: &str,
         selector: &AnonymousStatementSelector,
     ) -> Result<ResolvedMemberBinding> {
-        self.resolve_member_with_label(
-            request_id,
-            export_name,
-            selector,
-            "members[].selector.source_match",
-        )
+        self.resolve_member_with_label(request_id, export_name, selector, "source_matches[]")
     }
 
     /// Resolve a member-shaped selector while rendering diagnostics under a

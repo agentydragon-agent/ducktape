@@ -13,12 +13,7 @@ pub(super) fn collect_chunk_renames(
     ledger: &mut RenameLedger,
 ) -> Result<()> {
     for member in &chunk_renames.members {
-        let Some(binding_selector) = &member.selector.binding else {
-            bail!(
-                "chunk_renames: members[].selector.source_match is not supported here; use selector.binding.name"
-            );
-        };
-        let binding = &binding_selector.name;
+        let binding = &member.selector.binding.name;
         let export_name = member.name.clone().unwrap_or_else(|| binding.clone());
         ledger.submit(RenameIntent {
             scope: RenameScope::Chunk,

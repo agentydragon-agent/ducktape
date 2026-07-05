@@ -5,8 +5,8 @@ itself is in `cli.md`; these documents are the operational companion.
 
 - `cli_basics.md` — env vars, output formats, running the pipeline, inspecting a
   binding, evidence files, the gate. The base every workflow builds on.
-- `selectors.md` — authoring portable `source_match` / `binding_groups` selectors
-  that survive rebuilds.
+- `selectors.md` — authoring portable `source_matches[]` and
+  `anonymous_statements[].source_match` selectors that survive rebuilds.
 - `spec_editing.md` — proposing, moving, merging, and renaming modules and
   bindings; peel heuristics; `comment:` fields.
 

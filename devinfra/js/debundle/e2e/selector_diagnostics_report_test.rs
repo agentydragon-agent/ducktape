@@ -91,8 +91,8 @@ export { renderCard, decoratePrimary, decorateSecondary };
 
     let missing = find_entry(diagnostics, "selector_resolution_error", "MissingFormatter");
     assert_eq!(missing["module_path"], "diagnostics/missing");
-    assert_eq!(missing["selector_kind"], "members.source_match");
-    assert!(missing["target_binding"].is_null(), "{missing:#}");
+    assert_eq!(missing["selector_kind"], "source_matches");
+    assert_eq!(missing["target_binding"], "selectedFormatter");
     assert!(
         missing["source_match_preview"]
             .as_str()
@@ -303,7 +303,7 @@ fn keep_going_matches_known_unsat_anonymous_roots_by_index() {
 }
 
 #[test]
-fn keep_going_matches_known_unsat_binding_group_roots_by_target_binding() {
+fn keep_going_matches_known_unsat_source_match_roots_by_target_binding() {
     let opts = FixtureOpts::new(
         r#"const presentLeft = 1, presentRight = 2;
 console.log(presentLeft, presentRight);
@@ -338,7 +338,7 @@ export { presentLeft, presentRight };
         .expect("diagnostics must be an array");
 
     let left = find_entry(diagnostics, "selector_resolution_error", "ExportedLeft");
-    assert_eq!(left["selector_kind"], "binding_groups.source_match");
+    assert_eq!(left["selector_kind"], "source_matches");
     assert_eq!(
         left["root_isolation"]["classification"], "root_unsat_candidate",
         "{left:#}"
@@ -347,12 +347,12 @@ export { presentLeft, presentRight };
         left["root_isolation"]["implicated_debug_name"]
             .as_str()
             .unwrap()
-            .contains("diagnostics/group::binding_group.source_match.missingLeft,missingRight."),
+            .contains("diagnostics/group::source_matches.missingLeft,missingRight."),
         "{left:#}"
     );
 
     let right = find_entry(diagnostics, "selector_resolution_error", "ExportedRight");
-    assert_eq!(right["selector_kind"], "binding_groups.source_match");
+    assert_eq!(right["selector_kind"], "source_matches");
     assert_eq!(
         right["root_isolation"]["classification"], "root_unsat_candidate",
         "{right:#}"
@@ -360,7 +360,7 @@ export { presentLeft, presentRight };
 }
 
 #[test]
-fn keep_going_reports_unsupported_binding_group_source_match() {
+fn keep_going_reports_canonical_source_match_group_failure() {
     let opts = FixtureOpts::new(
         r#"const present = 1;
 console.log(present);
@@ -370,7 +370,9 @@ export { present };
             "diagnostics/unsupported-group",
             &[],
             &[BindingGroup::source_alpha(
-                "STMT_LIST;",
+                r#"const left = makeLeft();
+STMT_LIST;
+const right = makeRight();"#,
                 &[("left", "ExportedLeft"), ("right", "ExportedRight")],
             )],
         )],
@@ -380,8 +382,8 @@ export { present };
     assert!(
         rejected
             .stderr
-            .contains("binding_groups.source_match for target bindings [left, right]"),
-        "human diagnostics should report the unsupported group:\n{}",
+            .contains("source_matches[].bindings[`left`]"),
+        "human diagnostics should report the canonical source match:\n{}",
         rejected.stderr
     );
     let report_path = rejected
@@ -399,17 +401,17 @@ export { present };
         .expect("diagnostics must be an array");
 
     let left = find_entry(diagnostics, "selector_resolution_error", "ExportedLeft");
-    assert_eq!(left["selector_kind"], "binding_groups.source_match");
+    assert_eq!(left["selector_kind"], "source_matches");
     assert_eq!(left["target_binding"], "left");
     assert!(
         left["message"]
             .as_str()
             .unwrap()
-            .contains("cannot be lowered into native selector IR"),
+            .contains("did not produce a valid global selector assignment"),
         "{left:#}"
     );
     let right = find_entry(diagnostics, "selector_resolution_error", "ExportedRight");
-    assert_eq!(right["selector_kind"], "binding_groups.source_match");
+    assert_eq!(right["selector_kind"], "source_matches");
     assert_eq!(right["target_binding"], "right");
 }
 

@@ -50,10 +50,11 @@ Dispatch work in this order:
    RustSAT + CaDiCaL/Kissat only if OR-Tools integration is too expensive. Do
    not optimize the current `AssignmentRow` scheduler as if it were the final
    solver.
-2. **Alpha-all as query structure (P0.1).** Lower `identifiers: alpha_all` to
-   logic variables, equality, disequality / `all_different`, and scope facts.
-   Do not clone the procedural `selector_match::Bindings` matcher inside the
-   solver; alpha-renaming should fall out of the query.
+2. **Alpha-equivalence as query structure (P0.1).** Lower selector-local
+   identifier matching to logic variables, equality, disequality /
+   `all_different`, and scope facts. Do not clone the procedural
+   `selector_match::Bindings` matcher inside the solver; alpha-renaming should
+   fall out of the query.
 3. **Core hole predicates (P0.2).** Lower simple `ANYTHING` / `EXPR` / `STMT`
    holes, regex string predicates, and then ordered run holes (`STMT_LIST`,
    `OBJECT_PROPS`, `DECLARATORS`, `ARGS`, `CLASS_REST`, `CASE_REST`,
@@ -111,15 +112,14 @@ parallel dispatch queue.
   milestones realized by the read-off work; repair-report, version-port, and
   bootstrap flows should consume the solver-backed validation/diagnostic
   contract rather than cloning selector resolution logic.
-- <plans/spec_yaml_language_cleanup.md> — **not started.** Atomic Ducktape +
-  gaffer-private migration to replace source-match members and binding groups
-  with `source_matches[]`, separate binding-keyed annotations, and remove
-  `identifiers`. Temporary old-shape parsing is allowed only for the migration
-  window; the final state removes inline member metadata, binding groups, and the
-  partial-`Member` schema reused by `chunk_renames`.
-- <plans/adopt_names_via_bijection.md> — **not started.** Expose the `source_match`
-  identifier bijection so one selector both locates a declaration and adopts
-  readable names onto its params/locals/nested bindings.
+- <plans/spec_yaml_language_cleanup.md> — **landed; keep as historical design.**
+  Ducktape module YAML now uses `source_matches[]`, binding-keyed
+  `annotations`, and alpha-equivalent selectors without public `identifiers`.
+  Use the current docs, not the migration plan, for authoring guidance.
+- <plans/adopt_names_via_bijection.md> — **obsolete historical design.** Top-level
+  readable names are explicit `source_matches[].bindings[]` claims; future
+  param/local/nested-name adoption should be designed without reintroducing
+  `adopt_names`.
 - <plans/factor_vocabulary_rename.md> — **not started.** Rename "factor"
   vocabulary to graph-theoretic names (`OwnerGraph` / `AtomicDAG` / `ModuleDAG` /
   `ModuleAssignment`); atomic ducktape + gaffer-private cutover.
@@ -144,11 +144,10 @@ this list as the dispatch summary, not a second plan.
    continue deriving relation support and allowed tuples, but exact target
    assignment must be owned by OR-Tools CP-SAT or a measured SAT fallback with
    semantic `all_different`.
-3. **Lower alpha-all declaratively.** Represent selector-local identifier
+3. **Lower alpha-equivalence declaratively.** Represent selector-local identifier
    bindings/references as variables and constraints over facts, including
-   equality, disequality / `all_different`, and scope. This is the blocker for
-   current gaffer-private payoff: its Tana spec uses `identifiers: alpha_all`
-   for every `source_match`.
+   equality, disequality / `all_different`, and scope. This is still the path to
+   making structural selectors solver-native rather than procedurally matched.
 4. **Lower the retained hole vocabulary.** Start with simple single-node holes
    and regex string predicates, then add ordered run-hole placement for the
    high-volume families (`STMT_LIST`, `DECLARATORS`, `OBJECT_PROPS`). Each
@@ -440,9 +439,9 @@ workflows, and must use generic synthetic fixtures.
 - **Contextual selectors.** The disambiguation _capability_ for
   helper-boilerplate that appears multiple times has landed (#2315): the
   minimizer reads off a stable immediate neighbor's unique anchor and
-  emits a 2-statement-window `source_match` + `target_binding` rather than
-  a copied overlapping selector body (the matcher already rejects ambiguous
-  windows via the prove-gate). Decorator-helper neighborhoods — a helper
+  emits a 2-statement-window `source_matches[]` claim rather than a copied
+  overlapping selector body (the matcher already rejects ambiguous windows via
+  the prove-gate). Decorator-helper neighborhoods — a helper
   declaration syntactically identical across many classes, disambiguated by
   an adjacent decorator call whose property strings identify the target —
   are the motivating shape. Remaining: (a) readable `before` / `after` /
@@ -454,10 +453,10 @@ workflows, and must use generic synthetic fixtures.
   argument, callback body, object property value, or statement-list slot. This
   should avoid scanning unrelated subtrees while preserving the current rule
   that ambiguous matches are hard errors.
-- **Cross-module binding groups.** Current `binding_groups` export
-  multiple bindings into one logical module. Add or design a form for
-  one matched declaration context whose bindings should land in
-  different modules, without repeating the whole source selector.
+- **Cross-module source claims.** Current `source_matches[]` entries export
+  multiple bindings into one logical module. Add or design a form for one
+  matched declaration context whose bindings should land in different modules,
+  without repeating the whole source selector.
 
 ## Logical materialization breadth
 

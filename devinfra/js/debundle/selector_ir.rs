@@ -81,7 +81,7 @@ pub enum ClaimKind {
     },
     /// An anonymous top-level statement claim. The owner may declare no binding.
     AnonymousStatement,
-    /// One target in a `binding_groups[].source_match` selector.
+    /// One target in a `source_matches[].bindings[]` selector.
     BindingGroupMember {
         export_name: String,
         target_binding: String,

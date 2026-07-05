@@ -1,6 +1,9 @@
 # Spec YAML Language Cleanup
 
-Design note and migration plan. This is not implemented yet.
+Historical design note for the migration that introduced canonical
+`source_matches[]` binding claims and module-level `annotations`. This file
+preserves the reasoning behind the migration; use the current docs for authoring
+syntax.
 
 ## Goal
 
@@ -14,9 +17,8 @@ places:
    human reviewer: purity, local effects, callback-storage behavior, comments,
    notes, and similar author-owned metadata.
 
-When this plan is complete, Ducktape and gaffer-private should both be in the
-new format. There should be no permanent compatibility shims for the old YAML
-shapes.
+The intended end state was Ducktape and gaffer-private both using the new
+format, with no permanent compatibility shims for the old YAML shapes.
 
 ## Current Problems
 
@@ -196,7 +198,7 @@ Keep `source_matches[].bindings[]` compatible with a future `module:` field, but
 only implement cross-module grouped claims when a real spec has repeated
 selector bodies or module-boundary work that would materially benefit.
 
-## Migration Plan
+## Historical Migration Plan
 
 ### Phase 1: Ducktape accepts the new shape
 
@@ -204,8 +206,8 @@ selector bodies or module-boundary work that would materially benefit.
 - Add a `LogicalModule::annotations` map and a binding-annotation schema.
 - Merge member inline metadata and module `annotations` into one internal view
   during lowering.
-- Preserve current YAML long enough for existing Ducktape tests and the current
-  Gaffer spec to keep running.
+- Preserve then-current YAML long enough for Ducktape tests and the Gaffer spec
+  to migrate.
 - Add validation:
   - each `source_matches[].bindings[].local` must be a binding declared by the
     selector body;
@@ -251,14 +253,15 @@ selector bodies or module-boundary work that would materially benefit.
 
 ### Phase 3: Pause for repository handoff
 
-At this point Ducktape accepts both forms and gaffer-private uses only the new
-forms. Pause here so the Ducktape and Gaffer changes can be squash-merged in the
-right order. Gaffer is currently the only debundle consumer, so a separate spec
-capability/version check is not needed for this migration.
+At this point Ducktape accepted both forms and gaffer-private used only the new
+forms. The pause existed so the Ducktape and Gaffer changes could be
+squash-merged in the right order. Gaffer was the only debundle consumer, so a
+separate spec capability/version check was not needed for this migration.
 
 ### Phase 4: Delete old Ducktape acceptance
 
-After the migrated Gaffer state is merged and consumes the new Ducktape behavior:
+After the migrated Gaffer state was merged and consumed the new Ducktape
+behavior:
 
 - Remove inline member metadata fields from the accepted module YAML schema:
   `purity`, `effect`, `pure_members`, `no_sync_callback_members`, `comment`,

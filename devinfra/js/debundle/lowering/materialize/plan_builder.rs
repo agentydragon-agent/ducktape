@@ -699,18 +699,13 @@ fn native_source_match_no_match_message(
     member: &MemberRequest,
 ) -> Option<String> {
     let selector = member.source_match.as_ref()?;
-    let target_binding_hint = selector
-        .target_binding
-        .as_deref()
-        .map(|target| format!(" target_binding `{target}`"))
-        .unwrap_or_default();
     Some(format!(
-        "logical_module {}: members[].selector.source_match for export `{}`{} did not produce a \
+        "logical_module {}: {} for export `{}` did not produce a \
          valid global selector assignment for any top-level declaration accepted by the global \
          selector solver. The selector did not match any top-level declaration under the joint \
          constraints; it may have no matching source declaration, or the joint constraints may \
          reject all otherwise matching declarations. Selector:\n{}",
-        request.id, member.export_name, target_binding_hint, selector.match_source,
+        request.id, member.claim_origin, member.export_name, selector.match_source,
     ))
 }
 
@@ -720,18 +715,13 @@ fn native_source_match_ambiguous_message(
     candidates: &[ResolvedClaim],
 ) -> Option<String> {
     let selector = member.source_match.as_ref()?;
-    let target_binding_hint = selector
-        .target_binding
-        .as_deref()
-        .map(|target| format!(" target_binding `{target}`"))
-        .unwrap_or_default();
     Some(format!(
-        "logical_module {}: members[].selector.source_match for export `{}`{} is ambiguous in the \
+        "logical_module {}: {} for export `{}` is ambiguous in the \
          native selector solver -- matched {} owners at statement ordinals {:?} (bindings: {}). \
          Refine the selector. Source:\n{}",
         request.id,
+        member.claim_origin,
         member.export_name,
-        target_binding_hint,
         candidates.len(),
         candidates
             .iter()
@@ -770,7 +760,7 @@ fn classify_source_match_failure(message: &str) -> &'static str {
 fn recommended_source_match_action(category: &str) -> &'static str {
     match category {
         "ambiguous_selector" => {
-            "Refine the selector, add target_binding when selecting one binding from a matched declaration, or narrow the matched source context."
+            "Refine the selector, choose the intended local binding in source_matches[].bindings[], or narrow the matched source context."
         }
         "unresolved_selector" => {
             "Update the selector source to match the current chunk or inspect the logged selector context before applying a mechanical rewrite."
@@ -782,17 +772,13 @@ fn recommended_source_match_action(category: &str) -> &'static str {
 fn source_match_selector_kind(claim_origin: &str) -> &'static str {
     if claim_origin.starts_with("source_matches[]") {
         "source_matches"
-    } else if claim_origin.starts_with("binding_groups[]") {
-        "binding_groups.source_match"
     } else {
         "members.source_match"
     }
 }
 
 fn source_match_projection_kind(claim_origin: &str) -> &'static str {
-    if claim_origin.starts_with("binding_groups[]") {
-        "binding_groups.source_match"
-    } else if claim_origin.starts_with("source_matches[]") {
+    if claim_origin.starts_with("source_matches[]") {
         "source_matches"
     } else {
         "members.source_match"
@@ -895,12 +881,12 @@ fn selector_debug_name_matches_target(
             .map(|export_name| {
                 rest.starts_with(&format!("source_match.{export_name}."))
                     || rest
-                        .strip_prefix("binding_group.source_match.")
+                        .strip_prefix("source_matches.")
                         .is_some_and(|label| binding_group_debug_label_contains(label, export_name))
             })
             .or(Some(false)),
         selector_ir::ClaimKind::BindingGroupMember { target_binding, .. } => Some(
-            rest.strip_prefix("binding_group.source_match.")
+            rest.strip_prefix("source_matches.")
                 .is_some_and(|label| binding_group_debug_label_contains(label, target_binding)),
         ),
         selector_ir::ClaimKind::AnonymousStatement => match target.origin {
@@ -1059,9 +1045,6 @@ fn binding_group_member_diagnostics(
             selector.target_binding = Some(target_binding.clone());
             let claim_origin = match group.selector_kind {
                 "source_matches" => format!("source_matches[].bindings[`{target_binding}`]"),
-                "binding_groups.source_match" => {
-                    format!("binding_groups[].exports[`{target_binding}`]")
-                }
                 _ => group.selector_kind.to_string(),
             };
             SourceMatchDiagnostic::from_selector(
@@ -3097,7 +3080,7 @@ impl ChunkPlanBuilder {
                 root_isolation: diagnostic.root_isolation.clone(),
                 message: diagnostic.message.clone(),
                 recommended_next_action:
-                    "Repair the member selector or replace the fragile relation with a source_match or binding_group that has current candidates."
+                    "Repair the member selector or replace the fragile relation with a source_matches[] claim that has current candidates."
                         .to_string(),
             });
         }

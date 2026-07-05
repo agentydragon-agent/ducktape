@@ -1,7 +1,8 @@
 # Authoring portable selectors
 
-How to write `source_match` / `binding_groups` selectors that stay valid across
-minified rebuilds. Operational base: `cli_basics.md`.
+How to write `source_matches[]` and `anonymous_statements[].source_match`
+selectors that stay valid across minified rebuilds. Operational base:
+`cli_basics.md`.
 
 ## The contract and the ladder
 
@@ -27,9 +28,10 @@ anchors or route the shape back to Ducktape tooling before scaling the pattern.
 
 Default to this ladder when writing or repairing selectors:
 
-1. Use `selector.source_match` / `binding_groups` for the declaration,
-   statement, class, or small surrounding AST shape that is semantically
-   stable.
+1. Use `source_matches[]` for binding ownership, or
+   `anonymous_statements[].source_match` for anonymous side-effect statements,
+   with the declaration, statement, class, or small surrounding AST shape that is
+   semantically stable.
 2. Add anonymous `ANYTHING` holes where the hole name would not carry useful
    signal. Use typed holes (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`,
    `OBJECT_PROPS`, `CLASS_REST`, `CASE_REST`, or `DECLARATORS`) when the
@@ -80,7 +82,8 @@ the anchor is identity, not a body photograph:
    distinctive option-bag keys or method names.
 4. **Adjacent-class / sibling-declaration anchor** — for boilerplate with no
    self-identity (e.g. esbuild decorate-helper trios emitted many times): a
-   `binding_group` + `DECLARATORS_AFTER` keyed off an adjacent named class.
+   `source_matches[]` entry with `DECLARATORS_AFTER` keyed off an adjacent named
+   class.
 
 Reject as if stable (leave a name-pin with a `note:` instead): hashed chunk URLs
 (`import("./index-<hash>.js")`), registration-roster / long-body photographs,
@@ -122,12 +125,10 @@ For broad old-spec conversion passes, use an automation-first loop:
    narrower supported selector form before spelling large unstable source
    bodies.
 
-When several `members[].selector.source_match` entries repeat the same
-multi-declarator selector with different `target_binding` values, run
+When several source-backed claims repeat the same multi-declarator selector, run
 `debundle spec selector-debt --source-file <chunk.js> --modules <modules-dir>`.
-The source-aware report emits `binding_groups` suggestions that collapse those
-member selectors into one `source_match` with `DECLARATORS_*` holes and an
-`exports:` map.
+The source-aware report emits suggestions that collapse those claims into one
+`source_matches[]` entry with `DECLARATORS_*` holes and explicit `bindings[]`.
 
 To convert selected name-only members directly, run the source-aware
 synthesis codemod:
@@ -165,12 +166,12 @@ committing a hand-maintained exact long selector.
 
 The first automated forms are intentionally narrow:
 
-- single requested function or class declarations become member
-  `selector.source_match` entries with `target_binding`;
+- single requested function or class declarations become `source_matches[]`
+  entries with one binding claim;
 - one or more requested `var`/`let`/`const` declarators from the same
-  declaration become either a member `source_match` or one `binding_groups`
-  entry, with unrelated declarator runs collapsed to `DECLARATORS_BEFORE`,
-  `DECLARATORS_BETWEEN`, and `DECLARATORS_AFTER`.
+  declaration become one `source_matches[]` entry, with unrelated declarator
+  runs collapsed to `DECLARATORS_BEFORE`, `DECLARATORS_BETWEEN`, and
+  `DECLARATORS_AFTER`.
 
 This is the first indexed subset of the broader minimization problem. Synthesis
 should move toward producing minimized selectors directly: stable initializer
@@ -181,16 +182,16 @@ comments, and neighboring members remain stable; still review the diff because
 generated selectors may expose a missing minimization feature or require a more
 concise hole form before they are worth landing.
 
-## `source_match` for stable declarations
+## `source_matches` for stable declarations
 
-Use `selector.source_match` for stable declaration shapes:
+Use module-level `source_matches[]` for stable declaration shapes:
 
 ```yaml
-members:
-  - name: selectedConfig
-    selector:
-      source_match:
-        match: 'const config = { kind: "selected", enabled: true };'
+source_matches:
+  - match: 'const config = { kind: "selected", enabled: true };'
+    bindings:
+      - local: config
+        name: selectedConfig
 ```
 
 When a dry run spends too long resolving selectors, profile the debundler with
@@ -198,97 +199,95 @@ When a dry run spends too long resolving selectors, profile the debundler with
 keeps selector previews and stable hashes for repair workflows, but production
 resolution no longer has per-selector stderr timing hooks.
 
-`source_match` treats binding/value identifiers in the selector as
+`source_matches[].match` treats binding/value identifiers in the selector as
 alpha-renamable placeholders while keeping literals, operators, member
 property names, object keys, and AST structure significant. This is useful for
 matching `function(x, y) { return x * z; }` against the same structure after
-minifier parameter names drift. Existing specs may still spell
-`identifiers: alpha_all` explicitly, but alpha-all is the only public
-identifier policy; exact/non-alpha identifier matching is retained only as an
-internal lowering primitive.
+minifier parameter names drift. Alpha-equivalent identifier matching is the
+public policy; do not spell an `identifiers` field in YAML.
 
-## `target_binding` and context windows
+## Binding claims and context windows
 
-Use `target_binding` when the readable selector includes more than one
-binding but the member exports only one of them:
+Use `bindings[]` when the readable selector includes more than one binding but
+the module exports only some of them:
 
 ```yaml
-members:
-  - name: selectedLocalPart
-    selector:
-      source_match:
-        target_binding: localPart
-        match: |
-          const localPart = "primary",
-            domain = "example.test",
-            address = `${localPart}@${domain}`;
+source_matches:
+  - match: |
+      const localPart = "primary",
+        domain = "example.test",
+        address = `${localPart}@${domain}`;
+    bindings:
+      - local: localPart
+        name: selectedLocalPart
 ```
 
 When the selected declaration is too generic by itself, include adjacent
 top-level statements as context in the same `match`. The whole statement range
-must match uniquely, but only `target_binding` is claimed:
+must match uniquely, but only the listed bindings are claimed:
 
 ```yaml
-members:
-  - name: selectedSessions
-    selector:
-      source_match:
-        target_binding: sessions
-        match: |
-          const sessions = new Map(EXPR);
-          function closeSessions() {
-            return sessions.clear();
-          }
-          function getSession(name) {
-            return sessions.get(name);
-          }
+source_matches:
+  - match: |
+      const sessions = new Map(EXPR);
+      function closeSessions() {
+        return sessions.clear();
+      }
+      function getSession(name) {
+        return sessions.get(name);
+      }
+    bindings:
+      - local: sessions
+        name: selectedSessions
 ```
 
 If the selected binding is one declarator inside a wider comma-list declaration,
-write only the selected declarator in the selector and keep `target_binding` on
-that selector-local name. Debundle can align that single declarator to the
-matching declarator inside the runtime `var`/`let`/`const` list while still
-using any adjacent selector statements as context:
+write only the selected declarator in the selector and list that selector-local
+name in `bindings[]`. Debundle can align that single declarator to the matching
+declarator inside the runtime `var`/`let`/`const` list while still using any
+adjacent selector statements as context:
 
 ```yaml
-members:
-  - name: selectedConfig
-    selector:
-      source_match:
-        target_binding: config
-        match: |
-          const config = { kind: "selected" };
-          function readConfig() {
-            return config.kind;
-          }
+source_matches:
+  - match: |
+      const config = { kind: "selected" };
+      function readConfig() {
+        return config.kind;
+      }
+    bindings:
+      - local: config
+        name: selectedConfig
 ```
 
-Use `DECLARATORS_BEFORE` / `DECLARATORS_AFTER` or `binding_groups` when several
-declarators in the same comma-list need to be exported together. Do not spell
-unrelated sibling declarators just to make a single binding selectable.
+Use `DECLARATORS_BEFORE` / `DECLARATORS_AFTER` when several declarators in the
+same comma-list need to be exported together. Do not spell unrelated sibling
+declarators just to make a single binding selectable.
 
-## `binding_groups`
+## Multiple bindings from one source shape
 
-Use `binding_groups` when several exports come from the same
-multi-declarator or short declaration context. This is sugar for several
-`members[].selector.source_match` entries with the same `match` and
-different `target_binding` values:
+Use one `source_matches[]` entry when several exports come from the same
+multi-declarator or short declaration context. Binding annotations live under
+`annotations.<export_name>`, keyed by the final readable export name:
 
 ```yaml
-binding_groups:
-  - source_match:
-      match: |
-        const localPart = "system",
-          domain = "example.test",
-          address = `${localPart}@${domain}`;
-    exports:
-      localPart: SYSTEM_EMAIL_LOCAL_PART
-      domain: SYSTEM_EMAIL_DOMAIN
-      address: systemEmailAddress
-    comments:
-      address: Primary address shown to operators.
-    notes:
-      domain: TODO: minimize selector once domain literals can be factored out.
+source_matches:
+  - match: |
+      const localPart = "system",
+        domain = "example.test",
+        address = `${localPart}@${domain}`;
+    bindings:
+      - local: localPart
+        name: SYSTEM_EMAIL_LOCAL_PART
+      - local: domain
+        name: SYSTEM_EMAIL_DOMAIN
+      - local: address
+        name: systemEmailAddress
+
+annotations:
+  systemEmailAddress:
+    comment: Primary address shown to operators.
+  SYSTEM_EMAIL_DOMAIN:
+    note: TODO: minimize selector once domain literals can be factored out.
 ```
 
 The `match` may also be a contiguous range of top-level declarations. This is
@@ -296,53 +295,34 @@ useful when related constants are declared separately and a later object ties
 them together:
 
 ```yaml
-binding_groups:
-  - source_match:
-      match: |
-        const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
-        const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
-        const styles = { first: firstClassName, second: secondClassName };
-    adopt_names: true
+source_matches:
+  - match: |
+      const firstClassName = STR_LITERAL_MATCHING_RE("^Widget-module_first__[A-Za-z0-9_-]+$");
+      const secondClassName = STR_LITERAL_MATCHING_RE("^Widget-module_second__[A-Za-z0-9_-]+$");
+      const styles = { first: firstClassName, second: secondClassName };
+    bindings:
+      - firstClassName
+      - secondClassName
+      - styles
 ```
 
-Under `alpha_all`, the selector-local `firstClassName` and `secondClassName`
-names carry across the range, so the object initializer can refer to the
-matched runtime bindings without spelling their minified names.
+Selector-local names carry across the range, so the object initializer can
+refer to the matched runtime bindings without spelling their minified names.
 
 Declaration ranges are still structural AST matches. Comments between
 declarations are ignored, but export syntax is not: match `export const ...`
 with `export const ...` in the selector. A range may mix declaration kinds,
 such as `const` declarations followed by a helper `function` and another
-`const`. The `exports` map and `adopt_names` only choose which matched
-bindings are public exports; unexported declarations in the range may still be
-carried into the selected module or imported from residual output as ordinary
-dependencies of the exported bindings.
-If a range misses, the diagnostic names `binding_groups[].source_match` and
-reports that no top-level declaration range matched; common causes are
+`const`. The `bindings[]` list chooses which matched bindings are public exports;
+unexported declarations in the range may still be carried into the selected
+module or imported from residual output as ordinary dependencies of the exported
+bindings.
+If a range misses, the diagnostic names the `source_matches[]` entry and reports
+that no top-level declaration range matched; common causes are
 non-contiguous source statements, `export` syntax present on only one side, or
 an exact literal/object/function body mismatch outside a deliberate hole.
 
-When the selector source already uses the desired public names, use
-`adopt_names` instead of repeating identity entries under `exports`:
-
-```yaml
-binding_groups:
-  - source_match:
-      match: |
-        const SYSTEM_EMAIL_LOCAL_PART = "system",
-          SYSTEM_EMAIL_DOMAIN = "example.test",
-          systemEmailAddress = `${SYSTEM_EMAIL_LOCAL_PART}@${SYSTEM_EMAIL_DOMAIN}`;
-    adopt_names: true
-```
-
-`adopt_names: [nameOne, nameTwo]` adopts only the listed selector-local
-bindings. An explicit `exports` entry on the same group overrides the adopted
-public name for that selector-local binding. `comments` and `notes` are keyed by
-selector-local binding name after `exports`/`adopt_names` are applied:
-`comments` emits like `members[].comment` after expansion, while `notes` is
-YAML-only metadata for per-export debt/provenance.
-
-Binding groups claim exported bindings only. Model adjacent anonymous
+`source_matches[]` entries claim exported bindings only. Model adjacent anonymous
 side-effect statements as separate `anonymous_statements` entries with their
 own selectors rather than as source-order indices into neighboring context.
 
@@ -350,38 +330,39 @@ When a few useful bindings sit inside a larger `var`/`let`/`const` declaration
 list, use declarator-list holes instead of spelling unrelated siblings:
 
 ```yaml
-binding_groups:
-  - source_match:
-      match: |
-        const DECLARATORS_BEFORE = null,
-          selectedFormatter = EXPR_FORMATTER,
-          selectedLabels = new Map([
-            ["left", "Left"],
-            ["right", "Right"],
-          ]),
-          selectedReader = EXPR_READER,
-          DECLARATORS_AFTER = null;
-    adopt_names: true
+source_matches:
+  - match: |
+      const DECLARATORS_BEFORE = null,
+        selectedFormatter = EXPR_FORMATTER,
+        selectedLabels = new Map([
+          ["left", "Left"],
+          ["right", "Right"],
+        ]),
+        selectedReader = EXPR_READER,
+        DECLARATORS_AFTER = null;
+    bindings:
+      - selectedFormatter
+      - selectedLabels
+      - selectedReader
 ```
 
 `DECLARATORS` and `DECLARATORS_*` absorb any run of declarators, including an
 empty run. The initializer is ignored; selectors commonly write `= null`
 because `const` declarations require an initializer. These pseudo-declarators
-are not exposed through `adopt_names`. This is the preferred pattern when a
-few adjacent constants or arrow-function helpers sit at the beginning, middle,
-or end of a larger declaration list: pin the declarators you want to export,
-put `DECLARATORS_BEFORE` and/or `DECLARATORS_AFTER` around the unrelated
-siblings, and use `adopt_names` or explicit `exports` only for the pinned
-selector-local names.
+are not binding claims. This is the preferred pattern when a few adjacent
+constants or arrow-function helpers sit at the beginning, middle, or end of a
+larger declaration list: pin the declarators you want to export, put
+`DECLARATORS_BEFORE` and/or `DECLARATORS_AFTER` around the unrelated siblings,
+and list only the pinned selector-local names in `bindings[]`.
 
 ## Anonymous side-effect statements
 
-For anonymous side-effect statements, prefer `source_match` when
+For anonymous side-effect statements, use `source_match` when
 minified helper or class names drift, but keep selectors unique. If two
-statements are structurally identical under `alpha_all`, debundle must
-reject the spec as ambiguous rather than picking by source order.
-Refine the selector with an exact statement, a stable literal/property
-difference, or a deliberately small surrounding context.
+statements are structurally identical, debundle must reject the spec as
+ambiguous rather than picking by source order. Refine the selector with an exact
+statement, a stable literal/property difference, or a deliberately small
+surrounding context.
 
 An anonymous `source_match` selector claims exactly one pinned top-level
 statement. Prefer a small selector whose distinguished target is the anonymous
@@ -477,12 +458,12 @@ For string literals with stable shape but unstable suffixes, use
 `STR_LITERAL_MATCHING_RE("...")` in expression position:
 
 ```yaml
-members:
-  - selector:
-      source_match:
-        match: |
-          const selectedStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");
-    name: widgetShellStyle
+source_matches:
+  - match: |
+      const selectedStyle = STR_LITERAL_MATCHING_RE("^WidgetShell-[0-9]+$");
+    bindings:
+      - local: selectedStyle
+        name: widgetShellStyle
 ```
 
 This matches a string literal AST node, not arbitrary source text. The pattern
@@ -542,17 +523,17 @@ absorbed sequence for cross-occurrence equality.
   matches a run of declarators.
 
 ```yaml
-members:
-  - selector:
-      source_match:
-        match: |
-          class K {
-            increment() {
-              STMT_LIST_BODY;
-            }
-            CLASS_REST;
-          }
-    name: Counter
+source_matches:
+  - match: |
+      class K {
+        increment() {
+          STMT_LIST_BODY;
+        }
+        CLASS_REST;
+      }
+    bindings:
+      - local: K
+        name: Counter
 ```
 
 A list may take **several** holes. Each hole is a gap, and the members or
@@ -579,9 +560,8 @@ statements inside an anchored method only when those statements are part of the
 intended fingerprint; otherwise small upstream body drift will make the class
 miss even though the method anchors are still present.
 
-A hole works in **any** position — leading, middle, or trailing. Under
-`alpha_all`, identifiers match by an alpha-correspondence the matcher builds as
-it walks both trees, and a hole never contributes the identifiers it absorbs,
-so the members or statements after a hole still match by their own structure
-rather than by absolute position. (Single-node `EXPR`/`STMT` holes share this
-property.)
+A hole works in **any** position — leading, middle, or trailing. Identifiers
+match by an alpha-correspondence the matcher builds as it walks both trees, and
+a hole never contributes the identifiers it absorbs, so the members or
+statements after a hole still match by their own structure rather than by
+absolute position. (Single-node `EXPR`/`STMT` holes share this property.)

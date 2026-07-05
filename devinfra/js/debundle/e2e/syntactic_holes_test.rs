@@ -899,7 +899,7 @@ export { actual };
 }
 
 #[test]
-fn binding_group_source_match_expr_prefix_holes_match_each_target_binding() {
+fn grouped_source_matches_expr_prefix_holes_match_each_target_binding() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var first = 1 + 2, second = Number.parseInt("4", 10);
 console.log(first + second);
@@ -934,7 +934,7 @@ export { first, second };
 }
 
 #[test]
-fn binding_group_source_match_string_literal_regex_predicates_match_each_target_binding() {
+fn grouped_source_matches_string_literal_regex_predicates_match_each_target_binding() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimePrimary = "Token-primary-101",
   runtimeSecondary = "Token-secondary-202";
@@ -968,7 +968,7 @@ export { runtimePrimary, runtimeSecondary };
 }
 
 #[test]
-fn binding_group_source_match_string_literal_regex_range_exports_style_object() {
+fn grouped_source_matches_string_literal_regex_range_exports_style_object() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeFirstClassName = "Widget-module_first__a1B-2";
 const runtimeSecondClassName = "Widget-module_second__Z9_x";
@@ -1024,7 +1024,7 @@ const styles = { first: firstClassName, second: secondClassName };"#,
 }
 
 #[test]
-fn binding_group_source_match_range_ignores_comments_and_exports_subset() {
+fn grouped_source_matches_range_ignores_comments_and_exports_subset() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeFirstClassName = "Widget-module_first__c0m";
 // Deliberately between declarations; comments should not become selector anchors.
@@ -1071,7 +1071,7 @@ const styles = { first: firstClassName, second: secondClassName };"#,
 }
 
 #[test]
-fn binding_group_source_match_range_with_outer_stmt_list_holes_stays_native() {
+fn grouped_source_matches_range_with_outer_stmt_list_holes_stays_native() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const ignoredBefore = "before";
 const runtimeFirst = "alpha";
@@ -1113,7 +1113,7 @@ STMT_LIST_TAIL;"#,
 }
 
 #[test]
-fn binding_group_source_match_range_with_internal_stmt_list_hole_stays_native() {
+fn grouped_source_matches_range_with_internal_stmt_list_hole_stays_native() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeFirst = "alpha";
 const ignoredMiddle = "middle";
@@ -1153,7 +1153,7 @@ function second() {
 }
 
 #[test]
-fn binding_group_source_match_range_matches_exported_const_declarations() {
+fn grouped_source_matches_range_matches_exported_const_declarations() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"export const runtimeFirstClassName = "Widget-module_first__exp1";
 export const runtimeSecondClassName = "Widget-module_second__exp2";
@@ -1206,7 +1206,7 @@ export const styles = { first: firstClassName, second: secondClassName };"#,
 }
 
 #[test]
-fn binding_group_source_match_range_matches_mixed_declaration_kinds() {
+fn grouped_source_matches_range_matches_mixed_declaration_kinds() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimeFirstClassName = "Widget-module_first__mix1";
 const runtimeSecondClassName = "Widget-module_second__mix2";
@@ -1370,7 +1370,7 @@ export { first, second };
 }
 
 #[test]
-fn binding_group_comments_reject_unknown_selector_local_key() {
+fn source_match_comments_reject_unknown_annotation_key() {
     let opts = FixtureOpts::new(
         r#"const primary = 10, secondary = 20;
 console.log(primary + secondary);
@@ -1394,15 +1394,14 @@ export { primary, secondary };
         opts,
         &[
             "static/app::settings",
-            "binding_groups[].comments",
-            "not exported by the group",
+            "annotations key `secondary` does not match",
             "secondary",
         ],
     );
 }
 
 #[test]
-fn binding_group_notes_reject_unknown_selector_local_key() {
+fn source_match_notes_reject_unknown_annotation_key() {
     let opts = FixtureOpts::new(
         r#"const primary = 10, secondary = 20;
 console.log(primary + secondary);
@@ -1426,8 +1425,7 @@ export { primary, secondary };
         opts,
         &[
             "static/app::settings",
-            "binding_groups[].notes",
-            "not exported by the group",
+            "annotations key `secondary` does not match",
             "secondary",
         ],
     );
@@ -1557,7 +1555,7 @@ export { beforeTarget, runtimeTarget, afterTarget, makeTarget };
 }
 
 #[test]
-fn binding_group_declarator_holes_extract_multiple_bindings_and_skip_holes_for_adopt_names() {
+fn source_match_declarator_holes_extract_multiple_bindings_and_skip_holes_for_adopt_names() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const runtimePrefix = "prefix",
   runtimeFormat = (value) => String(value).toUpperCase(),
@@ -1794,7 +1792,8 @@ export { firstSelected, secondSelected };
         opts,
         &[
             "static/app::operations",
-            "binding_groups[].exports[`firstSelected`]",
+            "source_matches",
+            "firstSelected",
             "did not match",
             "firstSelected = operation",
             "secondSelected = operation",
@@ -1838,7 +1837,7 @@ export { selectedA, selectedB, selectedC };
         opts,
         &[
             "static/app::selected_values",
-            "target_binding `selectedB`",
+            "source_matches[].bindings[`selectedB`]",
             "did not match any top-level declaration",
             "selectedA = buildItem",
             "selectedB = buildItem",

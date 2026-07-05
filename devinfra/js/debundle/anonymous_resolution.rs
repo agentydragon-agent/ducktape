@@ -32,8 +32,7 @@ pub struct AnonymousStatementClaimSet<'a> {
     pub selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
-/// Member-form `selector.source_match` claims (including expanded
-/// `binding_groups:` entries) for one module. Resolved by
+/// Source-backed binding claims for one module. Resolved by
 /// [`resolve_member_selector_claims`] into the chunk-top binding
 /// names they claim.
 #[derive(Debug, Clone, Copy)]
@@ -91,7 +90,7 @@ fn resolve_member_selector_claims_in_globals(
         owner_graph_path,
         modules_root,
         source_root,
-        "spec contains members[].selector.source_match claims, but owner_graph.json has no \
+        "spec contains source_matches[] binding claims, but owner_graph.json has no \
          source_location data; cannot resolve source_match selectors",
         |parsed_by_source| {
             let facts_by_source: BTreeMap<String, SelectorFactStore> = parsed_by_source
@@ -116,9 +115,9 @@ fn resolve_member_selector_claims_in_globals(
                         {
                             let binding_name = claim.binding.clone().with_context(|| {
                                 format!(
-                                    "module {} members[].selector.source_match matched source {} \
-                                     owner {:?} without a single declared binding; use \
-                                     target_binding or a single-binding selector",
+                                    "module {} source_matches[] matched source {} owner {:?} \
+                                     without a projected binding; choose a local binding in \
+                                     source_matches[].bindings[] or use a single-binding selector",
                                     claims.module_path.display(),
                                     source_path,
                                     claim.owner,
@@ -139,13 +138,13 @@ fn resolve_member_selector_claims_in_globals(
                             }
                         }
                         [] => bail!(
-                            "module {} members[].selector.source_match did not match any top-level \
+                            "module {} source_matches[] did not match any top-level \
                      declaration in the chunk sources:\n{}",
                             claims.module_path.display(),
                             selector.match_source,
                         ),
                         multiple => bail!(
-                            "module {} members[].selector.source_match is ambiguous — matched {} \
+                            "module {} source_matches[] is ambiguous — matched {} \
                      declarations ({}); refine the selector:\n{}",
                             claims.module_path.display(),
                             multiple.len(),
@@ -182,9 +181,9 @@ fn resolve_member_source_match_claims(
         "candidate",
         &selector,
     )
-    .with_context(|| "lowering members[].selector.source_match to selector IR")?;
+    .with_context(|| "lowering source_matches[] binding selector to selector IR")?;
     let result = solve_global_selector_program(&lowered.program, facts)
-        .with_context(|| "solving members[].selector.source_match selector IR")?;
+        .with_context(|| "solving source_matches[] binding selector IR")?;
     let outcome = result
         .outcome_for(lowered.target)
         .with_context(|| "selector solver did not return the member source_match target")?;
@@ -193,13 +192,13 @@ fn resolve_member_source_match_claims(
         ClaimOutcome::Ambiguous { candidates } => Ok(candidates.clone()),
         ClaimOutcome::NoMatch => Ok(Vec::new()),
         ClaimOutcome::Unsupported { message } => {
-            bail!("members[].selector.source_match is unsupported by selector IR solver: {message}")
+            bail!("source_matches[] is unsupported by selector IR solver: {message}")
         }
         ClaimOutcome::Duplicate {
             owner,
             conflicting_targets,
         } => bail!(
-            "members[].selector.source_match produced a duplicate claim for owner {owner:?} \
+            "source_matches[] produced a duplicate claim for owner {owner:?} \
              across {conflicting_targets:?}",
         ),
     }

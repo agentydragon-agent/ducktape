@@ -269,7 +269,7 @@ pub(super) fn materialize_logical_chunk(
     drop(imported_binding_resolver);
     let analysis_hints: AnalysisHints = {
         let mut hints =
-            collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id), &builder)?;
+            collect_analysis_hints(&explicit_requests, &builder, chunk_renames.get(chunk_id))?;
         hints.imported_purities = cross_module_purities
             .bindings
             .get(chunk_id)
@@ -570,17 +570,13 @@ fn project_factorization_modules_with_sentinel(
     Ok((logical_modules, ModuleId(LogicalModuleIndex(sentinel_idx))))
 }
 
-/// Collect `AnalysisHints` from spec member annotations (purity,
-/// pure_members, effect). Spec annotations carried on any member
-/// form (logical-module member, chunk_renames member) propagate the
-/// same way: collect them by local binding name and feed them into
-/// fact analysis. They are semantic trust assertions, not ownership
-/// claims; binding patches routed through chunk_renames still do not
-/// force factorizer grouping.
+/// Collect `AnalysisHints` from binding annotations (`purity`,
+/// `pure_members`, `effect`). These are semantic trust assertions, not
+/// ownership claims.
 fn collect_analysis_hints(
     explicit_requests: &[LogicalRequest],
-    chunk_renames: Option<&ChunkRenames>,
     builder: &ChunkPlanBuilder,
+    chunk_renames: Option<&ChunkRenames>,
 ) -> Result<AnalysisHints> {
     let mut hints = AnalysisHints::default();
     for (request_index, req) in explicit_requests.iter().enumerate() {
@@ -588,15 +584,74 @@ fn collect_analysis_hints(
             collect_member_analysis_hints(request_index, req, m, builder, &mut hints)?;
         }
     }
-    if let Some(cr) = chunk_renames {
-        for m in
-            super::plans::build_members(&cr.members, &[], &[], &BTreeMap::new(), "<chunk_renames>")
-                .expect("chunk_renames members must use binding selectors")
-        {
-            m.collect_hints(&mut hints);
-        }
-    }
+    collect_chunk_rename_analysis_hints(chunk_renames, &mut hints)?;
     Ok(hints)
+}
+
+fn collect_chunk_rename_analysis_hints(
+    chunk_renames: Option<&ChunkRenames>,
+    hints: &mut AnalysisHints,
+) -> Result<()> {
+    let Some(chunk_renames) = chunk_renames else {
+        return Ok(());
+    };
+    let mut by_export_name = BTreeMap::<String, Vec<String>>::new();
+    for member in &chunk_renames.members {
+        let binding = &member.selector.binding.name;
+        let export_name = member.name.as_deref().unwrap_or(binding);
+        by_export_name
+            .entry(export_name.to_string())
+            .or_default()
+            .push(binding.clone());
+    }
+
+    for (export_name, annotation) in &chunk_renames.annotations {
+        let Some(bindings) = by_export_name.get(export_name) else {
+            bail!(
+                "chunk_renames.annotations key `{export_name}` does not match any \
+                 chunk_renames member name"
+            );
+        };
+        if bindings.len() != 1 {
+            bail!(
+                "chunk_renames.annotations key `{export_name}` is ambiguous because that \
+                 readable binding name is claimed {} times",
+                bindings.len()
+            );
+        }
+        collect_binding_annotation_hints(hints, &bindings[0], annotation);
+    }
+    Ok(())
+}
+
+fn collect_binding_annotation_hints(
+    hints: &mut AnalysisHints,
+    binding: &str,
+    annotation: &spec::BindingAnnotation,
+) {
+    if annotation.purity == MemberPurity::Pure {
+        hints.declared_pure.insert(binding.to_string());
+    }
+    if annotation.purity == MemberPurity::PureNew {
+        hints.declared_pure_new.insert(binding.to_string());
+    }
+    if !annotation.pure_members.is_empty() {
+        hints
+            .declared_pure_members
+            .entry(binding.to_string())
+            .or_default()
+            .extend(annotation.pure_members.iter().cloned());
+    }
+    if !annotation.no_sync_callback_members.is_empty() {
+        hints
+            .no_sync_callback_members
+            .entry(binding.to_string())
+            .or_default()
+            .extend(annotation.no_sync_callback_members.iter().cloned());
+    }
+    if let Some(effect) = known_effect_from_member_effect(annotation.effect) {
+        hints.known_effects.insert(binding.to_string(), effect);
+    }
 }
 
 fn collect_member_analysis_hints(

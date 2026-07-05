@@ -125,7 +125,6 @@ pub fn compute_spec_stats(modules_root: &Path) -> Result<SpecStats> {
         // "empty" in any meaningful sense.
         if member_count == 0
             && module.source_matches.is_empty()
-            && module.binding_groups.is_empty()
             && module.annotations.is_empty()
             && module.anonymous_statements.is_empty()
         {
@@ -147,7 +146,18 @@ pub fn compute_spec_stats(modules_root: &Path) -> Result<SpecStats> {
             if member_count <= 1 {
                 bindings.orphan += 1;
             }
-            if member.comment.is_some() {
+            let export_name = member.name.as_deref().or_else(|| {
+                member
+                    .selector
+                    .binding
+                    .as_ref()
+                    .map(|binding| binding.name.as_str())
+            });
+            if export_name
+                .and_then(|name| module.annotations.get(name))
+                .and_then(|annotation| annotation.comment.as_ref())
+                .is_some()
+            {
                 bindings.with_comment += 1;
             }
         }
@@ -320,7 +330,7 @@ mod tests {
         write(
             root,
             "annotated.yaml",
-            "comment: header\nmembers:\n  - comment: per-member\n    selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\n",
+            "comment: header\nmembers:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: b } }\nannotations:\n  a:\n    comment: per-member\n",
         );
         let s = compute_spec_stats(root).unwrap();
         assert_eq!(s.modules.with_comment, 1);

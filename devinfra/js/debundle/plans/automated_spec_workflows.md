@@ -110,7 +110,8 @@ and let a ranker choose:
 - exact structural `source_match`;
 - minimized structural `source_match` with `ANYTHING`, `OBJECT_PROPS`,
   `DECLARATORS`, `CLASS_REST`, `ARGS`, and `STMT_LIST` holes;
-- `binding_groups` when one source context exports multiple bindings;
+- grouped `source_matches[]` entries when one source context exports multiple
+  bindings;
 - literal-initializer selectors when a top-level binding is uniquely
   initialized to a stable literal;
 - regex string-literal anchors for generated class/style names or other stable
@@ -142,10 +143,10 @@ function/object/class bodies, statement runs, and nested expressions, and
 **report over-narrow selectors as debt even when they currently match** (long
 function bodies where a signature + stable literal would suffice; object literals
 where a few stable keys suffice; class bodies where `CLASS_REST` keeps the useful
-member; anonymous blocks where `STMT_LIST` ignores setup/cleanup). Binding groups
-use the same cost model, comparing one `binding_groups` selector against repeated
-member selectors and splitting when one huge selector would need long exact
-bodies or volatile initializers to be unique.
+member; anonymous blocks where `STMT_LIST` ignores setup/cleanup). Grouped
+`source_matches[]` entries use the same cost model, comparing one shared selector
+against repeated selectors and splitting when one huge selector would need long
+exact bodies or volatile initializers to be unique.
 
 **Reframe.** The cost model ranks and _proves_ candidates but does not _choose_
 the anchor: picking a purpose-bearing,
@@ -409,7 +410,7 @@ A greedy first implementation can be `O(R * (indexed_count + K * L))`, where
 coarse-grained relaxations first: whole argument list, whole object-property
 suffix, whole class-rest, whole statement-list window, then finer child holes
 only when needed. For bulk synthesis, group targets by exact source context so
-one relaxation search can emit a `binding_groups` selector for many exports.
+one relaxation search can emit one `source_matches[]` selector for many exports.
 
 ### Bulk Stabilization
 

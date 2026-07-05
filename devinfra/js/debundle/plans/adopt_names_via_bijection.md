@@ -1,4 +1,8 @@
-# `adopt_names` via the `source_match` identifier bijection
+# Historical: `adopt_names` via the `source_match` identifier bijection
+
+This plan predates canonical `source_matches[].bindings[]` claims and the
+removal of public `adopt_names`. It is retained only as historical background for
+deep readable-name adoption ideas; do not use it as current YAML guidance.
 
 Proposal / WIP design note — **not yet implemented**. Spun out of #2038, which
 gave `AstWildcardMatcher` a full identifier bijection.

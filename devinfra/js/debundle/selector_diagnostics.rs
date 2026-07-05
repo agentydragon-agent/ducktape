@@ -19,8 +19,8 @@
 //!
 //! Failure taxonomy ([`SelectorDiagnosticEntry::category`]):
 //!
-//! - `unresolved_selector` — a legacy `source_match` selector matched zero
-//!   top-level candidates (no-match);
+//! - `unresolved_selector` — a source-backed binding selector or anonymous
+//!   statement selector matched zero top-level candidates (no-match);
 //! - `ambiguous_selector` — the active resolver reported more than one valid
 //!   selector assignment;
 //! - `selector_resolution_error` — the selector failed to resolve for a
@@ -35,11 +35,13 @@
 //! - `duplicate_claim` — two selectors resolved to the same declaration
 //!   identity in the same chunk.
 //!
-//! The first three categories cover both member / binding-group `source_match`
-//! selectors and `anonymous_statements[].match` selectors;
+//! The first three categories cover both source-backed binding selectors and
+//! `anonymous_statements[].match` selectors;
 //! [`SelectorDiagnosticEntry::selector_kind`] distinguishes them
-//! (`members.source_match` / `binding_groups.source_match` /
-//! `anonymous_statements.source_match`).
+//! (`source_matches` / `members.source_match` /
+//! `anonymous_statements.source_match`). `members.source_match` appears only for
+//! internal lowered selector forms; public YAML binding claims use
+//! `source_matches[]`.
 //!
 //! Not yet classified here: name-pin debt annotated with `note:` (surfacing it
 //! as structured entries needs `note:` plumbed through `MemberRequest`), and the

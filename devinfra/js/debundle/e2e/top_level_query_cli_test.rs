@@ -467,27 +467,29 @@ fn coverage_counts_anonymous_statement_selectors_as_claims() {
 }
 
 #[test]
-fn coverage_and_describe_count_source_match_member_selectors_as_claims() {
+fn coverage_and_describe_count_source_matches_as_claims() {
     assert_structural_member_claim_visible_to_queries(
-        r#"members:
-  - name: Alpha
-    selector:
-      source_match:
-        match: 'const alpha = 1;'
+        r#"source_matches:
+  - match: 'const alpha = 1;'
+    bindings:
+      - local: alpha
+        name: Alpha
+members:
   - selector: { binding: { name: beta } }
 "#,
     );
 }
 
 #[test]
-fn coverage_and_describe_count_binding_groups_as_member_claims() {
+fn coverage_and_describe_count_source_matches_as_member_claims_after_members() {
     assert_structural_member_claim_visible_to_queries(
-        r#"binding_groups:
-  - source_match:
-      match: 'const alpha = 1;'
-    exports: { alpha: Alpha }
-members:
+        r#"members:
   - selector: { binding: { name: beta } }
+source_matches:
+  - match: 'const alpha = 1;'
+    bindings:
+      - local: alpha
+        name: Alpha
 "#,
     );
 }

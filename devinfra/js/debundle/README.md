@@ -168,25 +168,24 @@ captured command, stdout/stderr, profiler artifacts, and selector
 
 ## Comments
 
-Module YAMLs, `members:` entries, and `anonymous_statements:` entries
+Module YAMLs, binding annotations, and `anonymous_statements:` entries
 may carry an optional `comment:` field for reverse-engineering
 annotations; these emit into generated JS on every rebuild, so RE
-notes survive `debundle run` invocations. The same four levels —
-module top, `members:`, `binding_groups:`, and `anonymous_statements:`
-— also accept a `note:` field: YAML-only scratch metadata that never
-emits (debt rationale, provenance; `modules merge` writes its
-`merged from: <sources>` provenance into the module-level `note:`,
-composing with any existing note). `binding_groups:` additionally
-accepts per-export `comments:` (emitting) and `notes:` (non-emitting)
-maps keyed by selector-local binding name. Edit module and member comments via
+notes survive `debundle run` invocations. The same places also accept
+`note:`: YAML-only scratch metadata that never emits (debt rationale,
+provenance; `modules merge` writes its `merged from: <sources>` provenance into
+the module-level `note:`, composing with any existing note). Per-binding
+metadata belongs under `annotations.<export_name>` and may include `comment`,
+`note`, `purity`, `effect`, `pure_members`, or
+`no_sync_callback_members`. Edit module and member comments via
 `debundle bindings comment` / `debundle modules comment`. See
 `docs/spec_editing.md` → "Workflow: authoring `comment:` fields" for the
 YAML schema, worked CLI examples, and the comment/`note:` move semantics.
 
 A module-top `comment:` emits at the top of the generated module file,
-a member `comment:` immediately above the binding's owner statement, and
-an anonymous-statement `comment:` immediately above the matched
-statement; an empty `comment:` emits nothing.
+an annotation `comment:` immediately above the binding's owner statement, and
+an anonymous-statement `comment:` immediately above the matched statement; an
+empty `comment:` emits nothing.
 
 `comment:` text is part of debundle's readability surface — the point of
 the tool is to turn minified chunks into legible code, so use comments to

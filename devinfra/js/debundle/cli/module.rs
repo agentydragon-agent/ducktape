@@ -16,7 +16,7 @@
 //!
 //! The splice deserializes the target and each source into the typed
 //! [`spec::LogicalModule`] schema, concatenates their `members`,
-//! `anonymous_statements`, and `binding_groups`, composes the `comment` /
+//! `source_matches`, `annotations`, and `anonymous_statements`, composes the `comment` /
 //! `note` blocks, and reserializes. `deny_unknown_fields` makes that
 //! round-trip lossless, so the operation never navigates a raw
 //! `serde_yaml::Value` tree.
@@ -367,12 +367,11 @@ pub fn merge_modules(
         {
             merged_comments.push(format!("--- from {label}:\n{comment}"));
         }
-        // `members:`, `source_matches:`, `anonymous_statements:`, and
-        // `binding_groups:` are all claims; dropping any of them with the
-        // deleted source would silently unclaim their owners on the next
-        // `debundle run`. `annotations:` are keyed by readable binding name,
-        // so conflicting duplicate metadata must be rejected rather than
-        // overwritten.
+        // `members:`, `source_matches:`, and `anonymous_statements:` are all
+        // claims; dropping any of them with the deleted source would silently
+        // unclaim their owners on the next `debundle run`. `annotations:` are
+        // keyed by readable binding name, so conflicting duplicate metadata
+        // must be rejected rather than overwritten.
         target_module.members.extend(src_module.members);
         target_module
             .source_matches
@@ -393,9 +392,6 @@ pub fn merge_modules(
         target_module
             .anonymous_statements
             .extend(src_module.anonymous_statements);
-        target_module
-            .binding_groups
-            .extend(src_module.binding_groups);
         merged_source_labels.push(label);
     }
 
@@ -489,10 +485,8 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let mut all_empty = true;
     for p in &paths_abs {
         let module = read_module(p)?;
-        let claim_count = module.members.len()
-            + module.source_matches.len()
-            + module.binding_groups.len()
-            + module.annotations.len();
+        let claim_count =
+            module.members.len() + module.source_matches.len() + module.annotations.len();
         let has_anon = !module.anonymous_statements.is_empty();
         if claim_count > 0 || has_anon {
             all_empty = false;

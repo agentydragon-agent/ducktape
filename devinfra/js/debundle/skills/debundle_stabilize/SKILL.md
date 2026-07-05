@@ -41,7 +41,7 @@ because those are cheap and unique _today_. Your job is to override those with a
 anchor tied to what the code **does** — something a behavior-preserving refactor
 would keep and a human wouldn't rename.
 
-The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`, …), `binding_groups`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
+The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`, …), `source_matches[]`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
 
 ## The toolkit
 
@@ -56,7 +56,8 @@ first-class instrument**, not a last resort:
   worklist).
 - **`spec synthesize-selectors` — the selector minimizer.** Your workhorse for
   _compact_: it holes volatile subtrees (bodies, args, declarator runs,
-  `CLASS_REST`/`CASE_REST`), collapses multi-declarator runs into `binding_groups`,
+  `CLASS_REST`/`CASE_REST`), collapses multi-declarator runs into grouped
+  `source_matches[]` entries,
   and proves uniqueness — so much of the backlog converts to short, unique-today
   selectors with no hand-authoring. Run it dry to read its pick, `--candidates N` for
   a ranked menu, `--apply` to land a whole bucket. Use it two ways: as a **first-pass
@@ -130,7 +131,7 @@ debundle spec selector-debt --modules "$DEBUNDLE_MODULES" \
 This adds **source-aware near-ambiguous** rows — existing `source_match` selectors
 that resolve uniquely today but have high-scoring sibling statements, i.e. one
 upstream edit from ambiguous — plus source-aware repeated-exact bodies and
-`binding_groups` collapse suggestions. Treat this run as routine, not a footnote:
+grouped `source_matches[]` suggestions. Treat this run as routine, not a footnote:
 it is cheap (tens of seconds whole-spec) and surfaces a population about as large as
 the name-pin backlog that is otherwise invisible.
 
@@ -165,9 +166,9 @@ wrong anchor, so slack only prioritizes; it never decides.
    alternative anchor choices (in `alternatives`) instead of the single pick, then
    choose the most purpose-bearing one.
 
-3. **Choose a purpose anchor** (rubric below) and write the `source_match` into the
-   member YAML — by hand, or by taking `synthesize-selectors --apply` output and
-   tightening it onto the anchor you picked. After any `--apply`, run the repo
+3. **Choose a purpose anchor** (rubric below) and write it into a
+   `source_matches[]` entry — by hand, or by taking `synthesize-selectors --apply`
+   output and tightening it onto the anchor you picked. After any `--apply`, run the repo
    formatter (`pre-commit` / prettier) **before** reading the diff: `--apply`
    re-emits the whole YAML in the debundler's canonical 0-space form, so a
    pre-prettier `git diff` is unreviewable noise; the formatter reconciles it back to
@@ -178,12 +179,12 @@ wrong anchor, so slack only prioritizes; it never decides.
 --target-binding <name>`: it reports whether the selector resolves **uniquely** to
    the binding you mean, and its **slack** — the kept things you could still hole
    without losing uniqueness (i.e. whether you over-pinned). It uses the public
-   alpha-all source-match identifier policy. For a whole-spec sweep,
+   alpha-equivalent source-match identifier policy. For a whole-spec sweep,
    `debundle spec validate` (keep-going) resolves every selector
    and reports `no-match` / `ambiguous` / `duplicate-claim`.
 
-5. **Group** adjacent or cohesive bindings that share a declaration context into a
-   `binding_group` rather than emitting N overlapping member selectors.
+5. **Group** adjacent or cohesive bindings that share a declaration context into
+   one `source_matches[]` entry rather than emitting N overlapping selectors.
 
 6. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
    to trust, keep the name pin and add a YAML comment saying why. A truthful name
@@ -256,8 +257,8 @@ class DocumentAccessorFactory extends NodeAccessor {
 ```
 
 All three resolve uniquely _today_; they differ only in what they claim makes this
-the class. The wrapper (`identifiers: alpha_all`, `target_binding:
-DocumentAccessorFactory`) is the same each time — only the `match:` body changes.
+the class. The claim wrapper is the same each time — only the `match:` body
+changes.
 
 **Good** — anchors on the self-naming literal; holes the mechanism:
 
@@ -330,8 +331,9 @@ honest pin beats a photograph that _looks_ structural and durable but isn't.
   literals are shaped `<Component>-module_<local>__<hash>`. Never pin the `<hash>` (it
   is regenerated every build) — anchor each className constant with
   `STR_LITERAL_MATCHING_RE("^<Component>-module_<local>__[A-Za-z0-9_-]+$")` and collect
-  the component's `*Styles` object constants into one `binding_group` (the
-  `Widget-module_*` declaration-range example in `selectors.md` is exactly this shape).
+  the component's `*Styles` object constants into one grouped `source_matches[]`
+  entry (the `Widget-module_*` declaration-range example in `selectors.md` is
+  exactly this shape).
   Tailwind `tw-`-prefixed utility classes are shared across every component and so do
   not discriminate — never anchor on them.
 - **error classes**: the `name` / message string the class sets — not its field

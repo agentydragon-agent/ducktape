@@ -415,10 +415,10 @@ export { RuntimeCatalog };
             "valid global selector assignment",
             "catalog/primary",
             "as `PrimaryCatalog`",
-            "members[].selector.source_match as `PrimaryCatalog`",
+            "source_matches[].bindings[`K`]",
             "catalog/duplicate",
             "as `DuplicateCatalog`",
-            "members[].selector.source_match target_binding `K` as `DuplicateCatalog`",
+            "source_matches[].bindings[`K`]",
         ],
     );
 }
@@ -509,9 +509,9 @@ export { RuntimeCatalog };
         "Source-match selector diagnostic report: 2 unresolved selector(s) found",
         "valid global selector assignment",
         "export `PrimaryCatalog`",
-        "members[].selector.source_match as `PrimaryCatalog`",
+        "source_matches[].bindings[`K`]",
         "export `DuplicateCatalog`",
-        "members[].selector.source_match target_binding `K` as `DuplicateCatalog`",
+        "source_matches[].bindings[`K`]",
     ] {
         assert!(
             stderr.contains(required),
@@ -642,9 +642,9 @@ fn fail_fast_dry_run_stops_before_later_duplicate_claim_diagnostics() {
         run_fail_fast_dry_run_rejection_fixture(source_match_and_duplicate_claims_fixture());
     let stderr = rejected.stderr;
     for required in [
-        "members[].selector.source_match",
         "diagnostics/ambiguous",
         "export `AmbiguousHelper`",
+        "target_binding `repeatedHelper`",
         "valid global selector assignment",
     ] {
         assert!(

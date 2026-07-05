@@ -38,13 +38,9 @@ pub struct ResolvedMemberBindingGroup {
     pub bindings: BTreeMap<String, ResolvedMemberBinding>,
 }
 
-/// Expand one `binding_groups[]` entry into `(export_name,
-/// member-form selector)` pairs — each selector is the group's
-/// `source_match` with `target_binding` set to one selector-local
-/// binding. This is the single expansion both the run pipeline's
-/// member assembly (`lowering::build_members`) and the CLI edit gate
-/// consume, so the two always agree on which owners a binding group
-/// claims.
+/// One canonical `source_matches[].bindings[]` projection as an internal
+/// source-match member selector. Each selector carries the shared source
+/// pattern plus `target_binding` set to one selector-local binding.
 pub struct BindingGroupMemberSelector {
     pub export_name: String,
     pub selector: AnonymousStatementSelector,

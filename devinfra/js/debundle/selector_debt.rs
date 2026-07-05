@@ -12,9 +12,8 @@
 //!   looks (`minified_score`). Short / vowel-poor tokens rank highest
 //!   because they are the most likely to move under a rebuild.
 //! - **repeated `source_match` bodies** — identical structural selector
-//!   text reused across members / anonymous statements / binding groups.
-//!   These are the copy-paste the contextual-selector and matcher-core
-//!   work is meant to replace.
+//!   text reused across members / anonymous statements / canonical
+//!   `source_matches[]` claims.
 //! - **drifted minified bindings** (with `--against <other spec>`) —
 //!   members whose readable `name:` is stable across two spec versions
 //!   but whose `selector.binding.name` changed. A name-only selector
@@ -81,8 +80,8 @@ pub fn minified_score(name: &str) -> u8 {
 #[serde(rename_all = "snake_case")]
 pub enum SelectorSite {
     Member,
+    SourceMatch,
     AnonymousStatement,
-    BindingGroup,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -175,8 +174,9 @@ pub struct SourceAwareBindingGroupSuggestion {
     pub body_idx: usize,
     pub declaration_kind: String,
     pub selectors: Vec<SourceMatchBindingGroupSelector>,
-    /// Pasteable YAML sketch for replacing repeated member-form
-    /// `source_match` selectors with one `binding_groups` entry.
+    /// Pasteable YAML sketch for replacing repeated single-binding
+    /// `source_matches[]` claims with one multi-binding `source_matches[]`
+    /// entry.
     pub candidate_yaml: String,
 }
 
@@ -213,10 +213,10 @@ pub struct SelectorDebtSummary {
     /// Repeated structural selector bodies that resolve to the same exact
     /// top-level body index set in source-aware mode.
     pub source_aware_repeated_exact: usize,
-    /// Source-aware member-form `source_match` groups that can be consolidated
-    /// into one `binding_groups` entry.
+    /// Source-aware single-binding `source_matches[]` entries that can be
+    /// consolidated into one grouped `source_matches[]` entry.
     pub source_aware_binding_group_suggestions: usize,
-    /// Member-form `source_match` rows covered by those suggestions.
+    /// Source-match binding rows covered by those suggestions.
     pub source_aware_binding_group_suggested_selectors: usize,
 }
 
@@ -475,9 +475,9 @@ fn compute_selector_debt_impl(
             }
         }
 
-        for group in &module.binding_groups {
+        for claim in &module.source_matches {
             source_match_total += 1;
-            let selector = group.source_match.selector();
+            let selector = claim.source_match().selector();
             let exact_body_indices = collect_source_aware_debt(
                 &mut source_aware_checked,
                 &mut source_aware_unique,
@@ -485,16 +485,31 @@ fn compute_selector_debt_impl(
                 source_aware,
                 runtime_module.as_ref(),
                 &module_path,
-                SelectorSite::BindingGroup,
+                SelectorSite::SourceMatch,
                 None,
                 &selector,
             )?;
-            let normalized = normalize_match(&group.source_match.match_source);
+            if let Some(exact_body_indices) = exact_body_indices.as_deref() {
+                for expanded in
+                    source_match::source_match_claim_member_selectors(&module_path, claim)?
+                {
+                    if let Some(candidate) = collect_binding_group_suggestion_candidate(
+                        runtime_module.as_ref(),
+                        &module_path,
+                        Some(expanded.export_name),
+                        &expanded.selector,
+                        Some(exact_body_indices),
+                    )? {
+                        binding_group_suggestion_candidates.push(candidate);
+                    }
+                }
+            }
+            let normalized = normalize_match(&selector.match_source);
             let occurrence = SourceMatchOccurrence {
                 module: module_path.clone(),
-                site: SelectorSite::BindingGroup,
+                site: SelectorSite::SourceMatch,
                 export_name: None,
-                match_source: group.source_match.match_source.clone(),
+                match_source: selector.match_source,
             };
             if let Some(exact_body_indices) = exact_body_indices {
                 source_aware_exact_by_key
@@ -682,7 +697,6 @@ struct BindingGroupSuggestionCandidate {
     declarator_idx: usize,
     declarator: VarDeclarator,
     declaration_kind: VarDeclKind,
-    identifiers: spec::SourceMatchIdentifierMode,
 }
 
 fn collect_binding_group_suggestion_candidate(
@@ -740,7 +754,6 @@ fn collect_binding_group_suggestion_candidate(
         declarator_idx,
         declarator: declarator.clone(),
         declaration_kind: needle_var.kind,
-        identifiers: selector.identifiers,
     }))
 }
 
@@ -791,8 +804,7 @@ fn build_binding_group_suggestion(
             declarator_idx: candidate.declarator_idx,
         })
         .collect::<Vec<_>>();
-    let candidate_yaml =
-        render_binding_group_candidate_yaml(&selectors, &match_source, first.identifiers);
+    let candidate_yaml = render_source_matches_candidate_yaml(&selectors, &match_source);
     SourceAwareBindingGroupSuggestion {
         module: first.key.module.clone(),
         body_idx: first.key.body_idx,
@@ -845,33 +857,24 @@ fn render_var_source_match_template(
     lines.join("\n")
 }
 
-fn render_binding_group_candidate_yaml(
+fn render_source_matches_candidate_yaml(
     selectors: &[SourceMatchBindingGroupSelector],
     match_source: &str,
-    identifiers: spec::SourceMatchIdentifierMode,
 ) -> String {
-    let mut lines = vec![
-        "binding_groups:".to_string(),
-        "  - source_match:".to_string(),
-    ];
-    if identifiers != spec::SourceMatchIdentifierMode::Exact {
-        lines.push(format!(
-            "      identifiers: {}",
-            source_match_identifier_mode_label(identifiers),
-        ));
-    }
-    lines.push("      match: |".to_string());
-    lines.extend(indent_lines(match_source, 8));
-    lines.push("    exports:".to_string());
+    let mut lines = vec!["source_matches:".to_string(), "  - match: |".to_string()];
+    lines.extend(indent_lines(match_source, 6));
+    lines.push("    bindings:".to_string());
     for selector in selectors {
         let export_name = selector
             .export_name
             .as_deref()
             .unwrap_or(selector.target_binding.as_str());
-        lines.push(format!(
-            "      {}: {}",
-            selector.target_binding, export_name
-        ));
+        if export_name == selector.target_binding {
+            lines.push(format!("      - {}", selector.target_binding));
+        } else {
+            lines.push(format!("      - local: {}", selector.target_binding));
+            lines.push(format!("        name: {export_name}"));
+        }
     }
     lines.join("\n")
 }
@@ -926,13 +929,6 @@ fn js_string_escape(value: &str) -> String {
         }
     }
     escaped
-}
-
-fn source_match_identifier_mode_label(mode: spec::SourceMatchIdentifierMode) -> &'static str {
-    match mode {
-        spec::SourceMatchIdentifierMode::Exact => "exact",
-        spec::SourceMatchIdentifierMode::AlphaAll => "alpha_all",
-    }
 }
 
 fn module_item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
@@ -1010,7 +1006,7 @@ fn collect_source_aware_debt(
 pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) {
     let s = &report.summary;
     out.push_str(&format!(
-        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}  source-aware binding_groups suggestions: {} selector(s) in {} group(s)\n",
+        "name-only selectors: {} ({} fragile)  source_match: {} ({} repeated group(s))  drifted: {}  source-aware near-ambiguous: {}/{} unique checked  source-aware repeated exact: {}  source-aware source_matches suggestions: {} selector(s) in {} group(s)\n",
         s.name_only_total,
         s.name_only_fragile,
         s.source_match_total,
@@ -1118,7 +1114,7 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
     }
 
     if !report.source_aware_binding_group_suggestions.is_empty() {
-        out.push_str("source-aware binding_groups suggestions:\n");
+        out.push_str("source-aware source_matches suggestions:\n");
         for group in &report.source_aware_binding_group_suggestions {
             out.push_str(&format!(
                 "  {} body={} kind={} selectors={}\n",
@@ -1130,7 +1126,7 @@ pub fn render_selector_debt_text(report: &SelectorDebtReport, out: &mut String) 
             for selector in &group.selectors {
                 let readable = selector.export_name.as_deref().unwrap_or("-");
                 out.push_str(&format!(
-                    "      target_binding={} [{}] {} decl#{}\n",
+                    "      local_binding={} [{}] {} decl#{}\n",
                     selector.target_binding, readable, selector.module, selector.declarator_idx,
                 ));
             }
@@ -1278,7 +1274,7 @@ mod tests {
         write(
             root,
             "a.yaml",
-            "members:\n  - name: Foo\n    selector:\n      source_match:\n        target_binding: x\n        match: 'var x = decorate(y);'\n",
+            "source_matches:\n  - match: 'var x = decorate(y);'\n    bindings: [x]\n",
         );
         write(
             root,
@@ -1297,7 +1293,7 @@ mod tests {
         let group = &report.repeated_source_match[0];
         assert_eq!(group.normalized, "var x = decorate(y);");
         assert_eq!(group.occurrences.len(), 2);
-        assert_eq!(group.occurrences[0].site, SelectorSite::Member);
+        assert_eq!(group.occurrences[0].site, SelectorSite::SourceMatch);
         assert_eq!(group.occurrences[1].site, SelectorSite::AnonymousStatement);
     }
 
@@ -1346,7 +1342,7 @@ mod tests {
         write(
             root,
             "classes.yaml",
-            "members:\n  - name: PickedClass\n    selector:\n      source_match:\n        identifiers: alpha_all\n        match: |\n          class PickedClass {\n            important() {\n              return 1;\n            }\n          }\n",
+            "source_matches:\n  - match: |\n      class PickedClass {\n        important() {\n          return 1;\n        }\n      }\n    bindings: [PickedClass]\n",
         );
         let source_file = root.join("chunk.js");
         fs::write(
@@ -1367,8 +1363,8 @@ mod tests {
         assert_eq!(report.summary.source_aware_near_ambiguous, 1);
         let row = &report.source_aware_near_ambiguous[0];
         assert_eq!(row.module, "classes");
-        assert_eq!(row.site, SelectorSite::Member);
-        assert_eq!(row.export_name.as_deref(), Some("PickedClass"));
+        assert_eq!(row.site, SelectorSite::SourceMatch);
+        assert_eq!(row.export_name.as_deref(), None);
         assert_eq!(row.exact_body_indices, vec![0]);
         assert_eq!(row.near_misses.len(), 1);
         assert_eq!(row.near_misses[0].body_idx, 1);
@@ -1382,7 +1378,7 @@ mod tests {
         write(
             root,
             "classes.yaml",
-            "members:\n  - name: PickedClass\n    selector:\n      source_match:\n        identifiers: alpha_all\n        match: |\n          class PickedClass {\n            important() {\n              return 1;\n            }\n          }\n",
+            "source_matches:\n  - match: |\n      class PickedClass {\n        important() {\n          return 1;\n        }\n      }\n    bindings: [PickedClass]\n",
         );
         let source_file = root.join("chunk.js");
         fs::write(
@@ -1408,7 +1404,7 @@ mod tests {
     fn source_aware_mode_reports_repeated_exact_body_index_matches() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let selector = "members:\n  - name: SelectedFormatter\n    selector:\n      source_match:\n        identifiers: alpha_all\n        match: |\n          function selectedFormatter(value) {\n            return value.trim().toUpperCase();\n          }\n";
+        let selector = "source_matches:\n  - match: |\n      function selectedFormatter(value) {\n        return value.trim().toUpperCase();\n      }\n    bindings:\n      - local: selectedFormatter\n        name: SelectedFormatter\n";
         write(root, "format/primary.yaml", selector);
         write(root, "format/duplicate.yaml", selector);
         let source_file = root.join("chunk.js");
@@ -1445,31 +1441,27 @@ mod tests {
     }
 
     #[test]
-    fn source_aware_mode_suggests_binding_group_for_repeated_multideclarator_member_selectors() {
+    fn source_aware_mode_suggests_grouped_source_match_for_repeated_multideclarator_claims() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         write(
             root,
             "styles.yaml",
-            r#"members:
-  - name: PrimaryStyle
-    selector:
-      source_match:
-        identifiers: alpha_all
-        target_binding: primaryStyle
-        match: |
-          const primaryStyle = "WidgetShell-42",
-            ignoredValue = EXPR_IGNORED,
-            secondaryReader = computeReader(EXPR_INPUT);
-  - name: SecondaryReader
-    selector:
-      source_match:
-        identifiers: alpha_all
-        target_binding: secondaryReader
-        match: |
-          const primaryStyle = "WidgetShell-42",
-            ignoredValue = EXPR_IGNORED,
-            secondaryReader = computeReader(EXPR_INPUT);
+            r#"source_matches:
+  - match: |
+      const primaryStyle = "WidgetShell-42",
+        ignoredValue = EXPR_IGNORED,
+        secondaryReader = computeReader(EXPR_INPUT);
+    bindings:
+      - local: primaryStyle
+        name: PrimaryStyle
+  - match: |
+      const primaryStyle = "WidgetShell-42",
+        ignoredValue = EXPR_IGNORED,
+        secondaryReader = computeReader(EXPR_INPUT);
+    bindings:
+      - local: secondaryReader
+        name: SecondaryReader
 "#,
         );
         let source_file = root.join("chunk.js");
@@ -1515,8 +1507,8 @@ const stableName = 1;
             Some("SecondaryReader")
         );
         assert_eq!(group.selectors[1].declarator_idx, 2);
-        assert!(group.candidate_yaml.contains("binding_groups:"));
-        assert!(group.candidate_yaml.contains("identifiers: alpha_all"));
+        assert!(group.candidate_yaml.contains("source_matches:"));
+        assert!(!group.candidate_yaml.contains("identifiers:"));
         assert!(
             group
                 .candidate_yaml
@@ -1528,12 +1520,9 @@ const stableName = 1;
                 .contains("DECLARATORS_BETWEEN_1 = null,")
         );
         assert!(group.candidate_yaml.contains("DECLARATORS_AFTER = null;"));
-        assert!(group.candidate_yaml.contains("primaryStyle: PrimaryStyle"));
-        assert!(
-            group
-                .candidate_yaml
-                .contains("secondaryReader: SecondaryReader")
-        );
+        assert!(group.candidate_yaml.contains("- local: primaryStyle"));
+        assert!(group.candidate_yaml.contains("name: PrimaryStyle"));
+        assert!(group.candidate_yaml.contains("- local: secondaryReader"));
         assert!(
             group
                 .candidate_yaml
@@ -1548,36 +1537,32 @@ const stableName = 1;
         let mut text = String::new();
         render_selector_debt_text(&report, &mut text);
         assert!(
-            text.contains("source-aware binding_groups suggestions: 2 selector(s) in 1 group(s)")
+            text.contains("source-aware source_matches suggestions: 2 selector(s) in 1 group(s)")
         );
-        assert!(text.contains("source-aware binding_groups suggestions:"));
+        assert!(text.contains("source-aware source_matches suggestions:"));
         assert!(text.contains("styles body=0 kind=const selectors=2"));
-        assert!(text.contains("target_binding=primaryStyle [PrimaryStyle] styles decl#0"));
+        assert!(text.contains("local_binding=primaryStyle [PrimaryStyle] styles decl#0"));
     }
 
     #[test]
-    fn source_aware_mode_keeps_binding_group_suggestions_same_module() {
+    fn source_aware_mode_keeps_grouped_source_match_suggestions_same_module() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let first_selector = r#"members:
-  - name: PrimaryStyle
-    selector:
-      source_match:
-        identifiers: alpha_all
-        target_binding: primaryStyle
-        match: |
-          const primaryStyle = "WidgetShell-42",
-            secondaryReader = computeReader(EXPR_INPUT);
+        let first_selector = r#"source_matches:
+  - match: |
+      const primaryStyle = "WidgetShell-42",
+        secondaryReader = computeReader(EXPR_INPUT);
+    bindings:
+      - local: primaryStyle
+        name: PrimaryStyle
 "#;
-        let second_selector = r#"members:
-  - name: SecondaryReader
-    selector:
-      source_match:
-        identifiers: alpha_all
-        target_binding: secondaryReader
-        match: |
-          const primaryStyle = "WidgetShell-42",
-            secondaryReader = computeReader(EXPR_INPUT);
+        let second_selector = r#"source_matches:
+  - match: |
+      const primaryStyle = "WidgetShell-42",
+        secondaryReader = computeReader(EXPR_INPUT);
+    bindings:
+      - local: secondaryReader
+        name: SecondaryReader
 "#;
         write(root, "styles/primary.yaml", first_selector);
         write(root, "readers/secondary.yaml", second_selector);
@@ -1601,21 +1586,19 @@ const stableName = 1;
     }
 
     #[test]
-    fn source_aware_mode_skips_single_member_multideclarator_source_match_suggestions() {
+    fn source_aware_mode_skips_single_multideclarator_source_match_suggestions() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         write(
             root,
             "values.yaml",
-            r#"members:
-  - name: SelectedValue
-    selector:
-      source_match:
-        identifiers: alpha_all
-        target_binding: selectedValue
-        match: |
-          let skippedValue = EXPR_SKIPPED,
-            selectedValue = computeValue();
+            r#"source_matches:
+  - match: |
+      let skippedValue = EXPR_SKIPPED,
+        selectedValue = computeValue();
+    bindings:
+      - local: selectedValue
+        name: SelectedValue
 "#,
         );
         let source_file = root.join("chunk.js");

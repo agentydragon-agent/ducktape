@@ -7,12 +7,12 @@ use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
 use spec::{
-    AnonymousStatement, BindingAnnotation, BindingGroup, BundledPartialSwapBundle,
-    BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity, ChunkRenames,
-    EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig,
-    Member, MemberEffect, MemberPurity, OwnerGraphOptions, PartialSwapMark, PartialSwapPackage,
-    PartialSwapSymbol, SourceMatchClaim, SwapMark, SwapVendorChunksConfig, TransformSpec,
-    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
+    AnonymousStatement, BindingAnnotation, BundledPartialSwapBundle, BundledPartialSwapMark,
+    BundledPartialSwapPackage, ChunkExportPurity, ChunkRenameMember, ChunkRenameSelector,
+    ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
+    MaterializeLogicalModulesConfig, Member, OwnerGraphOptions, PartialSwapMark,
+    PartialSwapPackage, PartialSwapSymbol, SourceMatchClaim, SwapMark, SwapVendorChunksConfig,
+    TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
 };
 use spec_modules::{
     collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
@@ -137,8 +137,6 @@ struct ModuleSource {
     #[serde(default)]
     annotations: BTreeMap<String, BindingAnnotation>,
     #[serde(default)]
-    binding_groups: Vec<BindingGroup>,
-    #[serde(default)]
     anonymous_statements: Vec<AnonymousStatement>,
     #[serde(default)]
     comment: Option<String>,
@@ -241,7 +239,6 @@ fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<V
             members: data.members,
             source_matches: data.source_matches,
             annotations: data.annotations,
-            binding_groups: data.binding_groups,
             anonymous_statements: data.anonymous_statements,
             comment: data.comment,
             note: data.note,
@@ -261,8 +258,6 @@ fn is_trivial_binding_patch(member: &Member) -> bool {
         .as_ref()
         .is_none_or(|export_name| export_name == binding_name);
     name_is_noop
-        && matches!(member.purity, MemberPurity::Default)
-        && matches!(member.effect, MemberEffect::Default)
 }
 
 fn vendor_map(
@@ -487,7 +482,6 @@ fn logical_modules_map(
                     members: source.members,
                     source_matches: source.source_matches,
                     annotations: source.annotations,
-                    binding_groups: source.binding_groups,
                     anonymous_statements: source.anonymous_statements,
                     comment: source.comment,
                     note: source.note,
@@ -508,13 +502,25 @@ fn chunk_renames_map(
     main_chunk_id: &str,
     binding_patch_members: Vec<Member>,
 ) -> BTreeMap<String, ChunkRenames> {
-    if binding_patch_members.is_empty() {
+    let members = binding_patch_members
+        .into_iter()
+        .filter_map(|member| {
+            Some(ChunkRenameMember {
+                name: member.name,
+                selector: ChunkRenameSelector {
+                    binding: member.selector.binding?,
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+    if members.is_empty() {
         return BTreeMap::new();
     }
     BTreeMap::from([(
         main_chunk_id.to_string(),
         ChunkRenames {
-            members: binding_patch_members,
+            members,
+            annotations: BTreeMap::new(),
         },
     )])
 }
