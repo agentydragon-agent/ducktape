@@ -93,6 +93,16 @@ hand-written `terraform.tf` or `required_providers` blocks** — Bazel generates
 from `tf_providers_versions`. Do not suggest adding `terraform { required_providers }`
 blocks manually.
 
+## Haku Forgejo Tokens
+
+Forgejo tokens and credentials consumed by `haku-ci` or Haku pods must be produced by
+the in-cluster GitOps Terraform controller, not minted, copied, or synchronized
+manually. Change the Terraform/GitOps wiring under <tf/gitops/haku-state> and the Flux
+wrapper under <cluster/k8s/forgejo/haku-state> so reconcile creates and repairs the
+Kubernetes Secrets and Forgejo Actions secrets. Manual `curl`, `tea`, or `kubectl`
+edits are only incident diagnostics; follow them with a PR that makes the controller own
+the state.
+
 ## Flux Kustomization Wiring
 
 Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**
