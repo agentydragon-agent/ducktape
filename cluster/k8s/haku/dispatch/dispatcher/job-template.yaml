@@ -36,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-zone-worker:latest # {"$imagepolicy": "flux-system:haku-zone-worker"}
+          image: ghcr.io/agentydragon/haku-zone-worker:devel-20260705005142-42ce51e # {"$imagepolicy": "flux-system:haku-zone-worker"}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
