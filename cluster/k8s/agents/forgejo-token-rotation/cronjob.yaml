@@ -5,9 +5,7 @@ metadata:
   namespace: agents-infra
   annotations:
     description: >-
-      Mints full-account Forgejo API tokens for agent service accounts, commits
-      SOPS-encrypted raw-token files plus pod-ready tea config Secrets, then
-      prunes older rotator-created tokens after the Git push succeeds.
+      Mints full-account Forgejo API tokens for agent service accounts, commits SOPS-encrypted raw-token files plus pod-ready tea config Secrets, then prunes older rotator-created tokens after the Git push succeeds.
 spec:
   schedule: "35 * * * *"
   successfulJobsHistoryLimit: 3
@@ -53,7 +51,7 @@ spec:
               # Initial placeholder matching the ImagePolicy filterTags regex
               # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field after CI
               # publishes ghcr.io/agentydragon/forgejo-token-rotation.
-              image: ghcr.io/agentydragon/forgejo-token-rotation:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
+              image: ghcr.io/agentydragon/forgejo-token-rotation:devel-20260705003509-b448335 # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
               args: ["--config", "/config/tokens.yaml"]
               securityContext:
                 allowPrivilegeEscalation: false
