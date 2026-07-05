@@ -4,8 +4,7 @@ metadata:
   name: proxmox-proxy
   namespace: flux-system
 spec:
-  # Suspended — wyrm2 offline, no Proxmox nodes available. Re-enable once atlas is back up.
-  suspend: true
+  suspend: false
   retryInterval: 1m
   interval: 10m
   timeout: 5m
