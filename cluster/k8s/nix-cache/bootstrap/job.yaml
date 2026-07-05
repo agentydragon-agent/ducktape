@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: bootstrap
-          image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260704000554-b37cedf # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+          image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260705031216-027af30 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
           args:
             - "bootstrap-caches"
             - "--cache=main"
