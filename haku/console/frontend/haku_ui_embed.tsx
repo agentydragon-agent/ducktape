@@ -1,19 +1,24 @@
-import { Anchor } from "@mantine/core";
+import { ActionIcon, Anchor, Indicator } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
-import { isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
+import { type GeolocationOptions, isRoutePath, type Outbound, parseInbound, vetOpenLink } from "./bridge.ts";
 import { launchRoutine } from "./client.ts";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog.tsx";
+import { ConsolePanel, PANEL_Z } from "./console_panel.tsx";
+import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation.ts";
+import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { toastError, toastSuccess } from "./toast.ts";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox —
 // embedded as a sandboxed cross-origin iframe (the whole console is now this frame). The
 // console never renders Haku's UI itself; it only frames this origin (the backend CSP
-// frame-src permits the embed) and runs the trusted **bridge**: the iframe may `openLink`
-// or `requestLaunch` via postMessage, but only the shell decides and acts (origin-checked
-// + schema-validated). `allow-same-origin`/`allow-forms` are needed for the framed app's
-// own Authentik auth; **no `allow-popups`** (only the shell opens links) and **no
-// `allow="fullscreen"`**. See docs/containment.md.
+// frame-src permits the embed) and runs the trusted **bridge**: the iframe may `openLink`,
+// `requestLaunch`, or read location (`requestGeolocation` one-shot / `startGeolocationWatch`
+// stream) via postMessage, but only the shell decides and acts (origin-checked +
+// schema-validated). `allow-same-origin`/`allow-forms` are needed for the framed app's own
+// Authentik auth; **no `allow-popups`** (only the shell opens links), **no
+// `allow="fullscreen"`**, and **no `allow="geolocation"`** (only the shell reads location,
+// per its own consent grant; it holds every location watch). See docs/containment.md.
 
 // `noopener`/`noreferrer` force window.open() to return null even when the tab
 // opened, so open a same-origin blank tab first. The handle is the only reliable
@@ -62,6 +67,63 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     reply({ type: "openLinkResult", url, opened });
   }
 
+  // Read the shell origin's location and report it (or a browser-shaped error) over the
+  // bridge. Called on the granted fast-path AND after the operator approves the confirm.
+  function geolocateAndReply(id: string, options?: GeolocationOptions) {
+    void getGeolocation(options).then((r) =>
+      reply(
+        r.ok
+          ? { type: "geolocationResult", id, ok: true, position: r.position }
+          : { type: "geolocationResult", id, ok: false, code: r.code, reason: r.message }
+      )
+    );
+  }
+
+  // Standing consent to share location + whether a live watch is currently streaming, both
+  // mirrored for the console panel (below). The message handler reads the authoritative grant
+  // flag from storage (hasGeolocationGrant) directly, so it never goes stale in the effect
+  // closure; these mirrors only drive rendering.
+  const [geoGranted, setGeoGranted] = useState(() => hasGeolocationGrant());
+  const [tracking, setTracking] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  // The shell (never the iframe) holds every live watchPosition stream; each fix is relayed
+  // to the iframe as a geolocationResult tagged with its watch id. Created once.
+  const watcherRef = useRef<GeolocationWatcher | null>(null);
+  if (!watcherRef.current) {
+    watcherRef.current = new GeolocationWatcher((id, e) =>
+      reply(
+        e.ok
+          ? { type: "geolocationResult", id, ok: true, position: e.position }
+          : { type: "geolocationResult", id, ok: false, code: e.code, reason: e.message }
+      )
+    );
+  }
+  const watcher = watcherRef.current;
+
+  function startWatch(id: string, options?: GeolocationOptions) {
+    watcher.start(id, options);
+    setTracking(watcher.activeCount > 0);
+  }
+  function stopWatch(id: string) {
+    watcher.stop(id);
+    setTracking(watcher.activeCount > 0);
+  }
+
+  function withdrawGeolocation() {
+    // Kill switch: stop every live watch, tell the iframe each ended (terminal denial), then
+    // revoke the standing grant so nothing reads location again until re-granted.
+    for (const id of watcher.stopAll()) {
+      reply({ type: "geolocationResult", id, ok: false, code: GEO_PERMISSION_DENIED, reason: "withdrawn" });
+    }
+    setTracking(false);
+    setGeolocationGrant(false);
+    setGeoGranted(false);
+  }
+
+  // Tear down any live browser watches if the console unmounts.
+  useEffect(() => () => void watcher.stopAll(), [watcher]);
+
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.origin !== origin) return; // only Haku's UI origin may talk to the shell
@@ -75,6 +137,25 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
           return;
         }
         setPending({ kind: "launch", id: msg.id, prompt: msg.prompt });
+        return;
+      }
+      if (msg.type === "requestGeolocation") {
+        // The iframe can only ask; the shell owns the standing grant. With consent already
+        // given ("allow until withdrawn"), serve directly; otherwise pop the top-layer
+        // consent confirm, which — once approved — records the grant so later reads skip it.
+        if (hasGeolocationGrant()) geolocateAndReply(msg.id, msg.options);
+        else setPending({ kind: "geolocation", id: msg.id, options: msg.options });
+        return;
+      }
+      if (msg.type === "startGeolocationWatch") {
+        // A continuous stream: same grant gate as a one-shot read, but the shell keeps the
+        // watch (so the iframe can't start one silently or keep one the operator stopped).
+        if (hasGeolocationGrant()) startWatch(msg.id, msg.options);
+        else setPending({ kind: "geolocationWatch", id: msg.id, options: msg.options });
+        return;
+      }
+      if (msg.type === "stopGeolocationWatch") {
+        stopWatch(msg.id);
         return;
       }
       if (msg.type === "routeChanged") {
@@ -109,6 +190,15 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
       openAndReply(action.url);
       return;
     }
+    if (action.kind === "geolocation" || action.kind === "geolocationWatch") {
+      // Consent given on trusted chrome — record the standing grant so subsequent reads are
+      // served without re-confirming, until the operator withdraws (the console panel below).
+      setGeolocationGrant(true);
+      setGeoGranted(true);
+      if (action.kind === "geolocationWatch") startWatch(action.id, action.options);
+      else geolocateAndReply(action.id, action.options);
+      return;
+    }
     void launchRoutine(action.prompt || undefined)
       .then((result) => {
         toastSuccess(
@@ -131,6 +221,11 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
     if (!action) return;
     if (action.kind === "openLink") {
       reply({ type: "openLinkResult", url: action.url, opened: false, reason: "cancelled" });
+    } else if (action.kind === "geolocation" || action.kind === "geolocationWatch") {
+      // Declined on trusted chrome → mirror a browser PERMISSION_DENIED so the iframe treats
+      // it exactly like a native geolocation denial (for a watch, no stream ever starts). No
+      // grant is recorded.
+      reply({ type: "geolocationResult", id: action.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
     } else {
       reply({ type: "launchResult", id: action.id, ok: false, reason: "cancelled" });
     }
@@ -144,6 +239,30 @@ export function HakuUiEmbed({ uiUrl, launchAvailable }: { uiUrl: string; launchA
         title="Haku UI"
         sandbox="allow-scripts allow-same-origin allow-forms"
         style={{ display: "block", width: "100vw", height: "100vh", border: 0 }}
+      />
+      {/* Persistent escape hatch into the shell's own controls (config, grants, views),
+          rendered by the SHELL above the full-page iframe. The dot marks a standing location
+          grant, and pulses (green) while a live watch is streaming, so the operator has
+          at-a-glance awareness that tracking is on even before opening the panel. It only ever
+          opens trusted shell chrome / *reduces* privilege, so — unlike the consent moment — it
+          needn't be a top-layer surface; the browser's own site-settings revoke is the
+          tamper-proof backstop (docs/containment.md). */}
+      <Indicator
+        color={tracking ? "teal" : "blue"}
+        processing={tracking}
+        disabled={!geoGranted}
+        style={{ position: "fixed", top: 8, right: 8, zIndex: PANEL_Z - 1 }}
+      >
+        <ActionIcon variant="default" size="lg" aria-label="Open console controls" onClick={() => setPanelOpen(true)}>
+          ⚙
+        </ActionIcon>
+      </Indicator>
+      <ConsolePanel
+        opened={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        geoGranted={geoGranted}
+        tracking={tracking}
+        onWithdrawGeolocation={withdrawGeolocation}
       />
       <ConfirmDialog action={pending} onApprove={onApprove} onCancel={onCancel} />
     </>

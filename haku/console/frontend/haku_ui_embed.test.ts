@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant.ts";
 import { initialFrameSrc, openExternal } from "./haku_ui_embed.tsx";
 
 describe("initialFrameSrc", () => {
@@ -54,5 +55,17 @@ describe("openExternal", () => {
 
     expect(window.open).toHaveBeenCalledWith("mailto:ops@allegedly.works", "_blank");
     expect(opened.opener).toBeNull();
+  });
+});
+
+describe("geolocation grant (standing consent, shell localStorage)", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("is absent until granted, and cleared on withdraw", () => {
+    expect(hasGeolocationGrant()).toBe(false);
+    setGeolocationGrant(true);
+    expect(hasGeolocationGrant()).toBe(true);
+    setGeolocationGrant(false);
+    expect(hasGeolocationGrant()).toBe(false);
   });
 });

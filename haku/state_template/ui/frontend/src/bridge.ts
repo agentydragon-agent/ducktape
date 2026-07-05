@@ -1,7 +1,7 @@
 import { SHELL_ORIGIN } from "./constants.ts";
 
 // This UI runs INSIDE the trusted console's sandboxed cross-origin iframe. The iframe
-// may only **request**; the shell (ducktape, PR-gated) decides and acts. Two requests
+// may only **request**; the shell (ducktape, PR-gated) decides and acts. Three requests
 // (plus the fire-and-forget `routeChanged` notify at the bottom of this file):
 //
 //  - `openLink`: the iframe is sandboxed WITHOUT `allow-popups`, so it can't open links
@@ -13,6 +13,13 @@ import { SHELL_ORIGIN } from "./constants.ts";
 //    trusted-rendered chrome, so the iframe can only *ask* — the shell shows its OWN
 //    confirm and only then fires → `{type:"launchResult"}`. The iframe can render the
 //    prompt dialog; it can never script the launch.
+//  - `requestGeolocation` (one-shot) / `startGeolocationWatch` + `stopGeolocationWatch`
+//    (continuous): the iframe asks the shell for the operator's location, mirroring the
+//    browser Geolocation API's `getCurrentPosition` / `watchPosition`. The iframe has NO
+//    `allow="geolocation"`, so it can't read location itself; the shell reads its own
+//    (trusted) origin's location and, for a watch, holds the live stream. Gated by a
+//    shell-owned standing grant ("allow until withdrawn") — first ask pops a consent
+//    confirm; once allowed, later asks/fixes are served → `{type:"geolocationResult"}`.
 //
 // DUPLICATE: the result shapes + message `type` strings below are a hand-maintained copy
 // of the AUTHORITATIVE protocol in ducktape's haku/console/frontend/bridge.ts (the shell
@@ -31,6 +38,36 @@ export interface LaunchResult {
   id: string;
   ok: boolean;
   sessionUrl?: string;
+  reason?: string;
+}
+
+// Mirror of the browser Geolocation API's option bag / position. Kept in sync with the
+// shell's GeolocationOptions + GeoPosition (ducktape haku/console/frontend/bridge.ts).
+export interface GeolocationOptions {
+  enableHighAccuracy?: boolean;
+  timeout?: number;
+  maximumAge?: number;
+}
+
+export interface GeoPosition {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  altitude: number | null;
+  altitudeAccuracy: number | null;
+  heading: number | null;
+  speed: number | null;
+  timestamp: number;
+}
+
+export interface GeolocationResult {
+  type: "geolocationResult";
+  id: string;
+  ok: boolean;
+  position?: GeoPosition;
+  // On failure, the browser GeolocationPositionError.code (1 PERMISSION_DENIED — also used
+  // when the operator declines or withdraws — 2 POSITION_UNAVAILABLE, 3 TIMEOUT) + message.
+  code?: number;
   reason?: string;
 }
 
@@ -66,6 +103,57 @@ export function requestLaunch(prompt: string): Promise<LaunchResult> {
     window.addEventListener("message", onMessage);
     window.parent.postMessage({ type: "requestLaunch", id, prompt }, SHELL_ORIGIN);
   });
+}
+
+// Ask the shell for the operator's current location, mirroring the browser Geolocation
+// API's getCurrentPosition. The shell gates it behind a standing operator grant ("allow
+// until withdrawn"): the first call may pop the shell's consent confirm; once allowed,
+// later calls resolve without one, until the operator withdraws in the console panel.
+// Resolves with a plain position on success, or `ok:false` + a browser-shaped
+// `code`/`reason` (a decline/withdraw is code 1, PERMISSION_DENIED). Correlated by a
+// per-request id so a stale reply can't resolve the wrong call.
+export function requestGeolocation(options?: GeolocationOptions): Promise<GeolocationResult> {
+  const id = crypto.randomUUID();
+  return new Promise((resolve) => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== SHELL_ORIGIN) return; // only the shell may reply
+      const m = e.data as Partial<GeolocationResult> | null;
+      if (!m || m.type !== "geolocationResult" || m.id !== id) return;
+      window.removeEventListener("message", onMessage);
+      resolve({
+        type: "geolocationResult",
+        id,
+        ok: m.ok ?? false,
+        position: m.position,
+        code: m.code,
+        reason: m.reason,
+      });
+    }
+    window.addEventListener("message", onMessage);
+    window.parent.postMessage({ type: "requestGeolocation", id, options }, SHELL_ORIGIN);
+  });
+}
+
+// Continuously track the operator's location, mirroring watchPosition. The shell holds the
+// live watch (gated by the same standing grant as requestGeolocation) and streams each fix
+// to `onFix` as a geolocationResult tagged with this watch's id, until you call the returned
+// stop() — or the operator withdraws in the console panel, which delivers a terminal
+// `ok:false` fix (reason "withdrawn"). A per-watch id keeps one watch's fixes from crossing
+// into another's.
+export function watchGeolocation(onFix: (fix: GeolocationResult) => void, options?: GeolocationOptions): () => void {
+  const id = crypto.randomUUID();
+  function onMessage(e: MessageEvent) {
+    if (e.origin !== SHELL_ORIGIN) return; // only the shell may reply
+    const m = e.data as Partial<GeolocationResult> | null;
+    if (!m || m.type !== "geolocationResult" || m.id !== id) return;
+    onFix({ type: "geolocationResult", id, ok: m.ok ?? false, position: m.position, code: m.code, reason: m.reason });
+  }
+  window.addEventListener("message", onMessage);
+  window.parent.postMessage({ type: "startGeolocationWatch", id, options }, SHELL_ORIGIN);
+  return () => {
+    window.removeEventListener("message", onMessage);
+    window.parent.postMessage({ type: "stopGeolocationWatch", id }, SHELL_ORIGIN);
+  };
 }
 
 // Fire-and-forget: mirror the current hash route into the console shell's own URL
