@@ -128,13 +128,11 @@ tf.download(
     mirror = {
         "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
-        # CAUTION: low-user-count community provider holding an Anthropic API key.
-        # On every version bump, manually review the source diff since the last
-        # pinned tag (focus: internal/client/ egress+secret handling,
-        # .github/workflows/release.yml) BEFORE updating the lock hashes. Do not
-        # auto-merge Renovate/update_deps bumps. See memory
-        # project_acma_provider_repin_review and tf/gitops/haku-cloud-agent/terraform.tf.
-        "claude-managed-agents": "modus-agendi/anthropic-claude-managed-agents:1.1.0",
+        # Intentionally omitted from the global provider mirror while
+        # tf/gitops/haku-cloud-agent is parked: the OpenTofu registry still
+        # advertises modus-agendi/anthropic-claude-managed-agents v1.1.0, but
+        # its GitHub repo/release assets currently 404. Keeping it here makes
+        # unrelated Terraform/image jobs fail while mirroring providers.
         "external": "hashicorp/external:2.3.5",
         "flux": "fluxcd/flux:1.7.6",
         "forgejo": "svalabs/forgejo:1.5.0",

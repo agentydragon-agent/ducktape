@@ -12,6 +12,12 @@ spec:
   # cloud agent (unsuspend) or retire it. NOTE: the self-hosted agent's shared-vault
   # wiring (PR #2788) reads vault_id from this module's output Secret, so it can't be
   # cut over until this is unsuspended and re-applied to a live vault.
+  #
+  # CI note: the matching Bazel tf_module is tagged manual and the provider is
+  # omitted from the global rules_tf mirror because
+  # modus-agendi/anthropic-claude-managed-agents v1.1.0 no longer resolves through
+  # the GitHub release asset path advertised by the OpenTofu registry. Re-enable
+  # only after replacing/restoring the provider path or retiring this root.
   suspend: true
   interval: 15m
   refreshBeforeApply: true
