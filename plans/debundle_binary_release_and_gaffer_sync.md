@@ -1,6 +1,6 @@
 # Debundle Binary Release and Gaffer Auto-Sync
 
-Last trimmed: 2026-06-12.
+Last trimmed: 2026-07-05.
 
 Status: the Ducktape-side binary release path exists. `debundle` is in the
 release matrix, release metadata is emitted, and the Nix artifact package is
@@ -9,6 +9,12 @@ work.
 
 Gaffer-local pinning notes live in
 `../gaffer-private/tana/re/DUCKTAPE_PINNING.md`.
+
+Latest manual sync: Gaffer has absorbed the Ducktape pin for
+`f55e68b631bf1e25edb1cfeeb956608afc6bf8fa`. The required Tana RE web and
+desktop debundle gates passed against that pin, so the remaining value here is
+automation/review hygiene for the next pin bump, not another Ducktape producer
+change.
 
 ## Current Ducktape State
 
@@ -37,6 +43,10 @@ Gaffer currently has two independent Ducktape pins:
 
 The remaining automation should update those pins deliberately, not by fetching
 "latest" during Bazel evaluation.
+
+Manual repins are acceptable while this automation is absent, but they should be
+treated as the reference workflow the script is expected to encode: update both
+pins together, run the Gaffer gates, and land a reviewed Gaffer PR.
 
 ## Sync Workflow Shape
 
