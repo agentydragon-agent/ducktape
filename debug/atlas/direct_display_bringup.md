@@ -283,11 +283,174 @@ back returns nothing). Useful convars probed live: `composite_force`,
 corruption (see #5). Session env to reach it:
 `XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=gamescope-0 gamescopectl <convar> <val>`.
 
+## 2026-07-04 (later): pivot to a sway seat + SSD library + monitor audio
+
+Dropped the gamescope Big-Picture **kiosk** session in favor of a real WM on the
+game seat — one you can debug from and launch games from normally. Also moved the
+Steam library to SSD and got monitor audio working. **Current state: sway on the
+5090 works, Steam + Proton run, monitor speakers work; the one open item is
+per-game lag.**
+
+### Architecture change: gamescope kiosk → sway
+
+- seat-game runs a **sway** session (NixOS `programs.sway`; config via HM
+  `wayland.windowManager.sway` with `package = null`) as agentydragon — non-GNOME,
+  so no D-Bus clash with the seat0 SPICE GNOME session. Games get direct scan-out
+  via **per-title gamescope** (`gamescope -f -- %command%`), not a kiosk session.
+- NVIDIA/wlroots gotchas that cost time:
+  - `--unsupported-gpu` is mandatory (sway refuses NVIDIA otherwise); set via
+    `programs.sway.extraOptions`.
+  - **Do NOT set `WLR_DRM_DEVICES` to a `/dev/dri/by-path/pci-…` node.** That env
+    is a _colon-separated list_, so the PCI address's colons split it into garbage
+    → "Found 0 GPUs, cannot create backend" → sway exits and _wedges the greeter_
+    (it grabbed DRM, died, mutter couldn't reclaim). Unneeded anyway: the seat
+    assignment already hands seat-game only card2 (the 5090).
+  - `WLR_NO_HARDWARE_CURSORS=1`.
+  - Same GDM 60 s silent-death trap as gamescope — a failed session Exec logs
+    nothing. The **"Sway (debug)"** session (logs `sway -d` to
+    `/tmp/sway-session.log`) is what cracked the WLR_DRM_DEVICES bug. Keep the
+    debug-session-with-file-logging pattern for anything GDM launches.
+- Driving the seat headlessly over SSH works well: `swaymsg -t get_tree` for
+  windows, `grim -` for screenshots (pipe to a local file and view), `swaymsg
+seat - cursor` for input. Env: `XDG_RUNTIME_DIR=/run/user/1001
+WAYLAND_DISPLAY=wayland-1 SWAYSOCK=/run/user/1001/sway-ipc.1001.<pid>.sock`.
+
+### Steam library on SSD (/games)
+
+- Library was on `/mnt/tankshare` (tank-hdd virtiofs); Proton prefix creation
+  (thousands of small files) crawled for minutes. Repurposed the decommissioned
+  Longhorn disk (vdb, local-zfs SSD) into a **500 GB `/games`** library — grew
+  100→500 GB imperatively via `qm` on atlas, reusing the `virtio1` slot so
+  `/dev/vdb` doesn't rename.
+- **Stellaris** (native Linux) dies on `libselinux.so.1` in the SLR sandbox →
+  force Proton. First Proton launch then failed with `FileNotFoundError: …/
+tracked_files` — a **half-migrated prefix** (moving the game copied `pfx/` but
+  not `version`/`tracked_files`). Fix: `rm -rf compatdata/281990` and relaunch to
+  rebuild the prefix fresh (fast on SSD).
+
+### Monitor audio (DP passthrough)
+
+- The seat had **no audio path**: only the SPICE virtual sink (routes to the SPICE
+  console, muted). The display 5090's DP audio function wasn't passed through.
+- Fix: pass the **whole** display-GPU device. Host `03:00.0` had only its GPU
+  function passed; `03:00.1` (audio, same IOMMU group 16, already `vfio-pci`) was
+  not. Changed `hostpci1` from `0000:03:00.0` → `0000:03:00` (qm on atlas + TF).
+  Guest now sees `02:00.1` → ALSA "HDA NVidia" → PipeWire sink "GB202 … (HDMI)";
+  `wpctl set-default <sink>` routes audio to the FV43U's built-in speakers.
+  **Confirmed working.**
+- Gotcha: after a _forced_ VM stop, `qm start` failed once with `/dev/vfio/14:
+Device or resource busy` (compute-GPU IOMMU group not yet released) — just retry
+  `qm start` after a few seconds.
+
+### Per-game lag = cross-GPU copy (root-caused)
+
+Stellaris felt like ~15 FPS on a 5090. Cause is **not** presentation overhead and
+**not** GPU power — it's the **two-identical-5090** topology:
+
+```text
+stellaris.exe  → GPU0 (01:00.0)  6.6 GiB   ← the COMPUTE 5090 (DXVK rendered here)
+sway/Xwayland/display → GPU1 (02:00.0)      ← the DISPLAY 5090 (monitor is on DP-4)
+```
+
+DXVK picks the first Vulkan device (GPU0, the compute card), but the monitor is
+on GPU1, so **every frame is copied GPU0→GPU1 over PCIe** — that copy is the
+bottleneck. Diagnose with `nvidia-smi --query-compute-apps=pid,process_name,gpu_bus_id,used_memory`
+(the game's `gpu_bus_id` should match the display GPU) and `nvidia-smi pmon`.
+
+Two identical GPUs give no clean per-app PCI selector (DXVK's `DXVK_FILTER_DEVICE_NAME`
+can't tell them apart; NVIDIA Vulkan has none either). The standard fix is
+**gamescope with `--prefer-vk-device`**, which pins render+display to one GPU:
+
+- Launch option: `gamescope -f --prefer-vk-device 10de:2b85 -- %command%`
+  (`--prefer-vk-device` mandatory — without it gamescope grabs the virtio GPU:
+  `radv/amdgpu: failed to initialize device` / `vdrm_device_connect failed`).
+- Needs a **raw** gamescope: the capSysNice-wrapped `/run/wrappers/bin/gamescope`
+  dies in Steam's `no_new_privs` sandbox with `failed to inherit capabilities:
+Operation not permitted`. Set `programs.gamescope.enable = true; capSysNice = false;`.
+- The option must be set in the **Steam UI** — Steam Cloud reverts `localconfig.vdf`
+  edits made over SSH.
+- Also: sway defaulted DP-4 to **4K@60** though the FV43U exposes a **4K@144** mode
+  (`swaymsg -t get_outputs`) — worth pinning 144 in the sway output config.
+
+### Wind-down status (2026-07-04, end of session)
+
+**Working + verified:** sway on the display 5090 (seat-game); `/games` 500 GB SSD
+Steam library; monitor DP audio; Stellaris launches and runs under Proton.
+
+**The one thing left to verify — per-game gamescope for the lag:** the raw
+gamescope fix (`programs.gamescope.enable = true; capSysNice = false`) is
+**built and live on wyrm2** — `command -v gamescope` is the unwrapped binary, the
+`/run/wrappers/bin/gamescope` capSysNice wrapper is gone. What remains is purely
+the Steam-side step: set the launch option **in the Steam UI** (not over SSH —
+Steam Cloud reverts `localconfig.vdf` edits) to
+`gamescope -f --prefer-vk-device 10de:2b85 -- %command%`, launch fresh, and
+confirm `nvidia-smi --query-compute-apps` shows `stellaris.exe` on `02:00.0`
+(display GPU) instead of `01:00.0` (compute) — that kills the cross-GPU copy.
+Gotcha: `steam://rungameid` no-ops if the game is already running; stop it first.
+
+**Branches (all unmerged at wind-down):**
+
+- **#2891** `wyrm2-games-disk` — the `/games` SSD disk (nix + TF). Open PR.
+- **`wyrm2-sway-seat`** — stacked on #2891; carries the sway session, the audio
+  passthrough, grim, the raw-gamescope fix, and these notes. **No PR opened yet.**
+
+**Still to do (cleanup, not blocking):** strip the now-unused gamescope kiosk bits
+(`programs.steam.gamescopeSession`, the "Steam (debug)" + "Sway (debug)" sessions,
+`gdm.debug`); pin DP-4 to 4K@144 in the sway config; harden the session-teardown
+leak.
+
+### 2026-07-05 — gamescope abandoned; display moved to 01:00.0 instead
+
+Tried the gamescope launch option (`gamescope -f --prefer-vk-device 10de:2b85 --
+%command%`) live — **it did not help.** Confirmed why: `--prefer-vk-device` only
+takes `vendorID:deviceID`, and the two 5090s are identical (`10de:2b85`), so it
+cannot disambiguate them — it just grabs whichever Vulkan device enumerates first
+(the compute card, `01:00.0`), leaving the cross-PCIe copy in place. gamescope
+3.16.24 has **no PCI-bus selector**, and NVIDIA's proprietary Vulkan honors no
+per-app PCI device filter (Mesa's `MESA_VK_DEVICE_SELECT` layer isn't present /
+doesn't apply to the NVIDIA ICD). So there is **no software way to pin the game to
+a specific one of two identical GPUs** on this stack.
+
+**The actual fix (simpler, no gamescope): move the monitor to the GPU the game
+already renders on.** DXVK/Vulkan always picks the first-PCI device (`01:00.0`) and
+we can't change that — so instead make `01:00.0` the _display_ GPU. Then
+render==display==`01:00.0`, zero cross-PCIe copy, no compositor tricks.
+
+Steps taken (commit on `wyrm2-sway-seat`):
+
+- **Physical:** replug the FV43U DP cable from the `02:00.0` 5090 to the `01:00.0`
+  5090 (passthrough mapping unchanged; only which card the cable is in).
+- **Config swap** in `nix/nixos/hosts/wyrm2/default.nix`: `seat-game` udev pin
+  `02:00.0`→`01:00.0`; `mutter-device-ignore` `01:00.0`→`02:00.0` (now hide the
+  headless compute card, which is `02:00.0`); the "Steam/Sway (debug)"
+  `WLR_DRM_DEVICES` node `02:00.0`→`01:00.0`.
+- **Deploy:** `nixos-rebuild boot` + reboot (udev seat TAGs persist in the db, so a
+  live `switch` won't fully re-home the seat — reboot required).
+
+Post-reboot verification (all ✅): monitor connected on `card0-DP-1` (`01:00.0`);
+`udevadm info` shows `ID_SEAT=seat-game` on `card0`/`01:00.0` and gone from
+`02:00.0`; `loginctl seat-status seat-game` masters `card0`/`01:00.0`; greeter up
+on seat-game. (Transient gotcha: right after boot, `loginctl seat-status` briefly
+showed the _old_ card2 master — re-read a few seconds later for the settled view;
+`udevadm info` is authoritative immediately.)
+
+**Still to verify:** log into sway, launch Stellaris **plain (no gamescope launch
+option — remove it)**, confirm `nvidia-smi --query-compute-apps=pid,process_name,gpu_bus_id`
+shows `stellaris.exe` on `01:00.0` = the display GPU, with 5090-class FPS.
+
+**Now-vestigial:** the raw-gamescope block + `programs.steam.gamescopeSession`
+kiosk (and its `--prefer-vk-device` comment at ~L215, now describing the old
+ordering) are dead for the lag fix — fold into the deferred gamescope cleanup.
+
 ## Open questions
 
-- **Harden the session-teardown leak** (item 3) so re-logins stop colliding:
-  logind `KillUserProcesses` scoped to the seat-game session, or a session-exit
-  hook that reaps gamescope/Steam. Currently manual.
+- **Per-game lag** (root-caused, fix deployed 2026-07-05): cross-GPU copy — solved
+  by making `01:00.0` the display GPU (cable replug + seat/mutter/WLR pin swap) so
+  render==display. gamescope is _not_ the fix (can't pin one of two identical
+  GPUs). Final in-game FPS check still pending. Also bump DP-4 to 4K@144 in sway.
+- **Harden the session-teardown leak** so re-logins stop colliding: logind
+  `KillUserProcesses` scoped to the seat-game session, or a session-exit hook that
+  reaps the compositor/Steam. Currently manual (also bit the sway seat).
 - Is the spare USB A→B cable actually good? (First-port "cable is bad"
   errors vs. port flakiness — untested since the mux never engaged.)
 - Does the FV43U KVM binding survive monitor power cycles?
