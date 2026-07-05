@@ -130,21 +130,6 @@ fn collect_selector_outputs(doc: &serde_yaml::Value) -> Vec<SelectorOutput> {
             });
         }
     }
-    if let Some(binding_groups) = doc["binding_groups"].as_sequence() {
-        for group in binding_groups {
-            let Some(match_source) = group["source_match"]["match"].as_str() else {
-                continue;
-            };
-            let exports = mapping_string_keys(&group["exports"]);
-            if exports.is_empty() {
-                continue;
-            }
-            outputs.push(SelectorOutput {
-                exports,
-                match_source: match_source.trim().to_string(),
-            });
-        }
-    }
     if let Some(source_matches) = doc["source_matches"].as_sequence() {
         for claim in source_matches {
             let Some(match_source) = claim["match"].as_str() else {
@@ -178,16 +163,6 @@ fn source_match_binding_names(value: &serde_yaml::Value) -> BTreeSet<String> {
                 .map(str::to_string),
             _ => None,
         })
-        .collect()
-}
-
-fn mapping_string_keys(value: &serde_yaml::Value) -> BTreeSet<String> {
-    let serde_yaml::Value::Mapping(mapping) = value else {
-        return BTreeSet::new();
-    };
-    mapping
-        .keys()
-        .filter_map(|key| key.as_str().map(str::to_string))
         .collect()
 }
 

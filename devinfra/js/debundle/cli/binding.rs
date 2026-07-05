@@ -78,13 +78,13 @@ impl BindingName {
 }
 
 /// A located member inside a module file. Returned by [`find_matches`]
-/// and is the unit `assign` / `rename` mutate.
+/// and is the unit `assign` / `rename` inspect or mutate.
 #[derive(Debug, Clone)]
 pub struct BindingMatch {
     pub file: PathBuf,
     pub module_path: String,
     pub location: BindingLocation,
-    /// Legacy member index for callers that still only operate on
+    /// Member-like index for callers that still only operate on
     /// `members[]`. For canonical `source_matches[]` bindings this is the
     /// binding index inside the source-match claim; new callers should branch
     /// on [`BindingLocation`] instead.
@@ -634,8 +634,8 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///   * Destination modules are auto-created.
 ///   * Only modules that were sources of a move in THIS batch are
 ///     swept after draining, and only when they have no module-level
-///     `comment:`, no remaining `anonymous_statements:`, and no
-///     `binding_groups:`.
+///     `comment:`, no remaining `source_matches:`, `annotations:`, or
+///     `anonymous_statements:`.
 ///   * [`Gate::Run`] runs the unified realizability gate
 ///     ([`crate::edit_gate::gate_post_edit_partition`]) against the
 ///     in-memory post-batch spec; cycle or atom-split rejections
@@ -830,7 +830,7 @@ pub fn run_bindings_assign(
 
     // Step 7: realizability + atom-split gate against the in-memory
     // post-batch docs — the same `ModuleFile` claims model `debundle
-    // run` loads, so source_match members and binding_groups gate
+    // run` loads, so canonical source_matches[] claims gate
     // identically. Runs before any file is written.
     gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
 
@@ -945,7 +945,7 @@ fn member_minified_name(map: &Mapping) -> Option<String> {
 /// are considered — a pre-existing empty module shell is not this
 /// command's business — and a drained source survives when it still
 /// carries a module-level `comment:`, `source_matches:`, `annotations:`,
-/// `anonymous_statements:`, or `binding_groups:` (all of which are spec content the sweep must
+/// or `anonymous_statements:` (all of which are spec content the sweep must
 /// not destroy).
 fn drained_source_modules(
     docs: &BTreeMap<String, (PathBuf, Value)>,
@@ -969,17 +969,13 @@ fn drained_source_modules(
                     .get(yk("annotations"))
                     .and_then(Value::as_mapping)
                     .is_some_and(|m| !m.is_empty())
-                || [
-                    yk("source_matches"),
-                    yk("anonymous_statements"),
-                    yk("binding_groups"),
-                ]
-                .iter()
-                .any(|key| {
-                    map.get(key)
-                        .and_then(Value::as_sequence)
-                        .is_some_and(|s| !s.is_empty())
-                });
+                || [yk("source_matches"), yk("anonymous_statements")]
+                    .iter()
+                    .any(|key| {
+                        map.get(key)
+                            .and_then(Value::as_sequence)
+                            .is_some_and(|s| !s.is_empty())
+                    });
             members_empty && !keeps_content
         })
         .cloned()
@@ -1099,7 +1095,7 @@ pub struct UnassignOutcome {
 /// Remove one or more bindings from their current modules atomically.
 /// Source modules drained of members are deleted unless they carry a
 /// module-level `comment:`, remaining `source_matches:`, `annotations:`,
-/// `anonymous_statements:`, or `binding_groups:` — same drain rule as
+/// or `anonymous_statements:` — same drain rule as
 /// `run_bindings_assign`.
 ///
 /// After unassign, the bindings fall through to residual (the default
@@ -1183,8 +1179,8 @@ pub fn run_bindings_unassign(
 
     // Step 5: gate the in-memory post-batch spec (cycles +
     // atom-split) before any file is written. Built from the mutated
-    // docs through the run pipeline's claims model, so source_match
-    // members and binding_groups in surviving modules stay claimed.
+    // docs through the run pipeline's claims model, so source_matches[]
+    // claims in surviving modules stay claimed.
     gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
 
     let (files_written, files_deleted) = apply_doc_changes(&docs, &to_delete, dry_run)?;

@@ -294,7 +294,7 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
 /// exact post-batch state `bindings assign` / `bindings unassign`
 /// will write. Each doc is parsed through the same `ModuleFile` →
 /// `module_claims` path `debundle run`'s spec loading uses, so plain
-/// binding members, `source_match` members, `binding_groups:`, and
+/// binding members, canonical `source_matches:` claims, and
 /// `anonymous_statements:` all contribute the same claims to the gate
 /// that they would contribute to a run over the written spec.
 ///

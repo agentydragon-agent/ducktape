@@ -674,7 +674,13 @@ http_file(
 # FreeCAD 1.2.dev from conda.
 # Lockfile generated with pixi (not bazel run lockfile.update — rules_conda's
 # lock_environments target has a Python version conflict with our 3.13 toolchain).
-conda = use_extension("@rules_conda//conda:extensions.bzl", "conda")
+# Root-only: downstream modules such as Gaffer consume Ducktape's debundler and
+# must not evaluate this Conda environment extension.
+conda = use_extension(
+    "@rules_conda//conda:extensions.bzl",
+    "conda",
+    dev_dependency = True,
+)
 conda.environment(
     name = "freecad_conda",
     environment = "default",
@@ -855,14 +861,24 @@ http_archive(
 # Go toolchain and external module dependencies.
 
 # ─ Go toolchain ──────────────────────────────────────────────────────────
-go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+# Root-only: downstream modules such as Gaffer consume Ducktape's debundler and
+# must not evaluate Go toolchain/dependency extension tags for RE-only tools.
+go_sdk = use_extension(
+    "@io_bazel_rules_go//go:extensions.bzl",
+    "go_sdk",
+    dev_dependency = True,
+)
 go_sdk.download(version = "1.26.4")
 go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
 # Primary source: //third_party:go.mod (first-party Go code).
 # Extra manual go_deps.module() entries below cover BUILD-file-only Go tools.
-go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
+go_deps = use_extension(
+    "@bazel_gazelle//:extensions.bzl",
+    "go_deps",
+    dev_dependency = True,
+)
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
 # Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead

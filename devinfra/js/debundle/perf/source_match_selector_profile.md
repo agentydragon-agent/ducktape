@@ -29,8 +29,8 @@ template with leading/trailing `DECLARATORS_*` holes and one pinned
 
 Modes:
 
-- `binding-group`: calls `resolve_member_binding_group`, matching the
-  preferred `binding_groups[].source_match` shape.
+- `binding-group`: historical mode name for grouped source-match claim
+  resolution, matching the canonical `source_matches[]` shape.
 - `target-binding`: calls member-form `resolve_member_binding` with
   `target_binding`, a comparable single-binding resolution path.
 - `ambiguity`: calls member-form `resolve_member_binding` without

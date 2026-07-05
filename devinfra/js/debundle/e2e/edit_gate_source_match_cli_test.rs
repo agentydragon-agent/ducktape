@@ -113,7 +113,7 @@ source_matches:
 "#;
 
 /// Same claim set, with the canonical source-match claim ordered first.
-const ATOM_YAML_BINDING_GROUP: &str = r#"source_matches:
+const ATOM_YAML_SOURCE_MATCH_FIRST: &str = r#"source_matches:
   - match: 'const alpha = 1;'
     bindings:
       - local: alpha
@@ -153,7 +153,7 @@ fn run_unassign(root: &Path, modules: &Path, graph: &Path, sym: &str) -> std::pr
 
 #[test]
 fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_match() {
-    // Truth: alpha (source_match member) and beta (binding member)
+    // Truth: alpha (source_matches[] claim) and beta (binding member)
     // co-locate in home/atom — realizable. Unassigning beta sends it
     // to residual while alpha stays claimed → atom split. A gate
     // that only reads `selector.binding` treats alpha as residual
@@ -188,7 +188,7 @@ fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_match() {
 fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_matches() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let (modules, graph) = write_fixture(root, ATOM_YAML_BINDING_GROUP);
+    let (modules, graph) = write_fixture(root, ATOM_YAML_SOURCE_MATCH_FIRST);
     let pre_atom = fs::read_to_string(modules.join("home/atom.yaml")).unwrap();
 
     let out = run_unassign(root, &modules, &graph, "beta");
@@ -208,7 +208,7 @@ fn unassign_rejects_atom_split_when_sibling_is_claimed_via_source_matches() {
 
 #[test]
 fn unassign_of_independent_binding_passes_with_source_match_claims_present() {
-    // Positive control: the spec contains a source_match member (so
+    // Positive control: the spec contains a source_matches[] claim (so
     // the gate must resolve it against the chunk source), but the
     // edit itself — unassigning the independent gamma — splits
     // nothing. The gate must accept.

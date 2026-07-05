@@ -525,13 +525,13 @@ only for older in-repo fixtures.
 
 **Deviation** from STYLE.md ("every field needs a reader"; authoring provenance
 belongs in inert `#` comments, not `note:` schema fields): the spec's optional
-`note:` field on `LogicalModule` (module top) / `Member` / `BindingGroup` /
-`AnonymousStatement`, plus per-export `BindingGroup.notes` (<spec.rs>), is a
-ratified exemption, because the rewriters drop `#` comments — so a
-round-tripped `note:`/`notes:` value is the only debt-rationale annotation that
-survives a rewrite, and its reader is the human spec author. The emit/no-emit
-semantics and the `modules merge` → `note:` provenance behavior are documented
-in <README.md> → "Comments".
+`note:` field on `LogicalModule` (module top) / `Member` /
+`AnonymousStatement`, plus per-binding annotation notes under `annotations:`,
+is a ratified exemption, because the rewriters drop `#` comments — so a
+round-tripped `note:` value is the only debt-rationale annotation that survives
+a rewrite, and its reader is the human spec author. The emit/no-emit semantics
+and the `modules merge` → `note:` provenance behavior are documented in
+<README.md> → "Comments".
 
 ## Module-specifier path math
 
