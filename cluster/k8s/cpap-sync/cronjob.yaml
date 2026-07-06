@@ -34,7 +34,7 @@ spec:
                 path: /var/run/NetworkManager
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/cpap-sync:devel-20260610083610-aa99a75 # {"$imagepolicy": "flux-system:cpap-sync"}
+              image: ghcr.io/agentydragon/cpap-sync:devel-20260706063804-5de5e85 # {"$imagepolicy": "flux-system:cpap-sync"}
               args: ["--git-url", "$(GIT_REPO_URL)"]
               env:
                 # The clone (initial re-seed: the card's full history) lands in
