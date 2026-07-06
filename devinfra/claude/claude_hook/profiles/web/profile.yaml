@@ -26,7 +26,10 @@ idle_watchdog: false
 # implements it; otherwise delete this tombstone once the "Rust parity
 # follow-ups" item in devinfra/claude/TODO.md is closed as won't-do.
 # NOTE: DUCKTAPE_OTEL_BEARER_TOKEN is still exported by web_env.sh, independent
-# of the removed `otel:` key.
+# of the removed `otel:` key. Claude Code *native* telemetry deliberately does
+# NOT go through a profile key either: it is wired as the "otel forwarder"
+# background command below (decoupled script, no daemon involvement) — see
+# devinfra/claude/plans/transcript_collection.md.
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
@@ -48,6 +51,13 @@ background_commands:
   - name: creds banner
     command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"
     timeout: 10
+    after_env: true
+  # Localhost OTLP relay for Claude Code native telemetry (session env points
+  # OTEL_EXPORTER_OTLP_ENDPOINT at 127.0.0.1:4318; the claude process can't
+  # egress directly). Idempotent: no-op if a forwarder is already listening.
+  - name: otel forwarder
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/ensure_otel_forwarder.sh"
+    timeout: 90
     after_env: true
   - name: nix nixpkgs check
     command: |

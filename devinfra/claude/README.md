@@ -152,6 +152,18 @@ rotator in <cluster/k8s/agents/authentik-jwt-rotation/>. Rotation is normally
 automatic; to force a refresh, delete `secrets/alloy-otlp-bearer-token.yaml`
 from `devel` or manually run the `authentik-jwt-rotation` CronJob.
 
+### Claude Code native telemetry (session OTLP forwarder)
+
+Claude Code's own OTel exporter (enabled per environment via UI env vars,
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`) exports through a
+localhost relay: <otlp_forwarder.py>, started idempotently on every claude
+launch by <ensure_otel_forwarder.sh> (a profile background command in the web,
+home-manager, and haku profiles). The relay attaches the rotated bearer (from
+`DUCKTAPE_OTEL_BEARER_TOKEN`, else the `alloy-otlp-bearer` Secret mirrored into
+the sandbox namespaces — <cluster/k8s/agents/alloy-otlp-bearer/>) and forwards
+to `alloy-otlp.allegedly.works`. Rationale, probe evidence, and the env-var
+block to paste per environment: <plans/transcript_collection.md>.
+
 ## Web Setup
 
 To use this repository with Claude Code on the web, configure **both** of the following in the Claude Code web UI:
@@ -167,6 +179,26 @@ These must be configured as env vars in the Claude Code web UI so they are injec
 
 `DUCKTAPE_CLAUDE_HOOKS_PROFILE` is needed so Claude Code injects the profile path into all hook subprocesses.
 `SOPS_AGE_KEY` is the age private key for decrypting secrets. The hook daemon receives it from the Claude process environment via `startup_env_script`.
+
+**Optional — Claude Code native telemetry** (Grafana dashboards via the session
+OTLP forwarder; see the OTEL Tracing section above and
+<plans/transcript_collection.md> for rationale and the content-detail knobs):
+
+```text
+CLAUDE_CODE_ENABLE_TELEMETRY=1
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_TRACES_EXPORTER=otlp
+CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+```
+
+Content-inclusion knobs (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`,
+`OTEL_LOG_TOOL_CONTENT`, `OTEL_LOG_RAW_API_BODIES`) are a per-environment
+sensitivity call — everything exported lands in the operator-only Loki. These
+must be **UI env vars**: only that mechanism reaches the claude process
+(startup-script exports reach Bash subprocesses only).
 
 ### 2. Setup Script
 
