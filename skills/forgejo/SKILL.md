@@ -18,7 +18,7 @@ curl -fsS "$FORGEJO_URL/swagger.v1.json" \
 ```
 
 This Forgejo deployment exposes Actions metadata under `/api/v1/repos/.../actions/...`.
-It does not expose a GitHub-compatible REST log-download endpoint.
+It does not expose GitHub-compatible REST endpoints for log download or rerun/retry.
 
 ## Actions Metadata
 
@@ -54,7 +54,9 @@ curl -fsS -u "$USER:$PASS" \
   | jq -r '.prettyref, .event_payload | fromjson? | {ref, before, after, commits}'
 ```
 
-A green run on a non-main branch does not prove a main-gated publish step ran.
+A green run on a non-main branch does not prove a main-gated publish step ran. A green
+`workflow_dispatch` run also does not prove the push-triggered path is healthy; compare
+the `event` field before using one run to explain another.
 
 ## Logs
 
@@ -126,6 +128,9 @@ Notes:
 
 - `jobs/$JOB_INDEX` is the zero-based UI job index, not the REST task id and not the UI job
   id embedded in `data-initial-post-response`.
+- The deployment's OpenAPI currently exposes `GET` for Actions runs but no documented rerun
+  or retry endpoint. If you need to rerun a job, discover the web UI endpoint from the page
+  or trigger a new workflow/commit intentionally.
 - The download link in the gear menu is
   `$ACTIONS_URL/runs/$RUN_INDEX/jobs/$JOB_INDEX/attempt/$ATTEMPT/logs`, but the JSON POST is
   better for targeted diagnostics and works with expanded-step cursors.
@@ -133,6 +138,26 @@ Notes:
   page state lists each step summary/status under `state.currentJob.steps`.
 - Some repos also publish fallback logs, e.g. a `ci-logs` branch or workflow artifact; check
   workflow comments before assuming web logs are the only channel.
+
+## Actions Secrets And Registry Auth
+
+Forgejo Actions secret metadata is deliberately opaque. `GET
+/api/v1/repos/$OWNER/$REPO/actions/secrets` proves a secret exists, but it does not reveal
+the value and may not include a useful `updated_at`. Do not conclude a registry credential
+was refreshed from that listing alone. Verify with behavior: an authenticated registry probe
+such as `/v2/`, a workflow preflight step, or a real image push.
+
+When diagnosing image publishes, compare registry responses:
+
+```bash
+curl -sS -o /tmp/registry-probe.json -w '%{http_code}\n' \
+  -u "$REGISTRY_USER:$REGISTRY_PASSWORD" \
+  "$FORGEJO_URL/v2/"
+```
+
+On this deployment, valid haku credentials return `200` for `/v2/`; empty or wrong
+passwords return `401`. A workflow-only `403` points at the exact Actions context or
+generated Docker auth config, not at the registry being globally down.
 
 ## haku-state CI And UI Rollout
 
