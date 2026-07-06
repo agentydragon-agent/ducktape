@@ -125,6 +125,22 @@ kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
   docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
 ```
 
+Valkey storage cutovers are destructive but rebuildable. The `RedisReplication` owns the
+StatefulSet, while the StatefulSet-created PVCs are standalone objects. If the
+`volumeClaimTemplate` storage class changes, Flux updates the `RedisReplication`, but the
+existing StatefulSet/PVCs keep their original storage class. Roll it by deleting the
+operator-owned StatefulSet, deleting the old PVCs, waiting for the PVC deletion to finish,
+and then letting the operator recreate the StatefulSet. If the operator recreates the
+StatefulSet before the old PVCs finish terminating, it can reattach those old PVC names;
+delete the StatefulSet again so the pending PVC deletion completes and the next creation
+gets fresh claims from the updated template. Afterward verify:
+
+```bash
+kubectl -n oci-cache get sts,pod,pvc -l app=oci-cache-valkey -o wide
+kubectl -n oci-cache exec oci-cache-valkey-0 -c oci-cache-valkey -- \
+  redis-cli -p 6379 INFO replication
+```
+
 This path was last checked with haku-state's push-triggered `validate-state` workflow after
 the `docker2s2` fix. A manual `workflow_dispatch` proves the job can pass, but it does not
 replace a failed push status on the commit Forgejo shows in the branch badge; use a real
