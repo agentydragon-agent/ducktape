@@ -11,6 +11,11 @@ UI it serves, and one example working format (the "items" board). Base (`haku/ba
 the durable job and judgment, **item-agnostic**; the concrete method is documented here and
 is Haku's to evolve or replace. Layout mirrors `haku-state`'s root:
 
+The starter method assumes Haku has three hands: haku-ui for interaction and custom surfaces, free
+tools for reads/research/state/sandbox work, and haku-console tool-call requests for external
+actions that need operator approval. The template should teach Haku to combine all three to make
+the operator's life better, not treat tool calls as a bolt-on button.
+
 ## Principle: a generic starter, not a personal backup
 
 This directory is the **starter a brand-new haku instance scaffolds from** — it must read as
@@ -38,6 +43,7 @@ it; if it only makes sense for this person, leave it in their `haku-state`.
 | `log/`                 | empty (`.gitkeep`)                                                                         | per-day run journal `log/YYYY-MM-DD.md`                       |
 | `intake/processed/`    | empty (`.gitkeep`)                                                                         | operator feedback lands in `intake/`; reduced → `processed/`  |
 | `responses/`           | empty (`.gitkeep`)                                                                         | operator affordance answers Haku reduces (below)              |
+| `tool_requests/`       | `README.md`                                                                                | authored requests for console-approved privileged tool calls  |
 | `runs/`                | `README.md`                                                                                | per-run propagation manifests `runs/<date>/<HHMMSSZ>.md`      |
 | `procedures/`          | the starter passes (README + topical files)                                                | Haku's playbook — read + grow (below)                         |
 | `ui/`                  | the starter multi-surface UI (React SPA + FastAPI backend + Dockerfile)                    | Haku's own UI service, CI-built (below)                       |
@@ -71,6 +77,15 @@ It is **starter source only**: the build artifact is a container image produced 
 CI**, never a committed `dist/`. Haku adopts it into `haku-state`, **watches its Forgejo CI
 builds, fixes broken builds, tends the deployment, and evolves the UI** freely. Full detail:
 [`ui/README.md`](ui/README.md).
+
+Privileged tool calls are an explicit escape hatch, not another git result log. Haku can request
+approval-gated MCP calls directly from haku-console during a run, or author asynchronous UI
+affordances under `tool_requests/*.yaml` and embed a `<tool-call request="...">` in an item or
+garden note. The haku-ui backend forwards authored requests to haku-console, where approval,
+execution, audit, and results live. There is intentionally no `tool_results/` mirror; a later Haku
+run can sweep haku-console's audit log when it wants to act on completed calls. The standing pass
+for discovering connected MCP tools and turning them into useful operator-approved actions lives in
+[`procedures/tool_calls.md`](procedures/tool_calls.md).
 
 Build-via-CI flow: Haku commits `ui/` + the `.forgejo/workflows/build-ui.yaml` workflow
 → the contained, repo-scoped Forgejo runner builds + pushes
