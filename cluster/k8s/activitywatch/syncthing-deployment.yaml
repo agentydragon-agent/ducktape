@@ -45,8 +45,10 @@ spec:
       containers:
         - name: syncthing
           image: syncthing/syncthing:2.0.10
-          command:
-            - syncthing
+          env:
+            - name: STHOMEDIR
+              value: ""
+          args:
             - --config
             - /var/syncthing/config
             - --data
