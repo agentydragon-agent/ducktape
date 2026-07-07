@@ -65,6 +65,14 @@ Each Secret contains:
 The read-only service is NetworkPolicy-admitted from the Authentik server pods only; agent
 pods should not reach it directly.
 
+Rollout note: immediately after Terraform creates or updates the `activitywatch` proxy
+provider, the HTTPRoute can exist before the embedded Authentik outpost has reloaded the
+provider. In that transient window, `https://activitywatch.allegedly.works/api/0/info`
+may return an Authentik 404. Wait for server logs to show
+`authentik.outpost.proxyv2 Loaded application host=activitywatch.allegedly.works`; after
+that, unauthenticated `/api/0/info` should return a proxy-auth redirect to
+`/outpost.goauthentik.io/start`, not an Authentik 404.
+
 ## Storage Debt
 
 The Syncthing inbox is intentionally on SeaweedFS (`activitywatch-sync-inbox`,
