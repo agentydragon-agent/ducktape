@@ -2,6 +2,11 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+exports_files(
+    ["proxy-config.yaml"],
+    visibility = ["//debug/litellm_probe:__pkg__"],
+)
+
 py_library(
     name = "generate_litellm",
     srcs = ["generate_litellm.py"],
