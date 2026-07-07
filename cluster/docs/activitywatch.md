@@ -4,15 +4,18 @@ Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch
 The cluster is the query surface; individual devices keep local ActivityWatch capture and push
 `aw-sync` databases through Syncthing.
 
-No built-in ActivityWatch auth is enabled. Read/query access is constrained by Kubernetes
-NetworkPolicy and the read-only proxy; there is no public or Nebula route.
+No built-in ActivityWatch auth is enabled. Read/query access goes through the
+read-only proxy and, for public access, Authentik.
 
 ## Current Design
 
 - **Query server**: `aw-server-rust` in `cluster/k8s/activitywatch`, device id
   `activitywatch-cluster`, SQLite on `activitywatch-data` (`local-path-proxmox`, 10Gi).
 - **Read-only API**: nginx sidecar on Service `activitywatch-readonly`, allowing GET plus
-  POST `/api/0/query` for sandbox consumers.
+  POST `/api/0/query` for query consumers.
+- **Public query route**: `https://activitywatch.allegedly.works` routes through the
+  shared Authentik embedded proxy outpost to `activitywatch-readonly`. Human access is
+  gated by Authentik group `activitywatch-users` (currently `agentydragon`).
 - **Write API**: internal Service `activitywatch-write`, admitted only from the
   Syncthing/importer pod by CiliumNetworkPolicy.
 - **Sync receiver**: `activitywatch-syncthing` Deployment on OVH, receiving into
@@ -38,6 +41,29 @@ NetworkPolicy and the read-only proxy; there is no public or Nebula route.
   Syncthing expects.
 - **No mesh sidecar**: ActivityWatch is not joined to Nebula. Devices send data through
   Syncthing, and query access should use an explicit in-cluster or authenticated route.
+
+## Query Auth
+
+Humans browse to `https://activitywatch.allegedly.works` and authenticate through
+Authentik. The Authentik proxy provider is named `activitywatch`; it forwards only to the
+read-only nginx sidecar, not to the write-capable ActivityWatch service.
+
+Agents use separate Authentik service accounts and reflected client credentials:
+
+| Agent          | Authentik user                 | Reflected Secret                                  | Namespace        |
+| -------------- | ------------------------------ | ------------------------------------------------- | ---------------- |
+| Haku           | `activitywatch-haku`           | `activitywatch-haku-client-credentials`           | `haku-sandbox`   |
+| Claude sandbox | `activitywatch-claude-sandbox` | `activitywatch-claude-sandbox-client-credentials` | `claude-sandbox` |
+
+Each Secret contains:
+
+- `client_id`, `username`, `password`, `source_scopes`: mint a source JWT at `token_url`.
+- `proxy_client_id`, `proxy_scopes`: exchange that source JWT for an Authentik proxy
+  bearer token scoped to the ActivityWatch proxy provider.
+- `activitywatch_url`: the endpoint to query with `Authorization: Bearer <proxy-token>`.
+
+The read-only service is NetworkPolicy-admitted from the Authentik server pods only; agent
+pods should not reach it directly.
 
 ## Storage Debt
 
@@ -66,6 +92,10 @@ TODO:
 - Do not add additional ActivityWatch devices in a way that makes the local-path query DB
   the only durable copy of their data; each device should keep its own Syncthing-exported
   source folder.
+- Revisit agent credentials: current agent access reflects persistent Authentik
+  client-credential material into agent namespaces. A rotator-issued proxy JWT, or another
+  auto-rotated short-lived token handoff, would be more hygienic if agents do not need to
+  perform the OAuth exchange themselves.
 
 ## Desktop Setup
 

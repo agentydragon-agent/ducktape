@@ -234,6 +234,20 @@ and writes state to the `forgejo_agentydragon` schema.
 reconciliation. The token and webhook URL use `ignore_changes` and are stable across
 re-applies — only resource recreation changes them.
 
+### ActivityWatch Authentik Access
+
+The `agent-machine-access` tofu-controller module creates the Authentik
+`activitywatch` proxy provider/application, the `activitywatch-users` group, and
+the `activitywatch-agent-client-credentials` OAuth2 provider. It also creates
+per-agent Authentik service accounts (`activitywatch-haku`,
+`activitywatch-claude-sandbox`) and writes reflected Kubernetes Secrets in the
+`authentik` namespace for `haku-sandbox` and `claude-sandbox`.
+
+These credentials are generated from Authentik state, not SOPS files. If the
+tofu state is lost but Authentik still has the resources, import or recreate
+them consistently with the `agent_machine_access` schema before expecting agent
+ActivityWatch queries to work.
+
 ## L7: NixOS Worker Integration
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.

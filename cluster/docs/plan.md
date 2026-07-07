@@ -555,7 +555,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] Harbor proxy cache: add GHCR credentials for private repos (403 on `openclaw/openclaw`)
 - [ ] Verify ntfy.sh notifications
 - [ ] ActivityWatch: Gatus health check (`activitywatch-readonly:5600/api/0/info`)
-- [ ] ActivityWatch: public access via Authentik proxy outpost
+- [ ] ActivityWatch: replace reflected persistent agent OAuth credentials with
+      short-lived auto-rotated proxy JWTs, if agents do not need to perform the
+      Authentik exchange themselves.
 
 ## Production Cutover (`agentydragon.com`)
 

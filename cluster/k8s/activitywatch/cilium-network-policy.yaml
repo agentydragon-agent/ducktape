@@ -1,5 +1,5 @@
 # ActivityWatch query server and Syncthing importer.
-# Ingress: kube-apiserver (health probes), sandbox namespaces (readonly proxy).
+# Ingress: kube-apiserver (health probes), Authentik proxy (readonly proxy).
 # Egress: DNS only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -17,12 +17,12 @@ spec:
         - ports:
             - port: "5600"
               protocol: TCP
-    # Read-only proxy for sandbox namespaces (nginx on 5601).
+    # Read-only proxy through Authentik embedded outpost (nginx on 5601).
     - fromEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: openclaw-sandbox
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: claude-sandbox
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/name: authentik
+            app.kubernetes.io/component: server
       toPorts:
         - ports:
             - port: "5601"
