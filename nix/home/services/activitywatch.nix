@@ -128,6 +128,22 @@ in
           ];
         };
 
+        xdg.autostart = {
+          enable = true;
+          entries = [
+            (pkgs.writeText "activitywatch.desktop" ''
+              [Desktop Entry]
+              Type=Application
+              Name=ActivityWatch
+              Exec=${pkgs.activitywatch}/bin/aw-qt
+              Icon=activitywatch
+              Terminal=false
+              Categories=Utility;
+              X-GNOME-Autostart-enabled=true
+            '')
+          ];
+        };
+
         home.activation.activitywatchSyncDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
           mkdir -p '${syncRoot}'
         '';

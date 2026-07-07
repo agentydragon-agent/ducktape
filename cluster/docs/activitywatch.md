@@ -73,6 +73,7 @@ Current synced desktops are `rugged`, `wyrm2`, `iguana`, and `atlas`.
 
 - Local capture is managed by the graphical ActivityWatch applet (`aw-qt`), which starts
   `aw-server`, `aw-watcher-afk`, and `aw-watcher-window`.
+- Synced desktops get an XDG autostart entry for `aw-qt` from Home Manager.
 - `aw-qt` does not manage this Syncthing/`aw-sync` transport; Home Manager owns sync.
 - `nix/home/services/activitywatch.nix` configures local clients to use
   `127.0.0.1:5600` when `ducktape.activitywatch.sync.enable = true`.
