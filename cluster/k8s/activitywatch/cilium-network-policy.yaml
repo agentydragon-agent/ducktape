@@ -1,6 +1,6 @@
-# ActivityWatch with Nebula mesh sidecar.
+# ActivityWatch query server and Syncthing importer.
 # Ingress: kube-apiserver (health probes), sandbox namespaces (readonly proxy).
-# Egress: DNS, Nebula lighthouses/relays (UDP 4242).
+# Egress: DNS only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -27,6 +27,14 @@ spec:
         - ports:
             - port: "5601"
               protocol: TCP
+    # Write API for the Syncthing/importer pod only.
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: activitywatch-syncthing
+      toPorts:
+        - ports:
+            - port: "5600"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:
@@ -39,11 +47,48 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # Nebula lighthouses/relays (UDP 4242)
-    - toEntities:
-        - world
-        - cluster
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: activitywatch-syncthing
+  namespace: activitywatch
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: activitywatch-syncthing
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
       toPorts:
         - ports:
-            - port: "4242"
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # aw-sync importer sidecar writes pulled events into the ActivityWatch API.
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: activitywatch
+      toPorts:
+        - ports:
+            - port: "5600"
+              protocol: TCP
+    # Syncthing global discovery, relays, and direct sync attempts.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "22000"
+              protocol: TCP
+            - port: "22000"
+              protocol: UDP
+            - port: "22067"
+              protocol: TCP
+            - port: "21027"
               protocol: UDP

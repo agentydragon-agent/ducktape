@@ -39,15 +39,27 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 
 ## Mobile Nebula phone followups
 
-- [ ] Test cluster-hosted ActivityWatch from the phone over Nebula, either by
-      browser/API against `activitywatch.nebula.allegedly.works` or direct
-      `10.42.0.40` if Android/Mobile Nebula DNS behavior is awkward.
+- [ ] Wire phone ActivityWatch capture into the sync topology. Decide whether
+      Android can reliably run ActivityWatch + Syncthing in the background, or
+      whether it needs a phone-specific exporter/importer path. Keep the cluster
+      import shape consistent with the desktop path: one phone-owned sync folder,
+      provenance-preserving bucket names, and query from the cluster server.
 - [ ] Allow SSH from the phone to mesh machines such as `wyrm2`; verify the
       phone has an SSH client/key path, host SSH/firewall policy allows the
       phone's Nebula identity or `10.42.0.50`, and access stays key-only.
 - [ ] Consider running an SSH daemon on the phone for emergency access back to
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
+
+## ActivityWatch storage followups
+
+- [ ] Resolve the SQLite benchmark issue (#2959), then choose where the
+      ActivityWatch query server's hot SQLite DB should live. The Syncthing inbox
+      stays on `seaweedfs-ovh`, but `activitywatch-data` is still
+      `local-path-proxmox` and is therefore node-local failure debt.
+- [ ] Move the ActivityWatch query server off the Proxmox-pinned local-path PVC
+      once there is a validated storage target or an automated backup/rebuild
+      path from the Syncthing-exported source folders.
 
 ## OpenHands: self-hosted git provider
 

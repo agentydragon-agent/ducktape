@@ -62,6 +62,14 @@ in
     };
   };
 
+  ducktape.activitywatch.sync = {
+    enable = true;
+    syncthing = {
+      certFile = ../../../secrets/home/rugged/activitywatch-syncthing.cert.pem;
+      keySopsFile = ../../../secrets/home/rugged/activitywatch-syncthing.sops.key;
+    };
+  };
+
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
   sops.secrets =
     builtins.listToAttrs (
