@@ -24,7 +24,7 @@ spec:
       securityContext:
         fsGroup: 1000
       nodeSelector:
-        topology.kubernetes.io/region: hil-ovh
+        topology.kubernetes.io/zone: hil-ovh
       initContainers:
         - name: stage-syncthing-config
           image: busybox:1.37
