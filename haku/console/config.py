@@ -58,3 +58,16 @@ class Settings(BaseSettings):
     # The console never renders Haku's UI itself. See docs/containment.md.
     haku_ui_url: str
     auth_origin: str = "https://auth.allegedly.works"
+
+    # Optional YAML file for deploy-time console configuration that does not belong
+    # in env vars. Secret values stay in env/Kubernetes Secret references; this file
+    # can name connected MCP servers and the env-backed credential slot each uses.
+    config_file: Path | None = None
+
+    # Shared haku-console Postgres database. MCP approvals use it for the
+    # audit/result ledger; other console-owned state can move here over time.
+    # When unset, database-backed endpoints are disabled.
+    database_url: SecretStr | None = None
+    # Optional bearer accepted from Haku / haku-ui backend for backend-to-backend calls.
+    # Browser/operator calls still rely on the Authentik session at the ingress.
+    agent_api_token: SecretStr | None = None

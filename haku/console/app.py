@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 
-from haku.console import capabilities
+from haku.console import capabilities, mcp_approval
 from haku.console.config import Settings
 from haku.console.models import ConfigResponse
 
@@ -50,6 +50,14 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Haku console")
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
+    app.state.tool_call_ledger = (
+        mcp_approval.PostgresToolCallLedger(settings.database_url.get_secret_value())
+        if settings.database_url is not None
+        else None
+    )
+    app.state.tool_call_event_hub = mcp_approval.ToolCallEventHub()
+    app.state.tool_call_executor = mcp_approval.McpToolExecutor()
+    app.state.tool_call_metadata_provider = mcp_approval.McpMetadataProvider()
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -88,6 +96,7 @@ def create_app(settings: Settings) -> FastAPI:
         return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
 
     app.include_router(capabilities.router)
+    app.include_router(mcp_approval.router)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.
