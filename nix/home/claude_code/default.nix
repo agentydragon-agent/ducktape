@@ -585,7 +585,16 @@ in
       attribution.commit = ""; # Disable "Co-authored-by" in commits
       attribution.pr = ""; # Disable attribution in PR descriptions
       showThinkingSummaries = true;
+      showTurnDuration = true; # "Cooked for Xm Ys" messages
       autoMemoryEnabled = true;
+      # Voice dictation: speak prompts instead of typing. Tap once to record,
+      # tap again to send. Only usable on hosts with a local microphone (the
+      # laptop); a no-op on the headless agent-box/claude-web hosts. Requires a
+      # claude.ai account (not API-key/Bedrock/Vertex auth).
+      voice = {
+        enabled = true;
+        mode = "tap";
+      };
       # 9999 = effectively disable cleanup (0 = delete immediately, which is wrong)
       cleanupPeriodDays = 9999;
       promptSuggestions = true;

@@ -40,6 +40,14 @@ let
         "status"
       ];
 
+  ghReadOnlyCommands =
+    prefixCommandProduct
+      [ "gh" ]
+      [
+        "pr checks"
+        "pr view"
+      ];
+
   bazelExecutables = [
     "bazel"
     "bazelisk"
@@ -126,6 +134,7 @@ in
   # All allowed commands (no sudo - these are user-accessible commands)
   noSudo =
     gitReadOnlyCommands
+    ++ ghReadOnlyCommands
     ++ bazelCommands
     ++ nixDevelopBazelCommands
     ++ nixCommands
