@@ -46,7 +46,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260707044138-90c177e # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260707094317-0734306 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
