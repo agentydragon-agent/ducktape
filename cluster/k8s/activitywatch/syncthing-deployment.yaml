@@ -84,7 +84,7 @@ spec:
               cpu: 250m
               memory: 256Mi
         - name: importer
-          image: ghcr.io/agentydragon/aw-server:devel-20260708011521-6986e0e # {"$imagepolicy": "flux-system:activitywatch"}
+          image: ghcr.io/agentydragon/aw-server:devel-20260708060625-1c2fbd0 # {"$imagepolicy": "flux-system:activitywatch"}
           command:
             - /usr/local/bin/aw-sync
             - --host
