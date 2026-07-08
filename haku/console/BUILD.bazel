@@ -106,8 +106,10 @@ py_library(
         ":config",
         ":mcp_approval",
         ":models",
+        "//haku/console/tools:google",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
+        "@pypi//fastmcp",
         "@pypi//uvicorn",
         # uvicorn needs a WebSocket protocol impl at runtime or every /api/approvals/ws
         # upgrade fails ("Unsupported upgrade request") — the drawer's live channel (#2977).
@@ -206,6 +208,10 @@ py_test(
         "@pypi//starlette",
         "@pypi//testcontainers",
         "@pypi//uvicorn",
+        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py)
+        # needs the plugin importable at runtime for its entry-point autoload; Gazelle
+        # can't see that and will try to drop this dep on regen.
+        "@pypi//pytest_asyncio",
     ],
 )
 

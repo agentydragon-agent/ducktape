@@ -108,6 +108,14 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
+            # In-process `google` MCP server (calendar event creation, batch Gmail thread
+            # label changes, Gmail draft creation — see haku/console/tools/google.py).
+            # haku-console-google-access-token (access_token + expires_at) is written
+            # by Airlock's haku_console_google provider into the airlock namespace and
+            # mirrored here by ESO; re-read via google-auth's refresh_handler, no
+            # restart needed on rotation.
+            - name: HAKU_CONSOLE_GOOGLE_TOKEN_DIR
+              value: /etc/haku-console-google-token
           resources:
             requests:
               cpu: 50m
@@ -130,6 +138,9 @@ spec:
               mountPath: /tmp
             - name: config
               mountPath: /etc/haku-console/config
+              readOnly: true
+            - name: haku-console-google-token
+              mountPath: /etc/haku-console-google-token
               readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
@@ -183,5 +194,14 @@ spec:
         - name: config
           configMap:
             name: haku-console-config
+        - name: haku-console-google-token
+          # optional: true so a missing token (before the one-time operator OAuth
+          # consent below) never blocks the whole console pod from starting — only
+          # the in-process `google` MCP server degrades (google_token_dir empty ->
+          # its FastMCP instance never registered -> that capability entry reports
+          # `degraded`, everything else in the console is unaffected).
+          secret:
+            secretName: haku-console-google-access-token
+            optional: true
         - name: nginx-conf
           emptyDir: {}

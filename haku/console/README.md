@@ -84,6 +84,34 @@ uses the approving operator's linked OAuth token and refuses to move the call ou
 for reflection or fallback wiring, but they are not silently substituted for operator-approved
 execution on an `operator_oauth` server.
 
+### In-process MCP servers — no second deployment
+
+A `mcp.servers` entry that omits `server_url` is served by an **in-process `FastMCP`
+instance** instead of a remote server reached over the network: `fastmcp.client.Client`
+accepts a `FastMCP` object directly (an in-memory `FastMCPTransport`), so
+`McpToolExecutor`/`McpMetadataProvider` run the exact same `Client(...)` calls either
+way — same approval/audit/CSRF pipeline, same live `tools/list` reflection, just a
+different transport (`_transport()` in `mcp_approval.py` picks the registered in-process
+`FastMCP` for a server id, falling back to `server_url`). The one today is
+`haku.console.tools.google` (server id `google`): `create_calendar_event`,
+`batch_modify_gmail_thread_labels`, `create_gmail_draft`, built exactly like a
+standalone MCP server would be (`@mcp.tool`-decorated functions, mirroring
+`haku/gmail_labeling/server.py`'s style) — the only difference from a real deployment is
+that `create_app` hands the `FastMCP` object straight to the executor instead of
+serving it over HTTP.
+
+It holds its own Airlock-issued `haku_console_google` token (`calendar.events` +
+`gmail.modify` + `gmail.compose`, plus `google`'s read-only scopes), mounted from
+`haku-console-google-access-token` (`HAKU_CONSOLE_GOOGLE_TOKEN_DIR`) — kept separate
+from every other Google-scoped credential in the cluster (Haku's read-only token,
+gmail-labeling's `gmail.modify`-only token) and delivered only to this namespace.
+One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/
+README.md`. The one plain HTTP endpoint alongside the MCP tools, `GET /api/google/
+gmail/thread-previews` (subject/snippet/current-labels lookup the approval UI uses to
+render a pending `batch_modify_gmail_thread_labels` call — the tool call itself only
+carries thread IDs), stays outside `build_mcp`'s tool surface since it's a read for
+rendering, not something Haku calls.
+
 ## Free-form UI — Haku's own UI, embedded
 
 The console frames Haku's own UI service (`haku-ui.allegedly.works`, a separate

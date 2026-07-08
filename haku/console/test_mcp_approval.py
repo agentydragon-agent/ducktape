@@ -24,7 +24,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 from testcontainers.postgres import PostgresContainer
 
-from haku.console.mcp_approval import AliveServerMetadata, _mcp_result_to_json
+from haku.console.mcp_approval import (
+    AliveServerMetadata,
+    McpMetadataProvider,
+    McpServerEntry,
+    McpToolExecutor,
+    _mcp_result_to_json,
+)
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.net import pick_free_port, wait_for_port
 from util.oci import load_oci_image
@@ -664,6 +670,45 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     assert row["status"] == "ok"
     assert row["arguments_json"] == {"text": "world"}
     assert row["result_json"]["content"][0]["text"] == "echo:world"
+
+
+# --- In-process MCP servers (haku.console.tools.google's registration path) ------------
+# Unit tests only: no postgres/network fixtures, exercising McpToolExecutor/McpMetadataProvider
+# directly (over the module-level `_test_mcp_server()` FastMCP fixture, in-memory — no HTTP)
+# rather than through the FastAPI app.
+
+
+def test_server_entry_allows_missing_server_url() -> None:
+    McpServerEntry(id="google")  # ok: resolved via the in-process registry at runtime, not this model
+
+
+async def test_executor_dispatches_to_registered_in_process_server() -> None:
+    executor = McpToolExecutor({"google": _test_mcp_server()})
+    server = McpServerEntry(id="google")
+    result = await executor.execute(server, "echo", {"text": "hi"}, auth_token=None)
+    assert result["content"][0]["text"] == "echo:hi"
+
+
+async def test_executor_raises_when_no_server_url_and_not_registered() -> None:
+    executor = McpToolExecutor({})
+    server = McpServerEntry(id="google")
+    with pytest.raises(RuntimeError, match="no server_url and no in-process registration"):
+        await executor.execute(server, "echo", {}, auth_token=None)
+
+
+async def test_metadata_provider_reflects_in_process_server_tools() -> None:
+    metadata_provider = McpMetadataProvider({"google": _test_mcp_server()})
+    server = McpServerEntry(id="google")
+    metadata = await metadata_provider.metadata(server, auth_token=None)
+    assert isinstance(metadata, AliveServerMetadata)
+    assert {tool.name for tool in metadata.tools} == {"stock_add", "echo"}
+
+
+async def test_metadata_provider_degrades_when_no_server_url_and_not_registered() -> None:
+    metadata_provider = McpMetadataProvider({})
+    server = McpServerEntry(id="google")
+    metadata = await metadata_provider.metadata(server, auth_token=None)
+    assert metadata.status == "degraded"
 
 
 if __name__ == "__main__":
