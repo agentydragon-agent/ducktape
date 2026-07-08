@@ -120,36 +120,36 @@ class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
 
 
-class AliveToolMetadata(BaseModel):
+class ToolMetadataBase(BaseModel):
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+class AliveToolMetadata(ToolMetadataBase):
     status: Literal["alive"] = "alive"
-    name: str
-    description: str | None = None
-    input_schema: dict[str, Any] = Field(default_factory=dict)
 
 
-class DegradedToolMetadata(BaseModel):
+class DegradedToolMetadata(ToolMetadataBase):
     status: Literal["degraded"] = "degraded"
-    name: str
-    description: str | None = None
-    input_schema: dict[str, Any] = Field(default_factory=dict)
     degraded_reason: str
 
 
 type ToolMetadata = Annotated[AliveToolMetadata | DegradedToolMetadata, Field(discriminator="status")]
 
 
-class AliveServerMetadata(BaseModel):
+class ServerMetadataBase(BaseModel):
+    server_id: str
+    title: str
+    tools: list[ToolMetadata] = Field(default_factory=list)
+
+
+class AliveServerMetadata(ServerMetadataBase):
     status: Literal["alive"] = "alive"
-    server_id: str
-    title: str
-    tools: list[ToolMetadata] = Field(default_factory=list)
 
 
-class DegradedServerMetadata(BaseModel):
+class DegradedServerMetadata(ServerMetadataBase):
     status: Literal["degraded"] = "degraded"
-    server_id: str
-    title: str
-    tools: list[ToolMetadata] = Field(default_factory=list)
     degraded_reason: str
 
 
@@ -310,7 +310,7 @@ class PostgresToolCallLedger:
         return self._transition_pending_approval(tool_call_id, ToolCallStatus.RUNNING)
 
     def deny(self, tool_call_id: str, reason: str | None) -> tuple[ToolCallRecord, ToolCallEvent]:
-        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED)
+        return self._transition_pending_approval(tool_call_id, ToolCallStatus.DENIED, denial_reason=reason)
 
     def finish(
         self, tool_call_id: str, *, result: dict[str, Any] | None, error: str | None
@@ -329,7 +329,7 @@ class PostgresToolCallLedger:
             return updated, event
 
     def _transition_pending_approval(
-        self, tool_call_id: str, status: ToolCallStatus
+        self, tool_call_id: str, status: ToolCallStatus, *, denial_reason: str | None = None
     ) -> tuple[ToolCallRecord, ToolCallEvent]:
         with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id)
@@ -340,6 +340,7 @@ class PostgresToolCallLedger:
                 )
             row.status = status
             row.updated_at = dt.datetime.now(dt.UTC)
+            row.denial_reason = denial_reason
             updated = row.to_record()
             event = self._insert_event(session, ToolCallEventType.TOOL_CALL_UPDATED, updated)
             return updated, event
@@ -1094,6 +1095,22 @@ async def _execution_auth(
             )
         return token
     return _credential_token(server)
+
+
+async def operator_authenticated_client(
+    server_id: str, request: Request, settings: Settings, oauth_store: McpOperatorOAuthStoreProtocol
+) -> Client:
+    """Open a `fastmcp` client for `server_id`, authenticated exactly as an approved tool call
+    for that server would be (the requesting operator's own `operator_oauth` token, or the
+    server's configured bearer). The one public seam other `haku.console.tools.*` modules use
+    to reach a remote MCP server's own read tools for preview/reference-data lookups (see
+    `haku.console.tools.grocy`) — narrow and read-only by construction of what callers do with
+    the returned client; it grants no more than a real approval already would, and is not a
+    way to bypass the approval queue for mutating calls.
+    """
+    server = _server_entry(settings, server_id)
+    auth_token = await _execution_auth(server, _operator_principal(request), oauth_store)
+    return Client(_transport(server, {}), auth=auth_token)
 
 
 async def _maybe_execute(
