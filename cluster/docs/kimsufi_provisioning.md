@@ -35,27 +35,34 @@ variable is non-empty.
 
 ## 1. Choose a slot
 
-| Scenario                  | Slot                                                     |
-| ------------------------- | -------------------------------------------------------- |
-| Existing KS-5 worker slot | `kimsufi_worker0` (`var.kimsufi_service_name`)           |
-| Existing KS-5 worker slot | `kimsufi_worker1` (`var.kimsufi_service_name_1`)         |
-| Existing KS-5 CP slot     | `kimsufi_cp0` (`var.kimsufi_service_name_cp0`)           |
-| New KS-GAME worker slot   | `ks_game_worker0` (`var.kimsufi_service_name_ks_game_0`) |
-| New KS-GAME worker slot   | `ks_game_worker1` (`var.kimsufi_service_name_ks_game_1`) |
+All five slot variables below are currently occupied by provisioned servers (there is
+no spare slot). To provision a genuinely new node, either add a new variable following
+this naming pattern, or free up one of these slots via §5 (replacing an existing slot).
 
-Slot ↔ Nebula identity is fixed in code:
+| Variable                         | Current hostname | Hardware |
+| -------------------------------- | ---------------- | -------- |
+| `kimsufi_service_name`           | `ovh-ns103656`   | KS-5     |
+| `kimsufi_service_name_1`         | `ovh-ns103711`   | KS-5     |
+| `kimsufi_service_name_cp0`       | `ovh-ns102453`   | KS-5     |
+| `kimsufi_service_name_ks_game_0` | `ovh-ns104952`   | KS-GAME  |
+| `kimsufi_service_name_ks_game_1` | `ovh-ns104963`   | KS-GAME  |
 
-| Slot              | Hostname                 | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
-| ----------------- | ------------------------ | --------------- | ------------- | -------------------------------- | -------------------------------- |
-| `kimsufi_worker0` | `talos-kimsufi-worker-0` | `10.42.0.13/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_worker1` | `talos-kimsufi-worker-1` | `10.42.0.14/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_cp0`     | `talos-kimsufi-cp-0`     | `10.42.0.15/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
-| `ks_game_worker0` | `talos-ks-game-worker-0` | `10.42.0.16/16` | worker        | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
-| `ks_game_worker1` | `talos-ks-game-worker-1` | `10.42.0.17/16` | worker        | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+Slot ↔ Nebula identity is fixed in code (`cluster/terraform/main/ovh-nodes.tf`,
+`local.kimsufi_servers`):
 
-`data_disk_match` becomes a Talos `UserVolumeConfig` disk selector mounted at
-`/var/mnt/seaweedfs-data`; `local-path-ovh` uses
-`/var/mnt/seaweedfs-data/local-path` on each listed node.
+| Variable                         | Hostname       | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
+| -------------------------------- | -------------- | --------------- | ------------- | -------------------------------- | -------------------------------- |
+| `kimsufi_service_name`           | `ovh-ns103656` | `10.42.0.13/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_1`         | `ovh-ns103711` | `10.42.0.14/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_cp0`       | `ovh-ns102453` | `10.42.0.15/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_ks_game_0` | `ovh-ns104952` | `10.42.0.16/16` | control plane | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
+| `kimsufi_service_name_ks_game_1` | `ovh-ns104963` | `10.42.0.17/16` | control plane | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+
+`data_disk_match` becomes a Talos `UserVolumeConfig` disk selector; it mounts at
+`/var/mnt/seaweedfs-data` (legacy name) or `/var/mnt/local-path-ovh-<tier>` on nodes
+that have gone through the OVH storage-tiering rename (see `ovh-nodes.tf`'s
+`data_disk_mount_renamed_nodes`) — `local-path-ovh` uses whichever path applies on
+each listed node.
 
 ## 2. Set the service name
 
@@ -115,10 +122,11 @@ public Talos reachability between those nodes. Nebula and kubelet may look healt
 while public peer traffic still fails.
 
 ```bash
-# Direct API readiness for each Kimsufi control-plane public IP.
-kubectl --server=https://147.135.37.175:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+# Direct API readiness for each Kimsufi control-plane public IP
+# (ovh-ns103656, ovh-ns104952, ovh-ns104963 — see nebula-mesh.json for the roster).
 kubectl --server=https://147.135.39.162:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
-kubectl --server=https://147.135.39.176:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://147.135.104.5:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://147.135.104.16:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 
 # Cross-node Talos API/maintenance reachability from host-networked Kimsufi pods.
 # Use one Cilium pod per Kimsufi node as the source and test the other public IPs.
@@ -136,15 +144,16 @@ expiry. Two strategies:
 
 **A. Drain-then-replace** (clean K8s identity, brief disruption):
 
-1. `kubectl cordon talos-kimsufi-worker-N`
-2. `kubectl drain --ignore-daemonsets --delete-emptydir-data talos-kimsufi-worker-N`
+1. `kubectl cordon <hostname>` (e.g. `ovh-ns103711` — the Talos `HostnameConfig` sets
+   the k8s Node name to the slot's hostname, not a `talos-kimsufi-*` label)
+2. `kubectl drain --ignore-daemonsets --delete-emptydir-data <hostname>`
 3. `talosctl -n <old-ip> shutdown` (so old kubelet stops claiming the hostname)
-4. `kubectl delete node talos-kimsufi-worker-N`
+4. `kubectl delete node <hostname>`
 5. `tofu state rm` the 9 entries for that slot (`data.ovh_dedicated_server`,
    `ovh_dedicated_server`, `..._update.kimsufi_{rescue,harddisk}`,
    `..._reboot_task.kimsufi_to_{rescue,talos}`, `null_resource.install_talos_kimsufi`,
    `data.talos_machine_configuration`, `talos_machine_configuration_apply` — all
-   under `["kimsufi_workerN"]`).
+   under `["<hostname>"]`, since `local.kimsufi_servers` is keyed by hostname).
 6. Continue from §2.
 
 **B. Use the empty slot first, drain later** (additive, zero disruption):
