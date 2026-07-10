@@ -14,6 +14,15 @@
 # idempotency check, so re-evaluating on UPDATE would duplicate volume/env/mount
 # entries and the API server would reject the request (and break the Job
 # controller's finalizer PATCH). Injection only needs to happen at pod creation.
+#
+# Keep *.allegedly.works out of the proxy path. Those names resolve to the
+# public hostNetwork Cilium Gateway IPs, but they are still cluster-owned
+# services. If haku-egress-proxy CONNECTs to one of them, DNS can pick the proxy
+# pod's own Gateway node; that same-node public-Gateway hairpin returns Envoy
+# "Access denied" for the proxy identity. Direct sandbox egress to these hosts
+# is still bounded by Cilium's cluster-only egress rule, not free internet
+# access. Include both wildcard and suffix forms because NO_PROXY matching
+# differs across curl, Go, Python, node, and git.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -73,7 +82,7 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc.cluster.local,10.0.0.0/8"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -131,7 +140,7 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc.cluster.local,10.0.0.0/8"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
