@@ -35,7 +35,7 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
   toolCall({ tool_call_id: "tc_1", title: "Add Thrive box items to Grocy", status: "ok" }),
   toolCall({
     tool_call_id: "tc_2",
-    server_id: "google",
+    server_id: "google_calendar",
     tool_name: "create_calendar_event",
     title: "Create calendar event: Dentist",
     status: "error",
@@ -134,6 +134,14 @@ export const SAMPLE_GMAIL_THREADS = {
   },
 };
 
+// The calendar-name lookup the create-event widget fetches for a non-primary calendar_id;
+// served by mock_api so the detailed preview renders the name (linked) instead of the raw id.
+export const SAMPLE_CALENDAR_SUMMARY = {
+  calendar_id: "family@group.calendar.google.com",
+  summary: "Family",
+  html_link: "https://calendar.google.com/calendar/u/0/r?cid=ZmFtaWx5QGdyb3VwLmNhbGVuZGFyLmdvb2dsZS5jb20",
+};
+
 // Every implemented tool-call preview, for the `previews` gallery scene (harness.tsx renders
 // each in both compact and detailed). Real server ids + tool names so the registry dispatches
 // to each widget; the final entry has no widget, exercising the raw-JSON fallback.
@@ -180,7 +188,7 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
     },
   },
   {
-    serverId: "google",
+    serverId: "google_calendar",
     toolName: "create_calendar_event",
     args: {
       summary: "Dentist appointment",
@@ -188,18 +196,19 @@ export const PREVIEW_SAMPLES: { serverId: string; toolName: string; args: Record
       end: { date_time: "2026-07-12T10:00:00", time_zone: "America/Los_Angeles" },
       location: "123 Market St, San Francisco",
       description: "Routine cleaning and checkup.",
+      calendar_id: "family@group.calendar.google.com",
       reminders: [{ method: "popup", minutes_before_start: 30 }],
       attendees: ["dentist@example.com"],
     },
   },
   {
-    serverId: "google",
-    toolName: "batch_modify_gmail_thread_labels",
+    serverId: "gmail",
+    toolName: "threads_batch_modify",
     args: { thread_ids: ["t1", "t2", "t3", "t4"], add: ["Follow up"], remove: ["Inbox"] },
   },
   {
-    serverId: "google",
-    toolName: "create_gmail_draft",
+    serverId: "gmail",
+    toolName: "drafts_create",
     args: {
       to: ["ops@allegedly.works"],
       cc: ["rai@allegedly.works"],

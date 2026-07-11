@@ -1,22 +1,22 @@
 // Per-tool-type rendering for the remote `kubectl-passthrough-mcp` MCP server (see
 // cluster/k8s/agents/kubectl-passthrough-mcp/). Falls back to the generic raw-JSON view
-// for anything that isn't shaped as expected — same caveat as google.tsx:
+// for anything that isn't shaped as expected — same caveat as gmail.tsx:
 // arguments are only validated by the tool's own schema at execution time, not at
 // submission. Every tool here runs with the approving operator's own cluster-admin
 // identity (cluster_auth_mode=passthrough) once approved, so rendering the exact target
 // unambiguously matters more than for narrower-scoped tools.
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
 import { z } from "zod";
 
 import { Field } from "../field.tsx";
-import { clampBlock, type PreviewVariant } from "./variant.tsx";
+import { definePreview, type ToolPreview } from "./entry.tsx";
+import { clampBlock, type PreviewProps } from "./variant.tsx";
 
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 
 // kubectl-passthrough-mcp is a third-party binary (containers/kubernetes-mcp-server) —
-// there's no backend Pydantic model to generate these from (unlike google.tsx's
+// there's no backend Pydantic model to generate these from (unlike gmail.tsx's
 // :schema_zod), so they're hand-authored once, here, against that tool's real input schema
 // (checked via a live `tools/list` call against the deployed server).
 const zResourcesCreateOrUpdateArgs = z.object({
@@ -40,7 +40,7 @@ type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 
-function ResourcesApplyPreview({ args, variant }: { args: ResourcesCreateOrUpdateArgs; variant: PreviewVariant }) {
+function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOrUpdateArgs>) {
   const resource = variant === "compact" ? clampBlock(args.resource, 3) : args.resource;
   return (
     <Stack gap="xs">
@@ -96,7 +96,7 @@ function DeleteTargetPreview({
   );
 }
 
-function ResourcesDeletePreview({ args }: { args: ResourcesDeleteArgs }) {
+function ResourcesDeletePreview({ args }: PreviewProps<ResourcesDeleteArgs>) {
   return (
     <DeleteTargetPreview
       kind={args.kind}
@@ -107,28 +107,14 @@ function ResourcesDeletePreview({ args }: { args: ResourcesDeleteArgs }) {
   );
 }
 
-function PodsDeletePreview({ args }: { args: PodsDeleteArgs }) {
+function PodsDeletePreview({ args }: PreviewProps<PodsDeleteArgs>) {
   return <DeleteTargetPreview kind="Pod" name={args.name} namespace={args.namespace} gracePeriodSeconds={undefined} />;
 }
 
-/** Nice per-tool rendering for the `kubectl-passthrough-mcp` server's highest-stakes tools
- * (apply and delete); `null` for anything else, so the caller falls back to raw JSON. */
-export function kubectlToolPreview(
-  toolName: string,
-  args: Record<string, unknown>,
-  variant: PreviewVariant
-): ReactNode | null {
-  if (toolName === "resources_create_or_update") {
-    const parsed = zResourcesCreateOrUpdateArgs.safeParse(args);
-    return parsed.success ? <ResourcesApplyPreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "resources_delete") {
-    const parsed = zResourcesDeleteArgs.safeParse(args);
-    return parsed.success ? <ResourcesDeletePreview args={parsed.data} /> : null;
-  }
-  if (toolName === "pods_delete") {
-    const parsed = zPodsDeleteArgs.safeParse(args);
-    return parsed.success ? <PodsDeletePreview args={parsed.data} /> : null;
-  }
-  return null;
-}
+/** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
+ * (apply and delete). */
+export const kubectlPreviews = {
+  resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview),
+  resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview),
+  pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview),
+} satisfies Record<string, ToolPreview>;

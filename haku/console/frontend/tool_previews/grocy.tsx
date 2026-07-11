@@ -5,7 +5,7 @@
 //
 // grocy-sf's tool surface is generated from Grocy's own OpenAPI spec plus custom batch
 // tools (grocy_mcp/batch_tools.py) — there's no backend Pydantic model haku-console owns to
-// generate Zod schemas from (unlike google.tsx's :schema_zod), so these are
+// generate Zod schemas from (unlike gmail.tsx's :schema_zod), so these are
 // hand-authored once, here, against grocy_mcp/mcp_types.py's `AddItem` / `ConsumeItem` /
 // `CreateProductItem`. Every tool call runs as the approving operator's own linked Grocy
 // account (operator_oauth) once approved.
@@ -16,13 +16,13 @@
 // via GET /api/grocy-sf/reference and every row resolves through it.
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../grocy_client.ts";
 import { Field } from "../field.tsx";
-import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewVariant } from "./variant.tsx";
+import { definePreview, type ToolPreview } from "./entry.tsx";
+import { COMPACT_ITEM_LIMIT, MoreLine, type PreviewProps, type PreviewVariant } from "./variant.tsx";
 
 export const GROCY_SERVER_ID = "grocy-sf";
 
@@ -146,7 +146,7 @@ function StockAddRow({ item, reference }: { item: AddItem; reference: GrocyRefer
   );
 }
 
-function StockAddPreview({ args, variant }: { args: StockAddArgs; variant: PreviewVariant }) {
+function StockAddPreview({ args, variant }: PreviewProps<StockAddArgs>) {
   const { reference, error } = useGrocyReference();
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
@@ -187,7 +187,7 @@ function StockConsumeRow({ item, reference }: { item: ConsumeItem; reference: Gr
   );
 }
 
-function StockConsumePreview({ args, variant }: { args: StockConsumeArgs; variant: PreviewVariant }) {
+function StockConsumePreview({ args, variant }: PreviewProps<StockConsumeArgs>) {
   const { reference, error } = useGrocyReference();
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
@@ -281,7 +281,7 @@ function ProductsCreateRow({
   );
 }
 
-function ProductsCreatePreview({ args, variant }: { args: ProductsCreateArgs; variant: PreviewVariant }) {
+function ProductsCreatePreview({ args, variant }: PreviewProps<ProductsCreateArgs>) {
   const { reference, error } = useGrocyReference();
   const shown = variant === "compact" ? args.items.slice(0, COMPACT_ITEM_LIMIT) : args.items;
   return (
@@ -302,24 +302,9 @@ function ProductsCreatePreview({ args, variant }: { args: ProductsCreateArgs; va
   );
 }
 
-/** Nice per-tool rendering for the `grocy-sf` server's stock and product-creation tools;
- * `null` for anything else, so the caller falls back to raw JSON. */
-export function grocyToolPreview(
-  toolName: string,
-  args: Record<string, unknown>,
-  variant: PreviewVariant
-): ReactNode | null {
-  if (toolName === "stock_add") {
-    const parsed = zStockAddArgs.safeParse(args);
-    return parsed.success ? <StockAddPreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "stock_consume") {
-    const parsed = zStockConsumeArgs.safeParse(args);
-    return parsed.success ? <StockConsumePreview args={parsed.data} variant={variant} /> : null;
-  }
-  if (toolName === "products_create") {
-    const parsed = zProductsCreateArgs.safeParse(args);
-    return parsed.success ? <ProductsCreatePreview args={parsed.data} variant={variant} /> : null;
-  }
-  return null;
-}
+/** Per-tool preview widgets for the `grocy-sf` server's stock and product-creation tools. */
+export const grocyPreviews = {
+  stock_add: definePreview(zStockAddArgs, StockAddPreview),
+  stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview),
+  products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview),
+} satisfies Record<string, ToolPreview>;
