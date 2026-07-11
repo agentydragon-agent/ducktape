@@ -103,15 +103,28 @@ py_library(
 )
 
 py_library(
+    name = "auto_approval",
+    srcs = ["auto_approval.py"],
+    deps = [
+        "//haku/console/tools:gmail_client",
+        "//haku/gmail_labeling:namespace",
+        "@pypi//fastmcp",
+        "@pypi//jsonschema",
+    ],
+)
+
+py_library(
     name = "mcp_approval",
     srcs = ["mcp_approval.py"],
     deps = [
+        ":auto_approval",
         ":config",
         ":database_migrate",
         ":database_schema",
         ":deps",
         ":mcp_config",
         ":mcp_operator_oauth",
+        "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
@@ -120,6 +133,21 @@ py_library(
         "@pypi//psycopg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_auto_approval",
+    srcs = ["test_auto_approval.py"],
+    deps = [
+        ":auto_approval",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//haku/console/tools:gmail",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        # Pytest async auto mode is configured by the root conftest hooks.
+        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -224,6 +252,7 @@ py_test(
         ":mcp_approval",
         ":mcp_config",
         "//:conftest",
+        "//haku/console/tools:gmail",
         "//third_party/containers:rlocations",
         "//util:net",
         "//util:oci",

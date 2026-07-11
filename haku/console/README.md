@@ -57,9 +57,11 @@ haku-state git credential or clone at all.
 ## MCP approval queue — authored tool calls, console-approved
 
 The console also owns the privileged MCP-tool escape hatch (`mcp_approval.py`). Haku or haku-ui can
-submit a precise tool call that Haku should not run autonomously; the console mints the canonical
-`tool_call_id`, records the audit entry, asks the trusted console frontend for approval when
-required, executes the MCP tool, and keeps the result. haku-state stores only authored requests
+submit a precise tool call; the console mints the canonical `tool_call_id`, records the audit entry,
+runs the reviewed auto-approval decision, asks the trusted console frontend for approval when it
+does not match, executes the MCP tool, and keeps the result. The decision validates arguments
+against the existing FastMCP tool's generated schema; its audit-safe evaluation string is recorded
+even when the call stays manual, while errors are logged and fail closed. haku-state stores only authored requests
 (`tool_requests/*.yaml`) and UI affordances (`<tool-call request="...">`); there is no
 `tool_results/` mirror.
 
@@ -112,12 +114,13 @@ HTTP:
   smartness, no body decoding, no flattening: `threads_list` (paginated via
   `page_token`/`next_page_token`), `threads_get`/`messages_get` (with a `format` argument that
   passes straight through to Gmail — `minimal`/`metadata`/`full`, plus `raw` for messages),
-  `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_batch_modify`, and
-  label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Unlike `gmail-labeling`
-  (autonomous, structurally confined to the `haku/` label prefix), every call here — reads
-  included — is approval-gated; the reads add no capability Haku's own read-only Google token
-  lacks, they just route Gmail through the audited console (and are the prime candidates for
-  the later auto-approve policy — e.g. label calls scoped to `haku/`). Gmail affordances not
+  `labels_list`, `labels_get`. Writes are `drafts_create`, `threads_modify_labels`, and
+  label CRUD (`labels_create`, `labels_patch`, `labels_delete`). Calls default to operator approval.
+  The reviewed `v1` decision auto-approves Haku-agent calls to every
+  read tool above, plus `threads_modify_labels` when every added/removed name starts with `haku/`,
+  `labels_patch` only when both the current and new names start with `haku/` and no visibility is
+  changed, and `labels_delete` only when the current label name starts with `haku/`. Patch/delete
+  resolve the submitted label ID before deciding. Gmail affordances not
   yet exposed (send, trash/delete, message-level modify, drafts list/send, attachments,
   history, settings/filters) are tracked in `haku/console/TODO.md`.
 - **`google_calendar`** (`haku.console.tools.google_calendar`): `create_calendar_event`, plus a
@@ -136,7 +139,7 @@ token, gmail-labeling's `gmail.modify`-only token) and delivered only to this na
 One-time operator OAuth bootstrap and the scope list: `cluster/k8s/haku/console/README.md`.
 Two plain HTTP endpoints alongside the MCP tools render approvals whose tool call carries only
 opaque ids: `GET /api/gmail/thread-previews` (subject/snippet/current-labels for a pending
-`threads_batch_modify`) and `GET /api/google-calendar/calendar-summary` (a non-primary
+`threads_modify_labels`) and `GET /api/google-calendar/calendar-summary` (a non-primary
 `calendar_id` → the calendar's display name + a Google Calendar link, for a pending
 `create_calendar_event`). Both stay outside `build_mcp`'s tool surface since they're reads for
 rendering, not something Haku calls.
