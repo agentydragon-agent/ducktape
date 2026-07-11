@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
+
+
+class ReminderMethod(StrEnum):
+    POPUP = "popup"
+    EMAIL = "email"
 
 
 class EventDateTime(BaseModel):
     """Mirrors the Google Calendar API's `EventDateTime` — exactly one of `date`
-    (all-day) or `date_time` (+`time_zone`) is set."""
+    (all-day) or `date_time` (+`time_zone`) is set. Snake-case tool-arg surface (Haku passes
+    these); `_EventDateTime` below is the camelCase request-body twin."""
 
     date: str | None = Field(default=None, description="All-day event date, YYYY-MM-DD.")
     date_time: str | None = Field(
@@ -29,7 +37,7 @@ class EventDateTime(BaseModel):
 
 
 class CalendarReminder(BaseModel):
-    method: Literal["popup", "email"] = "popup"
+    method: ReminderMethod = ReminderMethod.POPUP
     minutes_before_start: int = Field(
         ge=0, le=40320, description="Minutes before the event start; Google's max is 4 weeks."
     )
@@ -54,8 +62,53 @@ class CreateCalendarEventArgs(BaseModel):
 
 
 class CreateCalendarEventResult(BaseModel):
-    event_id: str
-    html_link: str = Field(description="Link to the event in Google Calendar.")
+    # Parsed straight from the Calendar API's Event response via `model_validate`; the wire
+    # fields are `id`/`htmlLink`. populate_by_name keeps field-name construction working too.
+    model_config = ConfigDict(populate_by_name=True)
+
+    event_id: str = Field(validation_alias="id")
+    html_link: str = Field(validation_alias="htmlLink", description="Link to the event in Google Calendar.")
+
+
+# --- Google Calendar `events.insert` request-body models (camelCase wire shape) ---
+class _EventDateTime(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    date: str | None = None
+    date_time: str | None = None
+    time_zone: str | None = None
+
+    @classmethod
+    def of(cls, value: EventDateTime) -> _EventDateTime:
+        return cls(date=value.date, date_time=value.date_time, time_zone=value.time_zone)
+
+
+class _ReminderOverride(BaseModel):
+    method: ReminderMethod
+    minutes: int
+
+
+class _Reminders(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    use_default: bool
+    overrides: list[_ReminderOverride]
+
+
+class _Attendee(BaseModel):
+    email: str
+
+
+class _EventInsert(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    summary: str
+    start: _EventDateTime
+    end: _EventDateTime
+    description: str | None = None
+    location: str | None = None
+    attendees: list[_Attendee] | None = None
+    reminders: _Reminders | None = None
 
 
 class CalendarToolsClient:
@@ -63,30 +116,23 @@ class CalendarToolsClient:
         self._service = service
 
     def create_event(self, args: CreateCalendarEventArgs) -> CreateCalendarEventResult:
-        body: dict[str, Any] = {
-            "summary": args.summary,
-            "start": _event_date_time(args.start),
-            "end": _event_date_time(args.end),
-        }
-        if args.description is not None:
-            body["description"] = args.description
-        if args.location is not None:
-            body["location"] = args.location
-        if args.attendees:
-            body["attendees"] = [{"email": email} for email in args.attendees]
-        if args.reminders:
-            body["reminders"] = {
-                "useDefault": False,
-                "overrides": [{"method": r.method, "minutes": r.minutes_before_start} for r in args.reminders],
-            }
-        created = self._service.events().insert(calendarId=args.calendar_id, body=body).execute()
-        return CreateCalendarEventResult(event_id=created["id"], html_link=created["htmlLink"])
-
-
-def _event_date_time(value: EventDateTime) -> dict[str, str]:
-    if value.date is not None:
-        return {"date": value.date}
-    # enforced by EventDateTime's validator
-    assert value.date_time is not None
-    assert value.time_zone is not None
-    return {"dateTime": value.date_time, "timeZone": value.time_zone}
+        body = _EventInsert(
+            summary=args.summary,
+            start=_EventDateTime.of(args.start),
+            end=_EventDateTime.of(args.end),
+            description=args.description,
+            location=args.location,
+            attendees=[_Attendee(email=email) for email in args.attendees] or None,
+            reminders=_Reminders(
+                use_default=False,
+                overrides=[_ReminderOverride(method=r.method, minutes=r.minutes_before_start) for r in args.reminders],
+            )
+            if args.reminders
+            else None,
+        )
+        created = (
+            self._service.events()
+            .insert(calendarId=args.calendar_id, body=body.model_dump(by_alias=True, exclude_none=True))
+            .execute()
+        )
+        return CreateCalendarEventResult.model_validate(created)
