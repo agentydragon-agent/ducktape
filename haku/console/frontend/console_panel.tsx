@@ -1,4 +1,4 @@
-import { Badge, Button, Group, SegmentedControl, Stack, Text, Textarea } from "@mantine/core";
+import { ActionIcon, Badge, Button, Group, Indicator, SegmentedControl, Stack, Text, Textarea } from "@mantine/core";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -8,14 +8,17 @@ import {
   geolocationApprovalBody,
   geolocationApprovalTitle,
   recentToolCallCountdown,
+  shortDate,
+  statusColor,
   type GeolocationApproval,
   type RecentToolCall,
   terminalStatusLabel,
 } from "./approval_state.ts";
-import type { McpOperatorAuthStatus, PendingApproval, ToolCallRecord } from "./client.ts";
+import type { McpOperatorAuthStatus, PendingApproval } from "./client.ts";
 import { Field } from "./field.tsx";
+import { HistoryIcon, MenuIcon } from "./icons.tsx";
 import { ACTION_COLOR } from "./theme.ts";
-import { toolPreview } from "./tool_previews.tsx";
+import { ToolArgumentsField } from "./tool_arguments_field.tsx";
 
 export type ShellDrawerTab = "approvals" | "access";
 
@@ -37,6 +40,7 @@ export interface ShellDrawerProps {
   onApproveGeolocation: (approval: GeolocationApproval) => void;
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onDismissRecentToolCall: (toolCallId: string) => void;
+  onOpenToolCalls: () => void;
   geoGranted: boolean;
   tracking: boolean;
   onWithdrawGeolocation: () => void;
@@ -49,8 +53,7 @@ export interface ShellDrawerProps {
 export interface ShellControlsProps {
   pendingCount: number;
   opened: boolean;
-  activeTab: ShellDrawerTab;
-  onOpenTab: (tab: ShellDrawerTab) => void;
+  onToggle: () => void;
 }
 
 // zIndex maxed so shell chrome sits above the full-page iframe; controls are one below.
@@ -69,18 +72,6 @@ function useArmed(identity: string | null): boolean {
     return () => window.clearTimeout(t);
   }, [identity]);
   return armed;
-}
-
-function shortDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-}
-
-function statusColor(status: ToolCallRecord["status"]): string {
-  if (status === "ok") return "teal";
-  if (status === "error") return "red";
-  if (status === "denied") return "gray";
-  return "blue";
 }
 
 function openOnCardKeyDown(e: KeyboardEvent<HTMLElement>, onOpen: () => void) {
@@ -103,43 +94,32 @@ function RecentCountdown({ recent, nowMs }: { recent: RecentToolCall; nowMs: num
   );
 }
 
-export function ShellControls({ pendingCount, opened, activeTab, onOpenTab }: ShellControlsProps) {
+// The one persistent piece of shell chrome over the framed haku-ui: a generic panel
+// toggle. The count of pending approvals surfaces as a pulsing red callout on the icon —
+// a "something needs you" light — without spelling the drawer's contents onto the button.
+export function ShellControls({ pendingCount, opened, onToggle }: ShellControlsProps) {
   return (
     <Group className="haku-shell-controls" gap="xs" style={{ zIndex: PANEL_Z - 1 }}>
-      <Button
-        size="xs"
-        variant={opened && activeTab === "approvals" ? "filled" : "default"}
-        color={ACTION_COLOR}
-        onClick={() => onOpenTab("approvals")}
-        rightSection={
-          pendingCount > 0 ? (
-            <Badge size="xs" color="red" variant="filled">
-              {pendingCount}
-            </Badge>
-          ) : null
-        }
+      <Indicator
+        color="red"
+        size={16}
+        offset={4}
+        processing
+        disabled={pendingCount === 0}
+        label={pendingCount > 0 ? pendingCount : undefined}
       >
-        Approvals
-      </Button>
+        <ActionIcon
+          size="lg"
+          variant={opened ? "filled" : "default"}
+          color={ACTION_COLOR}
+          onClick={onToggle}
+          aria-label={opened ? "Close console panel" : "Open console panel"}
+        >
+          <MenuIcon />
+        </ActionIcon>
+      </Indicator>
     </Group>
   );
-}
-
-/** Arguments field for a tool-call approval/result: a per-tool-type widget
- * (google_tool_previews.tsx) when one matches, else the generic raw-JSON view. */
-function ToolArgumentsField({
-  serverId,
-  toolName,
-  args,
-  argumentsJson,
-}: {
-  serverId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-  argumentsJson: string;
-}) {
-  const nice = toolPreview(serverId, toolName, args);
-  return <Field label="Arguments">{nice ?? <pre className="haku-shell-json">{argumentsJson}</pre>}</Field>;
 }
 
 function ToolApprovalDetail({
@@ -295,10 +275,13 @@ function ToolApprovalCard({
   deciding: boolean;
   onSelect: () => void;
   onApprove: () => void;
-  onDeny: () => void;
+  onDeny: (reason?: string) => void;
 }) {
   const fields = approvalDisplayFields(approval);
   const armed = useArmed(`card:${approval.tool_call_id}`);
+  // An always-visible optional reason field so a single Deny click can carry a "why"
+  // straight from the card, without opening the detail view.
+  const [denyReason, setDenyReason] = useState("");
   return (
     <section
       className={`haku-shell-card haku-shell-approval-card ${selected ? "haku-shell-card-active" : ""}`}
@@ -329,20 +312,34 @@ function ToolApprovalCard({
           </Badge>
         </Group>
       </div>
-      <Group
-        justify="flex-end"
-        gap="xs"
-        mt="xs"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-      >
-        <Button size="compact-xs" variant="light" color="red" disabled={deciding || !armed} onClick={onDeny}>
-          Deny
-        </Button>
-        <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
-          Approve
-        </Button>
-      </Group>
+      <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <Textarea
+          size="xs"
+          mt="xs"
+          label="Denial reason (optional)"
+          placeholder="Why are you denying this?"
+          autosize
+          minRows={1}
+          maxRows={4}
+          disabled={deciding}
+          value={denyReason}
+          onChange={(e) => setDenyReason(e.currentTarget.value)}
+        />
+        <Group justify="flex-end" gap="xs" mt="xs">
+          <Button
+            size="compact-xs"
+            variant="light"
+            color="red"
+            disabled={deciding || !armed}
+            onClick={() => onDeny(denyReason.trim() || undefined)}
+          >
+            Deny
+          </Button>
+          <Button size="compact-xs" color={ACTION_COLOR} disabled={deciding || !armed} onClick={onApprove}>
+            Approve
+          </Button>
+        </Group>
+      </div>
     </section>
   );
 }
@@ -624,7 +621,7 @@ function ApprovalsTab({
                 deciding={deciding.has(item.id)}
                 onSelect={() => onSelectApproval(item.id)}
                 onApprove={() => onApproveTool(item.approval)}
-                onDeny={() => onDenyTool(item.approval)}
+                onDeny={(reason) => onDenyTool(item.approval, reason)}
               />
             ) : (
               <GeolocationApprovalCard
@@ -787,6 +784,16 @@ export function ShellDrawer(props: ShellDrawerProps) {
                 { value: "access", label: "Access" },
               ]}
             />
+            <Button
+              size="xs"
+              variant="light"
+              color={ACTION_COLOR}
+              fullWidth
+              leftSection={<HistoryIcon />}
+              onClick={props.onOpenToolCalls}
+            >
+              Past tool calls
+            </Button>
           </section>
           <div className="haku-shell-scroll">
             {props.activeTab === "approvals" ? (
