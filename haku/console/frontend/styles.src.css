@@ -20,15 +20,18 @@
     --haku-shell-active-bg: #e7f4ef;
   }
   :root[data-mantine-color-scheme="dark"] {
-    --haku-page-bg: #0f1f1d;
-    --haku-panel-bg: #142724;
-    --haku-border: #3b5652;
-    --haku-code-bg: #172f2b;
-    --haku-code-fg: #e8f4f0;
+    /* Follow Mantine's neutral dark surfaces, as used by the location popover. The
+       shell used to tint every page and card dark green, which made this chrome
+       feel unrelated to both that popover and Haku's lavender/cream mark. */
+    --haku-page-bg: var(--mantine-color-dark-8);
+    --haku-panel-bg: var(--mantine-color-dark-7);
+    --haku-border: var(--mantine-color-dark-4);
+    --haku-code-bg: var(--mantine-color-dark-6);
+    --haku-code-fg: var(--mantine-color-gray-1);
     --haku-backdrop: rgb(0 0 0 / 68%);
     --haku-shell-shadow: rgb(0 0 0 / 45%);
-    --haku-shell-muted-bg: #1b2f2c;
-    --haku-shell-active-bg: #203d38;
+    --haku-shell-muted-bg: var(--mantine-color-dark-6);
+    --haku-shell-active-bg: var(--mantine-color-dark-5);
   }
   body {
     margin: 0;
@@ -158,9 +161,12 @@
 }
 
 .haku-shell-drawer {
-  width: min(32rem, calc(100vw - 0.75rem));
+  /* Leave the persistent control stack exposed at the right edge. The menu button is
+     the drawer's natural close toggle, just as the location pin remains beside its
+     popover. */
+  width: min(32rem, calc(100vw - 4.25rem));
   height: calc(100dvh - 1rem);
-  margin: 0.5rem;
+  margin: 0.5rem 3.75rem 0.5rem 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -321,8 +327,8 @@
 
 @media (max-width: 520px) {
   .haku-shell-drawer {
-    width: calc(100vw - 0.5rem);
+    width: calc(100vw - 4rem);
     height: calc(100dvh - 0.5rem);
-    margin: 0.25rem;
+    margin: 0.25rem 3.5rem 0.25rem 0.25rem;
   }
 }
