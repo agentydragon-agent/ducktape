@@ -192,8 +192,8 @@ js_library(
         ":field",
         ":json_preview",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_previews",
-        "//haku/console/frontend/tool_previews:variant",
+        "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
@@ -203,7 +203,19 @@ js_library(
     deps = [
         "//:node_modules/highlight.js",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_previews:variant",
+        "//haku/console/frontend/tool_rendering:variant",
+    ],
+)
+
+js_library(
+    name = "tool_result_field",
+    srcs = ["tool_result_field.tsx"],
+    deps = [
+        ":field",
+        "//:node_modules/react",
+        "//haku/console/frontend/tool_rendering",
+        "//haku/console/frontend/tool_rendering:result_entry",
+        "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
@@ -223,7 +235,7 @@ js_library(
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_previews",
+        "//haku/console/frontend/tool_rendering",
     ],
 )
 
@@ -232,14 +244,14 @@ js_library(
     srcs = ["tool_call_card.tsx"],
     deps = [
         ":approval_state",
-        ":field",
         ":tool_action_line",
         ":tool_arguments_field",
         ":tool_call_meta",
+        ":tool_result_field",
         ":variant_control",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_previews:variant",
+        "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
@@ -260,7 +272,7 @@ js_library(
         ":icons",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_previews:variant",
+        "//haku/console/frontend/tool_rendering:variant",
     ],
 )
 
@@ -394,8 +406,9 @@ filegroup(
         "tool_call_decision.ts",
         "tool_call_meta.tsx",
         "tool_calls_page.tsx",
+        "tool_result_field.tsx",
         "variant_control.tsx",
-        "//haku/console/frontend/tool_previews:tailwind_srcs",
+        "//haku/console/frontend/tool_rendering:tailwind_srcs",
     ],
 )
 
@@ -476,7 +489,7 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//:node_modules/react-dom",
-        "//haku/console/frontend/tool_previews",
+        "//haku/console/frontend/tool_rendering",
     ],
 )
 
@@ -561,14 +574,18 @@ tsc_bin.tsc_test(
         ":screenshot_harness_lib",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
-        "//haku/console/frontend/tool_previews:gmail_test",
-        "//haku/console/frontend/tool_previews:google_calendar_test",
-        "//haku/console/frontend/tool_previews:grocy_test",
-        "//haku/console/frontend/tool_previews:haku_routine_test",
-        "//haku/console/frontend/tool_previews:index_test",
-        "//haku/console/frontend/tool_previews:kubectl_test",
-        "//haku/console/frontend/tool_previews:tana_test",
-        "//haku/console/frontend/tool_previews:variant_test",
+        "//haku/console/frontend/tool_rendering:gmail_requests_test",
+        "//haku/console/frontend/tool_rendering:google_calendar_requests_test",
+        "//haku/console/frontend/tool_rendering:grocy_requests_test",
+        "//haku/console/frontend/tool_rendering:haku_routine_requests_test",
+        "//haku/console/frontend/tool_rendering:index_test",
+        "//haku/console/frontend/tool_rendering:kubectl_requests_test",
+        "//haku/console/frontend/tool_rendering:tana_requests_test",
+        "//haku/console/frontend/tool_rendering:variant_test",
+        "//haku/console/frontend/tool_rendering:result_entry_test",
+        "//haku/console/frontend/tool_rendering:gmail_responses_test",
+        "//haku/console/frontend/tool_rendering:google_calendar_responses_test",
+        "//haku/console/frontend/tool_rendering:grocy_responses_test",
     ],
     tags = ["lint"],
 )
@@ -602,13 +619,17 @@ vitest_bin.vitest_test(
         ":tool_call_decision",
         "//:node_modules",
         "//:node_modules/@haku/console-bridge",
-        "//haku/console/frontend/tool_previews:gmail_test",
-        "//haku/console/frontend/tool_previews:google_calendar_test",
-        "//haku/console/frontend/tool_previews:grocy_test",
-        "//haku/console/frontend/tool_previews:haku_routine_test",
-        "//haku/console/frontend/tool_previews:index_test",
-        "//haku/console/frontend/tool_previews:kubectl_test",
-        "//haku/console/frontend/tool_previews:tana_test",
-        "//haku/console/frontend/tool_previews:variant_test",
+        "//haku/console/frontend/tool_rendering:gmail_requests_test",
+        "//haku/console/frontend/tool_rendering:gmail_responses_test",
+        "//haku/console/frontend/tool_rendering:google_calendar_requests_test",
+        "//haku/console/frontend/tool_rendering:google_calendar_responses_test",
+        "//haku/console/frontend/tool_rendering:grocy_requests_test",
+        "//haku/console/frontend/tool_rendering:grocy_responses_test",
+        "//haku/console/frontend/tool_rendering:haku_routine_requests_test",
+        "//haku/console/frontend/tool_rendering:index_test",
+        "//haku/console/frontend/tool_rendering:kubectl_requests_test",
+        "//haku/console/frontend/tool_rendering:result_entry_test",
+        "//haku/console/frontend/tool_rendering:tana_requests_test",
+        "//haku/console/frontend/tool_rendering:variant_test",
     ],
 )
