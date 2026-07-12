@@ -48,6 +48,11 @@ New local-inference follow-up: <local_dispatch_zone.md>. It adapts the existing 
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 
+New application follow-up: <kitchen_stocking_subagent.md>. Fleshes out the grocery-order
+bounded-write MCP line above into a first design pass for a kitchen/household-stocking
+subagent (operator, 2026-07-11) — a candidate first real workload for the oai or local zone,
+using the existing `grocy_mcp/eval` harness (already model-agnostic) to pick the tier.
+
 ## The oai zone (step 5)
 
 The middle trust level the two-level design lacked: OpenAI, subscription-billed, trusted
@@ -115,7 +120,24 @@ Still to wire:
   viewer-scoped key into `haku-sandbox`. Worker traffic is non-sensitive by construction
   (gated prompts), so Haku reading its own prompts/completions/costs is fine; a shared
   all-of-LiteLLM project would expose other consumers. The trace is the highest-value
-  "stuck/looping/burning budget" signal.
+  "stuck/looping/burning budget" signal. Concretely still missing (confirmed 2026-07-11):
+  today only the _main_ LiteLLM instance has `callbacks: ["langfuse_otel", "prometheus"]`
+  wired (`cluster/k8s/litellm/app/deployment.yaml`, one project: `langfuse-litellm-project`);
+  the workers-LiteLLM generator explicitly flags the gap
+  (`cluster/k8s/haku/dispatch/litellm/generate_workers_litellm.py`'s own
+  `# TODO(langfuse)` comment — `callbacks: ["prometheus"]` only). There's also **no
+  Terraform provider for Langfuse** (`tf/gitops/sso-providers/provider_langfuse.tf` is only
+  the Authentik OIDC login client) — every project/key that exists today came from Langfuse
+  Helm's one-shot `LANGFUSE_INIT_*` headless-init env vars, not a reusable provisioner.
+  Standing up a second project needs either extending that one-shot mechanism (awkward — it
+  only runs at chart install) or a new provisioner hitting Langfuse's Admin/Projects API
+  directly (matching the pattern of `cluster/provisioners/` for grocy/matrix/inventree), then
+  reflecting the resulting viewer key into `haku-sandbox` via the standard emberstack
+  pattern. **Open question raised by the kitchen-stocking-subagent plan** (operator,
+  2026-07-11): one shared `haku-workers` project for all zone traffic, or per-domain
+  sub-projects (e.g. a dedicated "Haku kitchen" project) so traces filter cleanly per
+  subagent as more get built? Leaning toward per-domain once there's more than one real
+  workload, but that's a provisioner-design call, not decided here.
 - **Raw worker logs — pre-approved in principle, skipped at v1** (operator, 2026-07-02).
   Traces + status/events + the result blob cover v1; the case they answer poorly is
   "harness stuck vs. waiting on a long job." If that need materializes, grant Haku
