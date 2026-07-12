@@ -55,17 +55,26 @@ def make_client(fake: FakeGrocy) -> httpx.Client:
 
 
 def test_converges_only_drifted_users():
-    # agentydragon already ADMIN (no PUT), haku wrongly elevated (PUT back to
-    # empty), auragon absent (auto-created, then PUT to ADMIN).
-    fake = FakeGrocy({"agentydragon": {1}, "haku": {2}})
-    reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN"}, "auragon": {"ADMIN"}, "haku": set()}))
-    assert fake.puts == {"auragon": [1], "haku": []}
-    assert fake.user_permissions == {"agentydragon": {1}, "auragon": {1}, "haku": set()}
+    # agentydragon already at its full explicit set (no PUT), haku wrongly elevated
+    # (PUT back to empty), auragon absent (auto-created, then PUT to its full set).
+    fake = FakeGrocy({"agentydragon": {1, 2}, "haku": {2}})
+    reconcile(
+        make_client(fake),
+        Policy(
+            users={
+                "agentydragon": {"ADMIN", "MASTER_DATA_EDIT"},
+                "auragon": {"ADMIN", "MASTER_DATA_EDIT"},
+                "haku": set(),
+            }
+        ),
+    )
+    assert fake.puts == {"auragon": [1, 2], "haku": []}
+    assert fake.user_permissions == {"agentydragon": {1, 2}, "auragon": {1, 2}, "haku": set()}
 
 
 def test_unlisted_users_untouched():
-    fake = FakeGrocy({"agentydragon": {1}, "bystander": {2}})
-    reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN"}}))
+    fake = FakeGrocy({"agentydragon": {1, 2}, "bystander": {2}})
+    reconcile(make_client(fake), Policy(users={"agentydragon": {"ADMIN", "MASTER_DATA_EDIT"}}))
     assert fake.puts == {}
     assert fake.user_permissions["bystander"] == {2}
 
