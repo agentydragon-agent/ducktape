@@ -51,14 +51,59 @@ const zShoppingListItemOkRow = z.looseObject({
   qu_name: z.string().nullish(),
 });
 
+const zStockEntryEditOkRow = z.looseObject({
+  kind: z.literal("ok"),
+  entry: z.looseObject({
+    entry_id: z.number(),
+    product_name: z.string(),
+    amount: z.number(),
+    qu_name: z.string(),
+    location_name: z.string(),
+    best_before_date: z.string().nullish(),
+    open: z.boolean(),
+  }),
+  changes: z.record(z.string(), z.looseObject({ old: z.unknown(), new: z.unknown() })).nullish(),
+});
+const zStockEntryRow = z.looseObject({
+  product_name: z.string(),
+  amount: z.number(),
+  amount_opened: z.number(),
+  qu_name: z.string(),
+  location_name: z.string(),
+  best_before_date: z.string().nullish(),
+});
+const zNamedRow = z.looseObject({ id: z.number(), name: z.string() });
+const zQuantityUnitRow = zNamedRow.extend({ name_plural: z.string().nullish() });
+const zShoppingListGetResult = z.looseObject({
+  name: z.string(),
+  description: z.string().nullish(),
+  items: z.array(
+    z.looseObject({
+      item_id: z.number(),
+      product_name: z.string().nullish(),
+      amount: z.number(),
+      qu_name: z.string().nullish(),
+      note: z.string().nullish(),
+      done: z.boolean(),
+    })
+  ),
+});
+
 const zStockAddResult = z.array(z.union([zStockAddOkRow, zFailedRow]));
 const zProductsCreateResult = z.array(z.union([zProductsCreateOkRow, zFailedRow]));
 const zShoppingListItemsAddResult = z.array(z.union([zShoppingListItemOkRow, zFailedRow]));
+const zStockEntryEditResult = z.array(z.union([zStockEntryEditOkRow, zFailedRow]));
+const zStockGetResult = z.array(zStockEntryRow);
+const zProductsListResult = z.array(zNamedRow);
+const zQuantityUnitsListResult = z.array(zQuantityUnitRow);
+const zSystemInfoResult = z.looseObject({});
+const zShoppingListItemsRemoveResult = z.array(z.union([zShoppingListItemOkRow, zFailedRow]));
 
 type FailedRow = z.infer<typeof zFailedRow>;
 type StockAddOkRow = z.infer<typeof zStockAddOkRow>;
 type ProductsCreateOkRow = z.infer<typeof zProductsCreateOkRow>;
 type ShoppingListItemOkRow = z.infer<typeof zShoppingListItemOkRow>;
+type StockEntryEditOkRow = z.infer<typeof zStockEntryEditOkRow>;
 
 // The zFailedRow refine guarantees a non-"ok" kind at runtime, but zod types it as plain
 // `string` (and TS doesn't narrow a generic union by discriminant), so the ok/failed split
@@ -236,9 +281,166 @@ function ShoppingListItemsAddResultView({
   );
 }
 
+function StockEntryEditResultRow({ row }: { row: StockEntryEditOkRow }) {
+  return (
+    <Stack gap={2}>
+      <Group gap={6}>
+        <Text span fw={600}>
+          {row.entry.product_name}
+        </Text>
+        <Text span>
+          {row.entry.amount} {row.entry.qu_name}
+        </Text>
+        <Text span c="dimmed">
+          in {row.entry.location_name} · entry #{row.entry.entry_id}
+        </Text>
+        {row.entry.open && (
+          <Badge size="sm" variant="outline">
+            opened
+          </Badge>
+        )}
+      </Group>
+      {row.changes && (
+        <Text size="sm" c="dimmed">
+          Changed:{" "}
+          {Object.keys(row.changes)
+            .map((field) => field.replaceAll("_", " "))
+            .join(", ")}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function StockEntryEditResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zStockEntryEditResult>>) {
+  return (
+    <BatchResultView
+      rows={result}
+      variant={variant}
+      verb="edited"
+      rowName={(row) => row.entry.product_name}
+      RowView={StockEntryEditResultRow}
+    />
+  );
+}
+
+function StockGetResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zStockGetResult>>) {
+  const rows = variant === "compact" ? result.slice(0, COMPACT_ITEM_LIMIT) : result;
+  return (
+    <Stack gap={4}>
+      <Text size="sm" fw={600}>
+        {result.length} stock {result.length === 1 ? "item" : "items"}
+      </Text>
+      {rows.map((row, i) => (
+        <Group gap={6} key={i}>
+          <Text span fw={600}>
+            {row.product_name}
+          </Text>
+          <Text span>
+            {row.amount} {row.qu_name}
+          </Text>
+          <Text span c="dimmed">
+            in {row.location_name}
+          </Text>
+          {row.amount_opened > 0 && (
+            <Badge size="sm" variant="outline">
+              {row.amount_opened} opened
+            </Badge>
+          )}
+        </Group>
+      ))}
+      <MoreLine count={result.length - rows.length} />
+    </Stack>
+  );
+}
+
+function NamedRowsResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zProductsListResult>>) {
+  const rows = variant === "compact" ? result.slice(0, COMPACT_ITEM_LIMIT) : result;
+  return (
+    <Stack gap={2}>
+      <Text size="sm" fw={600}>
+        {result.length} found
+      </Text>
+      {rows.map((row) => (
+        <Text key={row.id} size="sm">
+          {row.name}{" "}
+          <Text span c="dimmed">
+            #{row.id}
+          </Text>
+        </Text>
+      ))}
+      <MoreLine count={result.length - rows.length} />
+    </Stack>
+  );
+}
+
+function QuantityUnitsResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zQuantityUnitsListResult>>) {
+  return <NamedRowsResultView result={result} variant={variant} />;
+}
+
+function ShoppingListGetResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zShoppingListGetResult>>) {
+  const rows = variant === "compact" ? result.items.slice(0, COMPACT_ITEM_LIMIT) : result.items;
+  return (
+    <Stack gap={4}>
+      <Text fw={600}>
+        {result.name} · {result.items.length} items
+      </Text>
+      {rows.map((row) => (
+        <Group gap={6} key={row.item_id}>
+          <Text span td={row.done ? "line-through" : undefined}>
+            {row.product_name ?? row.note ?? "(note)"}
+          </Text>
+          <Text span c="dimmed">
+            × {row.amount}
+            {row.qu_name ? ` ${row.qu_name}` : ""} · #{row.item_id}
+          </Text>
+        </Group>
+      ))}
+      <MoreLine count={result.items.length - rows.length} />
+    </Stack>
+  );
+}
+
+function SystemInfoResultView({ result }: ResultPreviewProps<z.infer<typeof zSystemInfoResult>>) {
+  return (
+    <Stack gap={2}>
+      {Object.entries(result).map(([key, value]) => (
+        <Text size="sm" key={key}>
+          <Text span c="dimmed">
+            {key.replaceAll("_", " ")}:{" "}
+          </Text>
+          {String(value)}
+        </Text>
+      ))}
+    </Stack>
+  );
+}
+
+function ShoppingListItemsRemoveResultView({
+  result,
+  variant,
+}: ResultPreviewProps<z.infer<typeof zShoppingListItemsRemoveResult>>) {
+  return (
+    <BatchResultView
+      rows={result}
+      variant={variant}
+      verb="removed"
+      rowName={shoppingItemName}
+      RowView={ShoppingListItemsAddResultRow}
+    />
+  );
+}
+
 /** Per-tool result widgets for the `grocy-sf` server's list-returning batch tools. */
 export const grocyResultPreviews = {
   stock_add: defineResultPreview(zStockAddResult, StockAddResultView),
+  stock_entry_edit: defineResultPreview(zStockEntryEditResult, StockEntryEditResultView),
+  stock_get: defineResultPreview(zStockGetResult, StockGetResultView),
+  products_list: defineResultPreview(zProductsListResult, NamedRowsResultView),
+  quantity_units_list: defineResultPreview(zQuantityUnitsListResult, QuantityUnitsResultView),
+  get_system_info: defineResultPreview(zSystemInfoResult, SystemInfoResultView),
+  shopping_list_get: defineResultPreview(zShoppingListGetResult, ShoppingListGetResultView),
+  shopping_list_items_remove: defineResultPreview(zShoppingListItemsRemoveResult, ShoppingListItemsRemoveResultView),
   products_create: defineResultPreview(zProductsCreateResult, ProductsCreateResultView),
   shopping_list_items_add: defineResultPreview(zShoppingListItemsAddResult, ShoppingListItemsAddResultView),
 } satisfies Record<string, ToolResultPreview>;

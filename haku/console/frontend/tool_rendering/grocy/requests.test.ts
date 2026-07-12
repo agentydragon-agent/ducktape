@@ -35,6 +35,29 @@ describe("grocyPreviews", () => {
     }
   });
 
+  it("renders stock_entry_edit partial updates and cleared fields, in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      expect(
+        renderPreview(
+          grocyPreviews.stock_entry_edit,
+          { items: [{ entry_id: 189, price: 9.99, location: "Pantry", open: true, clear_fields: ["note"] }] },
+          variant
+        )
+      ).not.toBeNull();
+    }
+  });
+
+  it("renders stock/list/system reads and shopping-list removal", () => {
+    const cases = [
+      [grocyPreviews.stock_get, { products: ["Oats"], locations: [2] }],
+      [grocyPreviews.products_list, { detail: "brief" }],
+      [grocyPreviews.quantity_units_list, { detail: "full" }],
+      [grocyPreviews.get_system_info, {}],
+      [grocyPreviews.shopping_list_items_remove, { item_ids: [3, 7] }],
+    ] as const;
+    for (const [preview, args] of cases) expect(renderPreview(preview, args, "detailed")).not.toBeNull();
+  });
+
   it("renders shopping_list_get in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(renderPreview(grocyPreviews.shopping_list_get, { shopping_list: "Weekly" }, variant)).not.toBeNull();

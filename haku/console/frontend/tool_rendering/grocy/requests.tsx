@@ -22,7 +22,7 @@
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
-import type { z } from "zod";
+import { z } from "zod";
 
 import { fetchGrocyReference, type GrocyReferenceResponse } from "../../grocy_client.ts";
 import { mcpToolSchema } from "../../mcp_tool_schema.ts";
@@ -37,22 +37,35 @@ export const GROCY_SERVER_ID = "grocy-sf";
 // come through as `string | number`; a `date` field as `string`; a `set` as an array.
 const zStockAddArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_add");
 const zStockConsumeArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_consume");
+const zStockEntryEditArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_entry_edit");
+const zStockGetArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_get");
+const zProductsListArgs = mcpToolSchema(GROCY_SERVER_ID, "products_list");
+const zQuantityUnitsListArgs = mcpToolSchema(GROCY_SERVER_ID, "quantity_units_list");
+const zGetSystemInfoArgs = z.strictObject({});
 const zProductsCreateArgs = mcpToolSchema(GROCY_SERVER_ID, "products_create");
 const zProductsEditArgs = mcpToolSchema(GROCY_SERVER_ID, "products_edit");
 const zShoppingListGetArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_get");
 const zShoppingListItemsAddArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_items_add");
+const zShoppingListItemsRemoveArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_items_remove");
 const zShoppingListItemEditArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_item_edit");
 
 type StockAddArgs = z.infer<typeof zStockAddArgs>;
 type StockConsumeArgs = z.infer<typeof zStockConsumeArgs>;
+type StockEntryEditArgs = z.infer<typeof zStockEntryEditArgs>;
+type StockGetArgs = z.infer<typeof zStockGetArgs>;
+type ProductsListArgs = z.infer<typeof zProductsListArgs>;
+type QuantityUnitsListArgs = z.infer<typeof zQuantityUnitsListArgs>;
+type GetSystemInfoArgs = z.infer<typeof zGetSystemInfoArgs>;
 type ProductsCreateArgs = z.infer<typeof zProductsCreateArgs>;
 type ProductsEditArgs = z.infer<typeof zProductsEditArgs>;
 type ShoppingListGetArgs = z.infer<typeof zShoppingListGetArgs>;
 type ShoppingListItemsAddArgs = z.infer<typeof zShoppingListItemsAddArgs>;
+type ShoppingListItemsRemoveArgs = z.infer<typeof zShoppingListItemsRemoveArgs>;
 type ShoppingListItemEditArgs = z.infer<typeof zShoppingListItemEditArgs>;
 
 type AddItem = StockAddArgs["items"][number];
 type ConsumeItem = StockConsumeArgs["items"][number];
+type StockEntryEditItem = StockEntryEditArgs["items"][number];
 type CreateProductItem = ProductsCreateArgs["items"][number];
 type EditProductItem = ProductsEditArgs["items"][number];
 type ShoppingItem = ShoppingListItemsAddArgs["items"][number];
@@ -326,6 +339,101 @@ function ChangeLine({ change }: { change: FieldChange }) {
   );
 }
 
+function StockEntryEditRow({
+  item,
+  reference,
+  variant,
+}: {
+  item: StockEntryEditItem;
+  reference: GrocyReferenceResponse | null;
+  variant: PreviewVariant;
+}) {
+  const changes: FieldChange[] = [];
+  const add = (key: string, label: string, value: unknown) => {
+    if (value != null) changes.push({ key, label, old: null, next: String(value) });
+  };
+  add("amount", "amount", item.amount);
+  add("best_before_date", "best before", item.best_before_date);
+  add("purchased_date", "purchased", item.purchased_date);
+  add("price", "price", item.price);
+  if (item.location != null) {
+    changes.push({
+      key: "location",
+      label: "location",
+      old: null,
+      next: resolveName(reference?.locations, item.location),
+    });
+  }
+  if (item.open != null) add("open", "opened", item.open ? "yes" : "no");
+  add("note", "note", item.note);
+  for (const field of item.clear_fields ?? []) {
+    changes.push({ key: `clear_${field}`, label: field.replaceAll("_", " "), old: null, next: CLEARED });
+  }
+  const shown = variant === "compact" ? changes.slice(0, 2) : changes;
+  return (
+    <Stack gap={2}>
+      <Text fw={600}>Stock entry #{item.entry_id}</Text>
+      {shown.map((change) => (
+        <ChangeLine key={change.key} change={change} />
+      ))}
+      <MoreLine count={changes.length - shown.length} />
+    </Stack>
+  );
+}
+
+function StockEntryEditPreview({ args, variant }: PreviewProps<StockEntryEditArgs>) {
+  return (
+    <GrocyItemsPreview
+      items={args.items}
+      variant={variant}
+      gap={6}
+      renderRow={(item, reference, v) => <StockEntryEditRow item={item} reference={reference} variant={v} />}
+    />
+  );
+}
+
+function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
+  const { reference, error } = useGrocyReference();
+  const products = (args.products ?? []).map((value) => resolveName(reference?.products, value));
+  const locations = (args.locations ?? []).map((value) => resolveName(reference?.locations, value));
+  return (
+    <Stack gap={2}>
+      <Text>{products.length === 0 && locations.length === 0 ? "All current stock" : "Filtered current stock"}</Text>
+      {products.length > 0 && (
+        <Text size="sm" c="dimmed">
+          Products: {products.join(", ")}
+        </Text>
+      )}
+      {locations.length > 0 && (
+        <Text size="sm" c="dimmed">
+          Locations: {locations.join(", ")}
+        </Text>
+      )}
+      <GrocyReferenceLoadError error={error} />
+    </Stack>
+  );
+}
+
+function DetailPreview({ detail, noun }: { detail: "brief" | "full"; noun: string }) {
+  return <Text>{detail === "full" ? `Full ${noun} records` : `${noun[0].toUpperCase()}${noun.slice(1)} names`}</Text>;
+}
+
+function ProductsListPreview({ args }: PreviewProps<ProductsListArgs>) {
+  return <DetailPreview detail={args.detail ?? "brief"} noun="product" />;
+}
+
+function QuantityUnitsListPreview({ args }: PreviewProps<QuantityUnitsListArgs>) {
+  return <DetailPreview detail={args.detail ?? "brief"} noun="quantity unit" />;
+}
+
+function GetSystemInfoPreview(_: PreviewProps<GetSystemInfoArgs>) {
+  return <Text>Grocy server version and system details</Text>;
+}
+
+function ShoppingListItemsRemovePreview({ args }: PreviewProps<ShoppingListItemsRemoveArgs>) {
+  return <Text>Shopping-list item IDs: {args.item_ids.join(", ")}</Text>;
+}
+
 type NameMap = { id: number; name: string }[] | undefined;
 
 // The old value to show for a field: `null` while the reference loads (so no old side renders),
@@ -576,6 +684,17 @@ export const grocyPreviews = {
   stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview, (a) => ({
     text: `Grocy: Remove ${plural(a.items.length, "item")} from stock`,
   })),
+  stock_entry_edit: definePreview(zStockEntryEditArgs, StockEntryEditPreview, (a) => ({
+    text: `Grocy: Edit ${a.items.length} stock ${a.items.length === 1 ? "entry" : "entries"}`,
+  })),
+  stock_get: definePreview(zStockGetArgs, StockGetPreview, () => ({ text: "Grocy: View stock" })),
+  products_list: definePreview(zProductsListArgs, ProductsListPreview, () => ({ text: "Grocy: List products" })),
+  quantity_units_list: definePreview(zQuantityUnitsListArgs, QuantityUnitsListPreview, () => ({
+    text: "Grocy: List quantity units",
+  })),
+  get_system_info: definePreview(zGetSystemInfoArgs, GetSystemInfoPreview, () => ({
+    text: "Grocy: View system information",
+  })),
   products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview, (a) => ({
     text: `Grocy: Create ${plural(a.items.length, "product")}`,
   })),
@@ -587,6 +706,10 @@ export const grocyPreviews = {
   })),
   shopping_list_items_add: definePreview(zShoppingListItemsAddArgs, ShoppingListItemsAddPreview, (a) => ({
     text: `Grocy: Add ${plural(a.items.length, "item")} to shopping list`,
+  })),
+  shopping_list_items_remove: definePreview(zShoppingListItemsRemoveArgs, ShoppingListItemsRemovePreview, (a) => ({
+    text: `Grocy: Remove ${plural(a.item_ids.length, "shopping-list item")}`,
+    destructive: true,
   })),
   shopping_list_item_edit: definePreview(zShoppingListItemEditArgs, ShoppingListItemEditPreview, () => ({
     text: "Grocy: Edit shopping list item",
