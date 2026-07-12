@@ -29,7 +29,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: bootstrap
-          image: ghcr.io/agentydragon/stalwart:devel-20260702101457-150370a # {"$imagepolicy": "flux-system:stalwart"}
+          image: ghcr.io/agentydragon/stalwart:devel-20260712224645-ee1a7eb # {"$imagepolicy": "flux-system:stalwart"}
           command: ["/bin/sh", "/etc/stalwart/bootstrap.sh"]
           env:
             - name: STALWART_DB_PASSWORD
