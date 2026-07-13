@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
+from aiquota.providers.client import ProviderClientFactory
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
 logger = logging.getLogger(__name__)
@@ -22,10 +23,10 @@ USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 OAUTH_SCOPES = ["user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"]
-SHORT_WINDOW_SECS = 5 * 3600
-LONG_WINDOW_SECS = 7 * 86400
 TOKEN_EXPIRY_SKEW_SECS = 30
 API_TIMEOUT_SECS = 5.0
+SHORT_WINDOW_SECS = 5 * 3600
+LONG_WINDOW_SECS = 7 * 86400
 
 
 class ClaudeSettings(BaseModel):
@@ -138,11 +139,19 @@ def _spend_to_extra_spend(spend: Spend | None) -> ExtraSpend | None:
     )
 
 
+def _to_success(usage: UsageResponse) -> FetchSuccess:
+    windows = (_to_window(usage.five_hour, SHORT_WINDOW_SECS), _to_window(usage.seven_day, LONG_WINDOW_SECS))
+    return FetchSuccess(
+        windows=[window for window in windows if window], extra_spend=_spend_to_extra_spend(usage.spend)
+    )
+
+
 class ClaudeProvider(Provider):
     name = "claude"
 
-    def __init__(self, settings: ClaudeSettings) -> None:
+    def __init__(self, settings: ClaudeSettings, client_factory: ProviderClientFactory) -> None:
         self.settings = settings
+        self.client_factory = client_factory
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -152,7 +161,7 @@ class ClaudeProvider(Provider):
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
-            async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+            async with self.client_factory(self.name, {USAGE_URL}, API_TIMEOUT_SECS) as client:
                 if _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
@@ -165,9 +174,4 @@ class ClaudeProvider(Provider):
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 
-        short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
-        long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
-        extra = _spend_to_extra_spend(usage.spend)
-        return ProviderFetch(
-            fetched_at=now, result=FetchSuccess(short_window=short, long_window=long, extra_spend=extra)
-        )
+        return ProviderFetch(fetched_at=now, result=_to_success(usage))

@@ -27,6 +27,7 @@ py_library(
         ":models",
         "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
+        "//aiquota/providers:client",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
@@ -78,6 +79,7 @@ py_test(
     imports = [".."],
     deps = [
         ":models",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -100,6 +102,9 @@ py_test(
     deps = [
         ":cache",
         ":models",
+        "//:conftest",
+        "//aiquota/providers:base",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

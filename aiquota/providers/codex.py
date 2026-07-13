@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
+from aiquota.providers.client import ProviderClientFactory
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,18 @@ class _RateLimit(BaseModel):
     secondary_window: _WindowData | None = None
 
 
+class _AdditionalRateLimit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    limit_name: str
+    rate_limit: _RateLimit
+
+
 class _UsageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rate_limit: _RateLimit | None = None
+    additional_rate_limits: list[_AdditionalRateLimit] = []
 
 
 class _TokenRefreshResponse(BaseModel):
@@ -230,11 +239,13 @@ async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageRes
     return _UsageResponse.model_validate(resp.json())
 
 
-def _to_window(w: _WindowData | None) -> QuotaWindow | None:
+def _to_window(w: _WindowData | None, name: str | None = None, display: bool = True) -> QuotaWindow | None:
     if w is None or w.limit_window_seconds <= 0:
         return None
     reset_secs = max(0, w.reset_after_seconds)
     return QuotaWindow(
+        name=name,
+        display=display,
         used_percent=w.used_percent,
         reset_seconds=reset_secs,
         window_seconds=w.limit_window_seconds,
@@ -242,11 +253,26 @@ def _to_window(w: _WindowData | None) -> QuotaWindow | None:
     )
 
 
+def _to_success(usage: _UsageResponse) -> FetchSuccess:
+    windows: list[QuotaWindow | None] = []
+    if usage.rate_limit:
+        windows.extend((_to_window(usage.rate_limit.primary_window), _to_window(usage.rate_limit.secondary_window)))
+    for additional in usage.additional_rate_limits:
+        windows.extend(
+            (
+                _to_window(additional.rate_limit.primary_window, additional.limit_name, display=False),
+                _to_window(additional.rate_limit.secondary_window, additional.limit_name, display=False),
+            )
+        )
+    return FetchSuccess(windows=[window for window in windows if window])
+
+
 class CodexProvider(Provider):
     name = "codex"
 
-    def __init__(self, settings: CodexSettings) -> None:
+    def __init__(self, settings: CodexSettings, client_factory: ProviderClientFactory) -> None:
         self.settings = settings
+        self.client_factory = client_factory
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
@@ -254,7 +280,7 @@ class CodexProvider(Provider):
         if not auth:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no codex auth found"))
 
-        async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+        async with self.client_factory(self.name, {USAGE_URL}, API_TIMEOUT_SECS) as client:
             if _auth_stale(auth):
                 try:
                     auth = await _refresh_or_reload(auth, client)
@@ -280,7 +306,4 @@ class CodexProvider(Provider):
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "codex usage fetch"))
 
-        rl = usage.rate_limit
-        short = _to_window(rl.primary_window if rl else None)
-        long = _to_window(rl.secondary_window if rl else None)
-        return ProviderFetch(fetched_at=now, result=FetchSuccess(short_window=short, long_window=long))
+        return ProviderFetch(fetched_at=now, result=_to_success(usage))
