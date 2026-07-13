@@ -310,7 +310,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--endpoint", required=True)
     result.add_argument("--bucket", required=True)
     result.add_argument("--public-base-url", required=True)
-    result.add_argument("--pull-request", type=int, required=True)
+    result.add_argument("--pull-request", type=int)
     return result
 
 
@@ -318,7 +318,7 @@ def main() -> None:
     args = parser().parse_args()
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
-        raise ValueError("GITHUB_TOKEN is required to maintain the pull-request comment")
+        raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
     workflow_url = current_workflow_url()
 
     try:
@@ -345,12 +345,13 @@ def main() -> None:
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
         public_page_url = f"{public_url}index.html"
         summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
-        upsert_pull_request_comment(
-            repository=args.repository,
-            pull_request=args.pull_request,
-            body=success_comment_body(repository=args.repository, commit_sha=args.sha, url=public_url, tests=tests),
-            token=github_token,
-        )
+        if args.pull_request is not None:
+            upsert_pull_request_comment(
+                repository=args.repository,
+                pull_request=args.pull_request,
+                body=success_comment_body(repository=args.repository, commit_sha=args.sha, url=public_url, tests=tests),
+                token=github_token,
+            )
         publish_check_run(
             repository=args.repository,
             commit_sha=args.sha,
@@ -360,11 +361,14 @@ def main() -> None:
             token=github_token,
         )
     except Exception as error:
-        body = error_comment_body(repository=args.repository, commit_sha=args.sha, error=error)
         try:
-            upsert_pull_request_comment(
-                repository=args.repository, pull_request=args.pull_request, body=body, token=github_token
-            )
+            if args.pull_request is not None:
+                upsert_pull_request_comment(
+                    repository=args.repository,
+                    pull_request=args.pull_request,
+                    body=error_comment_body(repository=args.repository, commit_sha=args.sha, error=error),
+                    token=github_token,
+                )
             publish_check_run(
                 repository=args.repository,
                 commit_sha=args.sha,
