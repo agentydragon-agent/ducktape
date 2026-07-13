@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
-import threading
-from collections.abc import Generator
+import datetime
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
@@ -13,7 +12,6 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 import pytest_bazel
-import uvicorn
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
@@ -22,21 +20,20 @@ from mcp import types as mcp_types
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.orm import sessionmaker
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
-from testcontainers.postgres import PostgresContainer
+from starlette.routing import Route
 
-from haku.console.database_schema import metadata
+from haku.console.conftest import csrf_token, write_config
+from haku.console.database_schema import McpOperatorOAuthAssociation, metadata
 from haku.console.mcp_approval import AliveServerMetadata, McpMetadataProvider, McpToolExecutor, _mcp_result_to_json
 from haku.console.mcp_config import McpServerEntry
 from haku.console.tool_calls import ToolCallEventType, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
-from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.net import pick_free_port, wait_for_port
-from util.oci import load_oci_image
-from util.testing.postgres import force_drop_database_sync
+from util.net import pick_free_port
+from util.testing.asgi import serve_app_sync, serve_fastmcp
 
 
 def _test_mcp_server() -> FastMCP:
@@ -97,24 +94,6 @@ def _test_mcp_server() -> FastMCP:
         return [{"id": 5, "name": "Weekly"}]
 
     return server
-
-
-@contextmanager
-def _remote_mcp_url(server: FastMCP) -> Generator[str]:
-    port = pick_free_port()
-    mcp_app = server.http_app(path="/")
-    app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-    uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=uvicorn_server.run, daemon=True)
-    thread.start()
-    try:
-        wait_for_port("127.0.0.1", port, timeout_secs=10)
-        yield f"http://127.0.0.1:{port}/mcp"
-    finally:
-        uvicorn_server.should_exit = True
-        thread.join(timeout=10)
-        if thread.is_alive():
-            raise RuntimeError("test MCP server did not stop")
 
 
 @contextmanager
@@ -208,64 +187,33 @@ def _remote_oauth_url(*, static_client_id: str | None = None) -> Generator[str]:
     if static_client_id is None:
         routes.append(Route("/auth/register", register, methods=["POST"]))
     app = Starlette(routes=routes)
-    uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=uvicorn_server.run, daemon=True)
-    thread.start()
-    try:
-        wait_for_port("127.0.0.1", port, timeout_secs=10)
+    with serve_app_sync(app, port=port):
         yield base_url
-    finally:
-        uvicorn_server.should_exit = True
-        thread.join(timeout=10)
-        if thread.is_alive():
-            raise RuntimeError("test OAuth server did not stop")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _preload_postgres_images() -> None:
-    load_oci_image(RYUK)
-    load_oci_image(POSTGRES_18)
+# The Postgres testcontainer + per-test database fixtures (`db_url`, `migrated_db_url`, `make_client`)
+# live in conftest.py. `make_client` wires the app to a fresh migrated database automatically, so
+# tests only pass the overrides they exercise.
+
+# A static agent `haku` (bearer `tool-token`, acting as operator subject `op-haku`), referenced from
+# a config file's `static_agents` and resolved from these env vars — like the deploy.
+_AGENT_TOKEN = "tool-token"
+_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
+_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
+_STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
 
 
-@pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = PostgresContainer(image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres")
-    container.start()
-    try:
-        yield container
-    finally:
-        container.stop()
-
-
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
-
-
-@pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator[str]:
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_") or "haku_console_test"
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin_engine.dispose()
-
-    yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
-
-    force_drop_database_sync(postgres_admin_url, db_name)
+@pytest.fixture(autouse=True)
+def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
+    monkeypatch.setenv(_AGENT_OPERATOR_ENV, "op-haku")
 
 
 @pytest.fixture
 def mcp_server_url(monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
     monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
-    with _remote_mcp_url(_test_mcp_server()) as url:
+    with serve_fastmcp(_test_mcp_server()) as url:
         yield url
-
-
-def _test_app_overrides(db_url: str) -> dict[str, Any]:
-    return {"database_url": SecretStr(db_url)}
 
 
 def _alembic_config(conn: Connection) -> AlembicConfig:
@@ -304,67 +252,56 @@ def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
     }
 
 
+def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
+    """A console config dict for the given MCP servers, always carrying the `haku` static agent — a
+    console with no /mcp credential doesn't run (create_app raises), and the deploy always has it. So
+    an `/api/tool-calls` caller presenting its bearer authenticates as the agent; absent a
+    bearer/operator the endpoint 401s (under app-owned auth) rather than silently assuming operator."""
+    return {"mcp": {"servers": servers}, "static_agents": _STATIC_AGENTS}
+
+
 def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
-    path = tmp_path / "haku_console.yaml"
-    path.write_text(
-        f"""
-mcp:
-  servers:
-    - id: grocy-sf
-      server_url: {mcp_server_url}
-      bearer_token_secret: haku-console-grocy-sf-token
-    - id: smoke
-      server_url: {mcp_server_url}
-""",
-        encoding="utf-8",
-    )
-    return path
+    servers = [
+        {"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"},
+        {"id": "smoke", "server_url": mcp_server_url},
+    ]
+    return write_config(tmp_path / "haku_console.yaml", _config(servers))
+
+
+@pytest.fixture
+def console_config(tmp_path: Path, mcp_server_url: str) -> Path:
+    """The standard two-server console config (`grocy-sf` static-bearer + `smoke`) most tests use."""
+    return _config_file(tmp_path, mcp_server_url)
+
+
+@pytest.fixture
+def operator_client(make_operator_client: Callable[..., Any], console_config: Path) -> Generator[TestClient]:
+    """An operator-session client against the standard `console_config`, CSRF configured — the setup
+    the majority of operator-facing tests need. Tests with a bespoke config call `make_operator_client`
+    (or `make_client`) directly instead."""
+    with make_operator_client(config_file=console_config, csrf_secret=SecretStr("csrf")) as client:
+        yield client
 
 
 def _operator_oauth_config_file(tmp_path: Path, oauth_base_url: str) -> Path:
-    path = tmp_path / "haku_console_operator_oauth.yaml"
-    path.write_text(
-        f"""
-mcp:
-  servers:
-    - id: grocy-sf
-      server_url: {oauth_base_url}/mcp
-      operator_oauth: {{}}
-""",
-        encoding="utf-8",
-    )
-    return path
+    servers = [{"id": "grocy-sf", "server_url": f"{oauth_base_url}/mcp", "operator_oauth": {}}]
+    return write_config(tmp_path / "haku_console_operator_oauth.yaml", _config(servers))
 
 
 def _gmail_config_file(tmp_path: Path) -> Path:
-    path = tmp_path / "haku_console_gmail.yaml"
-    path.write_text("mcp:\n  servers:\n    - id: gmail\n", encoding="utf-8")
-    return path
+    return write_config(tmp_path / "haku_console_gmail.yaml", _config([{"id": "gmail"}]))
 
 
 def _operator_oauth_static_client_config_file(tmp_path: Path, oauth_base_url: str, client_id: str) -> Path:
-    path = tmp_path / "haku_console_operator_oauth_static.yaml"
-    path.write_text(
-        f"""
-mcp:
-  servers:
-    - id: grocy-sf
-      server_url: {oauth_base_url}/mcp
-      operator_oauth:
-        static_client_id: {client_id}
-""",
-        encoding="utf-8",
-    )
-    return path
-
-
-def _csrf(client: TestClient) -> str:
-    token = client.get("/api/capabilities/csrf").json()["csrf_token"]
-    assert isinstance(token, str)
-    return token
+    servers = [
+        {"id": "grocy-sf", "server_url": f"{oauth_base_url}/mcp", "operator_oauth": {"static_client_id": client_id}}
+    ]
+    return write_config(tmp_path / "haku_console_operator_oauth_static.yaml", _config(servers))
 
 
 def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
+    # An operator-originated submit; the client must carry an operator session (the `operator_client`
+    # fixture or `make_operator_client`).
     resp = client.post(
         "/api/tool-calls",
         json={
@@ -388,10 +325,7 @@ class RecordingExecutor:
         self, server: Any, tool_name: str, arguments: dict[str, Any], auth_token: str | None
     ) -> dict[str, Any]:
         self.auth_tokens.append(auth_token)
-        return {
-            "content": [{"type": "text", "text": f"{server.id}:{tool_name}:{arguments['items'][0]['amount']}"}],
-            "isError": False,
-        }
+        return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
 class RecordingMetadataProvider:
@@ -410,10 +344,8 @@ class EchoingExecutor:
         return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
-def test_reflection_lists_connected_servers_without_leaking_credentials(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
+def test_reflection_lists_connected_servers_without_leaking_credentials(make_client, console_config: Path) -> None:
+    with make_client(config_file=console_config) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     body = resp.json()
@@ -437,30 +369,22 @@ def test_reflection_lists_connected_servers_without_leaking_credentials(
     assert "bearer_token_secret" not in str(body)
 
 
-def test_operator_oauth_association_drives_tool_reflection(make_client, tmp_path: Path, db_url: str) -> None:
+def test_operator_oauth_association_drives_tool_reflection(make_operator_client, tmp_path: Path, db_url: str) -> None:
     metadata_provider = RecordingMetadataProvider()
     with (
         _remote_oauth_url() as oauth_url,
-        make_client(
+        make_operator_client(
             config_file=_operator_oauth_config_file(tmp_path, oauth_url),
             csrf_secret=SecretStr("csrf"),
             public_base_url="https://haku.test",
             tool_call_metadata_provider=metadata_provider,
-            **_test_app_overrides(db_url),
         ) as client,
     ):
-        before = client.get(
-            "/api/capabilities/mcp-servers", headers={"X-authentik-username": "operator@example.com"}
-        ).json()
-        started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
-        )
+        before = client.get("/api/capabilities/mcp-servers").json()
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         state = parse_qs(urlparse(started.json()["authorization_url"]).query)["state"][0]
         callback = client.get("/api/mcp/operator-auth/callback", params={"state": state, "code": "operator-code"})
-        after = client.get(
-            "/api/capabilities/mcp-servers", headers={"X-authentik-username": "operator@example.com"}
-        ).json()
+        after = client.get("/api/capabilities/mcp-servers").json()
 
     assert before["servers"][0]["status"] == "degraded"
     assert "Connect your grocy-sf MCP account" in before["servers"][0]["degraded_reason"]
@@ -470,23 +394,21 @@ def test_operator_oauth_association_drives_tool_reflection(make_client, tmp_path
     assert "bearer_token_secret" not in str(after)
 
 
-def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client, tmp_path: Path, db_url: str) -> None:
+def test_operator_oauth_static_client_id_skips_dynamic_registration(
+    make_operator_client, tmp_path: Path, db_url: str
+) -> None:
     """Mirrors kubectl-passthrough-mcp: fronted by Authentik, which has no DCR endpoint —
     dynamic registration would 401, so a configured static_client_id must skip it entirely.
     """
     with (
         _remote_oauth_url(static_client_id="preregistered-client") as oauth_url,
-        make_client(
+        make_operator_client(
             config_file=_operator_oauth_static_client_config_file(tmp_path, oauth_url, "preregistered-client"),
             csrf_secret=SecretStr("csrf"),
             public_base_url="https://haku.test",
-            **_test_app_overrides(db_url),
         ) as client,
     ):
-        started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
-        )
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         assert started.status_code == 200, started.text
         auth_query = parse_qs(urlparse(started.json()["authorization_url"]).query)
         assert auth_query["client_id"] == ["preregistered-client"]
@@ -494,16 +416,14 @@ def test_operator_oauth_static_client_id_skips_dynamic_registration(make_client,
         callback = client.get(
             "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
         )
-        after = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
+        after = client.get("/api/mcp/operator-auth").json()
 
     assert callback.status_code == 200, callback.text
     assert after["associations"][0]["status"] == "connected"
 
 
-def test_grocy_sf_reference_resolves_ids_to_names(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
+def test_grocy_sf_reference_resolves_ids_to_names(make_client, console_config: Path) -> None:
+    with make_client(config_file=console_config) as client:
         resp = client.get("/api/grocy-sf/reference")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
@@ -536,9 +456,7 @@ def test_reflection_marks_unreachable_servers_degraded(
     make_client, tmp_path: Path, db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
-    with make_client(
-        config_file=_config_file(tmp_path, "http://127.0.0.1:1/mcp"), **_test_app_overrides(db_url)
-    ) as client:
+    with make_client(config_file=_config_file(tmp_path, "http://127.0.0.1:1/mcp")) as client:
         resp = client.get("/api/capabilities/mcp-servers")
     assert resp.status_code == 200
     server = resp.json()["servers"][0]
@@ -565,10 +483,9 @@ def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
     }
 
 
-def test_submit_mints_tool_call_id(make_client, tmp_path: Path, db_url: str, mcp_server_url: str) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
-        first = _submit(client)
-        second = _submit(client)
+def test_submit_mints_tool_call_id(operator_client: TestClient) -> None:
+    first = _submit(operator_client)
+    second = _submit(operator_client)
     assert first["tool_call_id"].startswith("tc_")
     assert first["status"] == "pending_approval"
     assert "approval_id" not in first
@@ -581,11 +498,9 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     gmail = Mock()
     with make_client(
         config_file=_gmail_config_file(tmp_path),
-        agent_api_token=SecretStr("tool-token"),
         gmail_client=gmail,
         in_process_servers={"gmail": build_gmail_mcp(gmail)},
         tool_call_executor=EchoingExecutor(),
-        **_test_app_overrides(db_url),
     ) as client:
         response = client.post(
             "/api/tool-calls",
@@ -597,19 +512,16 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     assert response.status_code == 200, response.text
     record = response.json()
     assert record["status"] == "ok"
-    assert record["approval_policy_id"] == "v1"
-    assert record["auto_approval_evaluation"] == "approved: Gmail search/read operation"
+    assert record["approval_policy_id"] == "unconditional_v1"
+    assert record["auto_approval_evaluation"] == "approved: gmail/labels_list is allowlisted read-only/safe"
     assert record["approved_at"] is not None
     assert record["result"]["content"][0]["text"] == "gmail:labels_list"
     assert pending["approvals"] == []
 
 
-def test_operator_gmail_labels_list_stays_pending(make_client, tmp_path: Path, db_url: str) -> None:
-    with make_client(
-        config_file=_gmail_config_file(tmp_path),
-        gmail_client=Mock(),
-        tool_call_executor=EchoingExecutor(),
-        **_test_app_overrides(db_url),
+def test_operator_gmail_labels_list_stays_pending(make_operator_client, tmp_path: Path, db_url: str) -> None:
+    with make_operator_client(
+        config_file=_gmail_config_file(tmp_path), gmail_client=Mock(), tool_call_executor=EchoingExecutor()
     ) as client:
         response = client.post(
             "/api/tool-calls",
@@ -626,10 +538,8 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(make_client, tmp_p
     gmail = Mock()
     with make_client(
         config_file=_gmail_config_file(tmp_path),
-        agent_api_token=SecretStr("tool-token"),
         gmail_client=gmail,
         in_process_servers={"gmail": build_gmail_mcp(gmail)},
-        **_test_app_overrides(db_url),
     ) as client:
         response = client.post(
             "/api/tool-calls",
@@ -650,19 +560,14 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(make_client, tmp_p
     assert pending[0]["auto_approval_evaluation"] == response.json()["auto_approval_evaluation"]
 
 
-def test_approval_executes_tool_and_records_terminal_result(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with make_client(
-        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
-    ) as client:
-        submitted = _submit(client)
-        resp = client.post(
-            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": _csrf(client)},
-            json={"decision": "approve"},
-        )
-        fetched = client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
+def test_approval_executes_tool_and_records_terminal_result(operator_client: TestClient) -> None:
+    submitted = _submit(operator_client)
+    resp = operator_client.post(
+        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+        headers={"X-CSRF-Token": csrf_token(operator_client)},
+        json={"decision": "approve"},
+    )
+    fetched = operator_client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
     assert resp.status_code == 200, resp.text
     decided = resp.json()["tool_call"]
     assert decided["status"] == "ok"
@@ -672,27 +577,25 @@ def test_approval_executes_tool_and_records_terminal_result(
     assert fetched == decided
 
 
-def test_operator_oauth_association_drives_approved_tool_execution(make_client, tmp_path: Path, db_url: str) -> None:
+def test_operator_oauth_association_drives_approved_tool_execution(
+    make_operator_client, tmp_path: Path, db_url: str
+) -> None:
     executor = RecordingExecutor()
     with (
         _remote_oauth_url() as oauth_url,
-        make_client(
+        make_operator_client(
             config_file=_operator_oauth_config_file(tmp_path, oauth_url),
             csrf_secret=SecretStr("csrf"),
             public_base_url="https://haku.test",
             tool_call_executor=executor,
-            **_test_app_overrides(db_url),
         ) as client,
     ):
-        before = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
+        before = client.get("/api/mcp/operator-auth").json()
         assert before["associations"] == [
-            {"server_id": "grocy-sf", "status": "unconnected", "operator_principal": "operator@example.com"}
+            {"server_id": "grocy-sf", "status": "unconnected", "username": "operator@example.com"}
         ]
 
-        started = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
-        )
+        started = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         assert started.status_code == 200, started.text
         authorization_url = started.json()["authorization_url"]
         parsed_authorization = urlparse(authorization_url)
@@ -706,17 +609,13 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
             "/api/mcp/operator-auth/callback", params={"state": auth_query["state"][0], "code": "operator-code"}
         )
         assert callback.status_code == 200, callback.text
-        after = client.get("/api/mcp/operator-auth", headers={"X-authentik-username": "operator@example.com"}).json()
+        after = client.get("/api/mcp/operator-auth").json()
         assert after["associations"][0]["status"] == "connected"
         assert after["associations"][0]["connected_at"]
 
-        reconnect = client.post(
-            "/api/mcp/operator-auth/grocy-sf/connect",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
-        )
+        reconnect = client.post("/api/mcp/operator-auth/grocy-sf/connect", headers={"X-CSRF-Token": csrf_token(client)})
         removed_start = client.post(
-            "/api/mcp/operator-auth/grocy-sf/start",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+            "/api/mcp/operator-auth/grocy-sf/start", headers={"X-CSRF-Token": csrf_token(client)}
         )
         assert reconnect.status_code == 409
         assert reconnect.json()["detail"] == "MCP server grocy-sf is already connected; disconnect it first"
@@ -725,7 +624,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
         submitted = _submit(client)
         approved = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+            headers={"X-CSRF-Token": csrf_token(client)},
             json={"decision": "approve"},
         )
 
@@ -734,21 +633,22 @@ def test_operator_oauth_association_drives_approved_tool_execution(make_client, 
     assert executor.auth_tokens == ["operator-access-token"]
 
 
-def test_operator_oauth_approval_requires_existing_association(make_client, tmp_path: Path, db_url: str) -> None:
+def test_operator_oauth_approval_requires_existing_association(
+    make_operator_client, tmp_path: Path, db_url: str
+) -> None:
     executor = RecordingExecutor()
     with (
         _remote_oauth_url() as oauth_url,
-        make_client(
+        make_operator_client(
             config_file=_operator_oauth_config_file(tmp_path, oauth_url),
             csrf_secret=SecretStr("csrf"),
             tool_call_executor=executor,
-            **_test_app_overrides(db_url),
         ) as client,
     ):
         submitted = _submit(client)
         resp = client.post(
             f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": _csrf(client), "X-authentik-username": "operator@example.com"},
+            headers={"X-CSRF-Token": csrf_token(client)},
             json={"decision": "approve"},
         )
         fetched = client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
@@ -759,18 +659,74 @@ def test_operator_oauth_approval_requires_existing_association(make_client, tmp_
     assert executor.auth_tokens == []
 
 
-def test_approval_denial_is_terminal_and_does_not_execute(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
+def _seed_association(db_url: str, *, operator_subject: str, access_token: str) -> None:
+    """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
+    engine = create_engine(db_url)
+    now = datetime.datetime.now(datetime.UTC)
+    try:
+        with sessionmaker(engine)() as session, session.begin():
+            session.add(
+                McpOperatorOAuthAssociation(
+                    server_id="grocy-sf",
+                    operator_subject=operator_subject,
+                    created_at=now,
+                    updated_at=now,
+                    client_id="test-client",
+                    token_endpoint="http://unused.test/token",
+                    access_token=access_token,
+                    token_type="Bearer",
+                    token_expires_at=now + datetime.timedelta(hours=1),
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def test_routing_executes_each_agent_as_its_own_operator(
+    make_client, tmp_path: Path, migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Two static agents bound to two operators: each agent's auto-approved operator_oauth call
+    executes with *its* operator's token, with no crosstalk."""
+    # `haku` (bearer tool-token → op-haku) comes from the autouse env; add a second agent `ops-bot`.
+    monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
+    monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
+    _seed_association(migrated_db_url, operator_subject="op-haku", access_token="grocy-token-haku")
+    _seed_association(migrated_db_url, operator_subject="op-ops", access_token="grocy-token-ops")
+
+    config = _config([{"id": "grocy-sf", "server_url": "http://unused.test/mcp", "operator_oauth": {}}])
+    config["static_agents"] = [
+        *_STATIC_AGENTS,
+        {
+            "agent": "ops-bot",
+            "token_env_var": "HAKU_CONSOLE_TEST_AGENT2_TOKEN",
+            "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
+        },
+    ]
+    executor = RecordingExecutor()
     with make_client(
-        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
+        config_file=write_config(tmp_path / "routing.yaml", config), tool_call_executor=executor
     ) as client:
-        submitted = _submit(client)
-        resp = client.post(
-            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": _csrf(client)},
-            json={"decision": "deny", "reason": "not today"},
-        )
+        # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
+        for bearer in ("tool-token", "ops-token"):
+            resp = client.post(
+                "/api/tool-calls",
+                headers={"Authorization": f"Bearer {bearer}"},
+                json={"server_id": "grocy-sf", "tool_name": "products_list", "arguments": {}, "wait_for_ms": 0},
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["status"] == "ok", resp.json()
+
+    # haku's call executed with op-haku's token; ops-bot's with op-ops's — each routed to its operator.
+    assert executor.auth_tokens == ["grocy-token-haku", "grocy-token-ops"]
+
+
+def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
+    submitted = _submit(operator_client)
+    resp = operator_client.post(
+        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+        headers={"X-CSRF-Token": csrf_token(operator_client)},
+        json={"decision": "deny", "reason": "not today"},
+    )
     assert resp.status_code == 200
     tool_call = resp.json()["tool_call"]
     assert tool_call["status"] == "denied"
@@ -778,18 +734,15 @@ def test_approval_denial_is_terminal_and_does_not_execute(
     assert tool_call["denial_reason"] == "not today"
 
 
-def test_all_v1_tool_calls_require_console_approval(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
-        resp = client.post(
-            "/api/tool-calls",
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 1000},
-        )
-        pending = client.get("/api/approvals/pending").json()
-        listed = client.get(
-            "/api/tool-calls", params={"status": "pending_approval", "since": "1970-01-01T00:00:00+00:00"}
-        ).json()
+def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient) -> None:
+    resp = operator_client.post(
+        "/api/tool-calls",
+        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 1000},
+    )
+    pending = operator_client.get("/api/approvals/pending").json()
+    listed = operator_client.get(
+        "/api/tool-calls", params={"status": "pending_approval", "since": "1970-01-01T00:00:00+00:00"}
+    ).json()
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "pending_approval"
@@ -799,14 +752,13 @@ def test_all_v1_tool_calls_require_console_approval(
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
-def test_list_newest_first_keeps_the_most_recent(make_client, tmp_path: Path, db_url: str, mcp_server_url: str) -> None:
-    with make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client:
-        first = _submit(client, amount=1)
-        second = _submit(client, amount=2)
-        third = _submit(client, amount=3)
-        newest = client.get("/api/tool-calls", params={"newest_first": "true"}).json()
-        newest_two = client.get("/api/tool-calls", params={"newest_first": "true", "limit": 2}).json()
-        oldest = client.get("/api/tool-calls").json()
+def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
+    first = _submit(operator_client, amount=1)
+    second = _submit(operator_client, amount=2)
+    third = _submit(operator_client, amount=3)
+    newest = operator_client.get("/api/tool-calls", params={"newest_first": "true"}).json()
+    newest_two = operator_client.get("/api/tool-calls", params={"newest_first": "true", "limit": 2}).json()
+    oldest = operator_client.get("/api/tool-calls").json()
 
     ids = [first["tool_call_id"], second["tool_call_id"], third["tool_call_id"]]
     assert [r["tool_call_id"] for r in newest["tool_calls"]] == list(reversed(ids))
@@ -816,46 +768,33 @@ def test_list_newest_first_keeps_the_most_recent(make_client, tmp_path: Path, db
     assert [r["tool_call_id"] for r in oldest["tool_calls"]] == ids
 
 
-def test_websocket_receives_pending_approval_event(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with (
-        make_client(config_file=_config_file(tmp_path, mcp_server_url), **_test_app_overrides(db_url)) as client,
-        client.websocket_connect("/api/approvals/ws") as ws,
-    ):
+def test_websocket_receives_pending_approval_event(operator_client: TestClient) -> None:
+    with operator_client.websocket_connect("/api/approvals/ws") as ws:
         assert ws.receive_json() == {"type": "hello"}
-        submitted = _submit(client)
+        submitted = _submit(operator_client)
         event = ws.receive_json()
-        events = client.get("/api/approvals/events", params={"after_event_id": 0}).json()
+        events = operator_client.get("/api/approvals/events", params={"after_event_id": 0}).json()
     assert event["event_type"] == "tool_call_submitted"
     assert event["tool_call_id"] == submitted["tool_call_id"]
     assert event["status"] == "pending_approval"
     assert events["events"][0]["event_id"] == event["event_id"]
 
 
-def test_full_audit_log_listing_and_secret_redaction(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with make_client(
-        config_file=_config_file(tmp_path, mcp_server_url),
-        agent_api_token=SecretStr("tool-token"),
-        **_test_app_overrides(db_url),
-    ) as client:
-        operator_call = client.post(
-            "/api/tool-calls",
-            headers={"X-authentik-username": "operator@example.com"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
-        ).json()
-        haku_call = client.post(
-            "/api/tool-calls",
-            headers={"Authorization": "Bearer tool-token"},
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
-        ).json()
-        body = client.get("/api/tool-calls").json()
-        pending = client.get(
-            "/api/tool-calls", params=[("status", "pending_approval"), ("since", "1970-01-01T00:00:00+00:00")]
-        ).json()
-        future = client.get("/api/tool-calls", params={"since": "2999-01-01T00:00:00+00:00"}).json()
+def test_full_audit_log_listing_and_secret_redaction(operator_client: TestClient) -> None:
+    operator_call = operator_client.post(
+        "/api/tool-calls",
+        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "one"}, "wait_for_ms": 0},
+    ).json()
+    haku_call = operator_client.post(
+        "/api/tool-calls",
+        headers={"Authorization": "Bearer tool-token"},
+        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "two"}, "wait_for_ms": 0},
+    ).json()
+    body = operator_client.get("/api/tool-calls").json()
+    pending = operator_client.get(
+        "/api/tool-calls", params=[("status", "pending_approval"), ("since", "1970-01-01T00:00:00+00:00")]
+    ).json()
+    future = operator_client.get("/api/tool-calls", params={"since": "2999-01-01T00:00:00+00:00"}).json()
     ids = {r["tool_call_id"] for r in body["tool_calls"]}
     assert {operator_call["tool_call_id"], haku_call["tool_call_id"]} <= ids
     pending_ids = {r["tool_call_id"] for r in pending["tool_calls"]}
@@ -866,21 +805,16 @@ def test_full_audit_log_listing_and_secret_redaction(
     assert "tool-token" not in dumped
 
 
-def test_postgres_store_runs_alembic_and_persists_typed_ledger(
-    make_client, tmp_path: Path, db_url: str, mcp_server_url: str
-) -> None:
-    with make_client(
-        config_file=_config_file(tmp_path, mcp_server_url), csrf_secret=SecretStr("csrf"), **_test_app_overrides(db_url)
-    ) as client:
-        submitted = client.post(
-            "/api/tool-calls",
-            json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 0},
-        ).json()
-        approved = client.post(
-            f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-            headers={"X-CSRF-Token": _csrf(client)},
-            json={"decision": "approve"},
-        ).json()["tool_call"]
+def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: TestClient, db_url: str) -> None:
+    submitted = operator_client.post(
+        "/api/tool-calls",
+        json={"server_id": "smoke", "tool_name": "echo", "arguments": {"text": "world"}, "wait_for_ms": 0},
+    ).json()
+    approved = operator_client.post(
+        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
+        headers={"X-CSRF-Token": csrf_token(operator_client)},
+        json={"decision": "approve"},
+    ).json()["tool_call"]
 
     assert approved["status"] == "ok"
     assert approved["result"]["content"][0]["text"] == "echo:world"
@@ -935,8 +869,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(
     finally:
         engine.dispose()
 
-    assert version == "0004"
-    assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows"} <= tables
+    assert version == "0006"
+    assert {"mcp_operator_oauth_associations", "mcp_operator_oauth_flows", "mcp_agent_operator"} <= tables
     assert {
         "tool_call_id",
         "server_id",
