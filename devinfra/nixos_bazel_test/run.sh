@@ -8,12 +8,14 @@
 # Usage:
 #   ./run.sh              # Build image, drop into interactive shell
 #   ./run.sh build        # Only build the image
-#   ./run.sh test         # Build image and run bazel build+test
+#   ./run.sh test         # Build image and run the credentialed RBE smoke test
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 IMAGE_NAME="ducktape-nixos-bazel"
+TEST_WORKSPACE="$SCRIPT_DIR/testdata/workspace"
+RBE_BAZELRC="$REPO_ROOT/devinfra/bazel/rbe.bazelrc"
 
 build_image() {
   echo "=== Building NixOS Docker image ==="
@@ -73,26 +75,33 @@ build_image() {
 }
 
 run_container() {
+  local credential_rc=""
   local -a docker_args=(
-    --rm
     --network=host
-    -v "$REPO_ROOT:/repo"
-    -w /repo
+    --privileged
+    --cgroupns=host
+    -v "$TEST_WORKSPACE:/source:ro"
+    -v "$RBE_BAZELRC:/rbe.bazelrc:ro"
     # systemd needs tmpfs on /run and /tmp, cgroup access
     --tmpfs /run
     --tmpfs /tmp
-    -v /sys/fs/cgroup:/sys/fs/cgroup:ro
+    -v /sys/fs/cgroup:/sys/fs/cgroup:rw
   )
 
-  # Mount BuildBuddy credentials if available
-  local bb_rc="${HOME}/.config/bazel/buildbuddy.bazelrc"
-  if [[ -f "$bb_rc" ]]; then
-    docker_args+=(-v "$bb_rc:/root/.config/bazel/buildbuddy.bazelrc:ro")
-    echo "BuildBuddy credentials mounted."
+  if [[ "${1:-}" == "test" ]]; then
+    if [[ -z "${BUILDBUDDY_API_KEY:-}" ]]; then
+      echo "BUILDBUDDY_API_KEY is required for the RBE integration test" >&2
+      return 2
+    fi
+    credential_rc="$(mktemp)"
+    chmod 0600 "$credential_rc"
+    printf 'common:rbe --remote_header=x-buildbuddy-api-key=%s\n' "$BUILDBUDDY_API_KEY" >"$credential_rc"
+    docker_args+=(-v "$credential_rc:/root/.bazelrc:ro")
+    echo "Scoped BuildBuddy credential mounted."
   fi
 
   if [[ "${1:-}" == "test" ]]; then
-    echo "=== Running Bazel build+test ==="
+    echo "=== Running NixOS to BuildBuddy RBE integration test ==="
     # Start the NixOS container (systemd activates everything), then exec commands
     local container_id
     container_id=$(docker run -d "${docker_args[@]}" "$IMAGE_NAME:latest" /init)
@@ -100,30 +109,23 @@ run_container() {
     echo "Waiting for NixOS activation..."
     sleep 3
 
-    docker exec "$container_id" bash -lc '
-      set -euo pipefail
-      echo "=== NixOS filesystem checks ==="
-      echo "/bin/bash exists: $(test -e /bin/bash && echo YES || echo NO)"
-      echo "Bash location: $(which bash)"
-      echo "NIX_LD=${NIX_LD:-unset}"
-      echo "NIX_LD_LIBRARY_PATH=${NIX_LD_LIBRARY_PATH:-unset}"
-      echo ""
+    if [[ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != "true" ]]; then
+      echo "NixOS container exited during activation" >&2
+      docker logs "$container_id" >&2
+      docker rm -f "$container_id" >/dev/null 2>&1 || true
+      rm -f "$credential_rc"
+      return 1
+    fi
 
-      echo "=== Python (agent_core) ==="
-      bazel build //agent_core/...
-      bazel test //agent_core/...
-
-      echo "=== Go (kubespan_agent) ==="
-      bazel build //cluster/kubespan_agent/...
-
-      echo "=== Rust (worthy) ==="
-      bazel build //finance/worthy/...
-      bazel test //finance/worthy/...
-
-      echo "=== All languages verified ==="
-    '
+    set +e
+    docker exec "$container_id" /run/current-system/sw/bin/nixos-bazel-rbe-smoke
     local exit_code=$?
-    docker stop "$container_id" >/dev/null 2>&1 || true
+    set -e
+    if ((exit_code != 0)); then
+      docker logs "$container_id" >&2
+    fi
+    docker rm -f "$container_id" >/dev/null 2>&1 || true
+    rm -f "$credential_rc"
     return $exit_code
   else
     echo "=== Starting NixOS container ==="
@@ -135,10 +137,14 @@ run_container() {
     container_id=$(docker run -d "${docker_args[@]}" "$IMAGE_NAME:latest" /init)
     echo "Waiting for NixOS activation..."
     sleep 3
+    docker exec "$container_id" /run/current-system/sw/bin/nixos-bazel-rbe-smoke --prepare-only
     echo "Container $container_id running. Dropping into shell..."
-    docker exec -it "$container_id" bash -l
+    docker exec -it \
+      -e PATH=/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin \
+      -w /workspace \
+      "$container_id" /run/current-system/sw/bin/bash
     echo "Stopping container..."
-    docker stop "$container_id" >/dev/null 2>&1 || true
+    docker rm -f "$container_id" >/dev/null 2>&1 || true
   fi
 }
 
