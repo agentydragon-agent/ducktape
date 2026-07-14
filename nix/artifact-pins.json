@@ -37,8 +37,8 @@
       "sha256": "Z3AY00PYVKbEEQYR+lmxRtLJy/CgWQZ2nOYdD6L2M0M="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-799b20ea1e32/claude_hook",
-      "sha256": "eZsg6h4y8t+HyyKlB6UORCA7UbySuNRyqRQY0Bg920k="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-ae5299d87575/claude_hook",
+      "sha256": "rlKZ2HV1K/v/PZyI9K3Ne+68o/A2I9Dkc1Xo4T8lj+4="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-19ebd944e002/aiquota.zip",
@@ -49,8 +49,8 @@
       "sha256": "GevZROAC5TMDfuEJMTfPwKxFl8tWJxAWgpkoBoZZsQs="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-3a1edf561091/debundle",
-      "sha256": "Oh7fVhCRKnctLTu/fxD/ll4ISWz9BeyiR6C0qACniFA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-88b9150e216a/debundle",
+      "sha256": "iLkVDiFqByKNKyYKyO4p6nvf0/svVa2E4U2P0Zw0ojA="
     }
   }
 }
