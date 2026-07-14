@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: archive
-          image: ghcr.io/agentydragon/wayback-archive:devel-20260613073859-12d2dbf # {"$imagepolicy": "flux-system:wayback-archive"}
+          image: ghcr.io/agentydragon/wayback-archive:devel-20260714152743-548b5fb # {"$imagepolicy": "flux-system:wayback-archive"}
           imagePullPolicy: Always
           env:
             - name: RUST_LOG
