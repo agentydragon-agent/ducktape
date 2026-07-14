@@ -1,7 +1,7 @@
 {
   "rbe_worker": {
     "image": "ghcr.io/agentydragon/rbe-worker",
-    "digest": "sha256:21758c2610ea38dac68251ab7d5caee7f3879e43ba0a6182723afa82eeb90d46"
+    "digest": "sha256:ceb889a3d6224ae55fc0305d791658ef641818e6bd32986e6300bcb432e832ff"
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
