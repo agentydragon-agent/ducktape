@@ -208,9 +208,25 @@ js_library(
 )
 
 js_library(
+    name = "code_block",
+    srcs = ["code_block.tsx"],
+    deps = [
+        "//:node_modules/@codemirror/lang-json",
+        "//:node_modules/@codemirror/lang-yaml",
+        "//:node_modules/@codemirror/language",
+        "//:node_modules/@codemirror/state",
+        "//:node_modules/@codemirror/view",
+        "//:node_modules/@lezer/highlight",
+        "//:node_modules/@uiw/react-codemirror",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
     name = "tool_arguments_field",
     srcs = ["tool_arguments_field.tsx"],
     deps = [
+        ":code_block",
         ":field",
         ":json_preview",
         "//:node_modules/react",
@@ -223,7 +239,7 @@ js_library(
     name = "json_preview",
     srcs = ["json_preview.tsx"],
     deps = [
-        "//:node_modules/highlight.js",
+        ":code_block",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering:variant",
     ],
@@ -233,6 +249,7 @@ js_library(
     name = "tool_result_field",
     srcs = ["tool_result_field.tsx"],
     deps = [
+        ":code_block",
         ":field",
         "//:node_modules/react",
         "//haku/console/frontend/tool_rendering",
@@ -304,6 +321,7 @@ js_library(
     deps = [
         ":approval_state",
         ":client",
+        ":code_block",
         ":console_events",
         ":field",
         ":icons",
