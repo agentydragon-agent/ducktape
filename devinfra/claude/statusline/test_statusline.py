@@ -12,7 +12,14 @@ from syrupy.assertion import SnapshotAssertion
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.statusline.statusline import _format_context, _format_quota, _is_zai_session, render
+from devinfra.claude.statusline.statusline import (
+    QuotaRoute,
+    _detect_quota_route,
+    _format_context,
+    _format_quota,
+    _quota_segments,
+    render,
+)
 
 _SHORT_WINDOW_SECS = 5 * 3600
 _LONG_WINDOW_SECS = 7 * 86400
@@ -316,15 +323,37 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
 
 
 @pytest.mark.parametrize(
-    ("base_url", "expected"),
+    ("base_url", "model_id", "expected"),
     [
-        pytest.param("https://api.z.ai/api/anthropic", True, id="z_claude"),
-        pytest.param("https://api.anthropic.com", False, id="default_anthropic"),
-        pytest.param("", False, id="unset"),
+        pytest.param(
+            "https://api.z.ai/api/anthropic", "glm-5.2", QuotaRoute(provider="zai", label="zai"), id="direct_zai"
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            QuotaRoute(provider="zai", label="litellm→zai"),
+            id="litellm_glm_fallback",
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "some-model-alias",
+            QuotaRoute(provider=None, label="litellm→?"),
+            id="ambiguous_litellm",
+        ),
+        pytest.param(
+            "https://unknown-proxy.example",
+            "claude-opus-4-6",
+            QuotaRoute(provider=None, label="proxy→?"),
+            id="ambiguous_proxy",
+        ),
+        pytest.param(
+            "https://api.anthropic.com", "claude-opus-4-6", QuotaRoute(provider="claude"), id="default_anthropic"
+        ),
+        pytest.param("", "claude-opus-4-6", QuotaRoute(provider="claude"), id="unset"),
     ],
 )
-def test_is_zai_session(base_url: str, expected: bool):
-    assert _is_zai_session(base_url) is expected
+def test_detect_quota_route(base_url: str, model_id: str, expected: QuotaRoute):
+    assert _detect_quota_route(base_url=base_url, model_id=model_id) == expected
 
 
 # Fixed "now" for deterministic quota formatting
@@ -387,6 +416,56 @@ def test_render_minimal(snapshot: SnapshotAssertion):
     data = Input.model_validate_json("{}")
     result = render(data, is_subscription=False, quota=None, home=None, now=_NOW, daemon_healthy=False)
     assert result == snapshot
+
+
+@pytest.mark.parametrize(
+    ("base_url", "model_id", "include_quota", "quota_error", "expected"),
+    [
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            True,
+            None,
+            "litellm→zai 5h:24% 7d:61%",
+            id="known_with_quota",
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            False,
+            None,
+            "litellm→zai quota unavailable",
+            id="known_without_quota",
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "some-model-alias",
+            True,
+            None,
+            "litellm→? quota unknown",
+            id="unknown_suppresses_mismatched_quota",
+        ),
+        pytest.param(
+            "https://litellm.allegedly.works",
+            "glm-5.2-anthropic",
+            False,
+            "aiquota config error",
+            "litellm→zai aiquota config error",
+            id="config_error",
+        ),
+    ],
+)
+def test_detect_and_format_quota_segments(
+    base_url: str, model_id: str, include_quota: bool, quota_error: str | None, expected: str
+):
+    route = _detect_quota_route(base_url=base_url, model_id=model_id)
+    quota = (
+        _render_quota(seven_day_util=61.0, seven_day_resets_in=timedelta(), five_hour_util=24.0)
+        if include_quota
+        else None
+    )
+    segments = _quota_segments(quota, route=route, error=quota_error, now=_NOW)
+    assert " ".join(segment.plain for segment in segments) == expected
 
 
 if __name__ == "__main__":

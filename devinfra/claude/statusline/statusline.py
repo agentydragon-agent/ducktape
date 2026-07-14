@@ -9,10 +9,10 @@ GNOME extension.
 """
 
 import asyncio
-import logging
 import os
 import socket
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -21,7 +21,7 @@ from rich.console import Console
 from rich.text import Text
 
 from aiquota.cache import QuotaService
-from aiquota.config import DEFAULT_CONFIG_PATH, Config, load as load_config
+from aiquota.config import DEFAULT_CONFIG_PATH, load as load_config
 from aiquota.models import ExtraSpend, FetchSuccess, ProviderQuota, QuotaWindow
 from aiquota.render.format import format_window_label
 from devinfra.claude.claude_api.credentials import read_credentials
@@ -31,7 +31,13 @@ from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
 _STALE_THRESHOLD = timedelta(seconds=10)
 _SEP = Text(" ")
 
-logger = logging.getLogger(__name__)
+
+@dataclass(frozen=True)
+class QuotaRoute:
+    """Provider attribution for the quota displayed by the statusline."""
+
+    provider: str | None
+    label: str | None = None
 
 
 def _format_delta(delta: timedelta) -> str:
@@ -109,6 +115,24 @@ def _format_context(ctx: ContextWindow | None) -> Text | None:
     return Text(f"ctx:{pct:.0f}%", style=style)
 
 
+def _quota_segments(
+    quota: ProviderQuota | None, *, route: QuotaRoute | None, error: str | None, now: datetime
+) -> list[Text]:
+    if error is not None:
+        route_prefix = f"{route.label} " if route is not None and route.label is not None else ""
+        return [Text(f"{route_prefix}{error}", style="red")]
+    if route is not None and route.provider is None:
+        return [Text(f"{route.label or 'provider→?'} quota unknown", style="dim")]
+
+    quota_text = _format_quota(quota, now=now)
+    if quota_text is not None:
+        route_segments = [Text(route.label, style="dim")] if route is not None and route.label is not None else []
+        return [*route_segments, quota_text]
+    if route is not None and route.label is not None:
+        return [Text(f"{route.label} quota unavailable", style="dim")]
+    return []
+
+
 def _format_daemon(healthy: bool) -> Text:
     if healthy:
         return Text("daemon ✓", style="green")
@@ -128,16 +152,24 @@ def _daemon_healthy(sock_path: Path, timeout: float = 0.5) -> bool:
         return False
 
 
-def _is_zai_session(base_url: str) -> bool:
-    """Detect a z.ai-backed `claude` session (the `z-claude` wrapper).
+def _detect_quota_route(*, base_url: str, model_id: str) -> QuotaRoute:
+    """Attribute a session to a quota provider, failing closed when ambiguous.
 
-    z-claude points ANTHROPIC_BASE_URL at api.z.ai; the statusline then reports
-    the z.ai provider's quota instead of Anthropic's.
+    Direct endpoints identify their provider. The repository's LiteLLM endpoint
+    additionally uses the model slug to distinguish GLM from unknown routes.
     """
     if not base_url:
-        return False
+        return QuotaRoute(provider="claude")
     host = urlparse(base_url).hostname or ""
-    return host == "z.ai" or host.endswith(".z.ai")
+    if host == "api.anthropic.com":
+        return QuotaRoute(provider="claude")
+    if host == "z.ai" or host.endswith(".z.ai"):
+        return QuotaRoute(provider="zai", label="zai")
+    if host == "litellm.allegedly.works":
+        if model_id.lower().startswith("glm-"):
+            return QuotaRoute(provider="zai", label="litellm→zai")
+        return QuotaRoute(provider=None, label="litellm→?")
+    return QuotaRoute(provider=None, label="proxy→?")
 
 
 def render(
@@ -148,6 +180,8 @@ def render(
     home: Path | None,
     now: datetime,
     daemon_healthy: bool,
+    quota_route: QuotaRoute | None = None,
+    quota_error: str | None = None,
 ) -> str:
     """Render the statusline as a plain string."""
     model_name = (data.model.display_name or data.model.id) if data.model else "unknown"
@@ -176,9 +210,7 @@ def render(
     if context_text is not None:
         segments.append(context_text)
 
-    quota_text = _format_quota(quota, now=now)
-    if quota_text is not None:
-        segments.append(quota_text)
+    segments.extend(_quota_segments(quota, route=quota_route, error=quota_error, now=now))
 
     segments.append(_format_daemon(daemon_healthy))
 
@@ -205,17 +237,22 @@ def main() -> None:
     oauth = read_credentials()
     is_subscription = oauth is not None and oauth.subscription_type is not None
 
-    # Quota comes from aiquota's shared cache (read + populated by fetch_all),
-    # selecting the provider matching the running session.
-    try:
-        config = load_config(DEFAULT_CONFIG_PATH)
-    except Exception:
-        logger.debug("Failed to load aiquota config, using defaults", exc_info=True)
-        config = Config()
-    service = QuotaService(config=config)
-    quotas = asyncio.run(service.fetch_all())
-    provider_name = "zai" if _is_zai_session(os.environ.get("ANTHROPIC_BASE_URL", "")) else "claude"
-    quota = next((pq for pq in quotas.providers if pq.provider == provider_name), None)
+    model_id = (data.model.id if data.model is not None else "") or os.environ.get("ANTHROPIC_MODEL", "")
+    quota_route = _detect_quota_route(base_url=os.environ.get("ANTHROPIC_BASE_URL", ""), model_id=model_id)
+
+    # Quota comes from aiquota's shared cache (read + populated by fetch_all).
+    # Do not fetch or display any provider's quota when attribution is unknown.
+    quota: ProviderQuota | None = None
+    quota_error: str | None = None
+    if quota_route.provider is not None:
+        try:
+            config = load_config(DEFAULT_CONFIG_PATH)
+        except Exception:
+            quota_error = "aiquota config error"
+        else:
+            service = QuotaService(config=config)
+            quotas = asyncio.run(service.fetch_all())
+            quota = next((pq for pq in quotas.providers if pq.provider == quota_route.provider), None)
 
     home_env = os.environ.get("HOME")
     output = render(
@@ -225,6 +262,8 @@ def main() -> None:
         home=Path(home_env) if home_env else None,
         now=datetime.now(UTC),
         daemon_healthy=_daemon_healthy(hook_daemon_sock(data.session_id)),
+        quota_route=quota_route,
+        quota_error=quota_error,
     )
     sys.stdout.write(output)
 
