@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -11,13 +10,10 @@ import pytest_bazel
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
 
 from haku.console.config import OperatorIdentityConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import metadata
-from haku.console.mcp_approval import PostgresToolCallLedger
-from haku.console.mcp_config import McpServerEntry
 from haku.console.operator_identity import (
     InactiveOperatorError,
     OperatorIdentityTrust,
@@ -25,8 +21,6 @@ from haku.console.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.tool_call_actor import AgentActor
-from haku.console.tool_calls import SubmitToolCallRequest
 
 _TRUST_DOMAIN = "auth.test/authentik-user-id/v1"
 _BROWSER_ISSUER = "https://auth.test/application/o/haku-console/"
@@ -167,7 +161,7 @@ def test_duplicate_static_agent_owner_seed_creates_one_operator(db_url: str) -> 
         engine.dispose()
 
 
-def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state(db_url: str) -> None:
+def test_0008_preserves_only_exact_seeded_durable_rows_and_0009_drops_legacy_agent_links(db_url: str) -> None:
     engine = create_engine(db_url)
     exact_key = "  opaque-authentik-id  "
     try:
@@ -273,11 +267,10 @@ def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state
                     {"collection": collection, "key": f"{collection}-key"},
                 )
 
-        apply_migrations(
-            db_url,
-            operator_identity_seeds=((_TRUST_DOMAIN, exact_key),),
-            fastmcp_oauth_state_table=_FASTMCP_STATE_TABLE,
-        )
+        with engine.begin() as conn:
+            config = _alembic_config(conn, seeds=((_TRUST_DOMAIN, exact_key),))
+            config.attributes["fastmcp_oauth_state_table"] = _FASTMCP_STATE_TABLE
+            alembic_command.upgrade(config, "0008")
 
         with engine.connect() as conn:
             anchors = (
@@ -336,41 +329,11 @@ def test_0008_preserves_only_exact_seeded_durable_rows_and_drops_ephemeral_state
         assert links == []
         assert fastmcp_state_count == 0
         assert counts == {"identities": 0, "flows": 0, "calls": 0, "events": 0}
-    finally:
-        engine.dispose()
 
-
-def test_tool_call_event_owner_must_match_owning_call(migrated_db_url: str) -> None:
-    store = _store(migrated_db_url)
-    owner = store.resolve_configured_external_user_key("call-owner")
-    other = store.resolve_configured_external_user_key("other-owner")
-    ledger = PostgresToolCallLedger(migrated_db_url)
-    record, _ = ledger.submit(
-        server=McpServerEntry(id="server"),
-        req=SubmitToolCallRequest(
-            server_id="server", tool_name="tool", arguments={}, rationale="constraint test", wait_for_ms=0
-        ),
-        actor=AgentActor(principal="agent", operator_id=owner),
-    )
-    engine = create_engine(migrated_db_url)
-    try:
-        with pytest.raises(IntegrityError), engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO mcp_tool_call_events (
-                        event_type, operator_id, tool_call_id, status, created_at
-                    ) VALUES (
-                        'tool_call_updated', :operator_id, :tool_call_id, 'pending_approval', :created_at
-                    )
-                    """
-                ),
-                {
-                    "operator_id": other,
-                    "tool_call_id": record.tool_call_id,
-                    "created_at": datetime.datetime.now(datetime.UTC),
-                },
-            )
+        with engine.begin() as conn:
+            alembic_command.upgrade(_alembic_config(conn), "head")
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT to_regclass('public.mcp_agent_operator')")).scalar_one() is None
     finally:
         engine.dispose()
 

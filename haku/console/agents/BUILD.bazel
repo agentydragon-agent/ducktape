@@ -1,0 +1,117 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+)
+
+py_library(
+    name = "naming",
+    srcs = ["naming.py"],
+)
+
+py_test(
+    name = "test_naming",
+    srcs = ["test_naming.py"],
+    deps = [
+        ":naming",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "enrollment_page",
+    srcs = ["enrollment_page.py"],
+    data = ["agent_enrollment.html.j2"],
+    deps = [
+        "@pypi//jinja2",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "enrollment",
+    srcs = ["enrollment.py"],
+)
+
+py_library(
+    name = "authorization",
+    srcs = ["authorization.py"],
+    deps = [
+        ":enrollment",
+        ":models",
+        ":naming",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console:tool_call_actor",
+        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_authorization",
+    size = "medium",
+    srcs = ["test_authorization.py"],
+    requires_docker = True,
+    deps = [
+        ":authorization",
+        ":enrollment",
+        "//:conftest",
+        "//haku/console:database_migrate",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "enrollment_routes",
+    srcs = ["enrollment_routes.py"],
+    deps = [
+        ":enrollment",
+        ":enrollment_page",
+        ":naming",
+        "//haku/console:config",
+        "//haku/console:operator_auth",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_enrollment_page",
+    srcs = ["test_enrollment_page.py"],
+    deps = [
+        ":enrollment_page",
+        "@pypi//beautifulsoup4",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_enrollment_routes",
+    srcs = ["test_enrollment_routes.py"],
+    deps = [
+        ":enrollment",
+        ":enrollment_routes",
+        "//haku/console:operator_auth",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+        "@pypi//python_multipart",
+    ],
+)

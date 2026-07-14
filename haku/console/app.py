@@ -37,17 +37,14 @@ from haku.console import (
     operator_auth,
     tool_call_service,
 )
+from haku.console.agents import enrollment_routes
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.mcp_config import (
-    InProcessServers,
-    LoadedStaticAgent,
-    ResolvedStaticAgent,
-    load_static_agents,
-    resolve_static_agents,
-)
+from haku.console.mcp_auth.fastmcp_adapter import HakuAgentGrantMiddleware
+from haku.console.mcp_config import InProcessServers, LoadedStaticAgent, load_static_agents
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -120,7 +117,7 @@ def create_app(
     settings: Settings,
     *,
     loaded_static_agents: list[LoadedStaticAgent] | None = None,
-    resolved_static_agents: list[ResolvedStaticAgent] | None = None,
+    static_agent_definitions: tuple[StaticAgentDefinition, ...] | None = None,
     tool_call_executor: mcp_approval.McpToolExecutor | None = None,
     tool_call_metadata_provider: mcp_approval.McpMetadataProvider | None = None,
     gmail_client: gmail_tools.GmailToolsClient | None = None,
@@ -138,17 +135,34 @@ def create_app(
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         database_url, operator_identity_store=operator_identity_store
     )
+    agent_authority = PostgresAgentAuthority(
+        database_url, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
+    )
     # Read env-backed static credentials before migrations in ``main`` so the forward-only cutover
-    # can preserve exact legacy owner keys. Tests/new databases may let create_app read them here.
-    if loaded_static_agents is not None and resolved_static_agents is not None:
-        raise ValueError("pass at most one static-agent startup representation")
-    if resolved_static_agents is None:
+    # can seed exact owner identities. Tests/new databases may let create_app read them here. Schema
+    # generation may inject already-canonical definitions because it deliberately has no database;
+    # this is the same authority input reconciled at startup, not a request-time identity shortcut.
+    if loaded_static_agents is not None and static_agent_definitions is not None:
+        raise ValueError("loaded_static_agents and static_agent_definitions are mutually exclusive")
+    if static_agent_definitions is None:
         loaded_static_agents = (
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
-        static_agents = resolve_static_agents(loaded_static_agents, operator_identity_store)
-    else:
-        static_agents = resolved_static_agents
+        static_agent_definitions = tuple(
+            StaticAgentDefinition(
+                agent_id=agent.agent_id,
+                display_name=agent.display_name,
+                operator_id=operator_identity_store.resolve_configured_external_user_key(
+                    agent.operator_external_user_key
+                ),
+                secret_reference=agent.secret_reference,
+                token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
+            )
+            for agent in loaded_static_agents
+        )
+    static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
+        fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
+    )
     # Google clients back the two in-process MCP servers (gmail, google_calendar) and their
     # approval-render read endpoints (gmail thread previews, calendar-name resolution).
     if gmail_client is None and settings.google_token_dir is not None:
@@ -182,38 +196,39 @@ def create_app(
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
     console_mcp_context = mcp_server.ConsoleMcpContext(
         settings=settings,
-        static_agents=static_agents,
+        reflection_operator_ids=tuple(definition.operator_id for definition in static_agent_definitions),
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
-        identity_store=operator_identity_store,
         metadata_provider=tool_call_metadata_provider,
     )
 
     mcp_auth = mcp_agent_auth.build_auth(
-        settings,
-        static_agents,
-        operator_oauth_store=mcp_operator_oauth_store,
-        operator_identity_store=operator_identity_store,
+        settings, agent_authority=agent_authority, static_credentials=static_credential_registry
     )
     console_mcp = mcp_server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider)
+    console_mcp.add_middleware(
+        HakuAgentGrantMiddleware(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
+    )
     mcp_asgi = console_mcp.http_app(path="/")
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await console_event_hub.start()
-        try:
-            # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
-            # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
-            # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
-            if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
-                await mcp_auth.storage.setup()
-            # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
-            # connected servers into the tool surface once it is up.
-            async with mcp_asgi.lifespan(app):
-                await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
-                yield
-        finally:
-            await console_event_hub.aclose()
+        await agent_authority.reconcile_static_agents(static_agent_definitions)
+        async with agent_authority.expiry_maintenance():
+            await console_event_hub.start()
+            try:
+                # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
+                # cold connect (see mcp_infra/oauth_facade/server.py). The OAuth variant always carries
+                # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
+                if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
+                    await mcp_auth.storage.setup()
+                # FastMCP's streamable-http session manager runs under mcp_asgi.lifespan; reflect the
+                # connected servers into the tool surface once it is up.
+                async with mcp_asgi.lifespan(app):
+                    await mcp_server.register_proxy_tools(console_mcp, console_mcp_context)
+                    yield
+            finally:
+                await console_event_hub.aclose()
 
     # OAuth protected-resource and authorization-server discovery are origin-level RFC routes even
     # though the operational MCP/OAuth handlers remain isolated under /mcp. FastMCP cannot infer an
@@ -223,7 +238,9 @@ def create_app(
     app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path="/"))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
-    app.state.static_agents = static_agents
+    app.state.agent_authority = agent_authority
+    app.state.agent_enrollment_service = agent_authority
+    app.state.static_agent_credentials = static_credential_registry
     app.state.operator_identity_store = operator_identity_store
     app.state.tool_call_service = tool_calls
     app.state.mcp_operator_oauth_store = mcp_operator_oauth_store
@@ -242,10 +259,12 @@ def create_app(
     @app.middleware("http")
     async def _security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         response = await call_next(request)
-        response.headers["Content-Security-Policy"] = csp
+        # Route-owned HTML responses (Agent enrollment and OAuth completion) carry a stricter,
+        # nonce-bound policy. Preserve it; this default governs the SPA/API surfaces.
+        response.headers.setdefault("Content-Security-Policy", csp)
         response.headers["Cache-Control"] = _cache_control_for_path(request.url.path, response.status_code)
-        response.headers["Referrer-Policy"] = REFERRER_POLICY
-        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
+        response.headers.setdefault("Referrer-Policy", REFERRER_POLICY)
+        response.headers.setdefault("Permissions-Policy", PERMISSIONS_POLICY)
         return response
 
     # CSRF for the capability tier: a header-located double-submit token (the SPA
@@ -276,6 +295,7 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
+    app.include_router(enrollment_routes.router)
     app.include_router(gmail_tools.router, dependencies=operator_only)
     app.include_router(google_calendar_tools.router, dependencies=operator_only)
     app.include_router(grocy_tools.router, dependencies=operator_only)

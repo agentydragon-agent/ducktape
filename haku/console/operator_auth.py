@@ -18,11 +18,12 @@ The static SPA (served by nginx) stays public; on a 401 the frontend redirects t
 
 from __future__ import annotations
 
-import hmac
 import logging
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Annotated, cast
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
@@ -31,8 +32,10 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.requests import HTTPConnection
 
+from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentRejectedError
 from haku.console.config import OperatorOidcConfig, Settings
-from haku.console.mcp_config import ResolvedStaticAgent
+from haku.console.mcp_agent_auth import StaticAgentCredentialRegistry
+from haku.console.mcp_auth.fastmcp_adapter import AgentGrantAuthorityUnavailableError
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -41,27 +44,19 @@ logger = logging.getLogger(__name__)
 
 AUTHENTIK_CLIENT_NAME = "authentik"
 SESSION_USER_KEY = "operator"
+SESSION_RETURN_TO_KEY = "operator_return_to"
 OPERATOR_SESSION_MAX_AGE_SECONDS = 60 * 60
+_AGENT_ENROLLMENT_PATH_PREFIX = "/auth/agent-enrollment/"
+_MAX_RETURN_TO_LENGTH = 2048
 
 router = APIRouter(prefix="/auth", tags=["operator-auth"])
 
 
-def presents_agent_bearer(conn: HTTPConnection, token: str) -> bool:
-    """Constant-time check that the connection carries `token` as its Bearer credential."""
-    presented = conn.headers.get("authorization", "").encode()
-    return hmac.compare_digest(presented, f"Bearer {token}".encode())
-
-
-def authenticated_static_agent(
-    conn: HTTPConnection, static_agents: list[ResolvedStaticAgent]
-) -> ResolvedStaticAgent | None:
-    """The static agent whose configured bearer this request presents, or None.
-
-    The one HTTP boundary where a presented static-agent bearer maps to its
-    `ResolvedStaticAgent`, carrying both audit identity (`agent`) and canonical Operator
-    (`operator_id`). The agent-facing router guard and `ToolCallActorDep` share this resolution;
-    FastMCP separately resolves its already-verified `client_id` in `mcp_agent_auth`."""
-    return next((a for a in static_agents if presents_agent_bearer(conn, a.token.get_secret_value())), None)
+def _presented_bearer(conn: HTTPConnection) -> str | None:
+    scheme, separator, credential = conn.headers.get("authorization", "").partition(" ")
+    if not separator or scheme.lower() != "bearer" or not credential:
+        return None
+    return credential
 
 
 class OperatorResponse(BaseModel):
@@ -73,6 +68,7 @@ class OperatorSession:
     operator_id: UUID
     identity_id: UUID
     username: str
+    browser_session_id: str
 
 
 def build_oauth(config: OperatorOidcConfig) -> OAuth:
@@ -107,13 +103,21 @@ def operator_session(conn: HTTPConnection) -> OperatorSession | None:
     username = raw.get("username")
     if not isinstance(username, str) or not username:
         return None
+    browser_session_id = raw.get("browser_session_id")
+    if not isinstance(browser_session_id, str) or not browser_session_id:
+        return None
     expires_at = raw.get("expires_at")
     if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(time.time()):
         return None
     identity = _identity_store(conn).resolve_active_session(operator_id=operator_id, identity_id=identity_id)
     if identity is None:
         return None
-    return OperatorSession(operator_id=identity.operator_id, identity_id=identity.identity_id, username=username)
+    return OperatorSession(
+        operator_id=identity.operator_id,
+        identity_id=identity.identity_id,
+        username=username,
+        browser_session_id=browser_session_id,
+    )
 
 
 def operator_username(request: Request) -> str | None:
@@ -130,8 +134,27 @@ def _redirect_uri(request: Request) -> str:
     return f"{base}/auth/callback"
 
 
+def _validated_enrollment_return_to(value: str) -> str:
+    """Accept only a local enrollment-interaction URL, never a general redirect target."""
+    if len(value) > _MAX_RETURN_TO_LENGTH or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise HTTPException(status_code=400, detail="invalid operator login continuation")
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or parsed.fragment or not parsed.path.startswith(_AGENT_ENROLLMENT_PATH_PREFIX):
+        raise HTTPException(status_code=400, detail="invalid operator login continuation")
+    interaction_id = parsed.path.removeprefix(_AGENT_ENROLLMENT_PATH_PREFIX)
+    try:
+        UUID(interaction_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid operator login continuation") from None
+    return urlunsplit(("", "", parsed.path, parsed.query, ""))
+
+
 @router.get("/login")
-async def login(request: Request) -> RedirectResponse:
+async def login(request: Request, return_to: str | None = None) -> RedirectResponse:
+    if return_to is not None:
+        request.session[SESSION_RETURN_TO_KEY] = _validated_enrollment_return_to(return_to)
+    else:
+        request.session.pop(SESSION_RETURN_TO_KEY, None)
     client = cast(OAuth, request.app.state.operator_oauth).create_client(AUTHENTIK_CLIENT_NAME)
     return cast(RedirectResponse, await client.authorize_redirect(request, _redirect_uri(request)))
 
@@ -170,18 +193,23 @@ async def callback(request: Request) -> RedirectResponse:
         "operator_id": str(identity.operator_id),
         "identity_id": str(identity.identity_id),
         "username": username,
+        # Enrollment interactions bind to this random browser session, not merely to possession of
+        # a server-generated form nonce or to the Operator identity shared across browser devices.
+        "browser_session_id": secrets.token_urlsafe(32),
         # SessionMiddleware refreshes its cookie timestamp whenever it serializes the session. Keep
         # an independently signed absolute deadline so an active browser cannot turn the cookie
         # into a sliding authorization that outlives Authentik reauthentication indefinitely.
         "expires_at": int(time.time()) + OPERATOR_SESSION_MAX_AGE_SECONDS,
     }
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
-    return RedirectResponse(url="/", status_code=303)
+    raw_return_to = request.session.pop(SESSION_RETURN_TO_KEY, None)
+    return_to = _validated_enrollment_return_to(raw_return_to) if isinstance(raw_return_to, str) else "/"
+    return RedirectResponse(url=return_to, status_code=303)
 
 
 @router.get("/logout")
 async def logout(request: Request) -> RedirectResponse:
-    request.session.pop(SESSION_USER_KEY, None)
+    request.session.clear()
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -193,11 +221,12 @@ async def me(request: Request) -> OperatorResponse:
     return OperatorResponse(username=session.username)
 
 
-def _static_agents(conn: HTTPConnection) -> list[ResolvedStaticAgent]:
-    return cast("list[ResolvedStaticAgent]", conn.app.state.static_agents)
+def _agent_authority(conn: HTTPConnection) -> PostgresAgentAuthority:
+    return cast(PostgresAgentAuthority, conn.app.state.agent_authority)
 
 
-StaticAgentsDep = Annotated[list[ResolvedStaticAgent], Depends(_static_agents)]
+def _static_credentials(conn: HTTPConnection) -> StaticAgentCredentialRegistry:
+    return cast(StaticAgentCredentialRegistry, conn.app.state.static_agent_credentials)
 
 
 def _operator_actor(conn: HTTPConnection) -> OperatorActor:
@@ -210,16 +239,27 @@ def _operator_actor(conn: HTTPConnection) -> OperatorActor:
 OperatorActorDep = Annotated[OperatorActor, Depends(_operator_actor)]
 
 
-def _tool_call_actor(conn: HTTPConnection, static_agents: StaticAgentsDep) -> ToolCallActor:
+async def _tool_call_actor(conn: HTTPConnection) -> ToolCallActor:
     """Resolve exactly one presented credential into its audit identity and tenant."""
-    agent = authenticated_static_agent(conn, static_agents)
+    bearer = _presented_bearer(conn)
     session = operator_session(conn)
-    if agent is not None and session is not None:
+    if bearer is not None and session is not None:
         raise HTTPException(status_code=400, detail="present exactly one operator or static-agent credential")
-    if agent is not None:
-        if not _identity_store(conn).is_active(agent.operator_id):
-            raise HTTPException(status_code=401, detail="static agent's operator is disabled or missing")
-        return AgentActor(principal=agent.agent, operator_id=agent.operator_id)
+    if bearer is not None:
+        fingerprint = _static_credentials(conn).configured_fingerprint(bearer)
+        if fingerprint is None:
+            raise HTTPException(status_code=401, detail="static Agent credential is not configured")
+        try:
+            authorization = await _agent_authority(conn).static_authorization_for_fingerprint(fingerprint=fingerprint)
+        except StaticAgentRejectedError:
+            raise HTTPException(status_code=401, detail="static Agent credential is not active") from None
+        except AgentGrantAuthorityUnavailableError:
+            raise HTTPException(
+                status_code=503, detail="Agent authorization is temporarily unavailable", headers={"Retry-After": "60"}
+            ) from None
+        return AgentActor(
+            agent_id=authorization.agent_id, operator_id=authorization.operator_id, binding_id=authorization.binding_id
+        )
     if session is not None:
         return OperatorActor(operator_id=session.operator_id)
     raise HTTPException(status_code=401, detail="operator or agent authentication required")

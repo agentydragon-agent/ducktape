@@ -28,6 +28,13 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.websockets import WebSocketDisconnect
 
+from haku.console.agents.models import (
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, csrf_token, write_config
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, metadata
 from haku.console.mcp_approval import (
@@ -256,7 +263,14 @@ def preregistered_remote_oauth_url() -> Generator[str]:
 _AGENT_TOKEN = "tool-token"
 _AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
 _AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
-_STATIC_AGENTS = [{"agent": "haku", "token_env_var": _AGENT_TOKEN_ENV, "operator_subject_env": _AGENT_OPERATOR_ENV}]
+_STATIC_AGENTS = [
+    {
+        "agent_id": "30000000-0000-4000-8000-000000000001",
+        "display_name": "Haku",
+        "token_env_var": _AGENT_TOKEN_ENV,
+        "operator_subject_env": _AGENT_OPERATOR_ENV,
+    }
+]
 
 
 @pytest.fixture(autouse=True)
@@ -870,7 +884,7 @@ def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url:
     first = _submit(operator_client)
     second = _submit(operator_client)
     assert first["tool_call_id"].startswith("tc_")
-    assert UUID(first["caller_principal"]) == _operator_id(migrated_db_url, "operator-sub")
+    assert first["caller"] == {"kind": "operator"}
     assert first["status"] == "pending_approval"
     assert "approval_id" not in first
     assert second["tool_call_id"] != first["tool_call_id"]
@@ -1125,7 +1139,8 @@ def test_routing_executes_each_agent_as_its_own_operator(
     config["static_agents"] = [
         *_STATIC_AGENTS,
         {
-            "agent": "ops-bot",
+            "agent_id": "30000000-0000-4000-8000-000000000002",
+            "display_name": "Ops Bot",
             "token_env_var": "HAKU_CONSOLE_TEST_AGENT2_TOKEN",
             "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
         },
@@ -1181,8 +1196,13 @@ def test_two_operator_two_agent_http_authorization_matrix(
         [{"id": "grocy-sf", "server_url": mcp_server_url, "bearer_token_secret": "haku-console-grocy-sf-token"}]
     )
     config["static_agents"] = [
-        {"agent": name, "token_env_var": token_env, "operator_subject_env": operator_env}
-        for name, _, _, token_env, operator_env in agent_specs
+        {
+            "agent_id": f"30000000-0000-4000-8000-{index:012d}",
+            "display_name": name.replace("-", " ").title(),
+            "token_env_var": token_env,
+            "operator_subject_env": operator_env,
+        }
+        for index, (name, _, _, token_env, operator_env) in enumerate(agent_specs, start=10)
     ]
     config_file = write_config(tmp_path / "two_operator_agents.yaml", config)
 
@@ -1500,14 +1520,30 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
                 .mappings()
                 .all()
             }
+            principal_columns = {
+                row["column_name"]
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_name = 'mcp_tool_call_principals'
+                        """
+                    )
+                )
+                .mappings()
+                .all()
+            }
             row = cast(
                 dict[str, Any],
                 conn.execute(
                     text(
                         """
-                        SELECT operator_id, server_id, tool_name, status, arguments_json, result_json
-                        FROM mcp_tool_calls
-                        WHERE tool_call_id = :tool_call_id
+                        SELECT principal.operator_id, call.server_id, call.tool_name, call.status,
+                               call.arguments_json, call.result_json
+                        FROM mcp_tool_calls AS call
+                        JOIN mcp_tool_call_principals AS principal USING (tool_call_id)
+                        WHERE call.tool_call_id = :tool_call_id
                         """
                     ),
                     {"tool_call_id": submitted["tool_call_id"]},
@@ -1518,22 +1554,30 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     finally:
         engine.dispose()
 
-    assert version == "0008"
+    assert version == "0009"
     assert {
         "operators",
         "identity_anchors",
         "oidc_identities",
+        "client_software",
+        "enrollment_interactions",
+        "enrollment_correlation_reservations",
+        "agents",
+        "agent_name_reservations",
+        "credential_bindings",
+        "authorization_grants",
+        "static_credentials",
+        "mcp_tool_call_principals",
         "mcp_operator_oauth_associations",
         "mcp_operator_oauth_flows",
-        "mcp_agent_operator",
     } <= tables
-    assert {"mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(tables)
+    assert {"mcp_agent_operator", "mcp_tool_calls_legacy_unowned", "mcp_tool_call_events_legacy_unowned"}.isdisjoint(
+        tables
+    )
     assert {
         "tool_call_id",
-        "operator_id",
         "server_id",
         "tool_name",
-        "caller_principal",
         "status",
         "created_at",
         "updated_at",
@@ -1547,6 +1591,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
         "auto_approval_evaluation",
         "approved_at",
     } == columns
+    assert principal_columns == {"tool_call_id", "operator_id", "binding_id"}
     assert row["operator_id"] == _operator_id(db_url, "operator-sub")
     assert row["server_id"] == "smoke"
     assert row["tool_name"] == "echo"
@@ -1658,6 +1703,11 @@ def test_historical_enum_migration_reaches_current_head(db_url: str) -> None:
         engine.dispose()
 
     current_values = {
+        "agent_status": tuple(status.value for status in AgentStatus),
+        "client_registration_kind": tuple(kind.value for kind in ClientRegistrationKind),
+        "credential_binding_status": tuple(status.value for status in CredentialBindingStatus),
+        "credential_kind": tuple(kind.value for kind in CredentialKind),
+        "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
         "operator_status": tuple(status.value for status in OperatorStatus),
         "tool_call_event_type": tuple(event_type.value for event_type in ToolCallEventType),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
