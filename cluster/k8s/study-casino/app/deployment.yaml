@@ -28,7 +28,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: app
-          image: ghcr.io/agentydragon/study-casino:devel-20260712060906-7bec1a5 # {"$imagepolicy": "flux-system:study-casino"}
+          image: ghcr.io/agentydragon/study-casino:devel-20260715071341-2ac2ae8 # {"$imagepolicy": "flux-system:study-casino"}
           imagePullPolicy: Always
           ports:
             - name: http
@@ -36,7 +36,7 @@ spec:
               protocol: TCP
           env:
             - name: STUDY_CASINO_IMAGE_TAG
-              value: devel-20260712060906-7bec1a5 # {"$imagepolicy": "flux-system:study-casino:tag"}
+              value: devel-20260715071341-2ac2ae8 # {"$imagepolicy": "flux-system:study-casino:tag"}
             # Compose the SQLAlchemy URL from the CNPG-generated secret. The
             # `$(VAR)` syntax in env values is resolved by the kubelet from
             # earlier-defined env vars in the same container. `+psycopg`
