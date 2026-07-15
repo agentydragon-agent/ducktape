@@ -15,6 +15,7 @@ rules:
       - pods/log
       - pods/exec
       - pods/attach
+      - pods/portforward
       - services
       - configmaps
       - secrets
