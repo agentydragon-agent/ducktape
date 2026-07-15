@@ -13,8 +13,8 @@
       "sha256": "AiOiDhOGmrauqd5bXJYMmjzoWk71jpDTxX9X/tyZ/eQ="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-e9365b865834/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "6TZbhlg078WHvrG4kGGuU5T+mSTHo+ItdI8Jtgn7Ucs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-1e14b35ae270/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "HhSzWuJwQjiHpMtaRr1JGfoOeEKM3Bjl9P5Sq9CuPM4="
     },
     "ducktape-git-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-bb51b4ce9e94/ducktape_git_hooks-0.1.0-py3-none-any.whl",
