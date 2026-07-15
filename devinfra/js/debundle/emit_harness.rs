@@ -9,12 +9,14 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use artifact::{
-    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
-    chunk_id_for_js_path, get_chunk_entry_path, materialize_artifact_scripts,
-    module_path_from_path, normalize_module_path, path_from_module_path, write_json,
+    ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, ChunksReport,
+    OutputMetrics, PackageManifest, chunk_id_for_js_path, get_chunk_entry_path,
+    materialize_artifact_scripts, module_path_from_path, normalize_module_path,
+    path_from_module_path, write_json,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
+use spec::EmitBrowserHarnessConfig;
 
 /// Harness-relative module specifier for a chunk's emitted entry file,
 /// resolved from a snapshot `*.js` script path.
@@ -37,12 +39,6 @@ fn runtime_js_href(
         .join(chunk_name.split('/').collect::<PathBuf>())
         .join(entry_file.split('/').collect::<PathBuf>());
     Ok(artifact::relative_module_specifier(out_dir, &entry_path))
-}
-
-pub struct EmitBrowserHarnessOptions {
-    pub asset_summary_path: PathBuf,
-    pub out_dir: PathBuf,
-    pub snapshot_root: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +71,7 @@ struct HtmlEntries {
 /// snapshot manifest never contained.
 pub fn emit_browser_harness(
     artifact: &ChunkBundle,
-    options: &EmitBrowserHarnessOptions,
+    options: &EmitBrowserHarnessConfig,
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
@@ -144,7 +140,7 @@ pub fn emit_browser_harness(
     fs::write(app_root.join("bootstrap.js"), bootstrap)?;
     write_json(
         layout.chunks_report(),
-        &ChunksManifest {
+        &ChunksReport {
             chunks: chunk_records,
         },
     )?;
@@ -188,21 +184,10 @@ pub fn emit_browser_harness(
     write_json(
         app_root.join("package.json"),
         &PackageManifest {
-            package_type: "module",
+            module_type: "module",
         },
     )?;
     Ok(())
-}
-
-#[derive(Serialize)]
-struct ChunksManifest<'a> {
-    chunks: &'a [ArtifactChunkRecord],
-}
-
-#[derive(Serialize)]
-struct PackageManifest {
-    #[serde(rename = "type")]
-    package_type: &'static str,
 }
 
 #[derive(Serialize)]
