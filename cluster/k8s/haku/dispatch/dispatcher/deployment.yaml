@@ -24,7 +24,7 @@ spec:
       serviceAccountName: dispatcher
       containers:
         - name: dispatcher
-          image: ghcr.io/agentydragon/haku-dispatcher:devel-20260712060444-7bec1a5 # {"$imagepolicy": "flux-system:haku-dispatcher"}
+          image: ghcr.io/agentydragon/haku-dispatcher:devel-20260715071309-2ac2ae8 # {"$imagepolicy": "flux-system:haku-dispatcher"}
           ports:
             - name: http
               containerPort: 8000
