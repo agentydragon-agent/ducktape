@@ -13,18 +13,21 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, cast
 
 import boto3
+from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, TypeAdapter
 
+from util.visual_diff import compare_pngs
 from util.visual_review import MANIFEST_NAME, VisualReviewManifest
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 COMMENT_MARKER = "<!-- pr-visuals -->"
+COMMENT_BUDGET = 6000
 
 
 class BazelInvocation(BaseModel):
@@ -58,6 +61,79 @@ class DownloadedVisualTest:
     slug: str
     manifest: VisualReviewManifest
     directory: Path
+
+
+class BaselineSource(Protocol):
+    """Opaque reader over the published visual-review object store.
+
+    The publisher owns key construction (commit + target + asset); the source is
+    just ``key → bytes`` (``None`` when the object is absent), so a fake in tests
+    is a plain ``dict[str, bytes]``.
+    """
+
+    def fetch(self, key: str) -> bytes | None: ...
+
+
+def _is_not_found(error: ClientError) -> bool:
+    return error.response.get("Error", {}).get("Code") in ("NoSuchKey", "404")
+
+
+@dataclass(frozen=True)
+class S3BaselineSource:
+    client: Any
+    bucket: str
+
+    def fetch(self, key: str) -> bytes | None:
+        try:
+            body = self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        except ClientError as error:
+            if _is_not_found(error):
+                return None
+            raise
+        return cast(bytes, body)
+
+
+def _baseline_key(base_sha: str, slug: str, *parts: str) -> str:
+    """Object key for a baseline artifact at ``commits/<base_sha>/tests/<slug>/...``."""
+    return "/".join(("commits", base_sha, "tests", slug, *parts))
+
+
+class ClassificationCounts(BaseModel):
+    modified: int = 0
+    new: int = 0
+    removed: int = 0
+    unchanged: int = 0
+
+
+class ReviewAsset(BaseModel):
+    """A visual-review asset enriched with its baseline comparison result."""
+
+    path: str
+    label: str
+    classification: Literal["unchanged", "modified", "new", "removed"] | None = None
+    changed_fraction: float | None = None
+    changed_pixels: int | None = None
+    candidate_dimensions: list[int] | None = None
+    baseline_dimensions: list[int] | None = None
+    dimension_changed: bool | None = None
+
+
+class ReviewTest(BaseModel):
+    """A test target's review data, serialized to per-test and commit metadata."""
+
+    target_label: str
+    slug: str
+    title: str
+    assets: list[ReviewAsset]
+    base_sha: str | None = None
+    summary: ClassificationCounts | None = None
+    preview: ReviewAsset | None = None
+
+
+class ReviewBundleMetadata(BaseModel):
+    repository: str
+    commit_sha: str
+    tests: list[ReviewTest]
 
 
 def find_test_invocations(linkage_dir: Path) -> list[str]:
@@ -152,7 +228,94 @@ def _templates() -> Environment:
     )
 
 
-def build_bundle(tests: list[DownloadedVisualTest], output_root: Path, *, commit_sha: str, repository: str) -> Path:
+def _asset_summary(assets: list[ReviewAsset]) -> ClassificationCounts:
+    summary = ClassificationCounts()
+    for asset in assets:
+        match asset.classification:
+            case "modified":
+                summary.modified += 1
+            case "new":
+                summary.new += 1
+            case "removed":
+                summary.removed += 1
+            case "unchanged":
+                summary.unchanged += 1
+    return summary
+
+
+def _classify_test_assets(
+    test: DownloadedVisualTest,
+    base_sha: str,
+    baseline_metadata: dict[str, Any] | None,
+    baseline_source: BaselineSource,
+    target_dir: Path,
+) -> list[ReviewAsset]:
+    """Classify a test's candidate assets against its baseline commit.
+
+    Writes ``baseline/<path>`` (modified + removed) and ``diff/<path>``
+    (modified) PNGs into ``target_dir``. Candidate assets absent from the
+    baseline are ``new``; baseline assets absent from the candidate are
+    ``removed``; the rest are compared by :func:`compare_pngs`.
+    """
+    baseline_by_path = {asset["path"]: asset for asset in baseline_metadata["assets"]} if baseline_metadata else {}
+    baseline_dir = target_dir / "baseline"
+    diff_dir = target_dir / "diff"
+    enriched: list[ReviewAsset] = []
+
+    def materialize_baseline(path: str) -> Path | None:
+        body = baseline_source.fetch(_baseline_key(base_sha, test.slug, path))
+        if body is None:
+            return None
+        baseline_dir.mkdir(parents=True, exist_ok=True)
+        destination = baseline_dir / path
+        destination.write_bytes(body)
+        return destination
+
+    for asset in test.manifest.assets:
+        if asset.path not in baseline_by_path:
+            enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="new"))
+            continue
+        baseline_png = materialize_baseline(asset.path)
+        if baseline_png is None:
+            enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="new"))
+            continue
+        comparison = compare_pngs(test.directory / asset.path, baseline_png)
+        if comparison.classification == "unchanged":
+            enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="unchanged"))
+            continue
+        diff_dir.mkdir(parents=True, exist_ok=True)
+        if comparison.diff_overlay is not None:
+            comparison.diff_overlay.save(diff_dir / asset.path)
+        enriched.append(
+            ReviewAsset(
+                path=asset.path,
+                label=asset.label,
+                classification="modified",
+                changed_fraction=comparison.changed_fraction,
+                changed_pixels=comparison.changed_pixels,
+                candidate_dimensions=list(comparison.actual_size),
+                baseline_dimensions=list(comparison.baseline_size),
+                dimension_changed=comparison.dimension_changed,
+            )
+        )
+    candidate_paths = {asset.path for asset in test.manifest.assets}
+    for path, baseline_asset in baseline_by_path.items():
+        if path in candidate_paths:
+            continue
+        if materialize_baseline(path) is not None:
+            enriched.append(ReviewAsset(path=path, label=baseline_asset.get("label", path), classification="removed"))
+    return enriched
+
+
+def build_bundle(
+    tests: list[DownloadedVisualTest],
+    output_root: Path,
+    *,
+    commit_sha: str,
+    repository: str,
+    base_sha: str | None = None,
+    baseline_source: BaselineSource | None = None,
+) -> Path:
     if not FULL_SHA.fullmatch(commit_sha):
         raise ValueError("commit SHA must be the full 40-character lowercase SHA-1")
     if not tests:
@@ -161,31 +324,40 @@ def build_bundle(tests: list[DownloadedVisualTest], output_root: Path, *, commit
     bundle = output_root / "commits" / commit_sha
     environment = _templates()
     page_tests: list[dict[str, Any]] = []
-    metadata_tests: list[dict[str, Any]] = []
+    review_tests: list[ReviewTest] = []
     for test in tests:
         target_dir = bundle / "tests" / test.slug
         target_dir.mkdir(parents=True, exist_ok=True)
-        assets = [asset.model_dump() for asset in test.manifest.assets]
         for asset in test.manifest.assets:
             shutil.copyfile(test.directory / asset.path, target_dir / asset.path)
-        target_data = {
-            "target_label": test.target_label,
-            "slug": test.slug,
-            "title": test.manifest.title,
-            "assets": assets,
-        }
-        (target_dir / "metadata.json").write_text(json.dumps(target_data, indent=2) + "\n")
+        if base_sha and baseline_source is not None:
+            metadata_bytes = baseline_source.fetch(_baseline_key(base_sha, test.slug, "metadata.json"))
+            baseline_metadata = json.loads(metadata_bytes) if metadata_bytes is not None else None
+            assets = _classify_test_assets(test, base_sha, baseline_metadata, baseline_source, target_dir)
+        else:
+            assets = [ReviewAsset(path=asset.path, label=asset.label) for asset in test.manifest.assets]
+        review_test = ReviewTest(
+            target_label=test.target_label,
+            slug=test.slug,
+            title=test.manifest.title,
+            assets=assets,
+            base_sha=base_sha,
+            summary=_asset_summary(assets) if base_sha else None,
+            preview=next((asset for asset in assets if asset.classification == "modified"), None) if base_sha else None,
+        )
+        (target_dir / "metadata.json").write_text(review_test.model_dump_json(indent=2, exclude_none=True) + "\n")
+        page = review_test.model_dump(exclude_none=True)
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
-                repository=repository, commit_sha=commit_sha, **target_data
+                repository=repository, commit_sha=commit_sha, **page
             )
         )
-        page_tests.append(target_data)
-        metadata_tests.append(target_data)
+        page_tests.append(page)
+        review_tests.append(review_test)
 
     bundle.mkdir(parents=True, exist_ok=True)
-    metadata = {"repository": repository, "commitSha": commit_sha, "tests": metadata_tests}
-    (bundle / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    metadata = ReviewBundleMetadata(repository=repository, commit_sha=commit_sha, tests=review_tests)
+    (bundle / "metadata.json").write_text(metadata.model_dump_json(indent=2, exclude_none=True) + "\n")
     (bundle / "index.html").write_text(
         environment.get_template("pr_visuals.html.j2").render(
             repository=repository, commit_sha=commit_sha, tests=page_tests
@@ -211,22 +383,80 @@ def upload_bundle(bundle: Path, *, endpoint: str, bucket: str, key: str, client:
         )
 
 
-def success_comment_body(*, repository: str, commit_sha: str, url: str, tests: list[DownloadedVisualTest]) -> str:
+def _totals(review_tests: list[ReviewTest]) -> ClassificationCounts:
+    totals = ClassificationCounts()
+    for test in review_tests:
+        if test.summary is not None:
+            totals.modified += test.summary.modified
+            totals.new += test.summary.new
+            totals.removed += test.summary.removed
+            totals.unchanged += test.summary.unchanged
+    return totals
+
+
+def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> str:
+    """Append up to two modified-asset diff previews, respecting the byte budget."""
+    modified = [
+        (asset.changed_fraction or 0.0, test.slug, asset.path, asset.label)
+        for test in review_tests
+        for asset in test.assets
+        if asset.classification == "modified"
+    ]
+    modified.sort(key=lambda item: item[0], reverse=True)
+    if not modified:
+        return base
+    for limit in (2, 1):
+        lines = ["", "### Top changes"]
+        for fraction, slug, path, label in modified[:limit]:
+            lines += [
+                f'<img src="{url}tests/{slug}/diff/{path}" width="400">',
+                f"`{label}` · {fraction:.1%} changed",
+                "",
+            ]
+        body = base + "\n" + "\n".join(lines)
+        if len(body) <= COMMENT_BUDGET:
+            return body
+    return base
+
+
+def success_comment_body(
+    *, repository: str, commit_sha: str, url: str, review_tests: list[ReviewTest], base_sha: str | None = None
+) -> str:
     commit_url = f"https://github.com/{repository}/commit/{commit_sha}"
     page_url = f"{url}index.html"
+    target_count = len(review_tests)
+    plural = "" if target_count == 1 else "s"
+    if base_sha is None:
+        lines = [
+            COMMENT_MARKER,
+            f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
+            "",
+            f"{target_count} Bazel test target{plural} produced visual artifacts. [Open visual review]({page_url}).",
+            "",
+        ]
+        lines.extend(
+            f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {len(test.assets)} assets"
+            for test in review_tests
+        )
+        return "\n".join(lines)
+
+    totals = _totals(review_tests)
     lines = [
         COMMENT_MARKER,
         f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
         "",
-        f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts. "
-        f"[Open visual review]({page_url}).",
+        f"{target_count} Bazel test target{plural} produced visual artifacts · "
+        f"**{totals.modified} modified**, {totals.new} new, {totals.removed} removed, "
+        f"{totals.unchanged} unchanged. [Open visual review]({page_url}).",
         "",
     ]
-    lines.extend(
-        f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {len(test.manifest.assets)} assets"
-        for test in tests
-    )
-    return "\n".join(lines)
+    for test in review_tests:
+        counts = test.summary or ClassificationCounts()
+        lines.append(
+            f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): "
+            f"{counts.modified} modified, {counts.new} new, {counts.removed} removed"
+        )
+    return _with_diff_previews("\n".join(lines), review_tests, url)
 
 
 def error_comment_body(*, repository: str, commit_sha: str, error: Exception) -> str:
@@ -305,6 +535,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--linkage-dir", type=Path, required=True)
     result.add_argument("--work-dir", type=Path, required=True)
     result.add_argument("--sha", required=True)
+    result.add_argument("--base-sha")
     result.add_argument("--repository", required=True)
     result.add_argument("--endpoint", required=True)
     result.add_argument("--bucket", required=True)
@@ -334,12 +565,39 @@ def main() -> None:
             print(f"{summary} Skipping publication.")
             return
 
-        bundle = build_bundle(tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository)
+        base_sha = args.base_sha or None
+        baseline_source: BaselineSource | None = None
+        if base_sha:
+            if not FULL_SHA.fullmatch(base_sha):
+                raise ValueError("--base-sha must be the full 40-character lowercase SHA-1")
+            baseline_source = S3BaselineSource(
+                client=boto3.client("s3", endpoint_url=args.endpoint), bucket=args.bucket
+            )
+        bundle = build_bundle(
+            tests,
+            args.work_dir / "site",
+            commit_sha=args.sha,
+            repository=args.repository,
+            base_sha=base_sha,
+            baseline_source=baseline_source,
+        )
         upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}")
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
-        summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
+        review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests
+        if base_sha:
+            totals = _totals(review_tests)
+            summary = (
+                f"{len(tests)} target{'s' if len(tests) != 1 else ''} · {totals.modified} modified, "
+                f"{totals.new} new, {totals.removed} removed, {totals.unchanged} unchanged."
+            )
+        else:
+            summary = f"{len(tests)} Bazel test target{'s' if len(tests) != 1 else ''} produced visual artifacts."
         comment_body = success_comment_body(
-            repository=args.repository, commit_sha=args.sha, url=public_url, tests=tests
+            repository=args.repository,
+            commit_sha=args.sha,
+            url=public_url,
+            review_tests=review_tests,
+            base_sha=base_sha,
         )
         conclusion, details_url = "success", f"{public_url}index.html"
     except Exception as error:
