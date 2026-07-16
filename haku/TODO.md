@@ -1,7 +1,109 @@
 # Haku TODO
 
 Project-level TODOs for Haku. Design rationale lives in `PLAN.md`; this is the
-actionable checklist. Remove entries once done.
+actionable checklist. Remove entries once done. Component-specific detail stays in the
+component checklist rather than being copied here: haku-console's tool/API backlog is
+<console/TODO.md>, while the remaining OAuth/identity rationale and sequencing is
+<../plans/oauth_architecture.md>.
+
+## Immediate correctness and security
+
+- **Make independent haku-console rollouts skew-safe.** Do not bundle the server image, static
+  image, and live config into a bespoke atomic promotion unit. Define and test compatibility across
+  one rollout window instead: deploy readers before writers for config changes; make server API
+  additions available before the static frontend consumes them; remove old fields/endpoints only
+  after every consumer has moved. CI should exercise the server against the current and next config
+  shapes and the frontend against its supported server contract. Revisit the current `Recreate`
+  strategy so a failed replacement does not discard the last serving version. The 2026-07-14
+  authority cutover is the regression case: new config restarted the old incompatible server and
+  caused an outage until image automation caught up.
+- **Prove retry-safe tool-call admission.** Add fault injection for "the durable admission commit
+  succeeded, the HTTP/MCP response was lost, and the caller retried." Specify and implement a
+  caller-visible idempotency key scoped by canonical Operator and Agent binding if the current path
+  can create two executions. Preserve the exact binding generation in the deduplication boundary.
+- **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and
+  registration attempts with Haku-side rate limits and transaction quotas. FastMCP continues to
+  own protocol validation and TTLs; Haku owns enrollment interaction and activation limits.
+
+## Agent and Operator product work
+
+The canonical authority/enrollment cutover and migration squash are complete. These are product
+slices over the deployed schema, not another identity migration:
+
+- **Connected Agents:** ship an Operator-scoped API and trusted-console UI showing canonical Agent
+  name/status, safe client metadata, scopes, binding generations, creation time, last-authenticated
+  time, and reconnect history. Do not call inactivity "disconnected" or expose secrets/raw OAuth
+  metadata. The existing schema is sufficient for this slice; do not block it on schema cleanup.
+- **Agent-filtered tool-call history:** add an optional canonical `agent_id` backend filter and UI
+  control. Apply authenticated `operator_id` first and Agent scope second. A foreign Agent UUID
+  returns an empty result rather than revealing existence.
+- **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect
+  history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
+  the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
+  whether rename history is a product requirement before adding another reservation/audit table.
+- **Per-Agent approval policy:** store a typed policy keyed by canonical Agent, with the current
+  global policy as inherited/default. Later derive each Agent's tool surface from the verified
+  binding plus policy and emit `tools/list_changed` on policy edits; never authorize by an
+  unverified OAuth `client_id`.
+- **Per-tool-call deep link:** make the promise URL open/highlight its exact call rather than merely
+  loading the console. Detailed route/UI pointer: <console/TODO.md>.
+
+## Console and authority consolidation
+
+Keep these as small mechanical PRs unless a wire-contract check finds an external consumer:
+
+- Return pending `ToolCallRecord` values directly and remove the subset `PendingApproval` DTO plus
+  frontend unions.
+- Remove the impossible tool-level degraded-metadata variant; server-level degradation is the real
+  boundary.
+- Collapse identical access/refresh grant-resolution methods, ceremonial context wrappers, and
+  dead exception types. Preserve the required FastMCP context bridge, exact actor/binding
+  provenance, execution-time revalidation, and failure-preserving `MultiAuth` behavior.
+- Collapse `/api/approvals/events`, its cursor table, and multiple per-transition broadcasts into
+  one typed, Operator-routed `tool_calls_changed(tool_call_id)` invalidation. REST and actor-scoped
+  database reads remain authoritative; PostgreSQL notification delivery remains a lossy wakeup.
+- After the Connected Agents read contract provides evidence about which joins really hurt,
+  simplify the authority schema: remove the deferred name-reservation ownership cycle and
+  speculative client-software fields, consider the relational `operator_id`-or-`binding_id`
+  discriminated union directly on tool calls, remove deployment-only `secret_reference`, and prune
+  redundant trigger functions while retaining genuine cross-row security invariants. This is a
+  deliberate migration, not a five-second cleanup.
+
+## Google connection ownership and Airlock
+
+The current Airlock-backed `gmail` and `google_calendar` tool surfaces are intentionally global to
+authenticated Haku Agents during this transitional state. Do not add a temporary per-Operator
+owner mapping around the singleton token. Introduce Operator scoping when Haku owns the downstream
+Google connection itself:
+
+- **Give Haku per-Operator Google connections.** Replace the singleton Airlock-issued
+  `haku_console_google` token with Haku-owned connect/status/reconnect/revoke, private refresh-token
+  storage, and execution-time Operator selection. This is a downstream-provider relationship,
+  separate from Agent enrollment and Agent credentials.
+- **Retire only Haku's Airlock dependency after live proof.** Remove the
+  `haku_console_google` provider, its access-token publication/External Secrets mirror, and the
+  haku-console token mount. Do not couple this to Airlock's unrelated Oura, BSC, OpenClaw, or other
+  remaining consumers, and do not treat broader Airlock retirement as a prerequisite.
+- **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
+  whether every Operator should share one routine launcher. Specify whether the launcher is a
+  global Haku capability or an Operator-owned downstream resource before relying on it in a
+  multi-Operator console.
+
+## Cross-cutting OAuth/Auth infrastructure
+
+- **Minimum Airlock hardening while it remains:** separate interactive proxy, browser Operator,
+  Claude Code, and OpenClaw issuer/audience/scope contracts; require authenticated management POST
+  to initiate provider connection; make callback state bounded, expiring, one-time,
+  initiator/action/provider/generation-bound, and consumed on every terminal path.
+- **Typed auth configuration:** replace optional-heavy incoming/outgoing auth configurations with
+  role-specific discriminated models and typed scope domains, atomically per consumer. Keep
+  credentialed-facade and identity-delegation constructors separate.
+- **Shared browser OIDC helper:** extract only genuinely common Authlib/Starlette relying-party
+  behavior from Haku and Props. Migrate Study Casino away from username authority to a local UUID
+  plus exact `(issuer, subject)` identity.
+- **Singular Authentik ownership:** inventory provider/application/controller ownership, resolve
+  duplicate ownership such as Kagent proxy-vs-OIDC, assign shared mappings one controller, update
+  `cluster/docs/mcp_oauth_authentik_notes.md`, and add drift checks.
 
 ## Repo-boundary follow-ups (from the 2026-07-07 state_template retirement)
 
@@ -120,17 +222,6 @@ has shipped on the capability tier — see the README.)
   `text`; consider adding quick buttons for common instructions (e.g. "scan Gmail now",
   "CPAP check", "triage open PRs"). Reuses the launch button's existing bearer + egress
   perimeter. Docs: code.claude.com/docs/en/routines.
-- **Fold launch-routine into the MCP tool-call mechanism.** The launch-routine capability
-  (`capabilities.py`, its own CSRF-gated bespoke tier) reinvents what the MCP approval queue
-  already provides: an operator-gated, audited, exact-arguments call that acts on the world.
-  Consider retiring the separate capability tier and exposing routine-launching as an
-  **in-process MCP server** — a "claude-code-web routine launcher", built like
-  `haku.console.tools.google` — whose one `launch_routine` tool flows through the same
-  submit → approve → execute → audit pipeline as every other tool call (the launch bearer stays
-  console-side, unread by Haku, exactly as today). That collapses two consent/audit surfaces into
-  one and gives each launch a ledger entry + result for free. Preserve the property that firing is
-  a genuine operator gesture against trusted chrome (today the shell renders its own confirm) when
-  it becomes an approval-queue item; pairs naturally with the routine-runs listing panel above.
 
 ## Managed Agents runtimes — per-runtime TODOs
 
