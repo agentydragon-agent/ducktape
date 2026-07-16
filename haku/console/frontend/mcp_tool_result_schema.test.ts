@@ -12,12 +12,17 @@ describe("generated MCP tool result schemas", () => {
     expect(keys).toContain("google_calendar.get_event");
     expect(keys).toContain("google_calendar.list_events");
     expect(keys).toContain("google_calendar.list_event_instances");
+    expect(keys).not.toContain("gmail.thread_previews");
+    expect(keys).not.toContain("google_calendar.calendar_summary");
     // A `-> None` return has no structured result, so it has no entry.
     expect(keys).not.toContain("gmail.labels_delete");
     // grocy-sf's batch-tool result schemas are now reflected (the allowlisted preview tools).
-    expect(keys.filter((key) => key.startsWith("grocy-sf."))).toHaveLength(12);
+    expect(keys.filter((key) => key.startsWith("grocy-sf."))).toHaveLength(15);
     expect(keys).toContain("grocy-sf.stock_add");
     expect(keys).toContain("grocy-sf.products_list");
+    expect(keys).toContain("grocy-sf.locations_list");
+    expect(keys).toContain("grocy-sf.product_groups_list");
+    expect(keys).toContain("grocy-sf.shopping_lists_list");
   });
 
   it("parses a Draft resource and rejects one missing its id", () => {
@@ -38,6 +43,8 @@ describe("generated MCP tool result schemas", () => {
     };
     expect(mcpToolResultSchema("google_calendar", "create_event").safeParse(result).success).toBe(true);
     expect(mcpToolResultSchema("google_calendar", "get_event").safeParse(result).success).toBe(true);
-    expect(mcpToolResultSchema("google_calendar", "list_events").safeParse({ events: [result] }).success).toBe(true);
+    expect(
+      mcpToolResultSchema("google_calendar", "list_events").safeParse({ events: [result], summary: "Family" }).success
+    ).toBe(true);
   });
 });

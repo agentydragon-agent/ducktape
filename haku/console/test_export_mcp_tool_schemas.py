@@ -52,6 +52,8 @@ async def test_exports_every_server_and_tool() -> None:
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
     # grocy-sf is reflected only for the batch tools the console renders previews for.
     assert list(schema["properties"]["grocy-sf"]["properties"]) == [
+        "locations_list",
+        "product_groups_list",
         "products_create",
         "products_edit",
         "products_list",
@@ -60,6 +62,7 @@ async def test_exports_every_server_and_tool() -> None:
         "shopping_list_item_edit",
         "shopping_list_items_add",
         "shopping_list_items_remove",
+        "shopping_lists_list",
         "stock_add",
         "stock_consume",
         "stock_entry_edit",
@@ -147,6 +150,7 @@ async def test_exports_result_catalog() -> None:
     # A `-> None` return (gmail.labels_delete) has only a null wrapped result, so it is omitted —
     # the result tool set is a subset of the argument tool set.
     assert "labels_delete" not in gmail
+    assert "thread_previews" not in gmail
     assert "drafts_create" in gmail
     assert "threads_modify_labels" in gmail
     # `id` is the one required field of a Draft resource.
@@ -159,6 +163,8 @@ async def test_exports_result_catalog() -> None:
     ]
     assert list(schema["properties"]["haku_routine"]["properties"]) == ["launch_routine"]
     assert list(schema["properties"]["grocy-sf"]["properties"]) == [
+        "locations_list",
+        "product_groups_list",
         "products_create",
         "products_edit",
         "products_list",
@@ -167,6 +173,7 @@ async def test_exports_result_catalog() -> None:
         "shopping_list_item_edit",
         "shopping_list_items_add",
         "shopping_list_items_remove",
+        "shopping_lists_list",
         "stock_add",
         "stock_consume",
         "stock_entry_edit",

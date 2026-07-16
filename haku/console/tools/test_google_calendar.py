@@ -1,26 +1,16 @@
-"""Tests for the in-process `google_calendar` MCP server (build_mcp) and the calendar-summary
-router endpoint."""
+"""Tests for the in-process `google_calendar` MCP server (build_mcp)."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest_bazel
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from fastmcp import Client
 
-from haku.console.tools.google_calendar import GOOGLE_CALENDAR_SERVER_ID, build_mcp, router
-from haku.console.tools.google_calendar_client import CalendarEvent, CalendarEventsPage, CalendarSummary
+from haku.console.tools.google_calendar import GOOGLE_CALENDAR_SERVER_ID, build_mcp
+from haku.console.tools.google_calendar_client import CalendarEvent, CalendarEventsPage
 
 
 def _mcp(calendar=None):
     return build_mcp(calendar or Mock())
-
-
-def _http_client(calendar=None) -> TestClient:
-    app = FastAPI()
-    app.state.calendar_client = calendar
-    app.include_router(router)
-    return TestClient(app)
 
 
 async def test_tool_surface():
@@ -95,25 +85,6 @@ async def test_read_tools_dispatch_to_calendar_client():
     instance_args = calendar.list_event_instances.call_args.args[0]
     assert instance_args.recurring_event_id == "series1"
     assert instance_args.page_token == "page-2"
-
-
-def test_calendar_summary_endpoint_503s_when_unconfigured() -> None:
-    with _http_client() as http_client:
-        resp = http_client.get("/api/google-calendar/calendar-summary", params={"calendar_id": "c1"})
-        assert resp.status_code == 503
-
-
-def test_calendar_summary_endpoint_resolves_over_the_client_service() -> None:
-    summary = CalendarSummary(calendar_id="c1", summary="Team (SF)", html_link="https://calendar.example/c1")
-    calendar = Mock()  # non-None so the endpoint doesn't 503; its .service is handed to the reader
-    with (
-        patch("haku.console.tools.google_calendar.resolve_calendar_summary", return_value=summary) as resolve_mock,
-        _http_client(calendar) as http_client,
-    ):
-        resp = http_client.get("/api/google-calendar/calendar-summary", params={"calendar_id": "c1"})
-    assert resp.status_code == 200
-    assert resp.json()["summary"] == "Team (SF)"
-    resolve_mock.assert_called_once_with(calendar.service, "c1")
 
 
 if __name__ == "__main__":
