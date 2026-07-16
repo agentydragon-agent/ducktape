@@ -50,7 +50,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
         - name: facade
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260715071141-2ac2ae8 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260716074210-404c4ba # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
