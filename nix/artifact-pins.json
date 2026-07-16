@@ -25,8 +25,8 @@
       "sha256": "G+QfabOqAAKTa0E5X7i2NL+SS2eTi1JkWdpnUuxmh/g="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-4c6b862bc7e8/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "TGuGK8foUna74Gz1ibrcBOELP0sZGKyIT2K7DRXgimU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-b5fe7c18c663/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "tf58GMZjBFge/ZZSuvi2+F7FYVbLLM9fS08V9lRMf9s="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
@@ -145,8 +145,8 @@
       "sha256": "DbUVaLQCHyP3B/q/JhcZiWp5Spi3Xi3sDQE6Ddq9uPc="
     },
     "skill-ground_skill": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ground_skill-74b18999cf24/ground_skill.skill",
-      "sha256": "dLGJmc8knxw24EK1PE2O5DD7Ag09b+CJh7En4iHO7ok="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ground_skill-7f88a9abebf7/ground_skill.skill",
+      "sha256": "f4ipq+v3mLfXFctnjImx6TtsWb26kQlMbAHFwHkydBk="
     },
     "skill-ikea_3d_models": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ikea_3d_models-00e1ad41573c/ikea_3d_models.skill",
