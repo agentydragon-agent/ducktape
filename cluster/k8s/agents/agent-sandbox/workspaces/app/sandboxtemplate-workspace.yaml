@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workspace
-          image: ghcr.io/agentydragon/agent-workspace:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:agent-workspace"}
+          image: ghcr.io/agentydragon/agent-workspace:devel-20260716111145-d352fe8 # {"$imagepolicy": "flux-system:agent-workspace"}
           command: ["sleep", "infinity"]
           workingDir: /workspace
           securityContext:
