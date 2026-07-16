@@ -1,0 +1,76 @@
+# Disposable agent workspace: the agent-box workflow (a machine you go to,
+# creds wired, Claude CLI installed) minus the persistence. Reuses the haku
+# zone worker image (Claude Code + Codex CLIs, no baked credentials) and the
+# zone Job's pod hardening; unlike the zones this is trusted personal use —
+# open egress, quota-capped by the agent-workspaces namespace.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: workspace
+  namespace: agent-workspaces
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-workspace
+    spec:
+      # Always-on OVH capacity; keeps workspaces off the roaming GPU/laptop nodes.
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workspace
+          image: ghcr.io/agentydragon/haku-zone-worker:devel-20260710172610-8af6f13 # {"$imagepolicy": "flux-system:haku-zone-worker"}
+          command: ["sleep", "infinity"]
+          workingDir: /workspace
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # All LLM traffic goes through the cluster LiteLLM (budget, model
+            # allowlist, observability) — never direct to the provider. The
+            # virtual key is minted by tf/gitops/litellm-keys (alias
+            # agent-workspaces, GLM models, $25/30d) and reflected into this
+            # namespace; deleting that TF resource is the kill switch.
+            - name: ANTHROPIC_BASE_URL
+              value: http://litellm.litellm.svc.cluster.local:4000
+            - name: ANTHROPIC_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-agent-workspaces
+                  key: api-key
+            # Defaults matching the key's allowlist — Claude Code would
+            # otherwise request claude-* models LiteLLM rejects for this key.
+            - name: ANTHROPIC_MODEL
+              value: glm-5.2-anthropic
+            - name: ANTHROPIC_SMALL_FAST_MODEL
+              value: glm-4.5-air-anthropic
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+  # Claims may resize/replace the workspace volume (upstream's documented knob
+  # for per-claim storage overrides).
+  volumeClaimTemplatesPolicy: Overrides
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agent-workspaces-app
+  namespace: flux-system
+  annotations:
+    description: Disposable agent workspace template + warm pool in agent-workspaces. See agents/agent-sandbox/README.md for usage.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  path: ./cluster/k8s/agents/agent-sandbox/workspaces/app
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: agent-sandbox-controller # CRDs + controller
+    - name: agent-workspaces-namespace
+    - name: litellm-keys-tf # mints + reflects litellm-key-agent-workspaces
+    - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
