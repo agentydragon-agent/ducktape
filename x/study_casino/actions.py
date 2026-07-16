@@ -34,27 +34,33 @@ class ActionRequest(BaseModel):
 
 
 class SessionCompleteResult(BaseModel):
+    """Credit amounts are integer millicredits; `credits_earned_millis` is the
+    full award (base + daily bonus, streak-multiplied)."""
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
     seconds: int
-    credits_earned: int
+    credits_earned_millis: int
+    daily_bonus_millis: int = Field(description="Streak-multiplied first-5-minutes daily bonus, 0 if not earned.")
+    streak_days: int
+    streak_bonus_percent: int = Field(description="Streak bonus applied to this award: 1%/day, capped at 100.")
 
 
 class SessionAddPastResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
-    credits_earned: int
+    credits_earned_millis: int
 
 
 class SessionCreditsDeltaResult(BaseModel):
-    """`/actions/session/{edit,delete}` — `credits_delta` may be negative."""
+    """`/actions/session/{edit,delete}` — `credits_delta_millis` may be negative."""
 
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
-    credits_delta: int
+    credits_delta_millis: int
 
 
 class ConvertResult(BaseModel):
@@ -85,6 +91,12 @@ class PrizeRedeemResult(BaseModel):
     redemption_id: str
     prize_id: str
     cost: int
+
+
+class ChangelogAckResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    acked_through: int
 
 
 class ImportResult(BaseModel):
@@ -157,6 +169,7 @@ ActionResult = (
     | PrizeCreateResult
     | PrizeDeleteResult
     | PrizeRedeemResult
+    | ChangelogAckResult
     | ImportResult
     | ResetResult
     | SlotsActionResult
@@ -242,6 +255,10 @@ class PrizeRedeemRequest(ActionRequest):
     prize_id: str = Field(min_length=1, max_length=128)
 
 
+class ChangelogAckRequest(ActionRequest):
+    last_id: int = Field(ge=1, description="Highest changelog entry id the user has seen.")
+
+
 class ImportSession(BaseModel):
     """A row inside `ImportData.sessions`.
 
@@ -292,7 +309,7 @@ class ImportData(BaseModel):
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    credits: int = 0
+    credits: float = 0
     tokens: int = 0
     sessions: list[ImportSession] = Field(default_factory=list)
     prizes: list[ImportPrize] | None = None

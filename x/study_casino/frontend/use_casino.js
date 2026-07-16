@@ -76,9 +76,21 @@ export function useCasino() {
   const isAdmin = !!me?.is_admin;
   const username = me?.username ?? null;
 
-  const balance = state?.balance ?? { credits: 0, tokens: 0 };
-  const credits = Math.floor(balance.credits ?? 0);
+  const balance = state?.balance ?? { credits_millis: 0, tokens: 0 };
+  // Server tracks integer millicredits; convert to decimal credits at this seam.
+  const credits = (balance.credits_millis ?? 0) / 1000;
   const tokens = Math.floor(balance.tokens ?? 0);
+  const creditState = state?.credit_state ?? {
+    streak_days: 0,
+    streak_bonus_percent: 0,
+    rest_days_available: 0,
+    daily_bonus_claimed_today: false,
+  };
+  const changelogUnacked = state?.changelog_unacked ?? [];
+
+  // Server-computed award breakdown of the most recently completed session
+  // (SessionCompleteResult) — display-only, cleared on dismiss or next start.
+  const [lastAward, setLastAward] = useState(null);
 
   // Server returns server-shaped fields (ended_at_ms, at_ms); the JSX layer
   // uses camelCase aliases (endedAt, at) — translate at this seam.
@@ -98,6 +110,7 @@ export function useCasino() {
   // === Local-only active-session lifecycle ===
   const startSession = (subject) => {
     if (activeSession) return;
+    setLastAward(null);
     writeActiveSession({
       subject,
       startTime: Date.now(),
@@ -133,7 +146,7 @@ export function useCasino() {
     if (!activeSession) return;
     const endedAt = Date.now();
     try {
-      await casinoSync.postAction("/actions/session/complete", {
+      const response = await casinoSync.postAction("/actions/session/complete", {
         client_action_id: newActionId("session.complete"),
         subject: activeSession.subject,
         start_time_ms: activeSession.startTime,
@@ -141,6 +154,7 @@ export function useCasino() {
         ended_at_ms: endedAt,
       });
       writeActiveSession(null);
+      if (response.result?.credits_earned_millis > 0) setLastAward(response.result);
     } catch {
       // postAction surfaced the error already; keep the active session so the user can retry.
     }
@@ -283,6 +297,12 @@ export function useCasino() {
       client_action_id: newActionId("data.reset"),
     });
 
+  const ackChangelog = (lastId) =>
+    casinoSync.postAction("/actions/changelog/ack", {
+      client_action_id: newActionId("changelog.ack"),
+      last_id: lastId,
+    });
+
   return {
     offline,
     deploymentInfo,
@@ -290,6 +310,11 @@ export function useCasino() {
     isAdmin,
     credits,
     tokens,
+    creditState,
+    changelogUnacked,
+    ackChangelog,
+    lastAward,
+    dismissAward: () => setLastAward(null),
     sessions,
     prizes,
     prizeLog,
