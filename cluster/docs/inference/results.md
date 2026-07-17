@@ -19,15 +19,20 @@ table; a known dead end is a result.
 
 ## Coding-agent configurations
 
-| Config                                                                             | Runtime | Quant | Allocated ctx | Effective ctx | Decode tok/s @128K | Peak VRAM | Coding quality | Tool calls | Run |
-| ---------------------------------------------------------------------------------- | ------- | ----- | ------------- | ------------- | ------------------ | --------- | -------------- | ---------- | --- |
-| _(none accepted yet — first row lands with E1, the k8s vLLM Qwen3-Coder baseline)_ |         |       |               |               |                    |           |                |            |     |
+| Config                       | Runtime         | Quant              | Allocated ctx | Effective ctx       | Decode tok/s @128K | Peak VRAM            | Coding quality          | Tool calls                         | Run                                                      |
+| ---------------------------- | --------------- | ------------------ | ------------- | ------------------- | ------------------ | -------------------- | ----------------------- | ---------------------------------- | -------------------------------------------------------- |
+| Qwen3-Coder-30B-A3B          | vLLM 0.25.1 TP2 | AWQ 4-bit + FP8 KV | 262K `local`  | 262K `local~`       | 199 `local`        | 30.7/29.9 GB `local` | leaderboard `ext`       | pass `local`                       | [E1](runs/2026-07-17_e1_qwen3coder_awq/README.md)        |
+| gpt-oss-20b                  | vLLM 0.25.1 TP1 | native MXFP4       | 128K `local`  | 128K `ext?`         | ~1000–1500 `local` | 15 GB `local`        | HumanEval sat. `local`  | single/multi ✓, parallel ✗ `local` | [E2](runs/2026-07-17_e2_gptoss_vllm_vs_ollama/README.md) |
+| gpt-oss-20b                  | Ollama (GGUF)   | MXFP4→bf16 compute | 128K `local`  | 128K `ext?`         | ~600–1150 `local`  | 15 GB `local`        | HumanEval sat. `local`  | single/multi ✓, parallel ✗ `local` | [E2](runs/2026-07-17_e2_gptoss_vllm_vs_ollama/README.md) |
+| Qwen3.5-35B-A3B (VL, GDN)    | vLLM 0.25.1 TP2 | FP8 + FP8 KV       | 262K `local`  | unverified `local~` | ~210 `local`       | 29.0/27.0 GB `local` | verbose reasoner `ext?` | ✗ hermes parser `local`            | [E4](runs/2026-07-17_e4_qwen35_35b/README.md)            |
+| Devstral-Small-2-24B (dense) | vLLM 0.25.1 TP2 | FP8 + FP8 KV       | 128K `local`  | 128K `local~`       | ~90 `local`        | 30.7/28.7 GB `local` | SWE-bench strong `ext`  | single/parallel/multi ✓ `local`    | [E5](runs/2026-07-17_e5_devstral_24b/README.md)          |
 
 ## Long-context attempts
 
-| Config                                                                   | Runtime | Advertised ctx | Allocated ctx | Effective ctx | Notes | Run |
-| ------------------------------------------------------------------------ | ------- | -------------- | ------------- | ------------- | ----- | --- |
-| _(none accepted yet — first row lands with E3, the Nemotron 1M attempt)_ |         |                |               |               |       |     |
+| Config                 | Runtime         | Advertised ctx | Allocated ctx | Effective ctx | Notes                                                                                                                                        | Run                                               |
+| ---------------------- | --------------- | -------------- | ------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Qwen2.5-7B-Instruct-1M | vLLM 0.25.1 TP2 | 1,010,000      | **blocked**   | —             | dual-chunk attention needs flash-attn (no sm_120 kernel; FlashInfer errors on `layer_idx`). Memory fits (~28 GB KV); kernel doesn't. `local` | [E3](runs/2026-07-17_e3_qwen25_7b_1m/README.md)   |
+| _ceiling today_        | vLLM 0.25.1     | —              | ~256K         | 262K (E1)     | standard attention tops out ~256K; true 1M awaits newer vLLM/flash-attn-sm120 or SGLang                                                      | [E1](runs/2026-07-17_e1_qwen3coder_awq/README.md) |
 
 ## Historical (pre-program)
 
