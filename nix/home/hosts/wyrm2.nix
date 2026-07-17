@@ -96,6 +96,13 @@
   wayland.windowManager.sway = {
     enable = true;
     package = null;
+    # Force the initial workspace to 1. Otherwise sway names a fresh output's
+    # first workspace after the first `workspace number N` binding with a free
+    # name, and home-manager emits `Mod4+0 → number 10` before `Mod4+1 → number
+    # 1` (attrset keys sort "Mod4+0" < "Mod4+1"), so boot lands on 10. A bare
+    # `workspace` command in extraConfig (appended after the generated config)
+    # runs at load and focuses 1.
+    extraConfig = "workspace number 1";
     config = {
       modifier = "Mod4";
       terminal = "foot";
