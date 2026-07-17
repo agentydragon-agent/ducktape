@@ -156,6 +156,15 @@ in
     # QXL/virtio, not NVIDIA). SDDM runs the greeter under a Wayland compositor.
     wayland.enable = true;
   };
+  # Unlock the GNOME login keyring at SDDM login. services.gnome.gnome-keyring
+  # (gui.nix) already runs the daemon and registers org.freedesktop.secrets, but
+  # the gnome-keyring module only wires pam_gnome_keyring into the `login` PAM
+  # stack by default — not SDDM. GDM used to unlock the keyring via its own PAM;
+  # since seat0 moved off GDM to SDDM+sway, nothing unlocks it, so the login
+  # keyring stays locked/absent and libsecret apps (Signal) warn about a changed
+  # secret backend. pam_gnome_keyring on the sddm stack starts + unlocks it with
+  # the login password for both the sway and GNOME seat0 sessions.
+  security.pam.services.sddm.enableGnomeKeyring = true;
   # Default both seats to the sway session. seat0 moves off GNOME so its lock
   # works: GNOME's lock hard-requires GDM (canLock() queries org.gnome.Display-
   # Manager, absent under SDDM) — see debug/atlas/direct_display_bringup.md. sway

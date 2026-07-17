@@ -121,6 +121,9 @@
         # blanking the DP output makes the FV43U KVM revert to USB-C on the
         # seatphysical seat (see notes below); swaylock keeps the output live.
         { command = "swayidle -w timeout 300 'swaylock -f'"; }
+        # Login keyring is unlocked by pam_gnome_keyring on SDDM's PAM stack
+        # (security.pam.services.sddm.enableGnomeKeyring in the wyrm2 host config),
+        # so no keyring daemon needs starting here.
       ];
       # Keybindings mirror the user's GNOME + pop-shell muscle memory (dconf survey
       # in debug/atlas/direct_display_bringup.md). Focus stays on sway's default
@@ -132,6 +135,9 @@
 
         # Terminal on Super+Return (sway default), Super+t (GNOME media key), and
         # Ctrl+Alt+t (GNOME custom "Launch Terminal" binding).
+        # TODO(terminal): foot is minimal and has no tabs. Consider adopting a
+        # terminal with tabs/splits (kitty or wezterm) and update these bindings
+        # + the sway default (Mod4+Return) to match.
         "Mod4+t" = "exec foot";
         "Control+Mod1+t" = "exec foot";
         # Lock on Super+Escape (GNOME screensaver binding). NOT Super+l — that is

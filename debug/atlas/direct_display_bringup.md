@@ -856,6 +856,42 @@ proxmox-vms.tf`, `desk/`). Historical log entries above keep the old name.
 - Added `systemd.services.systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug"`
   (marked `DEBUG(added 2026-07-16)`, remove once the greeter is solved).
 
+### 2026-07-16 late — `switch` + DM restart (no reboot): seat0→sway confirmed, seatphysical still blocked
+
+Deployed via `nixos-rebuild switch` (not `boot`+reboot), then `systemctl restart
+display-manager`. Consequences of the no-reboot path:
+
+- **seat0 → sway works.** SDDM greeter defaults to `sway.desktop`; after selecting
+  sway, session 55 comes up on seat0/tty4 as a sway session (waybar, swaync,
+  merged keybindings). This is the main deliverable, validated.
+- **seatphysical rename did NOT take effect.** `nixos-rebuild switch` reloads the
+  udev _rules_ but does not re-tag the already-enumerated `card0` — `loginctl
+list-seats` still shows the hyphenated `seat-game`. Re-homing the seat TAG needs
+  a reboot (consistent with the Deploy note above).
+- **logind was NOT restarted** — `ExecMainStartTimestamp` still the Jul-14 boot, so
+  the `SYSTEMD_LOG_LEVEL=debug` drop-in is configured but not live on the running
+  process. **No logind varlink wire log this round.** The decisive `Received
+message`/`Sending message` capture still awaits a reboot.
+- **SDDM debug (`QT_LOGGING_RULES=*.debug=true`) IS live** (display-manager was
+  restarted). The seatphysical greeter attempt reproduced the _identical_
+  `seat-game` failure — `QDBusObjectPath: invalid path ".../Seat-game"` +
+  `pam_systemd … CreateSession() varlink call: org.varlink.service.InvalidParameter`
+  — confirming the failure is **not** cold-boot-specific; a plain DM restart
+  triggers it too. No _new_ info on the varlink question (still hyphenated seat,
+  still no logind wire log).
+
+**Symptom corroboration (user, first-hand):** the physical seat showed a **4K
+full-black screen, not a sleeping/DPMS-off screen**. That matches the diagnosis
+exactly: modeset succeeded (`card0-DP-1` enabled at 3840×2160, backlight on) but
+the greeter's `weston` aborted (`XDG_RUNTIME_DIR` unset → no logind session) so
+**nothing renders to the live output**. Rules out cable/KVM-switch/DPMS as the
+black-screen cause — the output is up, just no compositor drawing.
+
+**Still open:** whether the varlink `InvalidParameter` is _also_ the hyphen (logind
+rejecting the `seat-game` name) or a distinct param defect that survives the
+`seatphysical` rename. Only the reboot (re-tags seat to `seatphysical` **and**
+brings logind debug live) resolves this — see Root cause 1 and the Reboot procedure.
+
 ### Constraints (user decisions, 2026-07-16)
 
 Three hard "no"s — together they leave SDDM as essentially the only mainstream
