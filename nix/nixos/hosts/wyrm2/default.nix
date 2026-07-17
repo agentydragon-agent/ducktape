@@ -127,11 +127,14 @@ in
     mode = "0600";
   };
 
-  # Ollama with CUDA for local GPU inference (also used by k8s ollama pod, but
-  # useful standalone when cluster is down or for ad-hoc tasks).
-  # Models stored on Proxmox CSI PVC (200Gi) or ~/downloads/ollama-models/.
+  # Ollama with CUDA for local GPU inference — DISABLED. Redundant with the
+  # in-cluster ollama pod, which schedules onto wyrm2's own 5090 anyway, so this
+  # was a second instance contending for the same GPU rather than a separate-host
+  # fallback. Dropping it also avoids the from-source CUDA build (compiles every
+  # LLM arch) on nixpkgs bumps. Re-enable if a cluster-down local-inference path
+  # is actually needed; models were on the Proxmox CSI PVC (200Gi) / ~/downloads/ollama-models/.
+  # pkgs.ollama-cuda
   environment.systemPackages = [
-    pkgs.ollama-cuda
     pkgs.lvm2_dmeventd # LVM tools with dmeventd client support for thin pool autoextend
     pkgs.freecad
   ];
@@ -139,50 +142,45 @@ in
   # Podman
   virtualisation.podman.enable = true;
 
-  # Display manager: SDDM, not GDM. GDM refuses to start a second graphical
-  # session for a user already logged in elsewhere (its gnome-shell greeter's
-  # _findConflictingSession check, machine-wide, no per-seat exclude) — which
-  # blocked same-user multi-seat login on seatphysical while the seat0 SPICE
-  # session was active. SDDM follows logind seats (per-seat greeter), sets
-  # XDG_SEAT per seat, and has no same-user veto. See
-  # debug/atlas/greeter_multiseat_research.md and direct_display_bringup.md.
+  # Display manager: GDM (inherited from gui.nix; no host override needed).
   #
-  # gdm.enable is set in the shared gui.nix module, so it is force-disabled
-  # here rather than removed (other hosts still use GDM).
-  services.displayManager.gdm.enable = lib.mkForce false;
-  services.displayManager.sddm = {
-    enable = true;
-    # Wayland greeter (GNOME 49 is Wayland-only; the seat0 greeter renders on
-    # QXL/virtio, not NVIDIA). SDDM runs the greeter under a Wayland compositor.
-    wayland.enable = true;
-  };
-  # Unlock the GNOME login keyring at SDDM login. services.gnome.gnome-keyring
-  # (gui.nix) already runs the daemon and registers org.freedesktop.secrets, but
-  # the gnome-keyring module only wires pam_gnome_keyring into the `login` PAM
-  # stack by default — not SDDM. GDM used to unlock the keyring via its own PAM;
-  # since seat0 moved off GDM to SDDM+sway, nothing unlocks it, so the login
-  # keyring stays locked/absent and libsecret apps (Signal) warn about a changed
-  # secret backend. pam_gnome_keyring on the sddm stack starts + unlocks it with
-  # the login password for both the sway and GNOME seat0 sessions.
-  security.pam.services.sddm.enableGnomeKeyring = true;
-  # Default both seats to the sway session. seat0 moves off GNOME so its lock
-  # works: GNOME's lock hard-requires GDM (canLock() queries org.gnome.Display-
-  # Manager, absent under SDDM) — see debug/atlas/direct_display_bringup.md. sway
-  # locks via swaylock (DM-independent). GNOME stays installed and selectable from
-  # the SDDM session menu as a fallback.
+  # The dual-seat goal (independent greeters/logins on seat0 SPICE + seatphysical
+  # 5090) needs a DM that both (a) drives a non-seat0 logind seat and (b) does not
+  # veto a same-user login. No packaged DM clears both today:
+  # - SDDM 0.21.0 (shipped): follows seats + no veto, but hands the non-seat0
+  #   greeter a VC tty (`tty0`) that systemd-258's varlink logind rejects
+  #   (`InvalidParameter{Seat}`). Fix (cda8d93) unreleased for 2+ years.
+  # - PLM (KDE's SDDM fork): ships the tty fix, but its greeter runtime is a
+  #   single per-user-manager singleton (fixed-name units + last-writer-wins env,
+  #   KDE bug 520483), so the second seat stays black. The per-seat fix (MR 155)
+  #   is unmerged; a working backport is archived at
+  #   debug/atlas/direct_display_bringup/plm-mr155-per-seat-greeter.patch (builds
+  #   green) for when a PLM release ships it.
+  # - GDM: the cleanest multi-seat daemon (per-seat gnome-shell greeter, logind
+  #   splits the GPUs by ID_SEAT tag — renders on seatphysical), but its
+  #   gnome-shell greeter runs `_findConflictingSession` and refuses to start a
+  #   session for a user already logged in on another seat. No setting disables
+  #   it short of patching gnome-shell.
+  #
+  # Accepted trade-off (2026-07-17): use GDM and live with the same-user veto —
+  # both seats show a greeter, but only ONE can be logged in at a time (log out of
+  # seat0 SPICE to use seatphysical, and vice-versa). This is the least-painful
+  # working config; the PLM backport stays on the shelf if simultaneous dual
+  # login becomes worth carrying a patch.
+  #
+  # Full analysis + candidate matrix (Axis 1b = the VC-tty criterion):
+  # debug/atlas/direct_display_bringup/greeters.md and README.md.
+
+  # Default both seats to sway (session-agnostic under GDM). sway locks via
+  # swaylock; seat0 stays off GNOME so a second GNOME never contends for the
+  # shared user bus.
   services.displayManager.defaultSession = "sway";
 
-  # GDM greeter dconf tweaks removed with the GDM→SDDM swap:
-  # - idle-delay=0 kept the DP output awake so the FV43U KVM would not revert to
-  #   USB-C before the seatphysical keyboard could wake it. TODO: re-establish the
-  #   no-blank guarantee for the SDDM seatphysical greeter (weston idle) if the KVM
-  #   reverts again — see debug/atlas/direct_display_bringup.md.
-  # - enable-animations=false was a wrong theory for the "frozen greeter": the
-  #   real cause was the conflicting-session dialog, now gone with GDM.
-  #
-  #   Old GDM-specific wiring, for reference if reverting:
-  #   services.displayManager.gdm.wayland = true;
-  #   services.displayManager.gdm.debug = true;
+  # TODO(kvm-no-blank): the pre-SDDM GDM config set login-screen idle-delay=0 to
+  # keep the DP output awake so the FV43U KVM would not revert to USB-C before the
+  # seatphysical keyboard could wake it. Re-establish that no-blank guarantee for
+  # the GDM greeter if the KVM reverts again — see
+  # debug/atlas/direct_display_bringup/README.md.
 
   # Sway session for the game seat (seatphysical, on the display 5090). A real WM to
   # game + debug from, run as agentydragon — non-GNOME, so it doesn't clash with
@@ -219,7 +217,7 @@ in
   # streamed to atlas via Sunshine/Moonlight).
   # Games run directly in the sway session on seatphysical (the display GPU is
   # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
-  # needed — see debug/atlas/direct_display_bringup.md). No gamescope kiosk
+  # needed — see debug/atlas/direct_display_bringup/README.md). No gamescope kiosk
   # session: on this 2-identical-5090 box gamescope can't disambiguate the
   # GPUs and its greeter session crashed opening the wrong (seat0-owned) card.
   programs.steam.enable = true;
@@ -272,7 +270,7 @@ in
   # a no-op and Sunshine gets "Permission denied" creating virtual
   # keyboard/mouse.
   # Rules 2+3: multiseat for the direct-display gaming plan — see
-  # debug/atlas/direct_display_bringup.md.
+  # debug/atlas/direct_display_bringup/README.md.
   # - The display 5090 (guest 01:00.0 = hostpci0; DP cable to the FV43U)
   #   belongs to logind seat "seatphysical": GDM spawns a separate greeter
   #   there, independent of the seat0 SPICE desktop. Do NOT
@@ -282,7 +280,7 @@ in
   #   vendor:device 10de:2b85) so no selector can pin the game to a specific
   #   one. Putting the monitor on 01:00.0 makes render==display==01:00.0 →
   #   no cross-PCIe copy per frame (that copy was the ~15 FPS lag). See
-  #   debug/atlas/direct_display_bringup.md.
+  #   debug/atlas/direct_display_bringup/README.md.
   # - The other 5090 (02:00.0, headless compute) stays on seat0 but is
   #   hidden from mutter: multi-GPU mutter with NVIDIA cards crash-looped
   #   (SIGSEGV) as primary and rendered black as copy target (2026-07-02).
@@ -299,13 +297,25 @@ in
   # uses. Devices: the display 5090 (guest 01:00.0), and the TEX Shura
   # (04d9:0532), which arrives via QEMU port-path passthrough ONLY when the
   # monitor's KVM routes its hub to USB-B — in this guest it is unambiguously
-  # the seatphysical keyboard. See debug/atlas/direct_display_bringup.md.
+  # the seatphysical keyboard. See debug/atlas/direct_display_bringup/README.md.
   services.udev.packages = [
     (pkgs.writeTextFile {
       name = "seatphysical-udev-rules";
       destination = "/lib/udev/rules.d/72-seatphysical.rules";
       text = ''
         SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:01:00.0", ENV{ID_SEAT}="seatphysical"
+        # Spare NVIDIA (02:00.0) has no monitor connected. It defaults to seat0,
+        # where sway (wlroots) claims EVERY seat DRM card as a DRM-master output —
+        # so seat0's sway grabbed this headless GPU, and the seatphysical greeter's
+        # kwin then couldn't cleanly own its own card0 (atomic-commit permission
+        # denied; it also probed this node and was denied). Park it on an isolated
+        # seat (`seatspare`, no hyphen so it passes logind's seat_name_is_valid) so
+        # NEITHER seat0 nor seatphysical enumerates it, leaving card0 (01:00.0) as
+        # the physical seat's sole display. Strip master-of-seat so `seatspare` is
+        # non-graphical and PLM spawns no greeter there. Render nodes are not
+        # seat-gated, so Sunshine / game render-offload still reaches this GPU.
+        # See debug/atlas/direct_display_bringup/README.md (2026-07-17).
+        SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", ENV{ID_SEAT}="seatspare", ENV{ID_TAG_MASTER_OF_SEAT}="0", TAG-="master-of-seat"
         # No KERNEL=="event*" filter: logind resolves an evdev node's seat via
         # its PARENT input-class device, so inputNN needs ID_SEAT too (event-
         # only assignment = libinput claims it but logind denies TakeDevice).
@@ -341,7 +351,7 @@ in
   # /dev/vdb (virtio1): 500GB SSD (local-zfs) — Steam library for the gaming seat.
   # Repurposed from the decommissioned Longhorn disk. Games + Proton prefixes must be
   # on SSD: the small-file prefix I/O crawls on the tank-hdd virtiofs share
-  # (/mnt/tankshare). See debug/atlas/direct_display_bringup.md.
+  # (/mnt/tankshare). See debug/atlas/direct_display_bringup/README.md.
   fileSystems."/games" = {
     device = "/dev/vdb";
     fsType = "ext4";
@@ -412,19 +422,6 @@ in
   # `=` here plus a dotted `systemd.services.<x> =` elsewhere) is a Nix-level
   # "attribute already defined" error — so mkMerge the fixed services in here.
   systemd.services = lib.mkMerge [
-    # DEBUG(added 2026-07-16): reboot diagnostics for the seatphysical greeter's
-    # varlink CreateSession failure. logind at debug makes sd-varlink log the whole
-    # exchange (sd-varlink.c: `Received message: {…}` = the exact seat/tty/vtnr/type/
-    # class pam_systemd sent, and `Sending message: {…InvalidParameter,parameter…}` =
-    # the rejected field). That pair is decisive: a static read of both SDDM 0.21 and
-    # systemd 258 says the call *should* pass, so the bug is a runtime param value
-    # only the wire log reveals. QT_LOGGING_RULES cranks SDDM/Qt greeter logging too
-    # (spammy, intentional). Remove all of this once the greeter is solved — see
-    # debug/atlas/direct_display_bringup.md.
-    {
-      systemd-logind.environment.SYSTEMD_LOG_LEVEL = "debug";
-      display-manager.environment.QT_LOGGING_RULES = "*.debug=true";
-    }
     # OpenEBS LVM volume groups — idempotent oneshot services that create PV + VG.
     #   openebs-proxmox-ssd: virtio2 (/dev/vdc) — 500GB NVMe (local-zfs)
     #   openebs-proxmox-hdd: virtio6 (/dev/vdg) — 500GB HDD (tank-hdd)
