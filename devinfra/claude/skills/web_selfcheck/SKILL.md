@@ -155,12 +155,12 @@ trap 'git checkout -q "$START_BRANCH"; git branch -D "$TEST_BRANCH" 2>/dev/null;
 git checkout -q -b "$TEST_BRANCH"
 printf 'selfcheck %s\n' "$(date -Iseconds)" > "$TEST_FILE"
 git add "$TEST_FILE"
-# The commit-msg hook requires a BAZEL_TEST_INVOCATIONS= tag whenever
+# The commit-msg hook requires a Bazel-Test-Invocations trailer whenever
 # DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1 (both profiles export this). A bare
 # commit is *correctly* rejected; use the none: form for a no-code change.
 git commit -m "test: selfcheck — delete me
 
-BAZEL_TEST_INVOCATIONS=none: selfcheck throwaway, no code/tests affected" 2>&1 | tail -40
+Bazel-Test-Invocations: none: selfcheck throwaway, no code/tests affected" 2>&1 | tail -40
 echo "exit: ${PIPESTATUS[0]}"
 ```
 

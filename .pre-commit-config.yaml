@@ -233,7 +233,7 @@ repos:
         always_run: true
         stages: [prepare-commit-msg]
 
-      # Enforce BAZEL_TEST_INVOCATIONS= tag
+      # Enforce Bazel-Test-Invocations trailer
       - id: ducktape-commit-msg
         name: ducktape commit-msg
         entry: ducktape-commit-msg

@@ -50,10 +50,20 @@ class TestParseTestTag:
         ],
     )
     def test_valid(self, tag_value, expected):
-        assert parse_test_tag(f"Title\n\nBAZEL_TEST_INVOCATIONS={tag_value}") == expected
+        assert parse_test_tag(f"Title\n\nBazel-Test-Invocations: {tag_value}") == expected
+
+    def test_trailer_key_is_case_insensitive(self):
+        # git interpret-trailers matches trailer tokens case-insensitively.
+        msg = f"Title\n\nbazel-test-invocations: buildbuddy:{_UUID_STR}"
+        assert parse_test_tag(msg) == Invocations([BuildBuddyInvocation(_UUID)])
+
+    def test_legacy_equals_form_still_accepted(self):
+        # CLEANUP(added 2026-07-16): drop with the legacy pattern after 2026-10-01.
+        msg = f"Title\n\nBAZEL_TEST_INVOCATIONS=buildbuddy:{_UUID_STR}"
+        assert parse_test_tag(msg) == Invocations([BuildBuddyInvocation(_UUID)])
 
     def test_in_middle_of_body(self):
-        msg = f"Title\n\nSome context.\nBAZEL_TEST_INVOCATIONS=buildbuddy:{_UUID_STR}\nMore text."
+        msg = f"Title\n\nSome context.\nBazel-Test-Invocations: buildbuddy:{_UUID_STR}\nMore text."
         assert parse_test_tag(msg) == Invocations([BuildBuddyInvocation(_UUID)])
 
     @pytest.mark.parametrize(
@@ -69,7 +79,7 @@ class TestParseTestTag:
     )
     def test_invalid(self, tag_value, match):
         with pytest.raises(TestTagError, match=match):
-            parse_test_tag(f"Title\n\nBAZEL_TEST_INVOCATIONS={tag_value}")
+            parse_test_tag(f"Title\n\nBazel-Test-Invocations: {tag_value}")
 
     def test_missing(self):
         with pytest.raises(TestTagError):
@@ -80,9 +90,11 @@ class TestCheckCommitMessage:
     @pytest.mark.parametrize(
         "message",
         [
-            f"Add feature\n\nBAZEL_TEST_INVOCATIONS=buildbuddy:{_UUID_STR}",
+            f"Add feature\n\nBazel-Test-Invocations: buildbuddy:{_UUID_STR}",
+            f"Add feature\n\nBazel-Test-Invocations: local:{_UUID_STR}",
+            "Fix typo\n\nBazel-Test-Invocations: none: docs only",
+            # Legacy form, accepted until the tombstone in commit_tag.py lapses.
             f"Add feature\n\nBAZEL_TEST_INVOCATIONS=local:{_UUID_STR}",
-            "Fix typo\n\nBAZEL_TEST_INVOCATIONS=none: docs only",
             "Merge branch 'feature' into main",
             "fixup! Add feature",
         ],
@@ -90,7 +102,7 @@ class TestCheckCommitMessage:
     def test_passes(self, message):
         check_commit_message(message)
 
-    @pytest.mark.parametrize("message", ["Add feature\n\nSome body", "Fix typo\n\nBAZEL_TEST_INVOCATIONS=none:"])
+    @pytest.mark.parametrize("message", ["Add feature\n\nSome body", "Fix typo\n\nBazel-Test-Invocations: none:"])
     def test_raises(self, message):
         with pytest.raises(TestTagError):
             check_commit_message(message)

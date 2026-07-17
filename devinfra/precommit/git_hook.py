@@ -4,7 +4,7 @@ Installed as separate console scripts via the claude-hooks wheel:
 - ducktape-precommit: file validations (filenames, frozen-specimens)
 - ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits
-- ducktape-commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
+- ducktape-commit-msg: enforce Bazel-Test-Invocations trailer
 - ducktape-enforce-bazel-tests: verify affected Bazel tests are cached/passing
 """
 
@@ -158,7 +158,7 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
     return 0
 
 
-# commit-msg stage: enforce BAZEL_TEST_INVOCATIONS= tag
+# commit-msg stage: enforce Bazel-Test-Invocations trailer
 _TEST_TAG_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
 
 

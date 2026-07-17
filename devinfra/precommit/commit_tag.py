@@ -1,9 +1,12 @@
-"""Commit-msg hook: verify commit messages contain a BAZEL_TEST_INVOCATIONS= tag.
+"""Commit-msg hook: verify commit messages carry a Bazel-Test-Invocations trailer.
 
-Enforces that every commit documents its test coverage via a BAZEL_TEST_INVOCATIONS= line:
-  BAZEL_TEST_INVOCATIONS=buildbuddy:<uuid>                     single BuildBuddy test invocation
-  BAZEL_TEST_INVOCATIONS=buildbuddy:<uuid>,local:<uuid>        comma-separated, mixed sources
-  BAZEL_TEST_INVOCATIONS=none: <explanation>                   no tests affected, with rationale
+Enforces that every commit documents its test coverage via a standard git trailer:
+  Bazel-Test-Invocations: buildbuddy:<uuid>                single BuildBuddy test invocation
+  Bazel-Test-Invocations: buildbuddy:<uuid>,local:<uuid>  comma-separated, mixed sources
+  Bazel-Test-Invocations: none: <explanation>             no tests affected, with rationale
+
+Being a real git trailer, it works with `git commit --trailer
+'Bazel-Test-Invocations: none: docs'` and `git interpret-trailers`.
 
 buildbuddy: invocations are verified against the BuildBuddy API.
 local: invocations are accepted without verification.
@@ -25,29 +28,38 @@ from google.protobuf import json_format
 from proto import invocation_pb2
 
 logger = logging.getLogger(__name__)
-_TAG_PATTERN = re.compile(r"^BAZEL_TEST_INVOCATIONS=(.*)$", re.MULTILINE)
+# Canonical git-trailer form: `Bazel-Test-Invocations: <value>`. The key is a
+# valid trailer token (letters + hyphens, no underscores); match it
+# case-insensitively like `git interpret-trailers` does.
+_TRAILER_KEY = "Bazel-Test-Invocations"
+_TAG_PATTERN = re.compile(rf"^{re.escape(_TRAILER_KEY)}:[ \t]*(.*)$", re.MULTILINE | re.IGNORECASE)
+# CLEANUP(added 2026-07-16): drop this legacy `BAZEL_TEST_INVOCATIONS=` form and
+#   its pattern after 2026-10-01, by when branches predating the trailer switch
+#   have landed or rebased. Until then both forms parse so in-flight commits
+#   don't break.
+_LEGACY_TAG_PATTERN = re.compile(r"^BAZEL_TEST_INVOCATIONS=(.*)$", re.MULTILINE)
 _EXEMPT_PREFIXES = ("Merge ", "fixup! ", "squash! ")
 _NONE_PREFIX = "none:"
 _BUILDBUDDY_API_URL = "https://app.buildbuddy.io/rpc/BuildBuddyService/GetInvocation"
 
 _MISSING_TAG_MESSAGE = """\
-Commit message must contain a BAZEL_TEST_INVOCATIONS= tag.
+Commit message must contain a Bazel-Test-Invocations trailer.
 
 Run affected tests and add one of:
-  BAZEL_TEST_INVOCATIONS=buildbuddy:<uuid>        BuildBuddy test invocation (comma-separated for multiple)
-  BAZEL_TEST_INVOCATIONS=local:<uuid>             local test invocation (not verified)
-  BAZEL_TEST_INVOCATIONS=none: <explanation>      when no tests are affected, with rationale
+  Bazel-Test-Invocations: buildbuddy:<uuid>     BuildBuddy test invocation (comma-separated for multiple)
+  Bazel-Test-Invocations: local:<uuid>          local test invocation (not verified)
+  Bazel-Test-Invocations: none: <explanation>   when no tests are affected, with rationale
 
 Example:
-  BAZEL_TEST_INVOCATIONS=buildbuddy:abc12345-1234-5678-9abc-def012345678
-  BAZEL_TEST_INVOCATIONS=none: documentation-only change"""
+  Bazel-Test-Invocations: buildbuddy:abc12345-1234-5678-9abc-def012345678
+  Bazel-Test-Invocations: none: documentation-only change"""
 
 
 _RETRIABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
 
 class TestTagError(Exception):
-    """Raised when a commit message has a missing or invalid BAZEL_TEST_INVOCATIONS= tag."""
+    """Raised when a commit message has a missing or invalid Bazel-Test-Invocations trailer."""
 
 
 class _RetriableHTTPError(Exception):
@@ -105,20 +117,21 @@ def _parse_invocation_ref(raw: str) -> BuildBuddyInvocation | LocalInvocation:
 
 
 def parse_test_tag(message: str) -> TestTag:
-    """Parse BAZEL_TEST_INVOCATIONS= tag from commit message. Raises TestTagError if missing or malformed."""
-    match = _TAG_PATTERN.search(message)
+    """Parse the Bazel-Test-Invocations trailer. Raises TestTagError if missing or malformed."""
+    match = _TAG_PATTERN.search(message) or _LEGACY_TAG_PATTERN.search(message)
     if not match:
         raise TestTagError(_MISSING_TAG_MESSAGE)
 
     value = match.group(1).strip()
     if not value:
-        raise TestTagError("BAZEL_TEST_INVOCATIONS= tag is empty")
+        raise TestTagError("Bazel-Test-Invocations trailer is empty")
 
     if value.startswith(_NONE_PREFIX):
         explanation = value.removeprefix(_NONE_PREFIX).strip()
         if not explanation:
             raise TestTagError(
-                "BAZEL_TEST_INVOCATIONS=none: requires an explanation (e.g., BAZEL_TEST_INVOCATIONS=none: documentation-only change)"
+                "Bazel-Test-Invocations: none: requires an explanation "
+                "(e.g., Bazel-Test-Invocations: none: documentation-only change)"
             )
         return NoTests(explanation)
 
@@ -214,14 +227,14 @@ def verify_invocations_on_buildbuddy(ids: list[uuid.UUID]) -> None:
         if len(test_child_ids) == 1:
             inner_id = test_child_ids[0]
             logger.warning(
-                "Invocation %s is a wrapper; use inner test invocation directly: BAZEL_TEST_INVOCATIONS=buildbuddy:%s",
+                "Invocation %s is a wrapper; use inner test invocation directly: Bazel-Test-Invocations: buildbuddy:%s",
                 inv_id,
                 inner_id,
             )
 
 
 def check_commit_message(message: str) -> None:
-    """Check a commit message for a valid BAZEL_TEST_INVOCATIONS= tag. Raises TestTagError on failure."""
+    """Check a commit message for a valid Bazel-Test-Invocations trailer. Raises TestTagError on failure."""
     if is_exempt(message):
         return
 
