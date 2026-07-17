@@ -69,6 +69,17 @@ reviewed transparent auto-approved tools; `create_event` always remains operator
 callback stores the refresh token in the console's Postgres and self-refreshes the access token
 thereafter; Disconnect revokes it.
 
+**Gotcha — Testing publishing status expires the refresh token every 7 days.** The OAuth app
+(project `rai-personal`) is in **Testing**, not **In production**, because the requested Gmail/Drive
+scopes are _restricted_ and production verification would need a CASA security assessment. Google
+expires **Testing-mode refresh tokens 7 days after issue**, so the connection breaks roughly weekly
+and the Operator must re-**Connect** — the in-process self-refresh cannot save a refresh token Google
+has already invalidated. Because the app requests _restricted_ Gmail/Drive scopes, Google's **Publish
+app** flow requires submitting for verification (a CASA security assessment); there is **no** durable
+published-but-unverified state for restricted scopes (unlike merely _sensitive_ scopes, where an
+unverified production app just shows a warning). So the options are: stay in **Testing** and re-Connect
+roughly weekly, or complete verification. Testing is accepted for now.
+
 Scopes: `calendar.events`, `gmail.modify`, `gmail.compose`, `gmail.settings.basic`, plus every read-only scope the
 `google` provider carries (`gmail.readonly`, `drive.readonly`, `drive.activity.readonly`,
 `calendar.readonly`, `tasks.readonly`, `contacts.readonly`, `documents.readonly`,
