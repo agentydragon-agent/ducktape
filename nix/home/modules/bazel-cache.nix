@@ -1,18 +1,20 @@
-# Shared Bazel disk + repo-contents cache across local worktrees and CLI agent sessions.
+# Shared Bazel disk cache across local worktrees and CLI agent sessions.
 #
-# Each Bazel output base is single-owner (one per worktree/session, locked, can't be shared), so
-# without this each base independently extracts external repos into its own external/ and re-runs
-# local actions — the bulk of the disk that piles up across worktrees. Bazel already defaults
-# output_base, output_user_root, and repository_cache (downloaded archives) into the shared
-# ~/.cache/bazel/_bazel_$USER tree; this enables the two caches that are NOT on by default:
+# Each Bazel output base is single-owner (one per worktree/session, locked, and
+# not shareable). Bazel already defaults output_base, output_user_root, and the
+# downloaded-archive repository_cache into ~/.cache/bazel/_bazel_$USER. This
+# module adds the local action cache/CAS for local and no-RBE debugging builds.
 #
-#   --repo_contents_cache  — share the EXTRACTED external repos (the big per-base win)
-#   --disk_cache           — local action cache/CAS (helps local / no-RBE debug builds)
+# Deliberately does not share repo_contents_cache across output bases: fetched
+# trees can contain absolute symlinks into their producing output base, so a
+# shared entry breaks every consumer once that base is GC'd. Bazel 8.6 leaves
+# repo_contents_cache empty (disabled) by default, so no flag is needed to keep
+# it off — this module simply never enables it. See
+# devinfra/docs/bazel_worktree_cache_sharing.md.
 #
-# plus BAZELISK_HOME and the Claude sandbox write entry for the bazelisk cache. See
-# devinfra/docs/bazel_worktree_cache_sharing.md for rationale, probes, and the cross-filesystem
-# hardlink caveat (keep --experimental_repository_cache_hardlinks OFF where the repo cache and the
-# output bases live on different filesystems, e.g. wyrm2).
+# The bazelisk binary cache needs no wiring here: it already defaults to the
+# user-global ~/.cache/bazelisk, and its Claude-sandbox write grant lives with
+# the other sandbox writes in nix/home/claude_code/default.nix.
 {
   config,
   lib,
@@ -22,13 +24,11 @@ let
   cfg = config.ducktape.bazelCache;
   bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
   bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
-  bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
-  bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
 in
 {
   options.ducktape.bazelCache = {
-    enable = lib.mkEnableOption "shared Bazel disk + repo-contents cache across local worktrees";
+    enable = lib.mkEnableOption "shared Bazel disk cache across local worktrees";
 
     diskCacheGcMaxSize = lib.mkOption {
       type = lib.types.str;
@@ -45,20 +45,13 @@ in
     # Appends to the base ~/.bazelrc from home.nix (mkAfter keeps the try-import of
     # buildbuddy.bazelrc and common flags first).
     home.file.".bazelrc".text = lib.mkAfter ''
-      common --repo_contents_cache=${bazelRepoContentsCache}
-
       build --disk_cache=${bazelDiskCache}
       build --experimental_disk_cache_gc_max_size=${cfg.diskCacheGcMaxSize}
       build --experimental_disk_cache_gc_max_age=14d
     '';
 
     home.activation.bazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      mkdir -p '${bazelRepoContentsCache}' '${bazelDiskCache}' '${bazeliskCache}'
+      mkdir -p '${bazelDiskCache}'
     '';
-
-    programs.claude-code.settings = {
-      env.BAZELISK_HOME = bazeliskCache;
-      sandbox.filesystem.allowWrite = lib.mkAfter [ bazeliskCache ];
-    };
   };
 }

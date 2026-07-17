@@ -20,9 +20,6 @@ expensive content cache underneath separate output bases:
   all Bazel state under one mount, but each worktree still receives a separate
   hashed output base.
 - `--repository_cache`: downloaded external repository archives.
-- `--repo_contents_cache`: extracted/fetched repository contents. In the current
-  Bazel available through `bazelisk help`, this defaults to empty, so set it
-  explicitly if we want sharing.
 - `--disk_cache`: local action cache/CAS. This is less important when `--config=rbe`
   uses remote execution and remote cache, but it helps local builds, no-RBE
   debugging, and actions that are not downloaded from the remote cache.
@@ -30,6 +27,14 @@ expensive content cache underneath separate output bases:
 
 Remote execution/cache already shares action work across machines. It does not
 share local analysis state between worktrees.
+
+Do not enable `--repo_contents_cache`. Unlike the archive-only repository
+cache, it snapshots complete fetched trees. Repository rules can put absolute
+symlinks in those trees: rules_python's hermetic `python` link and Gazelle's
+helper repositories have both pointed back into the output base that produced
+the cache entry. Reusing that entry makes every consumer depend on the
+producer's output base; deleting the producer then yields dangling links and
+repository-fetch failures. Bazel `8.6.0` does not relocate those links.
 
 ## Output-base Lifecycle
 
@@ -65,10 +70,11 @@ A failed removal leaves its `.bazel-output-base-gc-*` quarantine visible as
 `REVIEW` on the next run. Resolve the reported mount or permission problem,
 confirm no process uses it, then remove that quarantine manually.
 
-Shared `cache/repos`, `cache/repo-contents`, and `cache/disk` directories and the
-`install` base are outside the eligible naming scheme and remain untouched.
-Only one output-user-root is scanned. Pass `--output-user-root PATH` for an
-explicit non-default root; session and temporary roots are not auto-discovered.
+Shared `cache/repos` and `cache/disk` directories, any legacy
+`cache/repo-contents` directory, and the `install` base are outside the eligible
+naming scheme and remain untouched. Only one output-user-root is scanned. Pass
+`--output-user-root PATH` for an explicit non-default root; session and
+temporary roots are not auto-discovered.
 
 ## Recommended Layout
 
@@ -80,7 +86,6 @@ Use one cache root per user:
     <hashed output bases per worktree>
     cache/
       repos/
-      repo-contents/
       disk/
 ~/.cache/bazelisk/
 ```
@@ -96,29 +101,14 @@ same filesystem.
 
 Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
 `ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel already
-defaults `--output_user_root`, per-worktree `--output_base`, and
-`--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree, so the
-module only enables caches that are not already on by default. The one per-host
-knob is `diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because
-its `cache/disk` shares a 150G SSD with the per-worktree output bases.
-
-```nix
-let
-  bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
-  bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
-  bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
-  bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
-in
-{
-  home.file.".bazelrc".text = lib.mkAfter ''
-    common --repo_contents_cache=${bazelRepoContentsCache}
-
-    build --disk_cache=${bazelDiskCache}
-    build --experimental_disk_cache_gc_max_size=200G
-    build --experimental_disk_cache_gc_max_age=14d
-  '';
-}
-```
+defaults `--output_user_root`, per-worktree `--output_base`, and the archive
+`--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree. The
+module enables only the action `--disk_cache`; it never sets
+`--repo_contents_cache`, which Bazel leaves disabled by default. The one per-host knob is
+`diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because its
+`cache/disk` shares a 150G SSD with the per-worktree output bases. The module
+owns the exact rc flags and directory-creation wiring; this doc does not restate
+them.
 
 For long local debugging loops, consider adding this temporarily rather than
 globally:
@@ -130,14 +120,6 @@ build --noallow_analysis_cache_discard
 That can keep more local analysis data around inside one server at the cost of
 memory. It still does not share analysis across worktrees.
 
-Create the cache directories declaratively:
-
-```nix
-home.activation.ruggedBazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-  mkdir -p '${bazelRepoContentsCache}' '${bazelDiskCache}'
-'';
-```
-
 ## Claude Code Local Sandbox
 
 Claude Code has two filesystem concepts that matter here:
@@ -147,43 +129,18 @@ Claude Code has two filesystem concepts that matter here:
 - `sandbox.filesystem.allowWrite` adds writable paths inside the sandbox. Use
   this for caches and build artifacts.
 
-For local CLI Claude Code, prefer absolute paths in Nix so path expansion does
-not depend on where the settings file lives:
+The Bazel and Bazelisk cache write grants (`~/.cache/bazel`, `~/.cache/bazelisk`)
+live with the rest of the Claude-sandbox settings in
+`nix/home/claude_code/default.nix`; this doc does not restate them. The bazelisk
+cache needs no dedicated env var — bazelisk already defaults `BAZELISK_HOME` to
+`~/.cache/bazelisk`; the only wiring it needs is that sandbox write grant. Two
+caveats that are easy to get wrong:
 
-```nix
-settings = {
-  env.BAZELISK_HOME = "${config.xdg.cacheHome}/bazelisk";
-
-  sandbox = {
-    enabled = true;
-    autoAllowBashIfSandboxed = true;
-    allowUnsandboxedCommands = true; # Keep an explicit escape hatch.
-    excludedCommands = [ "nvidia-smi" ];
-    filesystem.allowWrite = [
-      "${config.xdg.cacheHome}/bazel"
-      "${config.xdg.cacheHome}/bazelisk"
-      "${config.xdg.cacheHome}/pre-commit"
-    ];
-  };
-};
-```
-
-Do not put `bazel` or `bazelisk` in `sandbox.excludedCommands` if the goal is to
-let them run in the Claude sandbox.
-
-Avoid glob patterns in `sandbox.filesystem.allowWrite` on Linux. The restored
-sandbox runtime strips or filters write globs before building bubblewrap mounts;
-use concrete cache directories.
-
-The rugged Nix config appends the Bazelisk cache directory to Claude's sandbox
-writes and sets `BAZELISK_HOME`:
-
-```nix
-programs.claude-code.settings = {
-  env.BAZELISK_HOME = "${config.xdg.cacheHome}/bazelisk";
-  sandbox.filesystem.allowWrite = lib.mkAfter [ "${config.xdg.cacheHome}/bazelisk" ];
-};
-```
+- Do not put `bazel` or `bazelisk` in `sandbox.excludedCommands` if the goal is
+  to let them run in the Claude sandbox.
+- Avoid glob patterns in `sandbox.filesystem.allowWrite` on Linux. The restored
+  sandbox runtime strips or filters write globs before building bubblewrap
+  mounts; use concrete cache directories.
 
 Network-sandbox behavior and the Bazel incompatibility are owned by
 <../../docs/claude_code_sandbox.md>. This local-CLI note only records the cache
@@ -224,34 +181,10 @@ The cloned Codex source at `~/code/codex` shows:
 - With `network_access = true`, the Linux bubblewrap mode uses full network
   access unless a managed network proxy policy is active.
 
-Current Ducktape config already points Codex at writable Bazel cache roots:
-
-```nix
-codexBazelCache = "${config.xdg.cacheHome}/bazel";
-codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
-```
-
-Keep that shape, and add the shared disk-cache directories if they become
-separate roots:
-
-```nix
-shell_environment_policy.set.BAZELISK_HOME = "${config.xdg.cacheHome}/bazelisk";
-
-sandbox_mode = "workspace-write";
-sandbox_workspace_write = {
-  writable_roots = [
-    "${config.xdg.cacheHome}/bazel"
-    "${config.xdg.cacheHome}/bazelisk"
-    "${config.xdg.cacheHome}/pre-commit"
-    "${config.xdg.cacheHome}/sccache"
-    "${config.xdg.cacheHome}/nix"
-    "/nix"
-  ];
-  network_access = true;
-  exclude_tmpdir_env_var = false;
-  exclude_slash_tmp = false;
-};
-```
+Ducktape's Codex config already points Codex at the writable Bazel and Bazelisk
+cache roots under `workspace-write` mode; the exact `writable_roots` and
+`sandbox_workspace_write` wiring lives in `nix/home/codex/default.nix` and is not
+restated here.
 
 Important Codex-specific detail: generated exec-policy `decision="allow"` rules
 can bypass Codex's shell sandbox for matching command prefixes. That is

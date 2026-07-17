@@ -13,6 +13,13 @@ build:rbe --extra_execution_platforms=//:rbe_linux_x64
 # failures must be visible, and the RBE shell path is not valid on NixOS.
 build:rbe --spawn_strategy=remote
 build:rbe --remote_local_fallback=false
+# A local live-test tag is allowed to constrain only its TestRunner. Bazel also
+# copies that constraint to target and aspect actions; remove it there so
+# PyWriteBuildData, Ruff, mypy, and every other build action stay on RBE.
+build:rbe --modify_execution_info=^(?!TestRunner$).*=-no-remote-exec
+# Prefer RBE for every test. A TestRunner explicitly marked no-remote-exec may
+# select local; an RBE execution failure still cannot fall back locally.
+test:rbe --strategy=TestRunner=remote,local
 build:rbe --shell_executable=/bin/bash
 build:rbe --jobs=50
 build:rbe --remote_download_minimal
