@@ -28,16 +28,19 @@ with their dated run records.
 
 ## What's here
 
+- <PLAN.md> — active program for mapping agent-capable models across context,
+  quality, latency, conventional GPU serving, and exotic RAM/SSD/CPU-offload
+  runtimes on `wyrm2`. Owns the measurement conventions and the experiment order.
+- <results.md> — hand-maintained comparison table of current configurations,
+  with source/trust marks on every number.
 - <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama,
   vLLM, SGLang, TensorRT-LLM, and the rest. Includes current cluster state
   and migration path. Decision document for picking what to run on wyrm2.
 - <vllm_history.md> — distilled lessons from the prior wyrm2-host vLLM work
   (Qwen3-Coder OOM saga, AWQ + FP8 KV cache + `--max-num-seqs 32` fix). Read
   before re-attempting vLLM in cluster.
-- <benchmarks.md> — known measurements per (backend, model, flags)
-  configuration, caveats that bit us, and an off-the-shelf eval runner
-  cheat sheet (simple-evals, lm-eval-harness, evalplus, BFCL, …). Update
-  rows when you bring up or rerun a config.
+- <benchmarks.md> — legacy configuration and measurement register plus runner
+  notes. Historical evidence, frozen; current numbers live in <results.md>.
 - <runs/2026-07-14_glm52_colibri/README.md> — reproducible wyrm2 host run of
   GLM-5.2 through Colibri's disk-streamed MoE runtime, including the pinned
   flake, checkpoint gate, run scripts, measurements, and experiment verdict.
@@ -64,14 +67,12 @@ live in <backend_comparison.md>.
 Add new lessons here as we accumulate them. When investigating a specific
 incident or migration, write a focused doc and link it from this README.
 
-## TODO
+## Next work
 
-- **Consolidate per-run `bench.py` copies into one shared script.** Each
-  `runs/<date>_<name>/` currently carries a `bench.py` snapshot to
-  preserve the run-as-commit invariant. As the bench stabilizes, move it
-  to e.g. `cluster/docs/inference/bench/bench.py` and have run dirs only
-  store a manifest, env, and output. The snapshot invariant can then be
-  preserved by recording the bench commit hash in the run README.
+Follow <PLAN.md> for the experiment order (E1–E5 first) and the measurement
+conventions. Each run is a `runs/<run-id>/` directory (manifests/scripts + a
+README with the numbers); current comparisons land in <results.md>. Persistent
+individual tasks remain in <TODO.md>.
 
 ## See also
 
