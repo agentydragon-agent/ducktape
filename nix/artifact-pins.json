@@ -1,8 +1,8 @@
 {
   "pins": {
     "bbr": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-37548cf09c7e/bbr-0.1.0-py3-none-any.whl",
-      "sha256": "N1SM8Jx+hOjZIAZ89qWj6q1Bd7KUyaT8MPfCsA+17Zc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-b4d67e3a82d8/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "tNZ+OoLYkrZyJCZky9reQPZQ8JovsxabguVJFK6VjKc="
     },
     "bb": {
       "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.387/bazel-5.0.387-linux-x86_64",
@@ -85,8 +85,8 @@
       "sha256": "HY8zl+Cu2h32eZIg4X1BBEo1DHePQedyQExf1tY/PIc="
     },
     "skill-clean_workspaces": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-clean_workspaces-2c70ae5bde7c/clean_workspaces.skill",
-      "sha256": "LHCuW958bRBSaQ1wSHrCLMjsgp0LdV89uIq4dKH7zJU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-clean_workspaces-3649ac31cbf7/clean_workspaces.skill",
+      "sha256": "NkmsMcv3EnSjxAReb1WImc3yCaBtU6Vf1P8VWjoi8uI="
     },
     "skill-debundle_architect": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-1541b2e0f930/debundle_architect.skill",
