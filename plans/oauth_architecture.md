@@ -121,19 +121,15 @@ The per-tool-call deep link is an independent console improvement tracked in
 
 ### Haku Google connection and Airlock decoupling
 
-This is later than the common Agent lifecycle:
+Haku-specific credential architecture; the full G1/G2/G3 sequence and the console-mediation target
+(including the read-only-token tradeoff) live in <../haku/plans/google_access_mediation.md>. Status:
+G1/G2 done (the console owns the per-Operator Google connection and `haku_console_google` is
+removed); G3 — retiring Haku's last Airlock dependency, the read-only `google-access-token` — is
+later than the common Agent lifecycle and not scheduled. Do not couple it to Airlock's unrelated
+Oura, BSC, or remaining credential consumers.
 
-1. **G1 (done):** the console owns the per-Operator Google connection —
-   `haku/console/provider_connection.py` (Postgres per-Operator refresh storage + in-process
-   self-refresh), the `/api/provider-connections/*` connect/status/disconnect flow, the
-   `provider_connection: google` marker with execution-time Operator selection, and the Settings
-   → Connected accounts UI. The console token mount is already dropped. A downstream-provider
-   relationship, not Agent enrollment or an Agent-held credential.
-2. **G2 (pending live proof):** once an Operator has connected and it's verified live, remove only
-   `haku_console_google`, its Secret publication/External Secrets mirror, and its airlock-side
-   producer.
-
-Do not couple G1/G2 to Airlock's unrelated Oura, BSC, or remaining credential consumers.
+Leaning console-mediated for the security win; decision deferred. Until then the read-only token
+stays (least-privilege by construction — all `.readonly` scopes).
 
 ### Independent security and consolidation lanes
 
