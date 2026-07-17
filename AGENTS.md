@@ -195,6 +195,33 @@ If you need to run sops outside the repo, derive the key manually (see `.envrc`)
 
 **NEVER use `git reset --soft` to squash onto a base branch that has moved on the remote.** `git reset --soft origin/devel` collapses _all_ differences between HEAD and `origin/devel` into the staging area — including commits other people landed on devel since your branch diverged. The resulting "squashed" commit silently re-applies every upstream change as if it were yours. Use `git rebase origin/devel` first to rebase, then squash with `git reset --soft $(git merge-base HEAD origin/devel)` so only your branch's changes are staged.
 
+### Committing: the `BAZEL_TEST_INVOCATIONS=` trailer
+
+The `ducktape-commit-msg` hook rejects any commit whose message lacks a
+`BAZEL_TEST_INVOCATIONS=` line. It is a **line in the commit message body**, not
+an environment variable and not a git `--trailer` — put it in the `-m` text
+(blank line, then the tag). Accepted forms (source of truth:
+<devinfra/precommit/commit_tag.py>):
+
+```text
+BAZEL_TEST_INVOCATIONS=buildbuddy:<uuid>              verified against the BuildBuddy API
+BAZEL_TEST_INVOCATIONS=local:<uuid>                  accepted without verification
+BAZEL_TEST_INVOCATIONS=buildbuddy:<uuid>,local:<uuid>  comma-separated, mixed sources
+BAZEL_TEST_INVOCATIONS=none: <explanation>           no tests affected, with a rationale
+```
+
+For a change no Bazel target covers (docs, Nix/home-manager config), use
+`none: <why>`. For a local `bbr` run whose invocation the BuildBuddy API can't
+verify, use `local:<uuid>`. `Merge `/`fixup! `/`squash! ` messages are exempt.
+
+Two more commit gotchas:
+
+- **Committing on `devel`** (the default branch) trips the `no-commit-to-branch`
+  hook. When intentionally committing there, skip only that hook:
+  `SKIP=no-commit-to-branch git commit …`.
+- **`ALL_PROXY=socks5h…` crashes the hook** (its httpx verification has no
+  socks support). Prefix with `env -u ALL_PROXY -u all_proxy git commit …`.
+
 ## Conventions
 
 - **`debug/`**: write investigation notes here, not in code comments or PR descriptions.
