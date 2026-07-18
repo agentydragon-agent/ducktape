@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: osm-mcp
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/agents/osm-mcp/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: osm-mcp
+      namespace: osm-mcp
+  dependsOn:
+    - name: osm-mcp-namespace
+    # ESO mirrors the forgejo-images-creds pull secret into this namespace (see
+    # forgejo-images-creds-eso.yaml): the ClusterSecretStore + the reflected
+    # source credential in flux-system must exist first.
+    - name: external-secrets-config
+    - name: forgejo-images
