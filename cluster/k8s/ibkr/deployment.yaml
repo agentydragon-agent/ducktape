@@ -6,9 +6,7 @@ metadata:
     app.kubernetes.io/name: ibkr-mcp
   annotations:
     description: >-
-      Read-only IBKR market-data MCP server, co-located with an IBeam Client
-      Portal Gateway holding a single paper session. The gateway socket is
-      pod-local only; the MCP server exposes just the read-only tool surface.
+      Read-only IBKR market-data MCP server, co-located with an IBeam Client Portal Gateway holding a single paper session. The gateway socket is pod-local only; the MCP server exposes just the read-only tool surface.
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -69,7 +67,7 @@ spec:
             initialDelaySeconds: 60
             periodSeconds: 30
         - name: server
-          image: git.allegedly.works/ducktape-ci/ibkr-mcp:devel-20260717000000-0000000 # {"$imagepolicy": "flux-system:ibkr-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/ibkr-mcp:devel-20260718014628-9b373ef # {"$imagepolicy": "flux-system:ibkr-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: http
