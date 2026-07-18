@@ -67,7 +67,7 @@ spec:
             initialDelaySeconds: 60
             periodSeconds: 30
         - name: server
-          image: git.allegedly.works/ducktape-ci/ibkr-mcp:devel-20260718014628-9b373ef # {"$imagepolicy": "flux-system:ibkr-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/ibkr-mcp:devel-20260718025624-21f0ae2 # {"$imagepolicy": "flux-system:ibkr-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: http
