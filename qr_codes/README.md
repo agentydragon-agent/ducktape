@@ -15,6 +15,6 @@ bazel run //qr_codes:gen -- \
 
 ## Codes
 
-| File                    | Text                      | Caption             |
-| ----------------------- | ------------------------- | ------------------- |
-| `bathroom_15_leroy.svg` | `15 Leroy Place bathroom` | Rai's morning alarm |
+| Text                     | Caption           |
+| ------------------------ | ----------------- |
+| `Morning alarm complete` | Rai morning alarm |
