@@ -13,7 +13,6 @@ import contextlib
 import datetime
 import logging
 from collections.abc import Awaitable, Callable
-from enum import Enum, auto
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -22,8 +21,12 @@ from haku.console.config import Settings
 from haku.console.mcp_config import (
     InProcessServers,
     McpServerEntry,
+    NoBackendAuth,
+    OperatorIdentityAuth,
+    ProviderConnectionAuth,
+    RemoteServerOAuthAuth,
+    StaticBearerAuth,
     _credential_token,
-    _operator_oauth_enabled,
     _server_entry,
 )
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -99,6 +102,10 @@ class ProviderConnectionTokenStore(Protocol):
     async def access_token_for(self, *, provider: ProviderConnectionKind, operator_id: UUID) -> str | None: ...
 
 
+class AuthentikOperatorTokenStore(Protocol):
+    async def access_token_for(self, *, operator_id: UUID) -> str | None: ...
+
+
 # Resolves the acting Operator's Gmail client for auto-approval label lookups (or None when the
 # Operator has no Google connection). Production builds it from the provider store; tests inject one.
 GmailClientProvider = Callable[[UUID], Awaitable[GmailToolsClient | None]]
@@ -134,42 +141,41 @@ async def _require_operator_linked_token(token: Awaitable[str | None], server_id
     return resolved
 
 
-class ServerAuthMode(Enum):
-    """How a connected MCP server resolves its backend auth for an operator."""
-
-    PROVIDER = auto()
-    OPERATOR_OAUTH = auto()
-    STATIC = auto()
-
-
-def server_auth_mode(server: McpServerEntry) -> ServerAuthMode:
-    """Select a server's backend-auth mode. The per-mode failure behavior is the caller's."""
-    if server.provider_connection is not None:
-        return ServerAuthMode.PROVIDER
-    if _operator_oauth_enabled(server):
-        return ServerAuthMode.OPERATOR_OAUTH
-    return ServerAuthMode.STATIC
-
-
 async def backend_auth_for_operator(
     *,
     server: McpServerEntry,
     operator_id: UUID,
     oauth_store: OperatorOAuthTokenStore,
     provider_store: ProviderConnectionTokenStore,
+    authentik_store: AuthentikOperatorTokenStore,
 ) -> str | None:
-    match server_auth_mode(server):
-        case ServerAuthMode.PROVIDER:
-            assert server.provider_connection is not None  # PROVIDER ⇒ provider_connection set
+    """Resolve the server's backend credential for the acting operator, per its ``auth`` variant.
+
+    - ``ProviderConnectionAuth``: the operator's linked provider account token (Google).
+    - ``RemoteServerOAuthAuth``: the operator's OAuth token at the remote MCP server itself.
+    - ``OperatorIdentityAuth``: the operator's own Authentik login token (captured via
+      offline_access), which the server exchanges for a per-host token (hostexec); missing ⇒ the
+      operator has not logged in with offline_access yet.
+    - ``StaticBearerAuth``: the console's fixed configured bearer, not operator-scoped.
+    - ``NoBackendAuth``: none — the server carries its own credential.
+    """
+    match server.auth:
+        case ProviderConnectionAuth(provider=provider):
             return await _require_operator_linked_token(
-                provider_store.access_token_for(provider=server.provider_connection, operator_id=operator_id), server.id
+                provider_store.access_token_for(provider=provider, operator_id=operator_id), server.id
             )
-        case ServerAuthMode.OPERATOR_OAUTH:
+        case RemoteServerOAuthAuth():
             return await _require_operator_linked_token(
                 oauth_store.access_token_for(server=server, operator_id=operator_id), server.id
             )
-        case ServerAuthMode.STATIC:
-            return _credential_token(server)
+        case OperatorIdentityAuth():
+            return await _require_operator_linked_token(
+                authentik_store.access_token_for(operator_id=operator_id), server.id
+            )
+        case StaticBearerAuth(bearer_token_secret=secret):
+            return _credential_token(server.id, secret)
+        case NoBackendAuth():
+            return None
 
 
 class ToolCallApplicationService:
@@ -185,6 +191,7 @@ class ToolCallApplicationService:
         oauth_store: OperatorOAuthTokenStore,
         in_process_servers: InProcessServers,
         provider_store: ProviderConnectionTokenStore,
+        authentik_token_store: AuthentikOperatorTokenStore,
         gmail_client_provider: GmailClientProvider = _no_gmail_client,
     ) -> None:
         self._settings = settings
@@ -194,11 +201,16 @@ class ToolCallApplicationService:
         self._oauth_store = oauth_store
         self._in_process_servers = in_process_servers
         self._provider_store = provider_store
+        self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
 
     async def _backend_auth(self, server: McpServerEntry, operator_id: UUID) -> str | None:
         return await backend_auth_for_operator(
-            server=server, operator_id=operator_id, oauth_store=self._oauth_store, provider_store=self._provider_store
+            server=server,
+            operator_id=operator_id,
+            oauth_store=self._oauth_store,
+            provider_store=self._provider_store,
+            authentik_store=self._authentik_token_store,
         )
 
     async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:

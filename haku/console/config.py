@@ -12,6 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
+from mcp_infra.exec.models import MAX_EXEC_TIMEOUT_MS
 from mcp_infra.persistence import PostgresPersistence
 
 # Both URLs are built from the routine (trigger) id, so only the id + token are
@@ -152,6 +153,38 @@ class ProviderOAuthClientConfig(BaseModel):
     client_secret: SecretStr
 
 
+class HostexecHostConfig(BaseModel):
+    """One in-scope host for the `hostexec` in-process server.
+
+    `exec_url` is how the console reaches this host's `hostexecd` (the k8s node hostname on the
+    cluster pod network, or a Service DNS name). `audience_client_id` is the Authentik client_id of
+    the host's `hostexec-<host>` provider — the audience the operator's token is exchanged for.
+    """
+
+    exec_url: str
+    audience_client_id: str
+
+
+class HostexecConfig(BaseModel):
+    """The `hostexec` in-process server: the in-scope hosts and the token-exchange scope.
+
+    The Authentik token endpoint is derived from the operator OIDC issuer at composition (the same
+    Authentik that authenticated the operator mints the per-host token from their identity), so it
+    is not configured here. Unset on `Settings` → the server is not offered.
+    """
+
+    hosts: dict[str, HostexecHostConfig]
+    # Scopes requested on the per-host exchange. `groups` is required — the per-host provider's
+    # `groups` scope mapping emits the operator's `hostexec-*` groups, which hostexecd checks for
+    # `hostexec-<run_as>-<host>`; `openid` carries `sub` for the audit log. Configurable in case the
+    # Authentik scope mapping is named differently.
+    exchange_scope: str = "openid groups"
+    # hostexecd responds only once the command finishes or its own timeout_ms fires (capped at
+    # MAX_EXEC_TIMEOUT_MS), so the HTTP wait must outlast the longest command plus margin — otherwise
+    # a slow-but-legitimate command is cut off by an HTTP timeout instead of returning its result.
+    request_timeout: float = MAX_EXEC_TIMEOUT_MS / 1000 + 30
+
+
 class Settings(BaseSettings):
     # env_nested_delimiter so launch_routine.{routine_id,token} read from
     # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
@@ -206,6 +239,12 @@ class Settings(BaseSettings):
     # to a specific tool call in the SPA, returned in the MCP server's promise/read-tool results.
     # Unset → no link is included.
     ui_base_url: str | None = None
+
+    # The `hostexec` in-process server: run a shell command on an operator machine (wyrm2/rugged)
+    # under the operator's own Authentik authority. Set via `HAKU_CONSOLE_HOSTEXEC` as a JSON object
+    # (the host map + exchange scope). Unset → the server is not offered, no offline_access is
+    # requested, and no operator Authentik token is persisted (nothing would read it).
+    hostexec: HostexecConfig | None = None
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
