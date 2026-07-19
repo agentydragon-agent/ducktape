@@ -9,8 +9,8 @@
       "sha256": "zV9vs+sjVRB7pRkN8WeTdxJWZJtlPEMqsA2qDum3c0A="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-0223a20e1386/bbapi",
-      "sha256": "AiOiDhOGmrauqd5bXJYMmjzoWk71jpDTxX9X/tyZ/eQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-d9847e09ebd1/bbapi",
+      "sha256": "2YR+CevRvhBrvVcfX3SIFGyD8dxBe2sUhWJUmUBVX0E="
     },
     "claude-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-1e14b35ae270/claude_hooks-0.1.0-py3-none-any.whl",
