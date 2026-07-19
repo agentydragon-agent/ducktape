@@ -89,8 +89,8 @@
       "sha256": "1AfBqDmGSZ0YdPKuNTmjafpPnPW/eN9IB7zENYiSi6w="
     },
     "skill-workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-ce3a3f987d9b/workspace-gc.skill",
-      "sha256": "zjo/mH2bHaI/K/yWepZe8d3/hJldLFyzvzYYB74/EoM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-45d0482d059f/workspace-gc.skill",
+      "sha256": "RdBILQWfCP1Wcc2EK7wBVFyXYD+7gMr1UA/OtH6Nxmo="
     },
     "skill-debundle_architect": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-1541b2e0f930/debundle_architect.skill",
