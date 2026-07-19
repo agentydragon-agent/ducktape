@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vector-talos-logs
+  labels:
+    # Fixed-resource DaemonSet — opt out of Goldilocks/VPA recommendations.
+    goldilocks.fairwinds.com/enabled: "false"
+    # hostPort is allowed under baseline PSA; Vector runs unprivileged (no hostNetwork).
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
