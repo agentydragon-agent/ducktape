@@ -38,6 +38,7 @@ from haku.console import (
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
+    node_daemons,
     operator_auth,
     provider_connection,
     tool_call_service,
@@ -174,6 +175,11 @@ def create_app(
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,
     )
+    node_daemon_service = (
+        node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
+        if console_config.node_daemons is not None
+        else None
+    )
     agent_authority = PostgresAgentAuthority(
         db_sessions, public_base_url=settings.public_base_url, operator_identity_store=operator_identity_store
     )
@@ -225,14 +231,14 @@ def create_app(
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
-        hostexec_server = (
-            HostexecServerConfig(
+        hostexec_server = None
+        if hostexec_config is not None:
+            assert node_daemon_service is not None
+            hostexec_server = HostexecServerConfig(
                 config=hostexec_config,
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
+                broker=node_daemon_service,
             )
-            if hostexec_config is not None
-            else None
-        )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(routine_launcher=routine_launcher, hostexec=hostexec_server)
         )
@@ -320,6 +326,7 @@ def create_app(
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
+    app.state.node_daemon_service = node_daemon_service
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -363,6 +370,10 @@ def create_app(
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
+    app.include_router(node_daemons.operator_router, dependencies=operator_only)
+    # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
+    # browser session or CSRF token.
+    app.include_router(node_daemons.machine_router)
     app.include_router(enrollment_routes.router)
 
     deployment_info = build_deployment_info()

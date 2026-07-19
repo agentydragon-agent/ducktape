@@ -21,7 +21,7 @@ from haku.console.mcp_config import (
     InProcessServers,
     const_in_process_server,
 )
-from haku.console.tools.hostexec_client import HostexecClient
+from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 
 
@@ -32,6 +32,7 @@ class HostexecServerConfig:
 
     config: HostexecConfig
     token_endpoint: str
+    broker: NodeDaemonBroker
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,19 +67,19 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             routine_tools.build_mcp(dependencies.routine_launcher)
         )
     if (hostexec := dependencies.hostexec) is not None:
-        exec_urls = {host: entry.exec_url for host, entry in hostexec.config.hosts.items()}
+        daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}
         audience_client_ids = {host: entry.audience_client_id for host, entry in hostexec.config.hosts.items()}
         servers[hostexec_tools.HOSTEXEC_SERVER_ID] = InProcessServerRegistration(
             builder=lambda token: hostexec_tools.build_mcp(
                 HostexecClient(
-                    exec_urls=exec_urls,
+                    daemon_ids=daemon_ids,
                     exchange=HostexecJwtBearerExchanger(
                         operator_token=token,
                         token_endpoint=hostexec.token_endpoint,
                         audience_client_ids=audience_client_ids,
                         scope=hostexec.config.exchange_scope,
                     ).exchange,
-                    timeout=hostexec.config.request_timeout,
+                    broker=hostexec.broker,
                 )
             ),
             credential_kind=InProcessCredentialKind.OPERATOR_LOGIN_IDENTITY,
