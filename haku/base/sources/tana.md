@@ -10,7 +10,7 @@ routes through the console's operator-approval queue instead of executing direct
 
 ## Reaching it
 
-haku-console proxies the tana-rw MCP server (tools get a `tana_rw_` prefix). Reach
+haku-console proxies the tana-rw MCP server (tools get a `tana_rw__` prefix). Reach
 it however your runtime wires it: managed sessions expose the tools directly as
 in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP-HTTP
 (<mcp_over_http.md>) with the `haku-console-agent-api` bearer from `haku-sandbox`,
@@ -20,7 +20,7 @@ source — if `fastmcp` is missing, fall back to `curl`, never skip it.
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
 fastmcp call https://haku.allegedly.works/mcp \
-  tana_rw_search_nodes query="follow up" --auth "$TOKEN" --transport http --json
+  tana_rw__search_nodes query="follow up" --auth "$TOKEN" --transport http --json
 ```
 
 Read tools only auto-approve — `search_nodes`, `read_node`, `get_children`, `open_node`,

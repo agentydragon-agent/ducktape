@@ -21,7 +21,7 @@ in-session MCP tools; otherwise call `https://haku.allegedly.works/mcp` over MCP
 
 ```bash
 TOKEN=$(kubectl -n haku-sandbox get secret haku-console-agent-api -o jsonpath='{.data.token}' | base64 -d)
-fastmcp call https://haku.allegedly.works/mcp gmail_threads_list \
+fastmcp call https://haku.allegedly.works/mcp gmail__threads_list \
   --input-json '{"q":"after:1784133277","maxResults":100}' \
   --auth "$TOKEN" --transport http
 ```
