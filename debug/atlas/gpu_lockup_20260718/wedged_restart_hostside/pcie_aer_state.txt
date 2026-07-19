@@ -1,0 +1,55 @@
+=== capture time ===
+2026-07-19T00:15:26 PDT
+
+=== dead GPU 03:00.0 + bridge 00:01.3: AER sysfs counters ===
+--- 0000:03:00.0 ---
+aer_dev_correctable: RxErr 0 BadTLP 0 BadDLLP 0 Rollover 0 Timeout 0 NonFatalErr 0 CorrIntErr 0 HeaderOF 0 TOTAL_ERR_COR 0
+aer_dev_fatal: Undefined 0 DLP 0 SDES 0 TLP 0 FCP 0 CmpltTO 0 CmpltAbrt 0 UnxCmplt 0 RxOF 0 MalfTLP 0 ECRC 0 UnsupReq 0 ACSViol 0 UncorrIntErr 0 BlockedTLP 0 AtomicOpBlocked 0 TLPBlockedErr 0 PoisonTLPBlocked 0 DMWrReqBlocked 0 IDECheck 0 MisIDETLP 0 PCRC_CHECK 0 TLPXlatBlocked 0 TOTAL_ERR_FATAL 0
+aer_dev_nonfatal: Undefined 0 DLP 0 SDES 0 TLP 0 FCP 0 CmpltTO 0 CmpltAbrt 0 UnxCmplt 0 RxOF 0 MalfTLP 0 ECRC 0 UnsupReq 0 ACSViol 0 UncorrIntErr 0 BlockedTLP 0 AtomicOpBlocked 0 TLPBlockedErr 0 PoisonTLPBlocked 0 DMWrReqBlocked 0 IDECheck 0 MisIDETLP 0 PCRC_CHECK 0 TLPXlatBlocked 0 TOTAL_ERR_NONFATAL 0
+current_link_speed: Unknown
+current_link_width: 63
+--- 0000:00:01.3 ---
+aer_dev_correctable: cat: '/sys/bus/pci/devices/0000:00:01.3/aer_dev_correctable': No such file or directory
+aer_dev_fatal: cat: '/sys/bus/pci/devices/0000:00:01.3/aer_dev_fatal': No such file or directory
+aer_dev_nonfatal: cat: '/sys/bus/pci/devices/0000:00:01.3/aer_dev_nonfatal': No such file or directory
+current_link_speed: 32.0 GT/s PCIe
+current_link_width: 8
+
+=== lspci -vvv bridge 00:01.3 (LnkSta, AER, DevSta error bits) ===
+		DevCtl:	CorrErr- NonFatalErr- FatalErr- UnsupReq-
+		DevSta:	CorrErr+ NonFatalErr- FatalErr- UnsupReq- AuxPwr- TransPend-
+			ClockPM- Surprise- LLActRep+ BwNot+ ASPMOptComp+
+		LnkSta:	Speed 32GT/s, Width x8
+		SltCap:	AttnBtn- PwrCtrl- MRL- AttnInd- PwrInd- HotPlug- Surprise-
+		RootCtl: ErrCorrectable- ErrNon-Fatal- ErrFatal- PMEIntEna- CRSVisible+
+		LnkSta2: Current De-emphasis Level: -3.5dB, EqualizationComplete+ EqualizationPhase1+
+
+=== dead GPU 03:00.0 DevSta/error bits (may be unreadable) ===
+	!!! Unknown header type 7f
+
+=== host dmesg: AER / PCIe error lines this boot ===
+[Sat Jul 18 00:42:03 2026] snd_hda_intel 0000:03:00.1: Handle vga_switcheroo audio client
+[Sat Jul 18 00:42:03 2026] input: HDA NVidia HDMI/DP,pcm=3 as /devices/pci0000:00/0000:00:01.3/0000:03:00.1/sound/card1/input18
+[Sat Jul 18 00:42:03 2026] input: HDA NVidia HDMI/DP,pcm=7 as /devices/pci0000:00/0000:00:01.3/0000:03:00.1/sound/card1/input19
+[Sat Jul 18 00:42:03 2026] input: HDA NVidia HDMI/DP,pcm=8 as /devices/pci0000:00/0000:00:01.3/0000:03:00.1/sound/card1/input20
+[Sat Jul 18 00:42:03 2026] input: HDA NVidia HDMI/DP,pcm=9 as /devices/pci0000:00/0000:00:01.3/0000:03:00.1/sound/card1/input21
+[Sat Jul 18 00:42:21 2026] snd_hda_intel 0000:03:00.1: GPU sound probed, but not operational: please add a quirk to driver_denylist
+[Sat Jul 18 00:42:21 2026] vfio-pci 0000:03:00.0: resetting
+[Sat Jul 18 00:42:21 2026] vfio-pci 0000:03:00.0: reset done
+[Sat Jul 18 00:42:34 2026] vfio-pci 0000:03:00.0: resetting
+[Sat Jul 18 00:42:34 2026] vfio-pci 0000:03:00.0: reset done
+[Sat Jul 18 00:42:34 2026] vfio-pci 0000:03:00.1: enabling device (0000 -> 0002)
+[Sat Jul 18 00:42:34 2026] vfio-pci 0000:03:00.0: resetting
+[Sat Jul 18 00:42:34 2026] vfio-pci 0000:03:00.1: resetting
+[Sat Jul 18 00:42:35 2026] vfio-pci 0000:03:00.0: reset done
+[Sat Jul 18 00:42:35 2026] vfio-pci 0000:03:00.1: reset done
+[Sat Jul 18 00:42:35 2026] vfio-pci 0000:03:00.0: resetting
+[Sat Jul 18 00:42:35 2026] vfio-pci 0000:03:00.0: reset done
+[Sat Jul 18 23:37:57 2026] vfio-pci 0000:03:00.0: timed out waiting for pending transaction; performing function level reset anyway
+[Sat Jul 18 23:37:57 2026] vfio-pci 0000:03:00.0: resetting
+[Sat Jul 18 23:37:57 2026] vfio-pci 0000:03:00.1: resetting
+[Sat Jul 18 23:37:58 2026] pcieport 0000:00:01.3: broken device, retraining non-functional downstream link at 2.5GT/s
+[Sat Jul 18 23:37:59 2026] pcieport 0000:00:01.3: retraining failed
+[Sat Jul 18 23:37:59 2026] pcieport 0000:00:01.3: Data Link Layer Link Active not set in 100 msec
+[Sat Jul 18 23:37:59 2026] vfio-pci 0000:03:00.0: reset done
+[Sat Jul 18 23:37:59 2026] vfio-pci 0000:03:00.1: reset done

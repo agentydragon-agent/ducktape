@@ -442,7 +442,11 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       restarts are boring.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
-- [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
+- [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239).
+      Gets power/temp/clocks, PCIe replay counters, and XID-as-a-metric
+      (`DCGM_FI_DEV_XID_ERRORS`) into Mimir (365 d) to characterize the recurring RTX 5090
+      fall-off events; replaces the local-CSV `gpu-monitor.nix` poller. Context:
+      <../../debug/atlas/gpu_lockup_20260718_followups.md>.
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver, now via Alloy)
 - [ ] **Roaming node DaemonSet problem** (high priority; recurs for any DaemonSet):
       Offline roaming nodes (iguana/rugged) leave DaemonSet pods Pending, which

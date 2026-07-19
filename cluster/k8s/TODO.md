@@ -222,6 +222,16 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       node loss. RCA and recovery matrix:
       `cluster/docs/lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md`.
 
+## Ship node systemd journals to Loki (not just pod logs)
+
+- [ ] **At next wyrm2 boot:** ship the wyrm2 (and atlas) **systemd journal** to
+      cluster Loki. Today Alloy/promtail scrape pod logs only, so kernel messages —
+      including the RTX 5090 `Xid 79 "GPU has fallen off the bus"` events — never
+      leave the node's local ~4-day journal, leaving no cluster-side history to
+      quantify GPU fall-off frequency. Add a `loki.source.journal` source (Alloy) or
+      a promtail journal scrape on the node. Rationale and the broader
+      detect/quantify plan: <../../debug/atlas/gpu_lockup_20260718_followups.md>.
+
 ## agent-box follow-ups
 
 The agent-box VM and its `codex` user are live (see
