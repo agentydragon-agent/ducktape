@@ -419,6 +419,7 @@ py_library(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
+        ":node_daemons",
         ":provider_connection",
         ":tool_call_actor",
         ":tool_call_service",
@@ -439,6 +440,7 @@ py_library(
     deps = [
         ":authentik_operator_token",
         ":config",
+        ":oauth_callback_page",
         ":operator_identity",
         ":operator_identity_store",
         ":tool_call_actor",
@@ -736,11 +738,14 @@ py_library(
     srcs = ["export_mcp_tool_schemas.py"],
     deps = [
         ":in_process_servers",
+        ":mcp_server",
+        ":node_daemons",
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
     ],
 )
 

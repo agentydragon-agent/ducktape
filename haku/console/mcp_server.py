@@ -30,7 +30,7 @@ import datetime
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
@@ -49,15 +49,19 @@ from haku.console.mcp_approval import DegradedServerMetadata, McpServerClient, S
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import (
     InProcessBackend,
+    InProcessCredential,
     McpServerEntry,
     McpServerNotFoundError,
+    NoCredential,
     OperatorConnectionCredential,
     RemoteMcpBackend,
     RemoteServerOAuthAuth,
+    StaticBearerAuth,
     _load_servers,
     server_tool_prefix,
 )
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
+from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -117,6 +121,7 @@ class ConsoleMcpContext:
     oauth_store: PostgresMcpOperatorOAuthStore
     provider_store: PostgresProviderConnectionStore
     metadata_provider: McpServerClient
+    node_daemons: NodeDaemonService | None = None
 
 
 class ToolCallPromise(BaseModel):
@@ -135,6 +140,31 @@ class ToolCallView(BaseModel):
     url: str | None = None
 
 
+class StaticBearerAuthStatus(BaseModel):
+    """Safe reflection of static-bearer auth: the secret's environment reference is omitted."""
+
+    kind: Literal["static_bearer"] = "static_bearer"
+
+
+type RemoteMcpAuthStatus = Annotated[
+    RemoteServerOAuthAuth | StaticBearerAuthStatus | NoCredential, Field(discriminator="kind")
+]
+
+
+class RemoteMcpBackendStatus(BaseModel):
+    kind: Literal["remote_mcp"] = "remote_mcp"
+    url: str
+    auth: RemoteMcpAuthStatus
+
+
+class InProcessBackendStatus(BaseModel):
+    kind: Literal["in_process"] = "in_process"
+    credential: InProcessCredential
+
+
+type McpBackendStatus = Annotated[RemoteMcpBackendStatus | InProcessBackendStatus, Field(discriminator="kind")]
+
+
 class McpServerConnectionStatus(BaseModel):
     """Persisted connection state for one configured MCP server.
 
@@ -143,25 +173,35 @@ class McpServerConnectionStatus(BaseModel):
     """
 
     server_id: str
-    auth_kind: str
+    backend: McpBackendStatus
     connection: McpOperatorAuthStatus | ProviderConnectionStatus | None = Field(
-        default=None,
         description=(
             "The persisted, non-secret operator connection status. This uses the same safe status "
             "shape as the console's OAuth/provider APIs, including connection and token-expiry times. "
             "It is null when this authentication kind has no separately linked operator connection."
-        ),
+        )
     )
 
 
 class McpServerConnectionStatusResponse(BaseModel):
-    servers: list[McpServerConnectionStatus] = Field(default_factory=list)
+    servers: list[McpServerConnectionStatus]
 
 
 class McpServerProbeResponse(BaseModel):
-    """Current, active reflection result for one configured MCP server."""
+    """Persisted linkage plus the current reflection result for one configured server."""
 
+    connection: McpServerConnectionStatus
     server: ServerMetadata
+
+
+def _backend_status(backend: RemoteMcpBackend | InProcessBackend) -> McpBackendStatus:
+    match backend:
+        case RemoteMcpBackend(auth=StaticBearerAuth()):
+            return RemoteMcpBackendStatus(url=backend.url, auth=StaticBearerAuthStatus())
+        case RemoteMcpBackend():
+            return RemoteMcpBackendStatus(url=backend.url, auth=backend.auth)
+        case InProcessBackend():
+            return InProcessBackendStatus(credential=backend.credential)
 
 
 class ApprovalRequestEnvelope(BaseModel):
@@ -204,23 +244,42 @@ def _passive_server_connection_statuses(
     result: list[McpServerConnectionStatus] = []
     for server in servers:
         match server.backend:
-            case RemoteMcpBackend(auth=RemoteServerOAuthAuth() as auth):
+            case RemoteMcpBackend(auth=RemoteServerOAuthAuth()):
                 oauth_status = oauth_statuses.get(server.id)
                 result.append(
-                    McpServerConnectionStatus(server_id=server.id, auth_kind=auth.kind, connection=oauth_status)
+                    McpServerConnectionStatus(
+                        server_id=server.id, backend=_backend_status(server.backend), connection=oauth_status
+                    )
                 )
-            case InProcessBackend(credential=OperatorConnectionCredential(connection=connection) as credential):
+            case InProcessBackend(credential=OperatorConnectionCredential(connection=connection)):
                 provider_status = provider_statuses.get(connection)
                 result.append(
                     McpServerConnectionStatus(
-                        server_id=server.id, auth_kind=credential.kind, connection=provider_status
+                        server_id=server.id, backend=_backend_status(server.backend), connection=provider_status
                     )
                 )
-            case RemoteMcpBackend(auth=auth):
-                result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=auth.kind))
-            case InProcessBackend(credential=credential):
-                result.append(McpServerConnectionStatus(server_id=server.id, auth_kind=credential.kind))
+            case RemoteMcpBackend():
+                result.append(
+                    McpServerConnectionStatus(
+                        server_id=server.id, backend=_backend_status(server.backend), connection=None
+                    )
+                )
+            case InProcessBackend():
+                result.append(
+                    McpServerConnectionStatus(
+                        server_id=server.id, backend=_backend_status(server.backend), connection=None
+                    )
+                )
     return McpServerConnectionStatusResponse(servers=result)
+
+
+def _without_tool_schemas(metadata: ServerMetadata) -> ServerMetadata:
+    """Keep the reflected catalog useful while omitting its potentially large schemas."""
+    if isinstance(metadata, DegradedServerMetadata):
+        return metadata
+    return metadata.model_copy(
+        update={"tools": [tool.model_copy(update={"input_schema": None}) for tool in metadata.tools]}
+    )
 
 
 def _envelope_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -539,32 +598,56 @@ def build_console_mcp(
 
         This is a passive status read: it never refreshes a token, contacts an authorization server,
         or calls a downstream MCP server. OAuth/provider connection objects mirror the console's
-        persisted non-secret status structures, including connection and token-expiry times. A real
+        persisted non-secret status structures, including connection and token-expiry times. The
+        nested backend object mirrors the safe server configuration shape so callers can distinguish
+        remote MCP transports from in-process implementations; static bearer secret references are
+        omitted. A real
         discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
+        Cataloged provider accounts whose OAuth client is absent remain visible as ``unprovisioned``.
         """
         return _passive_server_connection_statuses(context, actor)
 
     @mcp.tool(annotations=_READ_ONLY_META)
+    async def list_node_daemons(actor: ToolCallActor = current_actor_dependency) -> DaemonStatusResponse:
+        """List configured node daemons and their current persisted heartbeat/lease status.
+
+        Use this to check whether approved node work can currently be dispatched; do not use it to
+        submit or alter work. Each result includes the daemon's derived presence state, last
+        heartbeat, advertised backends/version, and active execution when one exists. This is a
+        read-only console-state view and does not contact a daemon or renew its lease.
+        """
+        _ = actor
+        return context.node_daemons.statuses() if context.node_daemons is not None else DaemonStatusResponse(daemons=[])
+
+    @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(
-        server_id: str, actor: ToolCallActor = current_actor_dependency
+        server_id: str, include_tool_schemas: bool = False, actor: ToolCallActor = current_actor_dependency
     ) -> McpServerProbeResponse:
         """Actively reflect one configured MCP server's current tool availability.
 
         Unlike ``list_mcp_servers``, this may refresh the operator's linked OAuth token and contact
-        the remote MCP server. It returns a degraded reason when that cannot succeed, so agents can
-        distinguish an unavailable configured server from an unknown tool name.
+        the remote MCP server. It returns persisted linkage plus a structured degraded result when
+        that cannot succeed, so agents can distinguish credential failures from downstream tool
+        discovery failures. Tool names, descriptions, and annotations are returned by default;
+        set ``include_tool_schemas`` to include the potentially large input schemas.
         """
         server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
         if server is None:
             raise ToolError(f"unknown configured MCP server {server_id!r}")
+        connection = next(
+            status
+            for status in _passive_server_connection_statuses(context, actor).servers
+            if status.server_id == server_id
+        )
+        metadata = await metadata_for_operator(
+            operator_id=actor.operator_id,
+            server=server,
+            metadata_provider=context.metadata_provider,
+            oauth_store=context.oauth_store,
+            provider_store=context.provider_store,
+        )
         return McpServerProbeResponse(
-            server=await metadata_for_operator(
-                operator_id=actor.operator_id,
-                server=server,
-                metadata_provider=context.metadata_provider,
-                oauth_store=context.oauth_store,
-                provider_store=context.provider_store,
-            )
+            connection=connection, server=metadata if include_tool_schemas else _without_tool_schemas(metadata)
         )
 
     @mcp.tool(annotations=_READ_ONLY_META)
