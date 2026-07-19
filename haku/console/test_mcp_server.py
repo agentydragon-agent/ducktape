@@ -29,7 +29,7 @@ from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
-from haku.console.mcp_approval import AliveServerMetadata, ToolMetadata
+from haku.console.mcp_approval import AliveServerMetadata, DegradedServerMetadata, ToolMetadata
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_operator_oauth import (
     McpOperatorAuthConnected,
@@ -189,51 +189,52 @@ async def test_tool_surface_splits_pass_through_and_request(harness: _Harness) -
         tools = {t.name: t for t in await client.list_tools()}
 
     # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
-    assert "gmail_labels_list" in tools
-    assert "input" not in tools["gmail_labels_list"].inputSchema.get("properties", {})
-    assert tools["gmail_labels_list"].meta[MCP_TOOL_META_KEY] == {
+    assert "gmail__labels_list" in tools
+    assert "input" not in tools["gmail__labels_list"].inputSchema.get("properties", {})
+    assert tools["gmail__labels_list"].meta[MCP_TOOL_META_KEY] == {
         "server_id": "gmail",
         "upstream_tool_name": "labels_list",
         "approval_mode": "passthrough",
     }
     # Read tools advertise read-only; the write tool stays unannotated (defaults describe mutating).
-    gmail_read_ann = tools["gmail_labels_list"].annotations
+    gmail_read_ann = tools["gmail__labels_list"].annotations
     assert gmail_read_ann is not None
     assert gmail_read_ann.readOnlyHint is True
-    assert tools["gmail_drafts_create"].annotations is None
+    assert tools["gmail__drafts_create"].annotations is None
     # Gmail writes are approval-request tools with the envelope.
-    assert "gmail_drafts_create" in tools
-    envelope = tools["gmail_drafts_create"].inputSchema
+    assert "gmail__drafts_create" in tools
+    envelope = tools["gmail__drafts_create"].inputSchema
     assert set(envelope["required"]) == {"input", "rationale"}
     assert set(envelope["properties"]) == {"input", "title", "rationale", "wait_for_approval_ms"}
-    assert tools["gmail_drafts_create"].meta[MCP_TOOL_META_KEY] == {
+    assert tools["gmail__drafts_create"].meta[MCP_TOOL_META_KEY] == {
         "server_id": "gmail",
         "upstream_tool_name": "drafts_create",
         "approval_mode": "approval_required",
     }
     # The read tools are present.
-    assert {"get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
+    assert {"get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
+    assert "actor" not in tools["get_mcp_server_status"].inputSchema.get("properties", {})
     # Native read tools advertise read-only + closed-world so clients (claude.ai) treat them as
     # passive reads and skip approvals. See mcp_infra/docs/tool_annotations.md.
-    for meta_tool in ("get_tool_call", "list_tool_calls", "list_mcp_servers"):
+    for meta_tool in ("get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"):
         ann = tools[meta_tool].annotations
         assert ann is not None
         assert ann.readOnlyHint is True
         assert ann.openWorldHint is False
     # The promise preamble is in the envelope tool's description.
-    assert "operator-approval queue" in tools["gmail_drafts_create"].description
+    assert "operator-approval queue" in tools["gmail__drafts_create"].description
     # Calendar reads are transparent; creation is the approval-gated request tool. The server
     # prefix supplies "calendar", so no tool repeats it in the local name.
-    assert "google_calendar_get_event" in tools
-    assert "input" not in tools["google_calendar_get_event"].inputSchema.get("properties", {})
-    cal_read_ann = tools["google_calendar_get_event"].annotations
+    assert "google_calendar__get_event" in tools
+    assert "input" not in tools["google_calendar__get_event"].inputSchema.get("properties", {})
+    cal_read_ann = tools["google_calendar__get_event"].annotations
     assert cal_read_ann is not None
     assert cal_read_ann.readOnlyHint is True
-    assert "google_calendar_create_event" in tools
-    assert "google_calendar_create_calendar_event" not in tools
+    assert "google_calendar__create_event" in tools
+    assert "google_calendar__create_calendar_event" not in tools
 
 
 async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> None:
@@ -267,12 +268,12 @@ async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> 
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
         assert listed.status_code == 200, listed.text
-        assert "gmail_labels_list" in listed.text
+        assert "gmail__labels_list" in listed.text
 
 
 async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        result = await client.call_tool("gmail_labels_list", {})
+        result = await client.call_tool("gmail__labels_list", {})
 
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
@@ -292,7 +293,7 @@ async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness
     validation error immediately and nothing enters the approval queue (operator, 2026-07-16)."""
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         with pytest.raises(ToolError, match="single_events"):
-            await client.call_tool("google_calendar_list_events", {"single_events": True})
+            await client.call_tool("google_calendar__list_events", {"single_events": True})
 
     operator = OperatorActor(operator_id=harness.operator_id)
     calls = harness.tool_calls.list_tool_calls(actor=operator)
@@ -306,7 +307,7 @@ async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness
 
 async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
-        result = await client.call_tool("google_calendar_get_event", {"event_id": "series1"})
+        result = await client.call_tool("google_calendar__get_event", {"event_id": "series1"})
 
     assert result.structured_content is not None
     assert result.structured_content["event_id"] == "series1"
@@ -319,7 +320,7 @@ async def test_calendar_read_is_transparent_and_audited(harness: _Harness) -> No
 async def test_request_tool_returns_promise_with_deep_link(harness: _Harness) -> None:
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         result = await client.call_tool(
-            "gmail_drafts_create",
+            "gmail__drafts_create",
             {
                 "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
                 "rationale": "test",
@@ -355,7 +356,7 @@ async def test_request_tool_preserves_explicit_zero_wait(harness: _Harness, monk
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         with pytest.raises(ToolError, match="captured request"):
             await client.call_tool(
-                "gmail_drafts_create",
+                "gmail__drafts_create",
                 {
                     "input": {"to": ["a@b.test"], "subject": "s", "body": "b"},
                     "rationale": "test",
@@ -376,7 +377,7 @@ async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None
     async def submit_draft(token: str, subject: str) -> str:
         async with Client(f"{harness.base}/mcp", auth=token) as client:
             result = await client.call_tool(
-                "gmail_drafts_create",
+                "gmail__drafts_create",
                 {
                     "input": {"to": ["a@b.test"], "subject": subject, "body": "body"},
                     "rationale": "test agent read isolation",
@@ -468,14 +469,14 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
             # The agent (bearer) sees the upstream tool behind the approval envelope and gets a promise.
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 tools = {t.name: t for t in await client.list_tools()}
-                assert "standin_echo" in tools
+                assert "standin__echo" in tools
                 # Upstream self-declared annotations propagate through the proxy reflection.
-                ann = tools["standin_echo"].annotations
+                ann = tools["standin__echo"].annotations
                 assert ann is not None
                 assert ann.readOnlyHint is True
                 assert ann.openWorldHint is False
                 result = await client.call_tool(
-                    "standin_echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
+                    "standin__echo", {"input": {"text": "hi"}, "rationale": "e2e", "wait_for_approval_ms": 0}
                 )
                 assert result.structured_content is not None
                 assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
@@ -498,7 +499,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
                     "id": 10,
                     "method": "tools/call",
                     "params": {
-                        "name": "standin_echo",
+                        "name": "standin__echo",
                         "arguments": {"input": {"text": "operator"}, "rationale": "render an operator preview"},
                     },
                 }
@@ -598,19 +599,27 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
 
         with serve_app_sync(app) as base:
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                assert "standin_echo" in {tool.name for tool in await client.list_tools()}
+                assert "standin__echo" in {tool.name for tool in await client.list_tools()}
+                status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
+                assert status.structured_content is not None
+                assert status.structured_content["server"]["status"] == "alive"
+                assert status.structured_content["server"]["server_id"] == "standin"
             async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-                assert "standin_echo" not in {tool.name for tool in await client.list_tools()}
-                with pytest.raises(ToolError, match="Unknown tool"):
-                    await client.call_tool("standin_echo", {"input": {"text": "no"}, "rationale": "test"})
+                assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
+                status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
+                assert status.structured_content is not None
+                assert status.structured_content["server"]["status"] == "degraded"
+                assert "Connect your standin MCP account" in status.structured_content["server"]["degraded_reason"]
+                with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
+                    await client.call_tool("standin__echo", {"input": {"text": "no"}, "rationale": "test"})
 
             connected.clear()
             connected.add(other_operator_id)
 
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                assert "standin_echo" not in {tool.name for tool in await client.list_tools()}
+                assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
             async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
-                assert "standin_echo" in {tool.name for tool in await client.list_tools()}
+                assert "standin__echo" in {tool.name for tool in await client.list_tools()}
 
 
 async def test_list_mcp_servers_passively_reports_persisted_connection_state(
@@ -771,9 +780,9 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
         async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-            proxy_names = [tool.name for tool in await client.list_tools() if tool.name.endswith("_echo")]
+            proxy_names = [tool.name for tool in await client.list_tools() if tool.name.endswith("__echo")]
 
-    assert proxy_names == ["beta_echo", "alpha_echo"]
+    assert proxy_names == ["beta__echo", "alpha__echo"]
 
 
 async def test_tool_dispatch_reflects_only_target_server(
@@ -822,12 +831,56 @@ async def test_tool_dispatch_reflects_only_target_server(
         actor_resolver,
     )
 
-    tool = await provider._get_tool("beta_echo")
+    tool = await provider._get_tool("beta__echo")
 
     assert isinstance(tool, mcp_server_module.ProxyTool)
-    assert tool.name == "beta_echo"
+    assert tool.name == "beta__echo"
     assert tool.actor == actor
     assert reflected == ["beta"]
+
+
+async def test_targeted_dispatch_reports_a_known_degraded_server(
+    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_file = write_config(
+        tmp_path / "degraded-dispatch.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "grocy-sf",
+                        "backend": {"kind": "remote_mcp", "url": "https://grocy.invalid/mcp", "auth": {"kind": "none"}},
+                    }
+                ]
+            },
+        },
+    )
+    settings = console_settings(migrated_db_url, config_file=config_file)
+    app = create_app(settings)
+
+    async def metadata_for_operator(**kwargs: Any) -> DegradedServerMetadata:
+        return DegradedServerMetadata(
+            server_id=str(kwargs["server"].id), title="grocy-sf", degraded_reason="MCP OAuth token refresh failed: 401"
+        )
+
+    monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
+    actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
+    actor_resolver.resolve = AsyncMock(
+        return_value=AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
+    )
+    provider = mcp_server_module.OperatorToolProvider(
+        mcp_server_module.ConsoleMcpContext(
+            settings=settings,
+            tool_calls=app.state.tool_call_service,
+            oauth_store=app.state.mcp_operator_oauth_store,
+            provider_store=app.state.provider_connection_store,
+            metadata_provider=app.state.tool_call_metadata_provider,
+        ),
+        actor_resolver,
+    )
+
+    assert await provider._get_tool("grocy_sf__product_groups_list") is None
 
 
 @dataclass(frozen=True)
@@ -938,7 +991,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
         with serve_app_sync(app, port=console_port) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
-                assert "standin_echo" in {t.name for t in await client.list_tools()}
+                assert "standin__echo" in {t.name for t in await client.list_tools()}
 
             async with httpx.AsyncClient() as anon:
                 slash_redirect = await anon.get(f"{base}/mcp/", follow_redirects=False)
@@ -1063,7 +1116,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                 # The returned bearer activates the exact Haku grant/binding and injects its
                 # canonical request-local AgentActor into a real FastMCP dependency.
                 async with Client(f"{base}/mcp", auth=access_token) as oauth_client:
-                    assert {"get_tool_call", "list_tool_calls", "standin_echo"} <= {
+                    assert {"get_tool_call", "list_tool_calls", "standin__echo"} <= {
                         tool.name for tool in await oauth_client.list_tools()
                     }
                     listed = await oauth_client.call_tool("list_tool_calls", {})

@@ -9,7 +9,7 @@ Each request exposes only servers connected by that principal's canonical Operat
 Operator-specific surface, the global auto-approval policy divides Agent-visible tools into two
 buckets:
 
-Every proxied tool is named ``<server>_<tool>`` (one uniform format — operator decision
+Every proxied tool is named ``<server>__<tool>`` (one uniform format — operator decision
 2026-07-13; bare upstream names hid which server a tool belonged to):
 
 - **Pass-through** — tools the policy unconditionally auto-approves (gmail reads): the upstream
@@ -34,8 +34,9 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers import Provider
 from fastmcp.tools import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
@@ -44,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.auto_approval import is_unconditionally_auto_approved
 from haku.console.config import Settings
-from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, metadata_for_operator
+from haku.console.mcp_approval import DegradedServerMetadata, McpMetadataProvider, ServerMetadata, metadata_for_operator
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -75,7 +76,6 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from mcp_infra.naming import build_mcp_function
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,10 @@ SERVER_NAME = "haku-console"
 # Synchronous hold budget (ms) before a call returns a promise; overridable per envelope call.
 DEFAULT_WAIT_MS = 5000
 MAX_WAIT_MS = 60_000
+TOOL_NAME_SEPARATOR = "__"
 
 INSTRUCTIONS = (
-    "haku-console tool proxy. Every proxied tool is named `<server>_<tool>`. Tools whose schema "
+    "haku-console tool proxy. Every proxied tool is named `<server>__<tool>`. Tools whose schema "
     "wraps the real arguments in an `input` + `rationale` envelope submit Agent calls to the "
     "operator's approval queue: they return the result if approved within a few seconds, otherwise "
     "a promise (a pending `tool_call_id` and approval link). Poll `get_tool_call(tool_call_id)` to "
@@ -156,6 +157,12 @@ class McpServerConnectionStatus(BaseModel):
 
 class McpServerConnectionStatusResponse(BaseModel):
     servers: list[McpServerConnectionStatus] = Field(default_factory=list)
+
+
+class McpServerProbeResponse(BaseModel):
+    """Current, active reflection result for one configured MCP server."""
+
+    server: ServerMetadata
 
 
 class ApprovalRequestEnvelope(BaseModel):
@@ -341,7 +348,7 @@ def _build_proxy_tool(
     schema = tool.input_schema if isinstance(tool.input_schema, dict) and tool.input_schema else {"type": "object"}
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
-    name = build_mcp_function(server_tool_prefix(server_id), tool.name)
+    name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
     if passthrough:
         parameters = schema
         description = tool.description or ""
@@ -372,6 +379,42 @@ def _build_proxy_tool(
     )
 
 
+class OperatorServerCatalog:
+    """Resolve one configured connected server for the current Operator."""
+
+    def __init__(self, context: ConsoleMcpContext) -> None:
+        self._context = context
+
+    def server_for_tool_name(self, name: str) -> McpServerEntry | None:
+        candidates = [
+            server
+            for server in _load_servers(self._context.settings)
+            if name.startswith(f"{server_tool_prefix(server.id)}{TOOL_NAME_SEPARATOR}")
+        ]
+        if not candidates:
+            return None
+        # A longer namespace is the more specific match (for example, ``google_calendar``
+        # rather than ``google``). Startup validation guarantees exact namespace uniqueness.
+        return max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
+
+    async def metadata(self, server: McpServerEntry, actor: ToolCallActor) -> ServerMetadata:
+        return await metadata_for_operator(
+            operator_id=actor.operator_id,
+            server=server,
+            metadata_provider=self._context.metadata_provider,
+            oauth_store=self._context.oauth_store,
+            provider_store=self._context.provider_store,
+        )
+
+
+def _unavailable_server_message(server_id: str, reason: str) -> str:
+    return (
+        f"MCP server {server_id!r} is unavailable: {reason.rstrip().rstrip('.') or 'unknown availability error'}. "
+        f"Use get_mcp_server_status(server_id={server_id!r}) to check it; "
+        "reconnect the server in the console if its OAuth connection has expired or been revoked."
+    )
+
+
 class OperatorToolProvider(Provider):
     """Reflect the connected-server catalog for the current principal's Operator.
 
@@ -380,19 +423,19 @@ class OperatorToolProvider(Provider):
     if a client calls a tool after its Operator disconnects that server.
     """
 
-    def __init__(self, context: ConsoleMcpContext, actor_resolver: HakuMcpActorResolver) -> None:
+    def __init__(
+        self,
+        context: ConsoleMcpContext,
+        actor_resolver: HakuMcpActorResolver,
+        catalog: OperatorServerCatalog | None = None,
+    ) -> None:
         super().__init__()
         self._context = context
         self._actor_resolver = actor_resolver
+        self._catalog = catalog or OperatorServerCatalog(context)
 
     async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
-        meta = await metadata_for_operator(
-            operator_id=actor.operator_id,
-            server=server,
-            metadata_provider=self._context.metadata_provider,
-            oauth_store=self._context.oauth_store,
-            provider_store=self._context.provider_store,
-        )
+        meta = await self._catalog.metadata(server, actor)
         if isinstance(meta, DegradedServerMetadata):
             logger.info(
                 "mcp_server: hiding unavailable server %s from Operator %s: %s",
@@ -422,17 +465,20 @@ class OperatorToolProvider(Provider):
 
     async def _get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None:
         actor = await self._actor_resolver.resolve()
-        candidates = [
-            server
-            for server in _load_servers(self._context.settings)
-            if name.startswith(f"{server_tool_prefix(server.id)}_")
-        ]
-        if not candidates:
+        server = self._catalog.server_for_tool_name(name)
+        if server is None:
             return None
-        # A longer namespace is the more specific match (for example, ``google_calendar``
-        # rather than ``google``). Startup validation guarantees exact namespace uniqueness.
-        server = max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
-        for tool in await self._server_tools(server, actor):
+        meta = await self._catalog.metadata(server, actor)
+        if isinstance(meta, DegradedServerMetadata):
+            return None
+        for upstream_tool in meta.tools:
+            tool = _build_proxy_tool(
+                self._context,
+                server.id,
+                upstream_tool,
+                passthrough=is_unconditionally_auto_approved(server.id, upstream_tool.name),
+                actor=actor,
+            )
             if tool.name == name and (version is None or version.matches(tool.version)):
                 return tool
         return None
@@ -440,6 +486,31 @@ class OperatorToolProvider(Provider):
     async def get_tasks(self) -> Sequence[Tool]:
         # Proxy tools forbid background tasks, and startup has no request actor.
         return []
+
+
+class OperatorToolAvailabilityMiddleware(Middleware):
+    """Make a known server's reflection failure visible after FastMCP lookup misses."""
+
+    def __init__(self, catalog: OperatorServerCatalog, actor_resolver: HakuMcpActorResolver) -> None:
+        self._catalog = catalog
+        self._actor_resolver = actor_resolver
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mcp_types.CallToolRequestParams],
+        call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        try:
+            return await call_next(context)
+        except NotFoundError as error:
+            server = self._catalog.server_for_tool_name(context.message.name)
+            if server is None:
+                raise
+            actor = await self._actor_resolver.resolve()
+            meta = await self._catalog.metadata(server, actor)
+            if isinstance(meta, DegradedServerMetadata):
+                raise ToolError(_unavailable_server_message(server.id, meta.degraded_reason)) from error
+            raise
 
 
 def build_console_mcp(
@@ -453,7 +524,9 @@ def build_console_mcp(
     """
     mcp: FastMCP = FastMCP(name=SERVER_NAME, instructions=INSTRUCTIONS)
     mcp.auth = auth
-    mcp.add_provider(OperatorToolProvider(context, actor_resolver))
+    catalog = OperatorServerCatalog(context)
+    mcp.add_provider(OperatorToolProvider(context, actor_resolver, catalog))
+    mcp.add_middleware(OperatorToolAvailabilityMiddleware(catalog, actor_resolver))
 
     current_actor_dependency = Depends(actor_resolver.resolve)
 
@@ -467,6 +540,29 @@ def build_console_mcp(
         discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
         """
         return _passive_server_connection_statuses(context, actor)
+
+    @mcp.tool(annotations=_READ_ONLY_META)
+    async def get_mcp_server_status(
+        server_id: str, actor: ToolCallActor = current_actor_dependency
+    ) -> McpServerProbeResponse:
+        """Actively reflect one configured MCP server's current tool availability.
+
+        Unlike ``list_mcp_servers``, this may refresh the operator's linked OAuth token and contact
+        the remote MCP server. It returns a degraded reason when that cannot succeed, so agents can
+        distinguish an unavailable configured server from an unknown tool name.
+        """
+        server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
+        if server is None:
+            raise ToolError(f"unknown configured MCP server {server_id!r}")
+        return McpServerProbeResponse(
+            server=await metadata_for_operator(
+                operator_id=actor.operator_id,
+                server=server,
+                metadata_provider=context.metadata_provider,
+                oauth_store=context.oauth_store,
+                provider_store=context.provider_store,
+            )
+        )
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
