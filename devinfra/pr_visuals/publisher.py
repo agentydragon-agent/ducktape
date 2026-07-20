@@ -549,11 +549,9 @@ def success_comment_body(
     page_url = f"{url}index.html"
     target_count = len(review_tests)
     plural = "" if target_count == 1 else "s"
+    lines = [COMMENT_MARKER, f"## Visual review for [`{commit_sha[:8]}`]({commit_url})", ""]
     if base_sha is None:
-        lines = [
-            COMMENT_MARKER,
-            f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
-            "",
+        lines += [
             f"{target_count} Bazel test target{plural} produced visual artifacts. [Open visual review]({page_url}).",
             "",
         ]
@@ -564,10 +562,14 @@ def success_comment_body(
         return "\n".join(lines)
 
     totals = _totals(review_tests)
-    lines = [
-        COMMENT_MARKER,
-        f"## Visual review for [`{commit_sha[:8]}`]({commit_url})",
-        "",
+    if totals.modified == totals.new == totals.removed == 0:
+        lines.append(
+            f"No visual changes among the {target_count} affected Bazel test target{plural}. "
+            f"[Open visual review]({page_url})."
+        )
+        return "\n".join(lines)
+
+    lines += [
         f"{target_count} Bazel test target{plural} produced visual artifacts · "
         f"**{totals.modified} modified**, {totals.new} new, {totals.removed} removed, "
         f"{totals.unchanged} unchanged. [Open visual review]({page_url}).",
