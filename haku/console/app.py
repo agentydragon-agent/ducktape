@@ -39,6 +39,8 @@ from haku.console import (
     mcp_operator_oauth,
     mcp_server,
     node_daemons,
+    oauth_association_maintenance,
+    oauth_token_state,
     operator_auth,
     provider_connection,
     tool_call_service,
@@ -147,12 +149,16 @@ def create_app(
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
     # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
-    db_sessions = sessionmaker(create_engine(database_url, pool_pre_ping=True), expire_on_commit=False)
+    db_engine = create_engine(database_url, pool_pre_ping=True)
+    db_sessions = sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
+    oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
+        db_sessions, operator_identity_store=operator_identity_store
+    )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
-        db_sessions, operator_identity_store=operator_identity_store
+        db_sessions, operator_identity_store=operator_identity_store, token_states=oauth_token_states
     )
     # Per-Operator external provider connections (Google today), replacing Airlock's brokered
     # token. Only deploy-named providers whose client env vars are present are offered.
@@ -160,6 +166,7 @@ def create_app(
     provider_connection_store = provider_connection.PostgresProviderConnectionStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
+        token_states=oauth_token_states,
         provider_definitions=console_config.operator_connection_providers,
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
@@ -171,9 +178,19 @@ def create_app(
     authentik_operator_token_store = PostgresAuthentikOperatorTokenStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
+        token_states=oauth_token_states,
         client_id=settings.operator_oidc.client_id,
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,
+    )
+    oauth_maintenance = oauth_association_maintenance.OAuthAssociationMaintenance(
+        db_engine,
+        db_sessions,
+        servers=console_config.mcp.servers,
+        oauth_store=mcp_operator_oauth_store,
+        provider_store=provider_connection_store,
+        authentik_store=authentik_operator_token_store,
+        refresh_authentik_tokens=hostexec_config is not None,
     )
     node_daemon_service = (
         node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
@@ -291,7 +308,7 @@ def create_app(
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await agent_authority.reconcile_static_agents(static_agent_definitions)
-        async with agent_authority.expiry_maintenance():
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run():
             await console_event_hub.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
