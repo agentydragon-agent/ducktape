@@ -5,30 +5,33 @@ skill_package(
     name = "forgejo",
     srcs = [
         "SKILL.md",
-        "scripts/fetch_forgejo_logs.py",
+        "scripts/forgejo.py",
     ],
 )
 
 py_library(
-    name = "fetch_forgejo_logs_lib",
-    srcs = ["scripts/fetch_forgejo_logs.py"],
+    name = "forgejo_lib",
+    srcs = ["scripts/forgejo.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//httpx"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
 )
 
 py_binary(
-    name = "fetch_forgejo_logs",
-    srcs = ["scripts/fetch_forgejo_logs.py"],
-    main = "scripts/fetch_forgejo_logs.py",
+    name = "cli",
+    imports = ["../.."],
+    main_module = "skills.forgejo.scripts.forgejo",
     visibility = ["//visibility:public"],
-    deps = ["@pypi//httpx"],
+    deps = [":forgejo_lib"],
 )
 
 py_test(
-    name = "test_fetch_forgejo_logs",
-    srcs = ["test_fetch_forgejo_logs.py"],
+    name = "test_forgejo",
+    srcs = ["test_forgejo.py"],
     deps = [
-        ":fetch_forgejo_logs_lib",
+        ":forgejo_lib",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
