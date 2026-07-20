@@ -51,27 +51,26 @@ resource "forgejo_repository" "state" {
 
 # Block force-pushes (and branch deletion) on main. Forgejo rejects force-push
 # on any protected branch by default — there is no separate "force push" toggle
-# — so protecting `main` is what disallows it. enable_push keeps the write plane
-# direct-push: operator click-commits (haku-ui WAL → commit_and_push), scan-run
-# content commits, anki srs/ reconciles, and Flux's k8s/ image-tag pushes.
+# — so protecting `main` is what disallows it. enable_push keeps the whole
+# write plane direct-push (haku-ui WAL click-commits, scan-run content, anki
+# srs/ reconciles, Flux's k8s/ image-tag pushes).
 #
-# CODE trees are the exception (operator, 2026-07-19): direct pushes touching
-# them are rejected, so they land only through PRs with green required checks.
-# Rationale: Forgejo cancels an in-flight main run when a new push arrives, so
-# with concurrent Haku sessions pushing, code could merge with its tests never
-# executed (incident: anki srs-checkout commit landed red under a cancelled
-# run). PR branches get their own runs; required contexts make "merged" imply
-# "tested". Deliberately NOT k8s/** (Flux image automation direct-pushes the
-# image tag there) and not content trees (new garden views/docs must stay
-# one-commit cheap). Agents: keep code and content in separate pushes; land
-# code via PR + auto-merge-on-green (see haku-state procedures).
+# Code changes land via PRs gated on the required contexts below. That routing
+# is agent PROCEDURE, not server enforcement (operator, 2026-07-20): agents
+# hold the haku credential for the content write plane, and Forgejo cannot
+# scope one user's push rights by path — protected_file_patterns turned out to
+# block PR merges too (only admin force_merge lands them, which also overrides
+# RED checks), and a push whitelist admitting haku would gate nothing. The
+# structural fix is evicting code trees from this repo entirely (tracked in
+# haku-state memory/improvements). What IS server-enforced: any PR merge
+# requires the listed contexts green — and PR branches get their own runs, so
+# the cancelled-main-run race (the anki srs-checkout incident, 2026-07-19)
+# cannot hide a red test behind a superseded push.
 resource "forgejo_branch_protection" "state_main" {
-  repository_id = forgejo_repository.state.id
-  branch_name   = "main"
-  enable_push   = true
-  # Semicolon-separated globs, mirroring the Forgejo API field.
-  protected_file_patterns = "ui/**;tools/**;anki_service/**;.forgejo/**;MODULE.bazel;MODULE.bazel.lock;BUILD.bazel;.bazelrc"
-  enable_status_check     = true
+  repository_id       = forgejo_repository.state.id
+  branch_name         = "main"
+  enable_push         = true
+  enable_status_check = true
   # Context format observed live: "<workflow> / <job> (<event>)".
   status_check_contexts = [
     "bazel-ci / bazel (pull_request)",
