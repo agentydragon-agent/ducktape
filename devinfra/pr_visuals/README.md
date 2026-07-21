@@ -1,7 +1,7 @@
 # devinfra/pr_visuals
 
 Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
-(`.github/workflows/haku-pr-visuals-publish.yml`) runs `publisher.py` after
+(`.github/workflows/pr-visuals-publish.yml`) runs `publisher.py` after
 every successful Bazel CI run. It scans the run's test invocations for targets
 whose undeclared outputs contain a `visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
@@ -42,9 +42,12 @@ carries the target, every asset classifies as `new`.
 
 ## Check-runs
 
-- **PR visual review** — publication status: `success` once the bundle is
-  uploaded and the comment upserted, `failure` on invalid producer output or
-  publisher errors, `neutral` when no test exposed a manifest.
+- **PR visual review** — starts `in_progress` with the Bazel CI run and links
+  there while CI executes. The publisher updates that same check to `success`
+  once the bundle is uploaded and the comment upserted, `failure` on invalid
+  producer output or publisher errors, or `neutral` when no test exposed a
+  manifest. If Bazel CI does not succeed, its conclusion completes the check
+  without running the publisher.
 - **PR visual diffs** — comparison outcome, present only when a baseline
   comparison ran: `success` when nothing was modified or removed, `neutral`
   otherwise. Neutral is deliberate — the check points reviewers at visual
