@@ -1,7 +1,7 @@
 """The `hostexec` wire body between the in-process console tool and `hostexecd`.
 
 Three parties share these shapes:
-- the **agent** calls the `hostexec_run` MCP tool (agent-facing input is the tool's own flat
+- the **agent** calls the `bash` MCP tool (agent-facing input is the tool's own flat
   signature in `haku/console/tools/hostexec.py`; `RunAsUser` below is shared with it);
 - the **console** approves, then token-exchanges the operator's identity for a short-lived,
   per-host Authentik token;
@@ -27,12 +27,12 @@ class HostexecRequest(BaseModel):
     `token` is the operator's short-lived, per-host Authentik token (`aud=hostexec-<host>`,
     carrying the `hostexec-<run_as>-<host>` group), obtained by the console via token exchange on
     approval. `hostexecd` verifies it against Authentik's JWKS, enforces single-use, then runs
-    `argv` as `run_as`.
+    `cmd` as a bash script (`bash -c cmd`) as `run_as`.
     """
 
     token: str = Field(description="Operator's per-host Authentik token (aud=hostexec-<host>)")
     run_as: RunAsUser
-    argv: list[str] = Field(min_length=1)
+    cmd: str = Field(min_length=1)
     cwd: str | None = None
     max_bytes: int = Field(ge=0, le=100_000)
     timeout_ms: int = Field(gt=0)
