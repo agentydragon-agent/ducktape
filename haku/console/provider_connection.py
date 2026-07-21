@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse
 from fastapi_csrf_protect import CsrfProtect
 from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -44,8 +44,18 @@ from haku.console.mcp_config import (
     OperatorConnectionProviderDefinition,
 )
 from haku.console.oauth_callback_page import render_oauth_callback_page
-from haku.console.oauth_token_state import PostgresOAuthTokenStateStore, new_oauth_token_state
-from haku.console.oauth_token_support import parse_token_response, public_base_url, token_expires_at
+from haku.console.oauth_token_state import (
+    OAuthRefreshFailureEpisode,
+    PostgresOAuthTokenStateStore,
+    new_oauth_token_state,
+    refresh_failure_episode,
+)
+from haku.console.oauth_token_support import (
+    OAuthTokenResponseError,
+    parse_token_response,
+    public_base_url,
+    token_expires_at,
+)
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection_registry import (
@@ -65,6 +75,8 @@ UNPROVISIONED_DETAIL = "OAuth client not provisioned on this console; see the co
 
 
 class ProviderConnectionStatusBase(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     connection: str
     display_name: str
     provider: ProviderConnectionKind
@@ -78,6 +90,14 @@ class ProviderConnected(ProviderConnectionStatusBase):
     scope: str | None = None
 
 
+class ProviderDegraded(ProviderConnectionStatusBase):
+    status: Literal["degraded"] = "degraded"
+    connected_at: datetime.datetime
+    token_expires_at: datetime.datetime | None = None
+    scope: str | None = None
+    refresh_failure: OAuthRefreshFailureEpisode
+
+
 class ProviderUnconnected(ProviderConnectionStatusBase):
     status: Literal["unconnected"] = "unconnected"
 
@@ -89,7 +109,7 @@ class ProviderUnprovisioned(ProviderConnectionStatusBase):
 
 # Discriminated on `status`, so the connected-only fields exist exactly when connected.
 type ProviderConnectionStatus = Annotated[
-    ProviderConnected | ProviderUnconnected | ProviderUnprovisioned, Field(discriminator="status")
+    ProviderConnected | ProviderDegraded | ProviderUnconnected | ProviderUnprovisioned, Field(discriminator="status")
 ]
 
 
@@ -141,6 +161,16 @@ def _status_from_row(
         return ProviderUnconnected(connection=connection, display_name=definition.display_name, provider=provider.kind)
     if row.provider_name != definition.provider or row.provider != provider.kind:
         raise RuntimeError(f"operator connection {connection!r} provider changed; disconnect it before continuing")
+    if (failure := refresh_failure_episode(row.token_state)) is not None:
+        return ProviderDegraded(
+            connection=connection,
+            display_name=definition.display_name,
+            provider=provider.kind,
+            connected_at=row.created_at,
+            token_expires_at=row.token_state.token_expires_at,
+            scope=row.token_state.scope,
+            refresh_failure=failure,
+        )
     return ProviderConnected(
         connection=connection,
         display_name=definition.display_name,
@@ -186,11 +216,10 @@ async def _exchange_code(
         },
     )
     response = await _post_token(descriptor, data)
-    return await parse_token_response(
-        response,
-        label=f"{descriptor.display_name} token exchange",
-        error=lambda m: HTTPException(status_code=502, detail=m),
-    )
+    try:
+        return await parse_token_response(response, label=f"{descriptor.display_name} token exchange")
+    except OAuthTokenResponseError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 async def _refresh_token(
@@ -198,7 +227,7 @@ async def _refresh_token(
 ) -> OAuthToken:
     data = _token_request_data(descriptor, client, {"grant_type": "refresh_token", "refresh_token": refresh_token})
     response = await _post_token(descriptor, data)
-    return await parse_token_response(response, label=f"{descriptor.display_name} token refresh", error=RuntimeError)
+    return await parse_token_response(response, label=f"{descriptor.display_name} token refresh")
 
 
 def load_provider_clients(config: ConsoleConfigFile) -> dict[str, ProviderOAuthClientConfig]:

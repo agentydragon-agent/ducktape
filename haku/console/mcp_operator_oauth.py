@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import base64
 import datetime
+import logging
 import secrets
+import time
 from functools import partial
 from typing import Annotated, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
@@ -46,7 +48,8 @@ from mcp.shared.auth import (
 )
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
 from mcp.types import LATEST_PROTOCOL_VERSION
-from pydantic import BaseModel, Field
+from prometheus_client import Histogram
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
@@ -65,8 +68,17 @@ from haku.console.mcp_config import (
     _server_entry,
 )
 from haku.console.oauth_callback_page import render_oauth_callback_page
-from haku.console.oauth_token_state import PostgresOAuthTokenStateStore, new_oauth_token_state
+from haku.console.oauth_token_state import (
+    OAuthRefreshError,
+    OAuthRefreshFailureAction,
+    OAuthRefreshFailureEpisode,
+    OAuthRefreshFailureKind,
+    PostgresOAuthTokenStateStore,
+    new_oauth_token_state,
+    refresh_failure_episode,
+)
 from haku.console.oauth_token_support import (
+    OAuthTokenResponseError,
     parse_token_response,
     public_base_url,
     token_expires_at,
@@ -77,20 +89,31 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 Csrf = Annotated[CsrfProtect, Depends()]
 
+logger = logging.getLogger(__name__)
+
+MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
+    "haku_mcp_oauth_token_request_duration_seconds",
+    "Remote MCP OAuth token endpoint request duration",
+    ["operation", "outcome"],
+)
+
 MCP_OPERATOR_AUTH_CALLBACK_PATH = "/api/mcp/operator-auth/callback"
 MCP_OPERATOR_AUTH_FLOW_TTL = datetime.timedelta(minutes=10)
 
 router = APIRouter(tags=["mcp-operator-oauth"])
 
 
-class McpOperatorAuthStatusBase(BaseModel):
-    server_id: str
-    # The operator's human username (preferred_username), for display. Durable association
-    # ownership is keyed internally by canonical Operator UUID, which is not exposed in this API.
-    username: str
+def _observe_token_request(operation: str, outcome: str, started: float) -> None:
+    elapsed = time.monotonic() - started
+    MCP_OAUTH_TOKEN_REQUEST_DURATION.labels(operation=operation, outcome=outcome).observe(elapsed)
+    logger.info("MCP OAuth token %s outcome=%s duration_seconds=%.3f", operation, outcome, elapsed)
 
 
-class McpOperatorAuthConnected(McpOperatorAuthStatusBase):
+class McpOperatorAuthStateBase(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+
+class McpOperatorAuthConnected(McpOperatorAuthStateBase):
     status: Literal["connected"] = "connected"
     connected_at: datetime.datetime
     # None when the linked token declares no expiry (OAuth `expires_in` absent).
@@ -98,15 +121,33 @@ class McpOperatorAuthConnected(McpOperatorAuthStatusBase):
     scope: str | None = None
 
 
-class McpOperatorAuthUnconnected(McpOperatorAuthStatusBase):
+class McpOperatorAuthDegraded(McpOperatorAuthStateBase):
+    status: Literal["degraded"] = "degraded"
+    connected_at: datetime.datetime
+    token_expires_at: datetime.datetime | None = None
+    scope: str | None = None
+    refresh_failure: OAuthRefreshFailureEpisode
+
+
+class McpOperatorAuthUnconnected(McpOperatorAuthStateBase):
     status: Literal["unconnected"] = "unconnected"
 
 
 # Discriminated on `status`, so the connected-only fields (connected_at/token_expires_at/
 # scope) exist exactly when connected — no "unconnected with a connected_at" nonsense state.
-type McpOperatorAuthStatus = Annotated[
-    McpOperatorAuthConnected | McpOperatorAuthUnconnected, Field(discriminator="status")
+type McpOperatorAuthState = Annotated[
+    McpOperatorAuthConnected | McpOperatorAuthDegraded | McpOperatorAuthUnconnected, Field(discriminator="status")
 ]
+
+
+class McpOperatorAuthStatus(BaseModel):
+    """Stable association identity wrapping its discriminated connection state."""
+
+    server_id: str
+    # The operator's human username (preferred_username), for display. Durable association
+    # ownership is keyed internally by canonical Operator UUID, which is not exposed in this API.
+    username: str
+    state: McpOperatorAuthState
 
 
 class McpOperatorAuthStatusResponse(BaseModel):
@@ -128,15 +169,17 @@ class _OperatorOAuthTokenClient(BaseModel):
     token_endpoint_auth_method: str | None = None
     token_endpoint: str
     resource: str | None = None
+    timeout_seconds: float = 30.0
 
     @classmethod
-    def from_association(cls, row: McpOperatorOAuthAssociation) -> _OperatorOAuthTokenClient:
+    def from_association(cls, row: McpOperatorOAuthAssociation, *, timeout_seconds: float) -> _OperatorOAuthTokenClient:
         return cls(
             client_id=row.client_id,
             client_secret=row.client_secret,
             token_endpoint_auth_method=row.token_endpoint_auth_method,
             token_endpoint=row.token_endpoint,
             resource=row.resource,
+            timeout_seconds=timeout_seconds,
         )
 
 
@@ -191,6 +234,7 @@ class PostgresMcpOperatorOAuthStore:
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
         token_states: PostgresOAuthTokenStateStore,
+        token_timeout_seconds: float = 30.0,
     ) -> None:
         # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
         # here — constructing the store neither connects nor mutates schema. The engine/sessionmaker is
@@ -198,6 +242,7 @@ class PostgresMcpOperatorOAuthStore:
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
         self._token_states = token_states
+        self._token_timeout_seconds = token_timeout_seconds
 
     def list_statuses(
         self, *, servers: list[McpServerEntry], operator_id: UUID, username: str
@@ -281,7 +326,7 @@ class PostgresMcpOperatorOAuthStore:
         now = datetime.datetime.now(datetime.UTC)
         if flow.expires_at < now:
             raise HTTPException(status_code=410, detail="OAuth flow expired; start connection again")
-        token = await _exchange_operator_oauth_code(flow, code)
+        token = await _exchange_operator_oauth_code(flow, code, timeout_seconds=self._token_timeout_seconds)
         expires_at = token_expires_at(token, now)
         with self._sessions.begin() as session:
             # The code exchange is external I/O. Make active status and association persistence one
@@ -334,7 +379,7 @@ class PostgresMcpOperatorOAuthStore:
                 if row is None:
                     return None
                 token_state_id = row.token_state_id
-                client = _OperatorOAuthTokenClient.from_association(row)
+                client = _OperatorOAuthTokenClient.from_association(row, timeout_seconds=self._token_timeout_seconds)
 
             access_token = await self._token_states.access_token_for(
                 token_state_id=token_state_id,
@@ -365,14 +410,19 @@ def _oauth_status_from_row(
     server_id: str, username: str, row: McpOperatorOAuthAssociation | None
 ) -> McpOperatorAuthStatus:
     if row is None:
-        return McpOperatorAuthUnconnected(server_id=server_id, username=username)
-    return McpOperatorAuthConnected(
-        server_id=server_id,
-        username=username,
-        connected_at=row.created_at,
-        token_expires_at=row.token_state.token_expires_at,
-        scope=row.token_state.scope,
-    )
+        state: McpOperatorAuthState = McpOperatorAuthUnconnected()
+    elif (failure := refresh_failure_episode(row.token_state)) is not None:
+        state = McpOperatorAuthDegraded(
+            connected_at=row.created_at,
+            token_expires_at=row.token_state.token_expires_at,
+            scope=row.token_state.scope,
+            refresh_failure=failure,
+        )
+    else:
+        state = McpOperatorAuthConnected(
+            connected_at=row.created_at, token_expires_at=row.token_state.token_expires_at, scope=row.token_state.scope
+        )
+    return McpOperatorAuthStatus(server_id=server_id, username=username, state=state)
 
 
 def _metadata_request_headers() -> dict[str, str]:
@@ -559,7 +609,9 @@ def _token_request_auth(
     return data, headers
 
 
-async def _exchange_operator_oauth_code(flow: OperatorOAuthFlowState, code: str) -> OAuthToken:
+async def _exchange_operator_oauth_code(
+    flow: OperatorOAuthFlowState, code: str, *, timeout_seconds: float
+) -> OAuthToken:
     data: dict[str, str] = {
         "grant_type": "authorization_code",
         "code": code,
@@ -570,20 +622,25 @@ async def _exchange_operator_oauth_code(flow: OperatorOAuthFlowState, code: str)
     if flow.resource:
         data["resource"] = flow.resource
     data, headers = _token_request_auth(data, flow)
-    timeout_seconds = 10.0
+    started = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(flow.token_endpoint, data=data, headers=headers)
     except httpx.RequestError as e:
+        _observe_token_request("exchange", "transport", started)
         raise HTTPException(
             status_code=502,
             detail=token_request_error_message(
                 label="MCP OAuth token exchange", request_error=e, timeout_seconds=timeout_seconds
             ),
         ) from e
-    return await parse_token_response(
-        response, label="MCP OAuth token exchange", error=lambda m: HTTPException(status_code=502, detail=m)
-    )
+    try:
+        token = await parse_token_response(response, label="MCP OAuth token exchange")
+    except OAuthTokenResponseError as error:
+        _observe_token_request("exchange", "rejected", started)
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    _observe_token_request("exchange", "success", started)
+    return token
 
 
 async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient, refresh_token: str) -> OAuthToken:
@@ -595,17 +652,54 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
     if token_client.resource:
         data["resource"] = token_client.resource
     data, headers = _token_request_auth(data, token_client)
-    timeout_seconds = 10.0
+    started = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as http:
+        async with httpx.AsyncClient(timeout=token_client.timeout_seconds) as http:
             response = await http.post(token_client.token_endpoint, data=data, headers=headers)
-    except httpx.RequestError as e:
-        raise RuntimeError(
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+        _observe_token_request("refresh", "connect", started)
+        raise OAuthRefreshError(
             token_request_error_message(
-                label="MCP OAuth token refresh", request_error=e, timeout_seconds=timeout_seconds
-            )
+                label="MCP OAuth token refresh", request_error=e, timeout_seconds=token_client.timeout_seconds
+            ),
+            kind=OAuthRefreshFailureKind.CONNECT,
+            action=OAuthRefreshFailureAction.RETRYING,
         ) from e
-    return await parse_token_response(response, label="MCP OAuth token refresh", error=RuntimeError)
+    except httpx.RequestError as e:
+        _observe_token_request("refresh", "outcome_unknown", started)
+        raise OAuthRefreshError(
+            token_request_error_message(
+                label="MCP OAuth token refresh", request_error=e, timeout_seconds=token_client.timeout_seconds
+            ),
+            kind=OAuthRefreshFailureKind.OUTCOME_UNKNOWN,
+            action=OAuthRefreshFailureAction.RECONNECT,
+        ) from e
+    if response.status_code >= 500:
+        _observe_token_request("refresh", "upstream", started)
+        raise OAuthRefreshError(
+            f"MCP OAuth token refresh failed: {response.status_code}",
+            kind=OAuthRefreshFailureKind.UPSTREAM,
+            action=OAuthRefreshFailureAction.RETRYING,
+        )
+    try:
+        token = await parse_token_response(response, label="MCP OAuth token refresh")
+    except OAuthTokenResponseError as error:
+        _observe_token_request("refresh", "rejected", started)
+        raise OAuthRefreshError(
+            str(error),
+            kind=(
+                OAuthRefreshFailureKind.OAUTH_REJECTED
+                if not error.invalid_response
+                else OAuthRefreshFailureKind.INVALID_RESPONSE
+            ),
+            action=(
+                OAuthRefreshFailureAction.RECONNECT
+                if error.oauth_error == "invalid_grant"
+                else OAuthRefreshFailureAction.OPERATOR_ACTION
+            ),
+        ) from error
+    _observe_token_request("refresh", "success", started)
+    return token
 
 
 def _oauth_callback_response(ok: bool, message: str, *, status_code: int = 200) -> HTMLResponse:
@@ -640,12 +734,14 @@ async def disconnect_mcp_operator_auth(
     oauth_store: OAuthStoreDep,
     event_hub: ConsoleEventHubDep,
     actor: OperatorActorDep,
-) -> McpOperatorAuthUnconnected:
+) -> McpOperatorAuthStatus:
     await csrf_protect.validate_csrf(request)
     operator_id = actor.operator_id
     oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
     await event_hub.broadcast(operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")])
-    return McpOperatorAuthUnconnected(server_id=server_id, username=_operator_username(request))
+    return McpOperatorAuthStatus(
+        server_id=server_id, username=_operator_username(request), state=McpOperatorAuthUnconnected()
+    )
 
 
 @router.get(MCP_OPERATOR_AUTH_CALLBACK_PATH)

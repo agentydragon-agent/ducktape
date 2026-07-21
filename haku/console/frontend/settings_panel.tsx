@@ -18,6 +18,8 @@ import {
   listNodeDaemons,
   listMcpServers,
   type DaemonStatus,
+  type McpOperatorAuthDegraded,
+  type McpOperatorAuthStatus,
   type McpServerConnection,
   type McpServerProbe,
 } from "./mcp_status_client.ts";
@@ -81,24 +83,47 @@ type McpServerView = {
   error: string | null;
 };
 
+function isMcpOperatorAuthStatus(connection: McpServerConnection["connection"]): connection is McpOperatorAuthStatus {
+  return connection !== null && "state" in connection;
+}
+
+function refreshFailureSummary({
+  initial,
+  latest,
+  attempts,
+  resolution,
+}: McpOperatorAuthDegraded["refresh_failure"]): string {
+  const failure =
+    attempts > 1 && latest.message !== initial.message
+      ? `${initial.message}; latest after ${attempts} attempts: ${latest.message}`
+      : initial.message;
+  return `${failure} · ${resolution}`;
+}
+
 function connectionSummary(server: McpServerConnection): string {
   const backend = server.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process";
   const connection = server.connection;
-  if (connection === null) return `${backend} · no operator-linked account`;
+  if (connection === null) {
+    return server.backend.kind === "remote_mcp" && server.backend.auth.kind === "static_bearer"
+      ? `${backend} · Console-managed credential`
+      : `${backend} · no operator-linked account`;
+  }
+  if (isMcpOperatorAuthStatus(connection)) {
+    if (connection.state.status === "unconnected") {
+      return `${backend} · Not linked for ${connection.username}`;
+    }
+    const until = shortDate(
+      typeof connection.state.token_expires_at === "string" ? connection.state.token_expires_at : null
+    );
+    return `${backend} · linked for ${connection.username}${until ? ` until ${until}` : ""}`;
+  }
   if (connection.status === "unprovisioned") {
     return `${backend} · ${connection.display_name} OAuth client is not provisioned`;
   }
   if (connection.status === "unconnected") {
-    const account =
-      "server_id" in connection
-        ? `Not linked for ${connection.username}`
-        : `${connection.display_name} is not connected`;
-    return `${backend} · ${account}`;
+    return `${backend} · ${connection.display_name} is not connected`;
   }
   const until = shortDate(typeof connection.token_expires_at === "string" ? connection.token_expires_at : null);
-  if ("server_id" in connection) {
-    return `${backend} · linked for ${connection.username}${until ? ` until ${until}` : ""}`;
-  }
   return `${backend} · ${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
 }
 
@@ -122,19 +147,25 @@ function McpServerCard({
     linkage && "connection" in linkage && typeof linkage.connection === "string"
       ? (linkage.connection as OperatorConnectionName)
       : null;
-  const unconnected = linkage?.status === "unconnected";
-  const unprovisioned = linkage?.status === "unprovisioned";
+  const mcpState = isMcpOperatorAuthStatus(linkage) ? linkage.state : null;
+  const providerState = linkage && !isMcpOperatorAuthStatus(linkage) ? linkage : null;
+  const linkageStatus = mcpState?.status ?? providerState?.status;
+  const unconnected = linkageStatus === "unconnected";
+  const unprovisioned = linkageStatus === "unprovisioned";
+  const degraded = linkageStatus === "degraded";
   const state = unprovisioned
     ? { label: "Unprovisioned", color: "orange" }
     : unconnected
       ? { label: "Unconnected", color: "gray" }
-      : view.error || view.probe?.server.state.status === "degraded"
+      : degraded || view.error || view.probe?.server.state.status === "degraded"
         ? { label: "Unavailable", color: "red" }
         : view.probe?.server.state.status === "alive"
           ? { label: "Available", color: "teal" }
           : { label: "Checking", color: "blue" };
   const reason =
-    (unprovisioned ? linkage.detail : null) ??
+    (providerState?.status === "unprovisioned" ? providerState.detail : null) ??
+    (mcpState?.status === "degraded" ? refreshFailureSummary(mcpState.refresh_failure) : null) ??
+    (providerState?.status === "degraded" ? refreshFailureSummary(providerState.refresh_failure) : null) ??
     view.error ??
     (view.probe?.server.state.status === "degraded" ? view.probe.server.state.degraded_reason : null);
   const connect = linkedMcpServerId
@@ -171,7 +202,7 @@ function McpServerCard({
       </Group>
       {linkage && !unprovisioned && (
         <Group justify="flex-end" gap="xs" mt="sm">
-          {linkage.status === "connected" ? (
+          {linkageStatus === "connected" || linkageStatus === "degraded" ? (
             <Button size="compact-sm" variant="subtle" color="red" onClick={disconnect ?? undefined}>
               Disconnect
             </Button>
