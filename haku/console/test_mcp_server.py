@@ -23,7 +23,7 @@ import pytest_bazel
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from jsonschema import Draft202012Validator
-from mcp.types import Icon, ToolAnnotations
+from mcp.types import Icon, Tool, ToolAnnotations
 from pydantic import SecretStr, ValidationError
 from referencing import Registry, Resource
 from referencing.jsonschema import DRAFT202012
@@ -32,7 +32,7 @@ from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, write_config
-from haku.console.mcp_approval import AliveServerMetadata, DegradedServerMetadata, ToolMetadata
+from haku.console.mcp_approval import DegradedReflection
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_operator_oauth import (
     McpOperatorAuthConnected,
@@ -684,15 +684,16 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
                 assert "standin__echo" in {tool.name for tool in await client.list_tools()}
                 status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
                 assert status.structured_content is not None
-                assert status.structured_content["server"]["status"] == "alive"
+                assert status.structured_content["server"]["state"]["status"] == "alive"
                 assert status.structured_content["server"]["server_id"] == "standin"
             async with Client(f"{base}/mcp", auth=_OTHER_AGENT_TOKEN) as client:
                 assert "standin__echo" not in {tool.name for tool in await client.list_tools()}
                 status = await client.call_tool("get_mcp_server_status", {"server_id": "standin"})
                 assert status.structured_content is not None
-                assert status.structured_content["server"]["status"] == "degraded"
-                assert status.structured_content["server"]["failure_stage"] == "credential_resolution"
-                assert "Connect your standin MCP account" in status.structured_content["server"]["degraded_reason"]
+                assert status.structured_content["server"]["state"]["status"] == "degraded"
+                assert status.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
+                degraded_reason = status.structured_content["server"]["state"]["degraded_reason"]
+                assert "Connect your standin MCP account" in degraded_reason
                 with pytest.raises(ToolError, match="MCP server 'standin' is unavailable"):
                     await client.call_tool("standin__echo", {"input": {"text": "no"}, "rationale": "test"})
 
@@ -909,10 +910,11 @@ async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
     assert result.structured_content["server"] == {
         "server_id": "standin",
         "title": "standin",
-        "tools": [],
-        "status": "degraded",
-        "failure_stage": "credential_resolution",
-        "degraded_reason": "MCP OAuth token refresh failed: 401",
+        "state": {
+            "status": "degraded",
+            "failure_stage": "credential_resolution",
+            "degraded_reason": "MCP OAuth token refresh failed: 401",
+        },
     }
     assert result.structured_content["connection"]["server_id"] == "standin"
 
@@ -965,9 +967,9 @@ async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisi
     assert connection["display_name"] == "Google Calendar"
     assert probed.structured_content is not None
     assert probed.structured_content["connection"]["connection"] == connection
-    assert probed.structured_content["server"]["status"] == "degraded"
-    assert probed.structured_content["server"]["failure_stage"] == "credential_resolution"
-    assert "not provisioned" in probed.structured_content["server"]["degraded_reason"]
+    assert probed.structured_content["server"]["state"]["status"] == "degraded"
+    assert probed.structured_content["server"]["state"]["failure_stage"] == "credential_resolution"
+    assert "not provisioned" in probed.structured_content["server"]["state"]["degraded_reason"]
 
 
 async def test_get_mcp_server_status_includes_schemas_only_when_requested(
@@ -986,20 +988,15 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     )
     app = create_app(console_settings(migrated_db_url, config_file=config_file))
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
-        server_id = str(kwargs["server"].id)
-        return AliveServerMetadata(
-            server_id=server_id,
-            title=server_id,
-            tools=[
-                ToolMetadata(
-                    name="echo",
-                    description="Echo input",
-                    input_schema={"type": "object"},
-                    output_schema={"type": "object", "properties": {"echoed": {"type": "string"}}},
-                )
-            ],
-        )
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+        return [
+            Tool(
+                name="echo",
+                description="Echo input",
+                inputSchema={"type": "object"},
+                outputSchema={"type": "object", "properties": {"echoed": {"type": "string"}}},
+            )
+        ]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1011,7 +1008,7 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
 
     assert summary.structured_content is not None
     assert detailed.structured_content is not None
-    assert summary.structured_content["server"]["tools"][0] == {
+    assert summary.structured_content["server"]["state"]["tools"][0] == {
         "name": "echo",
         "title": None,
         "description": "Echo input",
@@ -1020,8 +1017,8 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
         "annotations": None,
         "icons": None,
     }
-    assert detailed.structured_content["server"]["tools"][0]["input_schema"] == {"type": "object"}
-    assert detailed.structured_content["server"]["tools"][0]["output_schema"] == {
+    assert detailed.structured_content["server"]["state"]["tools"][0]["input_schema"] == {"type": "object"}
+    assert detailed.structured_content["server"]["state"]["tools"][0]["output_schema"] == {
         "type": "object",
         "properties": {"echoed": {"type": "string"}},
     }
@@ -1046,18 +1043,15 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     started: set[str] = set()
     both_started = asyncio.Event()
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
-        server = kwargs["server"]
-        server_id = str(server.id)
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+        server_id = str(kwargs["server"].id)
         started.add(server_id)
         if len(started) == 2:
             both_started.set()
         await asyncio.wait_for(both_started.wait(), timeout=1)
         if server_id == "beta":
             await asyncio.sleep(0.01)
-        return AliveServerMetadata(
-            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
-        )
+        return [Tool(name="echo", inputSchema={"type": "object"})]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1084,13 +1078,11 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
     )
     app = create_app(console_settings(migrated_db_url, config_file=config_file))
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
         server_id = str(kwargs["server"].id)
         if server_id == "broken":
             raise RuntimeError("unexpected reflection failure")
-        return AliveServerMetadata(
-            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
-        )
+        return [Tool(name="echo", inputSchema={"type": "object"})]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     with serve_app_sync(app) as base:
@@ -1121,13 +1113,10 @@ async def test_tool_dispatch_reflects_only_target_server(
     app = create_app(settings)
     reflected: list[str] = []
 
-    async def metadata_for_operator(**kwargs: Any) -> AliveServerMetadata:
-        server = kwargs["server"]
-        server_id = str(server.id)
+    async def metadata_for_operator(**kwargs: Any) -> list[Tool]:
+        server_id = str(kwargs["server"].id)
         reflected.append(server_id)
-        return AliveServerMetadata(
-            server_id=server_id, title=server_id, tools=[ToolMetadata(name="echo", input_schema={"type": "object"})]
-        )
+        return [Tool(name="echo", inputSchema={"type": "object"})]
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
     actor = AgentActor(
@@ -1176,12 +1165,9 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(
     settings = console_settings(migrated_db_url, config_file=config_file)
     app = create_app(settings)
 
-    async def metadata_for_operator(**kwargs: Any) -> DegradedServerMetadata:
-        return DegradedServerMetadata(
-            server_id=str(kwargs["server"].id),
-            title="grocy-sf",
-            failure_stage="credential_resolution",
-            degraded_reason="MCP OAuth token refresh failed: 401",
+    async def metadata_for_operator(**kwargs: Any) -> DegradedReflection:
+        return DegradedReflection(
+            failure_stage="credential_resolution", degraded_reason="MCP OAuth token refresh failed: 401"
         )
 
     monkeypatch.setattr(mcp_server_module, "metadata_for_operator", metadata_for_operator)
