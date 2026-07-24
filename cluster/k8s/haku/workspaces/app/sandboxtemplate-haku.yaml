@@ -1,0 +1,102 @@
+# The Haku sandbox: an in-cluster EXEC TARGET the sandbox-provisioning MCP hands
+# out. The agent (Claude Code web / claude.ai / a managed agent) execs
+# `bazel run //cli:...` / `bazel test //...` in here THROUGH the MCP, against a
+# git-synced haku-state checkout. It does NOT run the agent loop. haku-state
+# builds locally (no BuildBuddy/RBE — source never leaves the cluster), so the
+# image is the local toolchain (../image/).
+#
+# Trust model (see haku/docs/security.md + haku-state improvements/
+# sandbox-provisioning-mcp.md): the pool lives IN haku-sandbox, where Haku already has
+# full CRUD — so Haku CAN edit this template and create pods/claims directly. That's
+# safe because the network fence does NOT rest on pod-spec or namespace write-isolation:
+# it's the cluster-scoped haku-sandbox-force-proxy CCNP (selects the namespace, enforced
+# at the Cilium datapath) + the cluster-default baseline PodSecurity (forbids
+# hostNetwork/hostPort/host*), both OUTSIDE Haku's RBAC (its haku-sandbox-admin Role has
+# no cilium/networkpolicy/PSS verbs). Every pod in haku-sandbox is force-proxied and
+# baseline-confined regardless of who wrote it, so Haku can't craft an un-fenced pod; and
+# a Haku direct-exec ≈ the arbitrary bash exec_sandbox already grants. The MCP approval
+# gate still governs the one party it must — the kubeconfig-less external harness (a plain
+# claude.ai chat), which can only reach the box THROUGH the MCP.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: haku
+  namespace: haku-sandbox
+spec:
+  # Unmanaged so the controller doesn't stamp its own RFC1918-blocking policy
+  # that would fight the haku-egress-proxy fence applied at the namespace level
+  # (the existing haku-sandbox-force-proxy CCNP).
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-sandbox
+    spec:
+      # Controller defaults DNS to public resolvers only; restore cluster DNS so
+      # forgejo-http.forgejo (module fetch + haku-state clone) resolves.
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      # Haku's own k8s identity so `kubectl` works out of the box — Haku operates its
+      # normal compute in haku-sandbox from here. The shared `haku` SA
+      # (cluster/k8s/haku/rbac/serviceaccount-haku.yaml) is bound to haku-sandbox-admin
+      # and is the same identity the managed-agent worker runs as.
+      serviceAccountName: haku
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workspace
+          image: git.allegedly.works/ducktape-ci/haku-sandbox-image:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:haku-sandbox-image"}
+          command: ["sleep", "infinity"]
+          workingDir: /workspace
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # The haku Forgejo account credential — ONE cred for BOTH in-cluster
+            # git fetches (the ducktape_haku module git_override on every bazel
+            # invocation + the haku-state clone), both over forgejo-http.forgejo.
+            # The haku account can read both repos, so a single .netrc line covers
+            # them. Same secret the managed-agent worker uses; minted into this
+            # namespace by tf/gitops/haku-state (never baked, never hand-minted).
+            # The per-claim haku-sandbox-setup.sh writes it into ~/.netrc.
+            - name: HAKU_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: username
+            - name: HAKU_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "3"
+              memory: 6Gi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+  volumeClaimTemplatesPolicy: Overrides
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        # No default StorageClass in this cluster — must be explicit.
+        storageClassName: seaweedfs-ovh
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 30Gi
