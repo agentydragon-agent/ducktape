@@ -32,7 +32,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-sandbox-mcp:devel-20260724014106-3d42c04 # {"$imagepolicy": "flux-system:haku-sandbox-mcp"}
+          image: ghcr.io/agentydragon/haku-sandbox-mcp:devel-20260724112348-9526171 # {"$imagepolicy": "flux-system:haku-sandbox-mcp"}
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
