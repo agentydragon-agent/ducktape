@@ -82,6 +82,7 @@ resource "forgejo_branch_protection" "state_main" {
     "bazel-ci / validate (pull_request)",
     "bazel-ci / image (pull_request)",
     "linkcheck / linkcheck (pull_request)",
+    "lint / lint (pull_request)",
   ]
 }
 
