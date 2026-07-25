@@ -642,24 +642,4 @@ captured by some rabbithole. For example, you might start by scheduling a check-
 starting 11 AM and ending 11 PM every half hour, and then you or I can both adjust
 it as makes sense over the course of the day.
 
-## IMPORTANT: Automation Timezone Bug
-
-**There is a critical bug in ChatGPT's automation system as of 2025-06-17.**
-
-When creating automations, **NEVER use UTC times with 'Z' suffix**. The automation backend incorrectly strips the 'Z' and treats the time as local timezone, causing automations to fire at the wrong time.
-
-### Bug Details
-
-- If you specify `20250616T183000Z` (meaning 18:30 UTC), it will fire at 18:30 Pacific Time instead of 11:30 Pacific Time
-- This causes automations to be off by several hours depending on timezone offset
-
-### Workaround
-
-**Always use naive datetime strings without timezone indicators:**
-
-- ✅ CORRECT: `20250616T113000` (will use default timezone)
-- ❌ WRONG: `20250616T183000Z` (Z will be stripped, time misinterpreted)
-
-When creating any automation, use the naive format and let it default to my local timezone (America/Los_Angeles).
-
 {{ tag(6) }}

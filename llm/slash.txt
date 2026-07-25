@@ -78,10 +78,6 @@ Macros:
 * 50 g fat
 ```
 
-## TODOs (/todos)
-
-List what TODOs you're aware of for me.
-
 ## Next plan (/next)
 
 Give me your best suggestions for my next steps for the coming ~hour or two.
