@@ -5,6 +5,17 @@
 # 2. Empty PATH in sandbox actions — system.bazelrc installs /etc/bazel.bazelrc
 # 3. Dynamically-linked Bazel-downloaded toolchains — nix-ld provides the linker stub
 #
+# WORTH KNOWING: #3 works here because of a *directory*, not because of the env vars.
+# nix-ld's compiled-in defaults live under /run/current-system/sw/share/nix-ld, which
+# `programs.nix-ld.enable` populates; it also sets NIX_LD, but only in
+# environment.sessionVariables, which reach login shells and not systemd services. A host
+# therefore runs FHS binaries fine with NIX_LD unset and even under `env -` (measured on
+# wyrm2). Anyone porting this to a container must copy that directory, not just the vars —
+# a Nix-built image that ported only the vars broke on every environment-scrubbed Bazel
+# action until the fallback was added. Same for bash: nixpkgs' fallback PATH is
+# `/no-such-path`, which an FHS host never notices. See
+# debug/nixos_bazel_bash/README.md "Two substrates" and "Issue 4".
+#
 # See debug/nixos_bazel_bash/README.md for details.
 {
   config,
