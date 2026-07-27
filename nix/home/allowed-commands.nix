@@ -44,6 +44,7 @@ let
     prefixCommandProduct
       [ "gh" ]
       [
+        "issue view"
         "pr checks"
         "pr view"
         "run view"
