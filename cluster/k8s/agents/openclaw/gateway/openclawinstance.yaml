@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: ghcr.io/agentydragon/openclaw
-    tag: latest # {"$imagepolicy": "flux-system:openclaw"}
+    tag: ghcr.io/agentydragon/openclaw:devel-20260727183142-c55cddb # {"$imagepolicy": "flux-system:openclaw"}
     pullPolicy: IfNotPresent
   env:
     - name: OPENAI_API_KEY
