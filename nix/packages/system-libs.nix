@@ -30,7 +30,7 @@ let
     pkgs.libxkbcommon
     pkgs.libxrandr
     pkgs.libxfixes
-    pkgs.xorg.libxshmfence
+    pkgs.libxshmfence
   ];
 in
 {

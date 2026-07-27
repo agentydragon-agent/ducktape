@@ -337,7 +337,7 @@
         # Dev tools
         pkgs.pre-commit
         pkgs.bazelisk
-        pkgs.nixfmt-rfc-style
+        pkgs.nixfmt
         pkgs.statix
         pkgs.ruff
         pkgs.shfmt
