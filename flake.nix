@@ -286,7 +286,6 @@
         inherit
           lib
           pkgs
-          pkgsUnstable
           artifacts
           ;
       };

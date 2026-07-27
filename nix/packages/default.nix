@@ -2,18 +2,14 @@
 {
   lib,
   pkgs,
-  pkgsUnstable,
   artifacts,
 }:
 let
   # The ducktape umbrella wheel is built (on Bazel) against
-  # `fastmcp==3.4.4` + `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
-  # 25.11 ships fastmcp 2.12 + mcp 1.15, and even nixos-unstable ships an older
-  # FastMCP. To let the MCP-using entry points (`git-commit-ai`,
-  # `gmail-archiver`) import on NixOS, package FastMCP's root and slim
-  # distributions plus the dependencies that nixpkgs does not carry. Rebuild
-  # newer upstream package sources against the stable Python interpreter so
-  # the whole closure shares one consistent site-packages.
+  # `fastmcp==3.4.4` (see requirements_bazel.txt). Nixpkgs 26.05 ships 3.2,
+  # while py-key-value-aio is older than FastMCP's >=0.4.4 floor. Package those
+  # two deltas against the stable Python package set so the whole closure shares
+  # one consistent site-packages.
   python3 = pkgs.python3.override {
     self = python3;
     packageOverrides =
@@ -25,71 +21,7 @@ let
         };
       in
       {
-        mcp = pyprev.mcp.overridePythonAttrs (old: {
-          version = "1.26.0";
-          inherit (pkgsUnstable.python3Packages.mcp) src;
-          # Dependency builds should not run upstream's ~1,000-test suite. It is
-          # slow and includes timing-sensitive SSE tests; Ducktape packages have
-          # explicit importsCheck gates below for the runtime contract we use.
-          doCheck = false;
-          dontUsePytestCheck = true;
-          # 1.26.0 added pyjwt + typing-inspection to its runtime deps
-          # (nixpkgs 25.11's derivation still encodes the 1.15.0 set).
-          dependencies =
-            old.dependencies
-            ++ (with pyprev; [
-              pyjwt
-              cryptography
-              typing-inspection
-            ]);
-        });
-        # FastMCP 3.4.4 requires newer security floors than nixpkgs 25.11:
-        # Starlette >=1.0.1 and python-multipart >=0.0.26. Reuse only the
-        # unstable source/version while retaining the stable Python closure.
-        starlette = pyprev.starlette.overridePythonAttrs {
-          inherit (pkgsUnstable.python3Packages.starlette) src version;
-        };
-        annotated-doc = pyfinal.buildPythonPackage {
-          pname = "annotated-doc";
-          inherit (pkgsUnstable.python3Packages.annotated-doc) src version;
-          pyproject = true;
-          build-system = [ pyfinal.pdm-backend ];
-          nativeCheckInputs = with pyfinal; [
-            pytestCheckHook
-            typing-extensions
-          ];
-          pythonImportsCheck = [ "annotated_doc" ];
-        };
-        # The stable FastAPI release still calls Starlette APIs removed before
-        # 1.1. Rebuild the compatible release for this same Python interpreter;
-        # it is also a check dependency of sse-starlette in MCP's closure.
-        fastapi = pyprev.fastapi.overridePythonAttrs (old: {
-          inherit (pkgsUnstable.python3Packages.fastapi) src version;
-          dependencies = [ pyfinal.annotated-doc ] ++ old.dependencies;
-          nativeCheckInputs =
-            old.nativeCheckInputs
-            ++ (with pyfinal; [
-              a2wsgi
-              pwdlib
-              pytest-timeout
-              pytest-xdist
-            ]);
-          disabledTestPaths = old.disabledTestPaths ++ [
-            "tests/test_tutorial/test_static_files"
-            "tests/test_tutorial/test_custom_docs_ui"
-            "tests/test_tutorial/test_graphql/test_tutorial001.py"
-          ];
-        });
-        python-multipart = pyprev.python-multipart.overridePythonAttrs {
-          inherit (pkgsUnstable.python3Packages.python-multipart) src version patches;
-        };
-        uncalled-for = pkgs.callPackage ./uncalled-for.nix {
-          python3Packages = pyfinal;
-        };
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
-          python3Packages = pyfinal;
-        };
-        griffelib = pkgs.callPackage ./griffelib.nix {
           python3Packages = pyfinal;
         };
         inherit (fastmcpPackages) fastmcp fastmcp-slim;

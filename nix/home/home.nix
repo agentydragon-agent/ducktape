@@ -22,7 +22,7 @@ let
   codexClaude = import ./claude_code/codex-claude.nix { inherit pkgs; };
 
   ducktapePackages = import ../packages {
-    inherit lib pkgs pkgsUnstable;
+    inherit lib pkgs;
     artifacts = ducktape-artifacts;
   };
   # The nixos-26.05 channel still packages the October 2025 Pop Shell snapshot,
