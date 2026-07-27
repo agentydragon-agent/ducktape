@@ -5,7 +5,6 @@ filegroup(
     name = "content_files",
     srcs = [
         "base.html.j2",
-        "coding.md",
         "index.md",
         "stats.html.j2",
         "style.css",
