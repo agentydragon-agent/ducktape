@@ -317,25 +317,15 @@ let
   # Gmail MCP Server - pinned to specific commit for security
   gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
 
-  # Helper to generate Read/Grep/Glob permissions for directories
-  # Allows recursive access to all files in specified directories
+  # Helper to generate recursive file-read permissions for directories.
+  # Read(path) rules cover every file-reading tool; Grep(path) and Glob(path)
+  # do not participate in Claude Code's file permission checks.
   # Pattern syntax: https://code.claude.com/docs/en/settings
   #   - Supports glob patterns: ** for recursive, * for wildcard
   #   - Supports ~ for home directory expansion
-  mkReadPerms =
-    dirs:
-    lib.flatten (
-      map (
-        dir:
-        map (tool: "${tool}(${dir}/**)") [
-          "Read"
-          "Grep"
-          "Glob"
-        ]
-      ) dirs
-    );
+  mkReadPerms = dirs: map (dir: "Read(${dir}/**)") dirs;
 
-  # Directories where Read/Grep/Glob are always allowed without prompting
+  # Directories where file-reading tools are always allowed without prompting.
   alwaysAllowedReadDirs = [
     "~/.claude" # Claude Code session history, settings, commands
     "/nix"
@@ -479,7 +469,7 @@ in
   options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
     type = lib.types.listOf lib.types.str;
     default = [ ];
-    description = "Additional directories to auto-allow for Read/Grep/Glob operations";
+    description = "Additional directories to auto-allow for file-reading operations";
     example = [ "/wyrmhdd/bazel" ];
   };
 

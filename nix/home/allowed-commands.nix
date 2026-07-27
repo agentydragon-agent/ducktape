@@ -141,6 +141,25 @@ let
         "tree"
       ];
 
+  helmReadOnlyCommands =
+    prefixCommandProduct
+      [
+        "helm"
+        "nix develop -c helm"
+      ]
+      [
+        "show"
+        "template"
+      ];
+
+  kubectlReadOnlyCommands =
+    prefixCommandProduct
+      [ "kubectl" ]
+      [
+        "get crd"
+        "get imagepolicy"
+      ];
+
   # bbapi — BuildBuddy API CLI. Almost entirely read-only (invocations,
   # targets, artifacts, logs, cache scorecard, trends, executions, AI
   # analysis); the one side-effecting subcommand is `workflow run`, which
@@ -203,6 +222,8 @@ in
     ]
     ++ wrappedCommands
     ++ cargoMetadataCommands
+    ++ helmReadOnlyCommands
+    ++ kubectlReadOnlyCommands
     ++ bbapiCommands
     ++ workspaceGcCommands;
 
