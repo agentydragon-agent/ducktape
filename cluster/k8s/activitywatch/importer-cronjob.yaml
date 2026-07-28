@@ -57,7 +57,7 @@ spec:
                   readOnly: true
           containers:
             - name: importer
-              image: ghcr.io/agentydragon/aw-server:devel-20260727204637-99a8998 # {"$imagepolicy": "flux-system:activitywatch"}
+              image: ghcr.io/agentydragon/aw-server:devel-20260728024047-a9ce743 # {"$imagepolicy": "flux-system:activitywatch"}
               command:
                 - /usr/local/bin/aw-sync
                 - --host
