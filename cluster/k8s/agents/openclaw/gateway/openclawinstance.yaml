@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: ghcr.io/agentydragon/openclaw
-    tag: devel-20260728031657-59f5024 # {"$imagepolicy": "flux-system:openclaw:tag"}
+    tag: devel-20260728063131-06ccfa8 # {"$imagepolicy": "flux-system:openclaw:tag"}
     pullPolicy: IfNotPresent
   env:
     # Direct OpenAI Platform credential used only by memorySearch embeddings
