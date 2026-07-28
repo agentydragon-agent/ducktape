@@ -21,9 +21,14 @@ work under `/tmp` avoids this mirror-mode retention bug.
 concurrent sessions for this agent. Use unique paths to avoid collisions, and
 commit and push any result that must survive sandbox recreation.
 
-OpenClaw only accepts tool working directories under its managed workspace
-roots. Keep the tool `workdir` under `/sandbox` and change directory within the
-shell command, for example:
+OpenClaw's native `read`, `write`, `edit`, and `apply_patch` tools resolve paths
+on the gateway side rather than inside the OpenShell sandbox. They are disabled
+for this deployment so the agent has one filesystem view. Use shell commands
+such as `git`, `sed`, and `cat` through `exec` for file access.
+
+OpenClaw also only accepts `exec` working directories under its managed
+workspace roots. Keep the tool `workdir` under `/sandbox` and change directory
+within the shell command, for example:
 
 ```bash
 git clone https://github.com/agentydragon/ducktape.git /tmp/ducktape-$TASK_ID
