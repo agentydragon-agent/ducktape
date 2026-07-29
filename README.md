@@ -72,6 +72,7 @@ See `.github/workflows/`.
 
 ```bash
 bb run //devinfra/lint:buildifier    # Format Bazel files
+bb test //...                          # Run the test suite
 ```
 
 Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
