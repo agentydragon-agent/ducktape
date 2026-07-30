@@ -33,6 +33,8 @@ spec:
         - matchName: api.github.com
         - matchName: codeload.github.com
         - matchName: objects.githubusercontent.com
+        # GitHub release assets redirect here (e.g. workspace-local tool bootstraps).
+        - matchName: release-assets.githubusercontent.com
         - matchName: raw.githubusercontent.com
       toPorts:
         - ports:
