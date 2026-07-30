@@ -1,0 +1,1 @@
+- Verified: opened with no GitHub credential in the agent container.
