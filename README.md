@@ -75,6 +75,8 @@ bb run //devinfra/lint:buildifier    # Format Bazel files
 bb test //...                          # Run the test suite
 ```
 
+For quick local iteration, Bazel's remote cache keeps repeat builds fast.
+
 Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
 
 ## Conventions
