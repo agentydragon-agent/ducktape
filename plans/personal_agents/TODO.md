@@ -1,0 +1,1 @@
+- Verified: the lab harness opened this PR with TLS verification enabled.
