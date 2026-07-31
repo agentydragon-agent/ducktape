@@ -1,0 +1,18 @@
+# PLACEHOLDER ONLY: replace the value below with the output of `claude setup-token`,
+# then encrypt this file in place before merging:
+#
+#   sops --encrypt --in-place cluster/k8s/haku/agent-sdk/claude-code-oauth-token.sops.yaml
+#
+# The token is deliberately isolated from the existing Anthropic API and Managed
+# Agents credentials. It is an undocumented Agent SDK authentication experiment,
+# not an interchangeable API key.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: haku-agent-sdk-oauth-token
+  namespace: haku-sandbox
+  annotations:
+    description: Long-lived Claude Code subscription OAuth token for the single-operator Haku Agent SDK compatibility spike. Replace the placeholder and SOPS-encrypt before merging.
+type: Opaque
+stringData:
+  CLAUDE_CODE_OAUTH_TOKEN: REPLACE_WITH_CLAUDE_CODE_OAUTH_TOKEN_AND_SOPS_ENCRYPT
