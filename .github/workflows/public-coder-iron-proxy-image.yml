@@ -1,6 +1,8 @@
 # Build the temporary public-coder-agent iron-proxy image from the exact
 # unreleased upstream revision that adds HTTP/2/gRPC MITM support. Remove this
 # workflow when an official iron-proxy release contains that change.
+# TODO(public-coder-agent): Delete this workflow after switching back to that
+# official upstream image.
 name: Public Coder Iron Proxy Image
 
 on:

@@ -1,3 +1,5 @@
+# TODO(public-coder-agent): Delete with the temporary Forgejo image after an
+# official iron-proxy release contains c90f4fe.
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:

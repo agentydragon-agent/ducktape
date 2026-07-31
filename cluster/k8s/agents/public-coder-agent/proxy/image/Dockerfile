@@ -1,6 +1,8 @@
 # Temporary build of iron-proxy from the first upstream commit with HTTP/2/gRPC
 # support in MITM mode. The workflow supplies the exact checked-out source tree
 # as this build context; do not fetch a branch or mutable tag here.
+# TODO(public-coder-agent): Delete this file once an official iron-proxy release
+# contains c90f4fe and the Deployment has returned to the upstream image.
 FROM golang:1.26.1-alpine3.23@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS build
 
 ARG IRON_PROXY_REVISION
