@@ -9,10 +9,30 @@ on:
         required: false
         type: string
         default: ""
+      environment:
+        description: "Protected GitHub Environment to gate this job (optional)"
+        required: false
+        type: string
+        default: ""
+      source_commit:
+        description: "Exact commit to check out and run (defaults to github.sha)"
+        required: false
+        type: string
+        default: ""
+      pr_head_sha:
+        description: "Expected PR head parent when source_commit is a synthetic merge"
+        required: false
+        type: string
+        default: ""
+      pr_base_sha:
+        description: "Event-time PR base SHA, used only for drift diagnostics"
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
 
 concurrency:
-  group: bazel-ci-${{ github.ref }}
+  group: bazel-ci-${{ inputs.pr_head_sha || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -24,11 +44,13 @@ env:
 jobs:
   bazel-ci:
     name: Test & Build
+    environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.source_commit || github.sha }}
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-nix-devtools
@@ -63,7 +85,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           rbe_image: ${{ inputs.rbe_image }}
-          run_from_commit: ${{ github.sha }}
+          run_from_commit: ${{ inputs.source_commit || github.sha }}
           linkage_roles: test,build
           script: |
             set -euo pipefail
@@ -94,7 +116,9 @@ jobs:
             # bazel-diff is the source of truth for the affected set; a
             # silent fallback would let a broken-devel failure re-block
             # unrelated PRs, defeating the whole policy.
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_HEAD_SHA="${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}"
+            PR_BASE_SHA="${{ inputs.pr_base_sha || github.event.pull_request.base.sha }}"
+            if [ -n "$PR_HEAD_SHA" ]; then
               # bb-remote initially fetches the exact commit at depth 1, which
               # makes Git treat the synthetic merge as a parentless shallow
               # root. Fetch the same exact SHA at depth 2 so both merge parents
@@ -110,8 +134,8 @@ jobs:
               # Only the HEAD parent (^2) must match the event. It guards against a
               # stale merge ref that predates the current PR head — we'd otherwise test
               # the wrong code, and a re-run fixes it once GitHub regenerates the ref.
-              if [ "$PR_HEAD" != "${{ github.event.pull_request.head.sha }}" ]; then
-                echo "::error::synthetic merge head parent ($PR_HEAD) != PR head (${{ github.event.pull_request.head.sha }}); merge ref is stale — re-run once GitHub regenerates it"
+              if [ "$PR_HEAD" != "$PR_HEAD_SHA" ]; then
+                echo "::error::synthetic merge head parent ($PR_HEAD) != approved PR head ($PR_HEAD_SHA); merge ref is stale — re-run once GitHub regenerates it"
                 exit 1
               fi
               # The BASE parent (^1) is whatever devel was when GitHub built the merge.
@@ -120,8 +144,8 @@ jobs:
               # devel churn), and ^1 is still the correct bazel-diff base: diffing
               # ^1 -> merge yields exactly the PR's delta either way. So a drifted base is
               # fine and must not fail CI — note it for visibility only.
-              if [ "$BASE" != "${{ github.event.pull_request.base.sha }}" ]; then
-                echo "::notice::base advanced since the PR event (event base ${{ github.event.pull_request.base.sha }} -> merge base $BASE); diffing against the merge's base parent, which is correct"
+              if [ -n "$PR_BASE_SHA" ] && [ "$BASE" != "$PR_BASE_SHA" ]; then
+                echo "::notice::base advanced since the PR event (event base $PR_BASE_SHA -> merge base $BASE); diffing against the merge's base parent, which is correct"
               fi
               echo "before-revision: $BASE"
               echo "pr-head:         $PR_HEAD"

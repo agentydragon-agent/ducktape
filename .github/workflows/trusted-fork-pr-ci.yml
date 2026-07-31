@@ -1,0 +1,44 @@
+# Privileged CI for fork pull requests, gated by a protected GitHub
+# Environment. pull_request_target intentionally loads this workflow and the
+# called reusable workflows from the base branch. Their jobs wait for approval
+# before checking out or executing the PR's synthetic merge commit.
+name: Trusted fork PR CI
+run-name: >-
+  Trusted PR #${{ github.event.pull_request.number }} @
+  ${{ github.event.pull_request.head.sha }}
+
+on:
+  pull_request_target:
+    branches: [devel]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: trusted-fork-pr-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bazel-ci:
+    if: >-
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      !github.event.pull_request.draft
+    uses: ./.github/workflows/bazel-ci.yml
+    with:
+      environment: trusted-pr-ci
+      source_commit: ${{ github.event.pull_request.merge_commit_sha }}
+      pr_head_sha: ${{ github.event.pull_request.head.sha }}
+      pr_base_sha: ${{ github.event.pull_request.base.sha }}
+    secrets: inherit
+
+  nix-wheel-check:
+    if: >-
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      !github.event.pull_request.draft
+    uses: ./.github/workflows/nix-wheel-check.yml
+    with:
+      environment: trusted-pr-ci
+      source_commit: ${{ github.event.pull_request.merge_commit_sha }}
+      pr_head_sha: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit
