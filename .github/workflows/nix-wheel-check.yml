@@ -15,13 +15,30 @@
 name: Nix wheel check
 
 on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Protected GitHub Environment to gate this job (optional)"
+        required: false
+        type: string
+        default: ""
+      source_commit:
+        description: "Exact commit to check out and build (defaults to github.sha)"
+        required: false
+        type: string
+        default: ""
+      pr_head_sha:
+        description: "Expected PR head parent when source_commit is a synthetic merge"
+        required: false
+        type: string
+        default: ""
   push:
     branches: [main, devel]
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: nix-wheel-check-${{ github.ref }}
+  group: nix-wheel-check-${{ inputs.pr_head_sha || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,12 +50,35 @@ env:
 jobs:
   nix-wheel-check:
     name: Build artifacts + imports check
+    # Fork revisions are checked by trusted-fork-pr-ci.yml after a maintainer
+    # approves that exact head through the trusted-pr-ci environment.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.source_commit || github.sha }}
           fetch-depth: 0
+
+      - name: Verify PR merge revision
+        if: inputs.pr_head_sha != ''
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha }}
+          EXPECTED_MERGE_SHA: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          actual_merge=$(git rev-parse HEAD)
+          actual_head=$(git rev-parse HEAD^2)
+          if [[ "$actual_merge" != "$EXPECTED_MERGE_SHA" ]]; then
+            echo "::error::checked out merge $actual_merge, expected $EXPECTED_MERGE_SHA"
+            exit 1
+          fi
+          if [[ "$actual_head" != "$EXPECTED_HEAD_SHA" ]]; then
+            echo "::error::merge head $actual_head, expected approved PR head $EXPECTED_HEAD_SHA"
+            exit 1
+          fi
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
@@ -88,7 +128,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: build ${{ steps.inputs.outputs.bazel_targets }} --remote_download_outputs=toplevel
-          run_from_commit: ${{ github.sha }}
+          run_from_commit: ${{ inputs.source_commit || github.sha }}
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (so aiquota's wheel

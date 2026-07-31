@@ -33,6 +33,10 @@ data "kubernetes_secret" "ci_age_key" {
   }
 }
 
+data "github_user" "agentydragon" {
+  username = "agentydragon"
+}
+
 resource "random_password" "pr_visuals_access_key" {
   length  = 32
   special = false
@@ -70,6 +74,29 @@ resource "github_actions_secret" "sops_age_key" {
 
 resource "github_actions_secret" "sops_age_key_gaffer_private" {
   repository      = "gaffer-private"
+  secret_name     = "SOPS_AGE_KEY"
+  plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
+}
+
+# Fork pull requests cannot receive repository Actions secrets, even after a
+# maintainer clicks GitHub's "Approve and run workflows" button.  This
+# environment is used by the base-branch-owned pull_request_target workflow:
+# each new PR head waits for an explicit review before any PR code runs with
+# the CI SOPS identity.
+resource "github_repository_environment" "trusted_pr_ci" {
+  repository          = "ducktape"
+  environment         = "trusted-pr-ci"
+  can_admins_bypass   = false
+  prevent_self_review = true
+
+  reviewers {
+    users = [data.github_user.agentydragon.id]
+  }
+}
+
+resource "github_actions_environment_secret" "trusted_pr_ci_sops_age_key" {
+  repository      = "ducktape"
+  environment     = github_repository_environment.trusted_pr_ci.environment
   secret_name     = "SOPS_AGE_KEY"
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
 }
