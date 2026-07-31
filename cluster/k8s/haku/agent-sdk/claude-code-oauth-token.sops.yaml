@@ -1,7 +1,19 @@
-# PLACEHOLDER ONLY: replace the value below with the output of `claude setup-token`,
-# then encrypt this file in place before merging:
+# PLACEHOLDER ONLY. Mint the long-lived token on a trusted interactive
+# workstation where Claude Code is installed and signed into the operator's
+# Claude Pro/Max account:
+#
+#   claude setup-token
+#
+# Complete the browser/login flow if prompted. The command prints the token;
+# copy it into CLAUDE_CODE_OAUTH_TOKEN below using an editor (not a shell
+# argument, command substitution, or anything else that records shell history).
+# Then encrypt this file at its final repository path before committing:
 #
 #   sops --encrypt --in-place cluster/k8s/haku/agent-sdk/claude-code-oauth-token.sops.yaml
+#
+# Confirm the plaintext is gone: the value must be ENC[...] and the file must
+# have a top-level sops: metadata block. Never paste the token into a PR,
+# terminal transcript, Job manifest, or log.
 #
 # The token is deliberately isolated from the existing Anthropic API and Managed
 # Agents credentials. It is an undocumented Agent SDK authentication experiment,
