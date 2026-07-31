@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: ""
+      allow_unsafe_pr_checkout:
+        description: "Opt in to checkout's pull_request_target fork checkout after an external approval gate"
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main, devel]
   pull_request:
@@ -61,6 +66,7 @@ jobs:
         with:
           ref: ${{ inputs.source_commit || github.sha }}
           fetch-depth: 0
+          allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
       - name: Verify PR merge revision
         if: inputs.pr_head_sha != ''
