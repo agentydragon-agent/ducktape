@@ -51,6 +51,11 @@ join/leave the cluster frequently. `rugged` has taint
 `node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
 require persistent availability on roaming nodes.
 
+Changing how many roaming nodes exist also requires raising `maxUnavailable` on
+the DaemonSets that schedule onto them — `//cluster/validation:test_roaming_daemonset_capacity`
+fails with the details when it doesn't. See <docs/mesh_membership.md> § Roaming
+k8s nodes.
+
 Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`)
 lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
 <docs/mesh_membership.md>.
