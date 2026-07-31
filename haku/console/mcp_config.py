@@ -168,12 +168,15 @@ class ConsoleMcpConfig(BaseModel):
     servers: list[McpServerEntry] = Field(default_factory=list)
 
 
+type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
+
+
 class AutoApprovalPolicyBase(BaseModel):
     """Fields shared by every node in the deploy-time policy graph."""
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
+    id: AutoApprovalPolicyId
 
 
 class ExactToolsAutoApprovalPolicy(AutoApprovalPolicyBase):
@@ -207,7 +210,7 @@ class AnyOfAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Auto-approve when any referenced policy auto-approves."""
 
     type: Literal["any_of"] = "any_of"
-    policies: tuple[str, ...] = Field(min_length=1)
+    policies: tuple[AutoApprovalPolicyId, ...] = Field(min_length=1)
 
 
 class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
@@ -246,7 +249,7 @@ class StaticAgentEntry(BaseModel):
     operator_subject_env: str
     # The root of this Agent's deploy-reviewed auto-approval policy graph. Every static Agent must
     # choose explicitly; dynamically enrolled/OAuth Agents remain manual-approval-only.
-    auto_approval_policy: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    auto_approval_policy: AutoApprovalPolicyId
 
     @field_validator("display_name")
     @classmethod
