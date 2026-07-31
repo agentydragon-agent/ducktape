@@ -6,6 +6,16 @@ package(default_visibility = ["//visibility:public"])
 # The `gmail` server's tool-call rendering widgets (see ../BUILD.bazel for the tree's shape).
 
 js_library(
+    name = "actions",
+    srcs = ["actions.ts"],
+    deps = [
+        "//haku/console/frontend:mcp_tool_schema",
+        "//haku/console/frontend/tool_rendering:action_entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
+    ],
+)
+
+js_library(
     name = "requests",
     srcs = ["requests.tsx"],
     deps = [
@@ -19,6 +29,7 @@ js_library(
         "//haku/console/frontend:link",
         "//haku/console/frontend:mcp_tool_schema",
         "//haku/console/frontend/tool_rendering:entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
@@ -38,6 +49,7 @@ js_library(
         "//haku/console/frontend:link",
         "//haku/console/frontend:mcp_tool_result_schema",
         "//haku/console/frontend/tool_rendering:result_entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
         "//haku/console/frontend/tool_rendering:variant",
     ],
 )
@@ -95,7 +107,9 @@ js_library(
     srcs = ["requests.test.ts"],
     deps = [
         ":requests",
+        "//haku/console/frontend/tool_rendering:actions",
         "//haku/console/frontend/tool_rendering:entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
     ],
 )
 
@@ -113,7 +127,9 @@ js_library(
     srcs = ["calls.test.ts"],
     deps = [
         ":calls",
+        "//haku/console/frontend/tool_rendering:actions",
         "//haku/console/frontend/tool_rendering:call_entry",
+        "//haku/console/frontend/tool_rendering:server_ids",
     ],
 )
 
