@@ -57,6 +57,16 @@ spec:
                 secretKeyRef:
                   name: public-coder-agent-github-token
                   key: GITHUB_TOKEN
+            # Shared BuildBuddy credential, reflected into this namespace but
+            # exposed only to the proxy. The agent receives a placeholder.
+            - name: BUILDBUDDY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: buildbuddy-api-key
+                  key: api-key
+                  # Do not take GitHub egress down during the brief reflection
+                  # window; Reloader restarts the proxy when the Secret lands.
+                  optional: true
           ports:
             - name: proxy
               containerPort: 8080

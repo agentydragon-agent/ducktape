@@ -19,3 +19,4 @@ spec:
     - name: cert-manager-trust
     - name: reflector
     - name: forgejo-images
+    - name: agent-shared-secrets
