@@ -93,24 +93,28 @@ _STATIC_AGENTS = [
         "display_name": "Haku",
         "token_env_var": _AGENT_TOKEN_ENV,
         "operator_subject_env": _AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000002",
         "display_name": "Sibling",
         "token_env_var": _SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _SIBLING_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000003",
         "display_name": "Other",
         "token_env_var": _OTHER_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000004",
         "display_name": "Other Sibling",
         "token_env_var": _OTHER_SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_SIBLING_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
 ]
 
@@ -195,10 +199,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
         tmp_path / "console.yaml",
         {
             "static_agents": [
-                {
-                    **agent,
-                    **({"auto_approval_policy": "haku_v1"} if agent["display_name"] == "Haku" else {}),
-                }
+                {**agent, **({"auto_approval_policy": "haku_v1"} if agent["display_name"] == "Haku" else {})}
                 for agent in _STATIC_AGENTS
             ],
             "auto_approval_policies": [
@@ -226,11 +227,8 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
                     "server": "gmail",
                     "label_prefix": "haku/",
                 },
-                {
-                    "id": "haku_v1",
-                    "type": "any_of",
-                    "policies": ["transparent_reads", "managed_gmail_labels"],
-                },
+                {"id": "haku_v1", "type": "any_of", "policies": ["transparent_reads", "managed_gmail_labels"]},
+                {"id": "no_auto_approval", "type": "never"},
             ],
             "mcp": {
                 "servers": [
@@ -1657,6 +1655,7 @@ def test_duplicate_static_agent_tokens_fail_startup(
                     "display_name": "Ops Bot",
                     "token_env_var": _AGENT_TOKEN_ENV,
                     "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
+                    "auto_approval_policy": "no_auto_approval",
                 },
             ]
         },

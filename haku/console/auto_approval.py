@@ -65,20 +65,14 @@ class _PolicyEvaluation:
 class AutoApprovalPolicyRegistry:
     """Validated policy graph plus static-Agent root assignments.
 
-    Configuration validation has already guaranteed unique ids, valid references, and an acyclic
-    graph. Static Agents with no assignment — and dynamically enrolled/OAuth Agents absent from the
-    deploy-time static list — receive the empty policy and therefore require manual approval.
+    Configuration validation has already guaranteed unique ids, valid references, an acyclic graph,
+    and an explicit root for every static Agent. Dynamically enrolled/OAuth Agents absent from the
+    deploy-time static list require manual approval.
     """
 
     def __init__(self, config: ConsoleConfigFile) -> None:
-        self._policies: dict[str, AutoApprovalPolicy] = {
-            policy.id: policy for policy in config.auto_approval_policies
-        }
-        self._agent_roots = {
-            agent.agent_id: agent.auto_approval_policy
-            for agent in config.static_agents
-            if agent.auto_approval_policy is not None
-        }
+        self._policies: dict[str, AutoApprovalPolicy] = {policy.id: policy for policy in config.auto_approval_policies}
+        self._agent_roots = {agent.agent_id: agent.auto_approval_policy for agent in config.static_agents}
         # Operators bypass the Agent approval lifecycle, but they share the reflected MCP catalog.
         # Preserve the useful transparent schema for any tool that an assigned Agent policy always
         # auto-approves; this affects presentation only, never Operator authorization.
@@ -135,16 +129,10 @@ class AutoApprovalPolicyRegistry:
             return None, f"manual: Agent has no auto-approval policy for {server_id}/{tool_name}"
 
         result = await self._evaluate_policy(
-            root,
-            server_id=server_id,
-            tool_name=tool_name,
-            arguments=arguments,
-            gmail=gmail,
+            root, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
         )
         if result.grants:
-            rendered = "; ".join(
-                f"{' -> '.join(grant.path)}: {grant.explanation}" for grant in result.grants
-            )
+            rendered = "; ".join(f"{' -> '.join(grant.path)}: {grant.explanation}" for grant in result.grants)
             return AGENT_AUTO_APPROVAL_ID, f"approved: Agent policy {root!r} matched {rendered}"
         detail = f" ({'; '.join(result.abstentions)})" if result.abstentions else ""
         return None, f"manual: Agent policy {root!r} did not auto-approve {server_id}/{tool_name}{detail}"
@@ -169,20 +157,14 @@ class AutoApprovalPolicyRegistry:
             case GmailLabelNamespaceAutoApprovalPolicy(server=server, label_prefix=label_prefix):
                 if server_id != server or tool_name not in GMAIL_LABEL_NAMESPACE_TOOLS:
                     return _PolicyEvaluation()
-                approved, explanation = await _evaluate_gmail_label_namespace(
-                    tool_name, arguments, label_prefix, gmail
-                )
+                approved, explanation = await _evaluate_gmail_label_namespace(tool_name, arguments, label_prefix, gmail)
                 if approved:
                     return _PolicyEvaluation(grants=(_Grant((policy.id,), explanation),))
                 return _PolicyEvaluation(abstentions=(f"{policy.id}: {explanation}",))
             case AnyOfAutoApprovalPolicy(policies=members):
                 results = [
                     await self._evaluate_policy(
-                        member,
-                        server_id=server_id,
-                        tool_name=tool_name,
-                        arguments=arguments,
-                        gmail=gmail,
+                        member, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
                     )
                     for member in members
                 ]
@@ -239,22 +221,16 @@ async def auto_approve_tool_call(
         if error is not None:
             return None, error
     return await policies.evaluate(
-        actor=actor,
-        server_id=server_id,
-        tool_name=tool_name,
-        arguments=arguments,
-        gmail=gmail,
+        actor=actor, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
     )
 
 
 async def _evaluate_gmail_label_namespace(
-    tool_name: str,
-    arguments: dict[str, Any],
-    label_prefix: str,
-    gmail: GmailToolsClient | None,
+    tool_name: str, arguments: dict[str, Any], label_prefix: str, gmail: GmailToolsClient | None
 ) -> tuple[bool, str]:
     """Evaluate the reviewed Gmail label-mutation boundary."""
     try:
+
         def allows_label(name: str) -> bool:
             return name.startswith(label_prefix)
 

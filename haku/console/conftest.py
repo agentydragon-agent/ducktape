@@ -50,6 +50,7 @@ _DEFAULT_STATIC_AGENTS = [
         "display_name": "Console Test Agent",
         "token_env_var": _DEFAULT_AGENT_TOKEN_ENV,
         "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     }
 ]
 
@@ -183,7 +184,13 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
     ``Settings`` overrides (e.g. ``config_file=...``, ``mcp_oauth=...``)."""
     monkeypatch.setenv(_DEFAULT_AGENT_TOKEN_ENV, "default-agent-token")
     monkeypatch.setenv(_DEFAULT_AGENT_OPERATOR_ENV, "default-op")
-    default_config = write_config(tmp_path / "console_default.yaml", {"static_agents": _DEFAULT_STATIC_AGENTS})
+    default_config = write_config(
+        tmp_path / "console_default.yaml",
+        {
+            "static_agents": _DEFAULT_STATIC_AGENTS,
+            "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+        },
+    )
 
     @contextmanager
     def _make(

@@ -292,6 +292,7 @@ _STATIC_AGENTS = [
         "display_name": "Haku",
         "token_env_var": _AGENT_TOKEN_ENV,
         "operator_subject_env": _AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     }
 ]
 
@@ -331,7 +332,11 @@ def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
     """A console config dict for the given MCP servers, always carrying the `haku` static agent — a
     console with no /mcp credential doesn't run (create_app raises), and the deploy always has it. So
     the test app exercises the same required static MCP credential as the deployment."""
-    return {"mcp": {"servers": servers}, "static_agents": _STATIC_AGENTS}
+    return {
+        "mcp": {"servers": servers},
+        "static_agents": _STATIC_AGENTS,
+        "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+    }
 
 
 def _remote_server(server_id: str, url: str, auth: dict[str, Any]) -> dict[str, Any]:
@@ -389,17 +394,8 @@ def gmail_config_file(tmp_path: Path) -> Path:
     config["static_agents"] = [{**_STATIC_AGENTS[0], "auto_approval_policy": "haku_v1"}]
     config["auto_approval_policies"] = [
         {"id": "gmail_reads", "type": "exact_tools", "tools": {"gmail": ["labels_list"]}},
-        {
-            "id": "managed_gmail_labels",
-            "type": "gmail_label_namespace",
-            "server": "gmail",
-            "label_prefix": "haku/",
-        },
-        {
-            "id": "haku_v1",
-            "type": "any_of",
-            "policies": ["gmail_reads", "managed_gmail_labels"],
-        },
+        {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
+        {"id": "haku_v1", "type": "any_of", "policies": ["gmail_reads", "managed_gmail_labels"]},
     ]
     config["operator_connection_providers"] = {
         "google_mail": {
@@ -733,8 +729,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     assert record["status"] == "ok"
     assert record["approval_policy_id"] == "agent_policy_v1"
     assert record["auto_approval_evaluation"] == (
-        "approved: Agent policy 'haku_v1' matched haku_v1 -> gmail_reads: "
-        "exact tool gmail/labels_list is listed"
+        "approved: Agent policy 'haku_v1' matched haku_v1 -> gmail_reads: exact tool gmail/labels_list is listed"
     )
     assert record["approved_at"] is not None
     assert record["result"]["content"][0]["text"] == "gmail:labels_list"
@@ -1125,6 +1120,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
             "display_name": name.replace("-", " ").title(),
             "token_env_var": token_env,
             "operator_subject_env": operator_env,
+            "auto_approval_policy": "no_auto_approval",
         }
         for index, (name, _, _, token_env, operator_env) in enumerate(agent_specs, start=10)
     ]

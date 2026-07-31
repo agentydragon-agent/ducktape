@@ -42,27 +42,6 @@ _EXACT_TOOLS = {
     ],
     "google_calendar": ["get_event", "list_events", "list_event_instances"],
     "grocy-sf": ["products_list"],
-    "tana-rw": [
-        "get_or_create_calendar_node",
-        "search_nodes",
-        "read_node",
-        "get_children",
-        "open_node",
-        "list_tags",
-        "list_workspaces",
-        "get_tag_schema",
-    ],
-    "interactive_brokers": ["market_data_snapshot", "session_status", "request_reauth"],
-    "osm": ["geocode_address", "route_fetch", "find_nearby_places", "tile_cache"],
-    "home-assistant": ["ha_get_state", "ha_search", "ha_get_history", "ha_eval_template", "ha_get_overview"],
-    "postscanmail-mcp": ["list_items", "list_automation_rules"],
-    "sandbox-mcp": [
-        "provision_sandbox",
-        "exec_sandbox",
-        "get_sandbox_info",
-        "list_sandboxes",
-        "dispose_sandbox",
-    ],
 }
 _SERVER_CONFIGS = [
     {
@@ -83,11 +62,7 @@ _POLICIES = AutoApprovalPolicyRegistry(
                     "server": "gmail",
                     "label_prefix": "haku/",
                 },
-                {
-                    "id": "haku_v1",
-                    "type": "any_of",
-                    "policies": ["safe_tools", "managed_gmail_labels"],
-                },
+                {"id": "haku_v1", "type": "any_of", "policies": ["safe_tools", "managed_gmail_labels"]},
                 {"id": "none", "type": "never"},
             ],
             "static_agents": [
@@ -261,18 +236,11 @@ async def test_operator_actor_is_not_auto_approved() -> None:
 
 
 def test_policy_graph_reports_clear_tool_modes() -> None:
+    assert _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "labels_list") is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
     assert (
-        _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "labels_list")
-        is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+        _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "labels_delete") is ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
     )
-    assert (
-        _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "labels_delete")
-        is ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
-    )
-    assert (
-        _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "drafts_create")
-        is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
-    )
+    assert _POLICIES.tool_mode(AGENT_ACTOR, "gmail", "drafts_create") is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
 
 
 async def test_unassigned_agent_fails_closed_to_manual_approval() -> None:
@@ -314,6 +282,22 @@ def test_policy_config_rejects_unknown_agent_policy() -> None:
         )
 
 
+def test_static_agent_policy_assignment_is_required() -> None:
+    with pytest.raises(ValidationError, match="auto_approval_policy"):
+        ConsoleConfigFile.model_validate(
+            {
+                "static_agents": [
+                    {
+                        "agent_id": str(AGENT_ACTOR.agent_id),
+                        "display_name": "Test Agent",
+                        "token_env_var": "TEST_AGENT_TOKEN",
+                        "operator_subject_env": "TEST_AGENT_OPERATOR",
+                    }
+                ]
+            }
+        )
+
+
 async def _remote_decision(server_id: str, tool_name: str, arguments: dict) -> tuple[str | None, str | None]:
     # Remote (operator_oauth) servers have no in-process schema, so `mcp` is None.
     return _approval(
@@ -341,114 +325,6 @@ async def test_grocy_writes_stay_manual() -> None:
         None,
         "manual: Agent policy 'haku_v1' did not auto-approve grocy-sf/products_create",
     )
-
-
-async def test_tana_calendar_node_auto_approves() -> None:
-    policy_id, _ = await _remote_decision("tana-rw", "get_or_create_calendar_node", {"date": "2026-07-12"})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-
-
-@pytest.mark.parametrize(
-    "tool_name",
-    ["search_nodes", "read_node", "get_children", "open_node", "list_tags", "list_workspaces", "get_tag_schema"],
-)
-async def test_tana_reads_auto_approve(tool_name: str) -> None:
-    policy_id, evaluation = await _remote_decision("tana-rw", tool_name, {})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
-
-
-async def test_tana_writes_stay_manual() -> None:
-    policy_id, _ = await _remote_decision("tana-rw", "create_tag", {"name": "x"})
-    assert policy_id is None
-
-
-@pytest.mark.parametrize("tool_name", ["market_data_snapshot", "session_status", "request_reauth"])
-async def test_ibkr_reads_auto_approve(tool_name: str) -> None:
-    policy_id, evaluation = await _remote_decision("interactive_brokers", tool_name, {})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
-
-
-async def test_ibkr_unlisted_tool_stays_manual() -> None:
-    # The allowlist is explicit, not "everything under interactive_brokers": a tool the server would
-    # never expose (it has no order routes) still would not auto-approve.
-    assert await _remote_decision("interactive_brokers", "place_order", {}) == (
-        None,
-        "manual: Agent policy 'haku_v1' did not auto-approve interactive_brokers/place_order",
-    )
-
-
-@pytest.mark.parametrize("tool_name", ["geocode_address", "route_fetch", "find_nearby_places", "tile_cache"])
-async def test_osm_reads_auto_approve(tool_name: str) -> None:
-    policy_id, evaluation = await _remote_decision("osm", tool_name, {})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
-
-
-async def test_osm_unlisted_tool_stays_manual() -> None:
-    assert await _remote_decision("osm", "not_a_real_tool", {}) == (
-        None,
-        "manual: Agent policy 'haku_v1' did not auto-approve osm/not_a_real_tool",
-    )
-
-
-@pytest.mark.parametrize(
-    "tool_name", ["ha_get_state", "ha_search", "ha_get_history", "ha_eval_template", "ha_get_overview"]
-)
-async def test_home_assistant_reads_auto_approve(tool_name: str) -> None:
-    policy_id, evaluation = await _remote_decision("home-assistant", tool_name, {})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
-
-
-@pytest.mark.parametrize(
-    "tool_name", ["ha_call_service", "ha_set_state", "ha_config_set_automation", "ha_restart", "ha_report_issue"]
-)
-async def test_home_assistant_writes_and_side_effects_stay_manual(tool_name: str) -> None:
-    # Control/config-write tools stay gated; ha_report_issue is annotated read-only upstream but
-    # files an issue outward, so it is deliberately excluded from the read allowlist.
-    policy_id, evaluation = await _remote_decision("home-assistant", tool_name, {})
-    assert policy_id is None
-    assert evaluation == f"manual: Agent policy 'haku_v1' did not auto-approve home-assistant/{tool_name}"
-
-
-@pytest.mark.parametrize("tool_name", ["list_items", "list_automation_rules"])
-async def test_postscanmail_reads_auto_approve(tool_name: str) -> None:
-    policy_id, evaluation = await _remote_decision("postscanmail-mcp", tool_name, {"page": 1})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
-
-
-@pytest.mark.parametrize(
-    "tool_name", ["set_automation_rule", "request_open", "request_discard", "request_shred", "cancel_shred"]
-)
-async def test_postscanmail_writes_stay_manual(tool_name: str) -> None:
-    # Every mutating/paid/destructive tool stays approval-gated — only the two GET reads
-    # auto-approve. Covers a paid scan (request_open), the destructive pair (discard/shred),
-    # the automation toggle, and a cancel.
-    assert await _remote_decision("postscanmail-mcp", tool_name, {}) == (
-        None,
-        f"manual: Agent policy 'haku_v1' did not auto-approve postscanmail-mcp/{tool_name}",
-    )
-
-
-@pytest.mark.parametrize(
-    "tool_name", ["provision_sandbox", "exec_sandbox", "get_sandbox_info", "list_sandboxes", "dispose_sandbox"]
-)
-async def test_sandbox_mcp_whole_surface_auto_approves(tool_name: str) -> None:
-    # Unlike every other server, the auto-approved sandbox-mcp tools are the powerful ones
-    # (claim a box, run arbitrary bash, delete the claim) — the operator-directed tap-free
-    # lifecycle for Haku's own ephemeral box, including its disposal.
-    policy_id, evaluation = await _remote_decision("sandbox-mcp", tool_name, {})
-    assert policy_id == AGENT_AUTO_APPROVAL_ID
-    assert evaluation is not None
-    assert "exact tool" in evaluation
 
 
 async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptureFixture) -> None:

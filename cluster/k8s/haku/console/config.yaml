@@ -101,7 +101,7 @@ auto_approval_policies:
         - ha_list_floors_areas
         - ha_list_services
         - ha_search
-  - id: sandbox_control
+  - id: haku_sandbox_control
     type: exact_tools
     tools:
       sandbox-mcp:
@@ -123,7 +123,7 @@ auto_approval_policies:
       - tana_safe_tools
       - postscanmail_reads
       - home_assistant_reads
-      - sandbox_control
+      - haku_sandbox_control
       - managed_gmail_labels
   - id: no_auto_approval
     type: never
@@ -188,11 +188,11 @@ mcp:
         # Cluster-internal Haku sandbox provisioner (haku/sandbox_mcp). The static bearer lives
         # only in haku-console (reflected from haku-sandbox-mcp); inner Haku agents get proxied
         # provision/exec/dispose tool schemas + results, never the bearer. By operator directive,
-        # the whole named surface in the `sandbox_control` policy auto-approves so Haku
+        # the whole named surface in the `haku_sandbox_control` policy auto-approves so Haku
         # drives its own box tap-free — exec_sandbox = arbitrary bash, but ≈ the direct `kubectl
         # exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox only releases the
         # ephemeral claim Haku itself created (re-clonable checkout, rebuildable cache). The
-        # `sandbox_control` exact-tools policy above records this reviewed authority.
+        # `haku_sandbox_control` exact-tools policy above records this reviewed authority.
         url: http://haku-sandbox-mcp.haku-sandbox-mcp.svc.cluster.local:8765/mcp
         auth:
           kind: static_bearer

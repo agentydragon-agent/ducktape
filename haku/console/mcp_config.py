@@ -168,18 +168,23 @@ class ConsoleMcpConfig(BaseModel):
     servers: list[McpServerEntry] = Field(default_factory=list)
 
 
-class ExactToolsAutoApprovalPolicy(BaseModel):
-    """Unconditionally auto-approve exact tools on exact configured servers."""
+class AutoApprovalPolicyBase(BaseModel):
+    """Fields shared by every node in the deploy-time policy graph."""
 
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
+
+
+class ExactToolsAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Unconditionally auto-approve exact tools on exact configured servers."""
+
     type: Literal["exact_tools"] = "exact_tools"
-    tools: dict[str, tuple[str, ...]] = Field(min_length=1)
+    tools: dict[str, set[str]] = Field(min_length=1)
 
     @field_validator("tools")
     @classmethod
-    def _require_distinct_tools(cls, value: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    def _require_named_tools(cls, value: dict[str, set[str]]) -> dict[str, set[str]]:
         for server_id, tools in value.items():
             if not server_id:
                 raise ValueError("exact-tools server id must not be blank")
@@ -187,45 +192,27 @@ class ExactToolsAutoApprovalPolicy(BaseModel):
                 raise ValueError(f"exact-tools policy server {server_id!r} must list at least one tool")
             if any(not tool for tool in tools):
                 raise ValueError(f"exact-tools policy server {server_id!r} contains a blank tool name")
-            if len(set(tools)) != len(tools):
-                raise ValueError(f"exact-tools policy server {server_id!r} contains duplicate tool names")
         return value
 
 
-class GmailLabelNamespaceAutoApprovalPolicy(BaseModel):
+class GmailLabelNamespaceAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve Gmail label mutations confined to one namespace."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     type: Literal["gmail_label_namespace"] = "gmail_label_namespace"
     server: Literal["gmail"] = "gmail"
     label_prefix: str = Field(min_length=1)
 
 
-class AnyOfAutoApprovalPolicy(BaseModel):
+class AnyOfAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Auto-approve when any referenced policy auto-approves."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     type: Literal["any_of"] = "any_of"
     policies: tuple[str, ...] = Field(min_length=1)
 
-    @field_validator("policies")
-    @classmethod
-    def _require_distinct_members(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if len(set(value)) != len(value):
-            raise ValueError("any-of policy contains duplicate policy references")
-        return value
 
-
-class NeverAutoApprovalPolicy(BaseModel):
+class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Never auto-approve; useful as an explicit Agent assignment."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     type: Literal["never"] = "never"
 
 
@@ -236,6 +223,11 @@ type AutoApprovalPolicy = Annotated[
     | NeverAutoApprovalPolicy,
     Field(discriminator="type"),
 ]
+
+
+def _default_auto_approval_policies() -> list[AutoApprovalPolicy]:
+    """The explicit no-authority root available to minimal/test configurations."""
+    return [NeverAutoApprovalPolicy(id="no_auto_approval")]
 
 
 class StaticAgentEntry(BaseModel):
@@ -252,9 +244,9 @@ class StaticAgentEntry(BaseModel):
     # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
     # never live request authority.
     operator_subject_env: str
-    # The root of this Agent's deploy-reviewed auto-approval policy graph. Unset means no call is
-    # auto-approved; OAuth-enrolled Agents likewise default to no auto-approval.
-    auto_approval_policy: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_-]*$")
+    # The root of this Agent's deploy-reviewed auto-approval policy graph. Every static Agent must
+    # choose explicitly; dynamically enrolled/OAuth Agents remain manual-approval-only.
+    auto_approval_policy: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
 
     @field_validator("display_name")
     @classmethod
@@ -277,7 +269,7 @@ class LoadedStaticAgent(BaseModel):
 
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
-    auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=list)
+    auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=_default_auto_approval_policies)
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
@@ -342,24 +334,19 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(f"duplicate auto-approval policy id {policy.id!r}")
             policies[policy.id] = policy
             if isinstance(policy, ExactToolsAutoApprovalPolicy):
-                unknown_servers = set(policy.tools) - server_ids
-                if unknown_servers:
+                if unknown_servers := set(policy.tools) - server_ids:
                     raise ValueError(
-                        f"auto-approval policy {policy.id!r} references unknown MCP servers "
-                        f"{sorted(unknown_servers)!r}"
+                        f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
                     )
             elif isinstance(policy, GmailLabelNamespaceAutoApprovalPolicy) and policy.server not in server_ids:
-                raise ValueError(
-                    f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}"
-                )
+                raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
 
         for policy in policies.values():
             if isinstance(policy, AnyOfAutoApprovalPolicy):
                 unknown_policies = set(policy.policies) - policies.keys()
                 if unknown_policies:
                     raise ValueError(
-                        f"auto-approval policy {policy.id!r} references unknown policies "
-                        f"{sorted(unknown_policies)!r}"
+                        f"auto-approval policy {policy.id!r} references unknown policies {sorted(unknown_policies)!r}"
                     )
 
         visiting: set[str] = set()
@@ -382,7 +369,7 @@ class ConsoleConfigFile(BaseModel):
             visit(policy_id)
 
         for agent in self.static_agents:
-            if agent.auto_approval_policy is not None and agent.auto_approval_policy not in policies:
+            if agent.auto_approval_policy not in policies:
                 raise ValueError(
                     f"static Agent {agent.agent_id} references unknown auto-approval policy "
                     f"{agent.auto_approval_policy!r}"

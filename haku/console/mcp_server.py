@@ -540,6 +540,12 @@ class OperatorToolProvider(Provider):
         self._catalog = catalog or OperatorServerCatalog(context)
         self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(context.settings))
 
+    def _is_passthrough(self, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
+        return (
+            self._auto_approval_policies.tool_mode(actor, server_id, tool_name)
+            is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+        )
+
     async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
         try:
             meta = await self._catalog.metadata(server, actor)
@@ -561,10 +567,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 tool,
-                passthrough=(
-                    self._auto_approval_policies.tool_mode(actor, server.id, tool.name)
-                    is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
-                ),
+                passthrough=self._is_passthrough(actor, server.id, tool.name),
                 actor=actor,
             )
             for tool in meta
@@ -591,10 +594,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 upstream_tool,
-                passthrough=(
-                    self._auto_approval_policies.tool_mode(actor, server.id, upstream_tool.name)
-                    is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
-                ),
+                passthrough=self._is_passthrough(actor, server.id, upstream_tool.name),
                 actor=actor,
             )
             if tool.name == name and (version is None or version.matches(tool.version)):
