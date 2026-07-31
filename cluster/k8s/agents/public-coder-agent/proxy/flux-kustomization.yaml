@@ -18,3 +18,4 @@ spec:
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector
+    - name: forgejo-images

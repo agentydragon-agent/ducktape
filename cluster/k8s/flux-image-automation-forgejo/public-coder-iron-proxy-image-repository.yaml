@@ -1,0 +1,11 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: public-coder-iron-proxy
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/public-coder-iron-proxy
+  interval: 5m
+  # Private Forgejo package; this credential is reflected from forgejo-images.
+  secretRef:
+    name: forgejo-images-creds

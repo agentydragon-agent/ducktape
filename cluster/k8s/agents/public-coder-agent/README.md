@@ -42,6 +42,12 @@ the proxy, via `NO_PROXY`.
   Terraform in <../../../docs/sso.md>. Every proxy provider is a blueprint and
   `embedded-outpost.yaml` owns outpost membership; a Terraform provider would
   split one object graph across two owners. Moves with the rest under issue #987.
+- **Temporary commit-built iron-proxy image.** `proxy/image/` and
+  `.github/workflows/public-coder-iron-proxy-image.yml` build upstream commit
+  `c90f4fe` into the private Forgejo registry because it adds the HTTP/2/gRPC
+  MITM support BuildBuddy needs but has not been released yet. Flux rolls the
+  proxy to that image after the first push. Return to the official image and
+  delete this build path once a release contains the commit.
 - **`gateway.bind: all`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is
   `app/networkpolicy-ingress.yaml`, which admits only the outpost's pods —

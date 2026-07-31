@@ -7,6 +7,8 @@ resources:
   - haku-sandbox-image-policy.yaml
   - codex-pod-image-repository.yaml
   - codex-pod-image-policy.yaml
+  - public-coder-iron-proxy-image-repository.yaml
+  - public-coder-iron-proxy-image-policy.yaml
   - grocy-user-perms-provisioner-image-repository.yaml
   - grocy-user-perms-provisioner-image-policy.yaml
   - ibkr-mcp-server-image-repository.yaml
