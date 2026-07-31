@@ -129,29 +129,60 @@ def _login_flows(conn: HTTPConnection) -> PostgresOperatorLoginFlowStore:
     return cast(PostgresOperatorLoginFlowStore, conn.app.state.operator_login_flows)
 
 
+def _rejected(conn: HTTPConnection, reason: str, **detail: object) -> None:
+    """Record why an operator session was refused.
+
+    Without this, every refusal reaches the browser as one indistinguishable 401 — an expired
+    absolute deadline, a cookie the browser never sent, and a disabled identity all look identical,
+    which is exactly the ambiguity that made a failed MCP account reconnect undiagnosable. Logs the
+    reason and the route only: never the cookie payload, a token, or an OAuth callback parameter.
+    """
+    logger.info(
+        "operator session rejected: reason=%s method=%s path=%s%s",
+        reason,
+        conn.scope.get("method", "-"),
+        conn.url.path,
+        "".join(f" {key}={value}" for key, value in detail.items()),
+    )
+
+
 def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | None:
     """The cookie's operator payload, or ``None`` when absent, malformed, or past its deadline.
 
     Pure cookie inspection — no database. Callers that need live authority use `operator_session`.
+    Each refusal is logged with its distinguishing reason; see `_rejected`.
     """
     if "session" not in conn.scope:
+        _rejected(conn, "no_session_middleware")
         return None
     raw = conn.session.get(SESSION_USER_KEY)
     if not isinstance(raw, dict):
+        _rejected(conn, "no_session_cookie")
         return None
     try:
         operator_id = UUID(raw["operator_id"])
         identity_id = UUID(raw["identity_id"])
     except (KeyError, TypeError, ValueError):
+        _rejected(conn, "malformed_identity")
         return None
     username = raw.get("username")
     if not isinstance(username, str) or not username:
+        _rejected(conn, "malformed_username")
         return None
     browser_session_id = raw.get("browser_session_id")
     if not isinstance(browser_session_id, str) or not browser_session_id:
+        _rejected(conn, "malformed_browser_session")
         return None
     expires_at = raw.get("expires_at")
-    if not isinstance(expires_at, int) or isinstance(expires_at, bool) or expires_at <= int(time.time()):
+    if not isinstance(expires_at, int) or isinstance(expires_at, bool):
+        _rejected(conn, "malformed_expiry")
+        return None
+    # Split from the type check above so an expired session is never reported as a malformed one:
+    # the absolute deadline never slides, so "expired" is an ordinary outcome for a long-lived tab
+    # and `expired_for` says immediately whether the deadline is what refused the request.
+    now = int(time.time())
+    if expires_at <= now:
+        _rejected(conn, "expired", expired_for=datetime.timedelta(seconds=now - expires_at))
         return None
     return SignedOperatorSession(
         operator_id=operator_id,
@@ -168,10 +199,11 @@ def operator_session(
     """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
     signed = signed_operator_session(conn)
     if signed is None:
-        return None
+        return None  # already logged with its distinguishing reason
     store = identity_store if identity_store is not None else _identity_store(conn)
     identity = store.resolve_active_session(operator_id=signed.operator_id, identity_id=signed.identity_id)
     if identity is None:
+        _rejected(conn, "identity_inactive", operator_id=signed.operator_id)
         return None
     return OperatorSession(
         operator_id=identity.operator_id,
