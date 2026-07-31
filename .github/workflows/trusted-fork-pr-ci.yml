@@ -30,6 +30,10 @@ jobs:
       source_commit: ${{ github.event.pull_request.merge_commit_sha }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
+      # actions/checkout v6 refuses fork code under pull_request_target unless
+      # explicitly opted in. The called job's trusted-pr-ci environment blocks
+      # before runner assignment, so this only takes effect after review.
+      allow_unsafe_pr_checkout: true
     secrets: inherit
 
   nix-wheel-check:
@@ -41,4 +45,5 @@ jobs:
       environment: trusted-pr-ci
       source_commit: ${{ github.event.pull_request.merge_commit_sha }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
+      allow_unsafe_pr_checkout: true
     secrets: inherit
