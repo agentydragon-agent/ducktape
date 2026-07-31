@@ -220,14 +220,18 @@ the runtimes differ in where the sandbox runs — see
   Agents self-hosted worker; remaining wiring in its per-runtime TODO above). The
   old `haku-scanner` image + CronJob idea is superseded.
 - **haku-traces** — push Claude Code transcripts to a store separate from
-  `haku-state` for replayability. If the loop ever runs on the **Claude Agent SDK**, the
-  supported mechanism is a `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`;
-  `append`/`load` required, `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys`
-  optional) — docs: <https://code.claude.com/docs/en/agent-sdk/session-storage>.
-  **Deliberately not done first:** the adapter runs _inside_ the sandbox, so pointing it at
-  the console's Postgres would give a deliberately fenced pod egress to — and credentials
-  for — a database outside its perimeter. That trades the force-proxy fence for convenience.
-  The direction to explore instead is inverting it: the sandbox keeps writing local JSONL
+  `haku-state` for replayability. Prefer `OTEL_LOG_RAW_API_BODIES=file:<dir>` over
+  parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join key
+  back to the Loki events — see
+  [`transcript_collection.md`](../devinfra/claude/plans/transcript_collection.md) section _Raw API bodies_.
+  If the loop ever runs on the **Claude Agent SDK**, a second mechanism exists: a
+  `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`; `append`/`load` required,
+  `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys` optional) — docs:
+  <https://code.claude.com/docs/en/agent-sdk/session-storage>. **Deliberately not done
+  first:** the adapter runs _inside_ the sandbox, so pointing it at the console's Postgres
+  would give a deliberately fenced pod egress to — and credentials for — a database outside
+  its perimeter. That trades the force-proxy fence for convenience. The direction to explore
+  instead is inverting it: the sandbox keeps writing local JSONL
   (`$CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<session-id>.jsonl`) and the console _pulls_,
   or the transcript ships out over the MCP path that is already permitted. Worth knowing
   before building either way: the store is a best-effort **mirror** of the local file, not a
@@ -238,6 +242,21 @@ the runtimes differ in where the sandbox runs — see
   to combine with `persist_session=False` or file checkpointing. A conformance suite ships in
   the package (`claude_agent_sdk.testing.run_session_store_conformance`), so an adapter is
   testable without any Anthropic credentials.
+- **A memory-flush trigger.** Nothing currently nudges Haku to write durable notes
+  into `haku-state` before compaction — it runs on model goodwill, unlike OpenClaw's
+  pre-compaction flush (a silent turn reminding the agent to save to memory files).
+  Claude Code's `PreCompact` hook cannot reproduce it: it can block compaction or
+  return `additionalContext`, but that lands _after_ compaction and it cannot make
+  the agent take a turn. Two primitives that can: a **`Stop` hook** (can block the
+  stop and inject `additionalContext`, so needs gating — e.g. only when `haku-state`
+  has no commit this session), or a **`type: "agent"` hook on `PreCompact`** that
+  extracts to `haku-state` out-of-band without spending the main session's context.
+  Note `type: "command"` hooks are unsupported in Claude Code web, so this must be
+  `http` / `agent` / `prompt` / `mcp_tool` — an `http` or `mcp_tool` hook against
+  haku-console keeps the logic in reviewed code. Works on Runtime A today; not
+  coupled to the runtime question. Under the Agent SDK this is simpler still —
+  hooks there are in-process callbacks and Python has both `PreCompact` and `Stop`
+  (see [`plans/agent_sdk_sandbox_runtime.md`](plans/agent_sdk_sandbox_runtime.md)).
 - **Cut the sandbox over to the Nix image** — `cluster/k8s/haku/workspaces/image/default.nix`
   builds in CI and publishes to `haku-sandbox-image-nix`, but the SandboxTemplate still pulls
   the apt/Dockerfile build. The blocker is a **runtime** question a green build can't answer:

@@ -23,10 +23,12 @@ Anthropic-managed Claude Code in the cloud; **routines** fire on a schedule, a
 GitHub event, or an API call. This is essentially v0-plus-triggers (today Haku is
 a manual web session).
 
-- **Pros:** ~zero ops, the mature Claude Code harness, the Console session view.
+- **Pros:** ~zero ops, the mature Claude Code harness, the Console session view;
+  **flat subscription billing** — runs on the operator's Claude subscription
+  rather than metered API rates.
 - **Cons:** Anthropic-managed container **only** (no BYOC); full lock-in (loop +
   infra + model all Anthropic); in-cluster access only via the public
-  `kubeapi.allegedly.works` proxy (as today); subscription/seat billing.
+  `kubeapi.allegedly.works` proxy (as today).
 
 ### Runtime A variant — self-hosted Claude Code (Agent SDK)
 
@@ -43,6 +45,40 @@ non-Anthropic provider through LiteLLM is lossy and the subscription benefit
 doesn't survive. Net: it collapses to "A's harness in front of LiteLLM →
 Anthropic" — self-hosted infra, same model lock-in — which is why it's a variant
 of A, not a peer of C.
+
+**Amendment (2026-07-31).** The above conflates two separable choices —
+self-hosting the loop, and routing the model leg through LiteLLM. Only the second
+kills the subscription:
+
+- **Agent SDK → LiteLLM → Anthropic.** As described: subscription benefit lost,
+  because LiteLLM terminates and re-emits the request, so what reaches Anthropic is
+  not a Claude Code request. It is also **blocked** — consumer OAuth tokens are
+  rejected outside Claude Code with `This credential is only authorized for use with
+Claude Code`, and Anthropic's [legal-and-compliance
+  doc](https://code.claude.com/docs/en/legal-and-compliance) scopes OAuth to
+  "ordinary use of Claude Code and other native Anthropic applications".
+- **Agent SDK → Anthropic directly.** Keeps flat subscription billing: the same doc
+  puts advertised Pro/Max limits on "ordinary, individual usage of Claude Code **and
+  the Agent SDK**". This buys BYOC — the loop inside the perimeter, in-cluster access
+  without Runtime A's public `kubeapi.allegedly.works` hop — while staying on the
+  subscription. It is the option this section didn't separate out.
+
+Two things to weigh before adopting it:
+
+- **It inverts a deliberate credential boundary.** Today the launch credential lives
+  in `haku-console`, a namespace Haku has no RBAC into — see <../console/README.md>
+  ("the confidentiality boundary that lets the console hold secrets Haku may not
+  read"). Running the loop in `haku-sandbox` puts the subscription OAuth token where
+  Haku has full CRUD. Blast radius is worse than a LiteLLM virtual key: misuse is
+  enforceable against the **personal Anthropic account**, without prior notice, and
+  there is no per-lane Terraform kill switch. Mitigations exist (loop in a third
+  namespace; Agent SDK with built-in tools disabled, reaching `haku-sandbox` only
+  through an MCP server) but they are design work, not defaults.
+- **The observability motivation is gone.** Wanting traces/metrics out of Haku was a
+  main driver for moving off Runtime A. That gap was a monitoring-stack bug, not a
+  runtime limitation — see
+  <../../cluster/docs/lessons_learned/2026_07_31_claude_code_otel_delta_temporality.md>.
+  Runtime A emits all three signals once the env var is set on the web environment.
 
 ## Runtime B — Anthropic Managed Agents (self-hosted sandbox)
 
@@ -111,15 +147,17 @@ collapse them into one.
 **Beyond billing mode, there is a coverage nuance** (policy/ToS, not technical).
 Running Haku as a **Claude Code web routine (A) is fine — routines are a first-party
 feature of the product**, i.e. a supported use of the subscription; scheduling one is
-not "programmatic use" in the ToS sense. The constraint is on the A-variant: driving the
-subscription-authed `claude` CLI from a **self-hosted Agent-SDK loop**. The Agent SDK's own
-documentation says Anthropic "does not allow third party developers to offer claude.ai login
-or rate limits for their products, including agents built on the Claude Agent SDK", and
-directs callers to API-key auth; `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere in the SDK's
-documented auth surface. That note addresses _offering_ subscription login to others rather
-than single-operator personal use, so it is not decisively on point — but it is a good deal
-more pointed than a grey area, and the instruction that follows is unqualified. Settle it
-before building on the A-variant; see
+not "programmatic use" in the ToS sense. **The A-variant is also in scope**, on the
+[legal-and-compliance doc](https://code.claude.com/docs/en/legal-and-compliance)'s own words:
+"Advertised usage limits for Pro and Max plans assume ordinary, individual usage of Claude
+Code **and the Agent SDK**." The restriction there is aimed elsewhere — at "third-party
+developers" building products, who may not "offer Claude.ai login or … route requests through
+Free, Pro, or Max plan credentials **on behalf of their users**." A single operator running
+their own agent on their own subscription is the named-in-scope case, not the prohibited one.
+The Agent SDK overview's blunter "use the API key authentication methods instead" reads as
+guidance for that developer audience; note also that `CLAUDE_CODE_OAUTH_TOKEN` appears nowhere
+in the SDK's documented auth surface, so the mechanics still need proving even where the
+policy allows it. Design caveats (chiefly the credential-boundary inversion) are in
 [agent_sdk_sandbox_runtime.md](agent_sdk_sandbox_runtime.md). Managed Agents (B) bill **API rates
 regardless**, so they never draw on the subscription in the first place. Net:
 A-as-routine is defensible; the caution is specifically about self-hosted
