@@ -40,6 +40,10 @@ spec:
         - name: iron-proxy
           # Pinned, not :latest — this process holds the credential. 0.49.0 is the
           # version every measurement in F15-F18 was taken against.
+          # TODO(public-coder-agent): Upgrade to the first release containing
+          # https://github.com/ironsh/iron-proxy/commit/c90f4fe31607552ed05675fc7ad239d94b431af2
+          # (HTTP/2/gRPC upstreams in MITM mode), then verify ALPN negotiates h2.
+          # Bazel cannot use BuildBuddy remote execution through this proxy until then.
           image: ironsh/iron-proxy:0.49.0
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
