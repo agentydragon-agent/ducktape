@@ -36,15 +36,18 @@ spec:
       labels:
         app.kubernetes.io/name: public-coder-agent-proxy
     spec:
+      # Private package in the in-cluster Forgejo registry. The credential is
+      # reflected into this namespace by cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       containers:
         - name: iron-proxy
-          # Pinned, not :latest — this process holds the credential. 0.49.0 is the
-          # version every measurement in F15-F18 was taken against.
-          # TODO(public-coder-agent): Upgrade to the first release containing
+          # Bootstrap on upstream 0.49.0. Once CI publishes the commit-pinned
+          # Forgejo image, Flux replaces this reference through the policy below.
+          # TODO(public-coder-agent): Return to the first official release containing
           # https://github.com/ironsh/iron-proxy/commit/c90f4fe31607552ed05675fc7ad239d94b431af2
-          # (HTTP/2/gRPC upstreams in MITM mode), then verify ALPN negotiates h2.
-          # Bazel cannot use BuildBuddy remote execution through this proxy until then.
-          image: ironsh/iron-proxy:0.49.0
+          # and remove the temporary image build after verifying ALPN still negotiates h2.
+          image: ironsh/iron-proxy:0.49.0 # {"$imagepolicy": "flux-system:public-coder-iron-proxy"}
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
             # The real credential lives here and nowhere else. It reaches the
