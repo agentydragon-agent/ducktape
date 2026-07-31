@@ -40,3 +40,25 @@ kubectl -n haku-sandbox get job haku-agent-sdk-smoke
 
 Changing the image tag causes Flux to replace and rerun the Job because the Job
 has the `kustomize.toolkit.fluxcd.io/force` annotation.
+
+## Result
+
+The live probe passed on 2026-07-31 with Agent SDK 0.1.48 and Claude CLI 2.1.71.
+The Job completed in 11 seconds with exit code 0 and no restart. It established
+that:
+
+- `CLAUDE_CODE_OAUTH_TOKEN` authenticates the SDK headlessly against the
+  operator's Claude subscription;
+- the CLI can reach Anthropic through Haku's forced proxy and intercepted TLS;
+- partial-message streaming, same-client state, and close/reopen resume at a
+  fixed `cwd` work;
+- Claude Code creates a populated JSONL transcript in `CLAUDE_CONFIG_DIR`;
+- `UserPromptSubmit` and `Stop` Python hooks fire for each turn; and
+- the no-tools probe made no tool attempt and retained one session ID across all
+  three turns.
+
+See
+[`haku/plans/agent_sdk_sandbox_runtime.md`](../../../../haku/plans/agent_sdk_sandbox_runtime.md)
+for the detailed evidence, remaining experiments, and decision to proceed with
+the runtime build. In particular, telemetry configuration was passed to the CLI
+but actual OTel arrival still needs to be confirmed in the backend.
