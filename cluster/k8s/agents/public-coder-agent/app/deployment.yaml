@@ -92,12 +92,23 @@ spec:
             # would never see it. See plans/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
               value: "proxy-github-placeholder"
-            # A non-secret proxy token, following the same contract as GH_PAT.
-            # bb/bbr/Bazel send it as x-buildbuddy-api-key; iron-proxy replaces
-            # it with the real key only on BuildBuddy hosts. The agent never
-            # receives the Kubernetes Secret containing the real credential.
+            # Unlike the GitHub PAT above, this must be the real credential.
+            # Either half of the BuildBuddy setup can use proxy substitution on
+            # its own: a local Bazel client sends its authenticated gRPC traffic
+            # through iron-proxy, and `bb remote` authenticates its local control
+            # channel through the same path. Combining them is different:
+            # `bb remote` serializes the key into the command executed on its
+            # hosted runner as `--remote_header=x-buildbuddy-api-key=...`, where
+            # the nested Bazel process uses BuildBuddy BES, cache, and RBE. That
+            # runner is outside this pod's proxy, so a placeholder reaches
+            # BuildBuddy unchanged and is rejected. Giving the agent the real
+            # key is the accepted cost of supporting remote Bazel together with
+            # remote execution; revisit this if either layer is removed.
             - name: BUILDBUDDY_API_KEY
-              value: "proxy-buildbuddy-placeholder"
+              valueFrom:
+                secretKeyRef:
+                  name: buildbuddy-api-key
+                  key: api-key
             - name: OPENCLAW_LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:

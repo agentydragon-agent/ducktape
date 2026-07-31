@@ -3,8 +3,8 @@
 # Deviation from agents/haku-zones-mitmproxy, which this used to mirror: it runs
 # iron-proxy rather than mitmproxy, because it now does two jobs. It is still the
 # TLS-intercepting forward proxy, and it additionally swaps a placeholder for the
-# real GitHub PAT on the way out, so the agent container holds no credential at
-# all. mitmproxy could do that too, through an addon we wrote and tested;
+# real GitHub PAT on the way out, so the agent container does not hold that PAT.
+# mitmproxy could do that too, through an addon we wrote and tested;
 # iron-proxy was chosen because the substitution is a maintained project's product
 # rather than forty lines of ours, and because it handles the base64 `Basic` shape
 # that git over HTTPS uses, which our addon did not.
@@ -50,23 +50,13 @@ spec:
           image: git.allegedly.works/ducktape-ci/public-coder-iron-proxy:devel-20260731032842-683f674 # {"$imagepolicy": "flux-system:public-coder-iron-proxy"}
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
-            # The real credential lives here and nowhere else. It reaches the
-            # agent's traffic only as a substitution performed by this process.
+            # The real GitHub credential lives here and nowhere else. It reaches
+            # the agent's traffic only as a substitution performed here.
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: public-coder-agent-github-token
                   key: GITHUB_TOKEN
-            # Shared BuildBuddy credential, reflected into this namespace but
-            # exposed only to the proxy. The agent receives a placeholder.
-            - name: BUILDBUDDY_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: buildbuddy-api-key
-                  key: api-key
-                  # Do not take GitHub egress down during the brief reflection
-                  # window; Reloader restarts the proxy when the Secret lands.
-                  optional: true
           ports:
             - name: proxy
               containerPort: 8080

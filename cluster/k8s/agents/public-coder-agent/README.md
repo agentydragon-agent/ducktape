@@ -29,10 +29,18 @@ Two layers, and the split matters:
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.
 
-GitHub and BuildBuddy credentials also stay in the proxy pod. The agent sees
-only `proxy-github-placeholder` and `proxy-buildbuddy-placeholder`; iron-proxy
-replaces them in the appropriate authentication header and only on the scoped
-provider hosts.
+The GitHub credential stays in the proxy pod. The agent sees only
+`proxy-github-placeholder`; iron-proxy replaces it in the authentication header
+and only on scoped GitHub hosts.
+
+BuildBuddy is the deliberate exception. The agent receives the real shared API
+key from the reflected `buildbuddy-api-key` Secret. A local Bazel client or the
+local `bb remote` control channel could each use proxy substitution alone, but
+their combination cannot: `bb remote` embeds the key in the Bazel command sent
+to its hosted runner, and that nested process uses BuildBuddy BES, cache, and
+RBE outside this proxy. A placeholder therefore fails on the runner. This is an
+accepted credential-exposure tradeoff for remote Bazel plus remote execution;
+revisit it if the agent later uses only one of those layers.
 
 ## Deviations worth knowing
 

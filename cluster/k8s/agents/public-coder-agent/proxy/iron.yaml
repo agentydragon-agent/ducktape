@@ -76,21 +76,5 @@ transforms:
             - host: "github.com"
             - host: "codeload.github.com"
 
-        - source:
-            type: env
-            var: BUILDBUDDY_API_KEY
-          replace:
-            # bb, bbr, Bazel, and bbapi all authenticate with this header. Keep
-            # the wire spelling lowercase so it is valid on HTTP/2 connections.
-            proxy_value: "proxy-buildbuddy-placeholder"
-            match_headers: ["x-buildbuddy-api-key"]
-            # As above, `require: true` would reject the header-less CONNECT
-            # request before iron-proxy can inspect the tunneled gRPC request.
-          # The API key cannot be substituted on any non-BuildBuddy host even
-          # though this agent's general outbound egress is intentionally broad.
-          rules:
-            - host: "remote.buildbuddy.io"
-            - host: "app.buildbuddy.io"
-
 log:
   level: "info"
