@@ -1,5 +1,133 @@
 # Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
 #
+# Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing authority
+# only to the named tools; newly reflected tools remain manual-approval by default. Conditional
+# atoms remain typed code-owned evaluators. `haku_v1` preserves Haku's reviewed authority as of
+# 2026-07-31; other Agents receive no auto-approval unless assigned a root policy below.
+auto_approval_policies:
+  - id: gmail_reads
+    type: exact_tools
+    tools:
+      gmail:
+        - threads_list
+        - threads_get
+        - messages_get
+        - labels_list
+        - labels_get
+        - filters_list
+        - filters_get
+        - drafts_list
+        - drafts_get
+  - id: google_calendar_reads
+    type: exact_tools
+    tools:
+      google_calendar:
+        - get_event
+        - list_events
+        - list_event_instances
+  - id: grocy_reads
+    type: exact_tools
+    tools:
+      grocy-sf:
+        - entities_get
+        - entities_list
+        - file_get
+        - get_below_minimum_stock
+        - get_current_user
+        - get_db_changed_time
+        - get_expired_stock
+        - get_expiring_stock
+        - get_product_stock
+        - get_system_info
+        - list_volatile_stock
+        - locations_list
+        - product_groups_list
+        - products_list
+        - quantity_units_list
+        - shopping_list_get
+        - shopping_lists_list
+        - stock_entries_list
+        - stock_get
+  - id: tana_safe_tools
+    type: exact_tools
+    tools:
+      tana-rw:
+        - get_or_create_calendar_node
+        - search_nodes
+        - read_node
+        - get_children
+        - open_node
+        - list_tags
+        - list_workspaces
+        - get_tag_schema
+  - id: postscanmail_reads
+    type: exact_tools
+    tools:
+      postscanmail-mcp:
+        - list_items
+        - list_automation_rules
+  - id: home_assistant_reads
+    type: exact_tools
+    tools:
+      home-assistant:
+        - ha_config_get_automation
+        - ha_config_get_calendar_events
+        - ha_config_get_category
+        - ha_config_get_label
+        - ha_config_get_scene
+        - ha_config_get_script
+        - ha_config_list_dashboard_resources
+        - ha_config_list_groups
+        - ha_config_list_helpers
+        - ha_eval_template
+        - ha_get_addon
+        - ha_get_automation_traces
+        - ha_get_blueprint
+        - ha_get_camera_image
+        - ha_get_device
+        - ha_get_entity
+        - ha_get_entity_exposure
+        - ha_get_hacs_info
+        - ha_get_history
+        - ha_get_integration
+        - ha_get_logs
+        - ha_get_operation_status
+        - ha_get_overview
+        - ha_get_skill_guide
+        - ha_get_state
+        - ha_get_system_health
+        - ha_get_todo
+        - ha_get_zone
+        - ha_list_floors_areas
+        - ha_list_services
+        - ha_search
+  - id: sandbox_control
+    type: exact_tools
+    tools:
+      sandbox-mcp:
+        - provision_sandbox
+        - exec_sandbox
+        - get_sandbox_info
+        - list_sandboxes
+        - dispose_sandbox
+  - id: managed_gmail_labels
+    type: gmail_label_namespace
+    server: gmail
+    label_prefix: haku/
+  - id: haku_v1
+    type: any_of
+    policies:
+      - gmail_reads
+      - google_calendar_reads
+      - grocy_reads
+      - tana_safe_tools
+      - postscanmail_reads
+      - home_assistant_reads
+      - sandbox_control
+      - managed_gmail_labels
+  - id: no_auto_approval
+    type: never
+#
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and
 # bearer bound to one Operator. The bearer and controller-fed Authentik user id are named env vars,
 # not literals — values live in the haku-console-agent / haku-console-oidc Secrets.
@@ -11,6 +139,7 @@ static_agents:
     display_name: Haku
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
+    auto_approval_policy: haku_v1
 operator_connection_providers:
   google_mail:
     kind: google
@@ -58,11 +187,12 @@ mcp:
         kind: remote_mcp
         # Cluster-internal Haku sandbox provisioner (haku/sandbox_mcp). The static bearer lives
         # only in haku-console (reflected from haku-sandbox-mcp); inner Haku agents get proxied
-        # provision/exec/dispose tool schemas + results, never the bearer. Auto-approval (operator
-        # directive, see haku/console/auto_approval.py): the WHOLE surface auto-approves so Haku
+        # provision/exec/dispose tool schemas + results, never the bearer. By operator directive,
+        # the whole named surface in the `sandbox_control` policy auto-approves so Haku
         # drives its own box tap-free — exec_sandbox = arbitrary bash, but ≈ the direct `kubectl
         # exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox only releases the
-        # ephemeral claim Haku itself created (re-clonable checkout, rebuildable cache).
+        # ephemeral claim Haku itself created (re-clonable checkout, rebuildable cache). The
+        # `sandbox_control` exact-tools policy above records this reviewed authority.
         url: http://haku-sandbox-mcp.haku-sandbox-mcp.svc.cluster.local:8765/mcp
         auth:
           kind: static_bearer
@@ -74,7 +204,7 @@ mcp:
     # (tf/gitops/agent-machine-access/postscanmail-mcp.tf). Reads (list_items,
     # list_automation_rules) auto-approve for the agent; every mutating/paid/destructive action
     # (set_automation_rule, request_*/cancel_* — open & rescan are paid, discard & shred remove
-    # mail) queues for operator approval — see haku/console/auto_approval.py. Reached via the
+    # mail) queues for operator approval — see `postscanmail_reads` above. Reached via the
     # public hostname like the other remote facades; no Terraform or NetworkPolicy change.
     - id: postscanmail-mcp
       backend:
@@ -88,7 +218,7 @@ mcp:
     # Writable Home Assistant management through homeassistant-ai/ha-mcp. The
     # upstream Home Assistant token remains in the ha-mcp pod; callers authenticate
     # to the shared facade through operator OAuth. Read tools now auto-approve
-    # (the readOnlyHint subset, minus ha_report_issue — see auto_approval.py); every
+    # (the readOnlyHint subset, minus ha_report_issue — see `home_assistant_reads` above); every
     # state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
     - id: home-assistant
       backend:
@@ -112,8 +242,8 @@ mcp:
     # SERVER pod's own /tmp (osmmcp is local-first). Findings + interim recipes:
     # haku-state memory/improvements/geocoding-geo-search-api.md. Re-enable by
     # uncommenting once routing has a properly profiled backend and a real test pass
-    # (the deployment and its NetworkPolicy stay up; auto_approval.py keeps the osm
-    # policy for that day).
+    # (the deployment and its NetworkPolicy stay up; add an explicit exact-tools atom when
+    # reconnecting it).
     # - id: osm
     #   backend:
     #     kind: remote_mcp

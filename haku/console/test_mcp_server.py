@@ -194,7 +194,44 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     config_file = write_config(
         tmp_path / "console.yaml",
         {
-            "static_agents": _STATIC_AGENTS,
+            "static_agents": [
+                {
+                    **agent,
+                    **({"auto_approval_policy": "haku_v1"} if agent["display_name"] == "Haku" else {}),
+                }
+                for agent in _STATIC_AGENTS
+            ],
+            "auto_approval_policies": [
+                {
+                    "id": "transparent_reads",
+                    "type": "exact_tools",
+                    "tools": {
+                        "gmail": [
+                            "threads_list",
+                            "threads_get",
+                            "messages_get",
+                            "labels_list",
+                            "labels_get",
+                            "filters_list",
+                            "filters_get",
+                            "drafts_list",
+                            "drafts_get",
+                        ],
+                        "google_calendar": ["get_event", "list_events", "list_event_instances"],
+                    },
+                },
+                {
+                    "id": "managed_gmail_labels",
+                    "type": "gmail_label_namespace",
+                    "server": "gmail",
+                    "label_prefix": "haku/",
+                },
+                {
+                    "id": "haku_v1",
+                    "type": "any_of",
+                    "policies": ["transparent_reads", "managed_gmail_labels"],
+                },
+            ],
             "mcp": {
                 "servers": [
                     {"id": "gmail", "backend": _in_process_backend({"kind": "none"})},
@@ -308,6 +345,18 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     for tool in tools.values():
         _assert_valid_json_schema(tool.inputSchema)
         _assert_valid_json_schema(tool.outputSchema)
+
+
+async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Harness) -> None:
+    async with Client(f"{harness.base}/mcp", auth=_SIBLING_AGENT_TOKEN) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    # Haku's exact-tools policy makes this transparent only for Haku. The unassigned sibling sees
+    # the approval envelope and cannot inherit Haku's standing read authority.
+    labels_list = tools["gmail__labels_list"]
+    assert set(labels_list.inputSchema["required"]) == {"input", "rationale"}
+    assert labels_list.meta is not None
+    assert labels_list.meta[MCP_TOOL_META_KEY]["approval_mode"] == "approval_required"
 
 
 async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> None:
