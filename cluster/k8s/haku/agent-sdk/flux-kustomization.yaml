@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 10m
   retryInterval: 1m
-  timeout: 5m
+  timeout: 20m
   path: ./cluster/k8s/haku/agent-sdk
   prune: true
   wait: true
@@ -17,5 +17,12 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  healthChecks:
+    - apiVersion: batch/v1
+      kind: Job
+      name: haku-agent-sdk-smoke
+      namespace: haku-sandbox
   dependsOn:
     - name: haku-namespace
+    - name: haku-egress-proxy
+    - name: alloy-otlp-bearer

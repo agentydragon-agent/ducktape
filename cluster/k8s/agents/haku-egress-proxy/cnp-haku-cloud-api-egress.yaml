@@ -48,6 +48,10 @@ spec:
         # own host. (A 403 here is a token-scope gap, not this allowlist — but
         # the host must still be reachable once the scope is granted.)
         - matchName: tasks.googleapis.com
+        # Claude Agent SDK smoke/runtime telemetry. The sandbox CLI subprocess
+        # removes *.allegedly.works from its inherited NO_PROXY so this public
+        # Authentik-gated endpoint stays behind the forced proxy.
+        - matchName: alloy-otlp.allegedly.works
         # Haku mailbox read API (bearer-gated, read-only; see haku/mailbox/README.md)
         # so sandbox pods can poll inbound operator mail.
         - matchName: haku-mailbox.allegedly.works
