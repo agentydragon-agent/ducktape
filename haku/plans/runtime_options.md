@@ -46,6 +46,14 @@ doesn't survive. Net: it collapses to "A's harness in front of LiteLLM →
 Anthropic" — self-hosted infra, same model lock-in — which is why it's a variant
 of A, not a peer of C.
 
+The 2026-07-31 Kubernetes compatibility spike passed: a `claude setup-token`
+credential authenticated Agent SDK 0.1.48/Claude CLI 2.1.71 headlessly through
+Haku's forced TLS-intercepting proxy, with streaming, multi-turn state,
+same-pod disk resume, transcripts, and Python hooks. This resolves technical
+feasibility, not the credential-boundary or model-lock-in tradeoffs above. Full
+evidence and remaining acceptance tests are in
+[agent_sdk_sandbox_runtime.md](agent_sdk_sandbox_runtime.md).
+
 **Amendment (2026-07-31).** The above conflates two separable choices —
 self-hosting the loop, and routing the model leg through LiteLLM. Only the second
 kills the subscription:

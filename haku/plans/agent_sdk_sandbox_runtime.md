@@ -1,7 +1,10 @@
 # Agent SDK loop in a Haku sandbox, driven from haku-console
 
-Status: **design only, no code written.** Policy permits subscription auth for individual use
-(see below); the open question is the mechanical one the spike answers.
+Status: **compatibility spike passed; runtime implementation not started.** The 2026-07-31
+Kubernetes probe resolved the two architecture-blocking mechanical questions: subscription OAuth
+works headlessly through the Agent SDK, and the bundled Claude CLI works through Haku's
+TLS-intercepting forced proxy. The remaining work is product/runtime construction rather than an
+authentication feasibility investigation.
 
 Companion to [runtime_options.md](runtime_options.md), which catalogues this as the
 "Runtime A variant — self-hosted Claude Code (Agent SDK)", and to
@@ -105,6 +108,70 @@ so sandbox loss was never detectable that way. Watch the Sandbox CR instead, and
 per session rather than environment-wide — which is what failed in the Claude Code web
 environment.
 
+## Compatibility result — 2026-07-31
+
+The one-shot `haku-agent-sdk-smoke` Job from PR #3632 completed successfully in `haku-sandbox`
+against source commit `da578377`. The pod exited 0 with no restart, and the Job reached
+`Complete` in 11 seconds. It ran Agent SDK 0.1.48 with its bundled Claude CLI 2.1.71; transcript
+inspection showed the CLI selected `claude-sonnet-4-6` under the subscription credential.
+
+The run proves:
+
+- **Headless subscription authentication works.** A long-lived token from `claude setup-token`,
+  injected as `CLAUDE_CODE_OAUTH_TOKEN`, completed three real inference turns without interactive
+  login or an Anthropic API key.
+- **The existing egress fence is compatible.** The CLI reached Anthropic through
+  `haku-egress-proxy` with `NODE_EXTRA_CA_CERTS` and the injected CA bundle. Successful inference
+  proves both proxy routing and TLS interception compatibility; no direct egress exception was
+  needed.
+- **Streaming works through `ClaudeSDKClient`.** Every turn emitted seven partial
+  `StreamEvent`s before a successful terminal `ResultMessage` with usage, latency, cost, and stop
+  metadata.
+- **Same-client conversational state works.** A second turn recalled a random nonce from the
+  first turn while retaining one stable session ID.
+- **Disk-backed resume works at a pinned working directory.** After the first client closed, a
+  new client resumed by session ID at `/workspace`, recalled the first-turn nonce, and retained
+  the same session ID.
+- **The transcript is a real, usable Claude Code JSONL.** The probe found it under
+  `$CLAUDE_CONFIG_DIR/projects/-workspace/<session-id>.jsonl`; manual inspection of a rerun showed
+  queue, user, and assistant records with the expected session ID, `cwd`, CLI version,
+  `dontAsk` permission mode, model response, and usage metadata.
+- **The Python hook surface needed for the runtime is active.** `UserPromptSubmit` and `Stop`
+  each fired exactly once for all three turns. `PreToolUse` fired zero times because the probe
+  exposed no tools; the deny-all backstop remained installed.
+- **The pod retained the intended containment.** It ran non-root with all capabilities dropped,
+  no privilege escalation, no mounted Kubernetes service-account token, emptyDir-backed state,
+  and no SDK tools.
+
+No credential appeared in the structured logs or inspected transcript excerpt. The observed
+three-turn model cost was about USD 0.00525, although subscription accounting rather than the
+reported API-equivalent cost is the premise of this runtime.
+
+### What this does not prove
+
+- **OTel arrival is not yet verified.** The probe proved that the bearer, endpoint, cumulative
+  temporality, resource attributes, and exporters were passed through `ClaudeAgentOptions.env`,
+  but the corresponding logs/metrics/traces have not yet been located in the telemetry backend.
+- **Resume survived a client/process boundary, not a pod loss.** The transcript lived on an
+  `emptyDir`; a replacement pod would lose it. The real runtime needs a deliberate persistence or
+  transcript-export design if pod-level recovery is required.
+- **Interrupt/cancellation was not exercised.** The chat runtime needs a focused
+  `client.interrupt()` test that drains the terminal result before accepting the next prompt.
+- **MCP wiring was not exercised.** The probe intentionally exposed no tools. A harmless MCP call
+  should verify server auth, tool naming, `PreToolUse`, and haku-console approval behavior before
+  broadening the production tool surface.
+- **Long-term token operations are not proven by an 11-second run.** Expiry, revocation, rotation,
+  and a stale-token failure mode still need an operational canary/runbook.
+
+### Decision
+
+Proceed with the runtime build. The failures that could have invalidated the architecture —
+headless OAuth rejection and incompatibility with the forced TLS proxy — did not occur. Verify
+OTel ingestion now because it is a cheap check against the recorded run ID. Treat interrupt,
+single-tool MCP, pod-loss persistence, and token-rotation coverage as acceptance tests for their
+respective implementation slices rather than reasons to defer the image, `SandboxTemplate`, or
+first console session flow.
+
 ## Architecture sketch
 
 ```text
@@ -129,19 +196,16 @@ temporality, which `otelcol.exporter.prometheus` drops silently, so the metrics 
 arrive and nothing reports an error. `CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH` separately truncates
 inline bodies at 61440 bytes by default, which is why the proxy leg carries the full ones.
 
-> **This is not yet fixed on `devel`.** The temporality variable and its write-up were
-> committed 2026-07-31 but the branch was never merged, so no laptop picks it up from
-> home-manager. Confirm it has landed before relying on the OTEL leg here.
+The cumulative-temporality fix and its write-up landed on `devel` in PR #3630. The spike passed
+that setting through to the SDK subprocess, but backend ingestion still needs the explicit check
+described above.
 
 ## Build order
 
-1. **Spike.** One pod, one Agent SDK turn, subscription-authed, egressing through the proxy —
-   `kubectl apply`, one response, delete. No UI, no session model, no CR plumbing. It tests the
-   two things nothing in this repo has exercised: whether `CLAUDE_CODE_OAUTH_TOKEN`
-   authenticates **headless in a container** (subscription OAuth is built around interactive
-   `claude setup-token` on a laptop), and whether the CLI tolerates **TLS interception**. It
-   should also report whether the CLI's OTEL variables take effect under the SDK — inferred
-   from `options.env` passthrough, not verified.
+1. **Spike — complete.** PRs #3631 and #3632 deployed the credential and one-shot compatibility
+   Job. Headless OAuth, intercepted egress, streaming, multi-turn state, same-pod disk resume,
+   transcript creation, and Python hooks passed. OTel configuration passthrough passed; backend
+   arrival remains to be checked.
 2. **Image + `SandboxTemplate`**, once the spike passes.
 3. **Proxy body capture**, which is a config change to already-deployed mitmproxy.
 4. **Thinnest console surface** — a "new session" button and one text box.
