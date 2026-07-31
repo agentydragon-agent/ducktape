@@ -29,6 +29,11 @@ Two layers, and the split matters:
 The model path never leaves the cluster: LiteLLM is reached directly, bypassing
 the proxy, via `NO_PROXY`.
 
+GitHub and BuildBuddy credentials also stay in the proxy pod. The agent sees
+only `proxy-github-placeholder` and `proxy-buildbuddy-placeholder`; iron-proxy
+replaces them in the appropriate authentication header and only on the scoped
+provider hosts.
+
 ## Deviations worth knowing
 
 - **Plain `Deployment`, not `OpenClawInstance`.** The operator's generated

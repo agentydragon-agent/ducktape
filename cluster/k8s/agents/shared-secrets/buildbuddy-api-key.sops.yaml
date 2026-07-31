@@ -5,9 +5,9 @@ metadata:
     namespace: claude-sandbox
     annotations:
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,codex-pod
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,codex-pod,public-coder-agent
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,codex-pod
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,codex-pod,public-coder-agent
 type: Opaque
 stringData:
     api-key: ENC[AES256_GCM,data:N3PqoXOOa3YOLsshnniwETZ4qzI=,iv:gA/OPqUy3r4FLh8wYbBnI3qRK/iOpjEevvFpMeGoME4=,tag:wpi1n6WZKLrx8i/drK5ttQ==,type:str]

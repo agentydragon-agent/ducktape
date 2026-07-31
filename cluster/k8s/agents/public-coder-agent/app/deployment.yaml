@@ -92,6 +92,12 @@ spec:
             # would never see it. See plans/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
               value: "proxy-github-placeholder"
+            # A non-secret proxy token, following the same contract as GH_PAT.
+            # bb/bbr/Bazel send it as x-buildbuddy-api-key; iron-proxy replaces
+            # it with the real key only on BuildBuddy hosts. The agent never
+            # receives the Kubernetes Secret containing the real credential.
+            - name: BUILDBUDDY_API_KEY
+              value: "proxy-buildbuddy-placeholder"
             - name: OPENCLAW_LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:
