@@ -15,6 +15,7 @@ py_test(
     deps = [
         ":smoke",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
