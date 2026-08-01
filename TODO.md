@@ -15,24 +15,13 @@
 - [ ] Start Signal minimized (difficult: settings in encrypted sqlite)
 - [ ] Combine ActivityWatch + HALinuxCompanion to report: session events (login/logout, lock/unlock, suspend/resume), battery charge level, and other device telemetry
 
-## Neovim
-
-- [ ] nvim-treesitter folding setup:
-
-  ```lua
-  vim.wo.foldmethod = 'expr'
-  vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
-  ```
-
 ## Build System
 
 - [ ] File upstream BB issue + revert `--script` workaround in `bazel-ci.yml` once fixed. See <devinfra/debug/bb_remote_peers_exhausted.md> (post-run `downloadOutputs` fails with "Exhausted all peers"). Also audit `push-images.yml` which also uses `bb remote build … --remote_download_regex=…`.
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
-- [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
 - [ ] Remove `--per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations` from `.bazelrc` once protobuf cleans up its internal deprecated API usage (`FieldOptions::weak()`, `RepeatedPtrField(Arena*)`). These are in `external/protobuf+/src/google/protobuf/` and `compiler/cpp/`. Currently `protobuf 33.1`.
 - [ ] Remove `--per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare` from `.bazelrc` once OR-Tools cleans up signed/unsigned comparisons in `external/or-tools+/`. Currently `or-tools 9.15`.
 - [ ] Pre-commit lint for `.github/workflows/push-images.yml` matrix completeness: fail if any in-cluster `oci_image` target lacks a matrix row, and warn on rows whose `image` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: a `py_test` that loads `push-images.yml`, parses the `image:` fields, runs `bazel query 'kind("oci_image_rule", //...)'`, and diffs the two sets.
-- [ ] Verify installed `drivectl` on a Google Drive host after gaffer-private CI publishes the `drivectl` pin.
 - [ ] Decide the fate of `secrets/shared/gaffer-private-fetch-pat.yaml` after the private-cache path exists: keep it for another workflow, rotate it, or delete it.
 - [ ] Cache `bazel-diff` base-commit hashes across PR runs. Today `bazel-ci.yml` regenerates the merge-base's Merkle hashes on every PR CI run (checks out the base, runs `bazel-diff generate-hashes` — a `bazel query`, so a chunk of RAM + wall-time per run) even though for a given devel commit the hashes are stable. Add a workflow on devel push that generates + uploads the hashes JSON keyed by SHA (GHA `actions/cache` with `key: bazel-diff-hashes-<sha>` is the simplest fit; SeaweedFS via `AWS_ENDPOINT_URL` or BuildBuddy CAS are alternatives), and have PR CI attempt a fetch before falling back to regeneration. PR CI then only pays the HEAD-hash cost.
 - [ ] Bundle `hetzner-vnc-screenshot` and `vm-interact` with their respective skills instead of shipping via the `ducktape` umbrella wheel. Today their entry points live in `//:wheel`'s `console_scripts` and ship under `//:ducktape_pkg` (see <BUILD.bazel>); ideally each `skills/<name>/BUILD.bazel` defines its own `py_wheel` + artifact-pin, and the umbrella drops the entry. Lets the skills install standalone (without the full umbrella's transitive deps — fastmcp 3, openai, ducktape-util, etc.) and matches how aiquota / ducktape-git-hooks are packaged. Watch out for the same py_package-vendoring conflict that motivated the umbrella for `git-commit-ai`/`gmail-archiver`: these two skills have light, non-shared deps (hcloud/asyncvnc/pillow/typer for hetzner; platformdirs/PIL/typer for proxmox), so vendoring isn't an issue here.
