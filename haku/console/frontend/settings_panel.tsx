@@ -731,7 +731,14 @@ export function SettingsPanel() {
             : false;
 
   return (
-    <Tabs value={activeTab} onChange={selectTab} keepMounted={false} className="haku-page" aria-label="Settings">
+    <Tabs
+      value={activeTab}
+      onChange={selectTab}
+      keepMounted={false}
+      color="haku"
+      className="haku-page"
+      aria-label="Settings"
+    >
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Text fw={700}>Settings</Text>
