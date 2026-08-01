@@ -105,7 +105,7 @@ class _MismatchingStateOAuth:
         return _MismatchingStateClient()
 
 
-def _static_agent_config(tmp_path: Path) -> Path:
+async def _static_agent_config(tmp_path: Path) -> Path:
     config = tmp_path / "console.yaml"
     config.write_text(
         yaml.safe_dump(
@@ -366,7 +366,7 @@ def test_callback_returns_to_the_page_the_login_started_from(make_operator_clien
     assert response.headers["location"] == return_to
 
 
-def test_callback_without_a_continuation_returns_to_the_root(make_operator_client) -> None:
+async def test_callback_without_a_continuation_returns_to_the_root(make_operator_client) -> None:
     with make_operator_client() as client:
         state = _seed_login_flow(client, return_to=None)
         client.app.state.operator_oauth = _MatchingIssuerOAuth()
@@ -391,7 +391,7 @@ def test_callback_without_a_continuation_returns_to_the_root(make_operator_clien
         "/auth/agent-enrollment/d9377996-7f17-4dcb-a746-3f401e0b1413#fragment",
     ],
 )
-def test_login_rejects_continuations_that_are_not_console_pages(make_client, return_to: str) -> None:
+async def test_login_rejects_continuations_that_are_not_console_pages(make_client, return_to: str) -> None:
     with make_client() as client:
         response = client.get("/auth/login", params={"return_to": return_to})
 
@@ -399,7 +399,7 @@ def test_login_rejects_continuations_that_are_not_console_pages(make_client, ret
     assert response.json()["detail"] == "invalid operator login continuation"
 
 
-def test_a_login_started_by_another_browser_is_refused(make_operator_client) -> None:
+async def test_a_login_started_by_another_browser_is_refused(make_operator_client) -> None:
     """RFC 6749 §10.12: possessing a `state` is not enough — the browser must have started it.
 
     Restarting cannot fix this outcome, so it explains rather than bouncing."""
@@ -415,7 +415,7 @@ def test_a_login_started_by_another_browser_is_refused(make_operator_client) -> 
         assert client.app.state.operator_login_flows.pending_login(state) is None
 
 
-def test_a_stale_attempt_restarts_the_login_once_then_explains(make_client) -> None:
+async def test_a_stale_attempt_restarts_the_login_once_then_explains(make_client) -> None:
     """A superseded or expired attempt is ordinary — every tab bounces to login at the same time —
     so the first one restarts itself instead of dead-ending on a page the operator must click."""
     with make_client() as client:
@@ -434,7 +434,7 @@ def test_a_stale_attempt_restarts_the_login_once_then_explains(make_client) -> N
         assert '<a href="/auth/login">Retry login</a>' in gave_up.text
 
 
-def test_me_reports_the_absolute_reauthentication_deadline(make_operator_client) -> None:
+async def test_me_reports_the_absolute_reauthentication_deadline(make_operator_client) -> None:
     deadline = int(time.time()) + 900
     with make_operator_client(operator_session_expires_at=deadline) as client:
         me = client.get("/auth/me")
@@ -446,7 +446,7 @@ def test_me_reports_the_absolute_reauthentication_deadline(make_operator_client)
 
 
 @pytest.mark.parametrize("oauth", [_MismatchedIssuerOAuth(), _MissingIssuerOAuth()])
-def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
+async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
     oauth: object, make_client, migrated_db_url: str
 ) -> None:
     with make_client() as client:

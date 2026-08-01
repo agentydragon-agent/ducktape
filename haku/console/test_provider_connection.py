@@ -12,7 +12,7 @@ import pytest_bazel
 from fastapi import HTTPException
 from mcp.shared.auth import OAuthToken
 from pydantic import SecretStr
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
@@ -42,7 +42,7 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
 @pytest.fixture
-def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
+async def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
     identity_store = operator_identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("op-provider")
     sessions = console_sessions(migrated_db_url)
@@ -77,12 +77,12 @@ def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, U
 
 
 @pytest.fixture
-def store(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> PostgresProviderConnectionStore:
+async def store(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> PostgresProviderConnectionStore:
     return _store_env[0]
 
 
 @pytest.fixture
-def operator_id(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> UUID:
+async def operator_id(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> UUID:
     return _store_env[1]
 
 
@@ -157,7 +157,7 @@ async def test_callback_persists_connection(
     ]
 
 
-def test_cataloged_connection_without_oauth_client_is_unprovisioned(
+async def test_cataloged_connection_without_oauth_client_is_unprovisioned(
     store: PostgresProviderConnectionStore, operator_id: UUID
 ) -> None:
     store._provider_clients.pop(GOOGLE_CALENDAR)
@@ -191,8 +191,8 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     await _connect(store, operator_id, monkeypatch, access_token="at-1", refresh_token="rt-1")
 
     engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
-    sessions = sessionmaker(engine, expire_on_commit=False)
-    with sessions.begin() as session:
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions.begin() as session:
         row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         row.token_state.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
@@ -206,7 +206,7 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     monkeypatch.setattr(provider_connection_module, "_refresh_token", fake_refresh)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-2"
 
-    with sessions.begin() as session:
+    async with sessions.begin() as session:
         row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         assert row.token_state.token_revision == revision_before + 1
@@ -237,7 +237,7 @@ async def test_access_token_for_unconnected_is_none(store: PostgresProviderConne
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
 
 
-def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -254,7 +254,7 @@ def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.
     assert load_provider_clients(config) == {}
 
 
-def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -272,7 +272,7 @@ def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.Monkey
         load_provider_clients(config)
 
 
-def _provider_store(token: str | None) -> Any:
+async def _provider_store(token: str | None) -> Any:
     class _Store:
         async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
             return token
@@ -280,7 +280,7 @@ def _provider_store(token: str | None) -> Any:
     return _Store()
 
 
-def _unconsulted_store() -> Any:
+async def _unconsulted_store() -> Any:
     """A token store the PROVIDER auth path must not consult — raises if the wrong mode reaches it."""
 
     class _Unconsulted:
