@@ -5,9 +5,9 @@
 # .dockerconfigjson) and only stamps the dockerconfigjson type on top — no
 # reassembly, no hardcoded registry host. Sources the reflector-mirrored copy
 # already present in flux-system (the ESO ServiceAccount has cluster-wide secret
-# read), so this needs no change to registry-creds.sops.yaml's allowlist (which
-# would require the cluster SOPS age key — see cluster/k8s/ibkr's identical file
-# for the full rationale).
+# read), so this needs no change to registry-creds.sops.yaml's allowlist. Editing
+# that SOPS document's plaintext reflector annotations would require the cluster
+# age key because its MAC covers them.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

@@ -205,7 +205,7 @@ mcp:
           kind: static_bearer
           bearer_token_secret: sandbox-mcp-bearer
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
-    # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade / ibkr-mcp, so
+    # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,
     # using dynamic client registration). Restricted to agentydragon by the facade's Authentik group policy
     # (tf/gitops/agent-machine-access/postscanmail-mcp.tf). Reads (list_items,
