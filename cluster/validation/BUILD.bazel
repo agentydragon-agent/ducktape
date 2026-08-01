@@ -370,7 +370,6 @@ py_test(
         "@multitool//tools/kustomize",
     ],
     deps = [
-        ":authentik_blueprints",
         ":checks",
         ":cluster",
         ":crd_layering",
@@ -384,7 +383,41 @@ py_test(
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_haku_manifest_contracts",
+    srcs = ["test_haku_manifest_contracts.py"],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_ntfy_manifest_contract",
+    srcs = ["test_ntfy_manifest_contract.py"],
+    data = ["//cluster/k8s:ntfy_manifest_contract_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_authentik_blueprint_contracts",
+    srcs = ["test_authentik_blueprint_contracts.py"],
+    data = ["//cluster/k8s:authentik_blueprint_contract_files"],
+    deps = [
+        ":authentik_blueprints",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

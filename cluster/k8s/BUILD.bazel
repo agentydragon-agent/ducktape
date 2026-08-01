@@ -43,6 +43,41 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Small direct-file surface for focused schema/wiring contracts. Keeping this
+# separate from cluster_all_files lets Bazel avoid the full cluster parse and all
+# Kustomize builds when one of these manifests changes.
+filegroup(
+    name = "haku_manifest_contract_files",
+    srcs = [
+        "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml",
+        "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml",
+        "agents/haku-egress-proxy/claude-networkpolicy.yaml",
+        "haku/console/config.yaml",
+        "haku/console/deployment.yaml",
+        "haku/console/httproute.yaml",
+        "haku/console/service.yaml",
+        "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",
+        "kustomization.yaml",
+        "kyverno/policies/inject-haku-egress-proxy.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
+filegroup(
+    name = "ntfy_manifest_contract_files",
+    srcs = ["flux-webhook/ntfy-webhook.sops.yaml"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
+filegroup(
+    name = "authentik_blueprint_contract_files",
+    srcs = [
+        "authentik/app/kustomization.yaml",
+        "kustomization.yaml",
+    ] + glob(["authentik/app/blueprints/*.yaml"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # The production mirror roster, consumed by loom/gym's panel-coverage test (the gym
 # panel and the deployed roster must not drift).
 filegroup(
