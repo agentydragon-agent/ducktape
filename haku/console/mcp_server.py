@@ -6,7 +6,7 @@ frontend uses this same endpoint with its Operator browser session; those calls 
 do not create tool-call rows, approval events, or promises.
 
 Each request exposes only servers connected by that principal's canonical Operator. Within that
-Operator-specific surface, the global auto-approval policy divides Agent-visible tools into two
+Operator-specific surface, the authenticated Agent's auto-approval policy divides tools into two
 buckets:
 
 Every proxied tool is named ``<server>__<tool>`` (one uniform format — operator decision
@@ -46,7 +46,7 @@ from fastmcp.utilities.versions import VersionSpec
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.auto_approval import is_unconditionally_auto_approved
+from haku.console.auto_approval import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
 from haku.console.mcp_approval import (
     DegradedReflection,
@@ -69,6 +69,7 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     StaticBearerAuth,
     _load_servers,
+    load_console_config,
     server_tool_prefix,
 )
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
@@ -537,6 +538,13 @@ class OperatorToolProvider(Provider):
         self._context = context
         self._actor_resolver = actor_resolver
         self._catalog = catalog or OperatorServerCatalog(context)
+        self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(context.settings))
+
+    def _is_passthrough(self, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
+        return (
+            self._auto_approval_policies.tool_mode(actor, server_id, tool_name)
+            is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+        )
 
     async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
         try:
@@ -559,7 +567,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 tool,
-                passthrough=is_unconditionally_auto_approved(server.id, tool.name),
+                passthrough=self._is_passthrough(actor, server.id, tool.name),
                 actor=actor,
             )
             for tool in meta
@@ -586,7 +594,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 upstream_tool,
-                passthrough=is_unconditionally_auto_approved(server.id, upstream_tool.name),
+                passthrough=self._is_passthrough(actor, server.id, upstream_tool.name),
                 actor=actor,
             )
             if tool.name == name and (version is None or version.matches(tool.version)):

@@ -279,8 +279,8 @@ class Settings(BaseSettings):
 
     # Optional YAML file for deploy-time console configuration that does not belong
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file
-    # names the connected MCP servers, the env-backed credential slot each uses, the
-    # static machine `agents` (each an agent id + env-referenced bearer + operator subject),
+    # names connected MCP servers, their env-backed credential slots, composable auto-approval
+    # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
     # and the `hostexec` host map (in-scope machines + their exec URLs / audiences).
     config_file: Path | None = None
 
@@ -288,10 +288,6 @@ class Settings(BaseSettings):
     # ledger and the operator OAuth token store — the console does not run without them. Both
     # stores are always constructed; migrations are applied once at startup (see app.main).
     database_url: SecretStr
-
-    # Namespace whose Gmail label mutations Haku may auto-approve. labels_list is
-    # wholesale because Haku already has standing Gmail read authority.
-    gmail_auto_approve_label_prefix: str = "haku/"
 
     # VAPID identity for Web Push. Reads HAKU_CONSOLE_WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
     # Unset → the console never sends push notifications and the subscribe endpoints return 503.

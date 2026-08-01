@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval import SchemaDenial, auto_approve_tool_call
+from haku.console.auto_approval import AutoApprovalPolicyRegistry, SchemaDenial, auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -29,6 +29,7 @@ from haku.console.mcp_config import (
     StaticBearerAuth,
     _credential_token,
     _server_entry,
+    load_console_config,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_calls import (
@@ -231,6 +232,7 @@ class ToolCallApplicationService:
         self._provider_store = provider_store
         self._authentik_token_store = authentik_token_store
         self._gmail_client_provider = gmail_client_provider
+        self._auto_approval_policies = AutoApprovalPolicyRegistry(load_console_config(settings))
         # In-flight background execution tasks dispatched by `decide`. Held so they aren't GC'd
         # mid-run, and drained/cancelled at shutdown (`aclose`).
         self._execution_tasks: set[asyncio.Task[ToolCallRecord]] = set()
@@ -252,11 +254,11 @@ class ToolCallApplicationService:
         gmail = await self._gmail_client_provider(actor.operator_id) if server.id == GMAIL_SERVER_ID else None
         server_builder = self._in_process_servers.get(server.id)
         decision = await auto_approve_tool_call(
+            policies=self._auto_approval_policies,
             actor=actor,
             server_id=server.id,
             tool_name=req.tool_name,
             arguments=req.arguments,
-            label_prefix=self._settings.gmail_auto_approve_label_prefix,
             gmail=gmail,
             mcp=server_builder.builder(None) if server_builder is not None else None,
         )

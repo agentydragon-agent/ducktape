@@ -93,24 +93,28 @@ _STATIC_AGENTS = [
         "display_name": "Haku",
         "token_env_var": _AGENT_TOKEN_ENV,
         "operator_subject_env": _AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000002",
         "display_name": "Sibling",
         "token_env_var": _SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _SIBLING_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000003",
         "display_name": "Other",
         "token_env_var": _OTHER_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000004",
         "display_name": "Other Sibling",
         "token_env_var": _OTHER_SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_SIBLING_AGENT_OPERATOR_ENV,
+        "auto_approval_policy": "no_auto_approval",
     },
 ]
 
@@ -194,7 +198,38 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
     config_file = write_config(
         tmp_path / "console.yaml",
         {
-            "static_agents": _STATIC_AGENTS,
+            "static_agents": [
+                {**agent, **({"auto_approval_policy": "haku_v1"} if agent["display_name"] == "Haku" else {})}
+                for agent in _STATIC_AGENTS
+            ],
+            "auto_approval_policies": [
+                {
+                    "id": "transparent_reads",
+                    "type": "exact_tools",
+                    "tools": {
+                        "gmail": [
+                            "threads_list",
+                            "threads_get",
+                            "messages_get",
+                            "labels_list",
+                            "labels_get",
+                            "filters_list",
+                            "filters_get",
+                            "drafts_list",
+                            "drafts_get",
+                        ],
+                        "google_calendar": ["get_event", "list_events", "list_event_instances"],
+                    },
+                },
+                {
+                    "id": "managed_gmail_labels",
+                    "type": "gmail_label_namespace",
+                    "server": "gmail",
+                    "label_prefix": "haku/",
+                },
+                {"id": "haku_v1", "type": "any_of", "policies": ["transparent_reads", "managed_gmail_labels"]},
+                {"id": "no_auto_approval", "type": "never"},
+            ],
             "mcp": {
                 "servers": [
                     {"id": "gmail", "backend": _in_process_backend({"kind": "none"})},
@@ -308,6 +343,18 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     for tool in tools.values():
         _assert_valid_json_schema(tool.inputSchema)
         _assert_valid_json_schema(tool.outputSchema)
+
+
+async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Harness) -> None:
+    async with Client(f"{harness.base}/mcp", auth=_SIBLING_AGENT_TOKEN) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    # Haku's exact-tools policy makes this transparent only for Haku. The unassigned sibling sees
+    # the approval envelope and cannot inherit Haku's standing read authority.
+    labels_list = tools["gmail__labels_list"]
+    assert set(labels_list.inputSchema["required"]) == {"input", "rationale"}
+    assert labels_list.meta is not None
+    assert labels_list.meta[MCP_TOOL_META_KEY]["approval_mode"] == "approval_required"
 
 
 async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> None:
@@ -1608,6 +1655,7 @@ def test_duplicate_static_agent_tokens_fail_startup(
                     "display_name": "Ops Bot",
                     "token_env_var": _AGENT_TOKEN_ENV,
                     "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
+                    "auto_approval_policy": "no_auto_approval",
                 },
             ]
         },

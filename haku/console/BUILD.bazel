@@ -463,6 +463,7 @@ py_library(
     name = "auto_approval",
     srcs = ["auto_approval.py"],
     deps = [
+        ":mcp_config",
         ":tool_call_actor",
         "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
@@ -525,11 +526,13 @@ py_test(
     srcs = ["test_auto_approval.py"],
     deps = [
         ":auto_approval",
+        ":mcp_config",
         ":tool_call_actor",
         "//:conftest",
         "//gmail_api:labels",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         # Pytest async auto mode is configured by the root conftest hooks.

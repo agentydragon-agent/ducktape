@@ -168,6 +168,71 @@ class ConsoleMcpConfig(BaseModel):
     servers: list[McpServerEntry] = Field(default_factory=list)
 
 
+type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
+
+
+class AutoApprovalPolicyBase(BaseModel):
+    """Fields shared by every node in the deploy-time policy graph."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: AutoApprovalPolicyId
+
+
+class ExactToolsAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Unconditionally auto-approve exact tools on exact configured servers."""
+
+    type: Literal["exact_tools"] = "exact_tools"
+    tools: dict[str, set[str]] = Field(min_length=1)
+
+    @field_validator("tools")
+    @classmethod
+    def _require_named_tools(cls, value: dict[str, set[str]]) -> dict[str, set[str]]:
+        for server_id, tools in value.items():
+            if not server_id:
+                raise ValueError("exact-tools server id must not be blank")
+            if not tools:
+                raise ValueError(f"exact-tools policy server {server_id!r} must list at least one tool")
+            if any(not tool for tool in tools):
+                raise ValueError(f"exact-tools policy server {server_id!r} contains a blank tool name")
+        return value
+
+
+class GmailLabelNamespaceAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-approve Gmail label mutations confined to one namespace."""
+
+    type: Literal["gmail_label_namespace"] = "gmail_label_namespace"
+    server: Literal["gmail"] = "gmail"
+    label_prefix: str = Field(min_length=1)
+
+
+class AnyOfAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Auto-approve when any referenced policy auto-approves."""
+
+    type: Literal["any_of"] = "any_of"
+    policies: tuple[AutoApprovalPolicyId, ...] = Field(min_length=1)
+
+
+class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Never auto-approve; useful as an explicit Agent assignment."""
+
+    type: Literal["never"] = "never"
+
+
+type AutoApprovalPolicy = Annotated[
+    ExactToolsAutoApprovalPolicy
+    | GmailLabelNamespaceAutoApprovalPolicy
+    | AnyOfAutoApprovalPolicy
+    | NeverAutoApprovalPolicy,
+    Field(discriminator="type"),
+]
+
+
+def _default_auto_approval_policies() -> list[AutoApprovalPolicy]:
+    """The explicit no-authority root available to minimal/test configurations."""
+    return [NeverAutoApprovalPolicy(id="no_auto_approval")]
+
+
 class StaticAgentEntry(BaseModel):
     """Controller-owned identity and secret reference for one static Agent slot.
 
@@ -182,6 +247,9 @@ class StaticAgentEntry(BaseModel):
     # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
     # never live request authority.
     operator_subject_env: str
+    # The root of this Agent's deploy-reviewed auto-approval policy graph. Every static Agent must
+    # choose explicitly; dynamically enrolled/OAuth Agents remain manual-approval-only.
+    auto_approval_policy: AutoApprovalPolicyId
 
     @field_validator("display_name")
     @classmethod
@@ -204,6 +272,7 @@ class LoadedStaticAgent(BaseModel):
 
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
+    auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=_default_auto_approval_policies)
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
@@ -261,6 +330,53 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(f"duplicate normalized static Agent display name {agent.display_name!r}")
             agent_ids.add(agent.agent_id)
             name_keys.add(name_key)
+
+        policies: dict[str, AutoApprovalPolicy] = {}
+        for policy in self.auto_approval_policies:
+            if policy.id in policies:
+                raise ValueError(f"duplicate auto-approval policy id {policy.id!r}")
+            policies[policy.id] = policy
+            if isinstance(policy, ExactToolsAutoApprovalPolicy):
+                if unknown_servers := set(policy.tools) - server_ids:
+                    raise ValueError(
+                        f"auto-approval policy {policy.id!r} references unknown MCP servers {sorted(unknown_servers)!r}"
+                    )
+            elif isinstance(policy, GmailLabelNamespaceAutoApprovalPolicy) and policy.server not in server_ids:
+                raise ValueError(f"auto-approval policy {policy.id!r} references unknown MCP server {policy.server!r}")
+
+        for policy in policies.values():
+            if isinstance(policy, AnyOfAutoApprovalPolicy):
+                unknown_policies = set(policy.policies) - policies.keys()
+                if unknown_policies:
+                    raise ValueError(
+                        f"auto-approval policy {policy.id!r} references unknown policies {sorted(unknown_policies)!r}"
+                    )
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(policy_id: str) -> None:
+            if policy_id in visiting:
+                raise ValueError(f"auto-approval policy graph contains a cycle at {policy_id!r}")
+            if policy_id in visited:
+                return
+            visiting.add(policy_id)
+            policy = policies[policy_id]
+            if isinstance(policy, AnyOfAutoApprovalPolicy):
+                for member_id in policy.policies:
+                    visit(member_id)
+            visiting.remove(policy_id)
+            visited.add(policy_id)
+
+        for policy_id in policies:
+            visit(policy_id)
+
+        for agent in self.static_agents:
+            if agent.auto_approval_policy not in policies:
+                raise ValueError(
+                    f"static Agent {agent.agent_id} references unknown auto-approval policy "
+                    f"{agent.auto_approval_policy!r}"
+                )
         if self.hostexec is not None:
             if self.node_daemons is None:
                 raise ValueError("hostexec requires node_daemons configuration")
