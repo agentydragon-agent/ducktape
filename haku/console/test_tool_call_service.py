@@ -411,7 +411,7 @@ async def test_two_operator_two_agent_authorization_matrix(
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
         service.list_tool_calls(actor=invalid_actor)
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
-        ledger.submit(
+        await ledger.submit(
             server=McpServerEntry(
                 id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
             ),
@@ -419,10 +419,10 @@ async def test_two_operator_two_agent_authorization_matrix(
             actor=invalid_actor,
         )
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
-        ledger.get(records["oa"].tool_call_id, actor=invalid_actor)
+        await ledger.get(records["oa"].tool_call_id, actor=invalid_actor)
     agent_as_operator: Any = actors["aa1"]
     with pytest.raises(TypeError, match="operator actor required"):
-        ledger.mark_running(records["aa1"].tool_call_id, actor=agent_as_operator)
+        await ledger.mark_running(records["aa1"].tool_call_id, actor=agent_as_operator)
 
     expected_visible = {
         "oa": {"oa", "aa1", "aa2"},
@@ -744,17 +744,17 @@ async def test_withdraw_survives_credential_binding_rotation(
 
     successor_id = uuid4()
     now = datetime.datetime.now(datetime.UTC)
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
-        with Session(engine) as session, session.begin():
+        async with AsyncSession(engine) as session, session.begin():
             # `uq_credential_bindings_one_active_per_agent` allows one ACTIVE binding per Agent, so a
             # reconnect retires the predecessor as it activates the successor — as production does.
-            predecessor = session.get_one(CredentialBinding, original.binding_id)
+            predecessor = await session.get_one(CredentialBinding, original.binding_id)
             predecessor.status = CredentialBindingStatus.REVOKED
             predecessor.ended_at = now
             predecessor.end_reason = "superseded by reconnect"
             predecessor.updated_at = now
-            session.flush()
+            await session.flush()
             session.add_all(
                 [
                     CredentialBinding(
@@ -780,7 +780,7 @@ async def test_withdraw_survives_credential_binding_rotation(
                 ]
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
     reconnected = AgentActor(agent_id=original.agent_id, operator_id=original.operator_id, binding_id=successor_id)
     withdrawn = await service.withdraw(
@@ -945,17 +945,17 @@ async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor
     server = McpServerEntry(
         id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
     )
-    record = ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
+    record = await ledger.submit(server=server, req=_request(owner="terminal"), actor=operator)
 
     with pytest.raises(ToolCallStateConflictError, match="not running"):
-        ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
+        await ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
 
-    running = ledger.mark_running(record.tool_call_id, actor=operator)
+    running = await ledger.mark_running(record.tool_call_id, actor=operator)
     assert running.status is ToolCallStatus.RUNNING
-    finished = ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
+    finished = await ledger.finish(record.tool_call_id, actor=operator, result={"ok": True}, error=None)
     assert finished.status is ToolCallStatus.OK
     with pytest.raises(ToolCallStateConflictError, match="not running"):
-        ledger.finish(record.tool_call_id, actor=operator, result={"again": True}, error=None)
+        await ledger.finish(record.tool_call_id, actor=operator, result={"again": True}, error=None)
 
 
 async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(
@@ -963,7 +963,7 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
 ) -> None:
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
-    record = ledger.submit(
+    record = await ledger.submit(
         server=McpServerEntry(
             id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
         ),
@@ -972,11 +972,11 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
         auto_approval_policy_id="policy:test",
     )
 
-    assert ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
-    engine = create_engine(migrated_db_url)
+    assert await ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
-        with Session(engine) as session, session.begin():
-            binding = session.get(CredentialBinding, agent.binding_id)
+        async with AsyncSession(engine) as session, session.begin():
+            binding = await session.get(CredentialBinding, agent.binding_id)
             assert binding is not None
             now = datetime.datetime.now(datetime.UTC)
             binding.status = CredentialBindingStatus.REVOKED
@@ -984,9 +984,9 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
             binding.ended_at = now
             binding.end_reason = "test revocation"
     finally:
-        engine.dispose()
+        await engine.dispose()
 
-    finished = ledger.finish(record.tool_call_id, actor=agent, result={"ok": True}, error=None)
+    finished = await ledger.finish(record.tool_call_id, actor=agent, result={"ok": True}, error=None)
     assert finished.status is ToolCallStatus.OK
 
 
