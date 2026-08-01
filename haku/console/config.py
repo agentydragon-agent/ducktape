@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -182,6 +183,8 @@ class ClaudeRuntimeConfig(BaseModel):
     https_proxy: str
     ca_bundle: str
     no_proxy: str
+    mcp_url: str
+    mcp_static_agent_id: UUID
 
     def claude_environment(self) -> dict[str, str]:
         return {

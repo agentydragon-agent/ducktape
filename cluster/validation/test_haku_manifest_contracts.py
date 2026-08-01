@@ -70,7 +70,16 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "https_proxy": "http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
+        "mcp_url": "http://haku-console.haku-console.svc.cluster.local:9090/mcp",
+        "mcp_static_agent_id": "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2",
     }
+    mcp_agent = next(
+        agent
+        for agent in console_config["static_agents"]
+        if agent["agent_id"] == console_config["claude_runtime"]["mcp_static_agent_id"]
+    )
+    assert mcp_agent["display_name"] == "Haku"
+    assert mcp_agent["auto_approval_policy"] == "haku_v1"
     env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
 

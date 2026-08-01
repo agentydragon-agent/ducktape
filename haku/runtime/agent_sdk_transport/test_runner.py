@@ -60,7 +60,18 @@ def memory_websocket_pair() -> tuple[MemoryWebSocket, MemoryWebSocket]:
 def test_launch_matches_the_pinned_sdk_and_uses_its_bundled_claude(tmp_path: Path) -> None:
     options = enable_fine_grained_streaming(
         ClaudeAgentOptions(
-            cwd=tmp_path, permission_mode="dontAsk", setting_sources=[], system_prompt="remote prompt", tools=[]
+            cwd=tmp_path,
+            permission_mode="dontAsk",
+            setting_sources=[],
+            system_prompt="remote prompt",
+            tools=[],
+            mcp_servers={
+                "haku-console": {
+                    "type": "http",
+                    "url": "http://haku-console.test/mcp",
+                    "headers": {"Authorization": "Bearer test-static-agent-token"},
+                }
+            },
         )
     )
     launch = build_claude_launch(options)
@@ -73,6 +84,9 @@ def test_launch_matches_the_pinned_sdk_and_uses_its_bundled_claude(tmp_path: Pat
     assert build_claude_command(bundled_cli, launch) == sdk_transport._build_command()
     assert launch.cwd == str(tmp_path)
     assert launch.environment[FINE_GRAINED_TOOL_STREAMING_ENV] == "1"
+    mcp_config = launch.arguments[launch.arguments.index("--mcp-config") + 1]
+    assert "http://haku-console.test/mcp" in mcp_config
+    assert "Bearer test-static-agent-token" in mcp_config
 
 
 def test_environment_does_not_expose_the_bridge_credential(monkeypatch: pytest.MonkeyPatch) -> None:
