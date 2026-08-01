@@ -24,6 +24,8 @@ from x.study_casino.app import create_app
 from x.study_casino.changelog import LATEST_CHANGELOG_ID
 from x.study_casino.config import Settings
 
+pytest_plugins = ("util.playwright",)
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page, Route
 
