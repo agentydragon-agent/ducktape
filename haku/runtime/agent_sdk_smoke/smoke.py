@@ -7,7 +7,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote
 
 from claude_agent_sdk import (
@@ -18,13 +18,14 @@ from claude_agent_sdk import (
     HookInput,
     HookJSONOutput,
     HookMatcher,
-    PermissionMode,
     ResultMessage,
     TextBlock,
     __version__ as sdk_version,
 )
 from claude_agent_sdk._cli_version import __cli_version__ as cli_version
 from claude_agent_sdk.types import HookEvent, StreamEvent
+
+from haku.runtime.agent_sdk_transport.options import enable_fine_grained_streaming
 
 
 def emit(event: str, **fields: Any) -> None:
@@ -179,22 +180,21 @@ def make_options(
     *, counts: HookCounts, cwd: Path, secrets_to_hide: list[str], resume: str | None = None
 ) -> ClaudeAgentOptions:
     """Construct identical fresh and resumed clients without loose kwargs."""
-    return ClaudeAgentOptions(
-        cwd=cwd,
-        env=sdk_environment(),
-        hooks=make_hooks(counts),
-        include_partial_messages=True,
-        # The bundled CLI supports dontAsk, but the repo-pinned SDK 0.1.x
-        # PermissionMode alias predates that literal. Keep the runtime probe on
-        # the intended deny-instead-of-prompt mode while documenting the skew.
-        permission_mode=cast(PermissionMode, "dontAsk"),
-        resume=resume,
-        setting_sources=[],
-        stderr=make_stderr_logger(secrets_to_hide),
-        system_prompt=(
-            "You are a deterministic compatibility probe. Never use tools. Follow output-format instructions exactly."
-        ),
-        tools=[],
+    return enable_fine_grained_streaming(
+        ClaudeAgentOptions(
+            cwd=cwd,
+            env=sdk_environment(),
+            hooks=make_hooks(counts),
+            permission_mode="dontAsk",
+            resume=resume,
+            setting_sources=[],
+            stderr=make_stderr_logger(secrets_to_hide),
+            system_prompt=(
+                "You are a deterministic compatibility probe. Never use tools. "
+                "Follow output-format instructions exactly."
+            ),
+            tools=[],
+        )
     )
 
 

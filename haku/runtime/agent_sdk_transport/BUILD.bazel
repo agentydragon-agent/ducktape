@@ -1,0 +1,92 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    visibility = ["//haku:__subpackages__"],
+)
+
+py_library(
+    name = "options",
+    srcs = ["options.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":protocol",
+        "@pypi//claude_agent_sdk",
+    ],
+)
+
+py_library(
+    name = "transport",
+    srcs = ["transport.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":protocol",
+        "@pypi//anyio",
+        "@pypi//claude_agent_sdk",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":protocol",
+        "@pypi//anyio",
+        "@pypi//websockets",
+    ],
+)
+
+py_binary(
+    name = "runner_bin",
+    srcs = ["runner.py"],
+    main = "runner.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protocol",
+        "@pypi//anyio",
+        "@pypi//websockets",
+    ],
+)
+
+py_test(
+    name = "test_options",
+    srcs = ["test_options.py"],
+    deps = [
+        ":options",
+        ":protocol",
+        "@pypi//claude_agent_sdk",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runner",
+    srcs = ["test_runner.py"],
+    deps = [
+        ":options",
+        ":protocol",
+        ":runner",
+        "//:conftest",
+        "@pypi//anyio",
+        "@pypi//claude_agent_sdk",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_transport",
+    srcs = ["test_transport.py"],
+    deps = [
+        ":protocol",
+        ":transport",
+        "//:conftest",
+        "@pypi//anyio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)

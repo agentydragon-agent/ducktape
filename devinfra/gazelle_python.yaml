@@ -366,6 +366,7 @@ manifest:
     mpl_toolkits.mplot3d: matplotlib
     mpmath: mpmath
     msgpack: msgpack
+    msgspec: msgspec
     multidict: multidict
     multipart: python_multipart
     multipledispatch: multipledispatch
@@ -665,4 +666,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 09af7d2eaca852d6af13b16cc58a10326660717b5aadcf910c47d56643eaee9b
+integrity: 2b615210966889a000ef0598fcb183921baa909b6a9a6b0318452e0bb270b0cf
