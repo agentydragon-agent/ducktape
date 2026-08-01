@@ -50,11 +50,7 @@ class HookCounts:
 def make_hooks(counts: HookCounts) -> dict[HookEvent, list[HookMatcher]]:
     """Install observation hooks and a deny-all tool backstop."""
 
-    async def observe(
-        hook_input: HookInput,
-        _tool_use_id: str | None,
-        _context: HookContext,
-    ) -> HookJSONOutput:
+    async def observe(hook_input: HookInput, _tool_use_id: str | None, _context: HookContext) -> HookJSONOutput:
         event = hook_input["hook_event_name"]
         if event == "UserPromptSubmit":
             counts.user_prompt_submit += 1
@@ -63,11 +59,7 @@ def make_hooks(counts: HookCounts) -> dict[HookEvent, list[HookMatcher]]:
         emit("hook", hook_event=event)
         return {}
 
-    async def deny_tool(
-        hook_input: HookInput,
-        _tool_use_id: str | None,
-        _context: HookContext,
-    ) -> HookJSONOutput:
+    async def deny_tool(hook_input: HookInput, _tool_use_id: str | None, _context: HookContext) -> HookJSONOutput:
         counts.pre_tool_use += 1
         tool_name = hook_input.get("tool_name", "unknown")
         emit("unexpected_tool_attempt", tool_name=tool_name)
@@ -96,9 +88,7 @@ def sdk_environment() -> dict[str, str]:
         "OTEL_LOGS_EXPORTER": "otlp",
         "OTEL_METRICS_EXPORTER": "otlp",
         "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-        "OTEL_EXPORTER_OTLP_ENDPOINT": os.environ[
-            "OTEL_EXPORTER_OTLP_ENDPOINT"
-        ],
+        "OTEL_EXPORTER_OTLP_ENDPOINT": os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"],
         "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
         "OTEL_LOG_USER_PROMPTS": "1",
         "OTEL_LOG_TOOL_DETAILS": "1",
@@ -108,19 +98,14 @@ def sdk_environment() -> dict[str, str]:
         # service ingress. Override it only for the CLI subprocess so the public
         # Alloy OTLP endpoint cannot bypass haku-sandbox's forced proxy.
         "NO_PROXY": (
-            "127.0.0.1,localhost,*.forgejo,.forgejo,.svc,.svc.cluster.local,"
-            "kubernetes.default.svc,10.0.0.0/8"
+            "127.0.0.1,localhost,*.forgejo,.forgejo,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
         ),
         "HAKU_AGENT_SDK_SMOKE_RUN_ID": run_id,
-        "OTEL_RESOURCE_ATTRIBUTES": (
-            f"service.name=haku-agent-sdk-smoke,haku.run_id={run_id}"
-        ),
+        "OTEL_RESOURCE_ATTRIBUTES": (f"service.name=haku-agent-sdk-smoke,haku.run_id={run_id}"),
     }
     bearer = os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN", "")
     if bearer:
-        env["OTEL_EXPORTER_OTLP_HEADERS"] = (
-            f"Authorization=Bearer%20{quote(bearer, safe='')}"
-        )
+        env["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Bearer%20{quote(bearer, safe='')}"
     return env
 
 
@@ -142,9 +127,7 @@ async def run_turn(client: ClaudeSDKClient, prompt: str) -> TurnResult:
         if isinstance(message, StreamEvent):
             stream_events += 1
         elif isinstance(message, AssistantMessage):
-            text_parts.extend(
-                block.text for block in message.content if isinstance(block, TextBlock)
-            )
+            text_parts.extend(block.text for block in message.content if isinstance(block, TextBlock))
         elif isinstance(message, ResultMessage):
             result = message
 
@@ -152,8 +135,7 @@ async def run_turn(client: ClaudeSDKClient, prompt: str) -> TurnResult:
         raise RuntimeError("SDK response ended without a ResultMessage")
     if result.is_error:
         raise RuntimeError(
-            f"SDK returned an error result: subtype={result.subtype!r} "
-            f"stop_reason={result.stop_reason!r}"
+            f"SDK returned an error result: subtype={result.subtype!r} stop_reason={result.stop_reason!r}"
         )
 
     text = "".join(text_parts).strip() or (result.result or "").strip()
@@ -177,9 +159,7 @@ def find_transcript(config_dir: Path, session_id: str) -> Path:
     """Locate the SDK's disk-backed transcript without assuming cwd encoding."""
     matches = list(config_dir.glob(f"projects/**/{session_id}.jsonl"))
     if len(matches) != 1:
-        raise RuntimeError(
-            f"expected one transcript for session {session_id}, found {len(matches)}"
-        )
+        raise RuntimeError(f"expected one transcript for session {session_id}, found {len(matches)}")
     return matches[0]
 
 
@@ -196,11 +176,7 @@ def make_stderr_logger(secrets_to_hide: list[str]) -> Callable[[str], None]:
 
 
 def make_options(
-    *,
-    counts: HookCounts,
-    cwd: Path,
-    secrets_to_hide: list[str],
-    resume: str | None = None,
+    *, counts: HookCounts, cwd: Path, secrets_to_hide: list[str], resume: str | None = None
 ) -> ClaudeAgentOptions:
     """Construct identical fresh and resumed clients without loose kwargs."""
     return ClaudeAgentOptions(
@@ -216,8 +192,7 @@ def make_options(
         setting_sources=[],
         stderr=make_stderr_logger(secrets_to_hide),
         system_prompt=(
-            "You are a deterministic compatibility probe. Never use tools. "
-            "Follow output-format instructions exactly."
+            "You are a deterministic compatibility probe. Never use tools. Follow output-format instructions exactly."
         ),
         tools=[],
     )
@@ -245,25 +220,15 @@ async def probe(cwd: Path, config_dir: Path) -> None:
     )
 
     nonce = secrets.token_hex(8)
-    options = make_options(
-        counts=counts,
-        cwd=cwd,
-        secrets_to_hide=secrets_to_hide,
-    )
+    options = make_options(counts=counts, cwd=cwd, secrets_to_hide=secrets_to_hide)
     async with ClaudeSDKClient(options=options) as client:
-        first = await run_turn(
-            client,
-            f"Reply with exactly: HELLO_FROM_HAKU {nonce}",
-        )
+        first = await run_turn(client, f"Reply with exactly: HELLO_FROM_HAKU {nonce}")
         if "HELLO_FROM_HAKU" not in first.text or nonce not in first.text:
             raise RuntimeError("first turn did not return the requested marker and nonce")
         if first.stream_events == 0:
             raise RuntimeError("partial-message streaming produced no StreamEvent")
 
-        second = await run_turn(
-            client,
-            "Reply with only the nonce from my previous message.",
-        )
+        second = await run_turn(client, "Reply with only the nonce from my previous message.")
         if nonce not in second.text:
             raise RuntimeError("same-client second turn did not retain the nonce")
         session_id = second.result.session_id
@@ -271,23 +236,13 @@ async def probe(cwd: Path, config_dir: Path) -> None:
     transcript = find_transcript(config_dir, session_id)
     emit("transcript_found", bytes=file_size(transcript), path=str(transcript))
 
-    resume_options = make_options(
-        counts=counts,
-        cwd=cwd,
-        secrets_to_hide=secrets_to_hide,
-        resume=session_id,
-    )
+    resume_options = make_options(counts=counts, cwd=cwd, secrets_to_hide=secrets_to_hide, resume=session_id)
     async with ClaudeSDKClient(options=resume_options) as resumed_client:
-        resumed = await run_turn(
-            resumed_client,
-            "Reply with only the nonce from the first message in this session.",
-        )
+        resumed = await run_turn(resumed_client, "Reply with only the nonce from the first message in this session.")
     if nonce not in resumed.text:
         raise RuntimeError("disk-backed resumed session did not retain the nonce")
     if resumed.result.session_id != session_id:
-        raise RuntimeError(
-            "resume silently started a different session despite using the same cwd"
-        )
+        raise RuntimeError("resume silently started a different session despite using the same cwd")
     if counts.pre_tool_use:
         raise RuntimeError("Claude unexpectedly attempted to invoke a tool")
 
@@ -306,11 +261,7 @@ def main() -> None:
             os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", ""),
             os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN", ""),
         ]
-        emit(
-            "probe_failed",
-            error=redact(str(error), secrets_to_hide),
-            error_type=type(error).__name__,
-        )
+        emit("probe_failed", error=redact(str(error), secrets_to_hide), error_type=type(error).__name__)
         raise
 
 
