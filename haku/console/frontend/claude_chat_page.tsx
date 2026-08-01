@@ -1,5 +1,5 @@
 import { Badge, Box, Button, Code, Group, Loader, Paper, Stack, Text, Textarea, Title } from "@mantine/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createClaudeChatSession,
@@ -9,8 +9,6 @@ import {
   sendClaudeChatMessage,
   type ClaudeChatSession,
 } from "./client";
-
-const POLL_MS = 500;
 
 function statusColor(status: ClaudeChatSession["status"]): string {
   if (status === "ready") return "teal";
@@ -37,33 +35,86 @@ export function ClaudeChatPage() {
   const [session, setSession] = useState<ClaudeChatSession | null>(null);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aborting, setAborting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const sessionId = session?.session_id;
   const sessionStatus = session?.status;
 
+  // SSE subscription: replaces 500ms HTTP polling with push-based updates.
+  // Falls back to polling when EventSource is unavailable (screenshot harness, etc.).
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  });
+
   useEffect(() => {
     if (!sessionId || sessionStatus === "closed" || sessionStatus === "failed") return;
     let alive = true;
-    const poll = async () => {
-      try {
-        const next = await fetchClaudeChatSession(sessionId);
-        if (alive) {
+    let eventSource: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const { protocol } = window.location;
+    const canUseSSE = protocol === "https:" || protocol === "http:";
+
+    if (canUseSSE) {
+      eventSource = new EventSource(`/api/claude/sessions/${sessionId}/stream`);
+      eventSource.onmessage = (event) => {
+        if (!alive) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "end") {
+            eventSource?.close();
+            return;
+          }
+          // The SSE delivers the full session view (same shape as the REST endpoint).
+          if (data.session_id) {
+            setSession(data as ClaudeChatSession);
+            setError(null);
+          }
+        } catch {
+          // Ignore malformed lines; the next event will resync.
+        }
+      };
+      eventSource.onerror = () => {
+        if (!alive) return;
+        eventSource?.close();
+        // Fall back to polling on SSE failure.
+        pollTimer = setInterval(async () => {
+          if (!alive) return;
+          try {
+            const next = await fetchClaudeChatSession(sessionId);
+            setSession(next);
+            setError(null);
+          } catch (e: unknown) {
+            if (alive) setError(displayableError(e));
+          }
+        }, 2000);
+      };
+    } else {
+      // No real origin (screenshot harness) — poll as before.
+      const poll = async () => {
+        if (!alive) return;
+        try {
+          const next = await fetchClaudeChatSession(sessionId);
           setSession(next);
           setError(null);
+        } catch (e: unknown) {
+          if (alive) setError(displayableError(e));
         }
-      } catch (e: unknown) {
-        if (alive) setError(displayableError(e));
-      }
-    };
-    const timer = window.setInterval(() => void poll(), POLL_MS);
+      };
+      pollTimer = setInterval(poll, 500);
+    }
+
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      eventSource?.close();
+      if (pollTimer) clearInterval(pollTimer);
     };
   }, [sessionId, sessionStatus]);
 
   const canSend = session?.status === "ready" && prompt.trim().length > 0 && !busy;
+  const canAbort = session?.status === "responding" && !aborting;
   const waiting = session?.status === "provisioning";
   const provisioning = session?.provisioning;
   const messages = useMemo(() => session?.messages ?? [], [session]);
@@ -96,6 +147,22 @@ export function ClaudeChatPage() {
     }
   }
 
+  async function abortTurn() {
+    if (!session) return;
+    setAborting(true);
+    try {
+      const resp = await fetch(`/api/claude/sessions/${session.session_id}/abort`, { method: "POST" });
+      if (!resp.ok && resp.status !== 409) {
+        const body = await resp.json().catch(() => null);
+        setError(body?.detail ?? "Failed to abort");
+      }
+    } catch (e: unknown) {
+      setError(displayableError(e));
+    } finally {
+      setAborting(false);
+    }
+  }
+
   async function closeSession() {
     if (!session) return;
     setBusy(true);
@@ -124,6 +191,11 @@ export function ClaudeChatPage() {
               <Badge color={statusColor(session.status)} variant="light">
                 {session.status}
               </Badge>
+              {canAbort && (
+                <Button variant="light" color="orange" onClick={() => void abortTurn()} loading={aborting}>
+                  Abort
+                </Button>
+              )}
               <Button variant="light" color="red" onClick={() => void closeSession()} loading={busy}>
                 Close session
               </Button>

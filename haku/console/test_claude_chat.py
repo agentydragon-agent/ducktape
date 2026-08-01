@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -237,7 +238,7 @@ def test_bridge_authentication_distinguishes_accept_terminal_and_rejected() -> N
         bridge_token_fingerprint=ClaudeChatStore._fingerprint(token),
         updated_at=None,
     )
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)))
+    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), database_url="postgresql://test")
 
     assert store.authenticate_bridge(session_id, token) == "accepted"
     assert record.status == "ready"
@@ -254,7 +255,7 @@ def test_bridge_authentication_distinguishes_accept_terminal_and_rejected() -> N
 def test_deliberate_close_is_not_reclassified_as_runner_failure() -> None:
     session_id = uuid4()
     record = SimpleNamespace(status="closing", error=None, bridge_token_fingerprint=b"cleanup-pending", updated_at=None)
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)))
+    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), database_url="postgresql://test")
 
     store.fail(session_id, "sandbox runner disconnected")
     assert record.status == "closing"
@@ -383,7 +384,9 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use()
     )
 
     session_id = uuid4()
-    await service._run_turn(cast(Any, _ToolUseClaudeClient()), session_id, "Check the Haku MCP catalog")
+    await service._run_turn(
+        cast(Any, _ToolUseClaudeClient()), session_id, "Check the Haku MCP catalog", abort_event=asyncio.Event()
+    )
 
     expected = [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}]
     assert len(store.message_ids) == 2
@@ -506,6 +509,13 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup() -> None:
 
     assert claims.deleted == session_ids
     assert store.completed == session_ids
+
+
+def test_request_abort_returns_false_without_connected_runner() -> None:
+    service = ClaudeChatService(
+        _runtime_config(), cast(Any, _ReconcileStore([])), cast(Any, _LifecycleClaims()), mcp_token=SecretStr("unused")
+    )
+    assert service.request_abort(uuid4()) is False
 
 
 if __name__ == "__main__":

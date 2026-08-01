@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import collections.abc
+import contextlib
 import hashlib
+import json
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
 
+import psycopg
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -20,11 +24,12 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk.types import StreamEvent
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig
@@ -37,6 +42,9 @@ from haku.runtime.agent_sdk_transport.transport import WebSocketTransport
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
 logger = logging.getLogger(__name__)
+
+_PROMPT_CHANNEL = "claude_chat_prompt"
+_UPDATE_CHANNEL = "claude_chat_update"
 
 SessionStatus = Literal["provisioning", "ready", "responding", "closing", "closed", "failed"]
 MessageRole = Literal["user", "assistant"]
@@ -279,14 +287,21 @@ class KubernetesSandboxClaims:
 
 
 class ClaudeChatStore:
-    """Small synchronous Postgres store; async callers dispatch operations to worker threads."""
+    """Synchronous Postgres store for Claude chat sessions."""
 
-    def __init__(self, sessions: sessionmaker[Session]):
+    def __init__(self, sessions: sessionmaker[Session], database_url: str):
         self._sessions = sessions
+        self._database_url = database_url
+        self._poll_fallback_seconds: float = 0.25
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
+
+    @staticmethod
+    def _notify(db: Session, channel: str, session_id: UUID) -> None:
+        """Emit ``pg_notify`` inside an active session transaction."""
+        db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": str(session_id)})
 
     def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
         now = datetime.now(UTC)
@@ -396,6 +411,7 @@ class ClaudeChatStore:
             db.add(message)
             chat.status = "responding"
             chat.updated_at = now
+            self._notify(db, _PROMPT_CHANNEL, session_id)
         return _message_view(message)
 
     def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
@@ -464,6 +480,7 @@ class ClaudeChatStore:
             if chat.status not in {"closing", "closed", "failed"}:
                 chat.status = "responding"
             chat.updated_at = now
+            self._notify(db, _UPDATE_CHANNEL, session_id)
 
     def complete_turn(self, session_id: UUID) -> None:
         now = datetime.now(UTC)
@@ -512,6 +529,50 @@ class ClaudeChatStore:
             if chat is not None and chat.status != "failed":
                 chat.status = "closed"
                 chat.updated_at = datetime.now(UTC)
+                self._notify(db, _UPDATE_CHANNEL, session_id)
+
+    def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
+        with self._sessions() as db:
+            return (
+                db.scalar(
+                    select(ClaudeChatSession.session_id).where(
+                        ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
+                    )
+                )
+                is not None
+            )
+
+    async def _listen(self, channel: str, session_id: UUID, *, timeout_seconds: float) -> bool:
+        """Block until a Postgres NOTIFY on *channel* fires for *session_id*.
+
+        Returns ``True`` on match, ``False`` on timeout.
+        """
+        dsn = self._database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+        try:
+            async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as conn:
+                await conn.execute(f"LISTEN {channel}")
+                try:
+                    async with asyncio.timeout(timeout_seconds):
+                        async for note in conn.notifies():
+                            if note.payload == str(session_id):
+                                return True
+                    return False
+                except (TimeoutError, asyncio.CancelledError):
+                    return False
+                finally:
+                    await conn.execute(f"UNLISTEN {channel}")
+        except Exception:
+            logger.debug("LISTEN/NOTIFY failed on %s for session %s; falling back to poll", channel, session_id)
+            await asyncio.sleep(self._poll_fallback_seconds)
+            return False
+
+    async def listen_for_update(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> None:
+        """Wait for a LISTEN/NOTIFY on the update channel for this session."""
+        await self._listen(_UPDATE_CHANNEL, session_id, timeout_seconds=timeout_seconds)
+
+    async def wait_for_prompt(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> bool:
+        """Wait for a prompt NOTIFY. Returns True if a prompt notification arrived."""
+        return await self._listen(_PROMPT_CHANNEL, session_id, timeout_seconds=timeout_seconds)
 
 
 class StarletteTextWebSocket(TextWebSocket):
@@ -536,6 +597,14 @@ class ClaudeChatService:
         self._store = store
         self._claims = claims
         self._mcp_token = mcp_token
+        self._abort_events: dict[UUID, asyncio.Event] = {}
+
+    def request_abort(self, session_id: UUID) -> bool:
+        event = self._abort_events.get(session_id)
+        if event is not None:
+            event.set()
+            return True
+        return False
 
     async def create(self, operator_id: UUID) -> ClaudeChatSessionView:
         view, token = await asyncio.to_thread(self._store.create, operator_id)
@@ -619,6 +688,8 @@ class ClaudeChatService:
             )
         )
         client = ClaudeSDKClient(options=options, transport=WebSocketTransport(adapter, build_claude_launch(options)))
+        abort_event = asyncio.Event()
+        self._abort_events[session_id] = abort_event
         try:
             await client.connect()
             while True:
@@ -627,84 +698,109 @@ class ClaudeChatService:
                     break
                 prompt = await asyncio.to_thread(self._store.next_prompt, session_id)
                 if prompt is None:
-                    await asyncio.sleep(self._config.prompt_poll_seconds)
+                    # Wait for a LISTEN/NOTIFY instead of polling.
+                    await self._store.wait_for_prompt(session_id, timeout_seconds=30.0)
                     continue
                 _, text = prompt
                 try:
-                    await self._run_turn(client, session_id, text)
+                    await self._run_turn(client, session_id, text, abort_event=abort_event)
                 except Exception as error:
                     await asyncio.to_thread(self._store.fail, session_id, str(error))
                     break
+                abort_event.clear()
         except WebSocketDisconnect:
             await asyncio.to_thread(self._store.fail, session_id, "sandbox runner disconnected")
         except Exception as error:
             await asyncio.to_thread(self._store.fail, session_id, f"Claude runtime failed: {error}")
         finally:
+            self._abort_events.pop(session_id, None)
             await client.disconnect()
             await self._cleanup_terminal_claim(session_id)
             await asyncio.to_thread(self._store.closed, session_id)
 
-    async def _run_turn(self, client: ClaudeSDKClient, session_id: UUID, prompt: str) -> None:
+    async def _run_turn(
+        self, client: ClaudeSDKClient, session_id: UUID, prompt: str, *, abort_event: asyncio.Event
+    ) -> None:
         await client.query(prompt)
         assistant_id: UUID | None = None
         streamed = ""
         saw_assistant_message = False
         result: ResultMessage | None = None
         try:
-            async for message in client.receive_response():
-                if isinstance(message, StreamEvent):
-                    delta = _text_delta(message.event)
-                    if not delta:
-                        continue
-                    if assistant_id is None:
-                        assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
-                    streamed += delta
-                    await asyncio.to_thread(self._store.update_assistant, session_id, assistant_id, streamed)
-                elif isinstance(message, AssistantMessage):
-                    saw_assistant_message = True
-                    if assistant_id is None:
-                        assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
-                    text = "".join(block.text for block in message.content if isinstance(block, TextBlock)).strip()
-                    tool_uses = [
-                        {"tool_use_id": block.id, "name": block.name, "input": block.input}
-                        for block in message.content
-                        if isinstance(block, ToolUseBlock)
-                    ]
-                    await asyncio.to_thread(
-                        self._store.update_assistant,
-                        session_id,
-                        assistant_id,
-                        text or streamed.strip(),
-                        tool_uses=tool_uses,
-                        complete=True,
-                    )
-                    assistant_id = None
-                    streamed = ""
-                elif isinstance(message, ResultMessage):
-                    result = message
+            response_iter = client.receive_response().__aiter__()
+            while True:
+                done, pending = await asyncio.wait(
+                    [asyncio.ensure_future(response_iter.__anext__()), asyncio.ensure_future(abort_event.wait())],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if abort_event.is_set():
+                    with contextlib.suppress(Exception):
+                        await client.interrupt()
+                    # Drain remaining messages from the interrupted turn.
+                    async for message in response_iter:
+                        if isinstance(message, ResultMessage):
+                            result = message
+                            break
+                    break
+                for task in done:
+                    exc = task.exception()
+                    if exc is not None:
+                        for t in pending:
+                            t.cancel()
+                        raise exc
+                    msg = task.result()
+                    if not isinstance(msg, (StreamEvent, AssistantMessage, ResultMessage)):
+                        continue  # abort_event.wait() task — skip
+                    if isinstance(msg, StreamEvent):
+                        delta = _text_delta(msg.event)
+                        if not delta:
+                            continue
+                        if assistant_id is None:
+                            assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
+                        streamed += delta
+                        await asyncio.to_thread(self._store.update_assistant, session_id, assistant_id, streamed)
+                    elif isinstance(msg, AssistantMessage):
+                        saw_assistant_message = True
+                        if assistant_id is None:
+                            assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
+                        text = "".join(block.text for block in msg.content if isinstance(block, TextBlock)).strip()
+                        tool_uses = [
+                            {"tool_use_id": block.id, "name": block.name, "input": block.input}
+                            for block in msg.content
+                            if isinstance(block, ToolUseBlock)
+                        ]
+                        await asyncio.to_thread(
+                            self._store.update_assistant,
+                            session_id,
+                            assistant_id,
+                            text or streamed.strip(),
+                            tool_uses=tool_uses,
+                            complete=True,
+                        )
+                        assistant_id = None
+                        streamed = ""
+                    elif isinstance(msg, ResultMessage):
+                        result = msg
+                for task in pending:
+                    task.cancel()
+                if result is not None:
+                    break
             if result is None:
                 raise RuntimeError("Claude response ended without a result")
-            if result.is_error:
+            if result.is_error and not abort_event.is_set():
                 raise RuntimeError(f"Claude returned {result.subtype}: {result.stop_reason or 'unknown error'}")
+            final_text = streamed.strip() or (result.result or "").strip()
+            if abort_event.is_set():
+                final_text += "\n\n[aborted by operator]"
             if assistant_id is not None:
                 await asyncio.to_thread(
-                    self._store.update_assistant,
-                    session_id,
-                    assistant_id,
-                    streamed.strip() or (result.result or "").strip(),
-                    tool_uses=[],
-                    complete=True,
+                    self._store.update_assistant, session_id, assistant_id, final_text, tool_uses=[], complete=True
                 )
                 assistant_id = None
             elif not saw_assistant_message:
                 assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
                 await asyncio.to_thread(
-                    self._store.update_assistant,
-                    session_id,
-                    assistant_id,
-                    (result.result or "").strip(),
-                    tool_uses=[],
-                    complete=True,
+                    self._store.update_assistant, session_id, assistant_id, final_text, tool_uses=[], complete=True
                 )
                 assistant_id = None
             await asyncio.to_thread(self._store.complete_turn, session_id)
@@ -862,6 +958,52 @@ async def get_session(
         return await service.get(actor.operator_id, session_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Claude chat session not found") from error
+
+
+async def _sse_stream(
+    store: ClaudeChatStore, operator_id: UUID, session_id: UUID
+) -> collections.abc.AsyncIterator[str]:
+    """Server-Sent Events stream delivering real-time session updates via LISTEN/NOTIFY."""
+    yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+    try:
+        last_view = await asyncio.to_thread(store.get, operator_id, session_id)
+    except KeyError:
+        yield f"data: {json.dumps({'type': 'end'})}\n\n"
+        return
+    yield f"data: {last_view.model_dump_json()}\n\n"
+    while True:
+        if last_view.status in {"closed", "failed"}:
+            yield f"data: {json.dumps({'type': 'end'})}\n\n"
+            return
+        await store.listen_for_update(session_id, timeout_seconds=30.0)
+        try:
+            next_view = await asyncio.to_thread(store.get, operator_id, session_id)
+        except KeyError:
+            yield f"data: {json.dumps({'type': 'end'})}\n\n"
+            return
+        if next_view.model_dump_json() != last_view.model_dump_json():
+            last_view = next_view
+            yield f"data: {next_view.model_dump_json()}\n\n"
+
+
+@router.get("/api/claude/sessions/{session_id}/stream")
+async def stream_session(session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep) -> StreamingResponse:
+    if not await asyncio.to_thread(store.session_exists, actor.operator_id, session_id):
+        raise HTTPException(status_code=404, detail="Claude chat session not found")
+    return StreamingResponse(
+        _sse_stream(store, actor.operator_id, session_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/api/claude/sessions/{session_id}/abort", status_code=202)
+async def abort_session(session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep) -> dict[str, str]:
+    if not await asyncio.to_thread(service._store.session_exists, actor.operator_id, session_id):
+        raise HTTPException(status_code=404, detail="Claude chat session not found")
+    if not service.request_abort(session_id):
+        raise HTTPException(status_code=409, detail="no active turn to abort")
+    return {"status": "aborted"}
 
 
 @router.post("/api/claude/sessions/{session_id}/messages")
