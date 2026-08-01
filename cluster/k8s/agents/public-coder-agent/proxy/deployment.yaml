@@ -57,6 +57,13 @@ spec:
                 secretKeyRef:
                   name: public-coder-agent-github-token
                   key: GITHUB_TOKEN
+            # Dedicated Haku Console bearer, held by the proxy rather than the agent. iron.yaml
+            # substitutes it only for the exact public Haku host's Authorization header.
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-public-coder-agent
+                  key: token
           ports:
             - name: proxy
               containerPort: 8080

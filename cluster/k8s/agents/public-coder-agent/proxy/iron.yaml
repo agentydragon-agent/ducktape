@@ -75,6 +75,16 @@ transforms:
             - host: "api.github.com"
             - host: "github.com"
             - host: "codeload.github.com"
+        - source:
+            type: env
+            var: HAKU_CONSOLE_TOKEN
+          replace:
+            # The OpenClaw container can present this as a normal bearer but can never read the
+            # real credential. Scope replacement to Authorization on the exact console host.
+            proxy_value: "proxy-haku-console-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "haku.allegedly.works"
 
 log:
   level: "info"

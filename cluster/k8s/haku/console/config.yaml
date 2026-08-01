@@ -140,6 +140,13 @@ static_agents:
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
     auto_approval_policy: haku_v1
+  - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+    display_name: public-coder-agent
+    token_env_var: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
+    operator_subject_env: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
+    # Coder may submit exact privileged calls for operator review, but receives no standing
+    # authority: every tool remains approval-wrapped and Coder cannot approve its own requests.
+    auto_approval_policy: no_auto_approval
 operator_connection_providers:
   google_mail:
     kind: google

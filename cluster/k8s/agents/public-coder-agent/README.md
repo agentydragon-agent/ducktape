@@ -33,6 +33,13 @@ The GitHub credential stays in the proxy pod. The agent sees only
 `proxy-github-placeholder`; iron-proxy replaces it in the authentication header
 and only on scoped GitHub hosts.
 
+Haku Console privileged calls use the same mediated shape. Terraform generates a dedicated
+`public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
+OpenClaw container sees `proxy-haku-console-placeholder`, which is replaced only in the
+`Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the explicit
+`no_auto_approval` policy: every tool call becomes an operator-reviewed request, including the
+cluster-admin-backed kubectl passthrough surface, and the Agent bearer cannot approve requests.
+
 BuildBuddy is the deliberate exception. The agent receives the real shared API
 key from the reflected `buildbuddy-api-key` Secret. A local Bazel client or the
 local `bb remote` control channel could each use proxy substitution alone, but

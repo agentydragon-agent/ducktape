@@ -182,6 +182,17 @@
       }
     }
   },
+  "mcp": {
+    "servers": {
+      "haku-console": {
+        "url": "https://haku.allegedly.works/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
+        }
+      }
+    }
+  },
   "tools": {
     "allow": [
       "exec",
@@ -192,7 +203,8 @@
       "apply_patch",
       "memory_get",
       "memory_search",
-      "session_status"
+      "session_status",
+      "bundle-mcp"
     ],
     "elevated": {
       "enabled": false

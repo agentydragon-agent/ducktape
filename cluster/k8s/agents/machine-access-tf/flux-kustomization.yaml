@@ -39,3 +39,5 @@ spec:
     # TF writes the `haku-console-oidc` secret (MCP OIDCProxy + operator-login client
     # credentials + session secret) into the `haku-console` namespace.
     - name: haku-console-namespace
+    # TF also writes public-coder-agent's proxy-held Haku Console bearer into this namespace.
+    - name: public-coder-agent-namespace
