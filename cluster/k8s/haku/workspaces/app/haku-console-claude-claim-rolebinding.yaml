@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: haku-console-claude-claims
-  namespace: haku-sandbox
+  namespace: haku-claude-sandbox
 subjects:
   - kind: ServiceAccount
     name: haku-console

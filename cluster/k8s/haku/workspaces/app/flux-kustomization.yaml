@@ -4,7 +4,7 @@ metadata:
   name: haku-workspaces
   namespace: flux-system
   annotations:
-    description: Haku sandbox template + warm pool in haku-sandbox (in-cluster exec target handed out by the sandbox-provisioning MCP). See haku/sandbox_mcp/README.md.
+    description: General Haku workspaces in haku-sandbox plus Console-owned Claude runners in the isolated haku-claude-sandbox namespace.
 spec:
   retryInterval: 1m
   interval: 10m
@@ -18,6 +18,7 @@ spec:
   dependsOn:
     - name: agent-sandbox-controller # shared CRDs + controller
     - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
+    - name: haku-claude-namespace # isolated namespace for the OAuth-capable Console runners
     - name: haku-egress-proxy # the fence haku-sandbox is opted into
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
     - name: external-secrets-config # ClusterSecretStore + CRDs for the ESO

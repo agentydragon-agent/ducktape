@@ -1,5 +1,19 @@
 # Non-secret haku-console config. Secret values stay in env/Kubernetes Secrets.
 #
+# Console-owned Claude Agent Sandbox runtime. Every value is explicit deployment
+# wiring; the application deliberately has no topology/path/proxy defaults. The
+# placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+claude_runtime:
+  namespace: haku-claude-sandbox
+  warm_pool: haku-claude
+  cwd: /workspace
+  session_ttl_seconds: 7200
+  prompt_poll_seconds: 0.25
+  oauth_placeholder: sk-ant-oat01-proxy-haku-claude-placeholder
+  https_proxy: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
+  ca_bundle: /egress-proxy-ca/ca-certificates.crt
+  no_proxy: 127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8
+
 # Auto-approval is an explicit per-Agent policy graph. Exact-tool atoms grant standing authority
 # only to the named tools; newly reflected tools remain manual-approval by default. Conditional
 # atoms remain typed code-owned evaluators. `haku_v1` preserves Haku's reviewed authority as of

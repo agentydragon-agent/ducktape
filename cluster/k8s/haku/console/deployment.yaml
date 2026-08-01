@@ -47,8 +47,9 @@ spec:
         app.kubernetes.io/name: haku-console
     spec:
       # Narrow Claude-runtime identity: create/delete/get haku-claude SandboxClaims and read
-      # their assigned Sandbox + Pod in haku-sandbox so the Operator UI can explain provisioning.
-      # It has no list/watch, Secret, log, exec, or SandboxTemplate access.
+      # their assigned Sandbox + Pod in the dedicated haku-claude-sandbox namespace so the
+      # Operator UI can explain provisioning. It has no list/watch, Secret, log, exec, or
+      # SandboxTemplate access.
       serviceAccountName: haku-console
       automountServiceAccountToken: true
       # Don't inject the kubelet's {SVCNAME}_* service-link env vars: the haku-console
@@ -111,18 +112,6 @@ spec:
               value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
-            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__NAMESPACE
-              value: haku-sandbox
-            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__WARM_POOL
-              value: haku-claude
-            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__CWD
-              value: /workspace
-            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__OAUTH_PLACEHOLDER
-              value: sk-ant-oat01-proxy-haku-claude-placeholder
-            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__HTTPS_PROXY
-              value: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
-            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__CA_BUNDLE
-              value: /egress-proxy-ca/ca-certificates.crt
             - name: HAKU_CONSOLE_MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
             # Direct tana-rw credential. It is resolved only while Console calls the internal

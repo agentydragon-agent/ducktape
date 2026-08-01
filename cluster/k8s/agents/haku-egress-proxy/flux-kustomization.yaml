@@ -13,6 +13,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: haku-egress-proxy-namespace
+    - name: haku-claude-namespace
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector

@@ -96,9 +96,8 @@ def sdk_environment() -> dict[str, str]:
         "OTEL_LOG_TOOL_DETAILS": "1",
         "OTEL_LOG_TOOL_CONTENT": "1",
         "OTEL_LOG_RAW_API_BODIES": "1",
-        # Kyverno's pod-wide NO_PROXY includes *.allegedly.works for internal
-        # service ingress. Override it only for the CLI subprocess so the public
-        # Alloy OTLP endpoint cannot bypass haku-sandbox's forced proxy.
+        # Keep public allegedly.works names on the CLI's explicit proxy path; only
+        # cluster-local service names bypass the dedicated Claude sandbox fence.
         "NO_PROXY": (
             "127.0.0.1,localhost,*.forgejo,.forgejo,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
         ),

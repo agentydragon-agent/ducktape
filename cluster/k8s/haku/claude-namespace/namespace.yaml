@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: haku-claude-sandbox
+  labels:
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
+    name: haku-claude-sandbox
+    # Console-owned Claude runners are a separate trust domain from Haku's general
+    # compute namespace. In particular, only this namespace can reach the proxy that
+    # substitutes the operator's Claude subscription OAuth token.
+    pod-security.kubernetes.io/enforce: baseline
