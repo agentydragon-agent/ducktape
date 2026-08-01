@@ -26,14 +26,14 @@ _BROWSER_ISSUER = "https://auth.test/application/o/haku-console/"
 _MCP_ISSUER = "https://auth.test/application/o/haku-console-mcp/"
 
 
-def _store(database_url: str) -> PostgresOperatorIdentityStore:
+async def _store(database_url: str) -> PostgresOperatorIdentityStore:
     return PostgresOperatorIdentityStore(
         console_sessions(database_url),
         OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})),
     )
 
 
-def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rejected(migrated_db_url: str) -> None:
+async def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rejected(migrated_db_url: str) -> None:
     store = _store(migrated_db_url)
     browser = store.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="authentik-user-42")
@@ -50,7 +50,7 @@ def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rejected(
         )
 
 
-def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_url: str) -> None:
+async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_url: str) -> None:
     def resolve(issuer: str) -> tuple[object, object]:
         identity = _store(migrated_db_url).resolve_verified_identity(
             VerifiedExternalIdentity(issuer=issuer, subject="concurrent-user")
@@ -73,7 +73,7 @@ def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_ur
         await engine.dispose()
 
 
-def test_disabled_operator_invalidates_session_static_and_resolution_paths(migrated_db_url: str) -> None:
+async def test_disabled_operator_invalidates_session_static_and_resolution_paths(migrated_db_url: str) -> None:
     store = _store(migrated_db_url)
     identity = store.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="disabled-user")
