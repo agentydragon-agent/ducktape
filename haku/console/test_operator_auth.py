@@ -23,6 +23,7 @@ import yaml
 from fastapi.routing import APIRoute
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from haku.console import operator_auth, operator_login_flow
 from haku.console.app import create_app

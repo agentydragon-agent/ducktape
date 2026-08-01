@@ -18,6 +18,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import metadata
@@ -71,7 +72,7 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
     with admin_engine.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    await admin_engine.dispose()
+    admin_engine.dispose()
 
     yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
 
@@ -561,7 +562,7 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
             context = MigrationContext.configure(conn, opts={"compare_type": True})
             assert compare_metadata(context, metadata) == []
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: str) -> None:
@@ -664,7 +665,7 @@ def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: st
                 == 3
             )
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db_url: str) -> None:
@@ -735,7 +736,7 @@ def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db
             assert conn.execute(text("SELECT count(*) FROM provider_connections")).scalar_one() == 0
             assert conn.execute(text("SELECT count(*) FROM provider_connection_flows")).scalar_one() == 0
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) -> None:
@@ -748,7 +749,7 @@ def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) 
         with pytest.raises(ProgrammingError, match=r"provider_connections\.provider_name"):
             apply_migrations(db_url)
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_database_already_at_head_is_unchanged(db_url: str) -> None:
@@ -785,7 +786,7 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
                 == 1
             )
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: str) -> None:
@@ -848,7 +849,7 @@ def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: s
             ).one()
             assert statuses == ("active", "active")
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_url: str) -> None:
@@ -922,7 +923,7 @@ def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_
                 {"reservation_id": graph.reservation_id},
             )
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_interaction_phase_identity_and_exact_tuple_are_one_time(db_url: str) -> None:
@@ -1149,7 +1150,7 @@ def test_interaction_phase_identity_and_exact_tuple_are_one_time(db_url: str) ->
             )
             assert audit_counts == {"interactions": 1, "reservations": 0}
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def test_grant_owner_scope_subtype_and_provenance_fail_closed(db_url: str) -> None:
@@ -1230,7 +1231,7 @@ def test_grant_owner_scope_subtype_and_provenance_fail_closed(db_url: str) -> No
                 {"operator_id": attacker.operator_id, "anchor_id": owner.anchor_id},
             )
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def _insert_static_replacement(
@@ -1402,7 +1403,7 @@ def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_ur
                 {"binding_id": generation_three, "now": _now()},
             )
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 def _insert_tool_call(conn: Connection, tool_call_id: str) -> None:
@@ -1502,7 +1503,7 @@ def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db
                 {"operator_id": identity.operator_id},
             )
     finally:
-        await engine.dispose()
+        engine.dispose()
 
 
 if __name__ == "__main__":

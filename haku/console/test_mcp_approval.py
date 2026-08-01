@@ -21,7 +21,7 @@ from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -551,9 +551,11 @@ def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, acto
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
-def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
+async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
-    engine = create_engine(app.state.settings.database_url.get_secret_value())
+    engine = create_async_engine(
+        app.state.settings.database_url.get_secret_value().replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+    )
     try:
         async with AsyncSession(engine) as session:
             binding_id, agent_id, operator_id = await session.execute(
@@ -767,7 +769,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         record = _submit_request(
             client,
             SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
-            actor=_static_agent_actor(client, "tool-token"),
+            actor=await _static_agent_actor(client, "tool-token"),
         )
         pending = operator.get("/api/approvals/pending").json()
 
@@ -811,7 +813,7 @@ def test_list_tool_calls_filters_by_auto_approved(
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
         client.app.state.provider_connection_store.access_token_for = AsyncMock(return_value="operator-token")
-        agent = _static_agent_actor(client, "tool-token")
+        agent = await _static_agent_actor(client, "tool-token")
         auto = _submit_request(
             client,
             SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
@@ -854,7 +856,7 @@ def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
         make_client(config_file=console_config) as client,
         make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
     ):
-        agent = _static_agent_actor(client, _AGENT_TOKEN)
+        agent = await _static_agent_actor(client, _AGENT_TOKEN)
         pending = _submit_request(client, _agent_stock_add(), actor=agent)
         assert [c["tool_call_id"] for c in operator.get("/api/approvals/pending").json()["approvals"]] == [
             pending["tool_call_id"]
@@ -883,7 +885,7 @@ def test_websocket_receives_agent_withdrawal_invalidation(
         make_client(config_file=console_config) as client,
         make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
     ):
-        agent = _static_agent_actor(client, _AGENT_TOKEN)
+        agent = await _static_agent_actor(client, _AGENT_TOKEN)
         with operator.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
             assert ws.receive_json() == {"event_type": "hello"}
             pending = _submit_request(client, _agent_stock_add(), actor=agent)
@@ -915,7 +917,7 @@ def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
                 arguments={"thread_ids": ["t1"], "add": ["INBOX"]},
                 wait_for_ms=0,
             ),
-            actor=_static_agent_actor(client, "tool-token"),
+            actor=await _static_agent_actor(client, "tool-token"),
         )
         pending = operator.get("/api/approvals/pending").json()["approvals"]
 
@@ -1110,13 +1112,13 @@ def test_routing_executes_each_agent_as_its_own_operator(
                 SubmitToolCallRequest(
                     server_id="grocy-sf", tool_name="products_list", arguments={"detail": "full"}, wait_for_ms=0
                 ),
-                actor=_static_agent_actor(client, bearer),
+                actor=await _static_agent_actor(client, bearer),
             )
             assert record["status"] == "ok", record
             call_ids.append(record["tool_call_id"])
 
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
-            actor = _static_agent_actor(client, bearer)
+            actor = await _static_agent_actor(client, bearer)
             listed = client.app.state.tool_call_service.list_tool_calls(actor=actor)
             assert [call.tool_call_id for call in listed] == [expected_call_id]
             assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
@@ -1189,7 +1191,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
                     arguments={"items": [{"product_id": 123, "amount": amount}]},
                     wait_for_ms=0,
                 ),
-                actor=_static_agent_actor(agents, bearer),
+                actor=await _static_agent_actor(agents, bearer),
             )
             call_ids[name] = record["tool_call_id"]
 
@@ -1323,7 +1325,7 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_record = _submit_request(
             agent,
             SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "agent"}, wait_for_ms=0),
-            actor=_static_agent_actor(agent, "tool-token"),
+            actor=await _static_agent_actor(agent, "tool-token"),
         )
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
@@ -1452,7 +1454,7 @@ def test_audit_log_is_tenant_scoped_and_redacts_secrets(
         haku_call = _submit_request(
             agent,
             SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "two"}, wait_for_ms=0),
-            actor=_static_agent_actor(agent, "tool-token"),
+            actor=await _static_agent_actor(agent, "tool-token"),
         )
         operator_body = operator.get("/api/tool-calls").json()
         haku_body = haku_operator.get("/api/tool-calls").json()

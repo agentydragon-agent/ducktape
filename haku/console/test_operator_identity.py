@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 import pytest_bazel
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from haku.console.config import OperatorIdentityConfig
 from haku.console.conftest import console_sessions

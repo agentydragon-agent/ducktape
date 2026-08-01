@@ -12,6 +12,7 @@ import pytest_bazel
 from fastapi import HTTPException
 from mcp.shared.auth import OAuthToken
 from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig

@@ -6,6 +6,7 @@ import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest_bazel
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import McpOperatorOAuthAssociation, OperatorAuthentikToken, ProviderConnection
