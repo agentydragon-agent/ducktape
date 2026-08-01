@@ -343,6 +343,8 @@ def create_app(
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await agent_authority.reconcile_static_agents(static_agent_definitions)
+        if claude_chat_service is not None:
+            await claude_chat_service.reconcile_terminal_claims()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run():
             await console_event_hub.start()
             try:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
@@ -28,10 +29,12 @@ from haku.runtime.agent_sdk_transport.transport import WebSocketTransport
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
+logger = logging.getLogger(__name__)
 
 SessionStatus = Literal["provisioning", "ready", "responding", "closing", "closed", "failed"]
 MessageRole = Literal["user", "assistant"]
 MessageStatus = Literal["pending", "streaming", "complete", "failed"]
+BridgeAuthentication = Literal["accepted", "terminal", "rejected"]
 
 
 class ClaudeChatMessageView(BaseModel):
@@ -306,22 +309,43 @@ class ClaudeChatStore:
             )
             return _session_view(record, messages)
 
-    def authenticate_bridge(self, session_id: UUID, token: str) -> bool:
+    def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         now = datetime.now(UTC)
         with self._sessions.begin() as db:
             record = db.get(ClaudeChatSession, session_id, with_for_update=True)
-            if (
-                record is None
-                or record.status != "provisioning"
-                or record.bridge_connected_at is not None
-                or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token))
-            ):
-                return False
+            if record is None or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token)):
+                return "rejected"
+            if record.status in {"closing", "closed", "failed"}:
+                return "terminal"
+            if record.status != "provisioning" or record.bridge_connected_at is not None:
+                return "rejected"
             record.bridge_connected_at = now
-            record.bridge_token_fingerprint = b""
             record.status = "ready"
             record.updated_at = now
-            return True
+            return "accepted"
+
+    def claim_cleanup_candidates(self) -> list[UUID]:
+        """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
+
+        with self._sessions() as db:
+            return list(
+                db.scalars(
+                    select(ClaudeChatSession.session_id).where(
+                        ClaudeChatSession.status.in_(("closing", "closed", "failed")),
+                        ClaudeChatSession.bridge_token_fingerprint != b"",
+                    )
+                )
+            )
+
+    def complete_claim_cleanup(self, session_id: UUID) -> None:
+        with self._sessions.begin() as db:
+            chat = db.get(ClaudeChatSession, session_id, with_for_update=True)
+            if chat is None:
+                return
+            chat.bridge_token_fingerprint = b""
+            if chat.status == "closing":
+                chat.status = "closed"
+            chat.updated_at = datetime.now(UTC)
 
     def enqueue_prompt(self, operator_id: UUID, session_id: UUID, text: str) -> ClaudeChatMessageView:
         now = datetime.now(UTC)
@@ -416,7 +440,7 @@ class ClaudeChatStore:
         now = datetime.now(UTC)
         with self._sessions.begin() as db:
             chat = db.get(ClaudeChatSession, session_id)
-            if chat is not None:
+            if chat is not None and chat.status not in {"closing", "closed"}:
                 chat.status = "failed"
                 chat.error = error
                 chat.updated_at = now
@@ -482,6 +506,9 @@ class ClaudeChatService:
             )
         except Exception as error:
             await asyncio.to_thread(self._store.fail, view.session_id, f"sandbox provisioning failed: {error}")
+            # If claim creation reached Kubernetes before its response failed, remove the partial
+            # resource now. A failed delete leaves the rendezvous hash as a durable retry marker.
+            await self._cleanup_terminal_claim(view.session_id)
             raise
         return await self._with_provisioning(view)
 
@@ -503,9 +530,33 @@ class ClaudeChatService:
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await asyncio.to_thread(self._store.request_close, operator_id, session_id)
         await self._claims.delete(session_id=session_id)
+        await asyncio.to_thread(self._store.complete_claim_cleanup, session_id)
+
+    async def reconcile_terminal_claims(self) -> None:
+        """Finish idempotent claim cleanup left behind by an interrupted Console process."""
+
+        session_ids = await asyncio.to_thread(self._store.claim_cleanup_candidates)
+        for session_id in session_ids:
+            await self._cleanup_terminal_claim(session_id)
+
+    async def _cleanup_terminal_claim(self, session_id: UUID) -> bool:
+        try:
+            await self._claims.delete(session_id=session_id)
+        except Exception as error:
+            # Keep the credential fingerprint as a durable cleanup-pending marker so another
+            # replica or a later restart retries. Kubernetes deletion is idempotent.
+            logger.warning("Claude claim cleanup failed for session %s: %s", session_id, error)
+            return False
+        await asyncio.to_thread(self._store.complete_claim_cleanup, session_id)
+        return True
 
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
-        if not await asyncio.to_thread(self._store.authenticate_bridge, session_id, bearer):
+        authentication = await asyncio.to_thread(self._store.authenticate_bridge, session_id, bearer)
+        if authentication == "terminal":
+            await self._cleanup_terminal_claim(session_id)
+            await websocket.close(code=1008, reason="runner session is already terminal")
+            return
+        if authentication == "rejected":
             await websocket.close(code=1008, reason="invalid or consumed runner credential")
             return
         await websocket.accept()
@@ -542,7 +593,7 @@ class ClaudeChatService:
             await asyncio.to_thread(self._store.fail, session_id, f"Claude runtime failed: {error}")
         finally:
             await client.disconnect()
-            await self._claims.delete(session_id=session_id)
+            await self._cleanup_terminal_claim(session_id)
             await asyncio.to_thread(self._store.closed, session_id)
 
     async def _run_turn(self, client: ClaudeSDKClient, session_id: UUID, assistant_id: UUID, prompt: str) -> None:
