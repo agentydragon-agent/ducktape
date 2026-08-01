@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, cast
-from uuid import UUID
+from unittest.mock import patch
+from uuid import UUID, uuid4
 
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from haku.console.claude_chat import KubernetesSandboxClaims, _text_delta
+from haku.console.claude_chat import (
+    ClaudeChatService,
+    ClaudeChatSessionView,
+    ClaudeChatStore,
+    KubernetesSandboxClaims,
+    _provisioning_view,
+    _text_delta,
+)
 from haku.console.config import ClaudeRuntimeConfig
 
 
@@ -199,6 +209,211 @@ def test_text_delta_ignores_non_text_stream_events() -> None:
     assert _text_delta({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}}) == "hi"
     assert _text_delta({"type": "content_block_delta", "delta": {"type": "input_json_delta"}}) == ""
     assert _text_delta({"type": "message_start"}) == ""
+
+
+class _RecordSessions:
+    def __init__(self, record: SimpleNamespace | None):
+        self.record = record
+
+    @contextmanager
+    def begin(self):
+        yield self
+
+    def get(self, model: object, session_id: UUID, **kwargs: object) -> SimpleNamespace | None:
+        del model, session_id, kwargs
+        return self.record
+
+
+def test_bridge_authentication_distinguishes_accept_terminal_and_rejected() -> None:
+    session_id = uuid4()
+    token = "one-use-rendezvous"
+    record = SimpleNamespace(
+        status="provisioning",
+        bridge_connected_at=None,
+        bridge_token_fingerprint=ClaudeChatStore._fingerprint(token),
+        updated_at=None,
+    )
+    store = ClaudeChatStore(cast(Any, _RecordSessions(record)))
+
+    assert store.authenticate_bridge(session_id, token) == "accepted"
+    assert record.status == "ready"
+    assert record.bridge_connected_at is not None
+    # Retain only the hash until claim deletion completes. It lets terminal retries prove that
+    # they belong to the stale claim without retaining or recovering the bearer itself.
+    assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
+
+    record.status = "failed"
+    assert store.authenticate_bridge(session_id, token) == "terminal"
+    assert store.authenticate_bridge(session_id, "wrong") == "rejected"
+
+
+def test_deliberate_close_is_not_reclassified_as_runner_failure() -> None:
+    session_id = uuid4()
+    record = SimpleNamespace(status="closing", error=None, bridge_token_fingerprint=b"cleanup-pending", updated_at=None)
+    store = ClaudeChatStore(cast(Any, _RecordSessions(record)))
+
+    store.fail(session_id, "sandbox runner disconnected")
+    assert record.status == "closing"
+    assert record.error is None
+
+    store.complete_claim_cleanup(session_id)
+    assert record.status == "closed"
+    assert record.bridge_token_fingerprint == b""
+
+
+class _LifecycleStore:
+    def __init__(self, session_id: UUID, token: str):
+        self.session_id = session_id
+        self.token = token
+        self.status_value = "provisioning"
+        self.cleanup_completed: list[UUID] = []
+        self.closed_sessions: list[UUID] = []
+
+    def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
+        del operator_id
+        now = datetime.now(UTC)
+        return (
+            ClaudeChatSessionView(
+                session_id=self.session_id,
+                status="provisioning",
+                error=None,
+                created_at=now,
+                updated_at=now,
+                messages=[],
+            ),
+            self.token,
+        )
+
+    def authenticate_bridge(self, session_id: UUID, token: str) -> str:
+        assert session_id == self.session_id
+        assert token == self.token
+        self.status_value = "closing"
+        return "accepted"
+
+    def status(self, session_id: UUID) -> str:
+        assert session_id == self.session_id
+        return self.status_value
+
+    def complete_claim_cleanup(self, session_id: UUID) -> None:
+        self.cleanup_completed.append(session_id)
+
+    def closed(self, session_id: UUID) -> None:
+        self.closed_sessions.append(session_id)
+
+
+class _LifecycleClaims:
+    def __init__(self):
+        self.created: list[UUID] = []
+        self.deleted: list[UUID] = []
+
+    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
+        assert bridge_token == "bridge-token"
+        assert expires_at > datetime.now(UTC)
+        self.created.append(session_id)
+
+    async def inspect(self, *, session_id: UUID):
+        return _provisioning_view(f"claude-{session_id.hex}", step="claim_created")
+
+    async def delete(self, *, session_id: UUID) -> None:
+        self.deleted.append(session_id)
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _LifecycleWebSocket:
+    def __init__(self):
+        self.accepted = False
+        self.closed: tuple[int, str] | None = None
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        self.closed = (code, reason)
+
+
+class _LifecycleClaudeClient:
+    def __init__(self, **kwargs: object):
+        del kwargs
+        self.connected = False
+        self.disconnected = False
+
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def disconnect(self) -> None:
+        self.disconnected = True
+
+
+async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim() -> None:
+    session_id = uuid4()
+    store = _LifecycleStore(session_id, "bridge-token")
+    claims = _LifecycleClaims()
+    service = ClaudeChatService(_runtime_config(), cast(Any, store), cast(Any, claims))
+    websocket = _LifecycleWebSocket()
+
+    session = await service.create(uuid4())
+    with patch("haku.console.claude_chat.ClaudeSDKClient", _LifecycleClaudeClient):
+        await service.handle_runner(cast(Any, websocket), session_id, "bridge-token")
+
+    assert session.session_id == session_id
+    assert claims.created == [session_id]
+    assert websocket.accepted is True
+    assert websocket.closed is None
+    assert claims.deleted == [session_id]
+    assert store.cleanup_completed == [session_id]
+    assert store.closed_sessions == [session_id]
+
+
+class _TerminalStore:
+    def __init__(self):
+        self.completed: list[UUID] = []
+
+    def authenticate_bridge(self, session_id: UUID, token: str) -> str:
+        del session_id, token
+        return "terminal"
+
+    def complete_claim_cleanup(self, session_id: UUID) -> None:
+        self.completed.append(session_id)
+
+
+async def test_terminal_runner_retry_deletes_its_stale_claim() -> None:
+    session_id = uuid4()
+    store = _TerminalStore()
+    claims = _LifecycleClaims()
+    service = ClaudeChatService(_runtime_config(), cast(Any, store), cast(Any, claims))
+    websocket = _LifecycleWebSocket()
+
+    await service.handle_runner(cast(Any, websocket), session_id, "stale-but-authentic")
+
+    assert claims.deleted == [session_id]
+    assert store.completed == [session_id]
+    assert websocket.closed == (1008, "runner session is already terminal")
+
+
+class _ReconcileStore:
+    def __init__(self, session_ids: list[UUID]):
+        self.session_ids = session_ids
+        self.completed: list[UUID] = []
+
+    def claim_cleanup_candidates(self) -> list[UUID]:
+        return self.session_ids
+
+    def complete_claim_cleanup(self, session_id: UUID) -> None:
+        self.completed.append(session_id)
+
+
+async def test_startup_reconciliation_retries_terminal_claim_cleanup() -> None:
+    session_ids = [uuid4(), uuid4()]
+    store = _ReconcileStore(session_ids)
+    claims = _LifecycleClaims()
+    service = ClaudeChatService(_runtime_config(), cast(Any, store), cast(Any, claims))
+
+    await service.reconcile_terminal_claims()
+
+    assert claims.deleted == session_ids
+    assert store.completed == session_ids
 
 
 if __name__ == "__main__":
