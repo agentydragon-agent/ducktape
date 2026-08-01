@@ -21,8 +21,8 @@ spec:
     - apiVersion: batch/v1
       kind: Job
       name: haku-agent-sdk-smoke
-      namespace: haku-sandbox
+      namespace: haku-claude-sandbox
   dependsOn:
-    - name: haku-namespace
+    - name: haku-claude-namespace
     - name: haku-egress-proxy
     - name: alloy-otlp-bearer

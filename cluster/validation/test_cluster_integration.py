@@ -109,6 +109,46 @@ def test_single_external_secrets_installation(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
+def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) -> None:
+    """Only the dedicated Console runner namespace receives Claude OAuth proxy authority."""
+    template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
+    assert template["metadata"]["namespace"] == "haku-claude-sandbox"
+
+    mounts = template["spec"]["podTemplate"]["spec"]["containers"][0]["volumeMounts"]
+    assert sum(mount["mountPath"] == "/egress-proxy-ca" for mount in mounts) == 1
+
+    oauth_ingress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/claude-networkpolicy.yaml").read_text())
+    peers = oauth_ingress["spec"]["ingress"][0]["from"]
+    allowed_namespaces = {peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"] for peer in peers}
+    assert allowed_namespaces == {"haku-claude-sandbox"}
+
+    general_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text()
+    assert "haku-claude-oauth-proxy" not in general_egress
+
+    claude_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml").read_text()
+    assert "haku-claude-sandbox" in claude_egress
+    assert "haku-claude-oauth-proxy" in claude_egress
+
+    general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
+    assert "haku-claude-sandbox" not in general_injection
+
+    console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
+    assert console_config["claude_runtime"] == {
+        "namespace": "haku-claude-sandbox",
+        "warm_pool": "haku-claude",
+        "cwd": "/workspace",
+        "session_ttl_seconds": 7200,
+        "prompt_poll_seconds": 0.25,
+        "oauth_placeholder": "sk-ant-oat01-proxy-haku-claude-placeholder",
+        "https_proxy": "http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180",
+        "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
+        "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
+    }
+    deployment = yaml.safe_load((k8s_dir / "haku/console/deployment.yaml").read_text())
+    env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
+
+
 def test_terraform_backends_not_kubernetes(cluster: ParsedCluster) -> None:
     """tofu-controller Terraform CRs must use the pg backend, not kubernetes Secrets."""
     errors = check_terraform_backends(cluster)

@@ -7,10 +7,10 @@ resources:
   - sandboxtemplate-haku-claude.yaml
   - sandboxwarmpool-haku-claude.yaml
   - cleanuppolicy-haku-janitor.yaml
-  # The sandbox-provisioning MCP's claim/exec access INTO this (haku-sandbox) namespace.
-  # Lives here, not in the MCP app kustomization, because that one has a
-  # `namespace: haku-sandbox-mcp` transformer that would rewrite these to the wrong
-  # namespace. This kustomization has no transformer, so they keep namespace: haku-sandbox.
+  - cleanuppolicy-haku-claude-janitor.yaml
+  # Cross-namespace RBAC lives here rather than under a namespace-transforming
+  # workload kustomization. The general sandbox MCP bindings remain in haku-sandbox;
+  # Console's Claude claim-only binding lives in haku-claude-sandbox.
   - haku-sandbox-mcp-role.yaml
   - haku-sandbox-mcp-rolebinding.yaml
   - haku-console-claude-claim-role.yaml

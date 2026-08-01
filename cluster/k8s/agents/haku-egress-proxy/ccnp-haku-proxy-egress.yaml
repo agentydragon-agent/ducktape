@@ -45,13 +45,3 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    # Dedicated Claude OAuth-substituting proxy. The real credential stays in
-    # haku-egress-proxy; sandbox traffic can reach only its proxy listener.
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: haku-egress-proxy
-            k8s:app.kubernetes.io/name: haku-claude-oauth-proxy
-      toPorts:
-        - ports:
-            - port: "8180"
-              protocol: TCP

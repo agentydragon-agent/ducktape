@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: haku-agent-sdk-smoke
-  namespace: haku-sandbox
+  namespace: haku-claude-sandbox
   annotations:
     description: One-shot Claude Agent SDK subscription OAuth, streaming, hooks, resume, proxy, and telemetry compatibility spike.
     kustomize.toolkit.fluxcd.io/force: enabled

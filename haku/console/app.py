@@ -159,12 +159,13 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions) if settings.claude_runtime is not None else None
+    claude_runtime = console_config.claude_runtime
+    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions) if claude_runtime is not None else None
     claude_chat_service = (
         claude_chat.ClaudeChatService(
-            settings.claude_runtime, claude_chat_store, claude_chat.KubernetesSandboxClaims(settings.claude_runtime)
+            claude_runtime, claude_chat_store, claude_chat.KubernetesSandboxClaims(claude_runtime)
         )
-        if settings.claude_runtime is not None and claude_chat_store is not None
+        if claude_runtime is not None and claude_chat_store is not None
         else None
     )
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)

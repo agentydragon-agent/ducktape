@@ -37,6 +37,26 @@ class RecordingCoreV1Api:
         return self.pods[name]
 
 
+def _runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
+    values: dict[str, object] = {
+        "namespace": "haku-claude-sandbox",
+        "warm_pool": "haku-claude",
+        "cwd": "/workspace",
+        "session_ttl_seconds": 7200,
+        "prompt_poll_seconds": 0.25,
+        "oauth_placeholder": "not-a-secret",
+        "https_proxy": "http://proxy.test:8180",
+        "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
+        "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
+    }
+    values.update(overrides)
+    return ClaudeRuntimeConfig.model_validate(values)
+
+
+def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
+    assert all(field.is_required() for field in ClaudeRuntimeConfig.model_fields.values())
+
+
 def _claims(
     config: ClaudeRuntimeConfig,
 ) -> tuple[KubernetesSandboxClaims, RecordingCustomObjectsApi, RecordingCoreV1Api]:
@@ -49,9 +69,7 @@ def _claims(
 
 
 async def test_claim_injects_only_the_session_rendezvous_values() -> None:
-    config = ClaudeRuntimeConfig(
-        oauth_placeholder="sk-ant-oat01-proxy-haku-claude-placeholder", https_proxy="http://proxy.test:8180"
-    )
+    config = _runtime_config(oauth_placeholder="sk-ant-oat01-proxy-haku-claude-placeholder")
     claims, api, _ = _claims(config)
     session_id = UUID("10000000-0000-4000-8000-000000000001")
 
@@ -61,7 +79,7 @@ async def test_claim_injects_only_the_session_rendezvous_values() -> None:
 
     assert api.created is not None
     args, _ = api.created
-    assert args[:4] == ("extensions.agents.x-k8s.io", "v1beta1", "haku-sandbox", "sandboxclaims")
+    assert args[:4] == ("extensions.agents.x-k8s.io", "v1beta1", "haku-claude-sandbox", "sandboxclaims")
     body = args[4]
     assert body["metadata"]["name"] == "claude-10000000000040008000000000000001"
     assert body["spec"]["warmPoolRef"] == {"name": "haku-claude"}
@@ -73,7 +91,7 @@ async def test_claim_injects_only_the_session_rendezvous_values() -> None:
 
 
 async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
-    config = ClaudeRuntimeConfig(oauth_placeholder="not-a-secret", https_proxy="http://proxy.test:8180")
+    config = _runtime_config()
     claims, custom, core = _claims(config)
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     claim_name = "claude-10000000000040008000000000000001"
@@ -123,7 +141,7 @@ async def test_inspect_reports_each_underlying_provisioning_layer() -> None:
 
 
 async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None:
-    config = ClaudeRuntimeConfig(oauth_placeholder="not-a-secret", https_proxy="http://proxy.test:8180")
+    config = _runtime_config()
     claims, custom, core = _claims(config)
     session_id = UUID("10000000-0000-4000-8000-000000000001")
     claim_name = "claude-10000000000040008000000000000001"
@@ -162,9 +180,7 @@ async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait() -> None
 
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
-    config = ClaudeRuntimeConfig(
-        oauth_placeholder="not-a-secret", https_proxy="http://proxy.test:8180", ca_bundle="/ca/bundle.pem"
-    )
+    config = _runtime_config(ca_bundle="/ca/bundle.pem")
 
     assert config.claude_environment() == {
         "CLAUDE_CODE_OAUTH_TOKEN": "not-a-secret",

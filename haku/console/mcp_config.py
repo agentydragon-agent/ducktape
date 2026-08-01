@@ -22,7 +22,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.config import HostexecConfig, NodeDaemonsConfig, Settings
+from haku.console.config import ClaudeRuntimeConfig, HostexecConfig, NodeDaemonsConfig, Settings
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -273,6 +273,9 @@ class LoadedStaticAgent(BaseModel):
 
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
+    # Non-secret deployment wiring for the optional Console-owned Claude runtime.
+    # The real OAuth bearer remains solely in the dedicated iron-proxy.
+    claude_runtime: ClaudeRuntimeConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=_default_auto_approval_policies)
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)

@@ -5,7 +5,7 @@ apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
   name: haku-claude
-  namespace: haku-sandbox
+  namespace: haku-claude-sandbox
 spec:
   networkPolicyManagement: Unmanaged
   # Claims may inject the session id and one-use bridge token. Agent Sandbox v0.5.1
@@ -19,9 +19,10 @@ spec:
       dnsPolicy: ClusterFirst
       automountServiceAccountToken: false
       enableServiceLinks: false
-      # TODO: deliberately defer the Haku Console agent bearer, Kubernetes identity,
-      # Forgejo credentials/workspace bootstrap, MCP configuration, and every other
-      # existing haku-sandbox integration until the chat-only slice needs them.
+      # Deliberately outside haku-sandbox: Haku's general compute authority must not
+      # inherit access to the Claude OAuth-substituting proxy. Also defer the Haku
+      # Console agent bearer, Kubernetes identity, Forgejo/workspace bootstrap, MCP
+      # configuration, and every other general sandbox integration.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

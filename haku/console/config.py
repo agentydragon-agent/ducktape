@@ -169,19 +169,19 @@ class ProviderOAuthClientConfig(BaseModel):
 
 
 class ClaudeRuntimeConfig(BaseModel):
-    """Agent Sandbox runtime used by the Console-owned Claude chat page."""
+    """Explicit deploy-time wiring for the Console-owned Claude chat runtime."""
 
     model_config = ConfigDict(frozen=True)
 
-    namespace: str = "haku-sandbox"
-    warm_pool: str = "haku-claude"
-    cwd: str = "/workspace"
-    session_ttl_seconds: int = Field(default=7200, ge=300, le=86400)
-    prompt_poll_seconds: float = Field(default=0.25, ge=0.05, le=5.0)
+    namespace: str
+    warm_pool: str
+    cwd: str
+    session_ttl_seconds: int = Field(ge=300, le=86400)
+    prompt_poll_seconds: float = Field(ge=0.05, le=5.0)
     oauth_placeholder: str
     https_proxy: str
-    ca_bundle: str = "/egress-proxy-ca/ca-certificates.crt"
-    no_proxy: str = "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+    ca_bundle: str
+    no_proxy: str
 
     def claude_environment(self) -> dict[str, str]:
         return {
@@ -310,7 +310,7 @@ class Settings(BaseSettings):
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file
     # names connected MCP servers, their env-backed credential slots, composable auto-approval
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
-    # and the `hostexec` host map (in-scope machines + their exec URLs / audiences).
+    # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
     config_file: Path | None = None
 
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
@@ -321,11 +321,6 @@ class Settings(BaseSettings):
     # VAPID identity for Web Push. Reads HAKU_CONSOLE_WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
     # Unset → the console never sends push notifications and the subscribe endpoints return 503.
     web_push: WebPushConfig | None = None
-
-    # Optional Console-owned Claude chat runtime. The real subscription OAuth token is deliberately
-    # absent: Claude receives only ``oauth_placeholder`` and the dedicated iron-proxy substitutes
-    # the real bearer on the exact Anthropic destination.
-    claude_runtime: ClaudeRuntimeConfig | None = None
 
     # Outbound token endpoint budget for remote MCP operator OAuth. Refresh endpoints may
     # legitimately queue behind an authorization server's control-plane work; keep this larger
