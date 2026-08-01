@@ -24,6 +24,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -159,7 +160,16 @@ def create_app(
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
     claude_chat_store = (
-        claude_chat.ClaudeChatStore(db_sessions, database_url=database_url) if claude_runtime is not None else None
+        claude_chat.ClaudeChatStore(
+            async_sessionmaker(
+                create_async_engine(
+                    database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1), pool_pre_ping=True
+                ),
+                expire_on_commit=False,
+            )
+        )
+        if claude_runtime is not None
+        else None
     )
     claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
