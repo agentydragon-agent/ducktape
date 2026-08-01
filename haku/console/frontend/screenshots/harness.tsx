@@ -111,6 +111,7 @@ function sceneElement(scene: string) {
     case "settings-system":
       return <ConsoleScene view="settings" />;
     case "claude-chat":
+    case "claude-message-boundaries":
     case "claude-tool-use":
     case "claude-tool-use-mobile":
     case "claude-provisioning":

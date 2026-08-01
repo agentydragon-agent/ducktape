@@ -461,7 +461,17 @@ class ClaudeChatStore:
                 message.tool_uses = tool_uses
             message.status = "complete" if complete else "streaming"
             message.updated_at = now
-            chat.status = "ready" if complete else "responding"
+            if chat.status not in {"closing", "closed", "failed"}:
+                chat.status = "responding"
+            chat.updated_at = now
+
+    def complete_turn(self, session_id: UUID) -> None:
+        now = datetime.now(UTC)
+        with self._sessions.begin() as db:
+            chat = db.get(ClaudeChatSession, session_id)
+            if chat is None or chat.status in {"closing", "closed", "failed"}:
+                return
+            chat.status = "ready"
             chat.updated_at = now
 
     def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
@@ -620,11 +630,10 @@ class ClaudeChatService:
                     await asyncio.sleep(self._config.prompt_poll_seconds)
                     continue
                 _, text = prompt
-                assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
                 try:
-                    await self._run_turn(client, session_id, assistant_id, text)
+                    await self._run_turn(client, session_id, text)
                 except Exception as error:
-                    await asyncio.to_thread(self._store.fail, session_id, str(error), assistant_id)
+                    await asyncio.to_thread(self._store.fail, session_id, str(error))
                     break
         except WebSocketDisconnect:
             await asyncio.to_thread(self._store.fail, session_id, "sandbox runner disconnected")
@@ -635,49 +644,74 @@ class ClaudeChatService:
             await self._cleanup_terminal_claim(session_id)
             await asyncio.to_thread(self._store.closed, session_id)
 
-    async def _run_turn(self, client: ClaudeSDKClient, session_id: UUID, assistant_id: UUID, prompt: str) -> None:
+    async def _run_turn(self, client: ClaudeSDKClient, session_id: UUID, prompt: str) -> None:
         await client.query(prompt)
+        assistant_id: UUID | None = None
         streamed = ""
-        final_parts: list[str] = []
-        tool_uses: dict[str, dict[str, Any]] = {}
+        saw_assistant_message = False
         result: ResultMessage | None = None
-        async for message in client.receive_response():
-            if isinstance(message, StreamEvent):
-                delta = _text_delta(message.event)
-                if delta:
+        try:
+            async for message in client.receive_response():
+                if isinstance(message, StreamEvent):
+                    delta = _text_delta(message.event)
+                    if not delta:
+                        continue
+                    if assistant_id is None:
+                        assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
                     streamed += delta
                     await asyncio.to_thread(self._store.update_assistant, session_id, assistant_id, streamed)
-            elif isinstance(message, AssistantMessage):
-                final_parts.extend(block.text for block in message.content if isinstance(block, TextBlock))
-                changed = False
-                for block in message.content:
-                    if not isinstance(block, ToolUseBlock):
-                        continue
-                    tool_uses[block.id] = {"tool_use_id": block.id, "name": block.name, "input": block.input}
-                    changed = True
-                if changed:
+                elif isinstance(message, AssistantMessage):
+                    saw_assistant_message = True
+                    if assistant_id is None:
+                        assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
+                    text = "".join(block.text for block in message.content if isinstance(block, TextBlock)).strip()
+                    tool_uses = [
+                        {"tool_use_id": block.id, "name": block.name, "input": block.input}
+                        for block in message.content
+                        if isinstance(block, ToolUseBlock)
+                    ]
                     await asyncio.to_thread(
                         self._store.update_assistant,
                         session_id,
                         assistant_id,
-                        streamed,
-                        tool_uses=list(tool_uses.values()),
+                        text or streamed.strip(),
+                        tool_uses=tool_uses,
+                        complete=True,
                     )
-            elif isinstance(message, ResultMessage):
-                result = message
-        if result is None:
-            raise RuntimeError("Claude response ended without a result")
-        if result.is_error:
-            raise RuntimeError(f"Claude returned {result.subtype}: {result.stop_reason or 'unknown error'}")
-        final = "".join(final_parts).strip() or streamed.strip() or (result.result or "").strip()
-        await asyncio.to_thread(
-            self._store.update_assistant,
-            session_id,
-            assistant_id,
-            final,
-            tool_uses=list(tool_uses.values()),
-            complete=True,
-        )
+                    assistant_id = None
+                    streamed = ""
+                elif isinstance(message, ResultMessage):
+                    result = message
+            if result is None:
+                raise RuntimeError("Claude response ended without a result")
+            if result.is_error:
+                raise RuntimeError(f"Claude returned {result.subtype}: {result.stop_reason or 'unknown error'}")
+            if assistant_id is not None:
+                await asyncio.to_thread(
+                    self._store.update_assistant,
+                    session_id,
+                    assistant_id,
+                    streamed.strip() or (result.result or "").strip(),
+                    tool_uses=[],
+                    complete=True,
+                )
+                assistant_id = None
+            elif not saw_assistant_message:
+                assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
+                await asyncio.to_thread(
+                    self._store.update_assistant,
+                    session_id,
+                    assistant_id,
+                    (result.result or "").strip(),
+                    tool_uses=[],
+                    complete=True,
+                )
+                assistant_id = None
+            await asyncio.to_thread(self._store.complete_turn, session_id)
+        except Exception as error:
+            if assistant_id is not None:
+                await asyncio.to_thread(self._store.fail, session_id, str(error), assistant_id)
+            raise
 
     async def aclose(self) -> None:
         await self._claims.aclose()
