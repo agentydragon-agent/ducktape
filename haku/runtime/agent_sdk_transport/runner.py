@@ -45,15 +45,9 @@ def build_claude_command(claude_path: Path, launch: ClaudeLaunch) -> list[str]:
 
 def build_claude_environment(launch: ClaudeLaunch) -> dict[str, str]:
     """Overlay trusted launch values without exposing the bridge credential."""
-    environment = {
-        key: value for key, value in os.environ.items() if key not in {"CLAUDECODE", "HAKU_AGENT_SDK_RUNNER_TOKEN"}
-    }
+    environment = {key: value for key, value in os.environ.items() if key != "HAKU_AGENT_SDK_RUNNER_TOKEN"}
     environment.update(
-        {
-            key: value
-            for key, value in launch.environment.items()
-            if key not in {"CLAUDECODE", "HAKU_AGENT_SDK_RUNNER_TOKEN"}
-        }
+        {key: value for key, value in launch.environment.items() if key != "HAKU_AGENT_SDK_RUNNER_TOKEN"}
     )
     return environment
 
@@ -145,9 +139,15 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None) -
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bridge a Haku Console WebSocket to Claude Code stdio.")
-    parser.add_argument("--websocket-url", required=True)
-    parser.add_argument("--claude-path", type=Path, default=Path("claude"))
-    return parser.parse_args()
+    parser.add_argument("--websocket-url", default=os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"))
+    parser.add_argument("--session-id", default=os.environ.get("HAKU_CLAUDE_SESSION_ID"))
+    parser.add_argument("--claude-path", type=Path, default=Path(os.environ.get("HAKU_CLAUDE_PATH", "claude")))
+    args = parser.parse_args()
+    if not args.websocket_url:
+        parser.error("--websocket-url or HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL is required")
+    if args.session_id:
+        args.websocket_url = f"{args.websocket_url.rstrip('/')}/{args.session_id}"
+    return args
 
 
 def main() -> None:

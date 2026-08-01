@@ -1,0 +1,30 @@
+# Dedicated Claude Code egress proxy. This application config is mounted through
+# configMapGenerator; it is not a Kubernetes manifest (kubeconform-excluded,
+# cluster-manifest-ignored). The sandbox receives only the token-shaped placeholder;
+# the real subscription OAuth token exists only in this trusted pod.
+dns:
+  enabled: false
+
+proxy:
+  tunnel_listen: ":8180"
+
+tls:
+  mode: "mitm"
+  ca_cert: "/ca/tls.crt"
+  ca_key: "/ca/tls.key"
+
+transforms:
+  - name: secrets
+    config:
+      secrets:
+        - source:
+            type: env
+            var: CLAUDE_CODE_OAUTH_TOKEN
+          replace:
+            proxy_value: "sk-ant-oat01-proxy-haku-claude-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "api.anthropic.com"
+
+log:
+  level: "info"

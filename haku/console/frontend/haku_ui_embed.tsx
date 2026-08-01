@@ -12,6 +12,7 @@ import {
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
+import { ClaudeChatPage } from "./claude_chat_page";
 import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
@@ -617,6 +618,7 @@ export function HakuUiEmbed({
           />
         )}
         {view === "toolCalls" && <ToolCallsPage />}
+        {view === "claudeChat" && <ClaudeChatPage />}
         {view === "notFound" && (
           <section className="haku-page" aria-label="Not found">
             <div className="haku-page-list">

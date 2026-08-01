@@ -16,6 +16,8 @@ spec:
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector
+    - name: external-secrets-config
+    - name: forgejo-images
   decryption:
     provider: sops
     secretRef:

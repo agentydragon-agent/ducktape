@@ -1,4 +1,9 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "protocol",
@@ -48,6 +53,76 @@ py_binary(
         "@pypi//anyio",
         "@pypi//websockets",
     ],
+)
+
+aspect_py_binary(
+    name = "runner_image_bin",
+    main = "runner.py",
+    deps = [":runner"],
+)
+
+py_image_layer(
+    name = "runner_layers",
+    binary = ":runner_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+py_binary(
+    name = "extract_claude",
+    srcs = ["extract_claude.py"],
+)
+
+genrule(
+    name = "claude_executable",
+    srcs = ["@pypi//claude_agent_sdk:whl"],
+    outs = ["claude"],
+    cmd = "$(location :extract_claude) $(location @pypi//claude_agent_sdk:whl) $@",
+    executable = True,
+    tools = [":extract_claude"],
+)
+
+pkg_files(
+    name = "claude_files",
+    srcs = [":claude_executable"],
+    attributes = pkg_attributes(
+        group = "1000",
+        mode = "0755",
+        user = "1000",
+    ),
+    prefix = "/usr/local/bin",
+)
+
+pkg_tar(
+    name = "claude_layer",
+    srcs = [":claude_files"],
+)
+
+oci_image(
+    name = "runner_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("runner_image_bin"),
+    env = py_image_env(
+        binary_name = "runner_image_bin",
+        extra_env = {
+            "HAKU_CLAUDE_PATH": "/usr/local/bin/claude",
+            "HOME": "/home/runner",
+            "CLAUDE_CONFIG_DIR": "/claude-config",
+        },
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":runner_layers",
+        ":claude_layer",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "runner_load",
+    image = ":runner_image",
+    repo_tags = ["haku-claude-runner:latest"],
 )
 
 py_test(

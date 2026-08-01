@@ -36,6 +36,8 @@ export type OAuthConnectionResult =
   | components["schemas"]["OAuthConnectionSucceeded"]
   | components["schemas"]["OAuthConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
+export type ClaudeChatSession = components["schemas"]["ClaudeChatSessionView"];
+export type ClaudeChatMessage = components["schemas"]["ClaudeChatMessageView"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -76,6 +78,36 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   const { data, error } = await api.GET("/auth/me");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load the operator session"));
   return data;
+}
+
+export async function createClaudeChatSession(): Promise<ClaudeChatSession> {
+  const { data, error } = await api.POST("/api/claude/sessions");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to create Claude chat session"));
+  return data;
+}
+
+export async function fetchClaudeChatSession(sessionId: string): Promise<ClaudeChatSession> {
+  const { data, error } = await api.GET("/api/claude/sessions/{session_id}", {
+    params: { path: { session_id: sessionId } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load Claude chat session"));
+  return data;
+}
+
+export async function sendClaudeChatMessage(sessionId: string, text: string): Promise<ClaudeChatMessage> {
+  const { data, error } = await api.POST("/api/claude/sessions/{session_id}/messages", {
+    params: { path: { session_id: sessionId } },
+    body: { text },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to send Claude chat message"));
+  return data;
+}
+
+export async function deleteClaudeChatSession(sessionId: string): Promise<void> {
+  const { error } = await api.DELETE("/api/claude/sessions/{session_id}", {
+    params: { path: { session_id: sessionId } },
+  });
+  if (error) throw new Error(errorDetail(error, "Failed to close Claude chat session"));
 }
 
 export async function fetchDeploymentInfo(): Promise<DeploymentInfo> {

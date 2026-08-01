@@ -5,12 +5,13 @@ import { useCallback, useEffect, useState } from "react";
 export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
 export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
+export const CLAUDE_CHAT_PATH = `${CONSOLE_ROOT_PATH}/chat`;
 export const OAUTH_RESULT_PATH_PREFIX = `${CONSOLE_ROOT_PATH}/oauth-result`;
 export const AGENT_ENROLLMENT_PATH_PREFIX = `${SETTINGS_PATH}/agents/enroll`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
-export type ConsoleNavigationView = "embed" | "settings" | "toolCalls";
+export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "claudeChat";
 export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "notFound";
 
 // A single call, deep-linked — what a push notification's "Details" opens, and what the MCP
@@ -46,6 +47,7 @@ export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";
+  if (pathname === CLAUDE_CHAT_PATH) return "claudeChat";
   if (toolCallIdForPathname(pathname) !== null) return "embed";
   if (oauthResultIdForPathname(pathname) !== null) return "oauthResult";
   if (pathname.startsWith(`${CONSOLE_ROOT_PATH}/`)) return "notFound";
@@ -82,6 +84,7 @@ export function rememberEmbedPath(path: string): void {
 function pathForView(view: ConsoleNavigationView): string {
   if (view === "settings") return SETTINGS_PATH;
   if (view === "toolCalls") return TOOL_CALLS_PATH;
+  if (view === "claudeChat") return CLAUDE_CHAT_PATH;
   return rememberedEmbedPath();
 }
 

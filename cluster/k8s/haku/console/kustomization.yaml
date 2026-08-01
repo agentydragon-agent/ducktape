@@ -4,6 +4,7 @@ namespace: haku-console
 
 resources:
   - deployment.yaml
+  - serviceaccount.yaml
   - haku-console-google-calendar-client-credentials.sops.yaml
   - haku-console-google-client-credentials.sops.yaml
   - node-daemon-rugged.sops.yaml

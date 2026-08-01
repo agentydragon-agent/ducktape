@@ -46,7 +46,10 @@ spec:
       labels:
         app.kubernetes.io/name: haku-console
     spec:
-      automountServiceAccountToken: false
+      # Narrow claim-only identity: create/delete haku-claude SandboxClaims in haku-sandbox.
+      # It has no Secret, Pod, exec, or SandboxTemplate access.
+      serviceAccountName: haku-console
+      automountServiceAccountToken: true
       # Don't inject the kubelet's {SVCNAME}_* service-link env vars: the haku-console
       # Service's HAKU_CONSOLE_PORT=tcp://<clusterIP>:8080 collides with the app's
       # HAKU_CONSOLE_ settings prefix (it parsed into the port:int field → crash).
@@ -107,6 +110,18 @@ spec:
               value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
+            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__NAMESPACE
+              value: haku-sandbox
+            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__WARM_POOL
+              value: haku-claude
+            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__CWD
+              value: /workspace
+            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__OAUTH_PLACEHOLDER
+              value: sk-ant-oat01-proxy-haku-claude-placeholder
+            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__HTTPS_PROXY
+              value: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
+            - name: HAKU_CONSOLE_CLAUDE_RUNTIME__CA_BUNDLE
+              value: /egress-proxy-ca/ca-certificates.crt
             - name: HAKU_CONSOLE_MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
             # Direct tana-rw credential. It is resolved only while Console calls the internal

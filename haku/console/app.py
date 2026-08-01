@@ -29,6 +29,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
     capabilities,
+    claude_chat,
     console_events,
     mcp_agent_auth,
     mcp_approval,
@@ -158,6 +159,14 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
+    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions) if settings.claude_runtime is not None else None
+    claude_chat_service = (
+        claude_chat.ClaudeChatService(
+            settings.claude_runtime, claude_chat_store, claude_chat.KubernetesSandboxClaims(settings.claude_runtime)
+        )
+        if settings.claude_runtime is not None and claude_chat_store is not None
+        else None
+    )
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -342,6 +351,8 @@ def create_app(
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
+                if claude_chat_service is not None:
+                    await claude_chat_service.aclose()
                 await console_event_hub.aclose()
                 await approval_notifier.aclose()
 
@@ -365,6 +376,8 @@ def create_app(
     app.state.oauth_connection_result_store = oauth_connection_result_store
     app.state.authentik_operator_token_store = authentik_operator_token_store
     app.state.console_event_hub = console_event_hub
+    app.state.claude_chat_store = claude_chat_store
+    app.state.claude_chat_service = claude_chat_service
     app.state.in_process_servers = in_process_servers
     app.state.tool_call_metadata_provider = tool_call_metadata_provider
     app.state.node_daemon_service = node_daemon_service
@@ -405,6 +418,7 @@ def create_app(
     # access to any /api/* route. The same endpoint separately recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
+    app.include_router(claude_chat.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
@@ -417,6 +431,7 @@ def create_app(
     # browser session or CSRF token.
     app.include_router(node_daemons.machine_router)
     app.include_router(enrollment_routes.entry_router)
+    app.include_router(claude_chat.internal_router)
 
     deployment_info = build_deployment_info()
 

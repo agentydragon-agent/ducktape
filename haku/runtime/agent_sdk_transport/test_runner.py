@@ -90,7 +90,7 @@ def test_environment_does_not_expose_the_bridge_credential(monkeypatch: pytest.M
 
     environment = build_claude_environment(launch)
 
-    assert "CLAUDECODE" not in environment
+    assert environment["CLAUDECODE"] == "injected-parent"
     assert "HAKU_AGENT_SDK_RUNNER_TOKEN" not in environment
     assert environment["SAFE"] == "value"
 

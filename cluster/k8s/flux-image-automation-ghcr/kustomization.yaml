@@ -61,6 +61,8 @@ resources:
   - haku-dispatcher-image-policy.yaml
   - haku-agent-sdk-smoke-image-repository.yaml
   - haku-agent-sdk-smoke-image-policy.yaml
+  - haku-claude-runner-image-repository.yaml
+  - haku-claude-runner-image-policy.yaml
   - haku-managed-agent-image-repository.yaml
   - haku-managed-agent-image-policy.yaml
   - haku-zone-worker-image-repository.yaml
