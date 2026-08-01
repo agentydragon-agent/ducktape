@@ -9,7 +9,7 @@ import hmac
 import json
 import logging
 import secrets
-from collections.abc import AsyncIterator, Callable, Collection
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TypeVar
@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, TimeoutError as SQLAlchemyTimeoutError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.enrollment import (
     AgentAutoApprovalPolicyManagedByDeploymentError,
@@ -172,7 +172,7 @@ class PostgresAgentAuthority:
 
     def __init__(
         self,
-        sessions: sessionmaker[Session],
+        sessions: async_sessionmaker[AsyncSession],
         *,
         public_base_url: str,
         operator_identity_store: PostgresOperatorIdentityStore,
@@ -210,16 +210,16 @@ class PostgresAgentAuthority:
             raise ValueError("default auto-approval policy must be configured")
         self._default_auto_approval_policy = default_auto_approval_policy
 
-    def available_auto_approval_policies(self) -> tuple[str, ...]:
+    async def available_auto_approval_policies(self) -> tuple[str, ...]:
         return self._auto_approval_policies
 
-    def _require_auto_approval_policy(self, policy: str) -> None:
+    async def _require_auto_approval_policy(self, policy: str) -> None:
         if policy not in self._auto_approval_policies:
             raise AutoApprovalPolicyUnavailableError(f"Unknown auto-approval policy: {policy}")
 
-    async def _database_call(self, operation: Callable[[], _T]) -> _T:
+    async def _database_call(self, operation: Callable[[], Awaitable[_T]]) -> _T:
         try:
-            return await asyncio.to_thread(operation)
+            return await operation()
         except SQLAlchemyTimeoutError as error:
             raise AgentGrantAuthorityUnavailableError from error
         except DBAPIError as error:
@@ -227,7 +227,7 @@ class PostgresAgentAuthority:
                 raise AgentGrantAuthorityUnavailableError from error
             raise
 
-    def _now(self) -> datetime.datetime:
+    async def _now(self) -> datetime.datetime:
         now = self._clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Agent authority clock must return a timezone-aware datetime")
@@ -236,16 +236,21 @@ class PostgresAgentAuthority:
     async def list_agents(self, *, operator_id: UUID) -> tuple[OperatorAgent, ...]:
         return await self._database_call(lambda: self._list_agents(operator_id))
 
-    def _list_agents(self, operator_id: UUID) -> tuple[OperatorAgent, ...]:
-        with self._sessions() as session:
-            rows = session.execute(
-                select(Agent, AgentNameReservation.display_name, CredentialBinding)
-                .join(AgentNameReservation, AgentNameReservation.reservation_id == Agent.current_name_reservation_id)
-                .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-                .where(
-                    Agent.owner_operator_id == operator_id, Agent.status.in_((AgentStatus.ACTIVE, AgentStatus.DISABLED))
+    async def _list_agents(self, operator_id: UUID) -> tuple[OperatorAgent, ...]:
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    select(Agent, AgentNameReservation.display_name, CredentialBinding)
+                    .join(
+                        AgentNameReservation, AgentNameReservation.reservation_id == Agent.current_name_reservation_id
+                    )
+                    .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+                    .where(
+                        Agent.owner_operator_id == operator_id,
+                        Agent.status.in_((AgentStatus.ACTIVE, AgentStatus.DISABLED)),
+                    )
+                    .order_by(AgentNameReservation.display_name_key, CredentialBinding.generation.desc())
                 )
-                .order_by(AgentNameReservation.display_name_key, CredentialBinding.generation.desc())
             ).all()
 
         agents: list[OperatorAgent] = []
@@ -272,7 +277,7 @@ class PostgresAgentAuthority:
     async def set_auto_approval_policy(
         self, *, operator_id: UUID, agent_id: UUID, auto_approval_policy: str
     ) -> OperatorAgent:
-        self._require_auto_approval_policy(auto_approval_policy)
+        await self._require_auto_approval_policy(auto_approval_policy)
         await self._database_call(lambda: self._set_auto_approval_policy(operator_id, agent_id, auto_approval_policy))
         agents = await self.list_agents(operator_id=operator_id)
         for agent in agents:
@@ -280,16 +285,16 @@ class PostgresAgentAuthority:
                 return agent
         raise AgentNotFoundError
 
-    def _set_auto_approval_policy(self, operator_id: UUID, agent_id: UUID, policy: str) -> None:
-        with self._sessions.begin() as session:
-            agent = session.get(Agent, agent_id, with_for_update=True)
+    async def _set_auto_approval_policy(self, operator_id: UUID, agent_id: UUID, policy: str) -> None:
+        async with self._sessions.begin() as session:
+            agent = await session.get(Agent, agent_id, with_for_update=True)
             if (
                 agent is None
                 or agent.owner_operator_id != operator_id
                 or agent.status not in {AgentStatus.ACTIVE, AgentStatus.DISABLED}
             ):
                 raise AgentNotFoundError
-            latest_binding = session.scalar(
+            latest_binding = await session.scalar(
                 select(CredentialBinding)
                 .where(CredentialBinding.agent_id == agent_id)
                 .order_by(CredentialBinding.generation.desc())
@@ -301,7 +306,7 @@ class PostgresAgentAuthority:
             if latest_binding.kind is CredentialKind.STATIC:
                 raise AgentAutoApprovalPolicyManagedByDeploymentError
             agent.auto_approval_policy = policy
-            agent.updated_at = self._now()
+            agent.updated_at = await self._now()
 
     async def sweep_expired_state(self, *, batch_size: int = _EXPIRY_SWEEP_BATCH_SIZE) -> int:
         """Expire one unlocked batch of stale enrollment and activation state."""
@@ -347,8 +352,8 @@ class PostgresAgentAuthority:
         while await self.sweep_expired_state(batch_size=batch_size) == batch_size:
             pass
 
-    def _sweep_expired_state(self, batch_size: int) -> int:
-        now = self._now()
+    async def _sweep_expired_state(self, batch_size: int) -> int:
+        now = await self._now()
         processed = 0
         nonterminal_phases = {
             EnrollmentPhase.AWAITING_BROWSER,
@@ -356,16 +361,18 @@ class PostgresAgentAuthority:
             EnrollmentPhase.ALLOWED,
             EnrollmentPhase.EXCHANGING,
         }
-        with self._sessions.begin() as session:
-            interactions = session.scalars(
-                select(EnrollmentInteraction)
-                .where(EnrollmentInteraction.phase.in_(nonterminal_phases), EnrollmentInteraction.expires_at <= now)
-                .order_by(EnrollmentInteraction.expires_at, EnrollmentInteraction.interaction_id)
-                .limit(batch_size)
-                .with_for_update(skip_locked=True)
+        async with self._sessions.begin() as session:
+            interactions = (
+                await session.scalars(
+                    select(EnrollmentInteraction)
+                    .where(EnrollmentInteraction.phase.in_(nonterminal_phases), EnrollmentInteraction.expires_at <= now)
+                    .order_by(EnrollmentInteraction.expires_at, EnrollmentInteraction.interaction_id)
+                    .limit(batch_size)
+                    .with_for_update(skip_locked=True)
+                )
             ).all()
             for interaction in interactions:
-                self._expire_interaction(session, interaction, now, "expiry_sweep")
+                await self._expire_interaction(session, interaction, now, "expiry_sweep")
             processed += len(interactions)
 
             remaining = batch_size - processed
@@ -379,25 +386,27 @@ class PostgresAgentAuthority:
                         AuthorizationGrant.token_family_persisted_at <= now - self._activation_lifetime,
                     )
                 )
-                issued_interactions = session.scalars(
-                    select(EnrollmentInteraction)
-                    .where(
-                        EnrollmentInteraction.phase == EnrollmentPhase.COMPLETED,
-                        EnrollmentInteraction.interaction_id.in_(issued_interaction_ids),
+                issued_interactions = (
+                    await session.scalars(
+                        select(EnrollmentInteraction)
+                        .where(
+                            EnrollmentInteraction.phase == EnrollmentPhase.COMPLETED,
+                            EnrollmentInteraction.interaction_id.in_(issued_interaction_ids),
+                        )
+                        .order_by(EnrollmentInteraction.closed_at, EnrollmentInteraction.interaction_id)
+                        .limit(remaining)
+                        .with_for_update(skip_locked=True)
                     )
-                    .order_by(EnrollmentInteraction.closed_at, EnrollmentInteraction.interaction_id)
-                    .limit(remaining)
-                    .with_for_update(skip_locked=True)
                 ).all()
                 for interaction in issued_interactions:
-                    grant_id = session.scalar(
+                    grant_id = await session.scalar(
                         select(AuthorizationGrant.grant_id).where(
                             AuthorizationGrant.enrollment_interaction_id == interaction.interaction_id
                         )
                     )
                     if grant_id is None:
                         continue
-                    rows = self._locked_grant_rows(session, grant_id)
+                    rows = await self._locked_grant_rows(session, grant_id)
                     if rows is None:
                         continue
                     grant, binding, agent, _operator, _client = rows
@@ -413,22 +422,22 @@ class PostgresAgentAuthority:
 
         return await self._database_call(lambda: self._reconcile_static_agents(definitions))
 
-    def _reconcile_static_agents(
+    async def _reconcile_static_agents(
         self, definitions: Collection[StaticAgentDefinition]
     ) -> tuple[StaticAgentAuthorization, ...]:
-        prepared = self._prepare_static_definitions(definitions)
-        now = self._now()
+        prepared = await self._prepare_static_definitions(definitions)
+        now = await self._now()
         authorizations: list[StaticAgentAuthorization] = []
-        with self._sessions.begin() as session:
-            self._lock_key(session, "static-agent-reconcile")
+        async with self._sessions.begin() as session:
+            await self._lock_key(session, "static-agent-reconcile")
             for definition, name in sorted(prepared, key=lambda item: item[0].agent_id.int):
-                self._require_auto_approval_policy(definition.auto_approval_policy)
-                self._lock_key(session, "static-agent", str(definition.agent_id))
-                self._operator_identities.require_active_in_transaction(session, definition.operator_id)
-                agent = session.get(Agent, definition.agent_id, with_for_update=True)
+                await self._require_auto_approval_policy(definition.auto_approval_policy)
+                await self._lock_key(session, "static-agent", str(definition.agent_id))
+                await self._operator_identities.require_active_in_transaction(session, definition.operator_id)
+                agent = await session.get(Agent, definition.agent_id, with_for_update=True)
                 if agent is None:
-                    self._lock_key(session, "agent-name", name.reservation_key)
-                    self._require_name_available(session, name.reservation_key, agent_id=None)
+                    await self._lock_key(session, "agent-name", name.reservation_key)
+                    await self._require_name_available(session, name.reservation_key, agent_id=None)
                     reservation_id = uuid4()
                     agent = Agent(
                         agent_id=definition.agent_id,
@@ -442,7 +451,7 @@ class PostgresAgentAuthority:
                         auto_approval_policy=definition.auto_approval_policy,
                     )
                     session.add(agent)
-                    session.flush()
+                    await session.flush()
                     session.add(
                         AgentNameReservation(
                             reservation_id=reservation_id,
@@ -455,7 +464,7 @@ class PostgresAgentAuthority:
                             activated_at=now,
                         )
                     )
-                    session.flush()
+                    await session.flush()
                 else:
                     if agent.owner_operator_id != definition.operator_id or agent.status not in {
                         AgentStatus.ACTIVE,
@@ -464,19 +473,21 @@ class PostgresAgentAuthority:
                         raise StaticAgentDefinitionError(
                             f"static Agent slot {definition.agent_id} conflicts with durable Agent ownership or status"
                         )
-                    self._reconcile_static_name(session, agent, name, now)
+                    await self._reconcile_static_name(session, agent, name, now)
                     if agent.auto_approval_policy != definition.auto_approval_policy:
                         agent.auto_approval_policy = definition.auto_approval_policy
                         agent.updated_at = now
 
-                active_row = session.execute(
-                    select(CredentialBinding, StaticCredential)
-                    .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-                    .where(
-                        CredentialBinding.agent_id == agent.agent_id,
-                        CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                active_row = (
+                    await session.execute(
+                        select(CredentialBinding, StaticCredential)
+                        .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
+                        .where(
+                            CredentialBinding.agent_id == agent.agent_id,
+                            CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                        )
+                        .with_for_update()
                     )
-                    .with_for_update()
                 ).one_or_none()
                 if active_row is not None:
                     active_binding, active_credential = active_row
@@ -506,14 +517,14 @@ class PostgresAgentAuthority:
                 else:
                     predecessor_id = None
 
-                fingerprint_owner = session.scalar(
+                fingerprint_owner = await session.scalar(
                     select(StaticCredential.binding_id).where(
                         StaticCredential.credential_fingerprint == definition.token_fingerprint
                     )
                 )
                 if fingerprint_owner is not None:
                     raise StaticAgentDefinitionError("static Agent token fingerprint was already used")
-                latest = session.scalar(
+                latest = await session.scalar(
                     select(CredentialBinding)
                     .where(CredentialBinding.agent_id == agent.agent_id)
                     .order_by(CredentialBinding.generation.desc())
@@ -551,7 +562,7 @@ class PostgresAgentAuthority:
                         end_reason=None,
                     )
                 )
-                session.flush()
+                await session.flush()
                 session.add(
                     StaticCredential(
                         binding_id=binding_id,
@@ -570,16 +581,18 @@ class PostgresAgentAuthority:
                     agent.updated_at = now
 
             desired_agent_ids = tuple(definition.agent_id for definition, _name in prepared)
-            removed = session.execute(
-                select(Agent, CredentialBinding)
-                .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-                .where(
-                    CredentialBinding.kind == CredentialKind.STATIC,
-                    CredentialBinding.status == CredentialBindingStatus.ACTIVE,
-                    Agent.agent_id.not_in(desired_agent_ids),
+            removed = (
+                await session.execute(
+                    select(Agent, CredentialBinding)
+                    .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+                    .where(
+                        CredentialBinding.kind == CredentialKind.STATIC,
+                        CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                        Agent.agent_id.not_in(desired_agent_ids),
+                    )
+                    .order_by(Agent.agent_id)
+                    .with_for_update()
                 )
-                .order_by(Agent.agent_id)
-                .with_for_update()
             ).all()
             for agent, binding in removed:
                 binding.status = CredentialBindingStatus.REVOKED
@@ -608,10 +621,10 @@ class PostgresAgentAuthority:
             lambda: self._static_authorization(binding_id=None, fingerprint=fingerprint, record_seen=record_seen)
         )
 
-    def _static_authorization(
+    async def _static_authorization(
         self, *, binding_id: UUID | None, fingerprint: bytes | None, record_seen: bool = False
     ) -> StaticAgentAuthorization:
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             statement = (
                 select(Agent, CredentialBinding, StaticCredential, Operator)
                 .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
@@ -625,7 +638,7 @@ class PostgresAgentAuthority:
                 statement = statement.where(StaticCredential.credential_fingerprint == fingerprint)
             if record_seen:
                 statement = statement.with_for_update()
-            row = session.execute(statement).one_or_none()
+            row = (await session.execute(statement)).one_or_none()
             if row is None:
                 raise StaticAgentRejectedError
             agent, binding, _credential, operator = row
@@ -637,7 +650,7 @@ class PostgresAgentAuthority:
             ):
                 raise StaticAgentRejectedError
             if record_seen:
-                now = self._now()
+                now = await self._now()
                 agent.last_seen_at = now
                 agent.updated_at = now
             return StaticAgentAuthorization(
@@ -645,7 +658,7 @@ class PostgresAgentAuthority:
             )
 
     @staticmethod
-    def _prepare_static_definitions(
+    async def _prepare_static_definitions(
         definitions: Collection[StaticAgentDefinition],
     ) -> list[tuple[StaticAgentDefinition, NormalizedAgentName]]:
         prepared: list[tuple[StaticAgentDefinition, NormalizedAgentName]] = []
@@ -674,23 +687,23 @@ class PostgresAgentAuthority:
         return prepared
 
     @staticmethod
-    def _require_name_available(session: Session, name_key: str, agent_id: UUID | None) -> None:
-        reservation = session.scalar(
+    async def _require_name_available(session: AsyncSession, name_key: str, agent_id: UUID | None) -> None:
+        reservation = await session.scalar(
             select(AgentNameReservation).where(AgentNameReservation.display_name_key == name_key)
         )
         if reservation is not None and reservation.agent_id != agent_id:
             raise StaticAgentDefinitionError("static Agent display name is already reserved")
 
-    def _reconcile_static_name(
-        self, session: Session, agent: Agent, name: NormalizedAgentName, now: datetime.datetime
+    async def _reconcile_static_name(
+        self, session: AsyncSession, agent: Agent, name: NormalizedAgentName, now: datetime.datetime
     ) -> None:
-        current = session.get(AgentNameReservation, agent.current_name_reservation_id)
+        current = await session.get(AgentNameReservation, agent.current_name_reservation_id)
         if current is None:
             raise StaticAgentDefinitionError("static Agent current display name is missing")
         if current.display_name_key == name.reservation_key:
             return
-        self._lock_key(session, "agent-name", name.reservation_key)
-        existing = session.scalar(
+        await self._lock_key(session, "agent-name", name.reservation_key)
+        existing = await session.scalar(
             select(AgentNameReservation).where(AgentNameReservation.display_name_key == name.reservation_key)
         )
         if existing is not None:
@@ -718,13 +731,13 @@ class PostgresAgentAuthority:
     async def reserve_authorization(self, *, request: AuthorizationRequest, upstream_authorization_url: str) -> str:
         return await self._database_call(lambda: self._reserve_authorization(request, upstream_authorization_url))
 
-    def _reserve_authorization(self, request: AuthorizationRequest, upstream_authorization_url: str) -> str:
-        self._validate_authorization_request(request, upstream_authorization_url)
+    async def _reserve_authorization(self, request: AuthorizationRequest, upstream_authorization_url: str) -> str:
+        await self._validate_authorization_request(request, upstream_authorization_url)
         interaction_id = uuid4()
         browser_nonce = self._browser_secret_factory()
         if not browser_nonce:
             raise ValueError("browser secret factory returned an empty secret")
-        now = self._now()
+        now = await self._now()
         expires_at = now + self._interaction_lifetime
         release_after = expires_at + self._correlation_retention
         presentation = {
@@ -732,15 +745,15 @@ class PostgresAgentAuthority:
             "display_name": request.client.display_name,
             "redirect_uris": [request.correlation.redirect_uri],
         }
-        with self._sessions.begin() as session:
-            self._lock_key(session, "agent-client", request.client.client_id)
-            self._lock_key(session, "agent-correlation", *self._correlation_parts(request.correlation))
-            session.execute(
+        async with self._sessions.begin() as session:
+            await self._lock_key(session, "agent-client", request.client.client_id)
+            await self._lock_key(session, "agent-correlation", *await self._correlation_parts(request.correlation))
+            await session.execute(
                 delete(EnrollmentCorrelationReservation).where(
                     EnrollmentCorrelationReservation.release_after <= func.clock_timestamp()
                 )
             )
-            duplicate = session.scalar(
+            duplicate = await session.scalar(
                 select(EnrollmentCorrelationReservation.interaction_id).where(
                     EnrollmentCorrelationReservation.client_id == request.correlation.client_id,
                     EnrollmentCorrelationReservation.redirect_uri == request.correlation.redirect_uri,
@@ -749,7 +762,7 @@ class PostgresAgentAuthority:
             )
             if duplicate is not None:
                 raise DuplicateAuthorizationError
-            client = self._upsert_client(
+            client = await self._upsert_client(
                 session, request.client, validated_redirect_uri=request.correlation.redirect_uri, now=now
             )
             interaction = EnrollmentInteraction(
@@ -777,7 +790,7 @@ class PostgresAgentAuthority:
                 closed_at=None,
             )
             session.add(interaction)
-            session.flush()
+            await session.flush()
             session.add(
                 EnrollmentCorrelationReservation(
                     interaction_id=interaction_id,
@@ -802,7 +815,7 @@ class PostgresAgentAuthority:
             lambda: self._open_interaction(interaction_id, browser_nonce, interaction_cookie, browser)
         )
 
-    def _open_interaction(
+    async def _open_interaction(
         self,
         interaction_id: UUID,
         browser_nonce: str | None,
@@ -811,14 +824,14 @@ class PostgresAgentAuthority:
     ) -> EnrollmentPage:
         error: Exception | None = None
         page: EnrollmentPage | None = None
-        now = self._now()
-        with self._sessions.begin() as session:
-            interaction = session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
+        now = await self._now()
+        async with self._sessions.begin() as session:
+            interaction = await session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
             if interaction is None:
                 raise EnrollmentInteractionNotFoundError
-            self._require_browser_identity(session, browser)
+            await self._require_browser_identity(session, browser)
             if now >= interaction.expires_at:
-                self._expire_interaction(session, interaction, now, "browser_interaction_timeout")
+                await self._expire_interaction(session, interaction, now, "browser_interaction_timeout")
                 error = EnrollmentInteractionExpiredError()
             elif interaction.phase is EnrollmentPhase.AWAITING_BROWSER:
                 if (
@@ -837,12 +850,12 @@ class PostgresAgentAuthority:
                 interaction.browser_identity_id = browser.identity_id
                 interaction.browser_binding_digest = self._browser_binding_digest(form_token, browser)
                 interaction.updated_at = now
-                page = self._enrollment_page(session, interaction, browser, form_token)
+                page = await self._enrollment_page(session, interaction, browser, form_token)
             elif interaction.phase is EnrollmentPhase.AWAITING_APPROVAL:
                 if interaction_cookie is None:
                     raise EnrollmentBrowserBindingError
-                self._require_interaction_browser(interaction, browser, interaction_cookie)
-                page = self._enrollment_page(session, interaction, browser, interaction_cookie)
+                await self._require_interaction_browser(interaction, browser, interaction_cookie)
+                page = await self._enrollment_page(session, interaction, browser, interaction_cookie)
             elif interaction.phase is EnrollmentPhase.EXPIRED:
                 error = EnrollmentInteractionExpiredError()
             else:
@@ -862,7 +875,7 @@ class PostgresAgentAuthority:
     ) -> EnrollmentDecisionResult:
         return await self._database_call(lambda: self._decide(interaction_id, browser, interaction_cookie, decision))
 
-    def _decide(
+    async def _decide(
         self,
         interaction_id: UUID,
         browser: EnrollmentBrowserSession,
@@ -873,7 +886,7 @@ class PostgresAgentAuthority:
             normalize_agent_name(decision.display_name) if isinstance(decision, CreateAgentDecision) else None
         )
         if isinstance(decision, (CreateAgentDecision, ReconnectAgentDecision)):
-            self._require_auto_approval_policy(decision.auto_approval_policy)
+            await self._require_auto_approval_policy(decision.auto_approval_policy)
         if isinstance(decision, CreateAgentDecision):
             assert normalized_name is not None
             decision_payload = {
@@ -891,19 +904,19 @@ class PostgresAgentAuthority:
             decision_payload = {"kind": "deny"}
         else:
             raise TypeError(f"unsupported enrollment decision: {type(decision).__name__}")
-        proposed_digest = self._decision_digest(interaction_cookie, browser, decision_payload)
-        now = self._now()
+        proposed_digest = await self._decision_digest(interaction_cookie, browser, decision_payload)
+        now = await self._now()
         error: Exception | None = None
         result: EnrollmentDecisionResult | None = None
-        with self._sessions.begin() as session:
-            interaction = session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
+        async with self._sessions.begin() as session:
+            interaction = await session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
             if interaction is None:
                 raise EnrollmentInteractionNotFoundError
-            self._require_browser_identity(session, browser)
+            await self._require_browser_identity(session, browser)
             if not hmac.compare_digest(interaction_cookie, decision.form_token):
                 raise EnrollmentBrowserBindingError
             if now >= interaction.expires_at:
-                self._expire_interaction(session, interaction, now, "operator_decision_timeout")
+                await self._expire_interaction(session, interaction, now, "operator_decision_timeout")
                 error = EnrollmentInteractionExpiredError()
             elif interaction.phase in {EnrollmentPhase.ALLOWED, EnrollmentPhase.DENIED}:
                 expected_phase = (
@@ -929,12 +942,12 @@ class PostgresAgentAuthority:
                     else EnrollmentDecisionConflictError()
                 )
             else:
-                self._require_interaction_browser(interaction, browser, interaction_cookie)
+                await self._require_interaction_browser(interaction, browser, interaction_cookie)
                 if isinstance(decision, CreateAgentDecision):
                     assert normalized_name is not None
-                    self._lock_key(session, "agent-name", normalized_name.reservation_key)
+                    await self._lock_key(session, "agent-name", normalized_name.reservation_key)
                     if (
-                        session.scalar(
+                        await session.scalar(
                             select(AgentNameReservation.reservation_id).where(
                                 AgentNameReservation.display_name_key == normalized_name.reservation_key
                             )
@@ -955,14 +968,16 @@ class PostgresAgentAuthority:
                         )
                     )
                 elif isinstance(decision, ReconnectAgentDecision):
-                    reconnect = session.execute(
-                        select(Agent, CredentialBinding)
-                        .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-                        .where(
-                            Agent.agent_id == decision.agent_id,
-                            CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                    reconnect = (
+                        await session.execute(
+                            select(Agent, CredentialBinding)
+                            .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+                            .where(
+                                Agent.agent_id == decision.agent_id,
+                                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                            )
+                            .with_for_update()
                         )
-                        .with_for_update()
                     ).one_or_none()
                     if reconnect is None:
                         raise EnrollmentDecisionConflictError
@@ -1002,7 +1017,7 @@ class PostgresAgentAuthority:
     ) -> GrantAuthorization:
         return await self._database_call(lambda: self._begin_exchange(correlation, client, principal, granted_scopes))
 
-    def _begin_exchange(
+    async def _begin_exchange(
         self,
         correlation: AuthorizationCorrelation,
         client: ClientSoftwareSnapshot,
@@ -1010,33 +1025,35 @@ class PostgresAgentAuthority:
         granted_scopes: frozenset[str],
     ) -> GrantAuthorization:
         try:
-            resolved = self._operator_identities.resolve_verified_identity(
+            resolved = await self._operator_identities.resolve_verified_identity(
                 VerifiedExternalIdentity(issuer=principal.issuer, subject=principal.subject)
             )
         except OperatorIdentityError as identity_error:
             raise EnrollmentRejectedError from identity_error
-        now = self._now()
+        now = await self._now()
         failure: Exception | None = None
         authorization: GrantAuthorization | None = None
-        with self._sessions.begin() as session:
-            self._lock_key(session, "agent-correlation", *self._correlation_parts(correlation))
-            reservation = session.execute(
-                select(EnrollmentCorrelationReservation)
-                .where(
-                    EnrollmentCorrelationReservation.client_id == correlation.client_id,
-                    EnrollmentCorrelationReservation.redirect_uri == correlation.redirect_uri,
-                    EnrollmentCorrelationReservation.code_challenge == correlation.code_challenge,
-                    EnrollmentCorrelationReservation.release_after > func.clock_timestamp(),
+        async with self._sessions.begin() as session:
+            await self._lock_key(session, "agent-correlation", *await self._correlation_parts(correlation))
+            reservation = (
+                await session.execute(
+                    select(EnrollmentCorrelationReservation)
+                    .where(
+                        EnrollmentCorrelationReservation.client_id == correlation.client_id,
+                        EnrollmentCorrelationReservation.redirect_uri == correlation.redirect_uri,
+                        EnrollmentCorrelationReservation.code_challenge == correlation.code_challenge,
+                        EnrollmentCorrelationReservation.release_after > func.clock_timestamp(),
+                    )
+                    .with_for_update()
                 )
-                .with_for_update()
             ).scalar_one_or_none()
             if reservation is None:
                 raise EnrollmentRejectedError
-            interaction = session.get(EnrollmentInteraction, reservation.interaction_id, with_for_update=True)
+            interaction = await session.get(EnrollmentInteraction, reservation.interaction_id, with_for_update=True)
             if interaction is None:
                 raise EnrollmentRejectedError
             if now >= interaction.expires_at:
-                self._expire_interaction(session, interaction, now, "exchange_timeout")
+                await self._expire_interaction(session, interaction, now, "exchange_timeout")
                 failure = EnrollmentRejectedError()
             elif interaction.phase is not EnrollmentPhase.ALLOWED:
                 failure = (
@@ -1050,23 +1067,23 @@ class PostgresAgentAuthority:
                 failure = EnrollmentRejectedError()
             else:
                 try:
-                    self._operator_identities.require_active_in_transaction(session, resolved.operator_id)
+                    await self._operator_identities.require_active_in_transaction(session, resolved.operator_id)
                 except InactiveOperatorError as error:
                     raise EnrollmentRejectedError from error
-                browser_operator = session.scalar(
+                browser_operator = await session.scalar(
                     select(IdentityAnchor.operator_id)
                     .join(OidcIdentity, OidcIdentity.anchor_id == IdentityAnchor.anchor_id)
                     .where(OidcIdentity.identity_id == interaction.browser_identity_id)
                 )
                 if browser_operator is None or browser_operator != resolved.operator_id:
                     raise EnrollmentRejectedError
-                client_row = session.get(ClientSoftware, interaction.client_software_id)
+                client_row = await session.get(ClientSoftware, interaction.client_software_id)
                 if client_row is None or client_row.oauth_client_id != client.client_id:
                     raise EnrollmentRejectedError
                 interaction.phase = EnrollmentPhase.EXCHANGING
                 interaction.updated_at = now
                 if interaction.reconnect_agent_id is None:
-                    name = session.scalar(
+                    name = await session.scalar(
                         select(AgentNameReservation)
                         .where(AgentNameReservation.pending_interaction_id == interaction.interaction_id)
                         .with_for_update()
@@ -1087,21 +1104,23 @@ class PostgresAgentAuthority:
                             auto_approval_policy=interaction.auto_approval_policy,
                         )
                     )
-                    session.flush()
+                    await session.flush()
                     name.pending_interaction_id = None
                     name.agent_id = agent_id
                     name.activated_at = now
                     generation = 1
                     predecessor_id = None
                 else:
-                    reconnect = session.execute(
-                        select(Agent, CredentialBinding)
-                        .join(
-                            CredentialBinding,
-                            CredentialBinding.binding_id == interaction.reconnect_predecessor_binding_id,
+                    reconnect = (
+                        await session.execute(
+                            select(Agent, CredentialBinding)
+                            .join(
+                                CredentialBinding,
+                                CredentialBinding.binding_id == interaction.reconnect_predecessor_binding_id,
+                            )
+                            .where(Agent.agent_id == interaction.reconnect_agent_id)
+                            .with_for_update()
                         )
-                        .where(Agent.agent_id == interaction.reconnect_agent_id)
-                        .with_for_update()
                     ).one_or_none()
                     if reconnect is None:
                         raise EnrollmentRejectedError
@@ -1117,7 +1136,7 @@ class PostgresAgentAuthority:
                     agent_id = agent.agent_id
                     predecessor_id = predecessor.binding_id
                     generation = (
-                        session.scalar(
+                        await session.scalar(
                             select(func.max(CredentialBinding.generation)).where(
                                 CredentialBinding.agent_id == agent.agent_id
                             )
@@ -1142,7 +1161,7 @@ class PostgresAgentAuthority:
                         end_reason=None,
                     )
                 )
-                session.flush()
+                await session.flush()
                 session.add(
                     AuthorizationGrant(
                         grant_id=grant_id,
@@ -1176,16 +1195,16 @@ class PostgresAgentAuthority:
     async def record_token_family(self, *, grant_id: UUID, evidence: TokenFamilyEvidence) -> None:
         await self._database_call(lambda: self._record_token_family(grant_id, evidence))
 
-    def _record_token_family(self, grant_id: UUID, evidence: TokenFamilyEvidence) -> None:
+    async def _record_token_family(self, grant_id: UUID, evidence: TokenFamilyEvidence) -> None:
         if not evidence.access_jti.strip() or (evidence.refresh_jti is not None and not evidence.refresh_jti.strip()):
             raise EnrollmentRejectedError
-        now = self._now()
+        now = await self._now()
         error: Exception | None = None
-        with self._sessions.begin() as session:
-            interaction = self._lock_grant_interaction(session, grant_id)
+        async with self._sessions.begin() as session:
+            interaction = await self._lock_grant_interaction(session, grant_id)
             if interaction is None:
                 raise EnrollmentRejectedError
-            rows = self._locked_grant_rows(session, grant_id)
+            rows = await self._locked_grant_rows(session, grant_id)
             if rows is None:
                 raise EnrollmentRejectedError
             grant, binding, _agent, operator, client = rows
@@ -1200,7 +1219,7 @@ class PostgresAgentAuthority:
             ):
                 return
             if now >= interaction.expires_at:
-                self._expire_interaction(session, interaction, now, "token_family_persistence_timeout")
+                await self._expire_interaction(session, interaction, now, "token_family_persistence_timeout")
                 error = EnrollmentRejectedError()
             elif (
                 operator.status is not OperatorStatus.ACTIVE
@@ -1235,18 +1254,18 @@ class PostgresAgentAuthority:
     ) -> GrantAuthorization:
         return await self._database_call(lambda: self._resolve_grant(grant_id, client_id, token_scopes, activate=True))
 
-    def _resolve_grant(
+    async def _resolve_grant(
         self, grant_id: UUID, client_id: str, scopes: frozenset[str], *, activate: bool
     ) -> GrantAuthorization:
-        now = self._now()
+        now = await self._now()
         rejection: GrantRejectedError | None = None
         authorization: GrantAuthorization | None = None
-        with self._sessions.begin() as session:
-            rows = self._locked_grant_rows(session, grant_id)
+        async with self._sessions.begin() as session:
+            rows = await self._locked_grant_rows(session, grant_id)
             if rows is None:
                 raise GrantRejectedError
             grant, binding, agent, operator, client = rows
-            interaction = session.get(EnrollmentInteraction, grant.enrollment_interaction_id)
+            interaction = await session.get(EnrollmentInteraction, grant.enrollment_interaction_id)
             if interaction is None:
                 raise GrantRejectedError
             allowed = frozenset(grant.allowed_scopes)
@@ -1269,7 +1288,7 @@ class PostgresAgentAuthority:
                     raise GrantRejectedError
                 if activate:
                     if binding.supersedes_binding_id is not None:
-                        predecessor = session.get(
+                        predecessor = await session.get(
                             CredentialBinding, binding.supersedes_binding_id, with_for_update=True
                         )
                         if (
@@ -1286,7 +1305,7 @@ class PostgresAgentAuthority:
                         # index. Flush the predecessor transition before activating its successor;
                         # SQLAlchemy does not otherwise guarantee UPDATE ordering between two rows
                         # of the same table.
-                        session.flush()
+                        await session.flush()
                         agent.auto_approval_policy = interaction.auto_approval_policy
                     else:
                         agent.status = AgentStatus.ACTIVE
@@ -1332,13 +1351,13 @@ class PostgresAgentAuthority:
     async def revoke_grant(self, *, grant_id: UUID) -> None:
         await self._database_call(lambda: self._revoke_grant(grant_id))
 
-    def _revoke_grant(self, grant_id: UUID) -> None:
-        now = self._now()
-        with self._sessions.begin() as session:
-            interaction = self._lock_grant_interaction(session, grant_id)
+    async def _revoke_grant(self, grant_id: UUID) -> None:
+        now = await self._now()
+        async with self._sessions.begin() as session:
+            interaction = await self._lock_grant_interaction(session, grant_id)
             if interaction is None:
                 raise GrantRejectedError
-            rows = self._locked_grant_rows(session, grant_id)
+            rows = await self._locked_grant_rows(session, grant_id)
             if rows is None:
                 raise GrantRejectedError
             grant, binding, agent, _operator, _client = rows
@@ -1373,16 +1392,16 @@ class PostgresAgentAuthority:
                 interaction.updated_at = now
 
     @staticmethod
-    def _correlation_parts(correlation: AuthorizationCorrelation) -> tuple[str, str, str]:
+    async def _correlation_parts(correlation: AuthorizationCorrelation) -> tuple[str, str, str]:
         return correlation.client_id, correlation.redirect_uri, correlation.code_challenge
 
     @staticmethod
-    def _lock_key(session: Session, namespace: str, *parts: str) -> None:
+    async def _lock_key(session: AsyncSession, namespace: str, *parts: str) -> None:
         key = _canonical_json([namespace, *parts])
-        session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
+        await session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
 
     @staticmethod
-    def _validate_authorization_request(request: AuthorizationRequest, upstream_url: str) -> None:
+    async def _validate_authorization_request(request: AuthorizationRequest, upstream_url: str) -> None:
         correlation = request.correlation
         if (
             not correlation.client_id.strip()
@@ -1394,7 +1413,7 @@ class PostgresAgentAuthority:
             raise ValueError("FastMCP authorization request is internally inconsistent")
 
     @staticmethod
-    def _metadata_hash(client: ClientSoftwareSnapshot, validated_redirect_uris: list[str]) -> bytes:
+    async def _metadata_hash(client: ClientSoftwareSnapshot, validated_redirect_uris: list[str]) -> bytes:
         return hashlib.sha256(
             _canonical_json(
                 {
@@ -1405,11 +1424,16 @@ class PostgresAgentAuthority:
             ).encode()
         ).digest()
 
-    def _upsert_client(
-        self, session: Session, snapshot: ClientSoftwareSnapshot, *, validated_redirect_uri: str, now: datetime.datetime
+    async def _upsert_client(
+        self,
+        session: AsyncSession,
+        snapshot: ClientSoftwareSnapshot,
+        *,
+        validated_redirect_uri: str,
+        now: datetime.datetime,
     ) -> ClientSoftware:
         redirects = [validated_redirect_uri]
-        row = session.scalar(
+        row = await session.scalar(
             select(ClientSoftware).where(ClientSoftware.oauth_client_id == snapshot.client_id).with_for_update()
         )
         if row is None:
@@ -1418,28 +1442,28 @@ class PostgresAgentAuthority:
                 registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
                 oauth_client_id=snapshot.client_id,
                 validated_redirect_uris=redirects,
-                metadata_hash=self._metadata_hash(snapshot, redirects),
+                metadata_hash=await self._metadata_hash(snapshot, redirects),
                 observed_name=snapshot.display_name,
                 observed_icon_uri=None,
                 created_at=now,
                 updated_at=now,
             )
             session.add(row)
-            session.flush()
+            await session.flush()
         else:
             redirects = list(dict.fromkeys([*row.validated_redirect_uris, validated_redirect_uri]))
             row.validated_redirect_uris = redirects
-            row.metadata_hash = self._metadata_hash(snapshot, redirects)
+            row.metadata_hash = await self._metadata_hash(snapshot, redirects)
             row.observed_name = snapshot.display_name
             row.updated_at = now
         return row
 
-    def _require_browser_identity(self, session: Session, browser: EnrollmentBrowserSession) -> None:
+    async def _require_browser_identity(self, session: AsyncSession, browser: EnrollmentBrowserSession) -> None:
         try:
             self._operator_identities.require_active_in_transaction(session, browser.operator_id)
         except InactiveOperatorError as error:
             raise EnrollmentBrowserBindingError from error
-        operator_id = session.scalar(
+        operator_id = await session.scalar(
             select(IdentityAnchor.operator_id)
             .join(OidcIdentity, OidcIdentity.anchor_id == IdentityAnchor.anchor_id)
             .where(OidcIdentity.identity_id == browser.identity_id)
@@ -1458,7 +1482,9 @@ class PostgresAgentAuthority:
         )
 
     @staticmethod
-    def _decision_digest(form_token: str, browser: EnrollmentBrowserSession, decision_payload: dict[str, str]) -> bytes:
+    async def _decision_digest(
+        form_token: str, browser: EnrollmentBrowserSession, decision_payload: dict[str, str]
+    ) -> bytes:
         return _digest(
             "enrollment-decision",
             form_token,
@@ -1468,7 +1494,7 @@ class PostgresAgentAuthority:
             _canonical_json(decision_payload),
         )
 
-    def _require_interaction_browser(
+    async def _require_interaction_browser(
         self, interaction: EnrollmentInteraction, browser: EnrollmentBrowserSession, form_token: str
     ) -> None:
         expected = self._browser_binding_digest(form_token, browser)
@@ -1480,7 +1506,7 @@ class PostgresAgentAuthority:
             raise EnrollmentBrowserBindingError
 
     @staticmethod
-    def _suggested_name(interaction: EnrollmentInteraction) -> str:
+    async def _suggested_name(interaction: EnrollmentInteraction) -> str:
         value = interaction.presentation_snapshot.get("display_name")
         if not isinstance(value, str):
             return "New Agent"
@@ -1489,42 +1515,48 @@ class PostgresAgentAuthority:
         except InvalidAgentNameError:
             return "New Agent"
 
-    def _enrollment_page(
-        self, session: Session, interaction: EnrollmentInteraction, browser: EnrollmentBrowserSession, form_token: str
+    async def _enrollment_page(
+        self,
+        session: AsyncSession,
+        interaction: EnrollmentInteraction,
+        browser: EnrollmentBrowserSession,
+        form_token: str,
     ) -> EnrollmentPage:
-        reconnect_rows = session.execute(
-            select(Agent.agent_id, AgentNameReservation.display_name, Agent.auto_approval_policy)
-            .join(AgentNameReservation, AgentNameReservation.reservation_id == Agent.current_name_reservation_id)
-            .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
-            .where(
-                Agent.owner_operator_id == browser.operator_id,
-                Agent.status == AgentStatus.ACTIVE,
-                CredentialBinding.kind == CredentialKind.OAUTH,
-                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+        reconnect_rows = (
+            await session.execute(
+                select(Agent.agent_id, AgentNameReservation.display_name, Agent.auto_approval_policy)
+                .join(AgentNameReservation, AgentNameReservation.reservation_id == Agent.current_name_reservation_id)
+                .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+                .where(
+                    Agent.owner_operator_id == browser.operator_id,
+                    Agent.status == AgentStatus.ACTIVE,
+                    CredentialBinding.kind == CredentialKind.OAUTH,
+                    CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                )
+                .order_by(AgentNameReservation.display_name_key)
             )
-            .order_by(AgentNameReservation.display_name_key)
         ).all()
         client_name = interaction.presentation_snapshot.get("display_name")
         return EnrollmentPage(
             client_software=client_name if isinstance(client_name, str) else interaction.client_id,
             redirect_host=urlsplit(interaction.redirect_uri).netloc,
             requested_scopes=tuple(sorted(interaction.requested_scopes)),
-            suggested_agent_name=self._suggested_name(interaction),
+            suggested_agent_name=await self._suggested_name(interaction),
             reconnectable_agents=tuple(
                 ReconnectableAgent(
                     agent_id=row.agent_id, display_name=row.display_name, auto_approval_policy=row.auto_approval_policy
                 )
                 for row in reconnect_rows
             ),
-            auto_approval_policies=self.available_auto_approval_policies(),
+            auto_approval_policies=await self.available_auto_approval_policies(),
             default_auto_approval_policy=self._default_auto_approval_policy,
             form_token=form_token,
             upstream_authorization_url=interaction.upstream_authorization_url,
         )
 
     @staticmethod
-    def _expire_interaction(
-        session: Session, interaction: EnrollmentInteraction, now: datetime.datetime, reason: str
+    async def _expire_interaction(
+        session: AsyncSession, interaction: EnrollmentInteraction, now: datetime.datetime, reason: str
     ) -> None:
         if interaction.phase in {
             EnrollmentPhase.COMPLETED,
@@ -1534,26 +1566,26 @@ class PostgresAgentAuthority:
         }:
             return
         if interaction.phase is EnrollmentPhase.ALLOWED:
-            session.execute(
+            await session.execute(
                 delete(AgentNameReservation).where(
                     AgentNameReservation.pending_interaction_id == interaction.interaction_id
                 )
             )
         if interaction.phase is EnrollmentPhase.EXCHANGING:
-            grant = session.scalar(
+            grant = await session.scalar(
                 select(AuthorizationGrant).where(
                     AuthorizationGrant.enrollment_interaction_id == interaction.interaction_id
                 )
             )
             if grant is not None:
-                binding = session.get(CredentialBinding, grant.binding_id, with_for_update=True)
+                binding = await session.get(CredentialBinding, grant.binding_id, with_for_update=True)
                 if binding is not None and binding.status is CredentialBindingStatus.ISSUING:
                     binding.status = CredentialBindingStatus.FAILED
                     binding.ended_at = now
                     binding.end_reason = reason
                     binding.updated_at = now
                     if binding.supersedes_binding_id is None:
-                        agent = session.get(Agent, binding.agent_id, with_for_update=True)
+                        agent = await session.get(Agent, binding.agent_id, with_for_update=True)
                         if agent is not None and agent.status is AgentStatus.DRAFT:
                             agent.status = AgentStatus.ABANDONED
                             agent.updated_at = now
@@ -1564,30 +1596,32 @@ class PostgresAgentAuthority:
         interaction.closure_reason = reason
         interaction.updated_at = now
 
-    def _locked_grant_rows(
-        self, session: Session, grant_id: UUID
+    async def _locked_grant_rows(
+        self, session: AsyncSession, grant_id: UUID
     ) -> tuple[AuthorizationGrant, CredentialBinding, Agent, Operator, ClientSoftware] | None:
-        row = session.execute(
-            select(AuthorizationGrant, CredentialBinding, Agent, Operator, ClientSoftware)
-            .join(CredentialBinding, CredentialBinding.binding_id == AuthorizationGrant.binding_id)
-            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
-            .join(Operator, Operator.operator_id == Agent.owner_operator_id)
-            .join(ClientSoftware, ClientSoftware.client_software_id == AuthorizationGrant.client_software_id)
-            .where(AuthorizationGrant.grant_id == grant_id)
-            .with_for_update()
+        row = (
+            await session.execute(
+                select(AuthorizationGrant, CredentialBinding, Agent, Operator, ClientSoftware)
+                .join(CredentialBinding, CredentialBinding.binding_id == AuthorizationGrant.binding_id)
+                .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
+                .join(Operator, Operator.operator_id == Agent.owner_operator_id)
+                .join(ClientSoftware, ClientSoftware.client_software_id == AuthorizationGrant.client_software_id)
+                .where(AuthorizationGrant.grant_id == grant_id)
+                .with_for_update()
+            )
         ).one_or_none()
         if row is None:
             return None
         return row[0], row[1], row[2], row[3], row[4]
 
     @staticmethod
-    def _lock_grant_interaction(session: Session, grant_id: UUID) -> EnrollmentInteraction | None:
-        interaction_id = session.scalar(
+    async def _lock_grant_interaction(session: AsyncSession, grant_id: UUID) -> EnrollmentInteraction | None:
+        interaction_id = await session.scalar(
             select(AuthorizationGrant.enrollment_interaction_id).where(AuthorizationGrant.grant_id == grant_id)
         )
         if interaction_id is None:
             return None
-        return session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
+        return await session.get(EnrollmentInteraction, interaction_id, with_for_update=True)
 
     def _activation_expired(
         self, grant: AuthorizationGrant, binding: CredentialBinding, now: datetime.datetime

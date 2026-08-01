@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import OAuthConnectionResult as OAuthConnectionResultRow
 from haku.console.operator_auth import OperatorActorDep
@@ -44,17 +44,17 @@ def bounded_result_message(message: str, *, fallback: str) -> str:
 
 class PostgresOAuthConnectionResultStore:
     def __init__(
-        self, sessions: sessionmaker[Session], *, operator_identity_store: PostgresOperatorIdentityStore
+        self, sessions: async_sessionmaker[AsyncSession], *, operator_identity_store: PostgresOperatorIdentityStore
     ) -> None:
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
 
-    def create(self, *, operator_id: UUID, result: OAuthConnectionResult) -> UUID:
+    async def create(self, *, operator_id: UUID, result: OAuthConnectionResult) -> UUID:
         now = datetime.datetime.now(datetime.UTC)
         result_id = uuid4()
-        with self._sessions() as session, session.begin():
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            session.execute(delete(OAuthConnectionResultRow).where(OAuthConnectionResultRow.expires_at <= now))
+        async with self._sessions() as session, session.begin():
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await session.execute(delete(OAuthConnectionResultRow).where(OAuthConnectionResultRow.expires_at <= now))
             session.add(
                 OAuthConnectionResultRow(
                     result_id=result_id,
@@ -68,12 +68,12 @@ class PostgresOAuthConnectionResultStore:
             )
         return result_id
 
-    def consume(self, *, result_id: UUID, operator_id: UUID) -> OAuthConnectionResult | None:
+    async def consume(self, *, result_id: UUID, operator_id: UUID) -> OAuthConnectionResult | None:
         now = datetime.datetime.now(datetime.UTC)
-        with self._sessions() as session, session.begin():
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            session.execute(delete(OAuthConnectionResultRow).where(OAuthConnectionResultRow.expires_at <= now))
-            row = session.scalar(
+        async with self._sessions() as session, session.begin():
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await session.execute(delete(OAuthConnectionResultRow).where(OAuthConnectionResultRow.expires_at <= now))
+            row = await session.scalar(
                 select(OAuthConnectionResultRow)
                 .where(
                     OAuthConnectionResultRow.result_id == result_id, OAuthConnectionResultRow.operator_id == operator_id
@@ -82,7 +82,7 @@ class PostgresOAuthConnectionResultStore:
             )
             if row is None:
                 return None
-            session.delete(row)
+            await session.delete(row)
             if row.status == "success":
                 return OAuthConnectionSucceeded(title=row.title, message=row.message)
             if row.status == "error":
@@ -98,14 +98,14 @@ OAuthConnectionResultStoreDep = Annotated[PostgresOAuthConnectionResultStore, De
 router = APIRouter(tags=["oauth-connection-results"])
 
 
-def result_redirect(
+async def result_redirect(
     store: PostgresOAuthConnectionResultStore,
     *,
     operator_id: UUID,
     result: OAuthConnectionResult,
     destination: Literal["result", "settings"] = "result",
 ) -> RedirectResponse:
-    result_id = store.create(operator_id=operator_id, result=result)
+    result_id = await store.create(operator_id=operator_id, result=result)
     url = (
         f"{OAUTH_RESULT_SETTINGS_PATH}?{urlencode({'oauth_result': str(result_id)})}"
         if destination == "settings"
@@ -115,10 +115,10 @@ def result_redirect(
 
 
 @router.post("/api/oauth-results/{result_id}", response_model=OAuthConnectionResult)
-def consume_oauth_connection_result(
+async def consume_oauth_connection_result(
     result_id: UUID, store: OAuthConnectionResultStoreDep, actor: OperatorActorDep
 ) -> OAuthConnectionResult:
-    result = store.consume(result_id=result_id, operator_id=actor.operator_id)
+    result = await store.consume(result_id=result_id, operator_id=actor.operator_id)
     if result is None:
         raise HTTPException(status_code=404, detail="OAuth connection result expired or was already viewed")
     return result

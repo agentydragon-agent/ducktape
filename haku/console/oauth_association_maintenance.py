@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from typing import Literal, cast
 from uuid import UUID
 
-from sqlalchemy import Engine, Text, cast as sql_cast, literal, or_, select, text, union_all
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import Text, cast as sql_cast, literal, or_, select, text, union_all
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.database_schema import (
@@ -31,8 +31,6 @@ from haku.console.provider_connection import PostgresProviderConnectionStore
 logger = logging.getLogger(__name__)
 
 DEFAULT_REFRESH_INTERVAL = datetime.timedelta(seconds=30)
-# Session-level PostgreSQL advisory lock spelling "HAKUOAUT" in ASCII. It keeps multiple
-# interchangeable console replicas from concurrently presenting the same rotating refresh token.
 _REFRESH_ADVISORY_LOCK = 0x48414B554F415554
 
 
@@ -48,8 +46,8 @@ class OAuthAssociationMaintenance:
 
     def __init__(
         self,
-        engine: Engine,
-        sessions: sessionmaker[Session],
+        engine: AsyncEngine,
+        sessions: async_sessionmaker[AsyncSession],
         *,
         servers: list[McpServerEntry],
         oauth_store: PostgresMcpOperatorOAuthStore,
@@ -65,7 +63,7 @@ class OAuthAssociationMaintenance:
         self._authentik_store = authentik_store
         self._refresh_authentik_tokens = refresh_authentik_tokens
 
-    def _candidates(self) -> list[_RefreshTarget]:
+    async def _candidates(self) -> list[_RefreshTarget]:
         refresh_before = datetime.datetime.now(datetime.UTC) + REFRESH_SKEW
         refreshable = (
             Operator.status == OperatorStatus.ACTIVE,
@@ -112,8 +110,8 @@ class OAuthAssociationMaintenance:
                 .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
                 .where(*refreshable)
             )
-        with self._sessions.begin() as session:
-            rows = session.execute(union_all(*candidates)).tuples()
+        async with self._sessions.begin() as session:
+            rows = (await session.execute(union_all(*candidates))).tuples()
             return [
                 _RefreshTarget(
                     kind=cast(Literal["remote_mcp", "provider", "operator_login"], kind),
@@ -151,15 +149,15 @@ class OAuthAssociationMaintenance:
 
     async def refresh_once(self) -> None:
         """Refresh one snapshot of candidates when this replica wins the database lock."""
-        with self._engine.connect() as leader:
-            if not leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}):
+        async with self._engine.connect() as leader:
+            if not await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}):
                 return
             try:
                 async with asyncio.TaskGroup() as tasks:
-                    for target in self._candidates():
+                    for target in await self._candidates():
                         tasks.create_task(self._refresh(target))
             finally:
-                if not leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}):
+                if not await leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}):
                     logger.error("OAuth association refresh advisory lock was not held at release")
 
     async def _run(self, interval: datetime.timedelta) -> None:

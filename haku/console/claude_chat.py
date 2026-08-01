@@ -293,7 +293,7 @@ class ClaudeChatStore:
 
     @property
     def _engine(self) -> AsyncEngine:
-        return self._sessions.kw["bind"]
+        return cast(AsyncEngine, self._sessions.kw["bind"])
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
@@ -552,6 +552,7 @@ class ClaudeChatStore:
         try:
             async with self._engine.connect() as conn:
                 raw = await conn.get_raw_connection()
+                assert raw.dbapi_connection is not None
                 pg_conn = raw.dbapi_connection.driver_connection
                 await pg_conn.set_autocommit(True)
                 await pg_conn.execute(f"LISTEN {channel}")

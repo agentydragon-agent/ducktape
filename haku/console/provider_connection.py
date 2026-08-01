@@ -31,7 +31,8 @@ from mcp.client.auth.oauth2 import PKCEParameters
 from mcp.shared.auth import OAuthToken
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.console_events import ConsoleEventHubDep, OperatorConnectionChangedEvent
@@ -256,7 +257,7 @@ class PostgresProviderConnectionStore:
 
     def __init__(
         self,
-        sessions: sessionmaker[Session],
+        sessions: async_sessionmaker[AsyncSession],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
         token_states: PostgresOAuthTokenStateStore,
@@ -273,47 +274,47 @@ class PostgresProviderConnectionStore:
         self._provider_clients = provider_clients
         self._operator_connections = operator_connections
 
-    def _require_definition(self, connection: str) -> OperatorConnectionDefinition:
+    async def _require_definition(self, connection: str) -> OperatorConnectionDefinition:
         definition = self._operator_connections.get(connection)
         if definition is None:
             raise HTTPException(status_code=404, detail=f"operator connection {connection!r} is not configured")
         return definition
 
-    def _require_provider_definition(self, provider: str) -> OperatorConnectionProviderDefinition:
+    async def _require_provider_definition(self, provider: str) -> OperatorConnectionProviderDefinition:
         definition = self._provider_definitions.get(provider)
         if definition is None:
             raise RuntimeError(f"operator connection provider {provider!r} is not configured")
         return definition
 
-    def is_connected(self, *, connection: str, operator_id: UUID) -> bool:
+    async def is_connected(self, *, connection: str, operator_id: UUID) -> bool:
         """Read persisted connection presence without refreshing or returning its credential."""
         self._require_definition(connection)
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            return session.get(ProviderConnection, (operator_id, connection)) is not None
+            return await session.get(ProviderConnection, (operator_id, connection)) is not None
 
-    def is_provisioned(self, *, connection: str) -> bool:
+    async def is_provisioned(self, *, connection: str) -> bool:
         """Whether the cataloged connection's provider OAuth client is installed."""
         return self._require_definition(connection).provider in self._provider_clients
 
     @property
-    def cataloged_connections(self) -> list[tuple[str, OperatorConnectionDefinition]]:
+    async def cataloged_connections(self) -> list[tuple[str, OperatorConnectionDefinition]]:
         """All cataloged logical connections, in config order, including unprovisioned ones."""
         return list(self._operator_connections.items())
 
-    def _require_client(self, provider: str) -> ProviderOAuthClientConfig:
+    async def _require_client(self, provider: str) -> ProviderOAuthClientConfig:
         client = self._provider_clients.get(provider)
         if client is None:
             raise HTTPException(status_code=404, detail=f"provider {provider} is not configured on this console")
         return client
 
-    def list_statuses(self, *, operator_id: UUID) -> ProviderConnectionStatusResponse:
+    async def list_statuses(self, *, operator_id: UUID) -> ProviderConnectionStatusResponse:
         connections = self.cataloged_connections
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
             if not connections:
                 return ProviderConnectionStatusResponse()
-            rows = session.scalars(
+            rows = await session.scalars(
                 select(ProviderConnection)
                 .where(ProviderConnection.operator_id == operator_id)
                 .where(ProviderConnection.connection_name.in_([name for name, _ in connections]))
@@ -326,7 +327,7 @@ class PostgresProviderConnectionStore:
                     name,
                     definition,
                     self._require_provider_definition(definition.provider),
-                    by_connection.get(name),
+                    await by_connection.get(name),
                     provisioned=definition.provider in self._provider_clients,
                 )
                 for name, definition in connections
@@ -356,14 +357,14 @@ class PostgresProviderConnectionStore:
             **dict(descriptor.extra_auth_params),
         }
         authorization_url = f"{descriptor.authorize_url}?{urlencode(params)}"
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            if session.get(ProviderConnection, (operator_id, connection)) is not None:
+            if await session.get(ProviderConnection, (operator_id, connection)) is not None:
                 raise HTTPException(
                     status_code=409, detail=f"{definition.display_name} is already connected; disconnect it first"
                 )
-            session.execute(delete(ProviderConnectionFlow).where(ProviderConnectionFlow.expires_at < now))
-            session.execute(
+            await session.execute(delete(ProviderConnectionFlow).where(ProviderConnectionFlow.expires_at < now))
+            await session.execute(
                 delete(ProviderConnectionFlow)
                 .where(ProviderConnectionFlow.operator_id == operator_id)
                 .where(ProviderConnectionFlow.connection_name == connection)
@@ -387,9 +388,9 @@ class PostgresProviderConnectionStore:
         )
 
     async def complete_callback(self, *, state: str, code: str, operator_id: UUID) -> ProviderConnectionStatus:
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            if (row := session.get(ProviderConnectionFlow, state)) is None:
+            if (row := await session.get(ProviderConnectionFlow, state)) is None:
                 raise HTTPException(status_code=404, detail="OAuth flow not found or already used")
             if row.operator_id != operator_id:
                 raise HTTPException(status_code=403, detail="OAuth flow belongs to a different operator")
@@ -403,7 +404,7 @@ class PostgresProviderConnectionStore:
                 code_verifier=row.code_verifier,
                 scope=row.scope,
             )
-            session.delete(row)
+            await session.delete(row)
         now = _now()
         if flow.expires_at < now:
             raise HTTPException(status_code=410, detail="OAuth flow expired; start the connection again")
@@ -419,12 +420,12 @@ class PostgresProviderConnectionStore:
             descriptor, client, code=code, redirect_uri=flow.redirect_uri, code_verifier=flow.code_verifier
         )
         expires_at = token_expires_at(token, now)
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             # The code exchange is external I/O. Make the active-status check and the persistence one
             # atomic final step, so a disable committed while it was in flight is observed here.
             self._operator_identity_store.require_active_in_transaction(session, flow.operator_id)
             if (
-                session.get(ProviderConnection, (flow.operator_id, flow.connection_name), with_for_update=True)
+                await session.get(ProviderConnection, (flow.operator_id, flow.connection_name), with_for_update=True)
                 is not None
             ):
                 raise HTTPException(
@@ -449,14 +450,14 @@ class PostgresProviderConnectionStore:
             session.add(connection)
             return _status_from_row(flow.connection_name, definition, provider, connection, provisioned=True)
 
-    def disconnect(self, *, connection: str, operator_id: UUID) -> ProviderUnconnected:
+    async def disconnect(self, *, connection: str, operator_id: UUID) -> ProviderUnconnected:
         definition = self._require_definition(connection)
         provider = self._require_provider_definition(definition.provider)
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
+            row = await session.get(ProviderConnection, (operator_id, connection), with_for_update=True)
             if row is not None:
-                session.delete(row)
+                await session.delete(row)
         return ProviderUnconnected(connection=connection, display_name=definition.display_name, provider=provider.kind)
 
     async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
@@ -465,9 +466,9 @@ class PostgresProviderConnectionStore:
         descriptor = PROVIDER_DESCRIPTORS[provider.kind]
         client = self._require_client(definition.provider)
         for attempt in range(2):
-            with self._sessions.begin() as session:
+            async with self._sessions.begin() as session:
                 self._operator_identity_store.require_active_in_transaction(session, operator_id)
-                row = session.get(ProviderConnection, (operator_id, connection))
+                row = await session.get(ProviderConnection, (operator_id, connection))
                 if row is None:
                     return None
                 if row.provider_name != definition.provider or row.provider != provider.kind:

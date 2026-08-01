@@ -123,8 +123,8 @@ def _enrollment_service(request: Request) -> AgentEnrollmentService:
     return cast(AgentEnrollmentService, request.app.state.agent_enrollment_service)
 
 
-def _operator_session(request: Request) -> OperatorSession | None:
-    return operator_session(request)
+async def _operator_session(request: Request) -> OperatorSession | None:
+    return await operator_session(request)
 
 
 EnrollmentServiceDep = Annotated[AgentEnrollmentService, Depends(_enrollment_service)]

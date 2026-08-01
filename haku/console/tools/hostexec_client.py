@@ -30,7 +30,7 @@ ExchangeToken = Callable[[str, str], Awaitable[str]]
 
 
 class NodeDaemonBroker(Protocol):
-    def enqueue(self, *, daemon_id: str, backend: str, payload: dict[str, object]) -> UUID: ...
+    async def enqueue(self, *, daemon_id: str, backend: str, payload: dict[str, object]) -> UUID: ...
 
     async def wait(self, execution_id: UUID) -> dict[str, object]: ...
 
@@ -56,7 +56,9 @@ class HostexecClient:
         # Audit to stdout in the haku-console namespace (Haku can't read these logs); never the token.
         logger.info("hostexec run host=%s run_as=%s cmd=%r", host, run_as, cmd[:200])
         try:
-            execution_id = self._broker.enqueue(daemon_id=daemon_id, backend="hostexec", payload=request.model_dump())
+            execution_id = await self._broker.enqueue(
+                daemon_id=daemon_id, backend="hostexec", payload=request.model_dump()
+            )
             result = await self._broker.wait(execution_id)
         except RuntimeError as error:
             raise ToolError(str(error)) from error

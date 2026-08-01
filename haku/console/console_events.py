@@ -193,7 +193,7 @@ class ConsoleEventHub:
                 waiter.set()
         if not self._connections:
             return
-        if not await asyncio.to_thread(self._operator_identity_store.is_active, event_operator_id):
+        if not await self._operator_identity_store.is_active(event_operator_id):
             disabled = [
                 websocket
                 for websocket, connected_operator_id in list(self._connections.items())

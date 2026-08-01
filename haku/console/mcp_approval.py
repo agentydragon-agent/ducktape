@@ -24,7 +24,7 @@ from fastmcp.client import Client
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import Select
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus
@@ -192,13 +192,13 @@ _SelectRow = TypeVar("_SelectRow", bound=tuple[Any, ...])
 class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
 
-    def __init__(self, sessions: sessionmaker[Session]) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
         # here — constructing a ledger neither connects nor mutates schema. The engine/sessionmaker is
         # created once in create_app and shared across every store.
         self._sessions = sessions
 
-    def submit(
+    async def submit(
         self,
         *,
         server: McpServerEntry,
@@ -208,7 +208,7 @@ class PostgresToolCallLedger:
         auto_approval_evaluation: str | None = None,
         auto_denial_reason: str | None = None,
     ) -> ToolCallRecord:
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             tool_call_id = f"tc_{secrets.token_hex(12)}"
             match actor:
                 case AgentActor():
@@ -252,19 +252,19 @@ class PostgresToolCallLedger:
                 approved_at=now if auto_approval_policy_id is not None else None,
             )
             session.add(self._row_from_record(record))
-            session.flush()
+            await session.flush()
             session.add(principal)
             return record
 
-    def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
-        with self._sessions.begin() as session:
+    async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
+        async with self._sessions.begin() as session:
             stmt = self._record_projection_stmt(actor).where(McpToolCall.tool_call_id == tool_call_id)
-            projection = session.execute(stmt).tuples().first()
+            projection = await session.execute(stmt).tuples().first()
             if projection is None:
                 raise ToolCallNotFoundError("tool call not found")
             return self._record_from_projection(*projection)
 
-    def list_tool_calls(
+    async def list_tool_calls(
         self,
         *,
         actor: ToolCallActor,
@@ -274,7 +274,7 @@ class PostgresToolCallLedger:
         limit: int = 100,
         newest_first: bool = False,
     ) -> list[ToolCallRecord]:
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             stmt = self._record_projection_stmt(actor)
             if since is not None:
                 stmt = stmt.where(McpToolCall.updated_at > since)
@@ -290,28 +290,28 @@ class PostgresToolCallLedger:
             # view wants those); the default ascending order stays the queue-friendly
             # oldest-first for pending-approval reads.
             order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
-            projections = session.execute(stmt.order_by(order).limit(limit)).tuples().all()
+            projections = await session.execute(stmt.order_by(order).limit(limit)).tuples().all()
             return [self._record_from_projection(*projection) for projection in projections]
 
-    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
+    async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             row, principal = self._lock_pending(session, tool_call_id, operator)
             self._require_executable_principal(session, principal, operator.operator_id)
             row.status = ToolCallStatus.RUNNING
             row.updated_at = row.approved_at = datetime.datetime.now(datetime.UTC)
             return self._record_from_principal(row, principal)
 
-    def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord:
+    async def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             row, principal = self._lock_pending(session, tool_call_id, operator)
             row.status = ToolCallStatus.DENIED
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.denial_reason = reason
             return self._record_from_principal(row, principal)
 
-    def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord:
+    async def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord:
         """Retract the Agent's own still-pending call.
 
         Scoped at the Agent rather than the exact credential binding (unlike `finish` /
@@ -321,7 +321,7 @@ class PostgresToolCallLedger:
         operator's queue.
         """
         agent = self._require_agent_actor(actor)
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             row, principal = self._lock_pending(session, tool_call_id, agent)
             self._require_active_agent_binding(session, agent)
             row.status = ToolCallStatus.WITHDRAWN
@@ -329,12 +329,12 @@ class PostgresToolCallLedger:
             row.withdrawal_reason = reason
             return self._record_from_principal(row, principal)
 
-    def finish(
+    async def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord:
         if (result is None) == (error is None):
             raise ValueError("finish requires exactly one of result or error")
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id, actor)
             principal = self._principal(session, tool_call_id)
             if isinstance(actor, AgentActor) and (
@@ -351,9 +351,9 @@ class PostgresToolCallLedger:
             row.error = error
             return self._record_from_principal(row, principal)
 
-    def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID:
+    async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID:
         """Revalidate the exact durable principal immediately before external execution."""
-        with self._sessions.begin() as session:
+        async with self._sessions.begin() as session:
             row = self._row_by_tool_call_id(session, tool_call_id, actor)
             if row.status is not ToolCallStatus.RUNNING:
                 raise ToolCallStateConflictError(f"tool call is not running; status={row.status}")
@@ -373,7 +373,7 @@ class PostgresToolCallLedger:
     # because the ledger is reachable from adapters that resolve an actor dynamically. Each caller
     # uses the narrowed value, so neither is a bare assertion.
     @staticmethod
-    def _require_operator_actor(actor: ToolCallActor) -> OperatorActor:
+    async def _require_operator_actor(actor: ToolCallActor) -> OperatorActor:
         match actor:
             case OperatorActor():
                 return actor
@@ -381,15 +381,15 @@ class PostgresToolCallLedger:
                 raise TypeError(f"operator actor required, got {type(actor).__name__}")
 
     @staticmethod
-    def _require_agent_actor(actor: ToolCallActor) -> AgentActor:
+    async def _require_agent_actor(actor: ToolCallActor) -> AgentActor:
         match actor:
             case AgentActor():
                 return actor
             case _:
                 raise TypeError(f"agent actor required, got {type(actor).__name__}")
 
-    def _lock_pending(
-        self, session: Session, tool_call_id: str, actor: ToolCallActor
+    async def _lock_pending(
+        self, session: AsyncSession, tool_call_id: str, actor: ToolCallActor
     ) -> tuple[McpToolCall, _ResolvedToolCallPrincipal]:
         """Lock the actor's call and assert it is still pending, for one of its three exits.
 
@@ -405,9 +405,9 @@ class PostgresToolCallLedger:
             raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
         return row, principal
 
-    def _row_by_tool_call_id(self, session: Session, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
+    async def _row_by_tool_call_id(self, session: AsyncSession, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
         stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
-        row = session.scalars(stmt.with_for_update(of=McpToolCall)).first()
+        row = await session.scalars(stmt.with_for_update(of=McpToolCall)).first()
         if row is None:
             raise ToolCallNotFoundError("tool call not found")
         return row
@@ -488,7 +488,7 @@ class PostgresToolCallLedger:
         return cls._record_from_principal(row, principal)
 
     @staticmethod
-    def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
+    async def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
         caller: ToolCallCaller
         if isinstance(principal, _OperatorToolCallPrincipal):
             caller = OperatorToolCallCaller()
@@ -515,8 +515,8 @@ class PostgresToolCallLedger:
         )
 
     @staticmethod
-    def _principal(session: Session, tool_call_id: str) -> _ResolvedToolCallPrincipal:
-        result = session.execute(
+    async def _principal(session: AsyncSession, tool_call_id: str) -> _ResolvedToolCallPrincipal:
+        result = await session.execute(
             select(
                 McpToolCallPrincipal,
                 CredentialBinding.agent_id,
@@ -542,7 +542,7 @@ class PostgresToolCallLedger:
         )
 
     @staticmethod
-    def _resolve_principal(
+    async def _resolve_principal(
         tool_call_id: str,
         row: McpToolCallPrincipal,
         *,
@@ -561,8 +561,8 @@ class PostgresToolCallLedger:
         )
 
     @staticmethod
-    def _require_active_operator(session: Session, operator_id: UUID) -> None:
-        found = session.scalar(
+    async def _require_active_operator(session: AsyncSession, operator_id: UUID) -> None:
+        found = await session.scalar(
             select(Operator.operator_id)
             .where(Operator.operator_id == operator_id, Operator.status == OperatorStatus.ACTIVE)
             .with_for_update()
@@ -571,8 +571,8 @@ class PostgresToolCallLedger:
             raise ToolCallStateConflictError("operator is not active")
 
     @staticmethod
-    def _require_active_agent_binding(session: Session, actor: AgentActor) -> str:
-        display_name = session.scalar(
+    async def _require_active_agent_binding(session: AsyncSession, actor: AgentActor) -> str:
+        display_name = await session.scalar(
             select(AgentNameReservation.display_name)
             .select_from(CredentialBinding)
             .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
@@ -600,8 +600,8 @@ class PostgresToolCallLedger:
             raise ToolCallStateConflictError("agent credential binding is not active")
         return display_name
 
-    def _require_executable_principal(
-        self, session: Session, principal: _ResolvedToolCallPrincipal, operator_id: UUID
+    async def _require_executable_principal(
+        self, session: AsyncSession, principal: _ResolvedToolCallPrincipal, operator_id: UUID
     ) -> UUID:
         if isinstance(principal, _OperatorToolCallPrincipal):
             if principal.operator_id != operator_id:
@@ -753,12 +753,12 @@ async def _resolve_operator_metadata_auth(
     credential = server.backend.credential if isinstance(server.backend, InProcessBackend) else server.backend.auth
     match credential:
         case OperatorConnectionCredential(connection=connection):
-            if not provider_store.is_provisioned(connection=connection):
+            if not await provider_store.is_provisioned(connection=connection):
                 return _DegradedAuth(
                     f"OAuth client for {connection} is not provisioned on this console; "
                     "see the console deployment README."
                 )
-            if not provider_store.is_connected(connection=connection, operator_id=operator_id):
+            if not await provider_store.is_connected(connection=connection, operator_id=operator_id):
                 return _DegradedAuth(f"Connect your {connection} account in the console to use this server.")
             # The implementation owns its schemas and tools/list invokes no backend operation.
             return _ResolvedAuth(None)
@@ -828,7 +828,7 @@ async def list_tool_calls(
 @router.get("/api/tool-calls/{tool_call_id}")
 async def get_tool_call(tool_call_id: str, service: ToolCallServiceDep, actor: OperatorActorDep) -> ToolCallRecord:
     try:
-        return service.get(tool_call_id, actor=actor)
+        return await service.get(tool_call_id, actor=actor)
     except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
         _raise_tool_call_http_error(error)
 

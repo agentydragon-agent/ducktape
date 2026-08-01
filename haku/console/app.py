@@ -11,6 +11,7 @@ configured for a direct local/dev fallback.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
@@ -23,9 +24,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
@@ -150,8 +149,9 @@ def create_app(
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
     # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
-    db_engine = create_engine(database_url, pool_pre_ping=True)
-    db_sessions = sessionmaker(db_engine, expire_on_commit=False)
+    async_database_url = database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+    db_engine = create_async_engine(async_database_url, pool_pre_ping=True)
+    db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
     oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
@@ -159,14 +159,7 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    claude_chat_store = claude_chat.ClaudeChatStore(
-        async_sessionmaker(
-            create_async_engine(
-                database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1), pool_pre_ping=True
-            ),
-            expire_on_commit=False,
-        )
-    )
+    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions)
     claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -242,19 +235,26 @@ def create_app(
         loaded_static_agents = (
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
-        static_agent_definitions = tuple(
-            StaticAgentDefinition(
-                agent_id=agent.agent_id,
-                display_name=agent.display_name,
-                operator_id=operator_identity_store.resolve_configured_external_user_key(
-                    agent.operator_external_user_key
-                ),
-                secret_reference=agent.secret_reference,
-                token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
-                auto_approval_policy=agent.auto_approval_policy,
-            )
-            for agent in loaded_static_agents
-        )
+
+        async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
+            defs: list[StaticAgentDefinition] = []
+            for agent in loaded_static_agents:
+                defs.append(  # noqa: PERF401, RUF100
+                    StaticAgentDefinition(
+                        agent_id=agent.agent_id,
+                        display_name=agent.display_name,
+                        operator_id=await operator_identity_store.resolve_configured_external_user_key(
+                            agent.operator_external_user_key
+                        ),
+                        secret_reference=agent.secret_reference,
+                        token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
+                        auto_approval_policy=agent.auto_approval_policy,
+                    )
+                )
+            return tuple(defs)
+
+        # create_app runs outside any event loop; asyncio.run is safe here.
+        static_agent_definitions = asyncio.run(_resolve_static_agent_definitions())
     if claude_runtime is not None:
         if loaded_static_agents is None:
             raise RuntimeError("Claude runtime requires loaded static Agent credentials")

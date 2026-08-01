@@ -26,7 +26,8 @@ import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
@@ -128,10 +129,11 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     )
 
 
-def console_sessions(db_url: str) -> sessionmaker[Session]:
-    """The shared sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
-    (production builds a single engine/sessionmaker and passes it to every store)."""
-    return sessionmaker(create_engine(db_url, pool_pre_ping=True), expire_on_commit=False)
+def console_sessions(db_url: str) -> async_sessionmaker[AsyncSession]:
+    """The shared async sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
+    (production builds a single async engine/sessionmaker and passes it to every store)."""
+    async_url = db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+    return async_sessionmaker(create_async_engine(async_url, pool_pre_ping=True), expire_on_commit=False)
 
 
 def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
