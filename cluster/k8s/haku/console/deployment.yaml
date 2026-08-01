@@ -158,6 +158,13 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
+            # public-coder-agent's dedicated static-Agent bearer. The same generated value reaches
+            # only its iron-proxy; the OpenClaw container uses a non-secret placeholder.
+            - name: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-public-coder-agent
+                  key: token
             - name: HAKU_CONSOLE_NODE_DAEMON_WYRM2_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -209,6 +216,13 @@ spec:
             # controller-fed Authentik user id. Haku resolves it through the configured identity
             # trust domain to a canonical Operator UUID; it never becomes live request authority.
             - name: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_subject
+            # Coder's manually approved calls execute as the same canonical Operator. This is a
+            # startup identity seed, not authority carried by the Agent request.
+            - name: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc

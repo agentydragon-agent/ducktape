@@ -92,6 +92,11 @@ spec:
             # would never see it. See plans/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
               value: "proxy-github-placeholder"
+            # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
+            # only in Haku Console and this agent's iron-proxy, which replaces this value only in
+            # Authorization headers sent to the exact haku.allegedly.works host.
+            - name: HAKU_CONSOLE_TOKEN
+              value: "proxy-haku-console-placeholder"
             # Unlike the GitHub PAT above, this must be the real credential.
             # Either half of the BuildBuddy setup can use proxy substitution on
             # its own: a local Bazel client sends its authenticated gRPC traffic

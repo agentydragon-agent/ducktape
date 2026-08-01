@@ -142,3 +142,30 @@ resource "kubernetes_secret" "haku_console_oidc" {
     operator_subject = tostring(data.authentik_user.agentydragon.pk)
   }
 }
+
+# Dedicated static-Agent bearer for public-coder-agent -> Haku Console MCP. The real value is
+# delivered only to Haku Console and public-coder-agent's iron-proxy; the OpenClaw container gets
+# a non-secret placeholder that the proxy replaces only for haku.allegedly.works Authorization
+# headers. This Agent is assigned the explicit no-auto-approval policy in the console config, so
+# possession of the bearer can submit calls but can never approve or execute one without the
+# Operator's reviewed approval.
+resource "random_password" "haku_console_public_coder_agent" {
+  length  = 48
+  special = false
+}
+
+resource "kubernetes_secret" "haku_console_public_coder_agent" {
+  for_each = toset(["haku-console", "public-coder-agent"])
+
+  metadata {
+    name      = "haku-console-public-coder-agent"
+    namespace = each.value
+    annotations = {
+      description = "Proxy-mediated static-Agent bearer for public-coder-agent -> Haku Console MCP"
+    }
+  }
+
+  data = {
+    token = random_password.haku_console_public_coder_agent.result
+  }
+}
