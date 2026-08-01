@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DeploymentInfo } from "./client";
-import { deploymentVersions } from "./settings_panel";
+import { deploymentVersions, settingsTabFromSearch } from "./settings_panel";
 
 function deployment(server: string | null, frontend: string | null): DeploymentInfo {
   const image = (commit: string | null) => ({
@@ -11,6 +11,20 @@ function deployment(server: string | null, frontend: string | null): DeploymentI
   });
   return { server: image(server), frontend: image(frontend) };
 }
+
+describe("settingsTabFromSearch", () => {
+  it("opens MCP servers by default", () => {
+    expect(settingsTabFromSearch("")).toBe("mcp");
+  });
+
+  it("restores a linked tab", () => {
+    expect(settingsTabFromSearch("?tab=nodes")).toBe("nodes");
+  });
+
+  it("falls back safely for unknown tabs", () => {
+    expect(settingsTabFromSearch("?tab=obsolete")).toBe("mcp");
+  });
+});
 
 describe("deploymentVersions", () => {
   it("collapses matching server and web commits", () => {

@@ -104,6 +104,11 @@ function OAuthSettingsResultScene({ status }: { status: "success" | "error" }) {
 function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
+    case "settings-mobile":
+    case "settings-agents":
+    case "settings-notifications":
+    case "settings-nodes":
+    case "settings-system":
       return <ConsoleScene view="settings" />;
     case "claude-chat":
     case "claude-provisioning":

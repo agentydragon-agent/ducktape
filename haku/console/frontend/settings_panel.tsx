@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Loader, Select, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Loader, Select, Stack, Tabs, Text } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { shortDate } from "./approval_state";
@@ -411,9 +411,65 @@ function PushNotificationCard() {
   );
 }
 
-// Operator settings — the console's rarely-touched MCP account linkage, rendered as one of the
-// shell chrome's mutually exclusive panels.
+const SETTINGS_TABS = ["mcp", "agents", "notifications", "nodes", "system"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+export function settingsTabFromSearch(search: string): SettingsTab {
+  const requested = new URLSearchParams(search).get("tab");
+  return SETTINGS_TABS.find((tab) => tab === requested) ?? "mcp";
+}
+
+function settingsTabFromLocation(): SettingsTab {
+  return settingsTabFromSearch(window.location.search);
+}
+
+function SystemStatusCard({ deployment }: { deployment: DeploymentInfo }) {
+  const versions = deploymentVersions(deployment);
+  const serverCommit = deployment.server.source_commit;
+  const frontendCommit = deployment.frontend.source_commit;
+  const inSync = Boolean(serverCommit && frontendCommit && serverCommit === frontendCommit);
+  const mixed = Boolean(serverCommit && frontendCommit && serverCommit !== frontendCommit);
+  const status = inSync
+    ? { label: "In sync", color: "teal", description: "The server and web application run the same revision." }
+    : mixed
+      ? {
+          label: "Mixed revisions",
+          color: "orange",
+          description: "The deployment is still converging on one revision.",
+        }
+      : { label: "Unknown", color: "gray", description: "Complete deployment revision metadata is unavailable." };
+
+  return (
+    <section className="haku-shell-card">
+      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text fw={600}>System status</Text>
+          <Text size="xs" c="dimmed">
+            {status.description}
+          </Text>
+        </Stack>
+        <Badge color={status.color} variant="light">
+          {status.label}
+        </Badge>
+      </Group>
+      <Stack gap={4} mt="sm">
+        {versions.map((version) => (
+          <VersionLink key={version.label} version={version} />
+        ))}
+        {versions.length === 0 && (
+          <Text size="xs" c="dimmed">
+            Deployment metadata unavailable.
+          </Text>
+        )}
+      </Stack>
+    </section>
+  );
+}
+
+// Operator settings are split by operational scope: service connectivity, callers, browser-local
+// preferences, execution workers, and the Console deployment itself.
 export function SettingsPanel() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [agents, setAgents] = useState<AgentView[] | null>(null);
   const [agentPolicies, setAgentPolicies] = useState<string[]>([]);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
@@ -424,29 +480,21 @@ export function SettingsPanel() {
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
   const [daemonsError, setDaemonsError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const loadGeneration = useRef(0);
+  const [mcpLoading, setMcpLoading] = useState(false);
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [deploymentLoading, setDeploymentLoading] = useState(false);
+  const [daemonsLoading, setDaemonsLoading] = useState(false);
+  const mcpGeneration = useRef(0);
+  const agentsGeneration = useRef(0);
+  const deploymentGeneration = useRef(0);
   const daemonGeneration = useRef(0);
-  const versions = deployment ? deploymentVersions(deployment) : [];
 
-  const load = useCallback(() => {
-    const generation = ++loadGeneration.current;
-    setLoading(true);
-    const agentsRequest = listAgents().then(
-      (response) => {
-        if (generation !== loadGeneration.current) return;
-        setAgents(response.agents);
-        setAgentPolicies(response.auto_approval_policies);
-        setAgentsError(null);
-      },
-      (e: unknown) => {
-        if (generation !== loadGeneration.current) return;
-        setAgentsError(displayableError(e));
-      }
-    );
-    const mcpRequest = listMcpServers().then(
+  const loadMcpServers = useCallback(() => {
+    const generation = ++mcpGeneration.current;
+    setMcpLoading(true);
+    void listMcpServers().then(
       async (connections) => {
-        if (generation !== loadGeneration.current) return;
+        if (generation !== mcpGeneration.current) return;
         setMcpError(null);
         setMcpServers((current) => {
           const previous = new Map(current?.map((view) => [view.connection.server_id, view]));
@@ -461,7 +509,7 @@ export function SettingsPanel() {
           connections.map(async (connection) => {
             try {
               const probe = await getMcpServerStatus(connection.server_id);
-              if (generation !== loadGeneration.current) return;
+              if (generation !== mcpGeneration.current) return;
               setMcpServers(
                 (current) =>
                   current?.map((view) =>
@@ -471,7 +519,7 @@ export function SettingsPanel() {
                   ) ?? null
               );
             } catch (e) {
-              if (generation !== loadGeneration.current) return;
+              if (generation !== mcpGeneration.current) return;
               const error = e instanceof Error ? e.message : String(e);
               setMcpServers(
                 (current) =>
@@ -482,61 +530,130 @@ export function SettingsPanel() {
             }
           })
         );
+        if (generation === mcpGeneration.current) setMcpLoading(false);
       },
       (e: unknown) => {
-        if (generation !== loadGeneration.current) return;
+        if (generation !== mcpGeneration.current) return;
         setMcpError(displayableError(e));
+        setMcpLoading(false);
       }
     );
-    const deploymentRequest = fetchDeploymentInfo().then(
+  }, []);
+
+  const loadAgents = useCallback(() => {
+    const generation = ++agentsGeneration.current;
+    setAgentsLoading(true);
+    void listAgents().then(
+      (response) => {
+        if (generation !== agentsGeneration.current) return;
+        setAgents(response.agents);
+        setAgentPolicies(response.auto_approval_policies);
+        setAgentsError(null);
+        setAgentsLoading(false);
+      },
+      (e: unknown) => {
+        if (generation !== agentsGeneration.current) return;
+        setAgentsError(displayableError(e));
+        setAgentsLoading(false);
+      }
+    );
+  }, []);
+
+  const loadDeployment = useCallback(() => {
+    const generation = ++deploymentGeneration.current;
+    setDeploymentLoading(true);
+    void fetchDeploymentInfo().then(
       (nextDeployment) => {
-        if (generation !== loadGeneration.current) return;
+        if (generation !== deploymentGeneration.current) return;
         setDeployment(nextDeployment);
         setDeploymentError(null);
+        setDeploymentLoading(false);
       },
       (e: unknown) => {
-        if (generation !== loadGeneration.current) return;
+        if (generation !== deploymentGeneration.current) return;
         setDeploymentError(displayableError(e));
+        setDeploymentLoading(false);
       }
     );
-    void Promise.all([agentsRequest, mcpRequest, deploymentRequest]).then(() => {
-      if (generation === loadGeneration.current) setLoading(false);
-    });
   }, []);
 
   const loadDaemons = useCallback(() => {
     const generation = ++daemonGeneration.current;
+    setDaemonsLoading(true);
     void listNodeDaemons().then(
       (nextDaemons) => {
         if (generation !== daemonGeneration.current) return;
         setDaemons(nextDaemons);
         setDaemonsError(null);
+        setDaemonsLoading(false);
       },
       (e: unknown) => {
         if (generation !== daemonGeneration.current) return;
         setDaemonsError(displayableError(e));
+        setDaemonsLoading(false);
       }
     );
   }, []);
 
+  const refreshActiveTab = useCallback(() => {
+    switch (activeTab) {
+      case "mcp":
+        loadMcpServers();
+        break;
+      case "agents":
+        loadAgents();
+        break;
+      case "notifications":
+        break;
+      case "nodes":
+        loadDaemons();
+        break;
+      case "system":
+        loadDeployment();
+        break;
+    }
+  }, [activeTab, loadAgents, loadDaemons, loadDeployment, loadMcpServers]);
+
   useEffect(() => {
-    loadDaemons();
+    refreshActiveTab();
+  }, [refreshActiveTab]);
+
+  useEffect(() => {
+    if (activeTab !== "nodes") return;
     const interval = window.setInterval(loadDaemons, 10_000);
+    return () => window.clearInterval(interval);
+  }, [activeTab, loadDaemons]);
+
+  useEffect(() => {
+    const restoreTab = () => setActiveTab(settingsTabFromLocation());
+    window.addEventListener("popstate", restoreTab);
     return () => {
-      window.clearInterval(interval);
-      loadGeneration.current += 1;
+      window.removeEventListener("popstate", restoreTab);
+      mcpGeneration.current += 1;
+      agentsGeneration.current += 1;
+      deploymentGeneration.current += 1;
       daemonGeneration.current += 1;
     };
-  }, [loadDaemons]);
+  }, []);
 
   useConsoleEvents((event) => {
+    if (event.event_type === "sync") refreshActiveTab();
     if (
-      event.event_type === "sync" ||
-      event.event_type === "mcp_operator_auth_changed" ||
-      event.event_type === "operator_connection_changed"
+      activeTab === "mcp" &&
+      (event.event_type === "mcp_operator_auth_changed" || event.event_type === "operator_connection_changed")
     )
-      load();
+      loadMcpServers();
   });
+
+  function selectTab(value: string | null) {
+    if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
+    const tab = value as SettingsTab;
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === "mcp") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url);
+  }
 
   function connect(serverId: string) {
     connectMcpOperatorAuth(serverId).then(
@@ -555,6 +672,7 @@ export function SettingsPanel() {
     disconnectMcpOperatorAuth(serverId).then(
       () => {
         toastSuccess("MCP account disconnected", serverId);
+        loadMcpServers();
       },
       (e: unknown) => toastError("Couldn't disconnect MCP account", e)
     );
@@ -575,7 +693,10 @@ export function SettingsPanel() {
 
   function disconnectProvider(connection: OperatorConnectionName) {
     disconnectOperatorConnection(connection).then(
-      (status) => toastSuccess("Account disconnected", status.display_name),
+      (status) => {
+        toastSuccess("Account disconnected", status.display_name);
+        loadMcpServers();
+      },
       (e: unknown) => toastError("Couldn't disconnect account", e)
     );
   }
@@ -598,118 +719,169 @@ export function SettingsPanel() {
     );
   }
 
+  const loading =
+    activeTab === "mcp"
+      ? mcpLoading
+      : activeTab === "agents"
+        ? agentsLoading
+        : activeTab === "nodes"
+          ? daemonsLoading
+          : activeTab === "system"
+            ? deploymentLoading
+            : false;
+
   return (
-    <section className="haku-page" aria-label="Settings">
+    <Tabs value={activeTab} onChange={selectTab} keepMounted={false} className="haku-page" aria-label="Settings">
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Text fw={700}>Settings</Text>
-          <Button size="xs" variant="light" color="gray" loading={loading} onClick={() => load()}>
-            Refresh
-          </Button>
+          {activeTab !== "notifications" && (
+            <Button size="xs" variant="light" color="gray" loading={loading} onClick={refreshActiveTab}>
+              Refresh
+            </Button>
+          )}
         </div>
+        <Tabs.List className="haku-settings-tabs-list" aria-label="Settings sections">
+          <Tabs.Tab value="mcp">
+            <span className="haku-settings-tab-long">MCP servers</span>
+            <span className="haku-settings-tab-short">MCP</span>
+          </Tabs.Tab>
+          <Tabs.Tab value="agents">Agents</Tabs.Tab>
+          <Tabs.Tab value="notifications">
+            <span className="haku-settings-tab-long">Notifications</span>
+            <span className="haku-settings-tab-short">Alerts</span>
+          </Tabs.Tab>
+          <Tabs.Tab value="nodes">Nodes</Tabs.Tab>
+          <Tabs.Tab value="system">System</Tabs.Tab>
+        </Tabs.List>
       </header>
       <div className="haku-page-scroll">
-        <Stack gap="xs" className="haku-page-list">
-          <SectionHeading
-            title="Agents"
-            description="Clients authorized to use Haku. Activity is historical and does not indicate that a client is currently online."
-          />
-          {agentsError && (
-            <Text c="red" size="sm">
-              Failed to load Agents: {agentsError}
-            </Text>
-          )}
-          {!agents && !agentsError && (
-            <Group justify="center" p="xl">
-              <Loader aria-label="Loading Agents" />
-            </Group>
-          )}
-          {agents && agents.length === 0 && (
-            <section className="haku-shell-card">
-              <Text size="sm" c="dimmed">
-                No Agents have been authorized.
-              </Text>
-            </section>
-          )}
-          {agents?.map((agent) => (
-            <AgentCard
-              key={agent.agent_id}
-              agent={agent}
-              policies={agentPolicies}
-              saving={savingAgentId !== null}
-              onPolicyChange={changeAgentPolicy}
+        <Tabs.Panel value="mcp">
+          <Stack gap="xs" className="haku-page-list">
+            <SectionHeading
+              title="MCP servers"
+              description="Live availability and account linkage for the tools Haku exposes. Status refreshes automatically and may verify linked credentials."
             />
-          ))}
-          <SectionHeading
-            title="Notifications"
-            description="Get a notification on this device when a tool call needs your approval, including when the console is closed. Notifications are per-browser: turn this on once on each device you want reached."
-          />
-          <PushNotificationCard />
-          <SectionHeading
-            title="MCP servers"
-            description="Live availability through the console's MCP reflection tools. Status refreshes automatically and may verify linked credentials."
-          />
-          {mcpError && (
-            <Text c="red" size="sm">
-              Failed to load MCP servers: {mcpError}
-            </Text>
-          )}
-          {!mcpServers && !mcpError && (
-            <Group justify="center" p="xl">
-              <Loader aria-label="Loading MCP servers" />
-            </Group>
-          )}
-          {mcpServers && mcpServers.length === 0 && (
-            <section className="haku-shell-card">
-              <Text size="sm" c="dimmed">
-                No MCP servers are configured.
+            {mcpError && (
+              <Text c="red" size="sm">
+                Failed to load MCP servers: {mcpError}
               </Text>
-            </section>
-          )}
-          {mcpServers?.map((view) => (
-            <McpServerCard
-              key={view.connection.server_id}
-              view={view}
-              onConnectMcp={connect}
-              onDisconnectMcp={disconnect}
-              onConnectProvider={connectProvider}
-              onDisconnectProvider={disconnectProvider}
+            )}
+            {!mcpServers && !mcpError && (
+              <Group justify="center" p="xl">
+                <Loader aria-label="Loading MCP servers" />
+              </Group>
+            )}
+            {mcpServers && mcpServers.length === 0 && (
+              <section className="haku-shell-card">
+                <Text size="sm" c="dimmed">
+                  No MCP servers are configured.
+                </Text>
+              </section>
+            )}
+            {mcpServers?.map((view) => (
+              <McpServerCard
+                key={view.connection.server_id}
+                view={view}
+                onConnectMcp={connect}
+                onDisconnectMcp={disconnect}
+                onConnectProvider={connectProvider}
+                onDisconnectProvider={disconnectProvider}
+              />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="agents">
+          <Stack gap="xs" className="haku-page-list">
+            <SectionHeading
+              title="Agents"
+              description="Clients authorized to use Haku. Activity is historical and does not indicate that a client is currently online."
             />
-          ))}
-          <SectionHeading
-            title="Node daemons"
-            description="Outbound execution daemons. Heartbeats determine whether approved node work can be dispatched."
-          />
-          {daemonsError && (
-            <Text c="red" size="sm">
-              Failed to load node daemons: {daemonsError}
-            </Text>
-          )}
-          {daemons?.map((daemon) => (
-            <DaemonCard key={daemon.daemon_id} daemon={daemon} />
-          ))}
-          {deployment && (
-            <div>
-              <Text fw={600}>Version</Text>
-              <Stack gap={2} mt={4}>
-                {versions.map((version) => (
-                  <VersionLink key={version.label} version={version} />
-                ))}
-                {versions.length === 0 && (
-                  <Text size="xs" c="dimmed">
-                    Deployment metadata unavailable.
-                  </Text>
-                )}
-              </Stack>
-            </div>
-          )}
-          {deploymentError && (
-            <Text c="red" size="sm">
-              Failed to load deployment version: {deploymentError}
-            </Text>
-          )}
-        </Stack>
+            {agentsError && (
+              <Text c="red" size="sm">
+                Failed to load Agents: {agentsError}
+              </Text>
+            )}
+            {!agents && !agentsError && (
+              <Group justify="center" p="xl">
+                <Loader aria-label="Loading Agents" />
+              </Group>
+            )}
+            {agents && agents.length === 0 && (
+              <section className="haku-shell-card">
+                <Text size="sm" c="dimmed">
+                  No Agents have been authorized.
+                </Text>
+              </section>
+            )}
+            {agents?.map((agent) => (
+              <AgentCard
+                key={agent.agent_id}
+                agent={agent}
+                policies={agentPolicies}
+                saving={savingAgentId !== null}
+                onPolicyChange={changeAgentPolicy}
+              />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="notifications">
+          <Stack gap="xs" className="haku-page-list">
+            <SectionHeading
+              title="Notifications"
+              description="Get notified on this device when a tool call needs approval, even when the console is closed. Enable notifications separately on every browser you want reached."
+            />
+            <PushNotificationCard />
+          </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="nodes">
+          <Stack gap="xs" className="haku-page-list">
+            <SectionHeading
+              title="Node daemons"
+              description="Outbound execution workers. Heartbeats determine whether approved node work can currently be dispatched."
+            />
+            {daemonsError && (
+              <Text c="red" size="sm">
+                Failed to load node daemons: {daemonsError}
+              </Text>
+            )}
+            {!daemons && !daemonsError && (
+              <Group justify="center" p="xl">
+                <Loader aria-label="Loading node daemons" />
+              </Group>
+            )}
+            {daemons && daemons.length === 0 && (
+              <section className="haku-shell-card">
+                <Text size="sm" c="dimmed">
+                  No node daemons are configured.
+                </Text>
+              </section>
+            )}
+            {daemons?.map((daemon) => (
+              <DaemonCard key={daemon.daemon_id} daemon={daemon} />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="system">
+          <Stack gap="xs" className="haku-page-list">
+            <SectionHeading
+              title="System"
+              description="Deployment status for the Console server and web application."
+            />
+            {deploymentError && (
+              <Text c="red" size="sm">
+                Failed to load system status: {deploymentError}
+              </Text>
+            )}
+            {!deployment && !deploymentError && (
+              <Group justify="center" p="xl">
+                <Loader aria-label="Loading system status" />
+              </Group>
+            )}
+            {deployment && <SystemStatusCard deployment={deployment} />}
+          </Stack>
+        </Tabs.Panel>
       </div>
-    </section>
+    </Tabs>
   );
 }
