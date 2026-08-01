@@ -57,6 +57,19 @@ class _Grant:
 
 
 @dataclass(frozen=True)
+class _AutoApproved:
+    explanation: str
+
+
+@dataclass(frozen=True)
+class _NotAutoApproved:
+    reason: str
+
+
+type _AutoApprovalDecision = _AutoApproved | _NotAutoApproved
+
+
+@dataclass(frozen=True)
 class _PolicyEvaluation:
     grants: tuple[_Grant, ...] = ()
     abstentions: tuple[str, ...] = ()
@@ -157,10 +170,12 @@ class AutoApprovalPolicyRegistry:
             case GmailLabelNamespaceAutoApprovalPolicy(server=server, label_prefix=label_prefix):
                 if server_id != server or tool_name not in GMAIL_LABEL_NAMESPACE_TOOLS:
                     return _PolicyEvaluation()
-                approved, explanation = await _evaluate_gmail_label_namespace(tool_name, arguments, label_prefix, gmail)
-                if approved:
-                    return _PolicyEvaluation(grants=(_Grant((policy.id,), explanation),))
-                return _PolicyEvaluation(abstentions=(f"{policy.id}: {explanation}",))
+                decision = await _evaluate_gmail_label_namespace(tool_name, arguments, label_prefix, gmail)
+                match decision:
+                    case _AutoApproved(explanation=explanation):
+                        return _PolicyEvaluation(grants=(_Grant((policy.id,), explanation),))
+                    case _NotAutoApproved(reason=reason):
+                        return _PolicyEvaluation(abstentions=(f"{policy.id}: {reason}",))
             case AnyOfAutoApprovalPolicy(policies=members):
                 results = [
                     await self._evaluate_policy(
@@ -227,7 +242,7 @@ async def auto_approve_tool_call(
 
 async def _evaluate_gmail_label_namespace(
     tool_name: str, arguments: dict[str, Any], label_prefix: str, gmail: GmailToolsClient | None
-) -> tuple[bool, str]:
+) -> _AutoApprovalDecision:
     """Evaluate the reviewed Gmail label-mutation boundary."""
     try:
 
@@ -238,12 +253,12 @@ async def _evaluate_gmail_label_namespace(
             add = arguments.get("add") or []
             remove = arguments.get("remove") or []
             if not add and not remove:
-                return False, "no label changes requested"
+                return _NotAutoApproved("no label changes requested")
             if set(add) & set(remove):
-                return False, "a label cannot be both added and removed"
+                return _NotAutoApproved("a label cannot be both added and removed")
             if all(allows_label(name) for name in [*add, *remove]):
-                return True, f"all label names are under {label_prefix!r}"
-            return False, f"at least one label name is outside {label_prefix!r}"
+                return _AutoApproved(f"all label names are under {label_prefix!r}")
+            return _NotAutoApproved(f"at least one label name is outside {label_prefix!r}")
         if gmail is None:
             raise RuntimeError("Gmail client is unavailable")
         if tool_name == "labels_patch":
@@ -253,17 +268,17 @@ async def _evaluate_gmail_label_namespace(
                 or arguments.get("label_list_visibility") is not None
                 or arguments.get("message_list_visibility") is not None
             ):
-                return False, "label rename required without visibility changes"
+                return _NotAutoApproved("label rename required without visibility changes")
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
             if allows_label(current.name) and allows_label(new_name):
-                return True, f"current and new label names are under {label_prefix!r}"
-            return False, f"current or new label name is outside {label_prefix!r}"
+                return _AutoApproved(f"current and new label names are under {label_prefix!r}")
+            return _NotAutoApproved(f"current or new label name is outside {label_prefix!r}")
         if tool_name == "labels_delete":
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
             if allows_label(current.name):
-                return True, f"label name is under {label_prefix!r}"
-            return False, f"label name is outside {label_prefix!r}"
-        return False, "Gmail operation is not handled by this policy"
+                return _AutoApproved(f"label name is under {label_prefix!r}")
+            return _NotAutoApproved(f"label name is outside {label_prefix!r}")
+        return _NotAutoApproved("Gmail operation is not handled by this policy")
     except Exception:
         logger.exception("auto-approval evaluation failed tool=%s", tool_name)
-        return False, "Gmail auto-approval evaluation failed"
+        return _NotAutoApproved("Gmail auto-approval evaluation failed")
