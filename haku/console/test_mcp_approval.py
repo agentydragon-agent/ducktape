@@ -8,7 +8,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
 from haku.console import console_events, operator_auth
@@ -49,7 +50,7 @@ from haku.console.database_schema import (
 )
 from haku.console.mcp_approval import (
     DegradedReflection,
-    McpServerClient,
+    McpServerDispatcher,
     PostgresToolCallLedger,
     _execution_auth,
     _mcp_result_to_json,
@@ -61,6 +62,7 @@ from haku.console.mcp_config import (
     InProcessCredentialKind,
     InProcessServerRegistration,
     McpServerEntry,
+    NoCredential,
     OperatorConnectionCredential,
     RemoteServerOAuthAuth,
     validate_in_process_server_bindings,
@@ -74,7 +76,7 @@ from haku.console.tool_call_service import ToolCallApplicationService, backend_a
 from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller, SubmitToolCallRequest, ToolCallStatus
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
-from util.testing.asgi import serve_app_sync, serve_fastmcp
+from util.testing.asgi import serve_app_sync
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -170,7 +172,9 @@ def _build_test_mcp_server() -> FastMCP:
 
 
 @contextmanager
-def _serve_remote_oauth(*, preregistered_client_id: str | None = None) -> Generator[str]:
+def _serve_remote_oauth(
+    *, preregistered_client_id: str | None = None, bearers: list[str | None] | None = None
+) -> Generator[str]:
     """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
     `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
     Authentik (fronted by kubernetes-mcp-server), which has no DCR endpoint — so the test
@@ -181,6 +185,12 @@ def _serve_remote_oauth(*, preregistered_client_id: str | None = None) -> Genera
     expected_client_id = preregistered_client_id or "dynamic-client"
 
     async def mcp(request: Request) -> JSONResponse:
+        # This endpoint only ever issues the 401 challenge that starts the DCR dance -- it is not a
+        # real MCP server. Recording here is still the wire: it is what the console dialled and the
+        # credential it presented, which is the whole claim under test.
+        if bearers is not None:
+            header = request.headers.get("authorization")
+            bearers.append(header.removeprefix("Bearer ") if header else None)
         return JSONResponse(
             {"detail": "auth required"},
             status_code=401,
@@ -252,7 +262,9 @@ def _serve_remote_oauth(*, preregistered_client_id: str | None = None) -> Genera
         )
 
     routes = [
-        Route("/mcp", mcp),
+        # POST too: the DCR challenge is a GET probe, but an executed tool call is a POST, and the
+        # bearer it carries is what these tests assert on.
+        Route("/mcp", mcp, methods=["GET", "POST"]),
         Route("/.well-known/oauth-protected-resource/mcp", protected_resource),
         Route("/.well-known/oauth-protected-resource", protected_resource),
         Route("/.well-known/oauth-authorization-server/auth", oauth_metadata),
@@ -266,8 +278,8 @@ def _serve_remote_oauth(*, preregistered_client_id: str | None = None) -> Genera
 
 
 @pytest.fixture
-def remote_oauth_url() -> Generator[str]:
-    with _serve_remote_oauth() as url:
+def remote_oauth_url(upstream_bearers: list[str | None]) -> Generator[str]:
+    with _serve_remote_oauth(bearers=upstream_bearers) as url:
         yield url
 
 
@@ -303,10 +315,47 @@ def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_AGENT_OPERATOR_ENV, "op-haku")
 
 
+class _BearerRecorder:
+    """ASGI wrapper recording the bearer each request actually arrives with.
+
+    Deliberately at the transport, not at an executor seam: this asserts the credential reached the
+    wire, so it still catches a console that resolves the right token and then sends another — and
+    it proves one Operator's token never rides another Operator's call. Consecutive duplicates are
+    collapsed because one execution is several HTTP requests (initialize, then the call), and it is
+    the sequence of *distinct* credentials that carries the meaning.
+    """
+
+    def __init__(self, app: ASGIApp, bearers: list[str | None]) -> None:
+        self._app = app
+        self._bearers = bearers
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            raw = dict(scope["headers"]).get(b"authorization")
+            bearer = raw.decode().removeprefix("Bearer ") if raw else None
+            if not self._bearers or self._bearers[-1] != bearer:
+                self._bearers.append(bearer)
+        await self._app(scope, receive, send)
+
+
+@contextmanager
+def _serve_recording_mcp(server: FastMCP, bearers: list[str | None]) -> Generator[str]:
+    """`serve_fastmcp`, plus a record of the credentials that reached it."""
+    mcp_app = server.http_app(path="/")
+    app = Starlette(routes=[Mount("/mcp", app=_BearerRecorder(mcp_app, bearers))], lifespan=mcp_app.lifespan)
+    with serve_app_sync(app) as base:
+        yield f"{base}/mcp"
+
+
 @pytest.fixture
-def mcp_server_url(monkeypatch: pytest.MonkeyPatch) -> Generator[str]:
+def upstream_bearers() -> list[str | None]:
+    return []
+
+
+@pytest.fixture
+def mcp_server_url(monkeypatch: pytest.MonkeyPatch, upstream_bearers: list[str | None]) -> Generator[str]:
     monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
-    with serve_fastmcp(_build_test_mcp_server()) as url:
+    with _serve_recording_mcp(_build_test_mcp_server(), upstream_bearers) as url:
         yield url
 
 
@@ -349,6 +398,30 @@ def _dynamic_remote_oauth() -> dict[str, Any]:
 
 def _in_process_server(server_id: str, credential: dict[str, Any]) -> dict[str, Any]:
     return {"id": server_id, "backend": {"kind": "in_process", "credential": credential}}
+
+
+def _build_gmail_shaped_mcp() -> FastMCP:
+    """A real MCP server standing in for the `gmail` upstream.
+
+    These tests are about the auto-approval policy and the approve-then-execute path, not about
+    Gmail: the policy keys on `gmail/<tool>`, so the server id and tool names must match, but what
+    sits behind them is a separate service. A real in-process MCP server is the honest double —
+    it exercises tool dispatch, schema validation, and result marshalling, where an executor stub
+    replaced all three.
+    """
+    server = FastMCP("gmail-stand-in")
+
+    @server.tool()
+    async def labels_list() -> str:
+        """List the user's labels."""
+        return "labels_list:ok"
+
+    @server.tool()
+    async def drafts_create(to: list[str], subject: str, body: str) -> str:
+        """Create a draft message."""
+        return f"drafts_create:{subject}"
+
+    return server
 
 
 def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
@@ -494,17 +567,6 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
         engine.dispose()
 
 
-class RecordingExecutor:
-    def __init__(self) -> None:
-        self.auth_tokens: list[str | None] = []
-
-    async def execute(
-        self, server: Any, tool_name: str, arguments: dict[str, Any], auth_token: str | None
-    ) -> dict[str, Any]:
-        self.auth_tokens.append(auth_token)
-        return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
-
-
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
     operator_ids: list[UUID] = []
 
@@ -540,26 +602,9 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
     return operator_ids
 
 
-class EchoingExecutor:
-    async def execute(
-        self, server: Any, tool_name: str, arguments: dict[str, Any], auth_token: str | None
-    ) -> dict[str, Any]:
-        return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
-
-
 @pytest.fixture
 def gmail_client() -> Mock:
     return Mock()
-
-
-@pytest.fixture
-def echoing_executor() -> EchoingExecutor:
-    return EchoingExecutor()
-
-
-@pytest.fixture
-def recording_executor() -> RecordingExecutor:
-    return RecordingExecutor()
 
 
 @pytest.mark.parametrize(
@@ -708,14 +753,13 @@ def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
 
 
 def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
-    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock, echoing_executor: EchoingExecutor
+    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
         make_client(
             config_file=gmail_config_file,
             gmail_client=gmail_client,
-            in_process_servers={"gmail": _operator_connection_server(build_gmail_mcp(gmail_client))},
-            tool_call_executor=echoing_executor,
+            in_process_servers={"gmail": _operator_connection_server(_build_gmail_shaped_mcp())},
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
@@ -733,17 +777,16 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         "approved: Agent policy 'haku_v1' matched haku_v1 -> gmail_reads: exact tool gmail/labels_list is listed"
     )
     assert record["approved_at"] is not None
-    assert record["result"]["content"][0]["text"] == "gmail:labels_list"
+    assert record["result"]["content"][0]["text"] == "labels_list:ok"
     assert pending["approvals"] == []
 
 
 def test_operator_gmail_labels_list_stays_pending(
-    make_operator_client, gmail_config_file: Path, gmail_client: Mock, echoing_executor: EchoingExecutor
+    make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with make_operator_client(
         config_file=gmail_config_file,
         gmail_client=gmail_client,
-        tool_call_executor=echoing_executor,
         # Matching a configured agent id must not turn an operator into an auto-approved agent.
         operator_username="haku",
     ) as client:
@@ -757,14 +800,13 @@ def test_operator_gmail_labels_list_stays_pending(
 
 
 def test_list_tool_calls_filters_by_auto_approved(
-    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock, echoing_executor: EchoingExecutor
+    make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
         make_client(
             config_file=gmail_config_file,
             gmail_client=gmail_client,
-            in_process_servers={"gmail": _operator_connection_server(build_gmail_mcp(gmail_client))},
-            tool_call_executor=echoing_executor,
+            in_process_servers={"gmail": _operator_connection_server(_build_gmail_shaped_mcp())},
         ) as client,
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
@@ -921,14 +963,12 @@ def test_configured_credential_approval_passes_canonical_operator_id(
     make_operator_client,
     console_config: Path,
     migrated_db_url: str,
-    recording_executor: RecordingExecutor,
+    upstream_bearers: list[str | None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     execution_operator_ids = _record_execution_operator_ids(monkeypatch)
     with make_operator_client(
-        config_file=console_config,
-        operator_external_user_key="configured-credential-sub",
-        tool_call_executor=recording_executor,
+        config_file=console_config, operator_external_user_key="configured-credential-sub"
     ) as client:
         submitted = _submit(client)
         approved = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
@@ -938,21 +978,19 @@ def test_configured_credential_approval_passes_canonical_operator_id(
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
     assert execution_operator_ids == [operator_id(migrated_db_url, "configured-credential-sub")]
-    assert recording_executor.auth_tokens == ["test-token"]
+    assert upstream_bearers == ["test-token"]
 
 
 def test_operator_oauth_association_drives_approved_tool_execution(
     make_operator_client,
     operator_oauth_config_file: Path,
-    recording_executor: RecordingExecutor,
+    upstream_bearers: list[str | None],
     migrated_db_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     execution_operator_ids = _record_execution_operator_ids(monkeypatch)
     with make_operator_client(
-        config_file=operator_oauth_config_file,
-        operator_external_user_key="operator-oauth-sub",
-        tool_call_executor=recording_executor,
+        config_file=operator_oauth_config_file, operator_external_user_key="operator-oauth-sub"
     ) as client:
         started = client.post("/api/mcp/operator-auth/grocy-sf/connect")
         assert started.status_code == 200, started.text
@@ -984,13 +1022,15 @@ def test_operator_oauth_association_drives_approved_tool_execution(
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
     assert execution_operator_ids == [operator_id(migrated_db_url, "operator-oauth-sub")]
-    assert recording_executor.auth_tokens == ["operator-access-token"]
+    # The upstream saw exactly two requests: the unauthenticated probe that starts the DCR
+    # challenge, then the approved execution carrying this Operator's own linked token.
+    assert upstream_bearers == [None, "operator-access-token"]
 
 
 def test_operator_oauth_approval_requires_existing_association(
-    make_operator_client, operator_oauth_config_file: Path, recording_executor: RecordingExecutor
+    make_operator_client, operator_oauth_config_file: Path, upstream_bearers: list[str | None]
 ) -> None:
-    with make_operator_client(config_file=operator_oauth_config_file, tool_call_executor=recording_executor) as client:
+    with make_operator_client(config_file=operator_oauth_config_file) as client:
         submitted = _submit(client)
         resp = client.post(f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "approve"})
         fetched = client.get(f"/api/tool-calls/{submitted['tool_call_id']}").json()
@@ -998,7 +1038,7 @@ def test_operator_oauth_approval_requires_existing_association(
     assert resp.status_code == 409
     assert "Connect your grocy-sf MCP account" in resp.json()["detail"]
     assert fetched["status"] == "pending_approval"
-    assert recording_executor.auth_tokens == []
+    assert upstream_bearers == []
 
 
 def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
@@ -1034,7 +1074,8 @@ def test_routing_executes_each_agent_as_its_own_operator(
     tmp_path: Path,
     migrated_db_url: str,
     monkeypatch: pytest.MonkeyPatch,
-    recording_executor: RecordingExecutor,
+    mcp_server_url: str,
+    upstream_bearers: list[str | None],
 ) -> None:
     """Two static agents bound to two operators: each agent's auto-approved operator_oauth call
     executes with *its* operator's token, with no crosstalk."""
@@ -1044,7 +1085,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
     _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
     _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
-    config = _config([_remote_server("grocy-sf", "http://unused.test/mcp", _dynamic_remote_oauth())])
+    config = _config([_remote_server("grocy-sf", mcp_server_url, _dynamic_remote_oauth())])
     config["auto_approval_policies"] = [
         {"id": "manual_review", "type": "never"},
         {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}},
@@ -1059,15 +1100,16 @@ def test_routing_executes_each_agent_as_its_own_operator(
             "auto_approval_policy": "grocy_reads",
         },
     ]
-    with make_client(
-        config_file=write_config(tmp_path / "routing.yaml", config), tool_call_executor=recording_executor
-    ) as client:
+    with make_client(config_file=write_config(tmp_path / "routing.yaml", config)) as client:
         # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
         call_ids: list[str] = []
         for bearer in ("tool-token", "ops-token"):
             record = _submit_request(
                 client,
-                SubmitToolCallRequest(server_id="grocy-sf", tool_name="products_list", arguments={}, wait_for_ms=0),
+                # The served upstream's products_list mirrors grocy-sf and requires full detail.
+                SubmitToolCallRequest(
+                    server_id="grocy-sf", tool_name="products_list", arguments={"detail": "full"}, wait_for_ms=0
+                ),
                 actor=_static_agent_actor(client, bearer),
             )
             assert record["status"] == "ok", record
@@ -1080,7 +1122,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
             assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
 
     # haku's call executed with op-haku's token; ops-bot's with op-ops's — each routed to its operator.
-    assert recording_executor.auth_tokens == ["grocy-token-haku", "grocy-token-ops"]
+    assert upstream_bearers == ["grocy-token-haku", "grocy-token-ops"]
 
 
 def test_two_operator_two_agent_http_authorization_matrix(
@@ -1548,8 +1590,8 @@ def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     assert baseline_values == current_values
 
 
-# --- In-process MCP servers (McpServerClient in-process registration) ---
-# Unit tests only: no postgres/network fixtures, exercising McpServerClient
+# --- In-process MCP servers (McpServerDispatcher in-process registration) ---
+# Unit tests only: no postgres/network fixtures, exercising McpServerDispatcher
 # directly (over a fresh `_build_test_mcp_server()` instance, in-memory — no HTTP)
 # rather than through the FastAPI app.
 
@@ -1655,7 +1697,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    executor = McpServerClient({"google": registration})
+    executor = McpServerDispatcher({"google": registration})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1665,7 +1707,7 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
 
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
-    executor = McpServerClient({})
+    executor = McpServerDispatcher({})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
@@ -1673,16 +1715,16 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
         await executor.execute(server, "echo", {}, auth_token=None)
 
 
-async def test_metadata_provider_reflects_in_process_server_tools() -> None:
+async def test_dispatcher_reflects_in_process_server_tools() -> None:
     builder = Mock(return_value=_build_test_mcp_server())
     registration = InProcessServerRegistration(
         builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
-    metadata_provider = McpServerClient({"google": registration})
+    dispatcher = McpServerDispatcher({"google": registration})
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    metadata = await metadata_provider.metadata(server, auth_token=None)
+    metadata = await dispatcher.metadata(server, auth_token=None)
     assert isinstance(metadata, list)
     assert {tool.name for tool in metadata} == {
         "stock_add",
@@ -1701,7 +1743,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     provider_store = Mock()
     provider_store.is_connected.return_value = True
     builder = Mock(return_value=_build_test_mcp_server())
-    metadata_provider = McpServerClient(
+    dispatcher = McpServerDispatcher(
         {
             "google": InProcessServerRegistration(
                 builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
@@ -1714,11 +1756,7 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     )
 
     metadata = await metadata_for_operator(
-        operator_id=operator,
-        server=server,
-        metadata_provider=metadata_provider,
-        oauth_store=Mock(),
-        provider_store=provider_store,
+        operator_id=operator, server=server, dispatcher=dispatcher, oauth_store=Mock(), provider_store=provider_store
     )
 
     assert isinstance(metadata, list)
@@ -1727,12 +1765,66 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
     provider_store.access_token_for.assert_not_called()
 
 
-async def test_metadata_provider_degrades_when_in_process_backend_is_not_registered() -> None:
-    metadata_provider = McpServerClient({})
+async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
+    builder = Mock(return_value=_build_test_mcp_server())
+    registration = InProcessServerRegistration(
+        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+    )
+    dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=3600.0)
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    metadata = await metadata_provider.metadata(server, auth_token=None)
+
+    first = await dispatcher.metadata(server, auth_token=None)
+    second = await dispatcher.metadata(server, auth_token=None)
+
+    assert isinstance(first, list)
+    assert isinstance(second, list)
+    assert {tool.name for tool in second} == {tool.name for tool in first}
+    builder.assert_called_once_with(None)
+
+
+async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
+    """A server that failed must be retried on the next listing, not held degraded for the TTL."""
+    dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=3600.0)
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
+
+    assert isinstance(await dispatcher.metadata(server, auth_token=None), DegradedReflection)
+
+    registered = McpServerDispatcher(
+        {
+            "google": InProcessServerRegistration(
+                builder=Mock(return_value=_build_test_mcp_server()),
+                credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION,
+            )
+        },
+        catalog_cache_ttl_seconds=3600.0,
+    )
+    assert isinstance(await registered.metadata(server, auth_token=None), list)
+
+
+async def test_dispatcher_does_not_serve_one_credentials_catalog_to_another() -> None:
+    builder = Mock(return_value=_build_test_mcp_server())
+    dispatcher = McpServerDispatcher(
+        {"google": InProcessServerRegistration(builder=builder, credential_kind=InProcessCredentialKind.NONE)},
+        catalog_cache_ttl_seconds=3600.0,
+    )
+    server = McpServerEntry(id="google", backend=InProcessBackend(credential=NoCredential()))
+
+    await dispatcher.metadata(server, auth_token="operator-a-token")
+    await dispatcher.metadata(server, auth_token="operator-b-token")
+
+    assert builder.call_args_list == [call("operator-a-token"), call("operator-b-token")]
+
+
+async def test_dispatcher_degrades_when_in_process_backend_is_not_registered() -> None:
+    dispatcher = McpServerDispatcher({})
+    server = McpServerEntry(
+        id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
+    )
+    metadata = await dispatcher.metadata(server, auth_token=None)
     assert isinstance(metadata, DegradedReflection)
 
 

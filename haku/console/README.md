@@ -197,6 +197,29 @@ result-schema catalog used by Gmail, Google Calendar, Grocy, and routine rendere
 generated from the Python response models at build time; the frontend does not restate those wire
 models in handwritten Zod.
 
+#### Catalog reuse
+
+Reflection stays live and request-local, but a reflected catalog is reusable for
+`HAKU_CONSOLE_MCP_CATALOG_CACHE_TTL_SECONDS` (default 60) — see `mcp_reflection_cache.py`. Without
+it, every `tools/list` pays a full MCP connect (`initialize`, `tools/list`, teardown) to each
+configured server, and `stateless_http=True` means there is no session to amortize that over. The
+fan-out is concurrent, so a listing costs its slowest upstream — and an upstream addressed by its
+public URL costs several times one addressed in-cluster, because it hairpins out through the Gateway
+for a same-cluster service. Single-flight matters at least as much as the TTL, because one client
+handshake opens several connections at once.
+
+The cache key is `(server_id, config fingerprint, credential fingerprint)`, and that third component
+is what preserves the fail-closed property described above: credentials are resolved **before** the
+cache is consulted, so a disconnected Operator never reaches a cached entry, and a rotated credential
+lands on a different key rather than reusing the previous holder's catalog. The key holds a digest,
+never a bearer. Only successful reflections are stored — a degraded server is retried on the next
+listing rather than held degraded for the TTL.
+
+Nothing invalidates when an upstream _adds_ a tool, so the TTL is a staleness budget, not a cache
+lifetime; that is why it is bounded low. Picking up an upstream `notifications/tools/list_changed`
+would need persistent upstream sessions, which is the natural next step (it would also remove the
+per-reflection connect entirely).
+
 ### Canonical Agent authority and enrollment
 
 Alembic revision `0010` is the single forward-only database baseline. It directly installs one
@@ -284,7 +307,7 @@ models.
 An `mcp.servers` entry explicitly selects either a `remote_mcp` backend with an HTTP URL and
 transport `auth`, or an `in_process` backend with an implementation `credential`. The latter is a
 registered **in-process `FastMCP` instance**: `fastmcp.client.Client` accepts a `FastMCP` object
-directly (an in-memory `FastMCPTransport`), so `McpServerClient` runs the exact
+directly (an in-memory `FastMCPTransport`), so `McpServerDispatcher` runs the exact
 same `Client(...)` calls either way. The application service still owns approval/audit and the HTTP
 adapter still owns exact-Origin admission, with the same live `tools/list` reflection.
 
@@ -448,31 +471,32 @@ Two operational notes:
 
 ## Layout
 
-| Path                               | Role                                                                                                                                                                                                                                                                   |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app.py`                           | Composition root for FastAPI, FastMCP, storage, execution, event delivery, and the shared `ToolCallApplicationService`; public app state exposes the service rather than its ledger/executor internals. Also serves config/health and the optional local SPA fallback. |
-| `capabilities.py`                  | Capability-tier router (`/api/capabilities/*`): exact-Origin-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text.                                                                        |
-| `tool_call_service.py`             | Actor-scoped application boundary for policy evaluation, submit/read/wait, decisions, execution orchestration, and event publication.                                                                                                                                  |
-| `mcp_approval.py`                  | Operator-browser FastAPI adapter plus the current Postgres tool-call repository, MCP executor, and metadata-reflection adapters. It does not own agent admission or lifecycle orchestration.                                                                           |
-| `mcp_server.py`                    | FastMCP transport adapter for proxy and result-read tools; resolves its request dependency to a canonical `AgentActor` and delegates lifecycle operations to the application service.                                                                                  |
-| `mcp_agent_auth.py`                | Agent-facing auth composition: one Haku OAuth adapter plus static-bearer verification, both resolving through the shared `PostgresAgentAuthority`.                                                                                                                     |
-| `agents/`                          | Canonical Agent domain: naming, enrollment contracts/routes/APIs, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                                 |
-| `mcp_auth/`                        | Haku-owned FastMCP composition adapter and exact-version contract tests; contains the single accepted private `_code_store` seam.                                                                                                                                      |
-| `console_events.py`                | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                     |
-| `web_push.py`                      | Web Push delivery of pending-approval notifications: the VAPID identity, the per-Operator subscription store, and the notifier that shows and retracts one call's notification.                                                                                        |
-| `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                            |
-| `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, reflection adapter, and operator OAuth linkage.                                                                                         |
-| `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                               |
-| `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                              |
-| `provider_connection.py`           | Deploy-named per-Operator connections to well-known external OAuth providers: fixed-client authorization-code + PKCE flow, connection-specific metadata, and the `/api/operator-connections/*` endpoints. Provider catalog: `provider_connection_registry.py`.         |
-| `oauth_token_state.py`             | Shared current-token persistence and refresh state machine for remote-server, provider, and Operator-login OAuth associations. A short database claim deduplicates foreground and background refreshes across replicas.                                                |
-| `oauth_association_maintenance.py` | Replica-coordinated candidate discovery and background refresh dispatch for expiring rows in the shared OAuth token-state table.                                                                                                                                       |
-| `migrations/`                      | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                                                             |
-| `models.py`                        | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                                                          |
-| `config.py`                        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                                                       |
-| `export_schema.py`                 | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                                                        |
-| `export_mcp_tool_schemas.py`       | Reflects the real in-process servers through MCP `tools/list` and prints their exact input schemas for generated frontend validators and types.                                                                                                                        |
-| `frontend/`                        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                                                                 |
+| Path                               | Role                                                                                                                                                                                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app.py`                           | Composition root for FastAPI, FastMCP, storage, execution, event delivery, and the shared `ToolCallApplicationService`; public app state exposes the service rather than its ledger/executor internals. Also serves config/health and the optional local SPA fallback.       |
+| `capabilities.py`                  | Capability-tier router (`/api/capabilities/*`): exact-Origin-gated, audited privileged actions. `POST /launch-routine` fires the routine with the server-side bearer and optional per-run text.                                                                              |
+| `tool_call_service.py`             | Actor-scoped application boundary for policy evaluation, submit/read/wait, decisions, execution orchestration, and event publication.                                                                                                                                        |
+| `mcp_approval.py`                  | Operator-browser FastAPI adapter plus the current Postgres tool-call repository and `McpServerDispatcher` — the one client for the configured MCP servers, which both executes tool calls and reflects catalogs. It does not own agent admission or lifecycle orchestration. |
+| `mcp_server.py`                    | FastMCP transport adapter for proxy and result-read tools; resolves its request dependency to a canonical `AgentActor` and delegates lifecycle operations to the application service.                                                                                        |
+| `mcp_agent_auth.py`                | Agent-facing auth composition: one Haku OAuth adapter plus static-bearer verification, both resolving through the shared `PostgresAgentAuthority`.                                                                                                                           |
+| `agents/`                          | Canonical Agent domain: naming, enrollment contracts/routes/APIs, and the transactional Postgres authority for interactions, grants, bindings, static credentials, activation, revocation, and expiry.                                                                       |
+| `mcp_auth/`                        | Haku-owned FastMCP composition adapter and exact-version contract tests; contains the single accepted private `_code_store` seam.                                                                                                                                            |
+| `console_events.py`                | Pydantic console-event shapes plus operator-scoped cross-replica WebSocket fan-out through Postgres LISTEN/NOTIFY.                                                                                                                                                           |
+| `web_push.py`                      | Web Push delivery of pending-approval notifications: the VAPID identity, the per-Operator subscription store, and the notifier that shows and retracts one call's notification.                                                                                              |
+| `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                                  |
+| `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |
+| `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                              |
+| `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                                     |
+| `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                                    |
+| `provider_connection.py`           | Deploy-named per-Operator connections to well-known external OAuth providers: fixed-client authorization-code + PKCE flow, connection-specific metadata, and the `/api/operator-connections/*` endpoints. Provider catalog: `provider_connection_registry.py`.               |
+| `oauth_token_state.py`             | Shared current-token persistence and refresh state machine for remote-server, provider, and Operator-login OAuth associations. A short database claim deduplicates foreground and background refreshes across replicas.                                                      |
+| `oauth_association_maintenance.py` | Replica-coordinated candidate discovery and background refresh dispatch for expiring rows in the shared OAuth token-state table.                                                                                                                                             |
+| `migrations/`                      | Alembic migrations for the deployed haku-console database; the console applies them at app startup before serving the API.                                                                                                                                                   |
+| `models.py`                        | Pydantic `ConfigResponse` — the `/api/config` response model.                                                                                                                                                                                                                |
+| `config.py`                        | Env settings (`HAKU_CONSOLE_*`).                                                                                                                                                                                                                                             |
+| `export_schema.py`                 | Prints the OpenAPI schema; the frontend generates its TypeScript types from it.                                                                                                                                                                                              |
+| `export_mcp_tool_schemas.py`       | Reflects the real in-process servers through MCP `tools/list` and prints their exact input schemas for generated frontend validators and types.                                                                                                                              |
+| `frontend/`                        | React SPA (esbuild bundle) — see `frontend/README.md`.                                                                                                                                                                                                                       |
 
 ## Perimeter / deploy
 

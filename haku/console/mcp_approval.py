@@ -1,7 +1,8 @@
 """Operator-approved MCP tool calls owned by haku-console.
 
-This module contains the FastAPI/wire adapter plus the current Postgres repository,
-MCP executor, and metadata-reflection adapters. `ToolCallApplicationService` owns the
+This module contains the FastAPI/wire adapter, the current Postgres repository, and
+`McpServerDispatcher` — the one path from the console to its configured MCP servers, for
+both executing tool calls and reflecting catalogs. `ToolCallApplicationService` owns the
 actor-scoped lifecycle: calls run immediately only when reviewed policy matches; all
 others wait for an operator decision in trusted console chrome. The connected-server
 catalog lives in `mcp_config`; operator OAuth account linkage lives in
@@ -11,6 +12,7 @@ catalog lives in `mcp_config`; operator OAuth account linkage lives in
 from __future__ import annotations
 
 import datetime
+import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
@@ -48,6 +50,7 @@ from haku.console.mcp_config import (
     _transport,
 )
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
+from haku.console.mcp_reflection_cache import ReflectionCache, ReflectionCacheKey
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -614,16 +617,26 @@ class PostgresToolCallLedger:
         return operator_id
 
 
-# TODO(naming): client-side dispatcher over fastmcp.client.Client, not a FastMCP Proxy/Provider
-#   (those are server-side concepts). Revisit the name against FastMCP terminology.
-class McpServerClient:
-    """Reaches a configured MCP server (in-process or remote) for tool execution and metadata
-    reflection, sharing one in-process registry and transport/Client lifecycle. The two operations
-    differ only in call and error policy — `execute` raises on tool error; `metadata` degrades on
-    transport error so one unreachable server can't break the capabilities listing."""
+class McpServerDispatcher:
+    """Dispatches the console's calls to whichever configured MCP server they name.
 
-    def __init__(self, in_process_servers: InProcessServers | None = None) -> None:
+    Not itself a client — it owns the in-process registry, resolves each entry to a transport and
+    credential, and drives a `fastmcp.client.Client` per call. Executing and reflecting are the same
+    dispatch differing only in call and error policy: `execute` raises on tool error, while
+    `metadata` degrades on transport error so one unreachable server can't break the whole
+    capabilities listing. Reflected catalogs are reused for `catalog_cache_ttl_seconds`.
+    """
+
+    def __init__(
+        self,
+        in_process_servers: InProcessServers | None = None,
+        *,
+        # 0 still collapses concurrent reflections of one server; it disables only reuse across
+        # requests. See `mcp_reflection_cache`.
+        catalog_cache_ttl_seconds: float = 0.0,
+    ) -> None:
         self._in_process = in_process_servers or {}
+        self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(
         self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
@@ -637,13 +650,34 @@ class McpServerClient:
 
     async def metadata(self, server: McpServerEntry, auth_token: str | None) -> ServerReflection:
         try:
-            transport, transport_auth = _transport(server, self._in_process, auth_token)
-            async with Client(transport, auth=transport_auth) as client:
-                tools: list[mcp_types.Tool] = await client.list_tools()
-                return tools
+            # A raise propagates out of the cache, so only successful catalogs are ever stored and
+            # a recovered server is retried on the next listing rather than staying degraded.
+            return await self._catalogs.reflect(
+                _reflection_cache_key(server, auth_token), lambda: self._reflect(server, auth_token)
+            )
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
             return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))
+
+    async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> list[mcp_types.Tool]:
+        transport, transport_auth = _transport(server, self._in_process, auth_token)
+        async with Client(transport, auth=transport_auth) as client:
+            tools: list[mcp_types.Tool] = await client.list_tools()
+            return tools
+
+
+def _reflection_cache_key(server: McpServerEntry, auth_token: str | None) -> ReflectionCacheKey:
+    return ReflectionCacheKey(
+        server_id=server.id,
+        config_fingerprint=_fingerprint(server.model_dump_json()),
+        # Digest, not the credential: a cached catalog must belong to exactly the credential that
+        # fetched it, but the key itself is ordinary in-memory state and must not hold a bearer.
+        credential_fingerprint="unauthenticated" if auth_token is None else _fingerprint(auth_token),
+    )
+
+
+def _fingerprint(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _mcp_result_to_json(result: mcp_types.CallToolResult) -> dict[str, Any]:
@@ -757,7 +791,7 @@ async def metadata_for_operator(
     *,
     operator_id: UUID,
     server: McpServerEntry,
-    metadata_provider: McpServerClient,
+    dispatcher: McpServerDispatcher,
     oauth_store: PostgresMcpOperatorOAuthStore,
     provider_store: ProviderConnectionTokenStore,
 ) -> ServerReflection:
@@ -766,7 +800,7 @@ async def metadata_for_operator(
     )
     if isinstance(resolution, _DegradedAuth):
         return DegradedReflection(failure_stage="credential_resolution", degraded_reason=resolution.reason)
-    return await metadata_provider.metadata(server, resolution.token)
+    return await dispatcher.metadata(server, resolution.token)
 
 
 @router.get("/api/tool-calls")
