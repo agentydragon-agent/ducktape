@@ -91,6 +91,14 @@ const SCENES = [
     frame: true,
   },
   {
+    name: "claude-message-boundaries",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    clicks: ["button::-p-text(New session)"],
+    expectVisible: "::-p-text(Next I'll try the read-only query.)",
+    frame: true,
+  },
+  {
     name: "claude-tool-use",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

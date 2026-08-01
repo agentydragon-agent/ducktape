@@ -27,6 +27,54 @@ function jsonResponse(body: unknown): Response {
 
 const realFetch = globalThis.fetch;
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
+const claudeBoundaryMessages = [
+  {
+    message_id: "61000000-0000-4000-8000-000000000010",
+    role: "user",
+    status: "complete",
+    content: "Try the Haku Console MCP tools.",
+    tool_uses: [],
+    error: null,
+    created_at: "2026-08-01T03:00:10Z",
+    updated_at: "2026-08-01T03:00:10Z",
+  },
+  {
+    message_id: "62000000-0000-4000-8000-000000000010",
+    role: "assistant",
+    status: "complete",
+    content: "I'll start with the catalog, then try a read-only query.",
+    tool_uses: [],
+    error: null,
+    created_at: "2026-08-01T03:00:11Z",
+    updated_at: "2026-08-01T03:00:11Z",
+  },
+  {
+    message_id: "62000000-0000-4000-8000-000000000011",
+    role: "assistant",
+    status: "complete",
+    content: "",
+    tool_uses: [
+      {
+        tool_use_id: "toolu_01HakuConsoleRead",
+        name: "mcp__haku-console__haku-console__list_mcp_servers",
+        input: {},
+      },
+    ],
+    error: null,
+    created_at: "2026-08-01T03:00:12Z",
+    updated_at: "2026-08-01T03:00:12Z",
+  },
+  {
+    message_id: "62000000-0000-4000-8000-000000000012",
+    role: "assistant",
+    status: "complete",
+    content: "The Haku Console catalog is available. Next I'll try the read-only query.",
+    tool_uses: [],
+    error: null,
+    created_at: "2026-08-01T03:00:13Z",
+    updated_at: "2026-08-01T03:00:13Z",
+  },
+] as const;
 const claudeSession = scene?.startsWith("claude-provisioning")
   ? {
       session_id: "60000000-0000-4000-8000-000000000006",
@@ -59,44 +107,47 @@ const claudeSession = scene?.startsWith("claude-provisioning")
       created_at: "2026-08-01T03:00:00Z",
       updated_at: "2026-08-01T03:01:00Z",
       provisioning: null,
-      messages: [
-        {
-          message_id: "61000000-0000-4000-8000-000000000006",
-          role: "user",
-          status: "complete",
-          content: "Create a short note in the sandbox and tell me what you wrote.",
-          tool_uses: [],
-          error: null,
-          created_at: "2026-08-01T03:00:10Z",
-          updated_at: "2026-08-01T03:00:10Z",
-        },
-        {
-          message_id: "62000000-0000-4000-8000-000000000006",
-          role: "assistant",
-          status: "complete",
-          content: "I created /workspace/note.txt with: Hello from the disposable Haku sandbox.",
-          tool_uses: scene?.startsWith("claude-tool-use")
-            ? [
-                {
-                  tool_use_id: "toolu_01HakuConsoleRead",
-                  name: "mcp__haku-console__haku-console__list_mcp_servers",
-                  input: {},
-                },
-                {
-                  tool_use_id: "toolu_02WriteNote",
-                  name: "Write",
-                  input: {
-                    file_path: "/workspace/note.txt",
-                    content: "Hello from the disposable Haku sandbox.",
-                  },
-                },
-              ]
-            : [],
-          error: null,
-          created_at: "2026-08-01T03:00:11Z",
-          updated_at: "2026-08-01T03:00:15Z",
-        },
-      ],
+      messages:
+        scene === "claude-message-boundaries"
+          ? claudeBoundaryMessages
+          : [
+              {
+                message_id: "61000000-0000-4000-8000-000000000006",
+                role: "user",
+                status: "complete",
+                content: "Create a short note in the sandbox and tell me what you wrote.",
+                tool_uses: [],
+                error: null,
+                created_at: "2026-08-01T03:00:10Z",
+                updated_at: "2026-08-01T03:00:10Z",
+              },
+              {
+                message_id: "62000000-0000-4000-8000-000000000006",
+                role: "assistant",
+                status: "complete",
+                content: "I created /workspace/note.txt with: Hello from the disposable Haku sandbox.",
+                tool_uses: scene?.startsWith("claude-tool-use")
+                  ? [
+                      {
+                        tool_use_id: "toolu_01HakuConsoleRead",
+                        name: "mcp__haku-console__haku-console__list_mcp_servers",
+                        input: {},
+                      },
+                      {
+                        tool_use_id: "toolu_02WriteNote",
+                        name: "Write",
+                        input: {
+                          file_path: "/workspace/note.txt",
+                          content: "Hello from the disposable Haku sandbox.",
+                        },
+                      },
+                    ]
+                  : [],
+                error: null,
+                created_at: "2026-08-01T03:00:11Z",
+                updated_at: "2026-08-01T03:00:15Z",
+              },
+            ],
     } as const);
 const mcpServers =
   scene === "settings-oauth-success"

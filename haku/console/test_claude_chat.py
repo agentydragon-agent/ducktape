@@ -327,7 +327,15 @@ class _LifecycleClaims:
 
 class _ToolUseStore:
     def __init__(self):
-        self.updates: list[tuple[str, list[dict[str, Any]] | None, bool]] = []
+        self.message_ids: list[UUID] = []
+        self.updates: list[tuple[UUID, str, list[dict[str, Any]] | None, bool]] = []
+        self.completed_turns: list[UUID] = []
+
+    def begin_assistant(self, session_id: UUID) -> UUID:
+        del session_id
+        message_id = uuid4()
+        self.message_ids.append(message_id)
+        return message_id
 
     def update_assistant(
         self,
@@ -338,8 +346,11 @@ class _ToolUseStore:
         tool_uses: list[dict[str, Any]] | None = None,
         complete: bool = False,
     ) -> None:
-        del session_id, message_id
-        self.updates.append((content, tool_uses, complete))
+        del session_id
+        self.updates.append((message_id, content, tool_uses, complete))
+
+    def complete_turn(self, session_id: UUID) -> None:
+        self.completed_turns.append(session_id)
 
 
 class _ToolUseClaudeClient:
@@ -365,16 +376,23 @@ class _ToolUseClaudeClient:
         )
 
 
-async def test_run_turn_projects_tool_uses_into_the_assistant_message() -> None:
+async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use() -> None:
     store = _ToolUseStore()
     service = ClaudeChatService(
         _runtime_config(), cast(Any, store), cast(Any, _LifecycleClaims()), mcp_token=SecretStr("unused")
     )
 
-    await service._run_turn(cast(Any, _ToolUseClaudeClient()), uuid4(), uuid4(), "Check the Haku MCP catalog")
+    session_id = uuid4()
+    await service._run_turn(cast(Any, _ToolUseClaudeClient()), session_id, "Check the Haku MCP catalog")
 
     expected = [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}]
-    assert store.updates == [("", expected, False), ("The Haku Console catalog is available.", expected, True)]
+    assert len(store.message_ids) == 2
+    assert store.message_ids[0] != store.message_ids[1]
+    assert store.updates == [
+        (store.message_ids[0], "", expected, True),
+        (store.message_ids[1], "The Haku Console catalog is available.", [], True),
+    ]
+    assert store.completed_turns == [session_id]
 
 
 class _LifecycleWebSocket:
