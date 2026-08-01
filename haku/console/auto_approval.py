@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 
@@ -50,29 +50,43 @@ class SchemaDenial:
     evaluation: str = SCHEMA_AUTO_DENIAL_EVALUATION
 
 
-@dataclass(frozen=True)
-class _Grant:
-    path: tuple[str, ...]
+@dataclass(frozen=True, slots=True)
+class AutoApproved:
     explanation: str
 
 
-@dataclass(frozen=True)
-class _AutoApproved:
-    explanation: str
-
-
-@dataclass(frozen=True)
-class _NotAutoApproved:
+@dataclass(frozen=True, slots=True)
+class NotAutoApproved:
     reason: str
 
 
-type _AutoApprovalDecision = _AutoApproved | _NotAutoApproved
+type AutoApprovalDecision = AutoApproved | NotAutoApproved
 
 
-@dataclass(frozen=True)
-class _PolicyEvaluation:
-    grants: tuple[_Grant, ...] = ()
-    abstentions: tuple[str, ...] = ()
+@dataclass(frozen=True, slots=True)
+class AutoApprovalEvaluationStep:
+    """One material result produced while walking a policy graph."""
+
+    policy_path: tuple[str, ...]
+    decision: AutoApprovalDecision
+
+
+@dataclass(slots=True)
+class AutoApprovalEvaluation:
+    """Logger-like collector for the material decisions made by policy leaves."""
+
+    steps: list[AutoApprovalEvaluationStep] = field(default_factory=list)
+
+    def record(self, policy_path: tuple[str, ...], decision: AutoApprovalDecision) -> None:
+        self.steps.append(AutoApprovalEvaluationStep(policy_path=policy_path, decision=decision))
+
+    @property
+    def approvals(self) -> tuple[AutoApprovalEvaluationStep, ...]:
+        return tuple(step for step in self.steps if isinstance(step.decision, AutoApproved))
+
+    @property
+    def rejections(self) -> tuple[AutoApprovalEvaluationStep, ...]:
+        return tuple(step for step in self.steps if isinstance(step.decision, NotAutoApproved))
 
 
 class AutoApprovalPolicyRegistry:
@@ -141,58 +155,67 @@ class AutoApprovalPolicyRegistry:
         if root is None:
             return None, f"manual: Agent has no auto-approval policy for {server_id}/{tool_name}"
 
-        result = await self._evaluate_policy(
-            root, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
+        evaluation = AutoApprovalEvaluation()
+        await self._evaluate_policy(
+            root,
+            policy_path=(),
+            server_id=server_id,
+            tool_name=tool_name,
+            arguments=arguments,
+            gmail=gmail,
+            evaluation=evaluation,
         )
-        if result.grants:
-            rendered = "; ".join(f"{' -> '.join(grant.path)}: {grant.explanation}" for grant in result.grants)
+        if evaluation.approvals:
+            rendered = "; ".join(
+                f"{' -> '.join(step.policy_path)}: {step.decision.explanation}"
+                for step in evaluation.approvals
+                if isinstance(step.decision, AutoApproved)
+            )
             return AGENT_AUTO_APPROVAL_ID, f"approved: Agent policy {root!r} matched {rendered}"
-        detail = f" ({'; '.join(result.abstentions)})" if result.abstentions else ""
+        reasons = tuple(
+            f"{step.policy_path[-1]}: {step.decision.reason}"
+            for step in evaluation.rejections
+            if isinstance(step.decision, NotAutoApproved)
+        )
+        detail = f" ({'; '.join(reasons)})" if reasons else ""
         return None, f"manual: Agent policy {root!r} did not auto-approve {server_id}/{tool_name}{detail}"
 
     async def _evaluate_policy(
         self,
         policy_id: str,
         *,
+        policy_path: tuple[str, ...],
         server_id: str,
         tool_name: str,
         arguments: dict[str, Any],
         gmail: GmailToolsClient | None,
-    ) -> _PolicyEvaluation:
+        evaluation: AutoApprovalEvaluation,
+    ) -> None:
         policy = self._policies[policy_id]
+        current_path = (*policy_path, policy.id)
         match policy:
             case ExactToolsAutoApprovalPolicy(tools=tools):
                 if tool_name not in tools.get(server_id, ()):
-                    return _PolicyEvaluation()
-                return _PolicyEvaluation(
-                    grants=(_Grant((policy.id,), f"exact tool {server_id}/{tool_name} is listed"),)
-                )
+                    return
+                evaluation.record(current_path, AutoApproved(f"exact tool {server_id}/{tool_name} is listed"))
             case GmailLabelNamespaceAutoApprovalPolicy(server=server, label_prefix=label_prefix):
                 if server_id != server or tool_name not in GMAIL_LABEL_NAMESPACE_TOOLS:
-                    return _PolicyEvaluation()
+                    return
                 decision = await _evaluate_gmail_label_namespace(tool_name, arguments, label_prefix, gmail)
-                match decision:
-                    case _AutoApproved(explanation=explanation):
-                        return _PolicyEvaluation(grants=(_Grant((policy.id,), explanation),))
-                    case _NotAutoApproved(reason=reason):
-                        return _PolicyEvaluation(abstentions=(f"{policy.id}: {reason}",))
+                evaluation.record(current_path, decision)
             case AnyOfAutoApprovalPolicy(policies=members):
-                results = [
+                for member in members:
                     await self._evaluate_policy(
-                        member, server_id=server_id, tool_name=tool_name, arguments=arguments, gmail=gmail
+                        member,
+                        policy_path=current_path,
+                        server_id=server_id,
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        gmail=gmail,
+                        evaluation=evaluation,
                     )
-                    for member in members
-                ]
-                return _PolicyEvaluation(
-                    grants=tuple(
-                        _Grant((policy.id, *grant.path), grant.explanation)
-                        for result in results
-                        for grant in result.grants
-                    ),
-                    abstentions=tuple(reason for result in results for reason in result.abstentions),
-                )
             case NeverAutoApprovalPolicy():
-                return _PolicyEvaluation(abstentions=(f"{policy.id}: policy never auto-approves",))
+                evaluation.record(current_path, NotAutoApproved("policy never auto-approves"))
 
 
 async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> SchemaDenial | str | None:
@@ -242,7 +265,7 @@ async def auto_approve_tool_call(
 
 async def _evaluate_gmail_label_namespace(
     tool_name: str, arguments: dict[str, Any], label_prefix: str, gmail: GmailToolsClient | None
-) -> _AutoApprovalDecision:
+) -> AutoApprovalDecision:
     """Evaluate the reviewed Gmail label-mutation boundary."""
     try:
 
@@ -253,12 +276,12 @@ async def _evaluate_gmail_label_namespace(
             add = arguments.get("add") or []
             remove = arguments.get("remove") or []
             if not add and not remove:
-                return _NotAutoApproved("no label changes requested")
+                return NotAutoApproved("no label changes requested")
             if set(add) & set(remove):
-                return _NotAutoApproved("a label cannot be both added and removed")
+                return NotAutoApproved("a label cannot be both added and removed")
             if all(allows_label(name) for name in [*add, *remove]):
-                return _AutoApproved(f"all label names are under {label_prefix!r}")
-            return _NotAutoApproved(f"at least one label name is outside {label_prefix!r}")
+                return AutoApproved(f"all label names are under {label_prefix!r}")
+            return NotAutoApproved(f"at least one label name is outside {label_prefix!r}")
         if gmail is None:
             raise RuntimeError("Gmail client is unavailable")
         if tool_name == "labels_patch":
@@ -268,17 +291,17 @@ async def _evaluate_gmail_label_namespace(
                 or arguments.get("label_list_visibility") is not None
                 or arguments.get("message_list_visibility") is not None
             ):
-                return _NotAutoApproved("label rename required without visibility changes")
+                return NotAutoApproved("label rename required without visibility changes")
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
             if allows_label(current.name) and allows_label(new_name):
-                return _AutoApproved(f"current and new label names are under {label_prefix!r}")
-            return _NotAutoApproved(f"current or new label name is outside {label_prefix!r}")
+                return AutoApproved(f"current and new label names are under {label_prefix!r}")
+            return NotAutoApproved(f"current or new label name is outside {label_prefix!r}")
         if tool_name == "labels_delete":
             current = await asyncio.to_thread(gmail.labels_get, arguments["label_id"])
             if allows_label(current.name):
-                return _AutoApproved(f"label name is under {label_prefix!r}")
-            return _NotAutoApproved(f"label name is outside {label_prefix!r}")
-        return _NotAutoApproved("Gmail operation is not handled by this policy")
+                return AutoApproved(f"label name is under {label_prefix!r}")
+            return NotAutoApproved(f"label name is outside {label_prefix!r}")
+        return NotAutoApproved("Gmail operation is not handled by this policy")
     except Exception:
         logger.exception("auto-approval evaluation failed tool=%s", tool_name)
-        return _NotAutoApproved("Gmail auto-approval evaluation failed")
+        return NotAutoApproved("Gmail auto-approval evaluation failed")
