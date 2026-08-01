@@ -14,8 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
@@ -162,35 +161,33 @@ class _OperatorTokens:
 
 
 class _RecordingLedger(PostgresToolCallLedger):
-    def __init__(self, sessions: sessionmaker[Session]) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         super().__init__(sessions)
         self.finish_actors: list[ToolCallActor] = []
 
-    def finish(
+    async def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord:
         self.finish_actors.append(actor)
-        return super().finish(tool_call_id, actor=actor, result=result, error=error)
+        return await super().finish(tool_call_id, actor=actor, result=result, error=error)
 
 
 @pytest.fixture
-def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
+async def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
     identities = operator_identity_store(migrated_db_url)
     operator_ids = {
-        "a": identities.resolve_configured_external_user_key("service-operator-a"),
-        "b": identities.resolve_configured_external_user_key("service-operator-b"),
+        "a": await identities.resolve_configured_external_user_key("service-operator-a"),
+        "b": await identities.resolve_configured_external_user_key("service-operator-b"),
     }
 
-    def agent(name: str, operator_id: UUID) -> AgentActor:
+    async def agent(name: str, operator_id: UUID) -> AgentActor:
         agent_id = uuid4()
         reservation_id = uuid4()
         binding_id = uuid4()
         now = datetime.datetime.now(datetime.UTC)
-        engine = create_engine(migrated_db_url)
+        engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
         try:
-            with Session(engine) as session, session.begin():
-                # These mutually-referencing rows use deferred foreign keys; flushing the Agent first
-                # mirrors the production lifecycle while keeping the fixture entirely in the ORM.
+            async with AsyncSession(engine) as session, session.begin():
                 session.add(
                     Agent(
                         agent_id=agent_id,
@@ -202,7 +199,7 @@ def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
                         activated_at=now,
                     )
                 )
-                session.flush()
+                await session.flush()
                 session.add_all(
                     [
                         AgentNameReservation(
@@ -238,16 +235,16 @@ def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
                     ]
                 )
         finally:
-            engine.dispose()
+            await engine.dispose()
         return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
 
     actors: dict[str, ToolCallActor] = {
         "oa": OperatorActor(operator_id=operator_ids["a"]),
         "ob": OperatorActor(operator_id=operator_ids["b"]),
-        "aa1": agent("agent-a1", operator_ids["a"]),
-        "ab1": agent("agent-b1", operator_ids["b"]),
-        "aa2": agent("agent-a2", operator_ids["a"]),
-        "ab2": agent("agent-b2", operator_ids["b"]),
+        "aa1": await agent("agent-a1", operator_ids["a"]),
+        "ab1": await agent("agent-b1", operator_ids["b"]),
+        "aa2": await agent("agent-a2", operator_ids["a"]),
+        "ab2": await agent("agent-b2", operator_ids["b"]),
     }
     return actors
 

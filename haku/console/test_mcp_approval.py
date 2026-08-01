@@ -21,7 +21,7 @@ from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -555,8 +555,8 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
     engine = create_engine(app.state.settings.database_url.get_secret_value())
     try:
-        with Session(engine) as session:
-            binding_id, agent_id, operator_id = session.execute(
+        async with AsyncSession(engine) as session:
+            binding_id, agent_id, operator_id = await session.execute(
                 select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
                 .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
                 .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
@@ -564,7 +564,7 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
             ).one()
         return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
@@ -1043,7 +1043,7 @@ def test_operator_oauth_approval_requires_existing_association(
 
 def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     now = datetime.datetime.now(datetime.UTC)
     try:
         with sessionmaker(engine)() as session, session.begin():
@@ -1066,7 +1066,7 @@ def _seed_association(db_url: str, *, operator_external_user_key: str, access_to
                 )
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_routing_executes_each_agent_as_its_own_operator(
@@ -1357,7 +1357,7 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert fetched == by_id[agent_call_id]
     finally:
         event.remove(ledger_engine, "before_cursor_execute", record_tool_call_query)
-        ledger_engine.dispose()
+        await ledger_engine.dispose()
 
 
 def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
@@ -1481,7 +1481,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     assert finished["status"] == "ok"
     assert finished["result"]["content"][0]["text"] == "echo:world"
 
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.connect() as conn:
             tables = {
@@ -1527,8 +1527,8 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
                 .all()
             }
         with sessionmaker(engine)() as session:
-            persisted_call = session.get(McpToolCall, submitted["tool_call_id"])
-            persisted_principal = session.get(McpToolCallPrincipal, submitted["tool_call_id"])
+            persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
+            persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
             assert persisted_call is not None
             assert persisted_principal is not None
             assert persisted_principal.operator_id == operator_id(db_url, "operator-sub")
@@ -1539,7 +1539,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
             assert persisted_call.result_json is not None
             assert persisted_call.result_json["content"][0]["text"] == "echo:world"
     finally:
-        engine.dispose()
+        await engine.dispose()
 
     assert {
         "operators",
@@ -1571,11 +1571,11 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
 
 def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         baseline_values = _enum_values(engine)
     finally:
-        engine.dispose()
+        await engine.dispose()
 
     current_values = {
         "agent_status": tuple(status.value for status in AgentStatus),

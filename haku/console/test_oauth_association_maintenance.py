@@ -6,7 +6,6 @@ import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest_bazel
-from sqlalchemy import create_engine
 
 from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import McpOperatorOAuthAssociation, OperatorAuthentikToken, ProviderConnection
@@ -17,7 +16,7 @@ from haku.console.provider_connection_registry import ProviderConnectionKind
 
 
 async def test_refreshes_every_expiring_association_and_isolates_failures(migrated_db_url: str, caplog) -> None:
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     sessions = console_sessions(migrated_db_url)
     operator_id = operator_identity_store(migrated_db_url).resolve_configured_external_user_key(
         "background-refresh-operator"
@@ -94,7 +93,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(migrat
     try:
         await maintenance.refresh_once()
     finally:
-        engine.dispose()
+        await engine.dispose()
 
     oauth_store.access_token_for.assert_awaited_once()
     assert oauth_store.access_token_for.await_args.kwargs["operator_id"] == operator_id

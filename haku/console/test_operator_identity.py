@@ -6,8 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import pytest_bazel
-from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
 
 from haku.console.config import OperatorIdentityConfig
 from haku.console.conftest import console_sessions
@@ -63,14 +62,14 @@ def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_ur
 
     assert len({operator_id for operator_id, _ in results}) == 1
     assert len({identity_id for _, identity_id in results}) == 2
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
-        with Session(engine) as session:
-            assert session.execute(select(func.count()).select_from(Operator)).scalar_one() == 1
-            assert session.execute(select(func.count()).select_from(IdentityAnchor)).scalar_one() == 1
-            assert session.execute(select(func.count()).select_from(OidcIdentity)).scalar_one() == 2
+        async with AsyncSession(engine) as session:
+            assert await session.execute(select(func.count()).select_from(Operator)).scalar_one() == 1
+            assert await session.execute(select(func.count()).select_from(IdentityAnchor)).scalar_one() == 1
+            assert await session.execute(select(func.count()).select_from(OidcIdentity)).scalar_one() == 2
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_disabled_operator_invalidates_session_static_and_resolution_paths(migrated_db_url: str) -> None:
@@ -78,14 +77,14 @@ def test_disabled_operator_invalidates_session_static_and_resolution_paths(migra
     identity = store.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="disabled-user")
     )
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
-        with Session(engine) as session, session.begin():
-            operator = session.get(Operator, identity.operator_id)
+        async with AsyncSession(engine) as session, session.begin():
+            operator = await session.get(Operator, identity.operator_id)
             assert operator is not None
             operator.status = OperatorStatus.DISABLED
     finally:
-        engine.dispose()
+        await engine.dispose()
 
     assert store.resolve_active_session(operator_id=identity.operator_id, identity_id=identity.identity_id) is None
     assert not store.is_active(identity.operator_id)

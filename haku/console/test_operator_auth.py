@@ -22,7 +22,7 @@ import pytest_bazel
 import yaml
 from fastapi.routing import APIRoute
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 
 from haku.console import operator_auth, operator_login_flow
 from haku.console.app import create_app
@@ -456,12 +456,12 @@ def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
     assert response.status_code == 401
     assert response.json()["detail"] == "OIDC token issuer does not match configured issuer"
     assert me.status_code == 401
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.connect() as connection:
             assert connection.scalar(select(func.count()).select_from(OidcIdentity)) == 0
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 @pytest.mark.parametrize("path", ["/api/tool-calls", "/api/config"])

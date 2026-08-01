@@ -71,7 +71,7 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
     with admin_engine.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    admin_engine.dispose()
+    await admin_engine.dispose()
 
     yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
 
@@ -555,18 +555,18 @@ def _create_static_agent(conn: Connection, *, identity: IdentityIds, label: str,
 
 def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.connect() as conn:
             context = MigrationContext.configure(conn, opts={"compare_type": True})
             assert compare_metadata(context, metadata) == []
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: str) -> None:
     apply_migrations(db_url, "0015")
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     operator_id = uuid4()
     now = _now()
     expires_at = now + datetime.timedelta(hours=1)
@@ -664,12 +664,12 @@ def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: st
                 == 3
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db_url: str) -> None:
     apply_migrations(db_url, "0012")
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     operator_id = uuid4()
     now = _now()
     try:
@@ -735,12 +735,12 @@ def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db
             assert conn.execute(text("SELECT count(*) FROM provider_connections")).scalar_one() == 0
             assert conn.execute(text("SELECT count(*) FROM provider_connection_flows")).scalar_one() == 0
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE provider_connections DROP COLUMN provider_name CASCADE"))
@@ -748,12 +748,12 @@ def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) 
         with pytest.raises(ProgrammingError, match=r"provider_connections\.provider_name"):
             apply_migrations(db_url)
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_database_already_at_head_is_unchanged(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     operator_id = uuid4()
     try:
         with engine.connect() as conn:
@@ -785,12 +785,12 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
                 == 1
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         # NFKC + Unicode casefold need not equal PostgreSQL lower(display_name). The database owns
         # nonempty/global uniqueness and immutability; application naming code owns normalization.
@@ -848,12 +848,12 @@ def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: s
             ).one()
             assert statuses == ("active", "active")
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         graph = _create_oauth_graph(engine, "name-owner", display_name="Straße ⑨", display_name_key="strasse 9")
         _activate_agent(engine, graph)
@@ -922,12 +922,12 @@ def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_
                 {"reservation_id": graph.reservation_id},
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_interaction_phase_identity_and_exact_tuple_are_one_time(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.begin() as conn:
             identity = _seed_identity(conn, "interaction")
@@ -1149,12 +1149,12 @@ def test_interaction_phase_identity_and_exact_tuple_are_one_time(db_url: str) ->
             )
             assert audit_counts == {"interactions": 1, "reservations": 0}
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def test_grant_owner_scope_subtype_and_provenance_fail_closed(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.begin() as conn:
             owner = _seed_identity(conn, "grant-owner")
@@ -1230,7 +1230,7 @@ def test_grant_owner_scope_subtype_and_provenance_fail_closed(db_url: str) -> No
                 {"operator_id": attacker.operator_id, "anchor_id": owner.anchor_id},
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def _insert_static_replacement(
@@ -1278,7 +1278,7 @@ def _insert_static_replacement(
 
 def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.begin() as conn:
             identity = _seed_identity(conn, "binding")
@@ -1402,7 +1402,7 @@ def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_ur
                 {"binding_id": generation_three, "now": _now()},
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 def _insert_tool_call(conn: Connection, tool_call_id: str) -> None:
@@ -1425,7 +1425,7 @@ def _insert_tool_call(conn: Connection, tool_call_id: str) -> None:
 
 def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         with engine.begin() as conn:
             identity = _seed_identity(conn, "principal")
@@ -1502,7 +1502,7 @@ def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db
                 {"operator_id": identity.operator_id},
             )
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 if __name__ == "__main__":

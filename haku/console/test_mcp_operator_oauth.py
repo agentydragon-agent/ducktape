@@ -11,9 +11,7 @@ import httpx
 import pytest
 import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
@@ -45,11 +43,11 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 @pytest.fixture
 def migrated_engine(migrated_db_url: str) -> Generator[Engine]:
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
         yield engine
     finally:
-        engine.dispose()
+        await engine.dispose()
 
 
 @pytest.fixture
@@ -78,7 +76,7 @@ def oauth_store_for(migrated_db_url: str) -> Callable[[str], tuple[PostgresMcpOp
 
 def _disable_operator(engine: Engine, operator_id: UUID) -> None:
     with sessionmaker(engine)() as session, session.begin():
-        operator = session.get(Operator, operator_id)
+        operator = await session.get(Operator, operator_id)
         assert operator is not None
         operator.status = OperatorStatus.DISABLED
         operator.updated_at = datetime.datetime.now(datetime.UTC)
@@ -168,7 +166,7 @@ async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
         )
 
     with sessionmaker(migrated_engine)() as session:
-        assert session.get(McpOperatorOAuthAssociation, ("grocy-sf", operator_id)) is None
+        assert await session.get(McpOperatorOAuthAssociation, ("grocy-sf", operator_id)) is None
 
 
 async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
@@ -200,7 +198,7 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
         await oauth_store.connect_flow(server=server, operator_id=operator_id, public_base_url="https://haku.test")
 
     with sessionmaker(migrated_engine)() as session:
-        assert session.get(McpOperatorOAuthFlow, "connect-race-state") is None
+        assert await session.get(McpOperatorOAuthFlow, "connect-race-state") is None
 
 
 async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
@@ -243,7 +241,7 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
     with sessionmaker(migrated_engine)() as session:
-        association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        association = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
         assert association is not None
         assert association.token_state.access_token == "old-expired-token"
         assert association.token_state.refresh_token == "refresh-token"
@@ -281,11 +279,11 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
     async def refresh_after_reconnect(_client: object, _refresh_token: str) -> OAuthToken:
         replacement_expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
         with sessionmaker(migrated_engine)() as session, session.begin():
-            association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+            association = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
             assert association is not None
             replacement_now = datetime.datetime.now(datetime.UTC)
-            session.delete(association)
-            session.flush()
+            await session.delete(association)
+            await session.flush()
             session.add(
                 McpOperatorOAuthAssociation(
                     association_id=replacement_association_id,
@@ -315,7 +313,7 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
 
     assert returned == "replacement-access-token"
     with sessionmaker(migrated_engine)() as session:
-        association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        association = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
         assert association is not None
         assert association.association_id == replacement_association_id
         assert association.client_id == "replacement-client"
@@ -438,7 +436,7 @@ async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_gr
     assert attempts == 1
 
     with sessionmaker(migrated_engine)() as session, session.begin():
-        association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        association = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
         assert association is not None
         association.token_state.refresh_retry_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
 
@@ -505,7 +503,7 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
     with sessionmaker(migrated_engine)() as session, session.begin():
-        association = session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
+        association = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
         assert association is not None
         assert association.token_state.refresh_retry_at is not None
         association.token_state.refresh_retry_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)

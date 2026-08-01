@@ -12,8 +12,6 @@ import pytest_bazel
 from fastapi import HTTPException
 from mcp.shared.auth import OAuthToken
 from pydantic import SecretStr
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
@@ -191,10 +189,10 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
 ) -> None:
     await _connect(store, operator_id, monkeypatch, access_token="at-1", refresh_token="rt-1")
 
-    engine = create_engine(migrated_db_url)
+    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     sessions = sessionmaker(engine, expire_on_commit=False)
     with sessions.begin() as session:
-        row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
+        row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         row.token_state.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
         revision_before = row.token_state.token_revision
@@ -208,11 +206,11 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-2"
 
     with sessions.begin() as session:
-        row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
+        row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         assert row.token_state.token_revision == revision_before + 1
         assert row.token_state.refresh_token == "rt-1"
-    engine.dispose()
+    await engine.dispose()
 
 
 async def test_disconnect_removes_connection(
