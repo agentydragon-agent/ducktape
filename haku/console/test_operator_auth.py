@@ -117,7 +117,8 @@ def _static_agent_config(tmp_path: Path) -> Path:
                         "operator_subject_env": _AGENT_OPERATOR_ENV,
                         "auto_approval_policy": "no_auto_approval",
                     }
-                ]
+                ],
+                "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
             }
         ),
         encoding="utf-8",

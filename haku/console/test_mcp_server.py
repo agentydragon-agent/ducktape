@@ -87,34 +87,35 @@ _OTHER_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_OTHER_AGENT_OPERATOR"
 _OTHER_SIBLING_AGENT_TOKEN = "other-sibling-agent-token"
 _OTHER_SIBLING_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_OTHER_SIBLING_AGENT_TOKEN"
 _OTHER_SIBLING_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_OTHER_SIBLING_AGENT_OPERATOR"
+_MANUAL_POLICY_ID = "manual_review"
 _STATIC_AGENTS = [
     {
         "agent_id": "40000000-0000-4000-8000-000000000001",
         "display_name": "Haku",
         "token_env_var": _AGENT_TOKEN_ENV,
         "operator_subject_env": _AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "auto_approval_policy": _MANUAL_POLICY_ID,
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000002",
         "display_name": "Sibling",
         "token_env_var": _SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _SIBLING_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "auto_approval_policy": _MANUAL_POLICY_ID,
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000003",
         "display_name": "Other",
         "token_env_var": _OTHER_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "auto_approval_policy": _MANUAL_POLICY_ID,
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000004",
         "display_name": "Other Sibling",
         "token_env_var": _OTHER_SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_SIBLING_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "auto_approval_policy": _MANUAL_POLICY_ID,
     },
 ]
 
@@ -228,7 +229,7 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
                     "label_prefix": "haku/",
                 },
                 {"id": "haku_v1", "type": "any_of", "policies": ["transparent_reads", "managed_gmail_labels"]},
-                {"id": "no_auto_approval", "type": "never"},
+                {"id": _MANUAL_POLICY_ID, "type": "never"},
             ],
             "mcp": {
                 "servers": [
@@ -1556,6 +1557,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                         "kind": "create",
                         "form_token": enrollment_data["form_token"],
                         "display_name": "OAuth Claude",
+                        "auto_approval_policy": enrollment_data["default_auto_approval_policy"],
                     },
                     follow_redirects=False,
                 )
@@ -1655,7 +1657,7 @@ def test_duplicate_static_agent_tokens_fail_startup(
                     "display_name": "Ops Bot",
                     "token_env_var": _AGENT_TOKEN_ENV,
                     "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
-                    "auto_approval_policy": "no_auto_approval",
+                    "auto_approval_policy": _MANUAL_POLICY_ID,
                 },
             ]
         },

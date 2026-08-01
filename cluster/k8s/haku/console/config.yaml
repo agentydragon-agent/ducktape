@@ -125,7 +125,7 @@ auto_approval_policies:
       - home_assistant_reads
       - haku_sandbox_control
       - managed_gmail_labels
-  - id: no_auto_approval
+  - id: manual_review
     type: never
 #
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and
@@ -146,7 +146,7 @@ static_agents:
     operator_subject_env: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
     # Coder may submit exact privileged calls for operator review, but receives no standing
     # authority: every tool remains approval-wrapped and Coder cannot approve its own requests.
-    auto_approval_policy: no_auto_approval
+    auto_approval_policy: manual_review
 operator_connection_providers:
   google_mail:
     kind: google

@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Group, Loader, Radio, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Badge, Button, Group, Loader, Radio, Select, Stack, Text, TextInput } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import {
@@ -25,6 +25,7 @@ export function AgentEnrollmentPanel({
   const [choice, setChoice] = useState<EnrollmentChoice>(initialChoice);
   const [displayName, setDisplayName] = useState("");
   const [reconnectAgentId, setReconnectAgentId] = useState<string | null>(null);
+  const [autoApprovalPolicy, setAutoApprovalPolicy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
 
@@ -36,6 +37,11 @@ export function AgentEnrollmentPanel({
         setEnrollment(view);
         setDisplayName(view.suggested_agent_name);
         setReconnectAgentId(view.reconnectable_agents[0]?.agent_id ?? null);
+        setAutoApprovalPolicy(
+          initialChoice === "reconnect"
+            ? (view.reconnectable_agents[0]?.auto_approval_policy ?? view.default_auto_approval_policy)
+            : view.default_auto_approval_policy
+        );
       },
       (reason: unknown) => {
         if (alive) setError(displayableError(reason));
@@ -44,7 +50,7 @@ export function AgentEnrollmentPanel({
     return () => {
       alive = false;
     };
-  }, [interactionId]);
+  }, [initialChoice, interactionId]);
 
   async function decide(body: EnrollmentDecisionRequest) {
     setDeciding(true);
@@ -64,13 +70,23 @@ export function AgentEnrollmentPanel({
   }
 
   function submit() {
-    if (!enrollment) return;
+    if (!enrollment || autoApprovalPolicy === null) return;
     if (choice === "create") {
-      void decide({ kind: "create", form_token: enrollment.form_token, display_name: displayName });
+      void decide({
+        kind: "create",
+        form_token: enrollment.form_token,
+        display_name: displayName,
+        auto_approval_policy: autoApprovalPolicy,
+      });
       return;
     }
     if (reconnectAgentId !== null) {
-      void decide({ kind: "reconnect", form_token: enrollment.form_token, agent_id: reconnectAgentId });
+      void decide({
+        kind: "reconnect",
+        form_token: enrollment.form_token,
+        agent_id: reconnectAgentId,
+        auto_approval_policy: autoApprovalPolicy,
+      });
     }
   }
 
@@ -127,7 +143,18 @@ export function AgentEnrollmentPanel({
 
               <Radio.Group
                 value={choice}
-                onChange={(value) => setChoice(value as EnrollmentChoice)}
+                onChange={(value) => {
+                  const nextChoice = value as EnrollmentChoice;
+                  setChoice(nextChoice);
+                  if (nextChoice === "create") {
+                    setAutoApprovalPolicy(enrollment.default_auto_approval_policy);
+                  } else {
+                    const agent = enrollment.reconnectable_agents.find(
+                      (candidate) => candidate.agent_id === reconnectAgentId
+                    );
+                    setAutoApprovalPolicy(agent?.auto_approval_policy ?? enrollment.default_auto_approval_policy);
+                  }
+                }}
                 label="What should this connection represent?"
               >
                 <Stack gap="sm" mt="xs">
@@ -152,7 +179,17 @@ export function AgentEnrollmentPanel({
                         <Radio.Group
                           mt="sm"
                           value={reconnectAgentId ?? ""}
-                          onChange={setReconnectAgentId}
+                          onChange={(agentId) => {
+                            setReconnectAgentId(agentId);
+                            const agent = enrollment.reconnectable_agents.find(
+                              (candidate) => candidate.agent_id === agentId
+                            );
+                            if (agent) {
+                              setAutoApprovalPolicy(
+                                agent.auto_approval_policy ?? enrollment.default_auto_approval_policy
+                              );
+                            }
+                          }}
                           aria-label="Existing Agent"
                         >
                           <Stack gap="xs">
@@ -172,6 +209,19 @@ export function AgentEnrollmentPanel({
                 </Stack>
               </Radio.Group>
 
+              <Select
+                label="Auto-approval policy"
+                description="Controls which tool calls this Agent may run without asking you. The default requires approval for every call."
+                data={enrollment.auto_approval_policies.map((policy) => ({
+                  value: policy,
+                  label: policy.replaceAll("_", " "),
+                }))}
+                value={autoApprovalPolicy}
+                onChange={setAutoApprovalPolicy}
+                allowDeselect={false}
+                disabled={deciding}
+              />
+
               <Group justify="flex-end">
                 <Button variant="subtle" color="red" onClick={deny} loading={deciding}>
                   Deny request
@@ -181,7 +231,8 @@ export function AgentEnrollmentPanel({
                   loading={deciding}
                   disabled={
                     (choice === "create" && displayName.trim().length === 0) ||
-                    (choice === "reconnect" && reconnectAgentId === null)
+                    (choice === "reconnect" && reconnectAgentId === null) ||
+                    autoApprovalPolicy === null
                   }
                 >
                   {choice === "create" ? "Continue" : "Reconnect"}

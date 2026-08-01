@@ -99,15 +99,20 @@ class AutoApprovalPolicyRegistry:
 
     def __init__(self, config: ConsoleConfigFile) -> None:
         self._policies: dict[str, AutoApprovalPolicy] = {policy.id: policy for policy in config.auto_approval_policies}
-        self._agent_roots = {agent.agent_id: agent.auto_approval_policy for agent in config.static_agents}
+        # Retain deploy-time roots as a mixed-version fallback while durable assignments are seeded.
+        self._static_agent_roots = {agent.agent_id: agent.auto_approval_policy for agent in config.static_agents}
         # Operators bypass the Agent approval lifecycle, but they share the reflected MCP catalog.
         # Preserve the useful transparent schema for any tool that an assigned Agent policy always
         # auto-approves; this affects presentation only, never Operator authorization.
-        self._assigned_roots = tuple(dict.fromkeys(self._agent_roots.values()))
+        self._assigned_roots = tuple(self._policies)
+
+    def _actor_root(self, actor: AgentActor) -> str | None:
+        root = actor.auto_approval_policy or self._static_agent_roots.get(actor.agent_id)
+        return root if root in self._policies else None
 
     def tool_mode(self, actor: ToolCallActor, server_id: str, tool_name: str) -> ToolAutoApprovalMode:
         if isinstance(actor, AgentActor):
-            root = self._agent_roots.get(actor.agent_id)
+            root = self._actor_root(actor)
             if root is None:
                 return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             return self._policy_mode(root, server_id, tool_name)
@@ -151,7 +156,7 @@ class AutoApprovalPolicyRegistry:
     ) -> tuple[str | None, str | None]:
         if not isinstance(actor, AgentActor):
             return None, None
-        root = self._agent_roots.get(actor.agent_id)
+        root = self._actor_root(actor)
         if root is None:
             return None, f"manual: Agent has no auto-approval policy for {server_id}/{tool_name}"
 

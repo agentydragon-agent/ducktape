@@ -38,6 +38,7 @@ export type OAuthConnectionResult =
 export type AgentView = components["schemas"]["AgentView"];
 export type ClaudeChatSession = components["schemas"]["ClaudeChatSessionView"];
 export type ClaudeChatMessage = components["schemas"]["ClaudeChatMessageView"];
+export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -124,10 +125,19 @@ export async function consumeOAuthConnectionResult(resultId: string): Promise<OA
   return data;
 }
 
-export async function listAgents(): Promise<AgentView[]> {
+export async function listAgents(): Promise<AgentListResponse> {
   const { data, error } = await api.GET("/api/agent-enrollment/agents");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load Agents"));
-  return data.agents;
+  return data;
+}
+
+export async function updateAgentAutoApprovalPolicy(agentId: string, autoApprovalPolicy: string): Promise<AgentView> {
+  const { data, error } = await api.PUT("/api/agent-enrollment/agents/{agent_id}/auto-approval-policy", {
+    params: { path: { agent_id: agentId } },
+    body: { auto_approval_policy: autoApprovalPolicy },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to update Agent auto-approval policy"));
+  return data;
 }
 
 export async function getAgentEnrollment(interactionId: string): Promise<EnrollmentView> {
