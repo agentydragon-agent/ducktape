@@ -10,7 +10,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, TextBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
+    TextBlock,
+    ToolUseBlock,
+)
 from claude_agent_sdk.types import StreamEvent
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -37,6 +44,14 @@ MessageStatus = Literal["pending", "streaming", "complete", "failed"]
 BridgeAuthentication = Literal["accepted", "terminal", "rejected"]
 
 
+class ClaudeChatToolUseView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool_use_id: str
+    name: str
+    input: dict[str, Any]
+
+
 class ClaudeChatMessageView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -44,6 +59,7 @@ class ClaudeChatMessageView(BaseModel):
     role: MessageRole
     status: MessageStatus
     content: str
+    tool_uses: list[ClaudeChatToolUseView]
     error: str | None
     created_at: datetime
     updated_at: datetime
@@ -372,6 +388,7 @@ class ClaudeChatStore:
                 role="user",
                 status="pending",
                 content=text,
+                tool_uses=[],
                 error=None,
                 created_at=now,
                 updated_at=now,
@@ -416,6 +433,7 @@ class ClaudeChatStore:
                     role="assistant",
                     status="streaming",
                     content="",
+                    tool_uses=[],
                     error=None,
                     created_at=now,
                     updated_at=now,
@@ -423,7 +441,15 @@ class ClaudeChatStore:
             )
         return message_id
 
-    def update_assistant(self, session_id: UUID, message_id: UUID, content: str, *, complete: bool = False) -> None:
+    def update_assistant(
+        self,
+        session_id: UUID,
+        message_id: UUID,
+        content: str,
+        *,
+        tool_uses: list[dict[str, Any]] | None = None,
+        complete: bool = False,
+    ) -> None:
         now = datetime.now(UTC)
         with self._sessions.begin() as db:
             message = db.get(ClaudeChatMessage, message_id)
@@ -431,6 +457,8 @@ class ClaudeChatStore:
             if message is None or chat is None:
                 return
             message.content = content
+            if tool_uses is not None:
+                message.tool_uses = tool_uses
             message.status = "complete" if complete else "streaming"
             message.updated_at = now
             chat.status = "ready" if complete else "responding"
@@ -611,6 +639,7 @@ class ClaudeChatService:
         await client.query(prompt)
         streamed = ""
         final_parts: list[str] = []
+        tool_uses: dict[str, dict[str, Any]] = {}
         result: ResultMessage | None = None
         async for message in client.receive_response():
             if isinstance(message, StreamEvent):
@@ -620,6 +649,20 @@ class ClaudeChatService:
                     await asyncio.to_thread(self._store.update_assistant, session_id, assistant_id, streamed)
             elif isinstance(message, AssistantMessage):
                 final_parts.extend(block.text for block in message.content if isinstance(block, TextBlock))
+                changed = False
+                for block in message.content:
+                    if not isinstance(block, ToolUseBlock):
+                        continue
+                    tool_uses[block.id] = {"tool_use_id": block.id, "name": block.name, "input": block.input}
+                    changed = True
+                if changed:
+                    await asyncio.to_thread(
+                        self._store.update_assistant,
+                        session_id,
+                        assistant_id,
+                        streamed,
+                        tool_uses=list(tool_uses.values()),
+                    )
             elif isinstance(message, ResultMessage):
                 result = message
         if result is None:
@@ -627,7 +670,14 @@ class ClaudeChatService:
         if result.is_error:
             raise RuntimeError(f"Claude returned {result.subtype}: {result.stop_reason or 'unknown error'}")
         final = "".join(final_parts).strip() or streamed.strip() or (result.result or "").strip()
-        await asyncio.to_thread(self._store.update_assistant, session_id, assistant_id, final, complete=True)
+        await asyncio.to_thread(
+            self._store.update_assistant,
+            session_id,
+            assistant_id,
+            final,
+            tool_uses=list(tool_uses.values()),
+            complete=True,
+        )
 
     async def aclose(self) -> None:
         await self._claims.aclose()
@@ -649,6 +699,7 @@ def _message_view(message: ClaudeChatMessage) -> ClaudeChatMessageView:
         role=cast(MessageRole, message.role),
         status=cast(MessageStatus, message.status),
         content=message.content,
+        tool_uses=[ClaudeChatToolUseView.model_validate(tool_use) for tool_use in message.tool_uses],
         error=message.error,
         created_at=message.created_at,
         updated_at=message.updated_at,

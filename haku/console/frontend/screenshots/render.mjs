@@ -91,6 +91,22 @@ const SCENES = [
     frame: true,
   },
   {
+    name: "claude-tool-use",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    clicks: ["button::-p-text(New session)"],
+    expectVisible: "::-p-text(mcp__haku-console__haku-console__list_mcp_servers)",
+    frame: true,
+  },
+  {
+    name: "claude-tool-use-mobile",
+    viewport: { width: 390, height: 1000 },
+    closeApprovals: true,
+    clicks: ["button::-p-text(New session)"],
+    expectVisible: "::-p-text(mcp__haku-console__haku-console__list_mcp_servers)",
+    frame: true,
+  },
+  {
     name: "claude-provisioning",
     viewport: { width: 1200, height: 900 },
     closeApprovals: true,

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest_bazel
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from kubernetes_asyncio import client as k8s_client
 from pydantic import SecretStr
 
@@ -322,6 +323,58 @@ class _LifecycleClaims:
 
     async def aclose(self) -> None:
         return None
+
+
+class _ToolUseStore:
+    def __init__(self):
+        self.updates: list[tuple[str, list[dict[str, Any]] | None, bool]] = []
+
+    def update_assistant(
+        self,
+        session_id: UUID,
+        message_id: UUID,
+        content: str,
+        *,
+        tool_uses: list[dict[str, Any]] | None = None,
+        complete: bool = False,
+    ) -> None:
+        del session_id, message_id
+        self.updates.append((content, tool_uses, complete))
+
+
+class _ToolUseClaudeClient:
+    async def query(self, prompt: str) -> None:
+        assert prompt == "Check the Haku MCP catalog"
+
+    async def receive_response(self):
+        yield AssistantMessage(
+            content=[ToolUseBlock(id="toolu_01", name="mcp__haku-console__haku-console__list_mcp_servers", input={})],
+            model="claude-sonnet-4-6",
+        )
+        yield AssistantMessage(
+            content=[TextBlock(text="The Haku Console catalog is available.")], model="claude-sonnet-4-6"
+        )
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=10,
+            duration_api_ms=8,
+            is_error=False,
+            num_turns=2,
+            session_id="sdk-session",
+            result="The Haku Console catalog is available.",
+        )
+
+
+async def test_run_turn_projects_tool_uses_into_the_assistant_message() -> None:
+    store = _ToolUseStore()
+    service = ClaudeChatService(
+        _runtime_config(), cast(Any, store), cast(Any, _LifecycleClaims()), mcp_token=SecretStr("unused")
+    )
+
+    await service._run_turn(cast(Any, _ToolUseClaudeClient()), uuid4(), uuid4(), "Check the Haku MCP catalog")
+
+    expected = [{"tool_use_id": "toolu_01", "name": "mcp__haku-console__haku-console__list_mcp_servers", "input": {}}]
+    assert store.updates == [("", expected, False), ("The Haku Console catalog is available.", expected, True)]
 
 
 class _LifecycleWebSocket:

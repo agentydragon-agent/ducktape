@@ -58,6 +58,7 @@ py_test(
         ":claude_chat",
         ":config",
         "//:conftest",
+        "@pypi//claude_agent_sdk",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

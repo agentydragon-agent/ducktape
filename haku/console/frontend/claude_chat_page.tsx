@@ -237,6 +237,23 @@ export function ClaudeChatPage() {
                     </Badge>
                   )}
                 </Group>
+                {message.tool_uses.length > 0 && (
+                  <Stack gap="xs" mb="sm">
+                    {message.tool_uses.map((toolUse) => (
+                      <Paper key={toolUse.tool_use_id} withBorder p="sm" radius="sm">
+                        <Group gap="xs" mb="xs">
+                          <Badge variant="light" color="gray">
+                            Tool
+                          </Badge>
+                          <Code style={{ overflowWrap: "anywhere" }}>{toolUse.name}</Code>
+                        </Group>
+                        <Code block style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                          {JSON.stringify(toolUse.input, null, 2)}
+                        </Code>
+                      </Paper>
+                    ))}
+                  </Stack>
+                )}
                 <Text component="div" style={{ whiteSpace: "pre-wrap" }}>
                   {message.content || (message.status === "streaming" ? "…" : "")}
                 </Text>
