@@ -125,9 +125,27 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     general_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text()
     assert "haku-claude-oauth-proxy" not in general_egress
 
-    claude_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml").read_text()
-    assert "haku-claude-sandbox" in claude_egress
-    assert "haku-claude-oauth-proxy" in claude_egress
+    claude_egress_path = k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml"
+    claude_egress_text = claude_egress_path.read_text()
+    assert "haku-claude-sandbox" in claude_egress_text
+    assert "haku-claude-oauth-proxy" in claude_egress_text
+
+    service = yaml.safe_load((k8s_dir / "haku/console/service.yaml").read_text())
+    bridge_service_port = next(port for port in service["spec"]["ports"] if port["port"] == 9090)
+    deployment = yaml.safe_load((k8s_dir / "haku/console/deployment.yaml").read_text())
+    server = next(
+        container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "server"
+    )
+    bridge_target_port = next(
+        port["containerPort"] for port in server["ports"] if port["name"] == bridge_service_port["targetPort"]
+    )
+    claude_egress = yaml.safe_load(claude_egress_text)
+    console_rule = next(
+        rule
+        for rule in claude_egress["spec"]["egress"]
+        if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name") == "haku-console"
+    )
+    assert console_rule["toPorts"][0]["ports"] == [{"port": str(bridge_target_port), "protocol": "TCP"}]
 
     general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
     assert "haku-claude-sandbox" not in general_injection
@@ -144,7 +162,6 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
     }
-    deployment = yaml.safe_load((k8s_dir / "haku/console/deployment.yaml").read_text())
     env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
 

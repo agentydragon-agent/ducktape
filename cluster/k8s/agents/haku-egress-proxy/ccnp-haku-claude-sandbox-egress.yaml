@@ -28,8 +28,10 @@ spec:
             k8s:io.kubernetes.pod.namespace: haku-console
             k8s:app.kubernetes.io/name: haku-console
       toPorts:
+        # Cilium evaluates the destination endpoint after Service translation.
+        # haku-console Service port 9090 targets the API container's `api` port 8080.
         - ports:
-            - port: "9090"
+            - port: "8080"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
