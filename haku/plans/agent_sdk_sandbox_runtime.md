@@ -108,6 +108,26 @@ so sandbox loss was never detectable that way. Watch the Sandbox CR instead, and
 per session rather than environment-wide — which is what failed in the Claude Code web
 environment.
 
+**Remote transport.** The Python SDK launches the CLI with `--input-format stream-json` and
+`--output-format stream-json`; its `Query` layer implements hooks, interrupts, SDK-hosted MCP, and
+message routing over an abstract `Transport`. Haku will keep `ClaudeSDKClient` and `Query` in the
+trusted console process and tunnel that existing JSON protocol over a WebSocket to a thin sandbox
+bridge around Claude Code's stdin/stdout. The executable bridge is
+`//haku/runtime/agent_sdk_transport:runner_bin`; it imports no Agent SDK code and starts the pinned
+Claude Code executable supplied by the sandbox image. The trusted process derives a versioned launch
+frame from `ClaudeAgentOptions`, preserving dynamic CLI arguments, working directory, and explicit
+environment without putting SDK orchestration in the sandbox. A compatibility test checks the launch
+command against the pinned SDK's `SubprocessCLITransport`. The WebSocket adds only launch and lifecycle
+framing such as end-of-input; it does not define a second prompt, turn, or tool protocol. This also lets
+SDK-hosted MCP handlers run
+inside haku-console and delegate directly to its actor-aware approval application service.
+
+The runtime explicitly enables both `include_partial_messages` and
+`CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING=1`. The former exposes raw Anthropic stream events;
+the latter makes tool arguments arrive as incremental `input_json_delta` events rather than only as
+the final `ToolUseBlock`. Console persistence must retain the raw events before typed parsing, then
+project complete tool inputs/results from final messages and `PreToolUse`/`PostToolUse` hooks.
+
 ## Compatibility result — 2026-07-31
 
 The one-shot `haku-agent-sdk-smoke` Job from PR #3632 completed successfully in `haku-sandbox`

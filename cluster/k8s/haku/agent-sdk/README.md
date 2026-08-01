@@ -23,7 +23,7 @@ The one-shot `haku-agent-sdk-smoke` Job exercises the assumptions needed by the
 larger runtime before any console or Sandbox CR plumbing is built:
 
 - subscription OAuth authentication from a headless container;
-- partial-message streaming and terminal result metadata;
+- partial-message streaming and explicit fine-grained tool-input streaming configuration;
 - two turns on one `ClaudeSDKClient`;
 - closing the client and resuming its disk-backed session at the same `cwd`;
 - `UserPromptSubmit`, `Stop`, and deny-all `PreToolUse` hooks;

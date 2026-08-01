@@ -6,7 +6,10 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "smoke",
     srcs = ["smoke.py"],
-    deps = ["@pypi//claude_agent_sdk"],
+    deps = [
+        "//haku/runtime/agent_sdk_transport:options",
+        "@pypi//claude_agent_sdk",
+    ],
 )
 
 py_test(
