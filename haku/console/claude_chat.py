@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -491,10 +491,13 @@ class StarletteTextWebSocket(TextWebSocket):
 
 
 class ClaudeChatService:
-    def __init__(self, config: ClaudeRuntimeConfig, store: ClaudeChatStore, claims: SandboxClaims):
+    def __init__(
+        self, config: ClaudeRuntimeConfig, store: ClaudeChatStore, claims: SandboxClaims, *, mcp_token: SecretStr
+    ):
         self._config = config
         self._store = store
         self._claims = claims
+        self._mcp_token = mcp_token
 
     async def create(self, operator_id: UUID) -> ClaudeChatSessionView:
         view, token = await asyncio.to_thread(self._store.create, operator_id)
@@ -565,6 +568,14 @@ class ClaudeChatService:
             ClaudeAgentOptions(
                 cwd=self._config.cwd,
                 env=self._config.claude_environment(),
+                mcp_servers={
+                    "haku-console": {
+                        "type": "http",
+                        "url": self._config.mcp_url,
+                        "headers": {"Authorization": f"Bearer {self._mcp_token.get_secret_value()}"},
+                    }
+                },
+                strict_mcp_config=True,
                 permission_mode="bypassPermissions",
                 setting_sources=[],
             )

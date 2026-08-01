@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
+from pydantic import SecretStr
 
 from haku.console.claude_chat import (
     ClaudeChatService,
@@ -58,6 +59,8 @@ def _runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
         "https_proxy": "http://proxy.test:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
+        "mcp_url": "http://haku-console.test:9090/mcp",
+        "mcp_static_agent_id": "00000000-0000-4000-8000-000000000001",
     }
     values.update(overrides)
     return ClaudeRuntimeConfig.model_validate(values)
@@ -334,8 +337,10 @@ class _LifecycleWebSocket:
 
 
 class _LifecycleClaudeClient:
+    last_options: object | None = None
+
     def __init__(self, **kwargs: object):
-        del kwargs
+        type(self).last_options = kwargs["options"]
         self.connected = False
         self.disconnected = False
 
@@ -350,7 +355,9 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     session_id = uuid4()
     store = _LifecycleStore(session_id, "bridge-token")
     claims = _LifecycleClaims()
-    service = ClaudeChatService(_runtime_config(), cast(Any, store), cast(Any, claims))
+    service = ClaudeChatService(
+        _runtime_config(), cast(Any, store), cast(Any, claims), mcp_token=SecretStr("haku-static-bearer")
+    )
     websocket = _LifecycleWebSocket()
 
     session = await service.create(uuid4())
@@ -364,6 +371,16 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert claims.deleted == [session_id]
     assert store.cleanup_completed == [session_id]
     assert store.closed_sessions == [session_id]
+    options = cast(Any, _LifecycleClaudeClient.last_options)
+    assert options.mcp_servers == {
+        "haku-console": {
+            "type": "http",
+            "url": "http://haku-console.test:9090/mcp",
+            "headers": {"Authorization": "Bearer haku-static-bearer"},
+        }
+    }
+    assert options.strict_mcp_config is True
+    assert "haku-static-bearer" not in options.env.values()
 
 
 class _TerminalStore:
@@ -382,7 +399,9 @@ async def test_terminal_runner_retry_deletes_its_stale_claim() -> None:
     session_id = uuid4()
     store = _TerminalStore()
     claims = _LifecycleClaims()
-    service = ClaudeChatService(_runtime_config(), cast(Any, store), cast(Any, claims))
+    service = ClaudeChatService(
+        _runtime_config(), cast(Any, store), cast(Any, claims), mcp_token=SecretStr("haku-static-bearer")
+    )
     websocket = _LifecycleWebSocket()
 
     await service.handle_runner(cast(Any, websocket), session_id, "stale-but-authentic")
@@ -408,7 +427,9 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup() -> None:
     session_ids = [uuid4(), uuid4()]
     store = _ReconcileStore(session_ids)
     claims = _LifecycleClaims()
-    service = ClaudeChatService(_runtime_config(), cast(Any, store), cast(Any, claims))
+    service = ClaudeChatService(
+        _runtime_config(), cast(Any, store), cast(Any, claims), mcp_token=SecretStr("haku-static-bearer")
+    )
 
     await service.reconcile_terminal_claims()
 

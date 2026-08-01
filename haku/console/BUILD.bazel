@@ -59,6 +59,7 @@ py_test(
         ":config",
         "//:conftest",
         "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

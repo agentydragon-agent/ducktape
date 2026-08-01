@@ -159,13 +159,7 @@ def create_app(
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
     claude_chat_store = claude_chat.ClaudeChatStore(db_sessions) if claude_runtime is not None else None
-    claude_chat_service = (
-        claude_chat.ClaudeChatService(
-            claude_runtime, claude_chat_store, claude_chat.KubernetesSandboxClaims(claude_runtime)
-        )
-        if claude_runtime is not None and claude_chat_store is not None
-        else None
-    )
+    claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -252,6 +246,22 @@ def create_app(
                 auto_approval_policy=agent.auto_approval_policy,
             )
             for agent in loaded_static_agents
+        )
+    if claude_runtime is not None and claude_chat_store is not None:
+        if loaded_static_agents is None:
+            raise RuntimeError("Claude runtime requires loaded static Agent credentials")
+        mcp_agent = next(
+            (agent for agent in loaded_static_agents if agent.agent_id == claude_runtime.mcp_static_agent_id), None
+        )
+        if mcp_agent is None:
+            raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
+        if mcp_agent.auto_approval_policy != "haku_v1":
+            raise RuntimeError("Claude runtime static Agent must use the haku_v1 auto-approval policy")
+        claude_chat_service = claude_chat.ClaudeChatService(
+            claude_runtime,
+            claude_chat_store,
+            claude_chat.KubernetesSandboxClaims(claude_runtime),
+            mcp_token=mcp_agent.token,
         )
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
         fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
