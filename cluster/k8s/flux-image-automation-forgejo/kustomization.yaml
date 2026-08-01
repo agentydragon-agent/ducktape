@@ -11,7 +11,5 @@ resources:
   - public-coder-iron-proxy-image-policy.yaml
   - grocy-user-perms-provisioner-image-repository.yaml
   - grocy-user-perms-provisioner-image-policy.yaml
-  - ibkr-mcp-server-image-repository.yaml
-  - ibkr-mcp-server-image-policy.yaml
   - osm-mcp-image-repository.yaml
   - osm-mcp-image-policy.yaml
