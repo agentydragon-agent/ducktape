@@ -114,6 +114,30 @@
   color: var(--mantine-color-anchor);
   overflow-wrap: anywhere;
 }
+.md pre {
+  margin: 0.5rem 0;
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--haku-code-bg);
+  padding: 0.65rem;
+}
+.md pre code {
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
+.md blockquote {
+  margin: 0.5rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--haku-border);
+  color: var(--mantine-color-dimmed);
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
 
 .haku-confirm-dialog {
   position: fixed;
@@ -317,6 +341,86 @@
    approvals panel's — so drop the panel's lift shadow and let the border alone delineate them. */
 .haku-page .haku-shell-card {
   box-shadow: none;
+}
+
+.haku-claude-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.haku-claude-header {
+  align-items: center;
+}
+
+.haku-claude-messages-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.haku-chat-messages {
+  min-height: 100%;
+}
+
+.haku-chat-messages > :first-child {
+  margin-top: auto;
+}
+
+.haku-chat-message {
+  width: min(88%, 46rem);
+  background: var(--haku-panel-bg);
+}
+
+.haku-chat-message-user {
+  align-self: flex-end;
+  background: var(--haku-shell-active-bg);
+}
+
+.haku-chat-message-assistant {
+  align-self: flex-start;
+}
+
+.haku-chat-markdown {
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.45;
+}
+
+.haku-chat-markdown h1,
+.haku-chat-markdown h2,
+.haku-chat-markdown h3,
+.haku-chat-markdown h4,
+.haku-chat-markdown h5,
+.haku-chat-markdown h6 {
+  margin: 0.65rem 0 0.35rem;
+  font-size: 1em;
+  line-height: 1.35;
+}
+
+.haku-claude-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-claude-composer-inner {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+}
+
+@media (max-width: 600px) {
+  .haku-claude-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .haku-chat-message {
+    width: 94%;
+  }
 }
 
 .haku-shell-header {

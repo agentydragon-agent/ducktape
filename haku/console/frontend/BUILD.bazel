@@ -585,11 +585,32 @@ ts_library(
 )
 
 ts_library(
+    name = "chat_scroll",
+    srcs = ["chat_scroll.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "markdown",
+    srcs = ["markdown.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/marked",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "claude_chat_page",
     srcs = ["claude_chat_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":chat_scroll",
         ":client",
+        ":markdown",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -885,6 +906,26 @@ js_test(
 # with — a spec that is not wired here simply does not exist to Bazel.
 
 ts_library(
+    name = "chat_scroll_test",
+    srcs = ["chat_scroll.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chat_scroll",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "markdown_test",
+    srcs = ["markdown.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":markdown",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "approval_state_test",
     srcs = ["approval_state.test.ts"],
     tsconfig = TSCONFIG,
@@ -1117,10 +1158,12 @@ vitest_bin.vitest_test(
         ":bridge_client_test",
         ":bridge_test_lib",
         ":calendar_client_test",
+        ":chat_scroll_test",
         ":code_block_test",
         ":geolocation_test",
         ":gmail_client_test",
         ":haku_ui_embed_test",
+        ":markdown_test",
         ":mcp_tool_result_schema_test",
         ":mcp_tool_schema_test",
         ":open_external_test",
