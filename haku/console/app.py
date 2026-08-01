@@ -255,8 +255,6 @@ def create_app(
         )
         if mcp_agent is None:
             raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
-        if mcp_agent.auto_approval_policy != "haku_v1":
-            raise RuntimeError("Claude runtime static Agent must use the haku_v1 auto-approval policy")
         claude_chat_service = claude_chat.ClaudeChatService(
             claude_runtime,
             claude_chat_store,
