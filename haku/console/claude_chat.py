@@ -13,7 +13,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, Protocol, cast
 from uuid import UUID, uuid4
 
-import psycopg
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -30,7 +29,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatMessage, ClaudeChatSession
@@ -287,27 +286,29 @@ class KubernetesSandboxClaims:
 
 
 class ClaudeChatStore:
-    """Synchronous Postgres store for Claude chat sessions."""
+    """Async Postgres store for Claude chat sessions."""
 
-    def __init__(self, sessions: sessionmaker[Session], database_url: str):
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
-        self._database_url = database_url
-        self._poll_fallback_seconds: float = 0.25
+
+    @property
+    def _engine(self) -> AsyncEngine:
+        return self._sessions.kw["bind"]
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
 
     @staticmethod
-    def _notify(db: Session, channel: str, session_id: UUID) -> None:
+    async def _notify(db: AsyncSession, channel: str, session_id: UUID) -> None:
         """Emit ``pg_notify`` inside an active session transaction."""
-        db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": str(session_id)})
+        await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": str(session_id)})
 
-    def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
+    async def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
         now = datetime.now(UTC)
         session_id = uuid4()
         bridge_token = secrets.token_urlsafe(32)
-        with self._sessions.begin() as db:
+        async with self._sessions.begin() as db:
             db.add(
                 ClaudeChatSession(
                     session_id=session_id,
@@ -320,11 +321,12 @@ class ClaudeChatStore:
                     updated_at=now,
                 )
             )
-        return self.get(operator_id, session_id), bridge_token
+        view = await self.get(operator_id, session_id)
+        return view, bridge_token
 
-    def get(self, operator_id: UUID, session_id: UUID) -> ClaudeChatSessionView:
-        with self._sessions() as db:
-            record = db.scalar(
+    async def get(self, operator_id: UUID, session_id: UUID) -> ClaudeChatSessionView:
+        async with self._sessions() as db:
+            record = await db.scalar(
                 select(ClaudeChatSession).where(
                     ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
                 )
@@ -332,18 +334,20 @@ class ClaudeChatStore:
             if record is None:
                 raise KeyError(session_id)
             messages = list(
-                db.scalars(
-                    select(ClaudeChatMessage)
-                    .where(ClaudeChatMessage.session_id == session_id)
-                    .order_by(ClaudeChatMessage.created_at, ClaudeChatMessage.message_id)
-                )
+                (
+                    await db.scalars(
+                        select(ClaudeChatMessage)
+                        .where(ClaudeChatMessage.session_id == session_id)
+                        .order_by(ClaudeChatMessage.created_at, ClaudeChatMessage.message_id)
+                    )
+                ).all()
             )
             return _session_view(record, messages)
 
-    def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
+    async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
         now = datetime.now(UTC)
-        with self._sessions.begin() as db:
-            record = db.get(ClaudeChatSession, session_id, with_for_update=True)
+        async with self._sessions.begin() as db:
+            record = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if record is None or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token)):
                 return "rejected"
             if record.status in {"closing", "closed", "failed"}:
@@ -355,22 +359,20 @@ class ClaudeChatStore:
             record.updated_at = now
             return "accepted"
 
-    def claim_cleanup_candidates(self) -> list[UUID]:
+    async def claim_cleanup_candidates(self) -> list[UUID]:
         """Return terminal sessions whose hashed rendezvous credential still marks cleanup pending."""
-
-        with self._sessions() as db:
-            return list(
-                db.scalars(
-                    select(ClaudeChatSession.session_id).where(
-                        ClaudeChatSession.status.in_(("closing", "closed", "failed")),
-                        ClaudeChatSession.bridge_token_fingerprint != b"",
-                    )
+        async with self._sessions() as db:
+            result = await db.scalars(
+                select(ClaudeChatSession.session_id).where(
+                    ClaudeChatSession.status.in_(("closing", "closed", "failed")),
+                    ClaudeChatSession.bridge_token_fingerprint != b"",
                 )
             )
+            return list(result.all())
 
-    def complete_claim_cleanup(self, session_id: UUID) -> None:
-        with self._sessions.begin() as db:
-            chat = db.get(ClaudeChatSession, session_id, with_for_update=True)
+    async def complete_claim_cleanup(self, session_id: UUID) -> None:
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if chat is None:
                 return
             chat.bridge_token_fingerprint = b""
@@ -378,10 +380,10 @@ class ClaudeChatStore:
                 chat.status = "closed"
             chat.updated_at = datetime.now(UTC)
 
-    def enqueue_prompt(self, operator_id: UUID, session_id: UUID, text: str) -> ClaudeChatMessageView:
+    async def enqueue_prompt(self, operator_id: UUID, session_id: UUID, prompt_text: str) -> ClaudeChatMessageView:
         now = datetime.now(UTC)
-        with self._sessions.begin() as db:
-            chat = db.scalar(
+        async with self._sessions.begin() as db:
+            chat = await db.scalar(
                 select(ClaudeChatSession)
                 .where(ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id)
                 .with_for_update()
@@ -390,7 +392,7 @@ class ClaudeChatStore:
                 raise KeyError(session_id)
             if chat.status != "ready":
                 raise RuntimeError(f"session is not ready (status={chat.status})")
-            existing = db.scalar(
+            existing = await db.scalar(
                 select(ClaudeChatMessage).where(
                     ClaudeChatMessage.session_id == session_id, ClaudeChatMessage.status == "pending"
                 )
@@ -402,7 +404,7 @@ class ClaudeChatStore:
                 session_id=session_id,
                 role="user",
                 status="pending",
-                content=text,
+                content=prompt_text,
                 tool_uses=[],
                 error=None,
                 created_at=now,
@@ -411,15 +413,15 @@ class ClaudeChatStore:
             db.add(message)
             chat.status = "responding"
             chat.updated_at = now
-            self._notify(db, _PROMPT_CHANNEL, session_id)
+            await self._notify(db, _PROMPT_CHANNEL, session_id)
         return _message_view(message)
 
-    def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
-        with self._sessions.begin() as db:
-            chat = db.get(ClaudeChatSession, session_id, with_for_update=True)
+    async def next_prompt(self, session_id: UUID) -> tuple[UUID, str] | None:
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id, with_for_update=True)
             if chat is None or chat.status in {"closing", "closed", "failed"}:
                 return None
-            message = db.scalar(
+            message = await db.scalar(
                 select(ClaudeChatMessage)
                 .where(
                     ClaudeChatMessage.session_id == session_id,
@@ -438,10 +440,10 @@ class ClaudeChatStore:
             chat.updated_at = now
             return message.message_id, message.content
 
-    def begin_assistant(self, session_id: UUID) -> UUID:
+    async def begin_assistant(self, session_id: UUID) -> UUID:
         now = datetime.now(UTC)
         message_id = uuid4()
-        with self._sessions.begin() as db:
+        async with self._sessions.begin() as db:
             db.add(
                 ClaudeChatMessage(
                     message_id=message_id,
@@ -457,7 +459,7 @@ class ClaudeChatStore:
             )
         return message_id
 
-    def update_assistant(
+    async def update_assistant(
         self,
         session_id: UUID,
         message_id: UUID,
@@ -467,9 +469,9 @@ class ClaudeChatStore:
         complete: bool = False,
     ) -> None:
         now = datetime.now(UTC)
-        with self._sessions.begin() as db:
-            message = db.get(ClaudeChatMessage, message_id)
-            chat = db.get(ClaudeChatSession, session_id)
+        async with self._sessions.begin() as db:
+            message = await db.get(ClaudeChatMessage, message_id)
+            chat = await db.get(ClaudeChatSession, session_id)
             if message is None or chat is None:
                 return
             message.content = content
@@ -480,35 +482,35 @@ class ClaudeChatStore:
             if chat.status not in {"closing", "closed", "failed"}:
                 chat.status = "responding"
             chat.updated_at = now
-            self._notify(db, _UPDATE_CHANNEL, session_id)
+            await self._notify(db, _UPDATE_CHANNEL, session_id)
 
-    def complete_turn(self, session_id: UUID) -> None:
+    async def complete_turn(self, session_id: UUID) -> None:
         now = datetime.now(UTC)
-        with self._sessions.begin() as db:
-            chat = db.get(ClaudeChatSession, session_id)
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id)
             if chat is None or chat.status in {"closing", "closed", "failed"}:
                 return
             chat.status = "ready"
             chat.updated_at = now
 
-    def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
+    async def fail(self, session_id: UUID, error: str, message_id: UUID | None = None) -> None:
         now = datetime.now(UTC)
-        with self._sessions.begin() as db:
-            chat = db.get(ClaudeChatSession, session_id)
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id)
             if chat is not None and chat.status not in {"closing", "closed"}:
                 chat.status = "failed"
                 chat.error = error
                 chat.updated_at = now
             if message_id is not None:
-                message = db.get(ClaudeChatMessage, message_id)
+                message = await db.get(ClaudeChatMessage, message_id)
                 if message is not None:
                     message.status = "failed"
                     message.error = error
                     message.updated_at = now
 
-    def request_close(self, operator_id: UUID, session_id: UUID) -> None:
-        with self._sessions.begin() as db:
-            chat = db.scalar(
+    async def request_close(self, operator_id: UUID, session_id: UUID) -> None:
+        async with self._sessions.begin() as db:
+            chat = await db.scalar(
                 select(ClaudeChatSession)
                 .where(ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id)
                 .with_for_update()
@@ -518,23 +520,23 @@ class ClaudeChatStore:
             chat.status = "closing"
             chat.updated_at = datetime.now(UTC)
 
-    def status(self, session_id: UUID) -> str | None:
-        with self._sessions() as db:
-            chat = db.get(ClaudeChatSession, session_id)
+    async def status(self, session_id: UUID) -> str | None:
+        async with self._sessions() as db:
+            chat = await db.get(ClaudeChatSession, session_id)
             return chat.status if chat is not None else None
 
-    def closed(self, session_id: UUID) -> None:
-        with self._sessions.begin() as db:
-            chat = db.get(ClaudeChatSession, session_id)
+    async def closed(self, session_id: UUID) -> None:
+        async with self._sessions.begin() as db:
+            chat = await db.get(ClaudeChatSession, session_id)
             if chat is not None and chat.status != "failed":
                 chat.status = "closed"
                 chat.updated_at = datetime.now(UTC)
-                self._notify(db, _UPDATE_CHANNEL, session_id)
+                await self._notify(db, _UPDATE_CHANNEL, session_id)
 
-    def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
-        with self._sessions() as db:
+    async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
+        async with self._sessions() as db:
             return (
-                db.scalar(
+                await db.scalar(
                     select(ClaudeChatSession.session_id).where(
                         ClaudeChatSession.session_id == session_id, ClaudeChatSession.operator_id == operator_id
                     )
@@ -545,25 +547,27 @@ class ClaudeChatStore:
     async def _listen(self, channel: str, session_id: UUID, *, timeout_seconds: float) -> bool:
         """Block until a Postgres NOTIFY on *channel* fires for *session_id*.
 
-        Returns ``True`` on match, ``False`` on timeout.
+        Uses a raw asyncpg connection from the engine's pool for LISTEN/NOTIFY.
         """
-        dsn = self._database_url.replace("postgresql+psycopg://", "postgresql://", 1)
         try:
-            async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as conn:
-                await conn.execute(f"LISTEN {channel}")
+            async with self._engine.connect() as conn:
+                raw = await conn.get_raw_connection()
+                pg_conn = raw.dbapi_connection.driver_connection
+                await pg_conn.set_autocommit(True)
+                await pg_conn.execute(f"LISTEN {channel}")
                 try:
                     async with asyncio.timeout(timeout_seconds):
-                        async for note in conn.notifies():
+                        async for note in pg_conn.notifies():
                             if note.payload == str(session_id):
                                 return True
                     return False
                 except (TimeoutError, asyncio.CancelledError):
                     return False
                 finally:
-                    await conn.execute(f"UNLISTEN {channel}")
+                    await pg_conn.execute(f"UNLISTEN {channel}")
         except Exception:
             logger.debug("LISTEN/NOTIFY failed on %s for session %s; falling back to poll", channel, session_id)
-            await asyncio.sleep(self._poll_fallback_seconds)
+            await asyncio.sleep(0.25)
             return False
 
     async def listen_for_update(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> None:
@@ -607,7 +611,7 @@ class ClaudeChatService:
         return False
 
     async def create(self, operator_id: UUID) -> ClaudeChatSessionView:
-        view, token = await asyncio.to_thread(self._store.create, operator_id)
+        view, token = await self._store.create(operator_id)
         try:
             await self._claims.create(
                 session_id=view.session_id,
@@ -615,7 +619,7 @@ class ClaudeChatService:
                 expires_at=datetime.now(UTC) + timedelta(seconds=self._config.session_ttl_seconds),
             )
         except Exception as error:
-            await asyncio.to_thread(self._store.fail, view.session_id, f"sandbox provisioning failed: {error}")
+            await self._store.fail(view.session_id, f"sandbox provisioning failed: {error}")
             # If claim creation reached Kubernetes before its response failed, remove the partial
             # resource now. A failed delete leaves the rendezvous hash as a durable retry marker.
             await self._cleanup_terminal_claim(view.session_id)
@@ -623,7 +627,7 @@ class ClaudeChatService:
         return await self._with_provisioning(view)
 
     async def get(self, operator_id: UUID, session_id: UUID) -> ClaudeChatSessionView:
-        view = await asyncio.to_thread(self._store.get, operator_id, session_id)
+        view = await self._store.get(operator_id, session_id)
         return await self._with_provisioning(view)
 
     async def _with_provisioning(self, view: ClaudeChatSessionView) -> ClaudeChatSessionView:
@@ -638,14 +642,14 @@ class ClaudeChatService:
         return view.model_copy(update={"provisioning": provisioning})
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
-        await asyncio.to_thread(self._store.request_close, operator_id, session_id)
+        await self._store.request_close(operator_id, session_id)
         await self._claims.delete(session_id=session_id)
-        await asyncio.to_thread(self._store.complete_claim_cleanup, session_id)
+        await self._store.complete_claim_cleanup(session_id)
 
     async def reconcile_terminal_claims(self) -> None:
         """Finish idempotent claim cleanup left behind by an interrupted Console process."""
 
-        session_ids = await asyncio.to_thread(self._store.claim_cleanup_candidates)
+        session_ids = await self._store.claim_cleanup_candidates()
         for session_id in session_ids:
             await self._cleanup_terminal_claim(session_id)
 
@@ -657,11 +661,11 @@ class ClaudeChatService:
             # replica or a later restart retries. Kubernetes deletion is idempotent.
             logger.warning("Claude claim cleanup failed for session %s: %s", session_id, error)
             return False
-        await asyncio.to_thread(self._store.complete_claim_cleanup, session_id)
+        await self._store.complete_claim_cleanup(session_id)
         return True
 
     async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
-        authentication = await asyncio.to_thread(self._store.authenticate_bridge, session_id, bearer)
+        authentication = await self._store.authenticate_bridge(session_id, bearer)
         if authentication == "terminal":
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1008, reason="runner session is already terminal")
@@ -693,10 +697,10 @@ class ClaudeChatService:
         try:
             await client.connect()
             while True:
-                status = await asyncio.to_thread(self._store.status, session_id)
+                status = await self._store.status(session_id)
                 if status in {None, "closing", "closed", "failed"}:
                     break
-                prompt = await asyncio.to_thread(self._store.next_prompt, session_id)
+                prompt = await self._store.next_prompt(session_id)
                 if prompt is None:
                     # Wait for a LISTEN/NOTIFY instead of polling.
                     await self._store.wait_for_prompt(session_id, timeout_seconds=30.0)
@@ -705,18 +709,18 @@ class ClaudeChatService:
                 try:
                     await self._run_turn(client, session_id, text, abort_event=abort_event)
                 except Exception as error:
-                    await asyncio.to_thread(self._store.fail, session_id, str(error))
+                    await self._store.fail(session_id, str(error))
                     break
                 abort_event.clear()
         except WebSocketDisconnect:
-            await asyncio.to_thread(self._store.fail, session_id, "sandbox runner disconnected")
+            await self._store.fail(session_id, "sandbox runner disconnected")
         except Exception as error:
-            await asyncio.to_thread(self._store.fail, session_id, f"Claude runtime failed: {error}")
+            await self._store.fail(session_id, f"Claude runtime failed: {error}")
         finally:
             self._abort_events.pop(session_id, None)
             await client.disconnect()
             await self._cleanup_terminal_claim(session_id)
-            await asyncio.to_thread(self._store.closed, session_id)
+            await self._store.closed(session_id)
 
     async def _run_turn(
         self, client: ClaudeSDKClient, session_id: UUID, prompt: str, *, abort_event: asyncio.Event
@@ -756,26 +760,21 @@ class ClaudeChatService:
                         if not delta:
                             continue
                         if assistant_id is None:
-                            assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
+                            assistant_id = await self._store.begin_assistant(session_id)
                         streamed += delta
-                        await asyncio.to_thread(self._store.update_assistant, session_id, assistant_id, streamed)
+                        await self._store.update_assistant(session_id, assistant_id, streamed)
                     elif isinstance(msg, AssistantMessage):
                         saw_assistant_message = True
                         if assistant_id is None:
-                            assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
+                            assistant_id = await self._store.begin_assistant(session_id)
                         text = "".join(block.text for block in msg.content if isinstance(block, TextBlock)).strip()
                         tool_uses = [
                             {"tool_use_id": block.id, "name": block.name, "input": block.input}
                             for block in msg.content
                             if isinstance(block, ToolUseBlock)
                         ]
-                        await asyncio.to_thread(
-                            self._store.update_assistant,
-                            session_id,
-                            assistant_id,
-                            text or streamed.strip(),
-                            tool_uses=tool_uses,
-                            complete=True,
+                        await self._store.update_assistant(
+                            session_id, assistant_id, text or streamed.strip(), tool_uses=tool_uses, complete=True
                         )
                         assistant_id = None
                         streamed = ""
@@ -793,20 +792,16 @@ class ClaudeChatService:
             if abort_event.is_set():
                 final_text += "\n\n[aborted by operator]"
             if assistant_id is not None:
-                await asyncio.to_thread(
-                    self._store.update_assistant, session_id, assistant_id, final_text, tool_uses=[], complete=True
-                )
+                await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
             elif not saw_assistant_message:
-                assistant_id = await asyncio.to_thread(self._store.begin_assistant, session_id)
-                await asyncio.to_thread(
-                    self._store.update_assistant, session_id, assistant_id, final_text, tool_uses=[], complete=True
-                )
+                assistant_id = await self._store.begin_assistant(session_id)
+                await self._store.update_assistant(session_id, assistant_id, final_text, tool_uses=[], complete=True)
                 assistant_id = None
-            await asyncio.to_thread(self._store.complete_turn, session_id)
+            await self._store.complete_turn(session_id)
         except Exception as error:
             if assistant_id is not None:
-                await asyncio.to_thread(self._store.fail, session_id, str(error), assistant_id)
+                await self._store.fail(session_id, str(error), assistant_id)
             raise
 
     async def aclose(self) -> None:
@@ -966,7 +961,7 @@ async def _sse_stream(
     """Server-Sent Events stream delivering real-time session updates via LISTEN/NOTIFY."""
     yield f"data: {json.dumps({'type': 'connected'})}\n\n"
     try:
-        last_view = await asyncio.to_thread(store.get, operator_id, session_id)
+        last_view = await store.get(operator_id, session_id)
     except KeyError:
         yield f"data: {json.dumps({'type': 'end'})}\n\n"
         return
@@ -977,7 +972,7 @@ async def _sse_stream(
             return
         await store.listen_for_update(session_id, timeout_seconds=30.0)
         try:
-            next_view = await asyncio.to_thread(store.get, operator_id, session_id)
+            next_view = await store.get(operator_id, session_id)
         except KeyError:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
             return
@@ -988,7 +983,7 @@ async def _sse_stream(
 
 @router.get("/api/claude/sessions/{session_id}/stream")
 async def stream_session(session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep) -> StreamingResponse:
-    if not await asyncio.to_thread(store.session_exists, actor.operator_id, session_id):
+    if not await store.session_exists(actor.operator_id, session_id):
         raise HTTPException(status_code=404, detail="Claude chat session not found")
     return StreamingResponse(
         _sse_stream(store, actor.operator_id, session_id),
@@ -999,7 +994,7 @@ async def stream_session(session_id: UUID, actor: OperatorActorDep, store: Claud
 
 @router.post("/api/claude/sessions/{session_id}/abort", status_code=202)
 async def abort_session(session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep) -> dict[str, str]:
-    if not await asyncio.to_thread(service._store.session_exists, actor.operator_id, session_id):
+    if not await service._store.session_exists(actor.operator_id, session_id):
         raise HTTPException(status_code=404, detail="Claude chat session not found")
     if not service.request_abort(session_id):
         raise HTTPException(status_code=409, detail="no active turn to abort")
@@ -1011,7 +1006,7 @@ async def send_message(
     session_id: UUID, body: ClaudeChatPrompt, actor: OperatorActorDep, store: ClaudeChatStoreDep
 ) -> ClaudeChatMessageView:
     try:
-        return await asyncio.to_thread(store.enqueue_prompt, actor.operator_id, session_id, body.text)
+        return await store.enqueue_prompt(actor.operator_id, session_id, body.text)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Claude chat session not found") from error
     except RuntimeError as error:
