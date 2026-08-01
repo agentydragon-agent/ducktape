@@ -65,6 +65,7 @@ const claudeSession = scene?.startsWith("claude-provisioning")
           role: "user",
           status: "complete",
           content: "Create a short note in the sandbox and tell me what you wrote.",
+          tool_uses: [],
           error: null,
           created_at: "2026-08-01T03:00:10Z",
           updated_at: "2026-08-01T03:00:10Z",
@@ -74,6 +75,23 @@ const claudeSession = scene?.startsWith("claude-provisioning")
           role: "assistant",
           status: "complete",
           content: "I created /workspace/note.txt with: Hello from the disposable Haku sandbox.",
+          tool_uses: scene?.startsWith("claude-tool-use")
+            ? [
+                {
+                  tool_use_id: "toolu_01HakuConsoleRead",
+                  name: "mcp__haku-console__haku-console__list_mcp_servers",
+                  input: {},
+                },
+                {
+                  tool_use_id: "toolu_02WriteNote",
+                  name: "Write",
+                  input: {
+                    file_path: "/workspace/note.txt",
+                    content: "Hello from the disposable Haku sandbox.",
+                  },
+                },
+              ]
+            : [],
           error: null,
           created_at: "2026-08-01T03:00:11Z",
           updated_at: "2026-08-01T03:00:15Z",
