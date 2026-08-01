@@ -19,6 +19,11 @@ on:
         required: false
         type: string
         default: ""
+      source_ref:
+        description: "Ref to resolve after approval instead of trusting an event-time commit SHA"
+        required: false
+        type: string
+        default: ""
       pr_head_sha:
         description: "Expected PR head parent when source_commit is a synthetic merge"
         required: false
@@ -55,9 +60,39 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.source_commit || github.sha }}
+          ref: ${{ inputs.source_ref || inputs.source_commit || github.sha }}
           fetch-depth: 0
           allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
+
+      # pull_request_target payloads can pair the current head SHA with an old
+      # merge_commit_sha. Resolve the live merge ref only after approval, then
+      # freeze it to this SHA and prove its second parent is the approved head
+      # before loading any PR-controlled local action.
+      - name: Resolve and verify source revision
+        id: source
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.pr_head_sha }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          resolved_sha=$(git rev-parse HEAD)
+          if [[ -z "$SOURCE_REF" ]]; then
+            expected_sha="${SOURCE_COMMIT:-$GITHUB_SHA}"
+            if [[ "$resolved_sha" != "$expected_sha" ]]; then
+              echo "::error::checked out $resolved_sha, expected $expected_sha"
+              exit 1
+            fi
+          fi
+          if [[ -n "$EXPECTED_HEAD_SHA" ]]; then
+            actual_head=$(git rev-parse HEAD^2)
+            if [[ "$actual_head" != "$EXPECTED_HEAD_SHA" ]]; then
+              echo "::error::merge head $actual_head, expected approved PR head $EXPECTED_HEAD_SHA"
+              exit 1
+            fi
+          fi
+          echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved source revision: $resolved_sha"
 
       - uses: ./.github/actions/setup-nix-devtools
         with:
@@ -91,7 +126,7 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           rbe_image: ${{ inputs.rbe_image }}
-          run_from_commit: ${{ inputs.source_commit || github.sha }}
+          run_from_commit: ${{ steps.source.outputs.sha }}
           linkage_roles: test,build
           script: |
             set -euo pipefail
@@ -137,11 +172,11 @@ jobs:
                 echo "::error::pull_request CI expected github.sha to be a two-parent synthetic merge commit"
                 exit 1
               fi
-              # Only the HEAD parent (^2) must match the event. It guards against a
-              # stale merge ref that predates the current PR head — we'd otherwise test
-              # the wrong code, and a re-run fixes it once GitHub regenerates the ref.
+              # Only the HEAD parent (^2) must match the approved/event head. It
+              # guards against a stale or subsequently advanced merge ref — we'd
+              # otherwise test code different from the revision the reviewer approved.
               if [ "$PR_HEAD" != "$PR_HEAD_SHA" ]; then
-                echo "::error::synthetic merge head parent ($PR_HEAD) != approved PR head ($PR_HEAD_SHA); merge ref is stale — re-run once GitHub regenerates it"
+                echo "::error::synthetic merge head parent ($PR_HEAD) != approved PR head ($PR_HEAD_SHA)"
                 exit 1
               fi
               # The BASE parent (^1) is whatever devel was when GitHub built the merge.

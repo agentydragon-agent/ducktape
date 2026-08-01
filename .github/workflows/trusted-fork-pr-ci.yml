@@ -27,7 +27,10 @@ jobs:
     uses: ./.github/workflows/bazel-ci.yml
     with:
       environment: trusted-pr-ci
-      source_commit: ${{ github.event.pull_request.merge_commit_sha }}
+      # GitHub can emit pull_request_target with a current head SHA but a stale
+      # merge_commit_sha. Resolve the live merge ref after approval instead;
+      # the called workflow verifies its second parent against pr_head_sha.
+      source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
       # actions/checkout v6 refuses fork code under pull_request_target unless
@@ -43,7 +46,7 @@ jobs:
     uses: ./.github/workflows/nix-wheel-check.yml
     with:
       environment: trusted-pr-ci
-      source_commit: ${{ github.event.pull_request.merge_commit_sha }}
+      source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       allow_unsafe_pr_checkout: true
     secrets: inherit
