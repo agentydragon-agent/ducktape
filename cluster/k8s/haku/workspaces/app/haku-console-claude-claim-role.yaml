@@ -6,4 +6,12 @@ metadata:
 rules:
   - apiGroups: ["extensions.agents.x-k8s.io"]
     resources: ["sandboxclaims"]
-    verbs: ["create", "delete"]
+    verbs: ["create", "delete", "get"]
+  # Read-only runtime inspection powers the Operator-facing provisioning details.
+  # The Console still cannot list arbitrary resources, read logs/Secrets, or exec.
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]

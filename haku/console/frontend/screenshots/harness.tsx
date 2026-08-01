@@ -106,6 +106,8 @@ function sceneElement(scene: string) {
     case "settings":
       return <ConsoleScene view="settings" />;
     case "claude-chat":
+    case "claude-provisioning":
+    case "claude-provisioning-mobile":
       return <ConsoleScene view="claudeChat" />;
     case "settings-oauth-success":
       return <OAuthSettingsResultScene status="success" />;

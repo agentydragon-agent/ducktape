@@ -13,7 +13,7 @@ from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClie
 from claude_agent_sdk.types import StreamEvent
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, CustomObjectsApi
+from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -46,6 +46,32 @@ class ClaudeChatMessageView(BaseModel):
     updated_at: datetime
 
 
+ProvisioningStep = Literal[
+    "claim_created", "waiting_for_sandbox", "waiting_for_pod", "waiting_for_pod_ready", "waiting_for_runner"
+]
+
+
+class ClaudeSandboxProvisioningView(BaseModel):
+    """Non-secret Kubernetes state explaining what sandbox provisioning is waiting on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    step: ProvisioningStep
+    inspected_at: datetime
+    claim_name: str
+    claim_ready: bool | None = None
+    claim_reason: str | None = None
+    claim_message: str | None = None
+    sandbox_name: str | None = None
+    sandbox_ready: bool | None = None
+    pod_name: str | None = None
+    pod_phase: str | None = None
+    pod_ready: bool | None = None
+    runner_ready: bool | None = None
+    runner_state: str | None = None
+    observation_error: str | None = None
+
+
 class ClaudeChatSessionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,6 +80,7 @@ class ClaudeChatSessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
+    provisioning: ClaudeSandboxProvisioningView | None = None
     messages: list[ClaudeChatMessageView]
 
 
@@ -66,6 +93,8 @@ class SandboxClaims(Protocol):
 
     async def delete(self, *, session_id: UUID) -> None: ...
 
+    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView: ...
+
     async def aclose(self) -> None: ...
 
 
@@ -76,11 +105,13 @@ class KubernetesSandboxClaims:
         self._config = config
         self._api_client: ApiClient | None = None
         self._custom_objects: CustomObjectsApi | None = None
+        self._core_v1: CoreV1Api | None = None
         self._lock = asyncio.Lock()
 
-    async def _client(self) -> CustomObjectsApi:
+    async def _clients(self) -> tuple[CustomObjectsApi, CoreV1Api]:
         if self._custom_objects is not None:
-            return self._custom_objects
+            assert self._core_v1 is not None
+            return self._custom_objects, self._core_v1
         async with self._lock:
             if self._custom_objects is None:
                 configuration = k8s_client.Configuration()
@@ -90,7 +121,10 @@ class KubernetesSandboxClaims:
                     raise RuntimeError("Kubernetes in-cluster configuration is unavailable") from error
                 self._api_client = ApiClient(configuration=configuration)
                 self._custom_objects = CustomObjectsApi(self._api_client)
-        return self._custom_objects
+                self._core_v1 = CoreV1Api(self._api_client)
+        assert self._custom_objects is not None
+        assert self._core_v1 is not None
+        return self._custom_objects, self._core_v1
 
     def _claim_name(self, session_id: UUID) -> str:
         return f"claude-{session_id.hex}"
@@ -118,13 +152,13 @@ class KubernetesSandboxClaims:
                 ],
             },
         }
-        client = await self._client()
+        client, _ = await self._clients()
         await client.create_namespaced_custom_object(
             "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", body
         )
 
     async def delete(self, *, session_id: UUID) -> None:
-        client = await self._client()
+        client, _ = await self._clients()
         try:
             await client.delete_namespaced_custom_object(
                 "extensions.agents.x-k8s.io",
@@ -138,11 +172,91 @@ class KubernetesSandboxClaims:
             if error.status != 404:
                 raise
 
+    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
+        claim_name = self._claim_name(session_id)
+        custom_objects, core_v1 = await self._clients()
+        try:
+            claim = await custom_objects.get_namespaced_custom_object(
+                "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", claim_name
+            )
+        except k8s_client.ApiException as error:
+            if error.status == 404:
+                return _provisioning_view(claim_name, step="claim_created")
+            raise
+
+        claim_condition = _condition(claim, "Ready")
+        claim_reason = _condition_text(claim_condition, "reason")
+        claim_message = _condition_text(claim_condition, "message")
+        sandbox_name = _nested_string(claim, "status", "sandbox", "name")
+        if sandbox_name is None:
+            return _provisioning_view(
+                claim_name,
+                step="waiting_for_sandbox",
+                claim_ready=_condition_bool(claim_condition),
+                claim_reason=claim_reason,
+                claim_message=claim_message,
+            )
+
+        try:
+            sandbox = await custom_objects.get_namespaced_custom_object(
+                "agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxes", sandbox_name
+            )
+        except k8s_client.ApiException as error:
+            if error.status == 404:
+                return _provisioning_view(
+                    claim_name,
+                    step="waiting_for_sandbox",
+                    claim_ready=_condition_bool(claim_condition),
+                    claim_reason=claim_reason,
+                    claim_message=claim_message,
+                    sandbox_name=sandbox_name,
+                )
+            raise
+
+        sandbox_condition = _condition(sandbox, "Ready")
+        annotations = sandbox.get("metadata", {}).get("annotations", {}) or {}
+        pod_name = str(annotations.get("agents.x-k8s.io/pod-name") or sandbox_name)
+        try:
+            pod = await core_v1.read_namespaced_pod(pod_name, self._config.namespace)
+        except k8s_client.ApiException as error:
+            if error.status == 404:
+                return _provisioning_view(
+                    claim_name,
+                    step="waiting_for_pod",
+                    claim_ready=_condition_bool(claim_condition),
+                    claim_reason=claim_reason,
+                    claim_message=claim_message,
+                    sandbox_name=sandbox_name,
+                    sandbox_ready=_condition_bool(sandbox_condition),
+                    pod_name=pod_name,
+                )
+            raise
+
+        pod_phase = pod.status.phase if pod.status is not None else None
+        pod_ready = _pod_ready(pod)
+        runner_ready, runner_state = _container_status(pod, "runner")
+        step: ProvisioningStep = "waiting_for_runner" if pod_ready and runner_ready else "waiting_for_pod_ready"
+        return _provisioning_view(
+            claim_name,
+            step=step,
+            claim_ready=_condition_bool(claim_condition),
+            claim_reason=claim_reason,
+            claim_message=claim_message,
+            sandbox_name=sandbox_name,
+            sandbox_ready=_condition_bool(sandbox_condition),
+            pod_name=pod_name,
+            pod_phase=pod_phase,
+            pod_ready=pod_ready,
+            runner_ready=runner_ready,
+            runner_state=runner_state,
+        )
+
     async def aclose(self) -> None:
         if self._api_client is not None:
             await self._api_client.close()
             self._api_client = None
             self._custom_objects = None
+            self._core_v1 = None
 
 
 class ClaudeChatStore:
@@ -369,7 +483,22 @@ class ClaudeChatService:
         except Exception as error:
             await asyncio.to_thread(self._store.fail, view.session_id, f"sandbox provisioning failed: {error}")
             raise
-        return view
+        return await self._with_provisioning(view)
+
+    async def get(self, operator_id: UUID, session_id: UUID) -> ClaudeChatSessionView:
+        view = await asyncio.to_thread(self._store.get, operator_id, session_id)
+        return await self._with_provisioning(view)
+
+    async def _with_provisioning(self, view: ClaudeChatSessionView) -> ClaudeChatSessionView:
+        if view.status != "provisioning":
+            return view
+        try:
+            provisioning = await self._claims.inspect(session_id=view.session_id)
+        except Exception as error:
+            provisioning = _provisioning_view(
+                f"claude-{view.session_id.hex}", step="claim_created", observation_error=str(error)
+            )
+        return view.model_copy(update={"provisioning": provisioning})
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await asyncio.to_thread(self._store.request_close, operator_id, session_id)
@@ -471,8 +600,85 @@ def _session_view(record: ClaudeChatSession, messages: list[ClaudeChatMessage]) 
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        provisioning=None,
         messages=[_message_view(message) for message in messages],
     )
+
+
+def _provisioning_view(claim_name: str, *, step: ProvisioningStep, **values: Any) -> ClaudeSandboxProvisioningView:
+    return ClaudeSandboxProvisioningView(claim_name=claim_name, step=step, inspected_at=datetime.now(UTC), **values)
+
+
+def _condition(resource: dict[str, Any], condition_type: str) -> dict[str, Any] | None:
+    conditions = resource.get("status", {}).get("conditions", []) or []
+    return next(
+        (
+            condition
+            for condition in conditions
+            if isinstance(condition, dict) and condition.get("type") == condition_type
+        ),
+        None,
+    )
+
+
+def _condition_text(condition: dict[str, Any] | None, key: str) -> str | None:
+    if condition is None:
+        return None
+    value = condition.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _condition_bool(condition: dict[str, Any] | None) -> bool | None:
+    status = _condition_text(condition, "status")
+    if status == "True":
+        return True
+    if status == "False":
+        return False
+    return None
+
+
+def _nested_string(resource: dict[str, Any], *path: str) -> str | None:
+    value: Any = resource
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _pod_ready(pod: k8s_client.V1Pod) -> bool | None:
+    if pod.status is None or pod.status.conditions is None:
+        return None
+    condition = next((item for item in pod.status.conditions if item.type == "Ready"), None)
+    if condition is None:
+        return None
+    if condition.status == "True":
+        return True
+    if condition.status == "False":
+        return False
+    return None
+
+
+def _container_status(pod: k8s_client.V1Pod, name: str) -> tuple[bool | None, str | None]:
+    if pod.status is None or pod.status.container_statuses is None:
+        return None, None
+    status = next((item for item in pod.status.container_statuses if item.name == name), None)
+    if status is None:
+        return None, None
+    state = status.state
+    if state is None:
+        return status.ready, None
+    if state.running is not None:
+        detail = "running"
+    elif state.waiting is not None:
+        reason = state.waiting.reason or "unknown"
+        detail = f"waiting: {reason}"
+    elif state.terminated is not None:
+        reason = state.terminated.reason or f"exit {state.terminated.exit_code}"
+        detail = f"terminated: {reason}"
+    else:
+        detail = None
+    return status.ready, detail
 
 
 def _service(request: Request) -> ClaudeChatService:
@@ -502,9 +708,11 @@ async def create_session(actor: OperatorActorDep, service: ClaudeChatServiceDep)
 
 
 @router.get("/api/claude/sessions/{session_id}")
-async def get_session(session_id: UUID, actor: OperatorActorDep, store: ClaudeChatStoreDep) -> ClaudeChatSessionView:
+async def get_session(
+    session_id: UUID, actor: OperatorActorDep, service: ClaudeChatServiceDep
+) -> ClaudeChatSessionView:
     try:
-        return await asyncio.to_thread(store.get, actor.operator_id, session_id)
+        return await service.get(actor.operator_id, session_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Claude chat session not found") from error
 

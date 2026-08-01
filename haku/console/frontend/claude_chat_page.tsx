@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Loader, Paper, Stack, Text, Textarea, Title } from "@mantine/core";
+import { Badge, Box, Button, Code, Group, Loader, Paper, Stack, Text, Textarea, Title } from "@mantine/core";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -18,6 +18,20 @@ function statusColor(status: ClaudeChatSession["status"]): string {
   if (status === "failed") return "red";
   return "gray";
 }
+
+function readiness(value: boolean | null | undefined, pending: string): { color: string; label: string } {
+  if (value === true) return { color: "teal", label: "ready" };
+  if (value === false) return { color: "yellow", label: "not ready" };
+  return { color: "gray", label: pending };
+}
+
+const STEP_LABELS: Record<NonNullable<ClaudeChatSession["provisioning"]>["step"], string> = {
+  claim_created: "Creating the SandboxClaim",
+  waiting_for_sandbox: "Waiting for Sandbox assignment",
+  waiting_for_pod: "Waiting for the sandbox Pod",
+  waiting_for_pod_ready: "Waiting for the Pod and runner container",
+  waiting_for_runner: "Pod is ready; waiting for the Claude bridge",
+};
 
 export function ClaudeChatPage() {
   const [session, setSession] = useState<ClaudeChatSession | null>(null);
@@ -51,6 +65,7 @@ export function ClaudeChatPage() {
 
   const canSend = session?.status === "ready" && prompt.trim().length > 0 && !busy;
   const waiting = session?.status === "provisioning";
+  const provisioning = session?.provisioning;
   const messages = useMemo(() => session?.messages ?? [], [session]);
 
   async function createSession() {
@@ -141,9 +156,59 @@ export function ClaudeChatPage() {
 
         {waiting && (
           <Paper withBorder p="xl">
-            <Stack align="center" gap="sm">
-              <Loader size="sm" />
-              <Text size="sm">Provisioning the sandbox and waiting for Claude…</Text>
+            <Stack gap="md">
+              <Group gap="sm">
+                <Loader size="sm" />
+                <div>
+                  <Text fw={600} size="sm">
+                    {provisioning ? STEP_LABELS[provisioning.step] : "Provisioning the sandbox"}
+                  </Text>
+                  <Text c="dimmed" size="xs">
+                    Live state from the Agent Sandbox resources; waiting for the runner to connect to Haku Console.
+                  </Text>
+                </div>
+              </Group>
+
+              {provisioning && (
+                <Stack gap="xs">
+                  <ProvisioningResource
+                    label="SandboxClaim"
+                    name={provisioning.claim_name}
+                    readiness={readiness(provisioning.claim_ready, "pending")}
+                  />
+                  <ProvisioningResource
+                    label="Sandbox"
+                    name={provisioning.sandbox_name}
+                    readiness={readiness(provisioning.sandbox_ready, "not assigned")}
+                  />
+                  <ProvisioningResource
+                    label="Pod"
+                    name={provisioning.pod_name}
+                    readiness={readiness(provisioning.pod_ready, provisioning.pod_phase ?? "not created")}
+                    detail={provisioning.pod_phase ? `phase: ${provisioning.pod_phase}` : undefined}
+                  />
+                  <ProvisioningResource
+                    label="runner container"
+                    readiness={readiness(provisioning.runner_ready, "not reported")}
+                    detail={provisioning.runner_state ?? undefined}
+                  />
+                  <ProvisioningResource label="Claude bridge" readiness={{ color: "blue", label: "waiting" }} />
+
+                  {(provisioning.claim_reason || provisioning.claim_message) && (
+                    <Text c="dimmed" size="xs">
+                      Claim: {[provisioning.claim_reason, provisioning.claim_message].filter(Boolean).join(" — ")}
+                    </Text>
+                  )}
+                  {provisioning.observation_error && (
+                    <Text c="red" size="xs">
+                      Kubernetes observation failed: {provisioning.observation_error}
+                    </Text>
+                  )}
+                  <Text c="dimmed" size="xs">
+                    Observed {new Date(provisioning.inspected_at).toLocaleTimeString()}
+                  </Text>
+                </Stack>
+              )}
             </Stack>
           </Paper>
         )}
@@ -212,5 +277,68 @@ export function ClaudeChatPage() {
         )}
       </div>
     </section>
+  );
+}
+
+function ProvisioningResource({
+  label,
+  name,
+  readiness: state,
+  detail,
+}: {
+  label: string;
+  name?: string | null;
+  readiness: { color: string; label: string };
+  detail?: string;
+}) {
+  const badge = (
+    <Badge color={state.color} variant="light" size="sm">
+      {state.label}
+    </Badge>
+  );
+  const value = (
+    <Stack gap={0} style={{ minWidth: 0 }}>
+      {name && (
+        <Code block style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {name}
+        </Code>
+      )}
+      {detail && (
+        <Text c="dimmed" size="xs">
+          {detail}
+        </Text>
+      )}
+    </Stack>
+  );
+  return (
+    <>
+      <Box hiddenFrom="sm">
+        <Stack gap={2}>
+          <Group justify="space-between" wrap="nowrap">
+            <Text size="xs" fw={600}>
+              {label}
+            </Text>
+            {badge}
+          </Group>
+          {value}
+        </Stack>
+      </Box>
+      <Box visibleFrom="sm">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(7.5rem, auto) minmax(0, 1fr) auto",
+            alignItems: "center",
+            columnGap: "0.5rem",
+          }}
+        >
+          <Text size="xs" fw={600}>
+            {label}
+          </Text>
+          {value}
+          {badge}
+        </div>
+      </Box>
+    </>
   );
 }

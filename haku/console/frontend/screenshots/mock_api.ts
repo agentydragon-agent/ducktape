@@ -27,33 +27,59 @@ function jsonResponse(body: unknown): Response {
 
 const realFetch = globalThis.fetch;
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
-const claudeSession = {
-  session_id: "60000000-0000-4000-8000-000000000006",
-  status: "ready",
-  error: null,
-  created_at: "2026-08-01T03:00:00Z",
-  updated_at: "2026-08-01T03:01:00Z",
-  messages: [
-    {
-      message_id: "61000000-0000-4000-8000-000000000006",
-      role: "user",
-      status: "complete",
-      content: "Create a short note in the sandbox and tell me what you wrote.",
+const claudeSession = scene?.startsWith("claude-provisioning")
+  ? {
+      session_id: "60000000-0000-4000-8000-000000000006",
+      status: "provisioning",
       error: null,
-      created_at: "2026-08-01T03:00:10Z",
-      updated_at: "2026-08-01T03:00:10Z",
-    },
-    {
-      message_id: "62000000-0000-4000-8000-000000000006",
-      role: "assistant",
-      status: "complete",
-      content: "I created /workspace/note.txt with: Hello from the disposable Haku sandbox.",
+      created_at: "2026-08-01T03:00:00Z",
+      updated_at: "2026-08-01T03:00:03Z",
+      provisioning: {
+        step: "waiting_for_pod_ready",
+        inspected_at: "2026-08-01T03:00:03Z",
+        claim_name: "claude-60000000000040008000000000000006",
+        claim_ready: false,
+        claim_reason: "PodNotReady",
+        claim_message: "Waiting for the sandbox Pod to become ready",
+        sandbox_name: "haku-claude-7r9qk",
+        sandbox_ready: false,
+        pod_name: "haku-claude-7r9qk",
+        pod_phase: "Pending",
+        pod_ready: false,
+        runner_ready: false,
+        runner_state: "waiting: ContainerCreating",
+        observation_error: null,
+      },
+      messages: [],
+    }
+  : ({
+      session_id: "60000000-0000-4000-8000-000000000006",
+      status: "ready",
       error: null,
-      created_at: "2026-08-01T03:00:11Z",
-      updated_at: "2026-08-01T03:00:15Z",
-    },
-  ],
-} as const;
+      created_at: "2026-08-01T03:00:00Z",
+      updated_at: "2026-08-01T03:01:00Z",
+      provisioning: null,
+      messages: [
+        {
+          message_id: "61000000-0000-4000-8000-000000000006",
+          role: "user",
+          status: "complete",
+          content: "Create a short note in the sandbox and tell me what you wrote.",
+          error: null,
+          created_at: "2026-08-01T03:00:10Z",
+          updated_at: "2026-08-01T03:00:10Z",
+        },
+        {
+          message_id: "62000000-0000-4000-8000-000000000006",
+          role: "assistant",
+          status: "complete",
+          content: "I created /workspace/note.txt with: Hello from the disposable Haku sandbox.",
+          error: null,
+          created_at: "2026-08-01T03:00:11Z",
+          updated_at: "2026-08-01T03:00:15Z",
+        },
+      ],
+    } as const);
 const mcpServers =
   scene === "settings-oauth-success"
     ? SAMPLE_MCP_SERVERS.map((server) =>

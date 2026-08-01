@@ -53,6 +53,22 @@ const SCENES = [
     frame: true,
   },
   {
+    name: "claude-provisioning",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    clicks: ["button::-p-text(New session)"],
+    expectVisible: "::-p-text(Waiting for the Pod and runner container)",
+    frame: true,
+  },
+  {
+    name: "claude-provisioning-mobile",
+    viewport: { width: 390, height: 900 },
+    closeApprovals: true,
+    clicks: ["button::-p-text(New session)"],
+    expectVisible: "::-p-text(Waiting for the Pod and runner container)",
+    frame: true,
+  },
+  {
     name: "settings-oauth-success",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
