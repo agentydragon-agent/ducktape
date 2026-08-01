@@ -271,6 +271,48 @@
   padding: 1rem;
 }
 
+.haku-settings-tabs-list {
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.haku-settings-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
+.haku-settings-tabs-list [role="tab"] {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.haku-settings-tab-short {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .haku-settings-tabs-list {
+    justify-content: space-between;
+  }
+
+  .haku-settings-tabs-list [role="tab"] {
+    padding-inline: 0.45rem;
+    font-size: var(--mantine-font-size-xs);
+  }
+
+  .haku-settings-tab-long {
+    display: none;
+  }
+
+  .haku-settings-tab-short {
+    display: inline;
+  }
+}
+
 /* Full-page cards sit on a solid page background, not floating over the iframe like the
    approvals panel's — so drop the panel's lift shadow and let the border alone delineate them. */
 .haku-page .haku-shell-card {
