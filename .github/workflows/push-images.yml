@@ -77,6 +77,11 @@ jobs:
               image_name: haku-agent-sdk-smoke,
               test_target: "//haku/runtime/agent_sdk_smoke/...",
             }
+          - {
+              image: "//haku/runtime/agent_sdk_transport:runner_image",
+              image_name: haku-claude-runner,
+              test_target: "//haku/runtime/agent_sdk_transport/...",
+            }
           - { image: "//haku/sandbox_mcp:image", image_name: haku-sandbox-mcp, test_target: "//haku/sandbox_mcp/..." }
           - {
               image: "//cluster/proxies/loki_read_proxy:image",

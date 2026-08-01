@@ -105,6 +105,8 @@ function sceneElement(scene: string) {
   switch (scene) {
     case "settings":
       return <ConsoleScene view="settings" />;
+    case "claude-chat":
+      return <ConsoleScene view="claudeChat" />;
     case "settings-oauth-success":
       return <OAuthSettingsResultScene status="success" />;
     case "settings-oauth-error":

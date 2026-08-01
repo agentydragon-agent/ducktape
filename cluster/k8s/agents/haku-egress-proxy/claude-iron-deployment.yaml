@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-claude-oauth-proxy
+  namespace: haku-egress-proxy
+  labels:
+    app.kubernetes.io/name: haku-claude-oauth-proxy
+  annotations:
+    description: Holds the real Claude subscription OAuth token and substitutes it for the sandbox placeholder only on api.anthropic.com Authorization headers.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-claude-oauth-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-claude-oauth-proxy
+    spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: iron-proxy
+          image: git.allegedly.works/ducktape-ci/public-coder-iron-proxy:devel-20260731032842-683f674
+          args: ["-config", "/etc/iron-proxy/iron.yaml"]
+          env:
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-claude-oauth-token
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+          ports:
+            - name: proxy
+              containerPort: 8180
+            - name: metrics
+              containerPort: 9090
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/iron-proxy
+              readOnly: true
+            - name: ca
+              mountPath: /ca
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: haku-claude-oauth-proxy-config
+        - name: ca
+          secret:
+            secretName: haku-egress-proxy-ca

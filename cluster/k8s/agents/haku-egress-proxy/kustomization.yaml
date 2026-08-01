@@ -3,8 +3,35 @@ kind: Kustomization
 resources:
   - certificate.yaml
   - trust-bundle.yaml
+  - forgejo-images-creds-eso.yaml
   - deployment.yaml
   - service.yaml
+  - claude-iron-deployment.yaml
+  - claude-iron-service.yaml
+  - claude-networkpolicy.yaml
+  - claude-code-oauth-token.sops.yaml
   - networkpolicy.yaml
   - cnp-haku-cloud-api-egress.yaml
+  - cnp-haku-claude-egress.yaml
   - ccnp-haku-proxy-egress.yaml
+
+configMapGenerator:
+  - name: haku-claude-oauth-proxy-config
+    namespace: haku-egress-proxy
+    files:
+      - iron.yaml=claude-iron.yaml
+
+patches:
+  # The encrypted object was moved byte-for-byte from the compatibility spike so no plaintext
+  # credential is needed during this refactor. Kustomize can relocate its plaintext metadata;
+  # Flux decrypts the value only after the rendered manifest is built.
+  - target:
+      kind: Secret
+      name: haku-agent-sdk-oauth-token
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: haku-claude-oauth-token
+      - op: replace
+        path: /metadata/namespace
+        value: haku-egress-proxy

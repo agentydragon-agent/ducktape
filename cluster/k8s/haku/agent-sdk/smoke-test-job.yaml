@@ -43,11 +43,20 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            # Non-secret token-shaped placeholder. The dedicated iron-proxy owns the real
+            # subscription OAuth token and substitutes it only on Anthropic Authorization headers.
             - name: CLAUDE_CODE_OAUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: haku-agent-sdk-oauth-token
-                  key: CLAUDE_CODE_OAUTH_TOKEN
+              value: sk-ant-oat01-proxy-haku-claude-placeholder
+            - name: HAKU_AGENT_SDK_SMOKE_PROXY
+              value: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
+            - name: NODE_EXTRA_CA_CERTS
+              value: /egress-proxy-ca/ca-certificates.crt
+            - name: SSL_CERT_FILE
+              value: /egress-proxy-ca/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /egress-proxy-ca/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /egress-proxy-ca/ca-certificates.crt
             # The reflected telemetry-ingest-only bearer is never logged. The
             # harness percent-encodes it into OTEL_EXPORTER_OTLP_HEADERS for the
             # CLI subprocess created by ClaudeAgentOptions.env.
@@ -74,6 +83,9 @@ spec:
               mountPath: /workspace
             - name: tmp
               mountPath: /tmp
+            - name: egress-proxy-ca
+              mountPath: /egress-proxy-ca
+              readOnly: true
       volumes:
         - name: home
           emptyDir: {}
@@ -83,3 +95,6 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: egress-proxy-ca
+          configMap:
+            name: haku-egress-proxy-ca-cert

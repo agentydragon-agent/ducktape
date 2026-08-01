@@ -45,6 +45,14 @@ const SCENES = [
     frame: true,
   },
   {
+    name: "claude-chat",
+    viewport: { width: 1200, height: 900 },
+    closeApprovals: true,
+    clicks: ["button::-p-text(New session)"],
+    expectVisible: "::-p-text(Hello from the disposable Haku sandbox.)",
+    frame: true,
+  },
+  {
     name: "settings-oauth-success",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

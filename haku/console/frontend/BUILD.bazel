@@ -585,6 +585,18 @@ ts_library(
 )
 
 ts_library(
+    name = "claude_chat_page",
+    srcs = ["claude_chat_page.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
     tsconfig = TSCONFIG,
@@ -592,6 +604,7 @@ ts_library(
         ":agent_enrollment_panel",
         ":approval_state",
         ":bridge",
+        ":claude_chat_page",
         ":client",
         ":confirm_dialog",
         ":console_events",
@@ -683,6 +696,7 @@ filegroup(
         "app.tsx",
         "approval_state.ts",
         "calendar_client.ts",
+        "claude_chat_page.tsx",
         "client.ts",
         "confirm_dialog.tsx",
         "field.tsx",

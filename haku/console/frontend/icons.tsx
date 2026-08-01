@@ -15,6 +15,7 @@ import IconList from "@tabler/icons-react/dist/esm/icons/IconList.mjs";
 import IconListDetails from "@tabler/icons-react/dist/esm/icons/IconListDetails.mjs";
 import IconMail from "@tabler/icons-react/dist/esm/icons/IconMail.mjs";
 import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
+import IconMessageCircle from "@tabler/icons-react/dist/esm/icons/IconMessageCircle.mjs";
 import IconRepeat from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
@@ -58,6 +59,11 @@ export function HistoryIcon(props: TablerIconProps) {
 /** Gear — links to the settings view. */
 export function SettingsIcon(props: TablerIconProps) {
   return <IconSettings size={20} {...props} />;
+}
+
+/** Speech bubble — opens the Console-owned sandbox Claude chat. */
+export function ChatIcon(props: TablerIconProps) {
+  return <IconMessageCircle size={20} {...props} />;
 }
 
 /** Map pin — the shell's location-sharing control, and a preview's location field. */

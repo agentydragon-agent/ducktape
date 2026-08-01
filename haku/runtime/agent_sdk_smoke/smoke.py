@@ -80,8 +80,9 @@ def make_hooks(counts: HookCounts) -> dict[HookEvent, list[HookMatcher]]:
 
 
 def sdk_environment() -> dict[str, str]:
-    """Build only the telemetry overrides passed explicitly to the CLI."""
+    """Build only the telemetry and credential-proxy overrides passed explicitly to the CLI."""
     run_id = os.environ["HAKU_AGENT_SDK_SMOKE_RUN_ID"]
+    proxy = os.environ.get("HAKU_AGENT_SDK_SMOKE_PROXY")
     env = {
         "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
         "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
@@ -104,6 +105,8 @@ def sdk_environment() -> dict[str, str]:
         "HAKU_AGENT_SDK_SMOKE_RUN_ID": run_id,
         "OTEL_RESOURCE_ATTRIBUTES": (f"service.name=haku-agent-sdk-smoke,haku.run_id={run_id}"),
     }
+    if proxy:
+        env.update({"HTTP_PROXY": proxy, "HTTPS_PROXY": proxy, "NODE_USE_ENV_PROXY": "1"})
     bearer = os.environ.get("DUCKTAPE_OTEL_BEARER_TOKEN", "")
     if bearer:
         env["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Bearer%20{quote(bearer, safe='')}"

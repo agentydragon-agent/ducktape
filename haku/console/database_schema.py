@@ -823,6 +823,54 @@ class OperatorAuthentikToken(Base):
     )
 
 
+class ClaudeChatSession(Base):
+    """One Operator-owned Claude conversation and its Agent Sandbox rendezvous."""
+
+    __tablename__ = "claude_chat_sessions"
+
+    session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('provisioning','ready','responding','closing','closed','failed')",
+            name="ck_claude_chat_sessions_status",
+        ),
+        Index("idx_claude_chat_sessions_operator", "operator_id", "created_at"),
+    )
+
+
+class ClaudeChatMessage(Base):
+    """A prompt or streamed assistant answer in one Claude chat session."""
+
+    __tablename__ = "claude_chat_messages"
+
+    message_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("role IN ('user','assistant')", name="ck_claude_chat_messages_role"),
+        CheckConstraint("status IN ('pending','streaming','complete','failed')", name="ck_claude_chat_messages_status"),
+        Index("idx_claude_chat_messages_session_created", "session_id", "created_at"),
+    )
+
+
 class PushSubscription(Base):
     """One browser Push API subscription an Operator has granted this console.
 

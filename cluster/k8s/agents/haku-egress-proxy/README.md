@@ -9,8 +9,12 @@ to Squid) without renaming the Namespace/Deployment/Service/CA wiring that other
 manifests depend on.
 
 - cert-manager creates `Secret/haku-egress-proxy-ca` in `haku-egress-proxy`.
-- The proxy mounts that Secret and builds mitmproxy's CA file from
+- The shared proxy mounts that Secret and builds mitmproxy's CA file from
   `tls.key` and `tls.crt`.
+- `haku-claude-oauth-proxy` is a separate iron-proxy deployment using the same CA.
+  It alone receives the real Claude subscription OAuth token and replaces the
+  non-secret sandbox placeholder only for `api.anthropic.com`'s `Authorization`
+  header. The shared mitmproxy remains unchanged.
 - Reflector mirrors the Secret into `cert-manager`, which is trust-manager's
   source namespace in this cluster.
 - trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`
