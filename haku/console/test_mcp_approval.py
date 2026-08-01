@@ -21,7 +21,7 @@ from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -172,7 +172,7 @@ def _build_test_mcp_server() -> FastMCP:
 
 
 @contextmanager
-def _serve_remote_oauth(
+async def _serve_remote_oauth(
     *, preregistered_client_id: str | None = None, bearers: list[str | None] | None = None
 ) -> Generator[str]:
     """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
@@ -310,7 +310,7 @@ _STATIC_AGENTS = [
 
 
 @pytest.fixture(autouse=True)
-def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
+async def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
     monkeypatch.setenv(_AGENT_OPERATOR_ENV, "op-haku")
 
@@ -325,7 +325,7 @@ class _BearerRecorder:
     the sequence of *distinct* credentials that carries the meaning.
     """
 
-    def __init__(self, app: ASGIApp, bearers: list[str | None]) -> None:
+    async def __init__(self, app: ASGIApp, bearers: list[str | None]) -> None:
         self._app = app
         self._bearers = bearers
 
@@ -424,13 +424,13 @@ def _build_gmail_shaped_mcp() -> FastMCP:
     return server
 
 
-def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
+async def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
     return InProcessServerRegistration(
         builder=lambda _token: mcp, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
 
 
-def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
+async def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     servers = [
         _remote_server(
             "grocy-sf", mcp_server_url, {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"}
@@ -503,7 +503,7 @@ def preregistered_operator_oauth_config_file(tmp_path: Path, preregistered_remot
     return write_config(tmp_path / "haku_console_operator_oauth_static.yaml", _config(servers))
 
 
-def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
+async def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
     """Submit directly at the application boundary; agent admission is tested through `/mcp`."""
     app = cast(FastAPI, client.app)
 
@@ -525,7 +525,7 @@ def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
-def _submit_request(
+async def _submit_request(
     client: TestClient, request: SubmitToolCallRequest, *, actor: ToolCallActor | None = None
 ) -> dict[str, Any]:
     app = cast(FastAPI, client.app)
@@ -540,7 +540,7 @@ def _submit_request(
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
-def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> dict[str, Any]:
+async def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> dict[str, Any]:
     app = cast(FastAPI, client.app)
 
     async def withdraw() -> Any:
@@ -569,7 +569,7 @@ async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
         await engine.dispose()
 
 
-def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
+async def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
     operator_ids: list[UUID] = []
 
     async def recording_execution_auth(
@@ -681,7 +681,7 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
     assert callback.status_code == 303, callback.text
 
 
-def test_operator_oauth_callback_is_bound_to_flow_operator(
+async def test_operator_oauth_callback_is_bound_to_flow_operator(
     make_operator_client, operator_oauth_config_file: Path
 ) -> None:
     with (
@@ -718,7 +718,7 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
     assert completed.status_code == 303, completed.text
 
 
-def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
+async def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
     result = mcp_types.CallToolResult(
         content=[
             mcp_types.TextContent(type="text", text="ok"),
@@ -735,7 +735,7 @@ def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
     }
 
 
-def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url: str) -> None:
+async def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url: str) -> None:
     first = _submit(operator_client)
     second = _submit(operator_client)
     assert first["tool_call_id"].startswith("tc_")
@@ -745,7 +745,7 @@ def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url:
     assert second["tool_call_id"] != first["tool_call_id"]
 
 
-def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
+async def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
     response = operator_client.post(
         "/api/tool-calls",
         headers={"Authorization": "Bearer tool-token"},
@@ -754,7 +754,7 @@ def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
     assert response.status_code == 405
 
 
-def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
+async def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
@@ -783,7 +783,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     assert pending["approvals"] == []
 
 
-def test_operator_gmail_labels_list_stays_pending(
+async def test_operator_gmail_labels_list_stays_pending(
     make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with make_operator_client(
@@ -801,7 +801,7 @@ def test_operator_gmail_labels_list_stays_pending(
     assert record["auto_approval_evaluation"] is None
 
 
-def test_list_tool_calls_filters_by_auto_approved(
+async def test_list_tool_calls_filters_by_auto_approved(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
@@ -839,7 +839,7 @@ def test_list_tool_calls_filters_by_auto_approved(
     assert {c["tool_call_id"] for c in unfiltered} == {manual["tool_call_id"], auto["tool_call_id"]}
 
 
-def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
+async def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
     return SubmitToolCallRequest(
         server_id="grocy-sf",
         tool_name="stock_add",
@@ -849,7 +849,7 @@ def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
     )
 
 
-def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
+async def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
     make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_config: Path
 ) -> None:
     with (
@@ -878,7 +878,7 @@ def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
     assert "not pending approval" in decision.json()["detail"]
 
 
-def test_websocket_receives_agent_withdrawal_invalidation(
+async def test_websocket_receives_agent_withdrawal_invalidation(
     make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_config: Path
 ) -> None:
     with (
@@ -898,7 +898,7 @@ def test_websocket_receives_agent_withdrawal_invalidation(
     assert event == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
 
 
-def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
+async def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
@@ -983,7 +983,7 @@ def test_configured_credential_approval_passes_canonical_operator_id(
     assert upstream_bearers == ["test-token"]
 
 
-def test_operator_oauth_association_drives_approved_tool_execution(
+async def test_operator_oauth_association_drives_approved_tool_execution(
     make_operator_client,
     operator_oauth_config_file: Path,
     upstream_bearers: list[str | None],
@@ -1029,7 +1029,7 @@ def test_operator_oauth_association_drives_approved_tool_execution(
     assert upstream_bearers == [None, "operator-access-token"]
 
 
-def test_operator_oauth_approval_requires_existing_association(
+async def test_operator_oauth_approval_requires_existing_association(
     make_operator_client, operator_oauth_config_file: Path, upstream_bearers: list[str | None]
 ) -> None:
     with make_operator_client(config_file=operator_oauth_config_file) as client:
@@ -1043,12 +1043,12 @@ def test_operator_oauth_approval_requires_existing_association(
     assert upstream_bearers == []
 
 
-def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
+async def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
     engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     now = datetime.datetime.now(datetime.UTC)
     try:
-        with sessionmaker(engine)() as session, session.begin():
+        async with async_sessionmaker(engine)() as session, session.begin():
             session.add(
                 McpOperatorOAuthAssociation(
                     server_id="grocy-sf",
@@ -1071,7 +1071,7 @@ def _seed_association(db_url: str, *, operator_external_user_key: str, access_to
         await engine.dispose()
 
 
-def test_routing_executes_each_agent_as_its_own_operator(
+async def test_routing_executes_each_agent_as_its_own_operator(
     make_client,
     tmp_path: Path,
     migrated_db_url: str,
@@ -1127,7 +1127,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
     assert upstream_bearers == ["grocy-token-haku", "grocy-token-ops"]
 
 
-def test_two_operator_two_agent_http_authorization_matrix(
+async def test_two_operator_two_agent_http_authorization_matrix(
     make_client, make_operator_client, tmp_path: Path, mcp_server_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     agent_specs = (
@@ -1239,7 +1239,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
         assert denied.json()["tool_call"]["status"] == "denied"
 
 
-def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
+async def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
         f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "deny", "reason": "not today"}
@@ -1251,7 +1251,7 @@ def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestC
     assert tool_call["denial_reason"] == "not today"
 
 
-def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient) -> None:
+async def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient) -> None:
     body = _submit_request(
         operator_client,
         SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=1000),
@@ -1266,14 +1266,16 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
-def test_unknown_oauth_server_maps_to_http_not_found(operator_client: TestClient) -> None:
+async def test_unknown_oauth_server_maps_to_http_not_found(operator_client: TestClient) -> None:
     connected = operator_client.post("/api/mcp/operator-auth/missing/connect")
 
     assert connected.status_code == 404
     assert connected.json()["detail"] == "unknown MCP server: missing"
 
 
-def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_client, console_config: Path) -> None:
+async def test_operator_tenants_cannot_read_or_decide_each_others_calls(
+    make_operator_client, console_config: Path
+) -> None:
     with (
         make_operator_client(
             config_file=console_config, operator_external_user_key="operator-a", operator_username="a@example.com"
@@ -1299,7 +1301,7 @@ def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_
         assert approved.json()["tool_call"]["status"] == "running"
 
 
-def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
+async def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
     first = _submit(operator_client, amount=1)
     second = _submit(operator_client, amount=2)
     third = _submit(operator_client, amount=3)
@@ -1315,7 +1317,7 @@ def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) ->
     assert [r["tool_call_id"] for r in oldest["tool_calls"]] == ids
 
 
-def test_ledger_get_and_list_load_principal_projection_in_one_query(
+async def test_ledger_get_and_list_load_principal_projection_in_one_query(
     make_client, make_operator_client, console_config: Path, migrated_db_url: str
 ) -> None:
     with (
@@ -1362,7 +1364,7 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         await ledger_engine.dispose()
 
 
-def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
+async def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
     with operator_client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
         assert ws.receive_json() == {"event_type": "hello"}
         submitted = _submit(operator_client)
@@ -1371,7 +1373,7 @@ def test_websocket_receives_pending_approval_invalidation(operator_client: TestC
     assert operator_client.get("/api/approvals/events").status_code == 404
 
 
-def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
+async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
     make_operator_client, console_config: Path
 ) -> None:
     with (
@@ -1409,7 +1411,7 @@ def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
     assert expected_b.isdisjoint({event["tool_call_id"] for event in received_a})
 
 
-def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
+async def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
     make_operator_client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Expiry gets its own close code so the shell re-authenticates instead of showing the live
@@ -1429,7 +1431,7 @@ def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
     assert disconnected.value.code == console_events.OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 
 
-def test_websocket_rejects_cross_origin(make_operator_client) -> None:
+async def test_websocket_rejects_cross_origin(make_operator_client) -> None:
     with (
         make_operator_client() as client,
         pytest.raises(WebSocketDisconnect) as exc_info,
@@ -1439,7 +1441,7 @@ def test_websocket_rejects_cross_origin(make_operator_client) -> None:
     assert exc_info.value.code == 1008
 
 
-def test_audit_log_is_tenant_scoped_and_redacts_secrets(
+async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     make_client, make_operator_client, console_config: Path
 ) -> None:
     with (
@@ -1468,7 +1470,7 @@ def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     assert "tool-token" not in dumped
 
 
-def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: TestClient, db_url: str) -> None:
+async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: TestClient, db_url: str) -> None:
     submitted = _submit_request(
         operator_client,
         SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=0),
@@ -1571,7 +1573,7 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     assert principal_columns == {column.name for column in McpToolCallPrincipal.__table__.columns}
 
 
-def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
+async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
     try:
@@ -1604,7 +1606,7 @@ def test_server_entry_allows_in_process_backend() -> None:
     )  # ok: resolved via the in-process registry at runtime, not this model
 
 
-def test_config_rejects_unknown_operator_connection() -> None:
+async def test_config_rejects_unknown_operator_connection() -> None:
     with pytest.raises(ValidationError, match="unknown operator connection 'missing'"):
         ConsoleConfigFile.model_validate(
             {
@@ -1615,7 +1617,7 @@ def test_config_rejects_unknown_operator_connection() -> None:
         )
 
 
-def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
+async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -1643,7 +1645,7 @@ def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     assert list(config.operator_connections) == ["google_mail", "google_calendar"]
 
 
-def test_config_rejects_incompatible_registered_credential_kind() -> None:
+async def test_config_rejects_incompatible_registered_credential_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -1671,7 +1673,7 @@ def test_config_rejects_incompatible_registered_credential_kind() -> None:
         validate_in_process_server_bindings(config, {"google": registration})
 
 
-def test_remote_oauth_client_registration_variants_reject_each_others_fields() -> None:
+async def test_remote_oauth_client_registration_variants_reject_each_others_fields() -> None:
     with pytest.raises(ValidationError, match="client_id"):
         RemoteServerOAuthAuth.model_validate(
             {
