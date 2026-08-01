@@ -283,7 +283,14 @@ def test_session_rejections_are_logged_with_distinguishing_reasons(
     assert not any("reason=expired" in message for message in anonymous)
     assert any("reason=expired" in message and "path=/api/config" in message for message in expired)
     # The elapsed time since the deadline is what identifies the absolute-deadline case on sight.
-    assert any("expired_for=0:01:30" in message for message in expired)
+    elapsed_text = next(
+        message.partition("expired_for=")[2].split()[0] for message in expired if "expired_for=" in message
+    )
+    hours, minutes, seconds = (int(part) for part in elapsed_text.split(":"))
+    elapsed = datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
+    # Constructing the client can cross a wall-clock second (and can take longer on a loaded CI
+    # worker), so assert the diagnostic's meaningful range rather than scheduler-perfect timing.
+    assert datetime.timedelta(seconds=90) <= elapsed < datetime.timedelta(minutes=2)
 
 
 def test_logout_is_an_exact_origin_post_that_clears_the_session(make_operator_client) -> None:
