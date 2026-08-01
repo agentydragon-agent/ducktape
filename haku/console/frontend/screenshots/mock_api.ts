@@ -77,8 +77,23 @@ const mcpServers =
 
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = requestUrl(input);
+  if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
+    const body = JSON.parse(String(init.body)) as { auto_approval_policy: string };
+    return jsonResponse({
+      agent_id: "40000000-0000-4000-8000-000000000004",
+      display_name: "Claude Desktop",
+      status: "active",
+      credential_kind: "oauth",
+      credential_status: "active",
+      created_at: "2026-07-18T12:00:00Z",
+      activated_at: "2026-07-18T12:05:00Z",
+      last_seen_at: "2026-07-20T19:30:00Z",
+      auto_approval_policy: body.auto_approval_policy,
+    });
+  }
   if (url.includes("/api/agent-enrollment/agents")) {
     return jsonResponse({
+      auto_approval_policies: ["manual_review", "haku_v1"],
       agents: [
         {
           agent_id: "40000000-0000-4000-8000-000000000004",
@@ -89,6 +104,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
           created_at: "2026-07-18T12:00:00Z",
           activated_at: "2026-07-18T12:05:00Z",
           last_seen_at: "2026-07-20T19:30:00Z",
+          auto_approval_policy: "haku_v1",
         },
         {
           agent_id: "50000000-0000-4000-8000-000000000005",
@@ -99,6 +115,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
           created_at: "2026-07-19T12:00:00Z",
           activated_at: "2026-07-19T12:00:00Z",
           last_seen_at: "2026-07-20T19:34:00Z",
+          auto_approval_policy: "manual_review",
         },
       ],
     });
@@ -110,7 +127,15 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       redirect_host: "localhost:6274",
       requested_scopes: ["openid", "offline_access", "mcp:tools"],
       suggested_agent_name: "Claude Desktop — laptop",
-      reconnectable_agents: [{ agent_id: "40000000-0000-4000-8000-000000000004", display_name: "Claude Desktop" }],
+      reconnectable_agents: [
+        {
+          agent_id: "40000000-0000-4000-8000-000000000004",
+          display_name: "Claude Desktop",
+          auto_approval_policy: "haku_v1",
+        },
+      ],
+      auto_approval_policies: ["manual_review", "haku_v1"],
+      default_auto_approval_policy: "manual_review",
       form_token: "form-token-for-screenshot",
     });
   }

@@ -253,6 +253,32 @@ async def test_unassigned_agent_fails_closed_to_manual_approval() -> None:
     assert decision == (None, "manual: Agent has no auto-approval policy for gmail/labels_list")
 
 
+async def test_durable_actor_policy_auto_approves_without_a_static_config_assignment() -> None:
+    enrolled = AgentActor(
+        agent_id=UUID("00000000-0000-0000-0000-000000000099"),
+        operator_id=TEST_OPERATOR_ID,
+        binding_id=UUID("00000000-0000-0000-0000-000000000098"),
+        auto_approval_policy="haku_v1",
+    )
+    policy_id, evaluation = await _decision("labels_list", {}, actor=enrolled)
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "haku_v1" in evaluation
+
+
+async def test_durable_actor_policy_overrides_the_static_rollout_fallback() -> None:
+    manually_approved = AgentActor(
+        agent_id=AGENT_ACTOR.agent_id,
+        operator_id=AGENT_ACTOR.operator_id,
+        binding_id=AGENT_ACTOR.binding_id,
+        auto_approval_policy="none",
+    )
+    assert await _decision("labels_list", {}, actor=manually_approved) == (
+        None,
+        "manual: Agent policy 'none' did not auto-approve gmail/labels_list (none: policy never auto-approves)",
+    )
+
+
 def test_policy_config_rejects_cycles() -> None:
     with pytest.raises(ValidationError, match="contains a cycle"):
         ConsoleConfigFile.model_validate(
@@ -296,6 +322,12 @@ def test_static_agent_policy_assignment_is_required() -> None:
                 ]
             }
         )
+
+
+def test_fail_closed_default_is_selected_by_policy_type_not_magic_id() -> None:
+    config = ConsoleConfigFile.model_validate({"auto_approval_policies": [{"id": "operator_review", "type": "never"}]})
+
+    assert config.default_agent_auto_approval_policy == "operator_review"
 
 
 async def _remote_decision(server_id: str, tool_name: str, arguments: dict) -> tuple[str | None, str | None]:

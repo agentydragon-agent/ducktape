@@ -56,9 +56,13 @@ def _page() -> EnrollmentPage:
         redirect_host="claude.ai",
         requested_scopes=("openid", "offline_access"),
         suggested_agent_name="Claude",
-        reconnectable_agents=(ReconnectableAgent(agent_id=AGENT_ID, display_name="Kitchen Claude"),),
+        reconnectable_agents=(
+            ReconnectableAgent(agent_id=AGENT_ID, display_name="Kitchen Claude", auto_approval_policy=None),
+        ),
         form_token=FORM_TOKEN,
         upstream_authorization_url="https://auth.example.test/authorize?opaque=1",
+        auto_approval_policies=("no_auto_approval", "haku_v1"),
+        default_auto_approval_policy="no_auto_approval",
     )
 
 
@@ -72,6 +76,7 @@ def _agent() -> OperatorAgent:
         created_at=NOW - datetime.timedelta(days=2),
         activated_at=NOW - datetime.timedelta(days=2),
         last_seen_at=NOW - datetime.timedelta(minutes=4),
+        auto_approval_policy="haku_v1",
     )
 
 
@@ -86,10 +91,20 @@ class _FakeEnrollmentService:
     listed_operator_ids: list[UUID] = field(default_factory=list)
     opens: list[dict[str, object]] = field(default_factory=list)
     decisions: list[dict[str, object]] = field(default_factory=list)
+    policy_updates: list[tuple[UUID, UUID, str]] = field(default_factory=list)
+
+    def available_auto_approval_policies(self) -> tuple[str, ...]:
+        return ("no_auto_approval", "haku_v1")
 
     async def list_agents(self, *, operator_id: UUID) -> tuple[OperatorAgent, ...]:
         self.listed_operator_ids.append(operator_id)
         return self.agents
+
+    async def set_auto_approval_policy(
+        self, *, operator_id: UUID, agent_id: UUID, auto_approval_policy: str
+    ) -> OperatorAgent:
+        self.policy_updates.append((operator_id, agent_id, auto_approval_policy))
+        return self.agents[0]
 
     async def open_interaction(
         self,
@@ -209,8 +224,10 @@ def test_settings_lists_operator_agents_without_claiming_live_connection_state()
                 "created_at": "2026-07-18T12:00:00Z",
                 "activated_at": "2026-07-18T12:00:00Z",
                 "last_seen_at": "2026-07-20T11:56:00Z",
+                "auto_approval_policy": "haku_v1",
             }
-        ]
+        ],
+        "auto_approval_policies": ["no_auto_approval", "haku_v1"],
     }
 
 
@@ -227,7 +244,11 @@ def test_bound_settings_route_returns_the_typed_enrollment_view() -> None:
         "redirect_host": "claude.ai",
         "requested_scopes": ["openid", "offline_access"],
         "suggested_agent_name": "Claude",
-        "reconnectable_agents": [{"agent_id": str(AGENT_ID), "display_name": "Kitchen Claude"}],
+        "reconnectable_agents": [
+            {"agent_id": str(AGENT_ID), "display_name": "Kitchen Claude", "auto_approval_policy": None}
+        ],
+        "auto_approval_policies": ["no_auto_approval", "haku_v1"],
+        "default_auto_approval_policy": "no_auto_approval",
         "form_token": FORM_TOKEN,
     }
     assert service.opens[-1]["browser_nonce"] is None
@@ -240,22 +261,36 @@ def test_create_reconnect_and_deny_use_one_discriminated_json_endpoint() -> None
 
     create = client.post(
         f"{API_PATH}/decision",
-        json={"kind": "create", "form_token": FORM_TOKEN, "display_name": "Kitchen Claude"},
+        json={
+            "kind": "create",
+            "form_token": FORM_TOKEN,
+            "display_name": "Kitchen Claude",
+            "auto_approval_policy": "haku_v1",
+        },
         headers={"Origin": "https://haku.test"},
     )
     assert create.status_code == 200
     assert create.json() == {"status": "continue", "authorization_url": "https://auth.example.test/authorize?opaque=1"}
-    assert service.decisions[0]["decision"] == CreateAgentDecision(form_token=FORM_TOKEN, display_name="Kitchen Claude")
+    assert service.decisions[0]["decision"] == CreateAgentDecision(
+        form_token=FORM_TOKEN, display_name="Kitchen Claude", auto_approval_policy="haku_v1"
+    )
     assert 'haku_agent_enrollment=""' in create.headers["set-cookie"]
 
     _enter(client)
     reconnect = client.post(
         f"{API_PATH}/decision",
-        json={"kind": "reconnect", "form_token": FORM_TOKEN, "agent_id": str(AGENT_ID)},
+        json={
+            "kind": "reconnect",
+            "form_token": FORM_TOKEN,
+            "agent_id": str(AGENT_ID),
+            "auto_approval_policy": "no_auto_approval",
+        },
         headers={"Origin": "https://haku.test"},
     )
     assert reconnect.status_code == 200
-    assert service.decisions[1]["decision"] == ReconnectAgentDecision(form_token=FORM_TOKEN, agent_id=AGENT_ID)
+    assert service.decisions[1]["decision"] == ReconnectAgentDecision(
+        form_token=FORM_TOKEN, agent_id=AGENT_ID, auto_approval_policy="no_auto_approval"
+    )
 
     _enter(client)
     service.result = EnrollmentDenied()
@@ -267,10 +302,59 @@ def test_create_reconnect_and_deny_use_one_discriminated_json_endpoint() -> None
     assert service.decisions[2]["decision"] == DenyEnrollmentDecision(form_token=FORM_TOKEN)
 
 
+def test_create_and_reconnect_require_an_explicit_policy_assignment() -> None:
+    client, _service = _client()
+    _enter(client)
+
+    create = client.post(
+        f"{API_PATH}/decision",
+        json={"kind": "create", "form_token": FORM_TOKEN, "display_name": "Kitchen Claude"},
+        headers={"Origin": "https://haku.test"},
+    )
+    assert create.status_code == 422
+
+    reconnect = client.post(
+        f"{API_PATH}/decision",
+        json={"kind": "reconnect", "form_token": FORM_TOKEN, "agent_id": str(AGENT_ID)},
+        headers={"Origin": "https://haku.test"},
+    )
+    assert reconnect.status_code == 422
+
+
+def test_settings_updates_an_agents_policy() -> None:
+    client, service = _client()
+    response = client.put(
+        f"/api/agent-enrollment/agents/{AGENT_ID}/auto-approval-policy",
+        json={"auto_approval_policy": "haku_v1"},
+        headers={"Origin": "https://haku.test"},
+    )
+
+    assert response.status_code == 200
+    assert service.policy_updates == [(OPERATOR_ID, AGENT_ID, "haku_v1")]
+    assert response.json()["auto_approval_policy"] == "haku_v1"
+
+
+def test_settings_policy_update_requires_an_explicit_assignment() -> None:
+    client, service = _client()
+    response = client.put(
+        f"/api/agent-enrollment/agents/{AGENT_ID}/auto-approval-policy",
+        json={},
+        headers={"Origin": "https://haku.test"},
+    )
+
+    assert response.status_code == 422
+    assert service.policy_updates == []
+
+
 def test_decision_rejects_invalid_origin_or_missing_browser_binding() -> None:
     client, service = _client()
     _enter(client)
-    body = {"kind": "create", "form_token": FORM_TOKEN, "display_name": "Claude"}
+    body = {
+        "kind": "create",
+        "form_token": FORM_TOKEN,
+        "display_name": "Claude",
+        "auto_approval_policy": "no_auto_approval",
+    }
 
     for origin in (None, "null", "https://evil.test"):
         headers = {} if origin is None else {"Origin": origin}
@@ -293,7 +377,12 @@ def test_correctable_name_conflict_is_json_and_leaves_the_interaction_bound() ->
 
     response = client.post(
         f"{API_PATH}/decision",
-        json={"kind": "create", "form_token": FORM_TOKEN, "display_name": "Kitchen Claude"},
+        json={
+            "kind": "create",
+            "form_token": FORM_TOKEN,
+            "display_name": "Kitchen Claude",
+            "auto_approval_policy": "no_auto_approval",
+        },
         headers={"Origin": "https://haku.test"},
     )
 

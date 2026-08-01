@@ -393,6 +393,7 @@ def gmail_config_file(tmp_path: Path) -> Path:
     config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_mail"})])
     config["static_agents"] = [{**_STATIC_AGENTS[0], "auto_approval_policy": "haku_v1"}]
     config["auto_approval_policies"] = [
+        {"id": "manual_review", "type": "never"},
         {"id": "gmail_reads", "type": "exact_tools", "tools": {"gmail": ["labels_list"]}},
         {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
         {"id": "haku_v1", "type": "any_of", "policies": ["gmail_reads", "managed_gmail_labels"]},
@@ -1045,7 +1046,8 @@ def test_routing_executes_each_agent_as_its_own_operator(
 
     config = _config([_remote_server("grocy-sf", "http://unused.test/mcp", _dynamic_remote_oauth())])
     config["auto_approval_policies"] = [
-        {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}}
+        {"id": "manual_review", "type": "never"},
+        {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}},
     ]
     config["static_agents"] = [
         {**_STATIC_AGENTS[0], "auto_approval_policy": "grocy_reads"},

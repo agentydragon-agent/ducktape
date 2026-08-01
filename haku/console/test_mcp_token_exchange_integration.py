@@ -187,6 +187,7 @@ def _console_config(path: Path, downstream_url: str) -> Path:
                     "auto_approval_policy": "no_auto_approval",
                 }
             ],
+            "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
             "mcp": {
                 "servers": [
                     {

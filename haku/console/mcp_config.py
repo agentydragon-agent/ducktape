@@ -229,8 +229,8 @@ type AutoApprovalPolicy = Annotated[
 
 
 def _default_auto_approval_policies() -> list[AutoApprovalPolicy]:
-    """The explicit no-authority root available to minimal/test configurations."""
-    return [NeverAutoApprovalPolicy(id="no_auto_approval")]
+    """A fail-closed root for config-less development and schema generation."""
+    return [NeverAutoApprovalPolicy(id="manual_review")]
 
 
 class StaticAgentEntry(BaseModel):
@@ -248,7 +248,7 @@ class StaticAgentEntry(BaseModel):
     # never live request authority.
     operator_subject_env: str
     # The root of this Agent's deploy-reviewed auto-approval policy graph. Every static Agent must
-    # choose explicitly; dynamically enrolled/OAuth Agents remain manual-approval-only.
+    # choose explicitly; dynamically enrolled/OAuth Agents choose during enrollment or reconnect.
     auto_approval_policy: AutoApprovalPolicyId
 
     @field_validator("display_name")
@@ -268,6 +268,7 @@ class LoadedStaticAgent(BaseModel):
     secret_reference: str
     token: SecretStr
     operator_external_user_key: str
+    auto_approval_policy: AutoApprovalPolicyId
 
 
 class ConsoleConfigFile(BaseModel):
@@ -282,6 +283,11 @@ class ConsoleConfigFile(BaseModel):
     # Authentik token is persisted (nothing would read it).
     hostexec: HostexecConfig | None = None
     node_daemons: NodeDaemonsConfig | None = None
+
+    @property
+    def default_agent_auto_approval_policy(self) -> AutoApprovalPolicyId:
+        """The unique fail-closed policy offered as the default for new Agent decisions."""
+        return next(policy.id for policy in self.auto_approval_policies if isinstance(policy, NeverAutoApprovalPolicy))
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
@@ -371,6 +377,14 @@ class ConsoleConfigFile(BaseModel):
         for policy_id in policies:
             visit(policy_id)
 
+        fail_closed_policies = [
+            policy.id for policy in policies.values() if isinstance(policy, NeverAutoApprovalPolicy)
+        ]
+        if len(fail_closed_policies) != 1:
+            raise ValueError(
+                "auto_approval_policies must contain exactly one never policy to use as the fail-closed Agent default"
+            )
+
         for agent in self.static_agents:
             if agent.auto_approval_policy not in policies:
                 raise ValueError(
@@ -433,6 +447,7 @@ def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
                 secret_reference=entry.token_env_var,
                 token=SecretStr(token),
                 operator_external_user_key=external_user_key,
+                auto_approval_policy=entry.auto_approval_policy,
             )
         )
     return loaded

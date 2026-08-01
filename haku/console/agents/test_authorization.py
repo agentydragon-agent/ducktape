@@ -26,6 +26,7 @@ from haku.console.agents.authorization import (
     fingerprint_static_token,
 )
 from haku.console.agents.enrollment import (
+    AgentAutoApprovalPolicyManagedByDeploymentError,
     CreateAgentDecision,
     EnrollmentAllowed,
     EnrollmentBrowserBindingError,
@@ -191,7 +192,9 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     force_drop_database_sync(postgres_admin_url, db_name)
 
 
-def _harness(db_url: str, *, subject: str = "operator-user") -> Harness:
+def _harness(
+    db_url: str, *, subject: str = "operator-user", auto_approval_policies: tuple[str, ...] = ("no_auto_approval",)
+) -> Harness:
     sessions = console_sessions(db_url)
     identities = PostgresOperatorIdentityStore(
         sessions,
@@ -214,6 +217,8 @@ def _harness(db_url: str, *, subject: str = "operator-user") -> Harness:
         operator_identity_store=identities,
         clock=clock,
         browser_secret_factory=SecretSequence(),
+        auto_approval_policies=auto_approval_policies,
+        default_auto_approval_policy=auto_approval_policies[0],
     )
     return Harness(
         authority=authority,
@@ -262,7 +267,11 @@ async def _allow_create(harness: Harness, *, label: str, display_name: str) -> t
         interaction_id=interaction_id,
         browser=harness.browser,
         interaction_cookie=form_token,
-        decision=CreateAgentDecision(form_token=form_token, display_name=display_name),
+        decision=CreateAgentDecision(
+            form_token=form_token,
+            display_name=display_name,
+            auto_approval_policy=harness.authority.available_auto_approval_policies()[0],
+        ),
     )
     assert isinstance(result, EnrollmentAllowed)
     return request, interaction_id
@@ -312,6 +321,43 @@ async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_
     assert await other.authority.list_agents(operator_id=other.browser.operator_id) == ()
 
 
+async def test_enrollment_and_settings_persist_the_selected_auto_approval_policy(db_url: str) -> None:
+    harness = _harness(db_url, auto_approval_policies=("no_auto_approval", "haku_v1"))
+    request = _request("policy-selection")
+    interaction_id, form_token = await _open(harness, request)
+    await harness.authority.decide(
+        interaction_id=interaction_id,
+        browser=harness.browser,
+        interaction_cookie=form_token,
+        decision=CreateAgentDecision(
+            form_token=form_token, display_name="Policy Agent", auto_approval_policy="haku_v1"
+        ),
+    )
+    grant = await harness.authority.begin_exchange(
+        correlation=request.correlation,
+        client=request.client,
+        principal=harness.principal,
+        granted_scopes=frozenset({"tools:call"}),
+    )
+    assert grant.actor.auto_approval_policy == "haku_v1"
+    await harness.authority.record_token_family(
+        grant_id=grant.grant_id, evidence=TokenFamilyEvidence(access_jti="policy-access", refresh_jti="policy-refresh")
+    )
+    activated = await harness.authority.activate_for_tool_call(
+        grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
+    )
+    assert activated.actor.auto_approval_policy == "haku_v1"
+
+    updated = await harness.authority.set_auto_approval_policy(
+        operator_id=harness.browser.operator_id, agent_id=grant.actor.agent_id, auto_approval_policy="no_auto_approval"
+    )
+    assert updated.auto_approval_policy == "no_auto_approval"
+    resolved = await harness.authority.activate_for_tool_call(
+        grant_id=grant.grant_id, client_id=_CLIENT_ID, token_scopes=frozenset({"tools:call"})
+    )
+    assert resolved.actor.auto_approval_policy == "no_auto_approval"
+
+
 async def test_reservation_accumulates_exact_fastmcp_validated_redirects(db_url: str) -> None:
     harness = _harness(db_url)
     first = _request("first-redirect")
@@ -341,7 +387,9 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
     harness = _harness(db_url)
     request = _request("create")
     interaction_id, form_token = await _open(harness, request)
-    decision = CreateAgentDecision(form_token=form_token, display_name="Kitchen Claude")
+    decision = CreateAgentDecision(
+        form_token=form_token, display_name="Kitchen Claude", auto_approval_policy="no_auto_approval"
+    )
     first = await harness.authority.decide(
         interaction_id=interaction_id, browser=harness.browser, interaction_cookie=form_token, decision=decision
     )
@@ -354,14 +402,22 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
             interaction_id=interaction_id,
             browser=harness.browser,
             interaction_cookie=form_token,
-            decision=CreateAgentDecision(form_token="different-form-token", display_name=decision.display_name),
+            decision=CreateAgentDecision(
+                form_token="different-form-token",
+                display_name=decision.display_name,
+                auto_approval_policy=decision.auto_approval_policy,
+            ),
         )
     with pytest.raises(EnrollmentDecisionConflictError):
         await harness.authority.decide(
             interaction_id=interaction_id,
             browser=harness.browser,
             interaction_cookie=form_token,
-            decision=CreateAgentDecision(form_token=form_token, display_name="Different Agent"),
+            decision=CreateAgentDecision(
+                form_token=form_token,
+                display_name="Different Agent",
+                auto_approval_policy=decision.auto_approval_policy,
+            ),
         )
 
     grant = await harness.authority.begin_exchange(
@@ -419,7 +475,9 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
     active = await _create_grant(harness, label="active", display_name="Reconnectable", activate=True)
     request = _request("reconnect-timeout")
     interaction_id, form_token = await _open(harness, request)
-    reconnect_decision = ReconnectAgentDecision(form_token=form_token, agent_id=active.actor.agent_id)
+    reconnect_decision = ReconnectAgentDecision(
+        form_token=form_token, agent_id=active.actor.agent_id, auto_approval_policy="no_auto_approval"
+    )
     first = await harness.authority.decide(
         interaction_id=interaction_id,
         browser=harness.browser,
@@ -467,7 +525,9 @@ async def test_reconnect_activation_revokes_predecessor_before_activating_succes
         interaction_id=interaction_id,
         browser=harness.browser,
         interaction_cookie=form_token,
-        decision=ReconnectAgentDecision(form_token=form_token, agent_id=active.actor.agent_id),
+        decision=ReconnectAgentDecision(
+            form_token=form_token, agent_id=active.actor.agent_id, auto_approval_policy="no_auto_approval"
+        ),
     )
     replacement = await harness.authority.begin_exchange(
         correlation=request.correlation,
@@ -608,7 +668,9 @@ async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(
         interaction_id=new_interaction_id,
         browser=harness.browser,
         interaction_cookie=page.form_token,
-        decision=CreateAgentDecision(form_token=page.form_token, display_name="Reused Correlation"),
+        decision=CreateAgentDecision(
+            form_token=page.form_token, display_name="Reused Correlation", auto_approval_policy="no_auto_approval"
+        ),
     )
     grant = await harness.authority.begin_exchange(
         correlation=request.correlation,
@@ -668,7 +730,9 @@ async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url
         interaction_id=interaction_id,
         browser=harness.browser,
         interaction_cookie=form_token,
-        decision=CreateAgentDecision(form_token=form_token, display_name="Lost Exchange"),
+        decision=CreateAgentDecision(
+            form_token=form_token, display_name="Lost Exchange", auto_approval_policy="no_auto_approval"
+        ),
     )
     grant = await harness.authority.begin_exchange(
         correlation=request.correlation,
@@ -688,7 +752,9 @@ async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url
         interaction_id=interaction_two,
         browser=harness.browser,
         interaction_cookie=token_two,
-        decision=CreateAgentDecision(form_token=token_two, display_name="Revoked Before Issue"),
+        decision=CreateAgentDecision(
+            form_token=token_two, display_name="Revoked Before Issue", auto_approval_policy="no_auto_approval"
+        ),
     )
     grant_two = await harness.authority.begin_exchange(
         correlation=request_two.correlation,
@@ -719,6 +785,7 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
         operator_id=harness.browser.operator_id,
         secret_reference="env:CONFIGURED_AGENT_TOKEN",
         token_fingerprint=fingerprint_static_token("first-token"),
+        auto_approval_policy="no_auto_approval",
     )
     first, second = await asyncio.gather(
         harness.authority.reconcile_static_agents([definition]), harness.authority.reconcile_static_agents([definition])
@@ -762,6 +829,7 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
         operator_id=definition.operator_id,
         secret_reference=definition.secret_reference,
         token_fingerprint=fingerprint_static_token("second-token"),
+        auto_approval_policy=definition.auto_approval_policy,
     )
     rotated = (await harness.authority.reconcile_static_agents([rotated_definition]))[0]
     assert rotated.agent_id == initial.agent_id
@@ -792,6 +860,27 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
     assert b"second-token" not in stored_fingerprints
 
 
+async def test_static_agent_policy_is_deployment_managed(db_url: str) -> None:
+    harness = _harness(db_url, auto_approval_policies=("no_auto_approval", "haku_v1"))
+    definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Deployment Policy Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:DEPLOYMENT_POLICY_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token("deployment-policy-token"),
+        auto_approval_policy="haku_v1",
+    )
+    authorization = (await harness.authority.reconcile_static_agents([definition]))[0]
+    assert authorization.auto_approval_policy == "haku_v1"
+
+    with pytest.raises(AgentAutoApprovalPolicyManagedByDeploymentError):
+        await harness.authority.set_auto_approval_policy(
+            operator_id=harness.browser.operator_id,
+            agent_id=definition.agent_id,
+            auto_approval_policy="no_auto_approval",
+        )
+
+
 async def test_static_reconcile_revokes_removed_definition_and_restores_stable_slot(db_url: str) -> None:
     harness = _harness(db_url)
     definition = StaticAgentDefinition(
@@ -800,6 +889,7 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
         operator_id=harness.browser.operator_id,
         secret_reference="env:REMOVABLE_AGENT_TOKEN",
         token_fingerprint=fingerprint_static_token("first-removable-token"),
+        auto_approval_policy="no_auto_approval",
     )
     initial = (await harness.authority.reconcile_static_agents([definition]))[0]
 
@@ -815,6 +905,7 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
         operator_id=definition.operator_id,
         secret_reference=definition.secret_reference,
         token_fingerprint=fingerprint_static_token("rotated-after-removal"),
+        auto_approval_policy=definition.auto_approval_policy,
     )
     restored = (await harness.authority.reconcile_static_agents([restored_definition]))[0]
     assert restored.agent_id == initial.agent_id
@@ -851,6 +942,8 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
         public_base_url="https://haku.test",
         operator_identity_store=harness.identities,
         clock=harness.clock,
+        auto_approval_policies=("no_auto_approval",),
+        default_auto_approval_policy="no_auto_approval",
     )
     interaction_lock_attempted = threading.Event()
 
@@ -902,7 +995,11 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
         sessions, OperatorIdentityTrust(trust_domain="test", trusted_issuers=frozenset({_BROWSER_ISSUER}))
     )
     authority = PostgresAgentAuthority(
-        sessions, public_base_url="https://haku.test", operator_identity_store=identities
+        sessions,
+        public_base_url="https://haku.test",
+        operator_identity_store=identities,
+        auto_approval_policies=("no_auto_approval",),
+        default_auto_approval_policy="no_auto_approval",
     )
     with pytest.raises(AgentGrantAuthorityUnavailableError):
         await authority.reserve_authorization(
@@ -928,7 +1025,9 @@ async def test_exchange_revalidates_operator_after_principal_resolution(db_url: 
         interaction_id=interaction_id,
         browser=harness.browser,
         interaction_cookie=form_token,
-        decision=CreateAgentDecision(form_token=form_token, display_name="Disabled During Exchange"),
+        decision=CreateAgentDecision(
+            form_token=form_token, display_name="Disabled During Exchange", auto_approval_policy="no_auto_approval"
+        ),
     )
     trust = OperatorIdentityTrust(
         trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
@@ -938,6 +1037,8 @@ async def test_exchange_revalidates_operator_after_principal_resolution(db_url: 
         public_base_url="https://haku.test",
         operator_identity_store=DisableAfterPrincipalResolutionIdentityStore(console_sessions(db_url), trust),
         clock=harness.clock,
+        auto_approval_policies=("no_auto_approval",),
+        default_auto_approval_policy="no_auto_approval",
     )
 
     with pytest.raises(EnrollmentRejectedError):

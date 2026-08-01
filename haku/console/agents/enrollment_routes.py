@@ -12,8 +12,11 @@ from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse, Response
 
 from haku.console.agents.enrollment import (
+    AgentAutoApprovalPolicyManagedByDeploymentError,
     AgentEnrollmentService,
     AgentNameUnavailableError,
+    AgentNotFoundError,
+    AutoApprovalPolicyUnavailableError,
     CreateAgentDecision,
     DenyEnrollmentDecision,
     EnrollmentAllowed,
@@ -50,15 +53,22 @@ class AgentView(BaseModel):
     created_at: datetime.datetime
     activated_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
+    auto_approval_policy: str | None
 
 
 class AgentListResponse(BaseModel):
     agents: list[AgentView]
+    auto_approval_policies: list[str]
+
+
+class UpdateAgentAutoApprovalPolicyRequest(BaseModel):
+    auto_approval_policy: str = Field(min_length=1)
 
 
 class ReconnectableAgentView(BaseModel):
     agent_id: UUID
     display_name: str
+    auto_approval_policy: str | None
 
 
 class EnrollmentView(BaseModel):
@@ -68,6 +78,8 @@ class EnrollmentView(BaseModel):
     requested_scopes: list[str]
     suggested_agent_name: str
     reconnectable_agents: list[ReconnectableAgentView]
+    auto_approval_policies: list[str]
+    default_auto_approval_policy: str
     form_token: str
 
 
@@ -75,12 +87,14 @@ class CreateEnrollmentRequest(BaseModel):
     kind: Literal["create"] = "create"
     form_token: str
     display_name: str
+    auto_approval_policy: str = Field(min_length=1)
 
 
 class ReconnectEnrollmentRequest(BaseModel):
     kind: Literal["reconnect"] = "reconnect"
     form_token: str
     agent_id: UUID
+    auto_approval_policy: str = Field(min_length=1)
 
 
 class DenyEnrollmentRequest(BaseModel):
@@ -201,9 +215,15 @@ def _enrollment_view(page: EnrollmentPage, session: OperatorSession) -> Enrollme
         requested_scopes=list(page.requested_scopes),
         suggested_agent_name=page.suggested_agent_name,
         reconnectable_agents=[
-            ReconnectableAgentView(agent_id=agent.agent_id, display_name=agent.display_name)
+            ReconnectableAgentView(
+                agent_id=agent.agent_id,
+                display_name=agent.display_name,
+                auto_approval_policy=agent.auto_approval_policy,
+            )
             for agent in page.reconnectable_agents
         ],
+        auto_approval_policies=list(page.auto_approval_policies),
+        default_auto_approval_policy=page.default_auto_approval_policy,
         form_token=page.form_token,
     )
 
@@ -218,6 +238,7 @@ def _agent_view(agent: OperatorAgent) -> AgentView:
         created_at=agent.created_at,
         activated_at=agent.activated_at,
         last_seen_at=agent.last_seen_at,
+        auto_approval_policy=agent.auto_approval_policy,
     )
 
 
@@ -243,8 +264,32 @@ async def enrollment_entry(
 async def list_agents(service: EnrollmentServiceDep, session: OperatorSessionDep) -> AgentListResponse:
     operator = _require_operator(session)
     return AgentListResponse(
-        agents=[_agent_view(agent) for agent in await service.list_agents(operator_id=operator.operator_id)]
+        agents=[_agent_view(agent) for agent in await service.list_agents(operator_id=operator.operator_id)],
+        auto_approval_policies=list(service.available_auto_approval_policies()),
     )
+
+
+@operator_router.put("/agents/{agent_id}/auto-approval-policy", response_model=AgentView)
+async def update_agent_auto_approval_policy(
+    agent_id: UUID,
+    body: UpdateAgentAutoApprovalPolicyRequest,
+    service: EnrollmentServiceDep,
+    session: OperatorSessionDep,
+) -> AgentView:
+    operator = _require_operator(session)
+    try:
+        agent = await service.set_auto_approval_policy(
+            operator_id=operator.operator_id, agent_id=agent_id, auto_approval_policy=body.auto_approval_policy
+        )
+    except AgentNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Agent not found") from error
+    except AgentAutoApprovalPolicyManagedByDeploymentError as error:
+        raise HTTPException(
+            status_code=409, detail="Static Agent policies are managed by deployment configuration"
+        ) from error
+    except AutoApprovalPolicyUnavailableError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return _agent_view(agent)
 
 
 @operator_router.get("/{interaction_id}", response_model=EnrollmentView)
@@ -273,10 +318,18 @@ async def decide_enrollment(
 
     decision: EnrollmentDecision
     match body:
-        case CreateEnrollmentRequest(form_token=form_token, display_name=display_name):
-            decision = CreateAgentDecision(form_token=form_token, display_name=display_name)
-        case ReconnectEnrollmentRequest(form_token=form_token, agent_id=agent_id):
-            decision = ReconnectAgentDecision(form_token=form_token, agent_id=agent_id)
+        case CreateEnrollmentRequest(
+            form_token=form_token, display_name=display_name, auto_approval_policy=auto_approval_policy
+        ):
+            decision = CreateAgentDecision(
+                form_token=form_token, display_name=display_name, auto_approval_policy=auto_approval_policy
+            )
+        case ReconnectEnrollmentRequest(
+            form_token=form_token, agent_id=agent_id, auto_approval_policy=auto_approval_policy
+        ):
+            decision = ReconnectAgentDecision(
+                form_token=form_token, agent_id=agent_id, auto_approval_policy=auto_approval_policy
+            )
         case DenyEnrollmentRequest(form_token=form_token):
             decision = DenyEnrollmentDecision(form_token=form_token)
 
@@ -290,6 +343,8 @@ async def decide_enrollment(
     except AgentNameUnavailableError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except InvalidAgentNameError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except AutoApprovalPolicyUnavailableError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (
         EnrollmentInteractionNotFoundError,

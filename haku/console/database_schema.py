@@ -248,6 +248,7 @@ class EnrollmentInteraction(Base):
     decision_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     reconnect_agent_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     reconnect_predecessor_binding_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    auto_approval_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
     closure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -311,6 +312,9 @@ class Agent(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     activated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Null is intentionally fail-closed and lets the migration distinguish existing Agents whose
+    # deploy-time static assignment still needs to be seeded at the next reconciliation.
+    auto_approval_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AgentNameReservation(Base):

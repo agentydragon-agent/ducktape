@@ -46,6 +46,7 @@ def main() -> None:
                         operator_id=UUID("00000000-0000-0000-0000-000000000001"),
                         secret_reference="schema-placeholder",
                         token_fingerprint=fingerprint_static_token("placeholder-token"),
+                        auto_approval_policy="manual_review",
                     ),
                 ),
             ).openapi(),

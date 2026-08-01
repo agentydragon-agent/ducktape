@@ -77,7 +77,10 @@ class _AuthorityStaticTokenVerifier(TokenVerifier, StaticAgentActorResolver):
         if access_token.client_id != f"{_STATIC_BINDING_CLIENT_ID_PREFIX}{authorization.binding_id}":
             return None
         return AgentActor(
-            agent_id=authorization.agent_id, operator_id=authorization.operator_id, binding_id=authorization.binding_id
+            agent_id=authorization.agent_id,
+            operator_id=authorization.operator_id,
+            binding_id=authorization.binding_id,
+            auto_approval_policy=authorization.auto_approval_policy,
         )
 
     async def _authorization(self, token: str, *, verification: bool) -> StaticAgentAuthorization | None:
