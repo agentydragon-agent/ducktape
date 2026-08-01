@@ -158,7 +158,9 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions) if claude_runtime is not None else None
+    claude_chat_store = (
+        claude_chat.ClaudeChatStore(db_sessions, database_url=database_url) if claude_runtime is not None else None
+    )
     claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
