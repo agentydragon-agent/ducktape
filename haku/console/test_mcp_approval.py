@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
 from pydantic import ValidationError
-from sqlalchemy import create_engine, event, select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.applications import Starlette
@@ -1332,8 +1332,10 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
-    ledger_engine = create_engine(migrated_db_url, pool_pre_ping=True)
-    ledger = PostgresToolCallLedger(sessionmaker(ledger_engine, expire_on_commit=False))
+    ledger_engine = create_async_engine(
+        migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1), pool_pre_ping=True
+    )
+    ledger = PostgresToolCallLedger(async_sessionmaker(ledger_engine, expire_on_commit=False))
     actor = OperatorActor(operator_id=operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
 
@@ -1345,7 +1347,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
 
     event.listen(ledger_engine, "before_cursor_execute", record_tool_call_query)
     try:
-        listed = ledger.list_tool_calls(actor=actor)
+        listed = await ledger.list_tool_calls(actor=actor)
         assert len(statements) == 1, statements
 
         by_id = {record.tool_call_id: record for record in listed}
@@ -1356,7 +1358,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert by_id[operator_call_id].caller == OperatorToolCallCaller()
 
         statements.clear()
-        fetched = ledger.get(agent_call_id, actor=actor)
+        fetched = await ledger.get(agent_call_id, actor=actor)
         assert len(statements) == 1, statements
         assert fetched == by_id[agent_call_id]
     finally:
@@ -1530,7 +1532,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
                 .mappings()
                 .all()
             }
-        with sessionmaker(engine)() as session:
+        async with async_sessionmaker(engine)() as session:
             persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
             persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
             assert persisted_call is not None
