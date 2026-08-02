@@ -178,7 +178,6 @@ class ClaudeRuntimeConfig(BaseModel):
     warm_pool: str
     cwd: str
     session_ttl_seconds: int = Field(ge=300, le=86400)
-    prompt_poll_seconds: float = Field(ge=0.05, le=5.0)
     oauth_placeholder: str
     https_proxy: str
     ca_bundle: str

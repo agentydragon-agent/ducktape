@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from kubernetes_asyncio import client as k8s_client
@@ -23,6 +23,7 @@ from haku.console.claude_chat import (
     _text_delta,
 )
 from haku.console.config import ClaudeRuntimeConfig
+from haku.console.database_schema import ClaudeChatSession
 
 
 class RecordingCustomObjectsApi:
@@ -49,13 +50,17 @@ class RecordingCoreV1Api:
         return self.pods[name]
 
 
+class FailingEngine:
+    def connect(self) -> Any:
+        raise RuntimeError("LISTEN unavailable")
+
+
 def _runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
     values: dict[str, object] = {
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
-        "prompt_poll_seconds": 0.25,
         "oauth_placeholder": "not-a-secret",
         "https_proxy": "http://proxy.test:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
@@ -215,70 +220,56 @@ def test_text_delta_ignores_non_text_stream_events() -> None:
     assert _text_delta({"type": "message_start"}) == ""
 
 
-class _RecordSessions:
-    def __init__(self, record: SimpleNamespace | None):
-        self.record = record
-
-    class _Session:
-        def __init__(self, record: SimpleNamespace | None):
-            self.record = record
-
-        async def get(self, model: object, session_id: UUID, **kwargs: object) -> SimpleNamespace | None:
-            del model, session_id, kwargs
-            return self.record
-
-    class _AsyncCtx:
-        def __init__(self, record: SimpleNamespace | None):
-            self.session = _RecordSessions._Session(record)
-
-        async def __aenter__(self):
-            return self.session
-
-        async def __aexit__(self, *args):
-            return False
-
-    def begin(self):
-        return _RecordSessions._AsyncCtx(self.record)
-
-    def __call__(self):
-        return _RecordSessions._AsyncCtx(self.record)
-
-
-async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected() -> None:
-    session_id = uuid4()
-    token = "one-use-rendezvous"
-    record = SimpleNamespace(
-        status="provisioning",
-        bridge_connected_at=None,
-        bridge_token_fingerprint=ClaudeChatStore._fingerprint(token),
-        updated_at=None,
-    )
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), cast(Any, object()))
+async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
+    migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-test")
+    store = ClaudeChatStore(migrated_sessions, migrated_engine)
+    view, token = await store.create(operator_id)
+    session_id = view.session_id
 
     assert await store.authenticate_bridge(session_id, token) == "accepted"
-    assert record.status == "ready"
-    assert record.bridge_connected_at is not None
-    # Retain only the hash until claim deletion completes. It lets terminal retries prove that
-    # they belong to the stale claim without retaining or recovering the bearer itself.
-    assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
+    async with migrated_sessions() as db:
+        record = await db.get(ClaudeChatSession, session_id)
+        assert record is not None
+        assert record.status == "ready"
+        assert record.bridge_connected_at is not None
+        # Retain only the hash until claim deletion completes. It lets terminal retries prove that
+        # they belong to the stale claim without retaining or recovering the bearer itself.
+        assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
 
-    record.status = "failed"
+    await store.fail(session_id, "runner failed")
     assert await store.authenticate_bridge(session_id, token) == "terminal"
     assert await store.authenticate_bridge(session_id, "wrong") == "rejected"
 
 
-async def test_deliberate_close_is_not_reclassified_as_runner_failure() -> None:
-    session_id = uuid4()
-    record = SimpleNamespace(status="closing", error=None, bridge_token_fingerprint=b"cleanup-pending", updated_at=None)
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), cast(Any, object()))
+async def test_listen_failure_is_not_reclassified_as_a_timeout() -> None:
+    store = ClaudeChatStore(cast(Any, object()), cast(Any, FailingEngine()))
 
-    await store.fail(session_id, "sandbox runner disconnected")
-    assert record.status == "closing"
-    assert record.error is None
+    with pytest.raises(RuntimeError, match="LISTEN unavailable"):
+        await store.wait_for_prompt(uuid4(), timeout_seconds=0.01)
 
-    await store.complete_claim_cleanup(session_id)
-    assert record.status == "closed"
-    assert record.bridge_token_fingerprint == b""
+
+async def test_deliberate_close_is_not_reclassified_as_runner_failure(
+    migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-close-test")
+    store = ClaudeChatStore(migrated_sessions, migrated_engine)
+    view, _token = await store.create(operator_id)
+
+    await store.request_close(operator_id, view.session_id)
+    await store.fail(view.session_id, "sandbox runner disconnected")
+    closing = await store.get(operator_id, view.session_id)
+    assert closing.status == "closing"
+    assert closing.error is None
+
+    await store.complete_claim_cleanup(view.session_id)
+    closed = await store.get(operator_id, view.session_id)
+    assert closed.status == "closed"
+    async with migrated_sessions() as db:
+        record = await db.get(ClaudeChatSession, view.session_id)
+        assert record is not None
+        assert record.bridge_token_fingerprint == b""
 
 
 class _LifecycleStore:

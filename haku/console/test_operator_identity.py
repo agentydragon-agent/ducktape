@@ -52,9 +52,9 @@ async def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rej
         )
 
 
-async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_async_db_url: str) -> None:
+async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_url: str) -> None:
     async def resolve(issuer: str) -> tuple[object, object]:
-        identity = await _store(migrated_async_db_url).resolve_verified_identity(
+        identity = await _store(migrated_db_url).resolve_verified_identity(
             VerifiedExternalIdentity(issuer=issuer, subject="concurrent-user")
         )
         return identity.operator_id, identity.identity_id
@@ -64,7 +64,7 @@ async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated
 
     assert len({operator_id for operator_id, _ in results}) == 1
     assert len({identity_id for _, identity_id in results}) == 2
-    engine = create_async_engine(migrated_async_db_url)
+    engine = create_async_engine(migrated_db_url)
     try:
         async with AsyncSession(engine) as session:
             assert (await session.execute(select(func.count()).select_from(Operator))).scalar_one() == 1
@@ -74,12 +74,12 @@ async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated
         await engine.dispose()
 
 
-async def test_disabled_operator_invalidates_session_static_and_resolution_paths(migrated_async_db_url: str) -> None:
-    store = _store(migrated_async_db_url)
+async def test_disabled_operator_invalidates_session_static_and_resolution_paths(migrated_db_url: str) -> None:
+    store = _store(migrated_db_url)
     identity = await store.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="disabled-user")
     )
-    engine = create_async_engine(migrated_async_db_url)
+    engine = create_async_engine(migrated_db_url)
     try:
         async with AsyncSession(engine) as session, session.begin():
             operator = await session.get(Operator, identity.operator_id)

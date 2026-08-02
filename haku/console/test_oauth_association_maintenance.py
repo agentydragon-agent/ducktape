@@ -6,9 +6,7 @@ import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest_bazel
-from sqlalchemy.ext.asyncio import create_async_engine
 
-from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import McpOperatorOAuthAssociation, OperatorAuthentikToken, ProviderConnection
 from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
 from haku.console.oauth_association_maintenance import OAuthAssociationMaintenance
@@ -16,12 +14,12 @@ from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.provider_connection_registry import ProviderConnectionKind
 
 
-async def test_refreshes_every_expiring_association_and_isolates_failures(migrated_async_db_url: str, caplog) -> None:
-    engine = create_async_engine(migrated_async_db_url)
-    sessions = console_sessions(migrated_async_db_url)
-    operator_id = await operator_identity_store(migrated_async_db_url).resolve_configured_external_user_key(
-        "background-refresh-operator"
-    )
+async def test_refreshes_every_expiring_association_and_isolates_failures(
+    migrated_engine, migrated_sessions, migrated_identity_store, caplog
+) -> None:
+    engine = migrated_engine
+    sessions = migrated_sessions
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("background-refresh-operator")
     now = datetime.datetime.now(datetime.UTC)
     async with sessions.begin() as session:
         session.add_all(
@@ -91,10 +89,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(migrat
         authentik_store=authentik_store,
         refresh_authentik_tokens=True,
     )
-    try:
-        await maintenance.refresh_once()
-    finally:
-        await engine.dispose()
+    await maintenance.refresh_once()
 
     oauth_store.access_token_for.assert_awaited_once()
     assert oauth_store.access_token_for.await_args.kwargs["operator_id"] == operator_id

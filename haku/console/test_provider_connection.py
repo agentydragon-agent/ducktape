@@ -12,7 +12,7 @@ import pytest_bazel
 from fastapi import HTTPException
 from mcp.shared.auth import OAuthToken
 from pydantic import SecretStr
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
@@ -42,18 +42,13 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
 @pytest.fixture
-def identity_store(migrated_identity_store: PostgresOperatorIdentityStore) -> PostgresOperatorIdentityStore:
-    return migrated_identity_store
-
-
-@pytest.fixture
 async def store(
-    migrated_sessions: async_sessionmaker, identity_store: PostgresOperatorIdentityStore
+    migrated_sessions: async_sessionmaker, migrated_identity_store: PostgresOperatorIdentityStore
 ) -> PostgresProviderConnectionStore:
     return PostgresProviderConnectionStore(
         migrated_sessions,
-        operator_identity_store=identity_store,
-        token_states=PostgresOAuthTokenStateStore(migrated_sessions, operator_identity_store=identity_store),
+        operator_identity_store=migrated_identity_store,
+        token_states=PostgresOAuthTokenStateStore(migrated_sessions, operator_identity_store=migrated_identity_store),
         provider_definitions={
             GOOGLE_MAIL: OperatorConnectionProviderDefinition(
                 kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"
@@ -80,8 +75,8 @@ async def store(
 
 
 @pytest.fixture
-async def operator_id(identity_store: PostgresOperatorIdentityStore) -> UUID:
-    return await identity_store.resolve_configured_external_user_key("op-provider")
+async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) -> UUID:
+    return await migrated_identity_store.resolve_configured_external_user_key("op-provider")
 
 
 async def _connect(
@@ -186,16 +181,11 @@ async def test_same_provider_connections_have_independent_grants(
 
 
 async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token(
-    store: PostgresProviderConnectionStore,
-    operator_id: UUID,
-    migrated_async_db_url: str,
-    monkeypatch: pytest.MonkeyPatch,
+    store: PostgresProviderConnectionStore, operator_id: UUID, migrated_sessions, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch, access_token="at-1", refresh_token="rt-1")
 
-    engine = create_async_engine(migrated_async_db_url)
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    async with sessions.begin() as session:
+    async with migrated_sessions.begin() as session:
         row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         row.token_state.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
@@ -209,12 +199,11 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     monkeypatch.setattr(provider_connection_module, "_refresh_token", fake_refresh)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-2"
 
-    async with sessions.begin() as session:
+    async with migrated_sessions.begin() as session:
         row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         assert row.token_state.token_revision == revision_before + 1
         assert row.token_state.refresh_token == "rt-1"
-    await engine.dispose()
 
 
 async def test_disconnect_removes_connection(

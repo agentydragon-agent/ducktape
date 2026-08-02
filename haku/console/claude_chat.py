@@ -544,29 +544,26 @@ class ClaudeChatStore:
     async def _listen(self, channel: str, session_id: UUID, *, timeout_seconds: float) -> bool:
         """Block until a Postgres NOTIFY on *channel* fires for *session_id*.
 
-        Uses a raw asyncpg connection from the engine's pool for LISTEN/NOTIFY.
+        Uses a raw asyncpg connection from the engine's pool for LISTEN/NOTIFY. Listener failures
+        propagate: this path is deliberately notification-only, so silently falling back to polling
+        would hide a broken cross-replica update channel.
         """
-        try:
-            async with self._engine.connect() as conn:
-                raw = await conn.get_raw_connection()
-                assert raw.dbapi_connection is not None
-                pg_conn = raw.dbapi_connection.driver_connection
-                await pg_conn.set_autocommit(True)
-                await pg_conn.execute(f"LISTEN {channel}")
-                try:
-                    async with asyncio.timeout(timeout_seconds):
-                        async for note in pg_conn.notifies():
-                            if note.payload == str(session_id):
-                                return True
-                    return False
-                except TimeoutError:
-                    return False
-                finally:
-                    await pg_conn.execute(f"UNLISTEN {channel}")
-        except Exception:
-            logger.debug("LISTEN/NOTIFY failed on %s for session %s; falling back to poll", channel, session_id)
-            await asyncio.sleep(0.25)
-            return False
+        async with self._engine.connect() as conn:
+            raw = await conn.get_raw_connection()
+            assert raw.dbapi_connection is not None
+            pg_conn = raw.dbapi_connection.driver_connection
+            await pg_conn.set_autocommit(True)
+            await pg_conn.execute(f"LISTEN {channel}")
+            try:
+                async with asyncio.timeout(timeout_seconds):
+                    async for note in pg_conn.notifies():
+                        if note.payload == str(session_id):
+                            return True
+                return False
+            except TimeoutError:
+                return False
+            finally:
+                await pg_conn.execute(f"UNLISTEN {channel}")
 
     async def listen_for_update(self, session_id: UUID, *, timeout_seconds: float = 30.0) -> None:
         """Wait for a LISTEN/NOTIFY on the update channel for this session."""

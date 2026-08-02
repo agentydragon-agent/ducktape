@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
@@ -742,7 +742,7 @@ async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
 
 
 async def test_withdraw_survives_credential_binding_rotation(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, migrated_async_db_url: str
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, migrated_sessions
 ) -> None:
     """An Agent that reconnected can still clear its predecessor binding's ask out of the queue.
 
@@ -756,43 +756,39 @@ async def test_withdraw_survives_credential_binding_rotation(
 
     successor_id = uuid4()
     now = datetime.datetime.now(datetime.UTC)
-    engine = create_async_engine(migrated_async_db_url)
-    try:
-        async with AsyncSession(engine) as session, session.begin():
-            # `uq_credential_bindings_one_active_per_agent` allows one ACTIVE binding per Agent, so a
-            # reconnect retires the predecessor as it activates the successor — as production does.
-            predecessor = await session.get_one(CredentialBinding, original.binding_id)
-            predecessor.status = CredentialBindingStatus.REVOKED
-            predecessor.ended_at = now
-            predecessor.end_reason = "superseded by reconnect"
-            predecessor.updated_at = now
-            await session.flush()
-            session.add_all(
-                [
-                    CredentialBinding(
-                        binding_id=successor_id,
-                        agent_id=original.agent_id,
-                        kind=CredentialKind.STATIC,
-                        status=CredentialBindingStatus.ACTIVE,
-                        generation=2,
-                        supersedes_binding_id=original.binding_id,
-                        created_at=now,
-                        updated_at=now,
-                        issued_at=now,
-                        activated_at=now,
-                        ended_at=None,
-                        end_reason=None,
-                    ),
-                    StaticCredential(
-                        binding_id=successor_id,
-                        secret_reference=f"test-tool-call-service/{successor_id}",
-                        credential_fingerprint=hashlib.sha256(successor_id.bytes).digest(),
-                        created_at=now,
-                    ),
-                ]
-            )
-    finally:
-        await engine.dispose()
+    async with migrated_sessions.begin() as session:
+        # `uq_credential_bindings_one_active_per_agent` allows one ACTIVE binding per Agent, so a
+        # reconnect retires the predecessor as it activates the successor — as production does.
+        predecessor = await session.get_one(CredentialBinding, original.binding_id)
+        predecessor.status = CredentialBindingStatus.REVOKED
+        predecessor.ended_at = now
+        predecessor.end_reason = "superseded by reconnect"
+        predecessor.updated_at = now
+        await session.flush()
+        session.add_all(
+            [
+                CredentialBinding(
+                    binding_id=successor_id,
+                    agent_id=original.agent_id,
+                    kind=CredentialKind.STATIC,
+                    status=CredentialBindingStatus.ACTIVE,
+                    generation=2,
+                    supersedes_binding_id=original.binding_id,
+                    created_at=now,
+                    updated_at=now,
+                    issued_at=now,
+                    activated_at=now,
+                    ended_at=None,
+                    end_reason=None,
+                ),
+                StaticCredential(
+                    binding_id=successor_id,
+                    secret_reference=f"test-tool-call-service/{successor_id}",
+                    credential_fingerprint=hashlib.sha256(successor_id.bytes).digest(),
+                    created_at=now,
+                ),
+            ]
+        )
 
     reconnected = AgentActor(agent_id=original.agent_id, operator_id=original.operator_id, binding_id=successor_id)
     withdrawn = await service.withdraw(
@@ -991,7 +987,7 @@ async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor
 
 
 async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(
-    migrated_async_db_url: str, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
+    migrated_sessions, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
 ) -> None:
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
@@ -1005,18 +1001,14 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
     )
 
     assert await ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
-    engine = create_async_engine(migrated_async_db_url)
-    try:
-        async with AsyncSession(engine) as session, session.begin():
-            binding = await session.get(CredentialBinding, agent.binding_id)
-            assert binding is not None
-            now = datetime.datetime.now(datetime.UTC)
-            binding.status = CredentialBindingStatus.REVOKED
-            binding.updated_at = now
-            binding.ended_at = now
-            binding.end_reason = "test revocation"
-    finally:
-        await engine.dispose()
+    async with migrated_sessions.begin() as session:
+        binding = await session.get(CredentialBinding, agent.binding_id)
+        assert binding is not None
+        now = datetime.datetime.now(datetime.UTC)
+        binding.status = CredentialBindingStatus.REVOKED
+        binding.updated_at = now
+        binding.ended_at = now
+        binding.end_reason = "test revocation"
 
     finished = await ledger.finish(record.tool_call_id, actor=agent, result={"ok": True}, error=None)
     assert finished.status is ToolCallStatus.OK

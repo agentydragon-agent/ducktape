@@ -13,7 +13,6 @@ import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
 from haku.console.mcp_config import (
     DynamicOAuthClientRegistration,
@@ -37,30 +36,23 @@ from haku.console.oauth_token_state import (
     PostgresOAuthTokenStateStore,
     new_oauth_token_state,
 )
-from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.operator_identity import InactiveOperatorError, OperatorStatus
 
 
 @pytest.fixture
 async def oauth_store_for(
-    migrated_async_db_url: str,
+    migrated_sessions, migrated_identity_store
 ) -> Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]]:
-    """Build a `(store, operator_id)` pair for a configured external-user key, resolving the operator
-    into the same migrated database the store reads and writes."""
+    """Build a `(store, operator_id)` pair on the shared migrated test database."""
 
     async def build(external_user_key: str) -> tuple[PostgresMcpOperatorOAuthStore, UUID]:
-        sessions = console_sessions(migrated_async_db_url)
-        identity_store = PostgresOperatorIdentityStore(
-            sessions,
-            OperatorIdentityTrust(
-                trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-            ),
-        )
-        operator_id = await identity_store.resolve_configured_external_user_key(external_user_key)
+        operator_id = await migrated_identity_store.resolve_configured_external_user_key(external_user_key)
         store = PostgresMcpOperatorOAuthStore(
-            sessions,
-            operator_identity_store=identity_store,
-            token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
+            migrated_sessions,
+            operator_identity_store=migrated_identity_store,
+            token_states=PostgresOAuthTokenStateStore(
+                migrated_sessions, operator_identity_store=migrated_identity_store
+            ),
         )
         return store, operator_id
 

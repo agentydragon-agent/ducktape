@@ -222,19 +222,13 @@ def migrated_db_url(db_url: str) -> str:
 
 
 @pytest.fixture
-def migrated_async_db_url(migrated_db_url: str) -> str:
-    """Compatibility alias for tests that name the runtime async database URL explicitly."""
-    return migrated_db_url
-
-
-@pytest.fixture
-async def migrated_engine(migrated_async_db_url: str) -> AsyncGenerator[AsyncEngine]:
+async def migrated_engine(migrated_db_url: str) -> AsyncGenerator[AsyncEngine]:
     """A shared async engine for tests that need direct database access.
 
     The fixture owns disposal so tests can share the same pool without leaking one engine per
     helper call.
     """
-    engine = create_async_engine(migrated_async_db_url, pool_pre_ping=True)
+    engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
         yield engine
     finally:
