@@ -259,7 +259,8 @@ class PostgresToolCallLedger:
     async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         async with self._sessions.begin() as session:
             stmt = self._record_projection_stmt(actor).where(McpToolCall.tool_call_id == tool_call_id)
-            if (projection := await session.execute(stmt).tuples().first()) is None:
+            result = await session.execute(stmt)
+            if (projection := result.tuples().first()) is None:
                 raise ToolCallNotFoundError("tool call not found")
             return self._record_from_projection(*projection)
 
@@ -289,7 +290,8 @@ class PostgresToolCallLedger:
             # view wants those); the default ascending order stays the queue-friendly
             # oldest-first for pending-approval reads.
             order = McpToolCall.created_at.desc() if newest_first else McpToolCall.created_at
-            projections = await session.execute(stmt.order_by(order).limit(limit)).tuples().all()
+            result = await session.execute(stmt.order_by(order).limit(limit))
+            projections = result.tuples().all()
             return [self._record_from_projection(*projection) for projection in projections]
 
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:

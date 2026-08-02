@@ -241,12 +241,25 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process_servers)
         operator_identity = None
         if operator:
-            operator_identity = asyncio.run(
-                app.state.operator_identity_store.resolve_verified_identity(
-                    VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
-                )
-            )
-            app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
+            # Resolve operator identity using a sync engine — the async sessionmaker
+            # is bound to the pytest-asyncio event loop and can't be used via asyncio.run().
+            sync_engine = create_engine(db_url)
+            try:
+                with sync_engine.connect() as conn:
+                    row = conn.execute(
+                        text(
+                            "SELECT o.operator_id, oi.identity_id "
+                            "FROM operators o "
+                            "JOIN identity_anchors ia ON ia.operator_id = o.operator_id "
+                            "JOIN oidc_identities oi ON oi.anchor_id = ia.anchor_id "
+                            "WHERE ia.anchor_key = :anchor_key"
+                        ),
+                        {"anchor_key": f"auth.test/authentik-user-id/v1:{operator_external_user_key}"},
+                    ).one_or_none()
+                if row is not None:
+                    app.state.test_operator_actor = OperatorActor(operator_id=row.operator_id)
+            finally:
+                sync_engine.dispose()
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")

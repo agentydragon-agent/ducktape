@@ -262,7 +262,9 @@ def create_app(
             import concurrent.futures  # noqa: PLC0415
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                static_agent_definitions = pool.submit(asyncio.run, _resolve_static_agent_definitions()).result()
+                static_agent_definitions = pool.submit(
+                    asyncio.run, _resolve_static_agent_definitions()
+                ).result()
     if claude_runtime is not None:
         if loaded_static_agents is None:
             raise RuntimeError("Claude runtime requires loaded static Agent credentials")
