@@ -14,7 +14,7 @@ import json
 import re
 import textwrap
 import time
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
@@ -225,6 +225,37 @@ def migrated_db_url(db_url: str) -> str:
 def migrated_async_db_url(migrated_db_url: str) -> str:
     """Compatibility alias for tests that name the runtime async database URL explicitly."""
     return migrated_db_url
+
+
+@pytest.fixture
+async def migrated_engine(migrated_async_db_url: str) -> AsyncGenerator[AsyncEngine]:
+    """A shared async engine for tests that need direct database access.
+
+    The fixture owns disposal so tests can share the same pool without leaking one engine per
+    helper call.
+    """
+    engine = create_async_engine(migrated_async_db_url, pool_pre_ping=True)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def migrated_sessions(migrated_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Sessionmaker bound to the shared migrated test engine."""
+    return async_sessionmaker(migrated_engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def migrated_identity_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
+    """Operator identity store bound to the shared migrated test engine."""
+    return PostgresOperatorIdentityStore(
+        migrated_sessions,
+        OperatorIdentityTrust(
+            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+        ),
+    )
 
 
 @pytest.fixture

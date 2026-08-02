@@ -14,15 +14,16 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
-from haku.console.conftest import console_sessions, console_settings, operator_identity_store, write_config
+from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, NoCredential, RemoteMcpBackend
 from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
@@ -173,8 +174,10 @@ class _RecordingLedger(PostgresToolCallLedger):
 
 
 @pytest.fixture
-async def actors(migrated_async_db_url: str) -> dict[str, ToolCallActor]:
-    identities = operator_identity_store(migrated_async_db_url)
+async def actors(
+    migrated_engine: AsyncEngine, migrated_identity_store: PostgresOperatorIdentityStore
+) -> dict[str, ToolCallActor]:
+    identities = migrated_identity_store
     operator_ids = {
         "a": await identities.resolve_configured_external_user_key("service-operator-a"),
         "b": await identities.resolve_configured_external_user_key("service-operator-b"),
@@ -185,57 +188,54 @@ async def actors(migrated_async_db_url: str) -> dict[str, ToolCallActor]:
         reservation_id = uuid4()
         binding_id = uuid4()
         now = datetime.datetime.now(datetime.UTC)
-        engine = create_async_engine(migrated_async_db_url)
-        try:
-            async with AsyncSession(engine) as session, session.begin():
-                session.add(
-                    Agent(
+        sessions = async_sessionmaker(migrated_engine, expire_on_commit=False)
+        async with sessions.begin() as session:
+            session.add(
+                Agent(
+                    agent_id=agent_id,
+                    owner_operator_id=operator_id,
+                    current_name_reservation_id=reservation_id,
+                    status=AgentStatus.ACTIVE,
+                    created_at=now,
+                    updated_at=now,
+                    activated_at=now,
+                )
+            )
+            await session.flush()
+            session.add_all(
+                [
+                    AgentNameReservation(
+                        reservation_id=reservation_id,
+                        display_name=name,
+                        display_name_key=name,
+                        originating_interaction_id=None,
+                        pending_interaction_id=None,
                         agent_id=agent_id,
-                        owner_operator_id=operator_id,
-                        current_name_reservation_id=reservation_id,
-                        status=AgentStatus.ACTIVE,
+                        created_at=now,
+                        activated_at=now,
+                    ),
+                    CredentialBinding(
+                        binding_id=binding_id,
+                        agent_id=agent_id,
+                        kind=CredentialKind.STATIC,
+                        status=CredentialBindingStatus.ACTIVE,
+                        generation=1,
+                        supersedes_binding_id=None,
                         created_at=now,
                         updated_at=now,
+                        issued_at=now,
                         activated_at=now,
-                    )
-                )
-                await session.flush()
-                session.add_all(
-                    [
-                        AgentNameReservation(
-                            reservation_id=reservation_id,
-                            display_name=name,
-                            display_name_key=name,
-                            originating_interaction_id=None,
-                            pending_interaction_id=None,
-                            agent_id=agent_id,
-                            created_at=now,
-                            activated_at=now,
-                        ),
-                        CredentialBinding(
-                            binding_id=binding_id,
-                            agent_id=agent_id,
-                            kind=CredentialKind.STATIC,
-                            status=CredentialBindingStatus.ACTIVE,
-                            generation=1,
-                            supersedes_binding_id=None,
-                            created_at=now,
-                            updated_at=now,
-                            issued_at=now,
-                            activated_at=now,
-                            ended_at=None,
-                            end_reason=None,
-                        ),
-                        StaticCredential(
-                            binding_id=binding_id,
-                            secret_reference=f"test-tool-call-service/{binding_id}",
-                            credential_fingerprint=hashlib.sha256(binding_id.bytes).digest(),
-                            created_at=now,
-                        ),
-                    ]
-                )
-        finally:
-            await engine.dispose()
+                        ended_at=None,
+                        end_reason=None,
+                    ),
+                    StaticCredential(
+                        binding_id=binding_id,
+                        secret_reference=f"test-tool-call-service/{binding_id}",
+                        credential_fingerprint=hashlib.sha256(binding_id.bytes).digest(),
+                        created_at=now,
+                    ),
+                ]
+            )
         return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
 
     actors: dict[str, ToolCallActor] = {
@@ -250,8 +250,8 @@ async def actors(migrated_async_db_url: str) -> dict[str, ToolCallActor]:
 
 
 @pytest.fixture
-def ledger(migrated_db_url: str) -> _RecordingLedger:
-    return _RecordingLedger(console_sessions(migrated_db_url))
+def ledger(migrated_sessions: async_sessionmaker[AsyncSession]) -> _RecordingLedger:
+    return _RecordingLedger(migrated_sessions)
 
 
 @pytest.fixture
@@ -278,14 +278,14 @@ def _service(
     *,
     database_url: str,
     tmp_path: Path,
+    sessions: async_sessionmaker[AsyncSession],
+    identity_store: PostgresOperatorIdentityStore,
     ledger: PostgresToolCallLedger,
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
     notifier: _RecordingApprovalNotifier,
 ) -> ToolCallApplicationService:
-    sessions = console_sessions(database_url)
-    identity_store = operator_identity_store(database_url)
     token_states = PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store)
     config_file = write_config(
         tmp_path / "tool-call-service.yaml",
@@ -338,6 +338,8 @@ def _service(
 def service(
     *,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
@@ -348,6 +350,8 @@ def service(
     return _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
+        sessions=migrated_sessions,
+        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -531,6 +535,8 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(
 async def test_pending_wait_rereads_after_subscribing_before_waiting(
     *,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
     ledger: _RecordingLedger,
@@ -544,6 +550,8 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
+        sessions=migrated_sessions,
+        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -847,6 +855,8 @@ async def test_list_tool_calls_filters_by_auto_approved(
 async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
     *,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
     ledger: _RecordingLedger,
@@ -861,6 +871,8 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
+        sessions=migrated_sessions,
+        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -880,6 +892,8 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
 async def test_executor_cancellation_terminalizes_before_reraising(
     *,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
     ledger: _RecordingLedger,
@@ -894,6 +908,8 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
+        sessions=migrated_sessions,
+        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,
@@ -914,6 +930,8 @@ async def test_executor_cancellation_terminalizes_before_reraising(
 async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     *,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
     ledger: _RecordingLedger,
@@ -925,6 +943,8 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     service = _service(
         database_url=migrated_db_url,
         tmp_path=tmp_path,
+        sessions=migrated_sessions,
+        identity_store=migrated_identity_store,
         ledger=ledger,
         publisher=publisher,
         executor=executor,

@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
-from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import ProviderConnection
 from haku.console.mcp_config import (
     ConsoleConfigFile,
@@ -43,23 +42,18 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
 @pytest.fixture
-async def _identity(migrated_db_url: str) -> tuple[PostgresOperatorIdentityStore, UUID]:
-    """Shared operator identity for provider-connection tests."""
-    identity_store = operator_identity_store(migrated_db_url)
-    operator_id = await identity_store.resolve_configured_external_user_key("op-provider")
-    return identity_store, operator_id
+def identity_store(migrated_identity_store: PostgresOperatorIdentityStore) -> PostgresOperatorIdentityStore:
+    return migrated_identity_store
 
 
 @pytest.fixture
 async def store(
-    migrated_db_url: str, _identity: tuple[PostgresOperatorIdentityStore, UUID]
+    migrated_sessions: async_sessionmaker, identity_store: PostgresOperatorIdentityStore
 ) -> PostgresProviderConnectionStore:
-    identity_store, _ = _identity
-    sessions = console_sessions(migrated_db_url)
     return PostgresProviderConnectionStore(
-        sessions,
+        migrated_sessions,
         operator_identity_store=identity_store,
-        token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
+        token_states=PostgresOAuthTokenStateStore(migrated_sessions, operator_identity_store=identity_store),
         provider_definitions={
             GOOGLE_MAIL: OperatorConnectionProviderDefinition(
                 kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"
@@ -86,8 +80,8 @@ async def store(
 
 
 @pytest.fixture
-async def operator_id(_identity: tuple[PostgresOperatorIdentityStore, UUID]) -> UUID:
-    return _identity[1]
+async def operator_id(identity_store: PostgresOperatorIdentityStore) -> UUID:
+    return await identity_store.resolve_configured_external_user_key("op-provider")
 
 
 async def _connect(

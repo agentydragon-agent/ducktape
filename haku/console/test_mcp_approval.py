@@ -1048,39 +1048,39 @@ async def test_operator_oauth_approval_requires_existing_association(
     assert upstream_bearers == []
 
 
-async def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
+async def _seed_association(
+    sessions: async_sessionmaker[AsyncSession], db_url: str, *, operator_external_user_key: str, access_token: str
+) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
-    engine = create_async_engine(db_url)
     now = datetime.datetime.now(datetime.UTC)
     resolved_operator_id = await operator_id(db_url, operator_external_user_key)
-    try:
-        async with async_sessionmaker(engine)() as session, session.begin():
-            session.add(
-                McpOperatorOAuthAssociation(
-                    server_id="grocy-sf",
+    async with sessions.begin() as session:
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id="grocy-sf",
+                operator_id=resolved_operator_id,
+                created_at=now,
+                client_id="test-client",
+                token_endpoint="http://unused.test/token",
+                token_state=new_oauth_token_state(
                     operator_id=resolved_operator_id,
-                    created_at=now,
-                    client_id="test-client",
-                    token_endpoint="http://unused.test/token",
-                    token_state=new_oauth_token_state(
-                        operator_id=resolved_operator_id,
-                        access_token=access_token,
-                        refresh_token=None,
-                        token_type="Bearer",
-                        scope=None,
-                        expires_at=now + datetime.timedelta(hours=1),
-                        now=now,
-                    ),
-                )
+                    access_token=access_token,
+                    refresh_token=None,
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now + datetime.timedelta(hours=1),
+                    now=now,
+                ),
             )
-    finally:
-        await engine.dispose()
+        )
 
 
 async def test_routing_executes_each_agent_as_its_own_operator(
+    *,
     make_client,
     tmp_path: Path,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     routing_upstream: tuple[str, list[str | None]],
 ) -> None:
@@ -1090,8 +1090,12 @@ async def test_routing_executes_each_agent_as_its_own_operator(
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
     mcp_server_url, upstream_bearers = routing_upstream
-    await _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
-    await _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
+    await _seed_association(
+        migrated_sessions, migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku"
+    )
+    await _seed_association(
+        migrated_sessions, migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops"
+    )
 
     config = _config([_remote_server("grocy-sf", mcp_server_url, _dynamic_remote_oauth())])
     config["auto_approval_policies"] = [
@@ -1324,7 +1328,7 @@ async def test_list_newest_first_keeps_the_most_recent(operator_client: TestClie
 
 
 async def test_ledger_get_and_list_load_principal_projection_in_one_query(
-    make_client, make_operator_client, console_config: Path, migrated_db_url: str, migrated_async_db_url: str
+    make_client, make_operator_client, console_config: Path, migrated_db_url: str, migrated_engine: AsyncEngine
 ) -> None:
     with (
         make_client(config_file=console_config) as agent,
@@ -1338,7 +1342,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
-    ledger_engine = create_async_engine(migrated_async_db_url, pool_pre_ping=True)
+    ledger_engine = migrated_engine
     ledger = PostgresToolCallLedger(async_sessionmaker(ledger_engine, expire_on_commit=False))
     actor = OperatorActor(operator_id=await operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
@@ -1367,7 +1371,6 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert fetched == by_id[agent_call_id]
     finally:
         event.remove(ledger_engine, "before_cursor_execute", record_tool_call_query)
-        await ledger_engine.dispose()
 
 
 async def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
@@ -1476,7 +1479,9 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     assert "tool-token" not in dumped
 
 
-async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: TestClient, db_url: str) -> None:
+async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
+    operator_client: TestClient, migrated_engine: AsyncEngine, migrated_db_url: str
+) -> None:
     submitted = _submit_request(
         operator_client,
         SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=0),
@@ -1491,71 +1496,68 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
     assert finished["status"] == "ok"
     assert finished["result"]["content"][0]["text"] == "echo:world"
 
-    engine = create_async_engine(db_url)
-    try:
-        async with engine.connect() as conn:
-            tables = {
-                row["table_name"]
-                for row in (
-                    await conn.execute(
-                        text(
-                            """
+    engine = migrated_engine
+    async with engine.connect() as conn:
+        tables = {
+            row["table_name"]
+            for row in (
+                await conn.execute(
+                    text(
+                        """
                             SELECT table_name
                             FROM information_schema.tables
                             WHERE table_schema = 'public'
                             """
-                        )
                     )
                 )
-                .mappings()
-                .all()
-            }
-            columns = {
-                row["column_name"]
-                for row in (
-                    await conn.execute(
-                        text(
-                            """
+            )
+            .mappings()
+            .all()
+        }
+        columns = {
+            row["column_name"]
+            for row in (
+                await conn.execute(
+                    text(
+                        """
                             SELECT column_name
                             FROM information_schema.columns
                             WHERE table_name = 'mcp_tool_calls'
                             """
-                        )
                     )
                 )
-                .mappings()
-                .all()
-            }
-            principal_columns = {
-                row["column_name"]
-                for row in (
-                    await conn.execute(
-                        text(
-                            """
+            )
+            .mappings()
+            .all()
+        }
+        principal_columns = {
+            row["column_name"]
+            for row in (
+                await conn.execute(
+                    text(
+                        """
                             SELECT column_name
                             FROM information_schema.columns
                             WHERE table_name = 'mcp_tool_call_principals'
                             """
-                        )
                     )
                 )
-                .mappings()
-                .all()
-            }
-        async with async_sessionmaker(engine)() as session:
-            persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
-            persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
-            assert persisted_call is not None
-            assert persisted_principal is not None
-            assert persisted_principal.operator_id == await operator_id(db_url, "operator-sub")
-            assert persisted_call.server_id == "smoke"
-            assert persisted_call.tool_name == "echo"
-            assert persisted_call.status is ToolCallStatus.OK
-            assert persisted_call.arguments_json == {"text": "world"}
-            assert persisted_call.result_json is not None
-            assert persisted_call.result_json["content"][0]["text"] == "echo:world"
-    finally:
-        await engine.dispose()
+            )
+            .mappings()
+            .all()
+        }
+    async with async_sessionmaker(engine)() as session:
+        persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
+        persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
+        assert persisted_call is not None
+        assert persisted_principal is not None
+        assert persisted_principal.operator_id == await operator_id(migrated_db_url, "operator-sub")
+        assert persisted_call.server_id == "smoke"
+        assert persisted_call.tool_name == "echo"
+        assert persisted_call.status is ToolCallStatus.OK
+        assert persisted_call.arguments_json == {"text": "world"}
+        assert persisted_call.result_json is not None
+        assert persisted_call.result_json["content"][0]["text"] == "echo:world"
 
     assert {
         "operators",

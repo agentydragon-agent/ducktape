@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
@@ -39,15 +39,6 @@ from haku.console.oauth_token_state import (
 )
 from haku.console.operator_identity import InactiveOperatorError, OperatorIdentityTrust, OperatorStatus
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-
-
-@pytest.fixture
-async def migrated_engine(migrated_async_db_url: str) -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(migrated_async_db_url)
-    try:
-        yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture
