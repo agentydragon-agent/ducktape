@@ -159,13 +159,6 @@ in
     '';
   };
 
-  # Keep Nix itself proxy-aware in the image. The CA bundle is assembled by
-  # public-coder-devbox-proxy-ca before normal multi-user services run.
-  nix.settings = {
-    "http-proxy" = proxyUrl;
-    "ssl-cert-file" = "${proxyCaRuntimeDir}/ca-bundle.crt";
-  };
-
   # These are intentionally placeholders / non-secret routing settings. The
   # iron-proxy substitutes the real GitHub credential only on GitHub hosts.
   environment.sessionVariables = {
