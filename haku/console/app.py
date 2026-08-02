@@ -252,8 +252,17 @@ def create_app(
                 )
             return tuple(defs)
 
-        # create_app runs outside any event loop; asyncio.run is safe here.
-        static_agent_definitions = asyncio.run(_resolve_static_agent_definitions())
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            static_agent_definitions = asyncio.run(_resolve_static_agent_definitions())
+        else:
+            # Already inside an event loop (e.g. async test fixture). Run in a
+            # worker thread that gets its own loop.
+            import concurrent.futures  # noqa: PLC0415
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                static_agent_definitions = pool.submit(asyncio.run, _resolve_static_agent_definitions()).result()
     if claude_runtime is not None:
         if loaded_static_agents is None:
             raise RuntimeError("Claude runtime requires loaded static Agent credentials")

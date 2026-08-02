@@ -178,7 +178,7 @@ async def test_cataloged_connection_without_oauth_client_is_unprovisioned(
         "status": "unprovisioned",
         "detail": "OAuth client not provisioned on this console; see the console deployment README.",
     }
-    assert store.is_provisioned(connection=GOOGLE_CALENDAR) is False
+    assert await store.is_provisioned(connection=GOOGLE_CALENDAR) is False
 
 
 async def test_same_provider_connections_have_independent_grants(

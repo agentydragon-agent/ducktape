@@ -635,7 +635,9 @@ class McpOperatorOAuthAssociation(Base):
     association_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     token_state_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    token_state: Mapped[OAuthTokenState] = relationship(cascade="all, delete-orphan", single_parent=True)
+    token_state: Mapped[OAuthTokenState] = relationship(
+        cascade="all, delete-orphan", single_parent=True, lazy="selectin"
+    )
     client_id: Mapped[str] = mapped_column(Text, nullable=False)
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     client_secret_expires_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

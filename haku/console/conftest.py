@@ -147,8 +147,13 @@ def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
 
 
 def operator_id(db_url: str, external_user_key: str) -> UUID:
-    """Resolve a controller-fed external user key to its canonical Operator UUID."""
-    return operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key)
+    """Resolve a controller-fed external user key to its canonical Operator UUID.
+
+    Uses ``asyncio.run`` because the store is async-backed and this helper is called from
+    both sync and async test code. ``asyncio.run`` creates a fresh event loop each time,
+    which is safe because we never call it from inside a running loop.
+    """
+    return asyncio.run(operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key))
 
 
 @pytest.fixture(scope="session")

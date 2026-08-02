@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime
 import time
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Callable, Generator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, call
@@ -170,10 +170,10 @@ def _build_test_mcp_server() -> FastMCP:
     return server
 
 
-@contextmanager
+@asynccontextmanager
 async def _serve_remote_oauth(
     *, preregistered_client_id: str | None = None, bearers: list[str | None] | None = None
-) -> Generator[str]:
+) -> AsyncGenerator[str]:
     """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
     `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
     Authentik (fronted by kubernetes-mcp-server), which has no DCR endpoint — so the test
@@ -324,7 +324,7 @@ class _BearerRecorder:
     the sequence of *distinct* credentials that carries the meaning.
     """
 
-    async def __init__(self, app: ASGIApp, bearers: list[str | None]) -> None:
+    def __init__(self, app: ASGIApp, bearers: list[str | None]) -> None:
         self._app = app
         self._bearers = bearers
 
@@ -431,7 +431,7 @@ async def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistrati
     )
 
 
-async def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
+def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     servers = [
         _remote_server(
             "grocy-sf", mcp_server_url, {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"}
@@ -838,7 +838,7 @@ async def test_list_tool_calls_filters_by_auto_approved(
     assert {c["tool_call_id"] for c in unfiltered} == {manual["tool_call_id"], auto["tool_call_id"]}
 
 
-async def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
+def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
     return SubmitToolCallRequest(
         server_id="grocy-sf",
         tool_name="stock_add",
@@ -1083,8 +1083,8 @@ async def test_routing_executes_each_agent_as_its_own_operator(
     # `haku` (bearer tool-token → op-haku) comes from the autouse env; add a second agent `ops-bot`.
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
-    _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
-    _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
+    await _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
+    await _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
     config = _config([_remote_server("grocy-sf", mcp_server_url, _dynamic_remote_oauth())])
     config["auto_approval_policies"] = [
