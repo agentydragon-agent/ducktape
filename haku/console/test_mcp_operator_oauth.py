@@ -154,7 +154,7 @@ async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
 
     async def exchange_after_disable(_flow: object, _code: str, *, timeout_seconds: float) -> OAuthToken:
         assert timeout_seconds == 30.0
-        _disable_operator(migrated_engine, operator_id)
+        await _disable_operator(migrated_engine, operator_id)
         return OAuthToken(access_token="must-not-be-persisted")
 
     monkeypatch.setattr("haku.console.mcp_operator_oauth._exchange_operator_oauth_code", exchange_after_disable)
@@ -181,7 +181,7 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
     now = datetime.datetime.now(datetime.UTC)
 
     async def build_flow_after_disable(_server: McpServerEntry, _public_base_url: str) -> _BuiltOperatorOAuthFlow:
-        _disable_operator(migrated_engine, operator_id)
+        await _disable_operator(migrated_engine, operator_id)
         return _BuiltOperatorOAuthFlow(
             state="connect-race-state",
             authorization_url="https://auth.test/authorize?state=connect-race-state",
@@ -232,7 +232,7 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
         )
 
     async def refresh_after_disable(_client: object, _refresh_token: str) -> OAuthToken:
-        _disable_operator(migrated_engine, operator_id)
+        await _disable_operator(migrated_engine, operator_id)
         return OAuthToken(
             access_token="must-not-be-written-or-returned", refresh_token="must-not-be-written", expires_in=3600
         )
