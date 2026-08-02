@@ -11,4 +11,5 @@ in
   rugged_wyrm = readKey "rugged-wyrm.pub";
   atlas = readKey "atlas-default.pub";
   gecko = readKey "gecko-default.pub";
+  publicCoderDevbox = readKey "public-coder-devbox.pub";
 }

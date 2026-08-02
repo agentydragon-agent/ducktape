@@ -19,5 +19,5 @@ spec:
     - name: cert-manager-trust
     - name: reflector
     - name: forgejo-images
-    # Generates the proxy-held Haku Console static-Agent bearer after both target namespaces exist.
+    # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.
     - name: agent-machine-access-tf
