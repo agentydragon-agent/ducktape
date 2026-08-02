@@ -192,15 +192,26 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
     )
 
 
-async def operator_session(
-    conn: HTTPConnection, *, identity_store: PostgresOperatorIdentityStore | None = None
-) -> OperatorSession | None:
+async def operator_session(conn: HTTPConnection) -> OperatorSession | None:
     """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
+    return await operator_session_for_identity_store(conn, _identity_store(conn))
+
+
+async def operator_session_for_identity_store(
+    conn: HTTPConnection, identity_store: PostgresOperatorIdentityStore
+) -> OperatorSession | None:
+    """Resolve a session against an explicitly supplied identity store.
+
+    The normal ``operator_session`` signature intentionally exposes only the request connection so
+    FastAPI can use it directly as a dependency. MCP's protocol adapter supplies its store
+    explicitly because it is constructed outside FastAPI's dependency graph.
+    """
     signed = signed_operator_session(conn)
     if signed is None:
         return None  # already logged with its distinguishing reason
-    store = identity_store if identity_store is not None else _identity_store(conn)
-    identity = await store.resolve_active_session(operator_id=signed.operator_id, identity_id=signed.identity_id)
+    identity = await identity_store.resolve_active_session(
+        operator_id=signed.operator_id, identity_id=signed.identity_id
+    )
     if identity is None:
         _rejected(conn, "identity_inactive", operator_id=signed.operator_id)
         return None
