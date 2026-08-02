@@ -787,7 +787,7 @@ async def mcp_operator_auth_callback(
 ) -> RedirectResponse:
     operator_id = actor.operator_id
     if error:
-        return result_redirect(
+        return await result_redirect(
             result_store,
             operator_id=operator_id,
             result=OAuthConnectionFailed(
@@ -799,7 +799,7 @@ async def mcp_operator_auth_callback(
             destination="settings",
         )
     if not state or not code:
-        return result_redirect(
+        return await result_redirect(
             result_store,
             operator_id=operator_id,
             result=OAuthConnectionFailed(
@@ -813,7 +813,7 @@ async def mcp_operator_auth_callback(
         )
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, str) else "MCP OAuth callback failed."
-        return result_redirect(
+        return await result_redirect(
             result_store,
             operator_id=operator_id,
             result=OAuthConnectionFailed(
@@ -825,7 +825,7 @@ async def mcp_operator_auth_callback(
     await event_hub.broadcast(
         operator_id, [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
     )
-    return result_redirect(
+    return await result_redirect(
         result_store,
         operator_id=operator_id,
         result=OAuthConnectionSucceeded(

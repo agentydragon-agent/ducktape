@@ -25,9 +25,9 @@ from haku.console.agents.enrollment import (
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
-from haku.console.agents.enrollment_routes import _operator_session, entry_router, operator_router
+from haku.console.agents.enrollment_routes import entry_router, operator_router
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.operator_auth import OperatorSession, require_operator_mutation_origin
+from haku.console.operator_auth import OperatorSession, operator_session, require_operator_mutation_origin
 
 INTERACTION_ID = UUID("10000000-0000-4000-8000-000000000001")
 OPERATOR_ID = UUID("20000000-0000-4000-8000-000000000002")
@@ -158,7 +158,7 @@ def _client(
     def operator_session_override() -> OperatorSession | None:
         return _session() if authenticated else None
 
-    app.dependency_overrides[_operator_session] = operator_session_override
+    app.dependency_overrides[operator_session] = operator_session_override
     return TestClient(app, base_url="https://haku.test"), fake
 
 
