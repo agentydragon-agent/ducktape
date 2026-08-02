@@ -746,7 +746,8 @@ def build_console_mcp(
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
 
     @mcp.tool(annotations=_READ_ONLY_META)
-    async def list_tool_calls(  # noqa: PLR0917
+    async def list_tool_calls(
+        *,
         status: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,

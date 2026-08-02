@@ -805,7 +805,8 @@ async def metadata_for_operator(
 
 
 @router.get("/api/tool-calls")
-async def list_tool_calls(  # noqa: PLR0917
+async def list_tool_calls(
+    *,
     service: ToolCallServiceDep,
     actor: OperatorActorDep,
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
