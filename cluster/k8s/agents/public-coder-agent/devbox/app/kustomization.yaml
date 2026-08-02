@@ -1,14 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: public-coder-agent
-generatorOptions:
-  disableNameSuffixHash: true
-secretGenerator:
-  - name: public-coder-devbox-cloud-init
-    files:
-      - userdata=cloud-init.txt
-
 resources:
+  - cloud-init
   - host-key.sops.yaml
   - vm-images-s3-reader.yaml
   - virtualmachine.yaml
