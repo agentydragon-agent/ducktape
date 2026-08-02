@@ -260,7 +260,8 @@ class PostgresToolCallLedger:
         async with self._sessions.begin() as session:
             stmt = self._record_projection_stmt(actor).where(McpToolCall.tool_call_id == tool_call_id)
             result = await session.execute(stmt)
-            if (projection := result.tuples().first()) is None:
+            projection = result.tuples().first()
+            if projection is None:
                 raise ToolCallNotFoundError("tool call not found")
             return self._record_from_projection(*projection)
 
