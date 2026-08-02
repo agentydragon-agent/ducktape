@@ -236,8 +236,9 @@ def create_app(
 
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None
-        return tuple(
-            StaticAgentDefinition(
+
+        async def resolve_agent(agent: LoadedStaticAgent) -> StaticAgentDefinition:
+            return StaticAgentDefinition(
                 agent_id=agent.agent_id,
                 display_name=agent.display_name,
                 operator_id=await operator_identity_store.resolve_configured_external_user_key(
@@ -247,8 +248,8 @@ def create_app(
                 token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
                 auto_approval_policy=agent.auto_approval_policy,
             )
-            for agent in loaded_static_agents
-        )
+
+        return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     # Resolving configured external identities is database I/O. Keep app construction pure and do
     # this during the async lifespan, after the event loop exists.

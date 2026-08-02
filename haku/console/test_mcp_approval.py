@@ -552,18 +552,23 @@ def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, acto
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
-async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
+def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
-    sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-    async with sessions() as session:
-        result = await session.execute(
-            select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
-            .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
-            .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
-        )
-        binding_id, agent_id, operator_id = result.one()
-    return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
+
+    async def resolve() -> AgentActor:
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        async with sessions() as session:
+            result = await session.execute(
+                select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
+                .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
+                .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
+                .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
+            )
+            binding_id, agent_id, operator_id = result.one()
+        return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
+
+    assert client.portal is not None
+    return client.portal.call(resolve)
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
@@ -771,7 +776,7 @@ async def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
         record = _submit_request(
             client,
             SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
-            actor=await _static_agent_actor(client, "tool-token"),
+            actor=_static_agent_actor(client, "tool-token"),
         )
         pending = operator.get("/api/approvals/pending").json()
 
@@ -815,7 +820,7 @@ async def test_list_tool_calls_filters_by_auto_approved(
         make_operator_client(config_file=gmail_config_file, operator_external_user_key="op-haku") as operator,
     ):
         client.app.state.provider_connection_store.access_token_for = AsyncMock(return_value="operator-token")
-        agent = await _static_agent_actor(client, "tool-token")
+        agent = _static_agent_actor(client, "tool-token")
         auto = _submit_request(
             client,
             SubmitToolCallRequest(server_id="gmail", tool_name="labels_list", arguments={}, wait_for_ms=0),
@@ -858,7 +863,7 @@ async def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_ro
         make_client(config_file=console_config) as client,
         make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
     ):
-        agent = await _static_agent_actor(client, _AGENT_TOKEN)
+        agent = _static_agent_actor(client, _AGENT_TOKEN)
         pending = _submit_request(client, _agent_stock_add(), actor=agent)
         assert [c["tool_call_id"] for c in operator.get("/api/approvals/pending").json()["approvals"]] == [
             pending["tool_call_id"]
@@ -887,7 +892,7 @@ async def test_websocket_receives_agent_withdrawal_invalidation(
         make_client(config_file=console_config) as client,
         make_operator_client(config_file=console_config, operator_external_user_key="op-haku") as operator,
     ):
-        agent = await _static_agent_actor(client, _AGENT_TOKEN)
+        agent = _static_agent_actor(client, _AGENT_TOKEN)
         with operator.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
             assert ws.receive_json() == {"event_type": "hello"}
             pending = _submit_request(client, _agent_stock_add(), actor=agent)
@@ -919,7 +924,7 @@ async def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
                 arguments={"thread_ids": ["t1"], "add": ["INBOX"]},
                 wait_for_ms=0,
             ),
-            actor=await _static_agent_actor(client, "tool-token"),
+            actor=_static_agent_actor(client, "tool-token"),
         )
         pending = operator.get("/api/approvals/pending").json()["approvals"]
 
@@ -1119,13 +1124,13 @@ async def test_routing_executes_each_agent_as_its_own_operator(
                 SubmitToolCallRequest(
                     server_id="grocy-sf", tool_name="products_list", arguments={"detail": "full"}, wait_for_ms=0
                 ),
-                actor=await _static_agent_actor(client, bearer),
+                actor=_static_agent_actor(client, bearer),
             )
             assert record["status"] == "ok", record
             call_ids.append(record["tool_call_id"])
 
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
-            actor = await _static_agent_actor(client, bearer)
+            actor = _static_agent_actor(client, bearer)
             listed = await client.app.state.tool_call_service.list_tool_calls(actor=actor)
             assert [call.tool_call_id for call in listed] == [expected_call_id]
             assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
@@ -1198,7 +1203,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
                     arguments={"items": [{"product_id": 123, "amount": amount}]},
                     wait_for_ms=0,
                 ),
-                actor=await _static_agent_actor(agents, bearer),
+                actor=_static_agent_actor(agents, bearer),
             )
             call_ids[name] = record["tool_call_id"]
 
@@ -1340,7 +1345,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_record = _submit_request(
             agent,
             SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "agent"}, wait_for_ms=0),
-            actor=await _static_agent_actor(agent, "tool-token"),
+            actor=_static_agent_actor(agent, "tool-token"),
         )
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
@@ -1468,7 +1473,7 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
         haku_call = _submit_request(
             agent,
             SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "two"}, wait_for_ms=0),
-            actor=await _static_agent_actor(agent, "tool-token"),
+            actor=_static_agent_actor(agent, "tool-token"),
         )
         operator_body = operator.get("/api/tool-calls").json()
         haku_body = haku_operator.get("/api/tool-calls").json()
@@ -1761,7 +1766,8 @@ async def test_dispatcher_reflects_in_process_server_tools() -> None:
 
 
 async def test_operator_connection_reflection_checks_presence_without_resolving_token() -> None:
-    provider_store = Mock()
+    provider_store = AsyncMock()
+    provider_store.is_provisioned.return_value = True
     provider_store.is_connected.return_value = True
     builder = Mock(return_value=_build_test_mcp_server())
     dispatcher = McpServerDispatcher(
@@ -1782,7 +1788,8 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
 
     assert isinstance(metadata, list)
     builder.assert_called_once_with(None)
-    provider_store.is_connected.assert_called_once_with(connection="google_workspace", operator_id=operator)
+    provider_store.is_provisioned.assert_awaited_once_with(connection="google_workspace")
+    provider_store.is_connected.assert_awaited_once_with(connection="google_workspace", operator_id=operator)
     provider_store.access_token_for.assert_not_called()
 
 

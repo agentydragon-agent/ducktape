@@ -409,7 +409,7 @@ class PostgresToolCallLedger:
 
     async def _row_by_tool_call_id(self, session: AsyncSession, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
         stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
-        row = await session.scalars(stmt.with_for_update(of=McpToolCall)).first()
+        row = (await session.scalars(stmt.with_for_update(of=McpToolCall))).first()
         if row is None:
             raise ToolCallNotFoundError("tool call not found")
         return row
@@ -518,23 +518,25 @@ class PostgresToolCallLedger:
 
     @staticmethod
     async def _principal(session: AsyncSession, tool_call_id: str) -> _ResolvedToolCallPrincipal:
-        result = await session.execute(
-            select(
-                McpToolCallPrincipal,
-                CredentialBinding.agent_id,
-                Agent.owner_operator_id,
-                AgentNameReservation.display_name,
+        result = (
+            await session.execute(
+                select(
+                    McpToolCallPrincipal,
+                    CredentialBinding.agent_id,
+                    Agent.owner_operator_id,
+                    AgentNameReservation.display_name,
+                )
+                .outerjoin(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
+                .outerjoin(Agent, Agent.agent_id == CredentialBinding.agent_id)
+                .outerjoin(
+                    AgentNameReservation,
+                    and_(
+                        AgentNameReservation.agent_id == Agent.agent_id,
+                        AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
+                    ),
+                )
+                .where(McpToolCallPrincipal.tool_call_id == tool_call_id)
             )
-            .outerjoin(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
-            .outerjoin(Agent, Agent.agent_id == CredentialBinding.agent_id)
-            .outerjoin(
-                AgentNameReservation,
-                and_(
-                    AgentNameReservation.agent_id == Agent.agent_id,
-                    AgentNameReservation.reservation_id == Agent.current_name_reservation_id,
-                ),
-            )
-            .where(McpToolCallPrincipal.tool_call_id == tool_call_id)
         ).first()
         if result is None:
             raise RuntimeError(f"tool call {tool_call_id!r} has no durable principal")

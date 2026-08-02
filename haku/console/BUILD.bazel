@@ -59,8 +59,8 @@ py_test(
     deps = [
         ":claude_chat",
         ":config",
-        "//:conftest",
         ":conftest",
+        "//:conftest",
         "@pypi//claude_agent_sdk",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",

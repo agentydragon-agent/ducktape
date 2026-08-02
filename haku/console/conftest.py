@@ -17,7 +17,7 @@ import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import itsdangerous
@@ -149,8 +149,11 @@ def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
 
 async def _resolve_operator_identity(app: Any, external_user_key: str) -> ResolvedOperatorIdentity:
     """Create the same issuer-scoped browser identity that the OIDC callback would persist."""
-    return await app.state.operator_identity_store.resolve_verified_identity(
-        VerifiedExternalIdentity(issuer=app.state.settings.operator_oidc.issuer, subject=external_user_key)
+    return cast(
+        ResolvedOperatorIdentity,
+        await app.state.operator_identity_store.resolve_verified_identity(
+            VerifiedExternalIdentity(issuer=app.state.settings.operator_oidc.issuer, subject=external_user_key)
+        ),
     )
 
 
