@@ -267,13 +267,14 @@ def create_app(
             claude_chat.KubernetesSandboxClaims(claude_runtime),
             mcp_token=mcp_agent.token,
         )
-    static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
-        fingerprints=(
-            tuple(definition.token_fingerprint for definition in static_agent_definitions)
-            if static_agent_definitions is not None
-            else tuple(fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents)
+    if static_agent_definitions is not None:
+        static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
+    else:
+        assert loaded_static_agents is not None
+        static_agent_fingerprints = tuple(
+            fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents
         )
-    )
+    static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(fingerprints=static_agent_fingerprints)
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
     # Google access token, resolved from the provider-connection store. Auto-approval label lookups
