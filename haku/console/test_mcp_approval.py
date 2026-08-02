@@ -277,14 +277,14 @@ async def _serve_remote_oauth(
 
 
 @pytest.fixture
-def remote_oauth_url(upstream_bearers: list[str | None]) -> Generator[str]:
-    with _serve_remote_oauth(bearers=upstream_bearers) as url:
+async def remote_oauth_url(upstream_bearers: list[str | None]) -> AsyncGenerator[str]:
+    async with _serve_remote_oauth(bearers=upstream_bearers) as url:
         yield url
 
 
 @pytest.fixture
-def preregistered_remote_oauth_url() -> Generator[str]:
-    with _serve_remote_oauth(preregistered_client_id="preregistered-client") as url:
+async def preregistered_remote_oauth_url() -> AsyncGenerator[str]:
+    async with _serve_remote_oauth(preregistered_client_id="preregistered-client") as url:
         yield url
 
 
@@ -557,12 +557,13 @@ async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     engine = create_async_engine(app.state.settings.async_database_url)
     try:
         async with AsyncSession(engine) as session:
-            binding_id, agent_id, operator_id = await session.execute(
+            result = await session.execute(
                 select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
                 .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
                 .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
                 .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
-            ).one()
+            )
+            binding_id, agent_id, operator_id = result.one()
         return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
     finally:
         await engine.dispose()
