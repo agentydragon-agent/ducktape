@@ -554,19 +554,16 @@ def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, acto
 
 async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
-    engine = create_async_engine(app.state.settings.database_url.get_secret_value())
-    try:
-        async with AsyncSession(engine) as session:
-            result = await session.execute(
-                select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
-                .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
-                .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
-                .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
-            )
-            binding_id, agent_id, operator_id = result.one()
-        return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
-    finally:
-        await engine.dispose()
+    sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+    async with sessions() as session:
+        result = await session.execute(
+            select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
+            .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
+            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
+            .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
+        )
+        binding_id, agent_id, operator_id = result.one()
+    return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
@@ -1328,7 +1325,13 @@ async def test_list_newest_first_keeps_the_most_recent(operator_client: TestClie
 
 
 async def test_ledger_get_and_list_load_principal_projection_in_one_query(
-    make_client, make_operator_client, console_config: Path, migrated_db_url: str, migrated_engine: AsyncEngine
+    *,
+    make_client,
+    make_operator_client,
+    console_config: Path,
+    migrated_db_url: str,
+    migrated_sessions,
+    migrated_engine: AsyncEngine,
 ) -> None:
     with (
         make_client(config_file=console_config) as agent,
@@ -1343,7 +1346,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
     ledger_engine = migrated_engine
-    ledger = PostgresToolCallLedger(async_sessionmaker(ledger_engine, expire_on_commit=False))
+    ledger = PostgresToolCallLedger(migrated_sessions)
     actor = OperatorActor(operator_id=await operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
 
@@ -1480,7 +1483,7 @@ async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
 
 
 async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
-    operator_client: TestClient, migrated_engine: AsyncEngine, migrated_db_url: str
+    operator_client: TestClient, migrated_engine: AsyncEngine, migrated_sessions, migrated_db_url: str
 ) -> None:
     submitted = _submit_request(
         operator_client,
@@ -1546,7 +1549,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
             .mappings()
             .all()
         }
-    async with async_sessionmaker(engine)() as session:
+    async with migrated_sessions() as session:
         persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
         persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
         assert persisted_call is not None

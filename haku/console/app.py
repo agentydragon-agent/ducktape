@@ -394,6 +394,10 @@ def create_app(
     app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
+    # Expose the shared database resources to internal dependencies and diagnostics; every store
+    # above uses these same objects rather than creating a second pool.
+    app.state.db_engine = db_engine
+    app.state.db_sessions = db_sessions
     # The operator-login callback persists the operator's Authentik token only when hostexec is
     # configured (offline_access is requested for the same reason). Read at request time from here.
     app.state.hostexec_enabled = hostexec_config is not None
