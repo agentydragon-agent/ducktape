@@ -1,8 +1,7 @@
 # Headless home-manager profile for the public-coder-devbox coder user.
 # Keep this deliberately smaller than the workstation profile: the VM is a
 # build/test environment, not a second personal workstation.
-_:
-{
+_: {
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
