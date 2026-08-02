@@ -15,6 +15,7 @@ from uuid import UUID
 import httpx
 from mcp.shared.auth import OAuthToken
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from haku.console.database_schema import OperatorAuthentikToken
 from haku.console.oauth_token_state import (
@@ -67,7 +68,12 @@ class PostgresAuthentikOperatorTokenStore:
         now = _now()
         async with self._sessions.begin() as session:
             await self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = await session.get(OperatorAuthentikToken, operator_id, with_for_update=True)
+            row = await session.get(
+                OperatorAuthentikToken,
+                operator_id,
+                options=(selectinload(OperatorAuthentikToken.token_state),),
+                with_for_update=True,
+            )
             if row is None:
                 session.add(
                     OperatorAuthentikToken(
