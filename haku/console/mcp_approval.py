@@ -543,7 +543,7 @@ class PostgresToolCallLedger:
         )
 
     @staticmethod
-    async def _resolve_principal(
+    def _resolve_principal(
         tool_call_id: str,
         row: McpToolCallPrincipal,
         *,
