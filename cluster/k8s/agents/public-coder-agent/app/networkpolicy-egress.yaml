@@ -43,8 +43,8 @@ spec:
     # Private in-cluster SSH to the dedicated NixOS devbox. This is intentionally
     # not an external SSH route; the VM's own egress remains proxy-fenced.
     - to:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: public-coder-devbox
+              kubevirt.io/domain: public-coder-devbox
       ports:
         - { port: 22, protocol: TCP }

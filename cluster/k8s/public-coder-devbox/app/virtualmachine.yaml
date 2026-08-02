@@ -2,7 +2,7 @@ apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
   name: public-coder-devbox
-  namespace: public-coder-devbox
+  namespace: public-coder-agent
   labels:
     app.kubernetes.io/name: public-coder-devbox
 spec:

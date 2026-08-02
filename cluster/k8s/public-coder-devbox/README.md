@@ -9,7 +9,7 @@ The VM is not exposed on a public port. OpenClaw reaches SSH through the
 ClusterIP Service:
 
 ```text
-public-coder-devbox-ssh.public-coder-devbox.svc.cluster.local:22
+public-coder-devbox-ssh.public-coder-agent.svc.cluster.local:22
 ```
 
 The OpenClaw Deployment mounts the matching SSH key and config as
@@ -27,8 +27,9 @@ HTTP(S) proxy variables point at that Service, but the network policy is the
 actual enforcement layer.
 
 The interception CA is deliberately not copied into this repository. The
-existing trust-manager Bundle publishes the live CA bundle into this namespace
-as `ConfigMap/public-coder-agent-proxy-ca-cert`. KubeVirt attaches that
+existing trust-manager Bundle publishes the live CA bundle into the shared
+`public-coder-agent` namespace as `ConfigMap/public-coder-agent-proxy-ca-cert`.
+KubeVirt attaches that
 ConfigMap as a read-only virtio disk; the NixOS service mounts it at boot and
 assembles the runtime CA bundle. CA rotation therefore follows the declarative
 cert-manager/trust-manager resources without a generated certificate being

@@ -11,7 +11,7 @@ spec:
       - key: k8s:io.kubernetes.pod.namespace
         operator: In
         values:
-          - public-coder-devbox
+          - public-coder-agent
       - key: k8s:kubevirt.io/domain
         operator: In
         values:

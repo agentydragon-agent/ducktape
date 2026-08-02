@@ -403,7 +403,6 @@ resources:
   - gecko/app/flux-kustomization.yaml
   - agent-box/namespace/flux-kustomization.yaml
   - agent-box/app/flux-kustomization.yaml
-  - public-coder-devbox/namespace/flux-kustomization.yaml
   - public-coder-devbox/app/flux-kustomization.yaml
   - website/flux-kustomization.yaml
 
