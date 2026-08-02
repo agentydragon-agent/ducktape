@@ -526,6 +526,10 @@
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
           wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
           bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
+          # Full public-coder-devbox image: the VM boots straight into the real
+          # build/test configuration and owns its first-boot disk setup through
+          # NixOS systemd units rather than cloud-init.
+          public-coder-devbox-image = self.nixosConfigurations.public-coder-devbox.config.system.build.images.qemu-efi;
           # Full agent-box host image: the VM boots straight into the real config
           # (codex user, Codex CLI, planted keys) — no bootstrap + nixos-rebuild
           # switch. Published by vm-images-publisher with IMAGE_OUTPUT=agent-box-image,

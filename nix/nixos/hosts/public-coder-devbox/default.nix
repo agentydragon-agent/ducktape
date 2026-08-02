@@ -16,6 +16,7 @@ let
   keys = import ../../../ssh-keys.nix;
   proxyHost = "public-coder-agent-proxy.public-coder-agent.svc.cluster.local";
   proxyUrl = "http://${proxyHost}:8080";
+  hostKeyDevice = "/dev/disk/by-id/virtio-pchostkey";
   proxyCaDevice = "/dev/disk/by-id/virtio-pcproxyca";
   proxyCaRuntimeDir = "/run/public-coder-devbox-proxy-ca";
 in
@@ -25,13 +26,55 @@ in
     ../../modules/bazel
   ];
 
-  # KubeVirt's NoCloud seed installs this stable host key before sshd is
-  # restarted by cloud-init. The private key remains in the encrypted
-  # cloud-init Secret; it is never checked into the repository.
-  services.cloud-init = {
-    enable = true;
-    network.enable = false;
-    settings.datasource_list = [ "NoCloud" ];
+  # The purpose-built image owns first boot. KubeVirt attaches the encrypted
+  # host-key Secret as a virtio disk; this service installs it before sshd
+  # starts, so the image does not depend on cloud-init being present.
+  systemd.services.public-coder-devbox-host-key = {
+    description = "Install the persisted public-coder-devbox SSH host key";
+    wantedBy = [ "sshd.service" ];
+    before = [ "sshd-keygen.service" "sshd.service" ];
+    after = [ "local-fs.target" ];
+    path = [
+      pkgs.coreutils
+      pkgs.util-linux
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      set -eu
+      src="/run/public-coder-devbox-host-key/source"
+      mkdir -p "$src"
+      mounted=0
+      for _ in $(seq 1 60); do
+        if mountpoint -q "$src"; then
+          mounted=1
+          break
+        fi
+        if mount -o ro "${hostKeyDevice}" "$src" 2>/dev/null; then
+          mounted=1
+          break
+        fi
+        sleep 1
+      done
+      if [ "$mounted" -ne 1 ]; then
+        echo "KubeVirt host-key disk did not appear at ${hostKeyDevice}" >&2
+        exit 1
+      fi
+      install -Dm0600 "$src/ssh_host_ed25519_key" /etc/ssh/ssh_host_ed25519_key
+      umount "$src"
+    '';
+  };
+
+  systemd.services.sshd = {
+    requires = [ "public-coder-devbox-host-key.service" ];
+    after = [ "public-coder-devbox-host-key.service" ];
+  };
+
+  systemd.services.sshd-keygen = {
+    wants = [ "public-coder-devbox-host-key.service" ];
+    after = [ "public-coder-devbox-host-key.service" ];
   };
 
   services.openssh.hostKeys = lib.mkForce [
@@ -111,6 +154,13 @@ in
         > "${proxyCaRuntimeDir}/ca-bundle.crt"
       umount "$src"
     '';
+  };
+
+  # Keep Nix itself proxy-aware in the image. The CA bundle is assembled by
+  # public-coder-devbox-proxy-ca before normal multi-user services run.
+  nix.settings = {
+    "http-proxy" = proxyUrl;
+    "ssl-cert-file" = "${proxyCaRuntimeDir}/ca-bundle.crt";
   };
 
   # These are intentionally placeholders / non-secret routing settings. The

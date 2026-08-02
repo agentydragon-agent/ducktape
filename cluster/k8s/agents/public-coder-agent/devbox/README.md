@@ -45,30 +45,38 @@ mounts it at boot and assembles the runtime CA bundle. CA rotation therefore
 follows the declarative cert-manager/trust-manager resources without a
 certificate being committed here.
 
-The cloud-init recipe is non-secret and lives inline in the VM manifest. The
-only secret input to it — the persistent SSH host key — is a separate
-SOPS-encrypted Secret attached as another KubeVirt disk. This keeps the
-cloud-init drive reproducible from its inputs instead of storing a composed
-opaque blob.
+The persistent SSH host key is a separate SOPS-encrypted Secret attached as a
+KubeVirt disk. The image's systemd first-boot unit consumes that disk directly,
+so no composed cloud-init blob is needed for the devbox.
 
 ## Bootstrap and switch
 
-The VM starts from the existing minimal bootstrap qcow2. Its inline cloud-init
-recipe mounts the SOPS-provided host-key disk, installs root's authorized key,
-and sets the proxy/CA settings needed for the first manual switch. After the VM
-is reachable, run:
+The VM is built from the purpose-specific `.#public-coder-devbox-image`
+output. The image already contains the full NixOS and Home Manager build/test
+configuration, so no first-boot `nixos-rebuild` is needed.
 
-```text
-nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#public-coder-devbox
+At boot, a NixOS systemd unit mounts the SOPS-provided host-key disk and installs
+its persisted host key before `sshd` starts. A second unit mounts the live proxy
+CA ConfigMap disk and assembles the runtime CA bundle. SSH authorized keys,
+proxy variables, and Nix proxy settings are part of the image configuration.
+
+The root disk is persistent, so subsequent boots use the same declarative
+configuration directly. The generic bootstrap image remains available for
+other VMs that intentionally use the manual-switch workflow.
+
+## Image publication
+
+Build and publish the image from the in-cluster `vm-images-publisher`:
+
+```bash
+job_name="publish-devbox-$(date +%s)"
+kubectl create job --from=cronjob/vm-images-publisher "$job_name" \
+  -n vm-images-publisher
+kubectl -n vm-images-publisher set env "job/$job_name" \
+  IMAGE_OUTPUT=public-coder-devbox-image OBJECT_PREFIX=public-coder-devbox
 ```
 
-The root disk is persistent, so subsequent boots use the switched NixOS
-configuration directly. Keeping the switch manual makes the bootstrap failure
-mode easy to inspect and avoids hiding a failed first deployment in cloud-init.
-
-## TODO
-
-Replace the generic bootstrap image with a devbox-specific NixOS bootstrap
-image. That image should own the virtio-disk mounts, SSH host-key setup, proxy
-CA setup, and initial proxy configuration through NixOS/systemd, leaving
-cloud-init as metadata-only or removing it entirely.
+After publication, update the VM's root S3 URL to
+`public-coder-devbox/<sha>.qcow2`. The VM
+manifest can then drop the cloud-init disk and Secret entirely; only the
+persisted host-key and proxy-CA virtio disks remain.
