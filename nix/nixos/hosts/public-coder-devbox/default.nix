@@ -32,7 +32,10 @@ in
   systemd.services.public-coder-devbox-host-key = {
     description = "Install the persisted public-coder-devbox SSH host key";
     wantedBy = [ "sshd.service" ];
-    before = [ "sshd-keygen.service" "sshd.service" ];
+    before = [
+      "sshd-keygen.service"
+      "sshd.service"
+    ];
     after = [ "local-fs.target" ];
     path = [
       pkgs.coreutils
