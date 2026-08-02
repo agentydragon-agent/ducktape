@@ -31,13 +31,7 @@ from sqlalchemy.engine import make_url
 from haku.console import mcp_server as mcp_server_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
-from haku.console.conftest import (
-    console_settings,
-    operator_id as resolve_operator_id,
-    operator_session_cookie,
-    resolve_operator_identity,
-    write_config,
-)
+from haku.console.conftest import console_settings, operator_session_cookie, resolve_operator_identity, write_config
 from haku.console.mcp_approval import DegradedReflection
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_operator_oauth import (
@@ -46,15 +40,14 @@ from haku.console.mcp_operator_oauth import (
     McpOperatorAuthStatusResponse,
     McpOperatorAuthUnconnected,
 )
+from haku.console.operator_identity import ResolvedOperatorIdentity
 from haku.console.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, ToolCallActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
     AgentToolCallCaller,
-    ApprovalDecision,
-    ApprovalDecisionRequest,
     SubmitToolCallRequest,
     ToolCallRecord,
     ToolCallStatus,
@@ -186,9 +179,10 @@ def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @dataclass
 class _Harness:
     base: str  # base URL of the served console MCP; open `Client(f"{base}/mcp", auth=_AGENT_TOKEN)`
+    origin: str
     tool_calls: ToolCallApplicationService
-    operator_id: UUID
-    other_operator_id: UUID
+    operator_identity: ResolvedOperatorIdentity
+    other_operator_identity: ResolvedOperatorIdentity
 
 
 @pytest.fixture
@@ -251,14 +245,19 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
         calendar_tools.GOOGLE_CALENDAR_SERVER_ID: const_in_process_server(calendar_tools.build_mcp(calendar_client)),
     }
     app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process)
-    operator_id = await resolve_operator_id(migrated_sessions, "42")
-    other_operator_id = await resolve_operator_id(migrated_sessions, "99")
+    operator_identity = await resolve_operator_identity(
+        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
+    )
+    other_operator_identity = await resolve_operator_identity(
+        migrated_sessions, issuer=settings.operator_oidc.issuer, subject="99"
+    )
     with serve_app_sync(app) as base:
         yield _Harness(
             base=base,
+            origin=settings.public_base_url.rstrip("/"),
             tool_calls=app.state.tool_call_service,
-            operator_id=operator_id,
-            other_operator_id=other_operator_id,
+            operator_identity=operator_identity,
+            other_operator_identity=other_operator_identity,
         )
 
 
@@ -269,6 +268,30 @@ async def agent_client(harness: _Harness) -> AsyncGenerator[Client]:
     `Client(...)` instead of using this fixture."""
     async with Client(f"{harness.base}/mcp", auth=_AGENT_TOKEN) as client:
         yield client
+
+
+def _operator_cookies(identity: ResolvedOperatorIdentity) -> dict[str, str]:
+    return {
+        "session": operator_session_cookie(
+            operator_id=str(identity.operator_id), identity_id=str(identity.identity_id), username="operator"
+        )
+    }
+
+
+async def _operator_get(
+    harness: _Harness, path: str, *, identity: ResolvedOperatorIdentity | None = None, **kwargs: Any
+) -> httpx.Response:
+    identity = identity or harness.operator_identity
+    async with httpx.AsyncClient(base_url=harness.base, cookies=_operator_cookies(identity)) as client:
+        return await client.get(path, **kwargs)
+
+
+async def _operator_post(
+    harness: _Harness, path: str, *, identity: ResolvedOperatorIdentity | None = None, **kwargs: Any
+) -> httpx.Response:
+    identity = identity or harness.operator_identity
+    async with httpx.AsyncClient(base_url=harness.base, cookies=_operator_cookies(identity)) as client:
+        return await client.post(path, headers={"Origin": harness.origin}, **kwargs)
 
 
 async def test_tool_surface_splits_pass_through_and_request(agent_client: Client) -> None:
@@ -404,14 +427,15 @@ async def test_pass_through_read_auto_approves_and_returns_result(harness: _Harn
     assert result.structured_content is not None
     assert result.structured_content["labels"][0]["name"] == "haku/triaged"
     assert result.meta is not None
-    calls = await harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
-    assert len(calls) == 1
-    assert calls[0].status == ToolCallStatus.OK
-    assert calls[0].tool_name == "labels_list"
+    tool_call_id = result.meta[MCP_TOOL_CALL_META_KEY]["tool_call_id"]
+    response = await _operator_get(harness, f"/api/tool-calls/{tool_call_id}")
+    assert response.status_code == 200, response.text
+    call = response.json()
+    assert call["status"] == ToolCallStatus.OK
+    assert call["tool_name"] == "labels_list"
     # The pass-through call is audited as the static agent that presented the bearer.
-    assert calls[0].caller.kind == "agent"
-    assert calls[0].caller.display_name == "Haku"
-    assert result.meta[MCP_TOOL_CALL_META_KEY] == {"tool_call_id": calls[0].tool_call_id}
+    assert call["caller"]["kind"] == "agent"
+    assert call["caller"]["display_name"] == "Haku"
 
 
 async def test_list_tool_calls_tool_filters_by_auto_approved(agent_client: Client) -> None:
@@ -445,14 +469,17 @@ async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness
     with pytest.raises(ToolError, match="single_events"):
         await agent_client.call_tool("google_calendar__list_events", {"single_events": True})
 
-    operator = OperatorActor(operator_id=harness.operator_id)
-    calls = await harness.tool_calls.list_tool_calls(actor=operator)
+    response = await _operator_get(harness, "/api/tool-calls")
+    assert response.status_code == 200, response.text
+    calls = response.json()["tool_calls"]
     assert len(calls) == 1
-    assert calls[0].status == ToolCallStatus.DENIED
-    assert calls[0].denial_reason is not None
-    assert "single_events" in calls[0].denial_reason
-    assert calls[0].auto_approval_evaluation == "denied: arguments failed the registered tool schema"
-    assert await harness.tool_calls.pending_approvals(actor=operator) == []
+    assert calls[0]["status"] == ToolCallStatus.DENIED
+    assert calls[0]["denial_reason"] is not None
+    assert "single_events" in calls[0]["denial_reason"]
+    assert calls[0]["auto_approval_evaluation"] == "denied: arguments failed the registered tool schema"
+    pending = await _operator_get(harness, "/api/approvals/pending")
+    assert pending.status_code == 200, pending.text
+    assert pending.json()["approvals"] == []
 
 
 async def test_calendar_read_is_transparent_and_audited(harness: _Harness, agent_client: Client) -> None:
@@ -460,10 +487,12 @@ async def test_calendar_read_is_transparent_and_audited(harness: _Harness, agent
 
     assert result.structured_content is not None
     assert result.structured_content["event_id"] == "series1"
-    calls = await harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
+    response = await _operator_get(harness, "/api/tool-calls")
+    assert response.status_code == 200, response.text
+    calls = response.json()["tool_calls"]
     assert len(calls) == 1
-    assert calls[0].server_id == "google_calendar"
-    assert calls[0].tool_name == "get_event"
+    assert calls[0]["server_id"] == "google_calendar"
+    assert calls[0]["tool_name"] == "get_event"
 
 
 async def test_request_tool_returns_promise_with_deep_link(agent_client: Client) -> None:
@@ -494,7 +523,7 @@ async def test_request_tool_preserves_explicit_zero_wait(
     submitted_waits: list[int] = []
 
     async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
-        assert actor.operator_id == harness.operator_id
+        assert actor.operator_id == harness.operator_identity.operator_id
         submitted_waits.append(req.wait_for_ms)
         raise ToolCallNotFoundError("captured request")
 
@@ -551,12 +580,12 @@ async def test_two_operator_two_agent_mcp_read_matrix(harness: _Harness) -> None
                 with pytest.raises(ToolError, match="not found"):
                     await client.call_tool("get_tool_call", {"tool_call_id": foreign_call_id})
 
-    operator_calls = await harness.tool_calls.list_tool_calls(actor=OperatorActor(operator_id=harness.operator_id))
-    other_operator_calls = await harness.tool_calls.list_tool_calls(
-        actor=OperatorActor(operator_id=harness.other_operator_id)
-    )
-    assert [call.tool_call_id for call in operator_calls] == call_ids[:2]
-    assert [call.tool_call_id for call in other_operator_calls] == call_ids[2:]
+    operator_response = await _operator_get(harness, "/api/tool-calls")
+    assert operator_response.status_code == 200, operator_response.text
+    other_response = await _operator_get(harness, "/api/tool-calls", identity=harness.other_operator_identity)
+    assert other_response.status_code == 200, other_response.text
+    assert [call["tool_call_id"] for call in operator_response.json()["tool_calls"]] == call_ids[:2]
+    assert [call["tool_call_id"] for call in other_response.json()["tool_calls"]] == call_ids[2:]
 
 
 async def _submit_pending_draft(client: Client, subject: str = "s") -> str:
@@ -609,11 +638,8 @@ async def test_withdraw_tool_call_after_approval_reports_the_real_status(
     harness: _Harness, agent_client: Client
 ) -> None:
     tool_call_id = await _submit_pending_draft(agent_client)
-    await harness.tool_calls.decide(
-        tool_call_id=tool_call_id,
-        decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
-        actor=OperatorActor(operator_id=harness.operator_id),
-    )
+    response = await _operator_post(harness, f"/api/tool-calls/{tool_call_id}/decision", json={"decision": "approve"})
+    assert response.status_code == 200, response.text
 
     # Withdrawal never stops an approved call; the agent is told the real status and reads the
     # outcome with get_tool_call instead.
@@ -792,10 +818,9 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 assert direct.status_code == 200, (direct.text, dict(direct.headers))
                 assert "echo:operator" in direct.text
 
-                calls = await app.state.tool_call_service.list_tool_calls(
-                    actor=OperatorActor(operator_id=operator_identity.operator_id)
-                )
-                assert [call.tool_call_id for call in calls] == [tool_call_id]
+                listed = await operator.get("/api/tool-calls")
+                assert listed.status_code == 200, listed.text
+                assert [call["tool_call_id"] for call in listed.json()["tool_calls"]] == [tool_call_id]
 
                 missing_origin = await operator.post("/mcp", headers=mcp_headers, json=direct_request)
                 assert missing_origin.status_code == 403
@@ -844,10 +869,16 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
                 },
             },
         )
-        app = create_app(console_settings(migrated_db_url, config_file=config_file))
-        operator_id = await resolve_operator_id(migrated_sessions, "42")
-        other_operator_id = await resolve_operator_id(migrated_sessions, "99")
-        connected = {operator_id}
+        settings = console_settings(migrated_db_url, config_file=config_file)
+        app = create_app(settings)
+        operator_identity = await resolve_operator_identity(
+            migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
+        )
+        other_operator_identity = await resolve_operator_identity(
+            migrated_sessions, issuer=settings.operator_oidc.issuer, subject="99"
+        )
+        connected = {operator_identity.operator_id}
+        other_operator_id = other_operator_identity.operator_id
 
         async def access_token_for(*, server: object, operator_id: UUID) -> str | None:
             return "connected-token" if operator_id in connected else None
@@ -933,7 +964,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     settings = console_settings(migrated_db_url, config_file=config_file)
     expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
     connected_at = expires_at - datetime.timedelta(days=1)
-    oauth_statuses = Mock(
+    oauth_statuses = AsyncMock(
         return_value=McpOperatorAuthStatusResponse(
             associations=[
                 McpOperatorAuthStatus(
@@ -949,7 +980,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
             ]
         )
     )
-    provider_statuses = Mock(
+    provider_statuses = AsyncMock(
         return_value=ProviderConnectionStatusResponse(
             connections=[
                 ProviderConnected(

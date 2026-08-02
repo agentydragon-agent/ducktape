@@ -222,6 +222,10 @@ class PostgresAgentAuthority:
             return await operation()
         except SQLAlchemyTimeoutError as error:
             raise AgentGrantAuthorityUnavailableError from error
+        except ConnectionError as error:
+            # asyncpg can surface a refused/unreachable socket before SQLAlchemy has a
+            # DBAPIError to wrap it in.
+            raise AgentGrantAuthorityUnavailableError from error
         except DBAPIError as error:
             if _database_is_unavailable(error):
                 raise AgentGrantAuthorityUnavailableError from error

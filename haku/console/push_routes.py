@@ -102,5 +102,5 @@ async def list_subscriptions(
 async def unsubscribe(endpoint: str, actor: OperatorActorDep, store: PushSubscriptionStoreDep) -> None:
     """Forget one device. Idempotent: a browser that already dropped its subscription locally
     still gets a clean unsubscribe, and an endpoint this Operator never owned is not found."""
-    if not store.delete(operator_id=actor.operator_id, endpoint=endpoint):
+    if not await store.delete(operator_id=actor.operator_id, endpoint=endpoint):
         raise HTTPException(status_code=404, detail="no such push subscription for this operator")

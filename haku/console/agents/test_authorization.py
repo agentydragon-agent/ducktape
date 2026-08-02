@@ -16,8 +16,10 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, event, func, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
@@ -946,9 +948,9 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
 
 async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: str, harness: Harness) -> None:
     grant = await _create_grant(harness, label="lock-order", display_name="Lock Ordered Agent")
-    authority_engine = create_engine(db_url, pool_pre_ping=True)
+    authority_engine = create_async_engine(make_url(db_url).set(drivername="postgresql+asyncpg"), pool_pre_ping=True)
     authority = PostgresAgentAuthority(
-        sessionmaker(authority_engine, expire_on_commit=False),
+        async_sessionmaker(authority_engine, expire_on_commit=False),
         public_base_url="https://haku.test",
         operator_identity_store=harness.identities,
         clock=harness.clock,
@@ -964,7 +966,7 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
         if "enrollment_interactions" in normalized and "for update" in normalized:
             interaction_lock_attempted.set()
 
-    event.listen(authority_engine, "before_cursor_execute", observe_interaction_lock)
+    event.listen(authority_engine.sync_engine, "before_cursor_execute", observe_interaction_lock)
     engine = create_engine(db_url)
     owner = Session(engine)
     transaction = owner.begin()
@@ -993,9 +995,9 @@ async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: s
         owner.close()
         if task is not None and not task.done():
             await task
-        event.remove(authority_engine, "before_cursor_execute", observe_interaction_lock)
+        event.remove(authority_engine.sync_engine, "before_cursor_execute", observe_interaction_lock)
         engine.dispose()
-        authority_engine.dispose()
+        await authority_engine.dispose()
 
 
 async def test_database_outage_maps_to_authority_unavailable() -> None:
@@ -1019,7 +1021,7 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
 
 async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
 
-    def time_out() -> None:
+    async def time_out() -> None:
         raise SQLAlchemyTimeoutError("connection pool exhausted")
 
     with pytest.raises(AgentGrantAuthorityUnavailableError):

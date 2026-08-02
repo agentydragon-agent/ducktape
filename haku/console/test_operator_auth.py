@@ -335,11 +335,13 @@ def test_successful_login_cookie_has_one_hour_max_age(make_client) -> None:
 def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-browser-binding") -> str:
     """A pending flow with its binding cookie — the stubbed OAuth clients never create one."""
     state = "seeded-login-state"
-    client.app.state.operator_login_flows.start(
-        state=state,
-        browser_binding=binding,
-        return_to=return_to,
-        data={"redirect_uri": "https://haku.test/auth/callback"},
+    client.portal.call(
+        lambda: client.app.state.operator_login_flows.start(
+            state=state,
+            browser_binding=binding,
+            return_to=return_to,
+            data={"redirect_uri": "https://haku.test/auth/callback"},
+        )
     )
     client.cookies.set(operator_login_flow.binding_cookie_name(state), binding)
     return state
@@ -411,7 +413,7 @@ async def test_a_login_started_by_another_browser_is_refused(make_operator_clien
         assert response.status_code == 401
         assert "started in a different browser" in response.text
         # The flow is spent either way, so it cannot be replayed.
-        assert client.app.state.operator_login_flows.pending_login(state) is None
+        assert client.portal.call(lambda: client.app.state.operator_login_flows.pending_login(state)) is None
 
 
 async def test_a_stale_attempt_restarts_the_login_once_then_explains(make_client) -> None:

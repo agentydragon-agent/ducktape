@@ -27,19 +27,16 @@ from starlette.routing import Route
 
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.server import build_server
-from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_id as resolve_operator_id, write_config
+from haku.console.database_schema import McpOperatorOAuthAssociation, OAuthTokenState
 from haku.console.mcp_config import (
     DynamicOAuthClientRegistration,
     McpServerEntry,
     RemoteMcpBackend,
     RemoteServerOAuthAuth,
 )
-from haku.console.tool_call_actor import AgentActor
-from haku.console.tool_call_service import ToolCallApplicationService
-from haku.console.tool_calls import SubmitToolCallRequest
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
@@ -83,8 +80,6 @@ class _ExchangeGate:
 @dataclass
 class _TokenChainHarness:
     operator: httpx.AsyncClient
-    tool_calls: ToolCallApplicationService
-    agent_actor: AgentActor
     downstream_url: str
     stored_reference: str
     exchange_gate: _ExchangeGate
@@ -108,27 +103,22 @@ class _TokenChainHarness:
                 block.text for block in direct_result.content if isinstance(block, mcp_types.TextContent)
             )
 
-        submitted = await self.tool_calls.submit_and_wait(
-            req=SubmitToolCallRequest(
-                server_id="grocy-test",
-                tool_name="get_system_info",
-                arguments={},
-                rationale="verify Grocy connectivity",
-                wait_for_ms=0,
-            ),
-            actor=self.agent_actor,
-        )
-        assert submitted.status == "pending_approval"
+        async with Client(f"{self.operator.base_url}/mcp", auth=_AGENT_TOKEN) as agent:
+            tool_name = next(tool.name for tool in await agent.list_tools() if tool.name.endswith("__get_system_info"))
+            submitted = await agent.call_tool(
+                tool_name, {"input": {}, "rationale": "verify Grocy connectivity", "wait_for_approval_ms": 0}
+            )
+        assert submitted.structured_content is not None
+        tool_call_id = str(submitted.structured_content["tool_call_id"])
+        assert submitted.structured_content["status"] == "pending_approval"
 
-        decided = await self.operator.post(
-            f"/api/tool-calls/{submitted.tool_call_id}/decision", json={"decision": "approve"}
-        )
+        decided = await self.operator.post(f"/api/tool-calls/{tool_call_id}/decision", json={"decision": "approve"})
         assert decided.status_code == 200, decided.text
         # decide records the approval and dispatches execution to a background task on the server, so
         # the response is RUNNING; poll until the row terminalizes (ok, or error on a rejected exchange).
         assert decided.json()["tool_call"]["status"] == "running"
         for _ in range(200):
-            finished = await self.operator.get(f"/api/tool-calls/{submitted.tool_call_id}")
+            finished = await self.operator.get(f"/api/tool-calls/{tool_call_id}")
             assert finished.status_code == 200, finished.text
             if finished.json()["status"] in {"ok", "error", "denied"}:
                 break
@@ -330,22 +320,15 @@ async def token_chain_harness(
             ),
         )
         operator_id = await resolve_operator_id(migrated_sessions, _OPERATOR_SUBJECT)
-        stored_reference = await console.state.mcp_operator_oauth_store.access_token_for(
-            server=server_entry, operator_id=operator_id
-        )
-        assert stored_reference is not None
-        authorization = await console.state.agent_enrollment_service.static_authorization_for_fingerprint(
-            fingerprint=fingerprint_static_token(_AGENT_TOKEN)
-        )
+        async with migrated_sessions() as session:
+            association = await session.get(McpOperatorOAuthAssociation, (server_entry.id, operator_id))
+            assert association is not None
+            token_state = await session.get(OAuthTokenState, association.token_state_id)
+            assert token_state is not None
+            stored_reference = token_state.access_token
 
         yield _TokenChainHarness(
             operator=operator,
-            tool_calls=console.state.tool_call_service,
-            agent_actor=AgentActor(
-                agent_id=authorization.agent_id,
-                operator_id=authorization.operator_id,
-                binding_id=authorization.binding_id,
-            ),
             downstream_url=downstream_url,
             stored_reference=stored_reference,
             exchange_gate=exchange_gate,
