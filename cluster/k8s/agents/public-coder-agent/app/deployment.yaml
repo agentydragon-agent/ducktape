@@ -206,7 +206,9 @@ spec:
         - name: devbox-ssh-secret
           secret:
             secretName: public-coder-devbox-ssh
-            defaultMode: 0400
+            # The pod's fsGroup makes this group-readable by the non-root
+            # initContainer (uid 1000), which copies the key into a 0600 file.
+            defaultMode: 0440
         - name: devbox-ssh
           emptyDir: {}
         - name: cfg

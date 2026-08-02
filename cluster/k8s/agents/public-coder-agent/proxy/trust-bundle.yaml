@@ -20,9 +20,5 @@ spec:
         annotations:
           description: Trust bundle for public-coder-agent HTTPS traffic intercepted by its egress proxy
     namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values:
-            - public-coder-agent
-            - public-coder-devbox
+      matchLabels:
+        kubernetes.io/metadata.name: public-coder-agent
