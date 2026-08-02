@@ -252,9 +252,13 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
                             "FROM operators o "
                             "JOIN identity_anchors ia ON ia.operator_id = o.operator_id "
                             "JOIN oidc_identities oi ON oi.anchor_id = ia.anchor_id "
-                            "WHERE ia.anchor_key = :anchor_key"
+                            "WHERE ia.trust_domain = :trust_domain "
+                            "AND ia.stable_external_user_key = :external_key"
                         ),
-                        {"anchor_key": f"auth.test/authentik-user-id/v1:{operator_external_user_key}"},
+                        {
+                            "trust_domain": settings.operator_identity.trust_domain,
+                            "external_key": operator_external_user_key,
+                        },
                     ).one_or_none()
                 if row is not None:
                     app.state.test_operator_actor = OperatorActor(operator_id=row.operator_id)
