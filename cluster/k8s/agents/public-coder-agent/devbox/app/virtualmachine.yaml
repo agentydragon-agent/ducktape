@@ -65,13 +65,13 @@ spec:
               disk:
                 bus: virtio
             - name: proxy-ca
+              serial: pcproxyca
               disk:
                 bus: virtio
-                serial: pcproxyca
             - name: host-key
+              serial: pchostkey
               disk:
                 bus: virtio
-                serial: pchostkey
           interfaces:
             - name: default
               masquerade: {}

@@ -77,7 +77,10 @@ in
     wantedBy = [ "multi-user.target" ];
     after = [ "local-fs.target" ];
     before = [ "network-online.target" ];
-    path = [ pkgs.coreutils pkgs.util-linux ];
+    path = [
+      pkgs.coreutils
+      pkgs.util-linux
+    ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
