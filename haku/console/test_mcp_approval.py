@@ -20,8 +20,7 @@ from fastmcp import FastMCP
 from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import event, select, text
-from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -359,16 +358,18 @@ def mcp_server_url(monkeypatch: pytest.MonkeyPatch, upstream_bearers: list[str |
         yield url
 
 
-def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
+async def _enum_values(engine: AsyncEngine) -> dict[str, tuple[str, ...]]:
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    """
                 SELECT type.typname, enum.enumlabel
                 FROM pg_type AS type
                 JOIN pg_enum AS enum ON enum.enumtypid = type.oid
                 ORDER BY type.typname, enum.enumsortorder
                 """
+                )
             )
         ).all()
     return {
@@ -503,7 +504,7 @@ def preregistered_operator_oauth_config_file(tmp_path: Path, preregistered_remot
     return write_config(tmp_path / "haku_console_operator_oauth_static.yaml", _config(servers))
 
 
-async def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
+def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
     """Submit directly at the application boundary; agent admission is tested through `/mcp`."""
     app = cast(FastAPI, client.app)
 
@@ -525,7 +526,7 @@ async def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
-async def _submit_request(
+def _submit_request(
     client: TestClient, request: SubmitToolCallRequest, *, actor: ToolCallActor | None = None
 ) -> dict[str, Any]:
     app = cast(FastAPI, client.app)
@@ -540,7 +541,7 @@ async def _submit_request(
     return cast(dict[str, Any], record.model_dump(mode="json"))
 
 
-async def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> dict[str, Any]:
+def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> dict[str, Any]:
     app = cast(FastAPI, client.app)
 
     async def withdraw() -> Any:
@@ -1485,16 +1486,18 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
 
     engine = create_async_engine(_async_url(db_url))
     try:
-        with engine.connect() as conn:
+        async with engine.connect() as conn:
             tables = {
                 row["table_name"]
-                for row in conn.execute(
-                    text(
-                        """
-                        SELECT table_name
-                        FROM information_schema.tables
-                        WHERE table_schema = 'public'
-                        """
+                for row in (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT table_name
+                            FROM information_schema.tables
+                            WHERE table_schema = 'public'
+                            """
+                        )
                     )
                 )
                 .mappings()
@@ -1502,13 +1505,15 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
             }
             columns = {
                 row["column_name"]
-                for row in conn.execute(
-                    text(
-                        """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_name = 'mcp_tool_calls'
-                        """
+                for row in (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_name = 'mcp_tool_calls'
+                            """
+                        )
                     )
                 )
                 .mappings()
@@ -1516,13 +1521,15 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
             }
             principal_columns = {
                 row["column_name"]
-                for row in conn.execute(
-                    text(
-                        """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_name = 'mcp_tool_call_principals'
-                        """
+                for row in (
+                    await conn.execute(
+                        text(
+                            """
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_name = 'mcp_tool_call_principals'
+                            """
+                        )
                     )
                 )
                 .mappings()
@@ -1575,7 +1582,7 @@ async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> Non
     apply_migrations(db_url)
     engine = create_async_engine(_async_url(db_url))
     try:
-        baseline_values = _enum_values(engine)
+        baseline_values = await _enum_values(engine)
     finally:
         await engine.dispose()
 
