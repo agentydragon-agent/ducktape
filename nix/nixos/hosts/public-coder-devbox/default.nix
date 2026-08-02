@@ -159,6 +159,26 @@ in
     '';
   };
 
+  # Nix's HTTP proxy is an environment setting, not a nix.conf setting. The
+  # interactive environment receives these through sessionVariables, while
+  # nix-daemon needs them explicitly in its systemd environment because it is
+  # the process that downloads substituters and flake inputs.
+  nix.settings."ssl-cert-file" = "${proxyCaRuntimeDir}/ca-bundle.crt";
+  systemd.services.nix-daemon = {
+    requires = [ "public-coder-devbox-proxy-ca.service" ];
+    after = [ "public-coder-devbox-proxy-ca.service" ];
+    environment = {
+      HTTP_PROXY = proxyUrl;
+      HTTPS_PROXY = proxyUrl;
+      http_proxy = proxyUrl;
+      https_proxy = proxyUrl;
+      NO_PROXY = "127.0.0.1,localhost";
+      no_proxy = "127.0.0.1,localhost";
+      SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
+      NIX_SSL_CERT_FILE = "${proxyCaRuntimeDir}/ca-bundle.crt";
+    };
+  };
+
   # These are intentionally placeholders / non-secret routing settings. The
   # iron-proxy substitutes the real GitHub credential only on GitHub hosts.
   environment.sessionVariables = {
