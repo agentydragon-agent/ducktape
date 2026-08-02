@@ -18,7 +18,8 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: public-coder-agent-proxy
-    - name: public-coder-agent-app
+    # The VM does not consume the agent's LiteLLM Secret or Deployment. The
+    # main agent app retains its own dependency on litellm-keys-tf.
     - name: kubevirt
     - name: cdi
     - name: external-secrets-operator
