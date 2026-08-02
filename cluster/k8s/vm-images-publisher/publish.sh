@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build .#bootstrap-image at the requested git ref and upload the qcow2 to
-# SeaweedFS via the in-cluster S3 endpoint. See README.md for context.
+# Build a selected flake image output at the requested git ref and upload the
+# qcow2 to SeaweedFS via the in-cluster S3 endpoint. See README.md for context.
 #
 # Runtime deps (git, awscli2, gawk) are provided by the wrapping `nix shell`
 # in cronjob.yaml. coreutils + findutils are already in the nixos/nix image.

@@ -1,7 +1,8 @@
 # vm-images-publisher
 
-In-cluster builder + publisher for the `.#bootstrap-image` qcow2 used by CDI to
-provision KubeVirt VMs (gecko etc.).
+In-cluster builder + publisher for the NixOS qcow2 image outputs used by CDI to
+provision KubeVirt VMs (for example `.#bootstrap-image` and
+`.#public-coder-devbox-image`).
 
 Why this exists: a GitHub Actions workflow previously did the publish from
 runner side and uploaded through the public S3 gateway at
@@ -27,9 +28,16 @@ instead, which has no such constraint. The legacy workflow has been removed.
 ## Running a publish
 
 ```bash
-# Default: build current devel HEAD and publish as bootstrap/<sha>.qcow2
+# Default: build current devel HEAD and publish bootstrap/<sha>.qcow2
 kubectl create job --from=cronjob/vm-images-publisher \
   "publish-$(date +%s)" -n vm-images-publisher
+
+# Publish the full public-coder-devbox image instead
+job_name="publish-devbox-$(date +%s)"
+kubectl create job --from=cronjob/vm-images-publisher "$job_name" \
+  -n vm-images-publisher
+kubectl -n vm-images-publisher set env "job/$job_name" \
+  IMAGE_OUTPUT=public-coder-devbox-image OBJECT_PREFIX=public-coder-devbox
 
 # Watch
 kubectl -n vm-images-publisher logs -f -l batch.kubernetes.io/job-name=publish-…
