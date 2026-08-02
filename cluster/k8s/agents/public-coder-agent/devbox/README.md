@@ -54,3 +54,10 @@ nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#public-coder
 The root disk is persistent, so subsequent boots use the switched NixOS
 configuration directly. Keeping the switch manual makes the bootstrap failure
 mode easy to inspect and avoids hiding a failed first deployment in cloud-init.
+
+## TODO
+
+Replace the generic bootstrap image with a devbox-specific NixOS bootstrap
+image. That image should own the virtio-disk mounts, SSH host-key setup, proxy
+CA setup, and initial proxy configuration through NixOS/systemd, leaving
+cloud-init as metadata-only or removing it entirely.
