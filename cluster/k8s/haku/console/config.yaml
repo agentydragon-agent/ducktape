@@ -144,6 +144,10 @@ auto_approval_policies:
       - home_assistant_reads
       - haku_sandbox_control
       - managed_gmail_labels
+  - id: coder_sandbox_v1
+    type: any_of
+    policies:
+      - haku_sandbox_control
   - id: manual_review
     type: never
 #
@@ -163,9 +167,10 @@ static_agents:
     display_name: public-coder-agent
     token_env_var: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
-    # Coder may submit exact privileged calls for operator review, but receives no standing
-    # authority: every tool remains approval-wrapped and Coder cannot approve its own requests.
-    auto_approval_policy: manual_review
+    # Coder is auto-approved for sandbox-mcp calls (provision/exec/get_info/list/dispose) so it
+    # can drive its own sandbox tap-free. All other privileged tools remain manual-approval;
+    # Coder still cannot approve its own requests outside the sandbox surface.
+    auto_approval_policy: coder_sandbox_v1
 operator_connection_providers:
   google_mail:
     kind: google
