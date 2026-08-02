@@ -243,7 +243,7 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         if operator:
             # Resolve operator identity using a sync engine — the async sessionmaker
             # is bound to the pytest-asyncio event loop and can't be used via asyncio.run().
-            sync_engine = create_engine(db_url)
+            sync_engine = create_engine(migrated_db_url)
             try:
                 with sync_engine.connect() as conn:
                     row = conn.execute(

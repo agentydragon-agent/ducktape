@@ -297,7 +297,7 @@ class PostgresToolCallLedger:
     async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
         async with self._sessions.begin() as session:
-            row, principal = self._lock_pending(session, tool_call_id, operator)
+            row, principal = await self._lock_pending(session, tool_call_id, operator)
             self._require_executable_principal(session, principal, operator.operator_id)
             row.status = ToolCallStatus.RUNNING
             row.updated_at = row.approved_at = datetime.datetime.now(datetime.UTC)
@@ -306,7 +306,7 @@ class PostgresToolCallLedger:
     async def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
         async with self._sessions.begin() as session:
-            row, principal = self._lock_pending(session, tool_call_id, operator)
+            row, principal = await self._lock_pending(session, tool_call_id, operator)
             row.status = ToolCallStatus.DENIED
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.denial_reason = reason
@@ -323,7 +323,7 @@ class PostgresToolCallLedger:
         """
         agent = self._require_agent_actor(actor)
         async with self._sessions.begin() as session:
-            row, principal = self._lock_pending(session, tool_call_id, agent)
+            row, principal = await self._lock_pending(session, tool_call_id, agent)
             await self._require_active_agent_binding(session, agent)
             row.status = ToolCallStatus.WITHDRAWN
             row.updated_at = datetime.datetime.now(datetime.UTC)
@@ -336,8 +336,8 @@ class PostgresToolCallLedger:
         if (result is None) == (error is None):
             raise ValueError("finish requires exactly one of result or error")
         async with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id, actor)
-            principal = self._principal(session, tool_call_id)
+            row = await self._row_by_tool_call_id(session, tool_call_id, actor)
+            principal = await self._principal(session, tool_call_id)
             if isinstance(actor, AgentActor) and (
                 not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id
             ):
@@ -355,10 +355,10 @@ class PostgresToolCallLedger:
     async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID:
         """Revalidate the exact durable principal immediately before external execution."""
         async with self._sessions.begin() as session:
-            row = self._row_by_tool_call_id(session, tool_call_id, actor)
+            row = await self._row_by_tool_call_id(session, tool_call_id, actor)
             if row.status is not ToolCallStatus.RUNNING:
                 raise ToolCallStateConflictError(f"tool call is not running; status={row.status}")
-            principal = self._principal(session, tool_call_id)
+            principal = await self._principal(session, tool_call_id)
             match actor:
                 case AgentActor():
                     if not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id:
@@ -399,8 +399,8 @@ class PostgresToolCallLedger:
         naming the winner's status. Each caller keeps its own actor type, so approve/deny stay
         operator verbs and withdraw stays the requester's own.
         """
-        row = self._row_by_tool_call_id(session, tool_call_id, actor)
-        principal = self._principal(session, tool_call_id)
+        row = await self._row_by_tool_call_id(session, tool_call_id, actor)
+        principal = await self._principal(session, tool_call_id)
         record = self._record_from_principal(row, principal)
         if record.status != ToolCallStatus.PENDING_APPROVAL:
             raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
