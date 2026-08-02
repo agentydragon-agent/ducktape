@@ -154,7 +154,7 @@ async def test_callback_persists_connection(
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-1"
-    connections = store.list_statuses(operator_id=operator_id).connections
+    connections = (await store.list_statuses(operator_id=operator_id)).connections
     assert [(c.connection, c.display_name, c.provider, c.status) for c in connections] == [
         (GOOGLE_MAIL, "Google Mail", GOOGLE, "connected"),
         (GOOGLE_CALENDAR, "Google Calendar", GOOGLE, "unconnected"),
@@ -166,7 +166,9 @@ async def test_cataloged_connection_without_oauth_client_is_unprovisioned(
 ) -> None:
     store._provider_clients.pop(GOOGLE_CALENDAR)
 
-    statuses = {status.connection: status for status in store.list_statuses(operator_id=operator_id).connections}
+    statuses = {
+        status.connection: status for status in (await store.list_statuses(operator_id=operator_id)).connections
+    }
 
     assert statuses[GOOGLE_MAIL].status == "unconnected"
     assert statuses[GOOGLE_CALENDAR].model_dump(mode="json") == {
@@ -225,9 +227,9 @@ async def test_disconnect_removes_connection(
     store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
-    store.disconnect(connection=GOOGLE_MAIL, operator_id=operator_id)
+    await store.disconnect(connection=GOOGLE_MAIL, operator_id=operator_id)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
-    connections = store.list_statuses(operator_id=operator_id).connections
+    connections = (await store.list_statuses(operator_id=operator_id)).connections
     assert [c.status for c in connections] == ["unconnected", "unconnected"]
 
 
@@ -279,7 +281,7 @@ async def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.
         load_provider_clients(config)
 
 
-async def _provider_store(token: str | None) -> Any:
+def _provider_store(token: str | None) -> Any:
     class _Store:
         async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None:
             return token
@@ -287,7 +289,7 @@ async def _provider_store(token: str | None) -> Any:
     return _Store()
 
 
-async def _unconsulted_store() -> Any:
+def _unconsulted_store() -> Any:
     """A token store the PROVIDER auth path must not consult — raises if the wrong mode reaches it."""
 
     class _Unconsulted:

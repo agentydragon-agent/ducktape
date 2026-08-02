@@ -105,7 +105,7 @@ class _MismatchingStateOAuth:
         return _MismatchingStateClient()
 
 
-async def _static_agent_config(tmp_path: Path) -> Path:
+def _static_agent_config(tmp_path: Path) -> Path:
     config = tmp_path / "console.yaml"
     config.write_text(
         yaml.safe_dump(
