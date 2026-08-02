@@ -62,13 +62,13 @@ class _Subscriber:
 
 
 @pytest.fixture
-def subscriptions(migrated_db_url: str) -> PostgresPushSubscriptionStore:
+async def subscriptions(migrated_db_url: str) -> PostgresPushSubscriptionStore:
     return PostgresPushSubscriptionStore(console_sessions(migrated_db_url))
 
 
 @pytest.fixture
-def operator_id(migrated_db_url: str) -> UUID:
-    return operator_identity_store(migrated_db_url).resolve_configured_external_user_key("push-operator")
+async def operator_id(migrated_db_url: str) -> UUID:
+    return await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("push-operator")
 
 
 def _notifier(subscriptions: PostgresPushSubscriptionStore, handler: httpx.MockTransport) -> WebPushApprovalNotifier:
@@ -109,7 +109,7 @@ async def test_pending_push_is_encrypted_to_the_subscription_and_carries_the_dee
     subscriptions: PostgresPushSubscriptionStore, operator_id: UUID
 ) -> None:
     subscriber = _Subscriber()
-    subscriptions.save(
+    await subscriptions.save(
         operator_id=operator_id,
         endpoint="https://push.test/endpoint/a",
         p256dh=subscriber.p256dh.decode(),
@@ -151,7 +151,7 @@ async def test_retraction_names_the_outcome_the_call_actually_reached(
     subscriptions: PostgresPushSubscriptionStore, operator_id: UUID
 ) -> None:
     subscriber = _Subscriber()
-    subscriptions.save(
+    await subscriptions.save(
         operator_id=operator_id,
         endpoint="https://push.test/endpoint/a",
         p256dh=subscriber.p256dh.decode(),
@@ -187,7 +187,7 @@ async def test_every_device_the_operator_enrolled_is_notified_and_retracted(
     for endpoint in ("https://push.test/laptop", "https://push.test/phone", "https://push.test/tablet"):
         subscriber = _Subscriber()
         devices[endpoint] = subscriber
-        subscriptions.save(
+        await subscriptions.save(
             operator_id=operator_id,
             endpoint=endpoint,
             p256dh=subscriber.p256dh.decode(),
@@ -216,10 +216,10 @@ async def test_every_device_the_operator_enrolled_is_notified_and_retracted(
 async def test_one_operators_push_never_reaches_anothers_device(
     subscriptions: PostgresPushSubscriptionStore, operator_id: UUID, migrated_db_url: str
 ) -> None:
-    other = operator_identity_store(migrated_db_url).resolve_configured_external_user_key("other-operator")
+    other = await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("other-operator")
     for owner, endpoint in [(operator_id, "https://push.test/mine"), (other, "https://push.test/theirs")]:
         subscriber = _Subscriber()
-        subscriptions.save(
+        await subscriptions.save(
             operator_id=owner,
             endpoint=endpoint,
             p256dh=subscriber.p256dh.decode(),
@@ -249,7 +249,7 @@ async def test_a_gone_subscription_is_pruned_and_a_transient_failure_is_not(
     """
     for endpoint in ("https://push.test/gone", "https://push.test/flaky"):
         subscriber = _Subscriber()
-        subscriptions.save(
+        await subscriptions.save(
             operator_id=operator_id,
             endpoint=endpoint,
             p256dh=subscriber.p256dh.decode(),
@@ -264,7 +264,7 @@ async def test_a_gone_subscription_is_pruned_and_a_transient_failure_is_not(
         operator_id=operator_id, record=_record()
     )
 
-    remaining = subscriptions.list_for(operator_id)
+    remaining = await subscriptions.list_for(operator_id)
     assert [subscription.endpoint for subscription in remaining] == ["https://push.test/flaky"]
     assert remaining[0].last_failure_at is not None
 
@@ -280,12 +280,12 @@ async def test_an_operator_with_no_subscriptions_sends_nothing(
     )
 
 
-def test_resubscribing_the_same_endpoint_replaces_rather_than_duplicates(
+async def test_resubscribing_the_same_endpoint_replaces_rather_than_duplicates(
     subscriptions: PostgresPushSubscriptionStore, operator_id: UUID
 ) -> None:
     """Browsers re-present a subscription on their own schedule; each must not add a row."""
     for user_agent in ("Firefox", "Firefox 2"):
-        subscriptions.save(
+        await subscriptions.save(
             operator_id=operator_id,
             endpoint="https://push.test/endpoint/a",
             p256dh="key",
@@ -293,19 +293,21 @@ def test_resubscribing_the_same_endpoint_replaces_rather_than_duplicates(
             user_agent=user_agent,
         )
 
-    stored = subscriptions.list_for(operator_id)
+    stored = await subscriptions.list_for(operator_id)
     assert len(stored) == 1
     assert stored[0].user_agent == "Firefox 2"
 
 
-def test_delete_is_scoped_to_the_owning_operator(
+async def test_delete_is_scoped_to_the_owning_operator(
     subscriptions: PostgresPushSubscriptionStore, operator_id: UUID, migrated_db_url: str
 ) -> None:
-    other = operator_identity_store(migrated_db_url).resolve_configured_external_user_key("other-operator")
-    subscriptions.save(operator_id=operator_id, endpoint="https://push.test/a", p256dh="k", auth="a", user_agent=None)
+    other = await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("other-operator")
+    await subscriptions.save(
+        operator_id=operator_id, endpoint="https://push.test/a", p256dh="k", auth="a", user_agent=None
+    )
 
-    assert subscriptions.delete(operator_id=other, endpoint="https://push.test/a") is False
-    assert subscriptions.delete(operator_id=operator_id, endpoint="https://push.test/a") is True
+    assert await subscriptions.delete(operator_id=other, endpoint="https://push.test/a") is False
+    assert await subscriptions.delete(operator_id=operator_id, endpoint="https://push.test/a") is True
 
 
 if __name__ == "__main__":

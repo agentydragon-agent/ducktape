@@ -27,6 +27,7 @@ from haku.console.mcp_config import (
     OperatorConnectionProviderDefinition,
 )
 from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
+from haku.console.operator_identity import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore, load_provider_clients
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
@@ -42,11 +43,20 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
 @pytest.fixture
-async def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
+async def _identity(migrated_db_url: str) -> tuple[PostgresOperatorIdentityStore, UUID]:
+    """Shared operator identity for provider-connection tests."""
     identity_store = operator_identity_store(migrated_db_url)
     operator_id = identity_store.resolve_configured_external_user_key("op-provider")
+    return identity_store, operator_id
+
+
+@pytest.fixture
+async def store(
+    migrated_db_url: str, _identity: tuple[PostgresOperatorIdentityStore, UUID]
+) -> PostgresProviderConnectionStore:
+    identity_store, _ = _identity
     sessions = console_sessions(migrated_db_url)
-    store = PostgresProviderConnectionStore(
+    return PostgresProviderConnectionStore(
         sessions,
         operator_identity_store=identity_store,
         token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
@@ -73,17 +83,11 @@ async def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionSt
             ),
         },
     )
-    return store, operator_id
 
 
 @pytest.fixture
-async def store(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> PostgresProviderConnectionStore:
-    return _store_env[0]
-
-
-@pytest.fixture
-async def operator_id(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> UUID:
-    return _store_env[1]
+async def operator_id(_identity: tuple[PostgresOperatorIdentityStore, UUID]) -> UUID:
+    return _identity[1]
 
 
 async def _connect(
@@ -186,11 +190,14 @@ async def test_same_provider_connections_have_independent_grants(
 
 
 async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token(
-    store: PostgresProviderConnectionStore, operator_id: UUID, migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
+    store: PostgresProviderConnectionStore,
+    operator_id: UUID,
+    migrated_async_db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _connect(store, operator_id, monkeypatch, access_token="at-1", refresh_token="rt-1")
 
-    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(migrated_async_db_url)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     async with sessions.begin() as session:
         row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))

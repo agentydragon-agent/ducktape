@@ -138,14 +138,14 @@ class WebPushIdentity:
         self._subject = config.subject
 
     @property
-    async def application_server_key(self) -> str:
+    def application_server_key(self) -> str:
         """The public key in the form `PushManager.subscribe` takes: base64url, unpadded."""
         point = self._vapid.public_key.public_bytes(
             serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
         )
         return base64.urlsafe_b64encode(point).rstrip(b"=").decode()
 
-    async def authorization(self, endpoint: str) -> dict[str, str]:
+    def authorization(self, endpoint: str) -> dict[str, str]:
         """Sign a VAPID token for one push service, whose origin is the token's audience."""
         parsed = httpx.URL(endpoint)
         expiry = int(datetime.datetime.now(tz=datetime.UTC).timestamp()) + _VAPID_TOKEN_LIFETIME_SECONDS
@@ -286,7 +286,7 @@ class WebPushApprovalNotifier:
                 {"endpoint": subscription.endpoint, "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}}
             ).encode(payload)
             headers = {
-                **await self._identity.authorization(subscription.endpoint),
+                **self._identity.authorization(subscription.endpoint),
                 "Content-Encoding": "aes128gcm",
                 "Content-Type": "application/octet-stream",
                 "TTL": str(PUSH_TTL_SECONDS),

@@ -16,14 +16,14 @@ from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.provider_connection_registry import ProviderConnectionKind
 
 
-async def test_refreshes_every_expiring_association_and_isolates_failures(migrated_db_url: str, caplog) -> None:
-    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
-    sessions = console_sessions(migrated_db_url)
-    operator_id = operator_identity_store(migrated_db_url).resolve_configured_external_user_key(
+async def test_refreshes_every_expiring_association_and_isolates_failures(migrated_async_db_url: str, caplog) -> None:
+    engine = create_async_engine(migrated_async_db_url)
+    sessions = console_sessions(migrated_async_db_url)
+    operator_id = await operator_identity_store(migrated_async_db_url).resolve_configured_external_user_key(
         "background-refresh-operator"
     )
     now = datetime.datetime.now(datetime.UTC)
-    with sessions.begin() as session:
+    async with sessions.begin() as session:
         session.add_all(
             [
                 McpOperatorOAuthAssociation(

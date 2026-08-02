@@ -447,7 +447,7 @@ async def test_me_reports_the_absolute_reauthentication_deadline(make_operator_c
 
 @pytest.mark.parametrize("oauth", [_MismatchedIssuerOAuth(), _MissingIssuerOAuth()])
 async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
-    oauth: object, make_client, migrated_db_url: str
+    oauth: object, make_client, migrated_async_db_url: str
 ) -> None:
     with make_client() as client:
         client.app.state.operator_oauth = oauth
@@ -457,10 +457,10 @@ async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
     assert response.status_code == 401
     assert response.json()["detail"] == "OIDC token issuer does not match configured issuer"
     assert me.status_code == 401
-    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(migrated_async_db_url)
     try:
-        with engine.connect() as connection:
-            assert connection.scalar(select(func.count()).select_from(OidcIdentity)) == 0
+        async with engine.connect() as connection:
+            assert (await connection.scalar(select(func.count()).select_from(OidcIdentity))) == 0
     finally:
         await engine.dispose()
 

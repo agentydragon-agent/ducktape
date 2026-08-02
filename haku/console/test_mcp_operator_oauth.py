@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-from collections.abc import Callable, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 import pytest_bazel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, Operator
@@ -43,8 +42,8 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 
 @pytest.fixture
-async def migrated_engine(migrated_db_url: str) -> Generator[Engine]:
-    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+async def migrated_engine(migrated_async_db_url: str) -> AsyncGenerator[AsyncEngine]:
+    engine = create_async_engine(migrated_async_db_url)
     try:
         yield engine
     finally:
@@ -52,19 +51,21 @@ async def migrated_engine(migrated_db_url: str) -> Generator[Engine]:
 
 
 @pytest.fixture
-async def oauth_store_for(migrated_db_url: str) -> Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]]:
+async def oauth_store_for(
+    migrated_async_db_url: str,
+) -> Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]]:
     """Build a `(store, operator_id)` pair for a configured external-user key, resolving the operator
     into the same migrated database the store reads and writes."""
 
-    def build(external_user_key: str) -> tuple[PostgresMcpOperatorOAuthStore, UUID]:
-        sessions = console_sessions(migrated_db_url)
+    async def build(external_user_key: str) -> tuple[PostgresMcpOperatorOAuthStore, UUID]:
+        sessions = console_sessions(migrated_async_db_url)
         identity_store = PostgresOperatorIdentityStore(
             sessions,
             OperatorIdentityTrust(
                 trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
             ),
         )
-        operator_id = identity_store.resolve_configured_external_user_key(external_user_key)
+        operator_id = await identity_store.resolve_configured_external_user_key(external_user_key)
         store = PostgresMcpOperatorOAuthStore(
             sessions,
             operator_identity_store=identity_store,
@@ -75,7 +76,7 @@ async def oauth_store_for(migrated_db_url: str) -> Callable[[str], tuple[Postgre
     return build
 
 
-async def _disable_operator(engine: Engine, operator_id: UUID) -> None:
+async def _disable_operator(engine: AsyncEngine, operator_id: UUID) -> None:
     async with async_sessionmaker(engine)() as session, session.begin():
         operator = await session.get(Operator, operator_id)
         assert operator is not None
@@ -130,11 +131,11 @@ async def test_refresh_read_timeout_is_classified_as_ambiguous_and_uses_configur
 
 
 async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("callback-race-operator")
+    oauth_store, operator_id = await oauth_store_for("callback-race-operator")
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -171,12 +172,12 @@ async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(
 
 
 async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("connect-race-operator")
-    server = _dynamic_remote_oauth_server()
+    oauth_store, operator_id = await oauth_store_for("connect-race-operator")
+    server = await _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
 
     async def build_flow_after_disable(_server: McpServerEntry, _public_base_url: str) -> _BuiltOperatorOAuthFlow:
@@ -203,12 +204,12 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
 
 
 async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("refresh-race-operator")
-    server = _dynamic_remote_oauth_server()
+    oauth_store, operator_id = await oauth_store_for("refresh-race-operator")
+    server = await _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -249,12 +250,12 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
 
 
 async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("refresh-reconnect-race")
-    server = _dynamic_remote_oauth_server()
+    oauth_store, operator_id = await oauth_store_for("refresh-reconnect-race")
+    server = await _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     replacement_association_id = uuid4()
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
@@ -323,12 +324,12 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
 
 
 async def test_operator_oauth_concurrent_callers_share_one_refresh(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("shared-refresh-claim")
-    server = _dynamic_remote_oauth_server()
+    oauth_store, operator_id = await oauth_store_for("shared-refresh-claim")
+    server = await _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -374,12 +375,12 @@ async def test_operator_oauth_concurrent_callers_share_one_refresh(
 
 
 async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_grant(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("refresh-timeout-operator")
-    server = _dynamic_remote_oauth_server()
+    oauth_store, operator_id = await oauth_store_for("refresh-timeout-operator")
+    server = await _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -425,7 +426,9 @@ async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_gr
         await oauth_store.access_token_for(server=server, operator_id=operator_id)
 
     # An ambiguous timeout leaves the association retryable, not terminally wedged.
-    status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
+    status = (
+        await oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator")
+    ).associations[0]
     assert isinstance(status.state, McpOperatorAuthDegraded)
     assert status.state.refresh_failure.initial.kind == OAuthRefreshFailureKind.OUTCOME_UNKNOWN
     assert status.state.refresh_failure.resolution == "Retry scheduled automatically."
@@ -446,7 +449,9 @@ async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_gr
     assert attempts == 2
 
     # `invalid_grant` is definitive, so the retries stop there and an operator is asked to reconnect.
-    status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
+    status = (
+        await oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator")
+    ).associations[0]
     assert isinstance(status.state, McpOperatorAuthDegraded)
     assert status.state.refresh_failure.latest.kind == OAuthRefreshFailureKind.OAUTH_REJECTED
     assert status.state.refresh_failure.resolution == "Reconnect the account before retrying."
@@ -457,12 +462,12 @@ async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_gr
 
 
 async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_success(
-    migrated_engine: Engine,
-    oauth_store_for: Callable[[str], tuple[PostgresMcpOperatorOAuthStore, UUID]],
+    migrated_engine: AsyncEngine,
+    oauth_store_for: Callable[[str], Awaitable[tuple[PostgresMcpOperatorOAuthStore, UUID]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    oauth_store, operator_id = oauth_store_for("refresh-retry-operator")
-    server = _dynamic_remote_oauth_server()
+    oauth_store, operator_id = await oauth_store_for("refresh-retry-operator")
+    server = await _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -510,7 +515,9 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
         association.token_state.refresh_retry_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
 
     assert await oauth_store.access_token_for(server=server, operator_id=operator_id) == "fresh"
-    status = oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator").associations[0]
+    status = (
+        await oauth_store.list_statuses(servers=[server], operator_id=operator_id, username="operator")
+    ).associations[0]
     assert isinstance(status.state, McpOperatorAuthConnected)
     assert attempts == 2
 

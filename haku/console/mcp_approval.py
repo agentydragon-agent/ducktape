@@ -212,13 +212,13 @@ class PostgresToolCallLedger:
             tool_call_id = f"tc_{secrets.token_hex(12)}"
             match actor:
                 case AgentActor():
-                    display_name = self._require_active_agent_binding(session, actor)
+                    display_name = await self._require_active_agent_binding(session, actor)
                     caller: ToolCallCaller = AgentToolCallCaller(agent_id=actor.agent_id, display_name=display_name)
                     principal = McpToolCallPrincipal(
                         tool_call_id=tool_call_id, operator_id=None, binding_id=actor.binding_id
                     )
                 case OperatorActor():
-                    self._require_active_operator(session, actor.operator_id)
+                    await self._require_active_operator(session, actor.operator_id)
                     caller = OperatorToolCallCaller()
                     principal = McpToolCallPrincipal(
                         tool_call_id=tool_call_id, operator_id=actor.operator_id, binding_id=None
@@ -259,8 +259,7 @@ class PostgresToolCallLedger:
     async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         async with self._sessions.begin() as session:
             stmt = self._record_projection_stmt(actor).where(McpToolCall.tool_call_id == tool_call_id)
-            projection = await session.execute(stmt).tuples().first()
-            if projection is None:
+            if (projection := await session.execute(stmt).tuples().first()) is None:
                 raise ToolCallNotFoundError("tool call not found")
             return self._record_from_projection(*projection)
 
@@ -323,7 +322,7 @@ class PostgresToolCallLedger:
         agent = self._require_agent_actor(actor)
         async with self._sessions.begin() as session:
             row, principal = self._lock_pending(session, tool_call_id, agent)
-            self._require_active_agent_binding(session, agent)
+            await self._require_active_agent_binding(session, agent)
             row.status = ToolCallStatus.WITHDRAWN
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.withdrawal_reason = reason
@@ -362,7 +361,7 @@ class PostgresToolCallLedger:
                 case AgentActor():
                     if not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id:
                         raise ToolCallStateConflictError("tool call was not submitted by this credential binding")
-                    self._require_active_agent_binding(session, actor)
+                    await self._require_active_agent_binding(session, actor)
                     return actor.operator_id
                 case OperatorActor():
                     return self._require_executable_principal(session, principal, actor.operator_id)
@@ -606,11 +605,11 @@ class PostgresToolCallLedger:
         if isinstance(principal, _OperatorToolCallPrincipal):
             if principal.operator_id != operator_id:
                 raise ToolCallNotFoundError("tool call not found")
-            self._require_active_operator(session, operator_id)
+            await self._require_active_operator(session, operator_id)
             return operator_id
         if principal.operator_id != operator_id:
             raise ToolCallNotFoundError("tool call not found")
-        self._require_active_agent_binding(
+        await self._require_active_agent_binding(
             session,
             AgentActor(agent_id=principal.agent_id, operator_id=principal.operator_id, binding_id=principal.binding_id),
         )

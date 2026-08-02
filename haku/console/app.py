@@ -145,12 +145,11 @@ def create_app(
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
     # lifespan below, since the listen loop needs a running event loop.
-    database_url = settings.database_url.get_secret_value()
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
     # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
-    async_database_url = database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
-    db_engine = create_async_engine(async_database_url, pool_pre_ping=True)
+    database_url = settings.database_url.get_secret_value()
+    db_engine = create_async_engine(settings.async_database_url, pool_pre_ping=True)
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)

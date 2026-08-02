@@ -38,7 +38,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.conftest import operator_id, write_config
+from haku.console.conftest import _async_url, operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
@@ -553,9 +553,7 @@ async def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *
 
 async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
-    engine = create_async_engine(
-        app.state.settings.database_url.get_secret_value().replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
-    )
+    engine = create_async_engine(app.state.settings.async_database_url)
     try:
         async with AsyncSession(engine) as session:
             binding_id, agent_id, operator_id = await session.execute(
@@ -1045,7 +1043,7 @@ async def test_operator_oauth_approval_requires_existing_association(
 
 async def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(_async_url(db_url))
     now = datetime.datetime.now(datetime.UTC)
     try:
         async with async_sessionmaker(engine)() as session, session.begin():
@@ -1318,7 +1316,7 @@ async def test_list_newest_first_keeps_the_most_recent(operator_client: TestClie
 
 
 async def test_ledger_get_and_list_load_principal_projection_in_one_query(
-    make_client, make_operator_client, console_config: Path, migrated_db_url: str
+    make_client, make_operator_client, console_config: Path, migrated_db_url: str, migrated_async_db_url: str
 ) -> None:
     with (
         make_client(config_file=console_config) as agent,
@@ -1332,9 +1330,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
-    ledger_engine = create_async_engine(
-        migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1), pool_pre_ping=True
-    )
+    ledger_engine = create_async_engine(migrated_async_db_url, pool_pre_ping=True)
     ledger = PostgresToolCallLedger(async_sessionmaker(ledger_engine, expire_on_commit=False))
     actor = OperatorActor(operator_id=operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
@@ -1487,7 +1483,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
     assert finished["status"] == "ok"
     assert finished["result"]["content"][0]["text"] == "echo:world"
 
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(_async_url(db_url))
     try:
         with engine.connect() as conn:
             tables = {
@@ -1577,7 +1573,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
 
 async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(_async_url(db_url))
     try:
         baseline_values = _enum_values(engine)
     finally:

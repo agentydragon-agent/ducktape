@@ -133,8 +133,7 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
 def console_sessions(db_url: str) -> async_sessionmaker[AsyncSession]:
     """The shared async sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
     (production builds a single async engine/sessionmaker and passes it to every store)."""
-    async_url = db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
-    return async_sessionmaker(create_async_engine(async_url, pool_pre_ping=True), expire_on_commit=False)
+    return async_sessionmaker(create_async_engine(_async_url(db_url), pool_pre_ping=True), expire_on_commit=False)
 
 
 def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
@@ -179,6 +178,23 @@ def migrated_db_url(db_url: str) -> str:
     explicit startup step, not inside a store constructor)."""
     apply_migrations(db_url)
     return db_url
+
+
+def _async_url(url: str) -> str:
+    """Convert a psycopg database URL to the asyncpg driver for async SQLAlchemy."""
+    return url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+
+
+@pytest.fixture
+def async_db_url(db_url: str) -> str:
+    """The per-test database URL with the asyncpg driver, for direct ``create_async_engine`` use."""
+    return _async_url(db_url)
+
+
+@pytest.fixture
+def migrated_async_db_url(migrated_db_url: str) -> str:
+    """Migrated per-test database URL with the asyncpg driver."""
+    return _async_url(migrated_db_url)
 
 
 @pytest.fixture

@@ -173,8 +173,8 @@ class _RecordingLedger(PostgresToolCallLedger):
 
 
 @pytest.fixture
-async def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
-    identities = operator_identity_store(migrated_db_url)
+async def actors(migrated_async_db_url: str) -> dict[str, ToolCallActor]:
+    identities = operator_identity_store(migrated_async_db_url)
     operator_ids = {
         "a": await identities.resolve_configured_external_user_key("service-operator-a"),
         "b": await identities.resolve_configured_external_user_key("service-operator-b"),
@@ -185,7 +185,7 @@ async def actors(migrated_db_url: str) -> dict[str, ToolCallActor]:
         reservation_id = uuid4()
         binding_id = uuid4()
         now = datetime.datetime.now(datetime.UTC)
-        engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+        engine = create_async_engine(migrated_async_db_url)
         try:
             async with AsyncSession(engine) as session, session.begin():
                 session.add(
@@ -384,7 +384,7 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
     assert result["content"][0]["text"] == "operator-backend:mutate"
     assert executor.executions == [("operator-backend", "mutate", {"owner": "browser"}, "token-a")]
     assert tokens.lookups == [operator.operator_id]
-    assert service.list_tool_calls(actor=operator) == []
+    assert await service.list_tool_calls(actor=operator) == []
     assert publisher.publications == []
 
     with pytest.raises(OperatorActorRequiredError, match="operator actor required"):
@@ -409,7 +409,7 @@ async def test_two_operator_two_agent_authorization_matrix(
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
         await service.submit_and_wait(req=_request(owner="lookalike"), actor=invalid_actor)
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
-        service.list_tool_calls(actor=invalid_actor)
+        await service.list_tool_calls(actor=invalid_actor)
     with pytest.raises(TypeError, match="unsupported tool-call actor"):
         await ledger.submit(
             server=McpServerEntry(
@@ -437,20 +437,20 @@ async def test_two_operator_two_agent_authorization_matrix(
         visible = expected_visible[reader_name]
         for owner_name, record in records.items():
             if owner_name in visible:
-                assert service.get(record.tool_call_id, actor=reader) == record
+                assert await service.get(record.tool_call_id, actor=reader) == record
             else:
                 with pytest.raises(ToolCallNotFoundError, match="tool call not found"):
-                    service.get(record.tool_call_id, actor=reader)
-        listed = service.list_tool_calls(actor=reader)
+                    await service.get(record.tool_call_id, actor=reader)
+        listed = await service.list_tool_calls(actor=reader)
         assert {record.tool_call_id for record in listed} == {records[owner].tool_call_id for owner in visible}
 
     for operator_name, owned_names in (("oa", {"oa", "aa1", "aa2"}), ("ob", {"ob", "ab1", "ab2"})):
-        pending = service.pending_approvals(actor=actors[operator_name])
+        pending = await service.pending_approvals(actor=actors[operator_name])
         assert {record.tool_call_id for record in pending} == {records[owner].tool_call_id for owner in owned_names}
 
     for agent_name in ("aa1", "aa2", "ab1", "ab2"):
         with pytest.raises(OperatorActorRequiredError):
-            service.pending_approvals(actor=actors[agent_name])
+            await service.pending_approvals(actor=actors[agent_name])
         with pytest.raises(OperatorActorRequiredError):
             await service.decide(
                 tool_call_id=records[agent_name].tool_call_id,
@@ -495,8 +495,8 @@ async def test_two_operator_two_agent_authorization_matrix(
     await service.join_executions()
     assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
     assert [
-        service.get(records["aa1"].tool_call_id, actor=actors["oa"]).status,
-        service.get(records["ab1"].tool_call_id, actor=actors["ob"]).status,
+        (await service.get(records["aa1"].tool_call_id, actor=actors["oa"])).status,
+        (await service.get(records["ab1"].tool_call_id, actor=actors["ob"])).status,
     ] == [ToolCallStatus.OK, ToolCallStatus.OK]
 
 
@@ -508,7 +508,7 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(
 
     waiting = asyncio.create_task(service.submit_and_wait(req=_request(owner="wait", wait_for_ms=1000), actor=agent))
     await asyncio.wait_for(publisher.subscribed.wait(), timeout=1)
-    [pending] = service.list_tool_calls(actor=agent)
+    [pending] = await service.list_tool_calls(actor=agent)
     assert pending.status is ToolCallStatus.PENDING_APPROVAL
 
     decided = await service.decide(
@@ -552,7 +552,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     # background task), so it lands in the durable row within the subscribe window — exactly the
     # race this test exercises: _wait_terminal must re-read after subscribing and observe it.
     async def transition_after_subscription_registration() -> None:
-        [pending] = service.list_tool_calls(actor=agent)
+        [pending] = await service.list_tool_calls(actor=agent)
         decided = await service.decide(
             tool_call_id=pending.tool_call_id,
             decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="reread race"),
@@ -591,10 +591,10 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
 
     missing_auth_actor = actors["aa2"]
     tokens.tokens.pop(missing_auth_actor.operator_id)
-    before = {record.tool_call_id for record in service.list_tool_calls(actor=actors["oa"])}
+    before = {record.tool_call_id for record in await service.list_tool_calls(actor=actors["oa"])}
     with pytest.raises(BackendAccountNotConnectedError):
         await service.submit_and_wait(req=_request(owner="missing-auth"), actor=missing_auth_actor)
-    after = {record.tool_call_id for record in service.list_tool_calls(actor=actors["oa"])}
+    after = {record.tool_call_id for record in await service.list_tool_calls(actor=actors["oa"])}
     assert after == before
 
 
@@ -613,7 +613,7 @@ async def test_withdraw_retracts_the_agents_own_pending_call(
     assert withdrawn.denial_reason is None
     # Published to the owning operator, so their open approvals drawer drops the item live.
     assert publisher.publications == [(actor.operator_id, pending.tool_call_id)]
-    assert service.pending_approvals(actor=actors["oa"]) == []
+    assert await service.pending_approvals(actor=actors["oa"]) == []
 
 
 async def test_queued_call_is_notified_once_and_retracted_by_whichever_exit_it_takes(
@@ -685,7 +685,7 @@ async def test_a_failing_notifier_never_fails_the_transition(
     pending = await service.submit_and_wait(req=_request(owner="unreachable"), actor=actors["aa1"])
 
     assert pending.status is ToolCallStatus.PENDING_APPROVAL
-    assert service.pending_approvals(actor=actors["oa"])[0].tool_call_id == pending.tool_call_id
+    assert (await service.pending_approvals(actor=actors["oa"]))[0].tool_call_id == pending.tool_call_id
 
 
 async def test_withdraw_rejects_calls_that_are_no_longer_pending(
@@ -726,11 +726,11 @@ async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
         with pytest.raises(ToolCallNotFoundError, match="not found"):
             await service.withdraw(tool_call_id=pending.tool_call_id, reason="not mine", actor=other)
 
-    assert service.get(pending.tool_call_id, actor=actor).status is ToolCallStatus.PENDING_APPROVAL
+    assert (await service.get(pending.tool_call_id, actor=actor)).status is ToolCallStatus.PENDING_APPROVAL
 
 
 async def test_withdraw_survives_credential_binding_rotation(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, migrated_db_url: str
+    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, migrated_async_db_url: str
 ) -> None:
     """An Agent that reconnected can still clear its predecessor binding's ask out of the queue.
 
@@ -744,7 +744,7 @@ async def test_withdraw_survives_credential_binding_rotation(
 
     successor_id = uuid4()
     now = datetime.datetime.now(datetime.UTC)
-    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(migrated_async_db_url)
     try:
         async with AsyncSession(engine) as session, session.begin():
             # `uq_credential_bindings_one_active_per_agent` allows one ACTIVE binding per Agent, so a
@@ -815,7 +815,7 @@ async def test_unknown_server_is_a_transport_independent_not_found(
         await service.submit_and_wait(
             req=_request(owner="missing").model_copy(update={"server_id": "missing"}), actor=actor
         )
-    assert service.list_tool_calls(actor=actor) == []
+    assert await service.list_tool_calls(actor=actor) == []
 
 
 async def test_list_tool_calls_filters_by_auto_approved(
@@ -828,11 +828,16 @@ async def test_list_tool_calls_filters_by_auto_approved(
     auto = await service.submit_and_wait(req=_request(owner="auto"), actor=actor)
 
     operator = actors["oa"]
-    assert [r.tool_call_id for r in service.list_tool_calls(actor=operator, auto_approved=False)] == [
+    assert [r.tool_call_id for r in await service.list_tool_calls(actor=operator, auto_approved=False)] == [
         manual.tool_call_id
     ]
-    assert [r.tool_call_id for r in service.list_tool_calls(actor=operator, auto_approved=True)] == [auto.tool_call_id]
-    assert {r.tool_call_id for r in service.list_tool_calls(actor=operator)} == {manual.tool_call_id, auto.tool_call_id}
+    assert [r.tool_call_id for r in await service.list_tool_calls(actor=operator, auto_approved=True)] == [
+        auto.tool_call_id
+    ]
+    assert {r.tool_call_id for r in await service.list_tool_calls(actor=operator)} == {
+        manual.tool_call_id,
+        auto.tool_call_id,
+    }
 
 
 async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
@@ -861,7 +866,7 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     completed = await service.submit_and_wait(req=_request(owner="raising-publisher"), actor=actor)
 
     assert completed.status is ToolCallStatus.OK
-    assert service.get(completed.tool_call_id, actor=actor).status is ToolCallStatus.OK
+    assert (await service.get(completed.tool_call_id, actor=actor)).status is ToolCallStatus.OK
     assert ledger.finish_actors == [actor]
     assert len(executor.executions) == 1
     assert publisher.publications == [(actor.operator_id, completed.tool_call_id)]
@@ -893,7 +898,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     with pytest.raises(asyncio.CancelledError):
         await service.submit_and_wait(req=_request(owner="cancelled"), actor=actor)
 
-    [terminal] = service.list_tool_calls(actor=actor)
+    [terminal] = await service.list_tool_calls(actor=actor)
     assert terminal.status is ToolCallStatus.ERROR
     assert terminal.error == "tool execution cancelled"
     assert ledger.finish_actors == [actor]
@@ -934,7 +939,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     # Shutdown cancels the in-flight execution, which terminalizes the row as cancelled.
     await service.aclose()
     assert service._execution_tasks == set()
-    terminal = service.get(pending.tool_call_id, actor=actors["oa"])
+    terminal = await service.get(pending.tool_call_id, actor=actors["oa"])
     assert terminal.status is ToolCallStatus.ERROR
     assert terminal.error == "tool execution cancelled"
 
@@ -959,7 +964,7 @@ async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor
 
 
 async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(
-    migrated_db_url: str, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
+    migrated_async_db_url: str, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
 ) -> None:
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)
@@ -973,7 +978,7 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
     )
 
     assert await ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
-    engine = create_async_engine(migrated_db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_async_engine(migrated_async_db_url)
     try:
         async with AsyncSession(engine) as session, session.begin():
             binding = await session.get(CredentialBinding, agent.binding_id)

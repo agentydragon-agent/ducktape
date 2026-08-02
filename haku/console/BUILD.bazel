@@ -238,6 +238,7 @@ py_test(
         ":oauth_connection_result",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -489,9 +490,7 @@ py_library(
 py_library(
     name = "mcp_mount",
     srcs = ["mcp_mount.py"],
-    deps = [
-        "@pypi//starlette",
-    ],
+    deps = ["@pypi//starlette"],
 )
 
 py_library(
@@ -668,6 +667,7 @@ py_test(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//alembic",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

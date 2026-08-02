@@ -254,19 +254,21 @@ class PostgresMcpOperatorOAuthStore:
         oauth_servers = [server for server in servers if _operator_oauth_enabled(server)]
         server_ids = [server.id for server in oauth_servers]
         async with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
             if not oauth_servers:
                 return McpOperatorAuthStatusResponse()
-            rows = await session.scalars(
-                select(McpOperatorOAuthAssociation)
-                .where(McpOperatorOAuthAssociation.operator_id == operator_id)
-                .where(McpOperatorOAuthAssociation.server_id.in_(server_ids))
-                .options(selectinload(McpOperatorOAuthAssociation.token_state))
+            rows = (
+                await session.scalars(
+                    select(McpOperatorOAuthAssociation)
+                    .where(McpOperatorOAuthAssociation.operator_id == operator_id)
+                    .where(McpOperatorOAuthAssociation.server_id.in_(server_ids))
+                    .options(selectinload(McpOperatorOAuthAssociation.token_state))
+                )
             ).all()
         by_server = {row.server_id: row for row in rows}
         return McpOperatorAuthStatusResponse(
             associations=[
-                _oauth_status_from_row(server.id, username, await by_server.get(server.id)) for server in oauth_servers
+                _oauth_status_from_row(server.id, username, by_server.get(server.id)) for server in oauth_servers
             ]
         )
 
@@ -276,7 +278,7 @@ class PostgresMcpOperatorOAuthStore:
         if not _operator_oauth_enabled(server):
             raise HTTPException(status_code=404, detail=f"MCP server {server.id} does not use operator OAuth")
         async with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
             existing = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
             if existing is not None:
                 raise HTTPException(
@@ -286,7 +288,7 @@ class PostgresMcpOperatorOAuthStore:
         async with self._sessions.begin() as session:
             # Metadata discovery and DCR are external I/O. Revalidate under the Operator row lock
             # before persisting a flow so a disable committed while they ran wins this race.
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
             now = datetime.datetime.now(datetime.UTC)
             await session.execute(delete(McpOperatorOAuthFlow).where(McpOperatorOAuthFlow.expires_at < now))
             await session.execute(
@@ -320,7 +322,7 @@ class PostgresMcpOperatorOAuthStore:
         self, *, state: str, code: str, operator_id: UUID, username: str
     ) -> McpOperatorAuthStatus:
         async with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
             # Each refusal below ends a browser account-link attempt, so log the reason: the operator
             # only sees the JSON detail, and nothing else records why a reconnect failed. The `state`
             # is the flow's primary key and a callback parameter, so it is never logged.
@@ -348,7 +350,7 @@ class PostgresMcpOperatorOAuthStore:
         async with self._sessions.begin() as session:
             # The code exchange is external I/O. Make active status and association persistence one
             # atomic final step; never store a token if a disable committed while it was in flight.
-            self._operator_identity_store.require_active_in_transaction(session, flow.operator_id)
+            await self._operator_identity_store.require_active_in_transaction(session, flow.operator_id)
             existing = await session.get(
                 McpOperatorOAuthAssociation, (flow.server_id, flow.operator_id), with_for_update=True
             )
@@ -389,7 +391,7 @@ class PostgresMcpOperatorOAuthStore:
 
     async def disconnect(self, *, server_id: str, operator_id: UUID) -> None:
         async with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
             row = await session.get(McpOperatorOAuthAssociation, (server_id, operator_id), with_for_update=True)
             if row is not None:
                 await session.delete(row)
@@ -399,7 +401,7 @@ class PostgresMcpOperatorOAuthStore:
             return None
         for attempt in range(2):
             async with self._sessions.begin() as session:
-                self._operator_identity_store.require_active_in_transaction(session, operator_id)
+                await self._operator_identity_store.require_active_in_transaction(session, operator_id)
                 row = await session.get(McpOperatorOAuthAssociation, (server.id, operator_id))
                 if row is None:
                     return None
@@ -764,7 +766,7 @@ async def disconnect_mcp_operator_auth(
     server_id: str, request: Request, oauth_store: OAuthStoreDep, event_hub: ConsoleEventHubDep, actor: OperatorActorDep
 ) -> McpOperatorAuthStatus:
     operator_id = actor.operator_id
-    oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
+    await oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
     await event_hub.broadcast(operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")])
     return McpOperatorAuthStatus(
         server_id=server_id, username=await _operator_username(request), state=McpOperatorAuthUnconnected()
