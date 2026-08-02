@@ -84,7 +84,7 @@ async def _disable_operator(engine: AsyncEngine, operator_id: UUID) -> None:
         operator.updated_at = datetime.datetime.now(datetime.UTC)
 
 
-async def _dynamic_remote_oauth_server() -> McpServerEntry:
+def _dynamic_remote_oauth_server() -> McpServerEntry:
     return McpServerEntry(
         id="grocy-sf",
         backend=RemoteMcpBackend(
@@ -177,7 +177,7 @@ async def test_operator_oauth_connect_rechecks_operator_after_discovery_and_dcr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = await oauth_store_for("connect-race-operator")
-    server = await _dynamic_remote_oauth_server()
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
 
     async def build_flow_after_disable(_server: McpServerEntry, _public_base_url: str) -> _BuiltOperatorOAuthFlow:
@@ -209,7 +209,7 @@ async def test_operator_oauth_refresh_rechecks_operator_before_write_and_return(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = await oauth_store_for("refresh-race-operator")
-    server = await _dynamic_remote_oauth_server()
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -255,7 +255,7 @@ async def test_operator_oauth_refresh_does_not_overwrite_concurrent_reconnect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = await oauth_store_for("refresh-reconnect-race")
-    server = await _dynamic_remote_oauth_server()
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     replacement_association_id = uuid4()
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
@@ -329,7 +329,7 @@ async def test_operator_oauth_concurrent_callers_share_one_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = await oauth_store_for("shared-refresh-claim")
-    server = await _dynamic_remote_oauth_server()
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -380,7 +380,7 @@ async def test_operator_oauth_ambiguous_timeout_retries_then_stops_on_invalid_gr
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = await oauth_store_for("refresh-timeout-operator")
-    server = await _dynamic_remote_oauth_server()
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(
@@ -467,7 +467,7 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     oauth_store, operator_id = await oauth_store_for("refresh-retry-operator")
-    server = await _dynamic_remote_oauth_server()
+    server = _dynamic_remote_oauth_server()
     now = datetime.datetime.now(datetime.UTC)
     async with async_sessionmaker(migrated_engine)() as session, session.begin():
         session.add(

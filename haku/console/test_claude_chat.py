@@ -253,7 +253,7 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
         bridge_token_fingerprint=ClaudeChatStore._fingerprint(token),
         updated_at=None,
     )
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)))
+    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), cast(Any, object()))
 
     assert await store.authenticate_bridge(session_id, token) == "accepted"
     assert record.status == "ready"
@@ -270,7 +270,7 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
 async def test_deliberate_close_is_not_reclassified_as_runner_failure() -> None:
     session_id = uuid4()
     record = SimpleNamespace(status="closing", error=None, bridge_token_fingerprint=b"cleanup-pending", updated_at=None)
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)))
+    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), cast(Any, object()))
 
     await store.fail(session_id, "sandbox runner disconnected")
     assert record.status == "closing"

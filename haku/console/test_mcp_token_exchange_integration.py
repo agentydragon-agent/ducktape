@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPubl
 from fastmcp import Client
 from mcp import types as mcp_types
 from pydantic import SecretStr
+from sqlalchemy.engine import make_url
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -29,7 +30,7 @@ from grocy_mcp.server import build_server
 from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
-from haku.console.conftest import console_settings, write_config
+from haku.console.conftest import console_settings, operator_id as resolve_operator_id, write_config
 from haku.console.mcp_config import (
     DynamicOAuthClientRegistration,
     McpServerEntry,
@@ -167,7 +168,7 @@ def _downstream_mcp(*, auth_config: AuthentikAuthConfig, backend_url: str, postg
         auth=auth_config,
         persistence=PostgresPersistence(
             kind="postgres",
-            url=postgres_url.replace("postgresql+psycopg://", "postgresql://", 1),
+            url=make_url(postgres_url).set(drivername="postgresql").render_as_string(hide_password=False),
             table_name="mcp_token_exchange_integration_oauth",
         ),
     )
@@ -327,7 +328,7 @@ async def token_chain_harness(
                 ),
             ),
         )
-        operator_id = console.state.operator_identity_store.resolve_configured_external_user_key(_OPERATOR_SUBJECT)
+        operator_id = await resolve_operator_id(migrated_db_url, _OPERATOR_SUBJECT)
         stored_reference = await console.state.mcp_operator_oauth_store.access_token_for(
             server=server_entry, operator_id=operator_id
         )

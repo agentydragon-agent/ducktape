@@ -352,11 +352,6 @@ class Settings(BaseSettings):
     # ``OperatorIdentityConfig`` for why this is distinct from either OIDC client.
     operator_identity: OperatorIdentityConfig
 
-    @property
-    def async_database_url(self) -> str:
-        """The database URL with the postgresql+asyncpg:// driver, for async SQLAlchemy."""
-        return self.database_url.get_secret_value().replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
-
     @model_validator(mode="after")
     def _operator_auth_requires_canonical_public_origin(self) -> Self:
         parsed = urlsplit(self.public_base_url)

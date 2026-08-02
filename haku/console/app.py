@@ -11,7 +11,6 @@ configured for a direct local/dev fallback.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
@@ -149,7 +148,7 @@ def create_app(
     # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
     # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
     database_url = settings.database_url.get_secret_value()
-    db_engine = create_async_engine(settings.async_database_url, pool_pre_ping=True)
+    db_engine = create_async_engine(database_url, pool_pre_ping=True)
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
@@ -158,7 +157,7 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions)
+    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions, db_engine)
     claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -235,36 +234,26 @@ def create_app(
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
 
-        async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
-            defs: list[StaticAgentDefinition] = []
-            for agent in loaded_static_agents:
-                defs.append(  # noqa: PERF401, RUF100
-                    StaticAgentDefinition(
-                        agent_id=agent.agent_id,
-                        display_name=agent.display_name,
-                        operator_id=await operator_identity_store.resolve_configured_external_user_key(
-                            agent.operator_external_user_key
-                        ),
-                        secret_reference=agent.secret_reference,
-                        token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
-                        auto_approval_policy=agent.auto_approval_policy,
-                    )
-                )
-            return tuple(defs)
+    async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
+        assert loaded_static_agents is not None
+        return tuple(
+            StaticAgentDefinition(
+                agent_id=agent.agent_id,
+                display_name=agent.display_name,
+                operator_id=await operator_identity_store.resolve_configured_external_user_key(
+                    agent.operator_external_user_key
+                ),
+                secret_reference=agent.secret_reference,
+                token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
+                auto_approval_policy=agent.auto_approval_policy,
+            )
+            for agent in loaded_static_agents
+        )
 
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            static_agent_definitions = asyncio.run(_resolve_static_agent_definitions())
-        else:
-            # Already inside an event loop (e.g. async test fixture). Run in a
-            # worker thread that gets its own loop.
-            import concurrent.futures  # noqa: PLC0415
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                static_agent_definitions = pool.submit(
-                    asyncio.run, _resolve_static_agent_definitions()
-                ).result()
+    # Resolving configured external identities is database I/O. Keep app construction pure and do
+    # this during the async lifespan, after the event loop exists. Tests that already provide
+    # canonical definitions skip the lookup entirely.
+    resolved_static_agent_definitions = static_agent_definitions
     if claude_runtime is not None:
         if loaded_static_agents is None:
             raise RuntimeError("Claude runtime requires loaded static Agent credentials")
@@ -280,7 +269,11 @@ def create_app(
             mcp_token=mcp_agent.token,
         )
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
-        fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
+        fingerprints=(
+            tuple(definition.token_fingerprint for definition in static_agent_definitions)
+            if static_agent_definitions is not None
+            else tuple(fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents)
+        )
     )
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
@@ -368,7 +361,10 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await agent_authority.reconcile_static_agents(static_agent_definitions)
+        nonlocal resolved_static_agent_definitions
+        if resolved_static_agent_definitions is None:
+            resolved_static_agent_definitions = await _resolve_static_agent_definitions()
+        await agent_authority.reconcile_static_agents(resolved_static_agent_definitions)
         if claude_chat_service is not None:
             await claude_chat_service.reconcile_terminal_claims()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run():

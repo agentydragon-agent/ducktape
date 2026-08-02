@@ -37,7 +37,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.conftest import _async_url, operator_id, write_config
+from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
@@ -425,7 +425,7 @@ def _build_gmail_shaped_mcp() -> FastMCP:
     return server
 
 
-async def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
+def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
     return InProcessServerRegistration(
         builder=lambda _token: mcp, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
@@ -554,7 +554,7 @@ def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, acto
 
 async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
-    engine = create_async_engine(app.state.settings.async_database_url)
+    engine = create_async_engine(app.state.settings.database_url.get_secret_value())
     try:
         async with AsyncSession(engine) as session:
             result = await session.execute(
@@ -569,7 +569,7 @@ async def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
         await engine.dispose()
 
 
-async def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
+def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
     operator_ids: list[UUID] = []
 
     async def recording_execution_auth(
@@ -607,6 +607,11 @@ async def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> lis
 @pytest.fixture
 def gmail_client() -> Mock:
     return Mock()
+
+
+@pytest.fixture
+def routing_upstream(mcp_server_url: str, upstream_bearers: list[str | None]) -> tuple[str, list[str | None]]:
+    return mcp_server_url, upstream_bearers
 
 
 @pytest.mark.parametrize(
@@ -961,7 +966,7 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
     assert finished["result"]["content"][0]["text"] == "stock_add:123:1"
 
 
-def test_configured_credential_approval_passes_canonical_operator_id(
+async def test_configured_credential_approval_passes_canonical_operator_id(
     make_operator_client,
     console_config: Path,
     migrated_db_url: str,
@@ -979,7 +984,7 @@ def test_configured_credential_approval_passes_canonical_operator_id(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [operator_id(migrated_db_url, "configured-credential-sub")]
+    assert execution_operator_ids == [await operator_id(migrated_db_url, "configured-credential-sub")]
     assert upstream_bearers == ["test-token"]
 
 
@@ -1023,7 +1028,7 @@ async def test_operator_oauth_association_drives_approved_tool_execution(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [operator_id(migrated_db_url, "operator-oauth-sub")]
+    assert execution_operator_ids == [await operator_id(migrated_db_url, "operator-oauth-sub")]
     # The upstream saw exactly two requests: the unauthenticated probe that starts the DCR
     # challenge, then the approved execution carrying this Operator's own linked token.
     assert upstream_bearers == [None, "operator-access-token"]
@@ -1045,19 +1050,20 @@ async def test_operator_oauth_approval_requires_existing_association(
 
 async def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
-    engine = create_async_engine(_async_url(db_url))
+    engine = create_async_engine(db_url)
     now = datetime.datetime.now(datetime.UTC)
+    resolved_operator_id = await operator_id(db_url, operator_external_user_key)
     try:
         async with async_sessionmaker(engine)() as session, session.begin():
             session.add(
                 McpOperatorOAuthAssociation(
                     server_id="grocy-sf",
-                    operator_id=operator_id(db_url, operator_external_user_key),
+                    operator_id=resolved_operator_id,
                     created_at=now,
                     client_id="test-client",
                     token_endpoint="http://unused.test/token",
                     token_state=new_oauth_token_state(
-                        operator_id=operator_id(db_url, operator_external_user_key),
+                        operator_id=resolved_operator_id,
                         access_token=access_token,
                         refresh_token=None,
                         token_type="Bearer",
@@ -1076,14 +1082,14 @@ async def test_routing_executes_each_agent_as_its_own_operator(
     tmp_path: Path,
     migrated_db_url: str,
     monkeypatch: pytest.MonkeyPatch,
-    mcp_server_url: str,
-    upstream_bearers: list[str | None],
+    routing_upstream: tuple[str, list[str | None]],
 ) -> None:
     """Two static agents bound to two operators: each agent's auto-approved operator_oauth call
     executes with *its* operator's token, with no crosstalk."""
     # `haku` (bearer tool-token → op-haku) comes from the autouse env; add a second agent `ops-bot`.
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
+    mcp_server_url, upstream_bearers = routing_upstream
     await _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
     await _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
@@ -1119,7 +1125,7 @@ async def test_routing_executes_each_agent_as_its_own_operator(
 
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
             actor = await _static_agent_actor(client, bearer)
-            listed = client.app.state.tool_call_service.list_tool_calls(actor=actor)
+            listed = await client.app.state.tool_call_service.list_tool_calls(actor=actor)
             assert [call.tool_call_id for call in listed] == [expected_call_id]
             assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
 
@@ -1334,7 +1340,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
 
     ledger_engine = create_async_engine(migrated_async_db_url, pool_pre_ping=True)
     ledger = PostgresToolCallLedger(async_sessionmaker(ledger_engine, expire_on_commit=False))
-    actor = OperatorActor(operator_id=operator_id(migrated_db_url, "op-haku"))
+    actor = OperatorActor(operator_id=await operator_id(migrated_db_url, "op-haku"))
     statements: list[str] = []
 
     def record_tool_call_query(
@@ -1485,7 +1491,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
     assert finished["status"] == "ok"
     assert finished["result"]["content"][0]["text"] == "echo:world"
 
-    engine = create_async_engine(_async_url(db_url))
+    engine = create_async_engine(db_url)
     try:
         async with engine.connect() as conn:
             tables = {
@@ -1541,7 +1547,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
             persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
             assert persisted_call is not None
             assert persisted_principal is not None
-            assert persisted_principal.operator_id == operator_id(db_url, "operator-sub")
+            assert persisted_principal.operator_id == await operator_id(db_url, "operator-sub")
             assert persisted_call.server_id == "smoke"
             assert persisted_call.tool_name == "echo"
             assert persisted_call.status is ToolCallStatus.OK
@@ -1581,7 +1587,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_cl
 
 async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(_async_url(db_url))
+    engine = create_async_engine(db_url)
     try:
         baseline_values = await _enum_values(engine)
     finally:

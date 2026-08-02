@@ -25,7 +25,7 @@ def main() -> None:
     # schema, and create_app never connects to the database.
     settings = Settings(
         haku_ui_url="about:blank",
-        database_url=SecretStr("postgresql+psycopg://placeholder/db"),
+        database_url=SecretStr("postgresql+asyncpg://placeholder/db"),
         public_base_url="https://haku-console.invalid",
         operator_oidc=OperatorOidcConfig(
             issuer="https://auth.invalid/application/o/haku-console/",

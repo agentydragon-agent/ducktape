@@ -6,7 +6,6 @@ import hmac
 from dataclasses import dataclass
 
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
-from starlette.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection
 
 from haku.console.agents.authorization import (
@@ -126,7 +125,7 @@ class _OperatorMcpSessionAuthenticator:
     async def __call__(self, conn: HTTPConnection) -> OperatorActor | None:
         if conn.url.path != self._mcp_path:
             return None
-        session = await run_in_threadpool(operator_session, conn, identity_store=self._identity_store)
+        session = await operator_session(conn, identity_store=self._identity_store)
         if session is None:
             return None
         if conn.headers.get("origin") != self._public_origin:

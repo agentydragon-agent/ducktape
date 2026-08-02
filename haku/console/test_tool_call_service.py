@@ -336,6 +336,7 @@ def _service(
 
 @pytest.fixture
 def service(
+    *,
     migrated_db_url: str,
     tmp_path: Path,
     ledger: _RecordingLedger,
@@ -392,6 +393,7 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
 
 
 async def test_two_operator_two_agent_authorization_matrix(
+    *,
     actors: dict[str, ToolCallActor],
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
@@ -527,6 +529,7 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(
 
 
 async def test_pending_wait_rereads_after_subscribing_before_waiting(
+    *,
     migrated_db_url: str,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
@@ -571,6 +574,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
 
 
 async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_agent(
+    *,
     actors: dict[str, ToolCallActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
@@ -841,6 +845,7 @@ async def test_list_tool_calls_filters_by_auto_approved(
 
 
 async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
+    *,
     migrated_db_url: str,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
@@ -873,6 +878,7 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
 
 
 async def test_executor_cancellation_terminalizes_before_reraising(
+    *,
     migrated_db_url: str,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],
@@ -906,6 +912,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
 
 
 async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
+    *,
     migrated_db_url: str,
     tmp_path: Path,
     actors: dict[str, ToolCallActor],

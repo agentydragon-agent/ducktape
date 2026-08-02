@@ -124,8 +124,7 @@ def _enrollment_service(request: Request) -> AgentEnrollmentService:
 
 
 async def _operator_session(request: Request) -> OperatorSession | None:
-    """FastAPI-compatible adapter: hides operator_session's internal ``identity_store`` keyword
-    parameter so FastAPI does not try to inject it as a request-scoped field."""
+    """FastAPI-compatible adapter around the DB-backed session resolver."""
     return await operator_session(request)
 
 

@@ -519,6 +519,7 @@ async def disconnect_provider_connection(
 
 @router.get(PROVIDER_CONNECTION_CALLBACK_PATH)
 async def provider_connection_callback(
+    *,
     store: ProviderConnectionStoreDep,
     result_store: OAuthConnectionResultStoreDep,
     event_hub: ConsoleEventHubDep,

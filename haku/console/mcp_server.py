@@ -715,7 +715,7 @@ def build_console_mcp(
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
-            record = context.tool_calls.get(tool_call_id, actor=actor)
+            record = await context.tool_calls.get(tool_call_id, actor=actor)
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
             raise ToolError(str(error)) from error
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
@@ -746,7 +746,7 @@ def build_console_mcp(
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
 
     @mcp.tool(annotations=_READ_ONLY_META)
-    async def list_tool_calls(
+    async def list_tool_calls(  # noqa: PLR0917
         status: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,
@@ -757,7 +757,7 @@ def build_console_mcp(
         """List recent tool calls (newest first by default), optionally filtered by status/since/
         auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that
         went through manual or no approval; omitted: no filter)."""
-        records = context.tool_calls.list_tool_calls(
+        records = await context.tool_calls.list_tool_calls(
             actor=actor,
             statuses=status,
             since=since,

@@ -288,12 +288,9 @@ class KubernetesSandboxClaims:
 class ClaudeChatStore:
     """Async Postgres store for Claude chat sessions."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine):
         self._sessions = sessions
-
-    @property
-    def _engine(self) -> AsyncEngine:
-        return cast(AsyncEngine, self._sessions.kw["bind"])
+        self._engine = engine
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
@@ -562,7 +559,7 @@ class ClaudeChatStore:
                             if note.payload == str(session_id):
                                 return True
                     return False
-                except (TimeoutError, asyncio.CancelledError):
+                except TimeoutError:
                     return False
                 finally:
                     await pg_conn.execute(f"UNLISTEN {channel}")

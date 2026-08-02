@@ -775,6 +775,7 @@ async def disconnect_mcp_operator_auth(
 
 @router.get(MCP_OPERATOR_AUTH_CALLBACK_PATH)
 async def mcp_operator_auth_callback(
+    *,
     request: Request,
     oauth_store: OAuthStoreDep,
     result_store: OAuthConnectionResultStoreDep,

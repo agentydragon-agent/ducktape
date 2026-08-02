@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -411,32 +411,39 @@ def _service(request: Request) -> NodeDaemonService:
     return service
 
 
+NodeDaemonServiceDep = Annotated[NodeDaemonService, Depends(_service)]
+
+
 async def _daemon(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
     return await _service(request).authenticate(authorization)
 
 
+DaemonIdDep = Annotated[str, Depends(_daemon)]
+
+
 @machine_router.post("/heartbeat")
-async def heartbeat(body: HeartbeatRequest, request: Request) -> HeartbeatResponse:
-    service = _service(request)
-    return await service.heartbeat(await _daemon(request, request.headers.get("authorization")), body)
+async def heartbeat(body: HeartbeatRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep) -> HeartbeatResponse:
+    return await service.heartbeat(daemon_id, body)
 
 
 @machine_router.post("/work/claim", response_model=ClaimedExecution, responses={204: {"description": "No work"}})
-async def claim(body: ClaimRequest, request: Request) -> ClaimedExecution | Response:
-    service = _service(request)
-    daemon_id = await _daemon(request, request.headers.get("authorization"))
+async def claim(
+    body: ClaimRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep
+) -> ClaimedExecution | Response:
     execution = await service.claim(daemon_id, body)
     return execution if execution is not None else Response(status_code=204)
 
 
 @machine_router.post("/executions/{execution_id}/heartbeat")
-async def renew(execution_id: UUID, body: LeaseRequest, request: Request) -> LeaseResponse:
-    service = _service(request)
-    return await service.renew(await _daemon(request, request.headers.get("authorization")), execution_id, body)
+async def renew(
+    execution_id: UUID, body: LeaseRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep
+) -> LeaseResponse:
+    return await service.renew(daemon_id, execution_id, body)
 
 
 @machine_router.post("/executions/{execution_id}/result", status_code=204)
-async def finish(execution_id: UUID, body: ExecutionResultRequest, request: Request) -> Response:
-    service = _service(request)
-    await service.finish(await _daemon(request, request.headers.get("authorization")), execution_id, body)
+async def finish(
+    execution_id: UUID, body: ExecutionResultRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep
+) -> Response:
+    await service.finish(daemon_id, execution_id, body)
     return Response(status_code=204)

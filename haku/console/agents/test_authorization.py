@@ -148,10 +148,10 @@ class SecretSequence:
 
 
 class DisableAfterPrincipalResolutionIdentityStore(PostgresOperatorIdentityStore):
-    def resolve_verified_identity(self, identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
-        resolved = super().resolve_verified_identity(identity)
-        with self._session_factory.begin() as session:
-            operator = session.get(Operator, resolved.operator_id)
+    async def resolve_verified_identity(self, identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
+        resolved = await super().resolve_verified_identity(identity)
+        async with self._session_factory.begin() as session:
+            operator = await session.get(Operator, resolved.operator_id)
             assert operator is not None
             operator.status = OperatorStatus.DISABLED
             operator.updated_at = datetime.datetime.now(datetime.UTC)
@@ -192,7 +192,7 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
     force_drop_database_sync(postgres_admin_url, db_name)
 
 
-def _harness(
+async def _harness(
     db_url: str, *, subject: str = "operator-user", auto_approval_policies: tuple[str, ...] = ("no_auto_approval",)
 ) -> Harness:
     sessions = console_sessions(db_url)
@@ -202,7 +202,7 @@ def _harness(
             trust_domain="auth.test/authentik-user-id/v1", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
         ),
     )
-    browser_identity = identities.resolve_verified_identity(
+    browser_identity = await identities.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject=subject)
     )
     # Correlation reservations are deliberately evaluated against PostgreSQL's
@@ -299,7 +299,7 @@ async def _create_grant(
 
 
 async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_binding(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     assert await harness.authority.list_agents(operator_id=harness.browser.operator_id) == ()
 
     grant = await _create_grant(harness, label="listed", display_name="Listed Agent", activate=True)
@@ -317,12 +317,12 @@ async def test_list_agents_returns_owned_active_and_disabled_agents_with_latest_
     assert disabled.status is AgentStatus.DISABLED
     assert disabled.credential_status is CredentialBindingStatus.REVOKED
 
-    other = _harness(db_url, subject="other-operator")
+    other = await _harness(db_url, subject="other-operator")
     assert await other.authority.list_agents(operator_id=other.browser.operator_id) == ()
 
 
 async def test_enrollment_and_settings_persist_the_selected_auto_approval_policy(db_url: str) -> None:
-    harness = _harness(db_url, auto_approval_policies=("no_auto_approval", "haku_v1"))
+    harness = await _harness(db_url, auto_approval_policies=("no_auto_approval", "haku_v1"))
     request = _request("policy-selection")
     interaction_id, form_token = await _open(harness, request)
     await harness.authority.decide(
@@ -359,7 +359,7 @@ async def test_enrollment_and_settings_persist_the_selected_auto_approval_policy
 
 
 async def test_reservation_accumulates_exact_fastmcp_validated_redirects(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     first = _request("first-redirect")
     second_redirect = "https://claude.test/oauth/alternate-callback"
     second = AuthorizationRequest(
@@ -384,7 +384,7 @@ async def test_reservation_accumulates_exact_fastmcp_validated_redirects(db_url:
 
 
 async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     request = _request("create")
     interaction_id, form_token = await _open(harness, request)
     decision = CreateAgentDecision(
@@ -464,7 +464,7 @@ async def test_create_decision_is_idempotent_and_grant_activates_then_revokes(db
 
 
 async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     initial = await _create_grant(harness, label="initial-timeout", display_name="Initial Timeout")
     harness.clock.advance(datetime.timedelta(minutes=16))
     with pytest.raises(GrantRejectedError):
@@ -517,7 +517,7 @@ async def test_activation_timeout_abandons_new_agent_but_only_expires_reconnect(
 
 
 async def test_reconnect_activation_revokes_predecessor_before_activating_successor(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     active = await _create_grant(harness, label="active-reconnect", display_name="Reconnectable", activate=True)
     request = _request("successful-reconnect")
     interaction_id, form_token = await _open(harness, request)
@@ -556,7 +556,7 @@ async def test_reconnect_activation_revokes_predecessor_before_activating_succes
 
 
 async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     _locked_request, locked_interaction_id = await _allow_create(
         harness, label="locked-allowed", display_name="Locked Allowed"
     )
@@ -603,7 +603,7 @@ async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_
 
 
 async def test_expiry_sweep_terminates_exchanging_response_loss(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     request, interaction_id = await _allow_create(harness, label="lost-exchange", display_name="Lost Exchange Sweep")
     grant = await harness.authority.begin_exchange(
         correlation=request.correlation,
@@ -628,7 +628,7 @@ async def test_expiry_sweep_terminates_exchanging_response_loss(db_url: str) -> 
 
 
 async def test_expiry_sweep_terminates_issued_response_loss(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     grant = await _create_grant(harness, label="lost-issued", display_name="Lost Issued Sweep")
     harness.clock.advance(datetime.timedelta(minutes=16))
 
@@ -645,7 +645,7 @@ async def test_expiry_sweep_terminates_issued_response_loss(db_url: str) -> None
 
 
 async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     request = _request("correlation-reuse")
     with _orm_session(db_url) as session:
         database_now = session.execute(select(func.clock_timestamp())).scalar_one()
@@ -686,12 +686,12 @@ async def test_exchange_uses_the_live_correlation_reservation_after_tuple_reuse(
 
 
 async def test_exchange_rejects_principal_from_different_operator_without_mutating_approval(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     request, interaction_id = await _allow_create(
         harness, label="wrong-operator", display_name="Wrong Operator Rejected"
     )
     other_subject = "different-operator"
-    other_identity = harness.identities.resolve_verified_identity(
+    other_identity = await harness.identities.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_MCP_ISSUER, subject=other_subject)
     )
     assert other_identity.operator_id != harness.browser.operator_id
@@ -723,7 +723,7 @@ async def test_exchange_rejects_principal_from_different_operator_without_mutati
 
 
 async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     request = _request("exchange-expiry")
     interaction_id, form_token = await _open(harness, request)
     await harness.authority.decide(
@@ -778,7 +778,7 @@ async def test_exchange_timeout_and_preissuance_revoke_abandon_new_agents(db_url
 
 
 async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     definition = StaticAgentDefinition(
         agent_id=uuid4(),
         display_name="Configured Agent",
@@ -861,7 +861,7 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
 
 
 async def test_static_agent_policy_is_deployment_managed(db_url: str) -> None:
-    harness = _harness(db_url, auto_approval_policies=("no_auto_approval", "haku_v1"))
+    harness = await _harness(db_url, auto_approval_policies=("no_auto_approval", "haku_v1"))
     definition = StaticAgentDefinition(
         agent_id=uuid4(),
         display_name="Deployment Policy Agent",
@@ -882,7 +882,7 @@ async def test_static_agent_policy_is_deployment_managed(db_url: str) -> None:
 
 
 async def test_static_reconcile_revokes_removed_definition_and_restores_stable_slot(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     definition = StaticAgentDefinition(
         agent_id=uuid4(),
         display_name="Removable Configured Agent",
@@ -934,7 +934,7 @@ async def test_static_reconcile_revokes_removed_definition_and_restores_stable_s
 
 
 async def test_revoke_waits_for_interaction_before_locking_grant_graph(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     grant = await _create_grant(harness, label="lock-order", display_name="Lock Ordered Agent")
     authority_engine = create_engine(db_url, pool_pre_ping=True)
     authority = PostgresAgentAuthority(
@@ -1008,7 +1008,7 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
 
 
 async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
 
     def time_out() -> None:
         raise SQLAlchemyTimeoutError("connection pool exhausted")
@@ -1018,7 +1018,7 @@ async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str
 
 
 async def test_exchange_revalidates_operator_after_principal_resolution(db_url: str) -> None:
-    harness = _harness(db_url)
+    harness = await _harness(db_url)
     request = _request("operator-race")
     interaction_id, form_token = await _open(harness, request)
     await harness.authority.decide(

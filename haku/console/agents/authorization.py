@@ -210,7 +210,7 @@ class PostgresAgentAuthority:
             raise ValueError("default auto-approval policy must be configured")
         self._default_auto_approval_policy = default_auto_approval_policy
 
-    async def available_auto_approval_policies(self) -> tuple[str, ...]:
+    def available_auto_approval_policies(self) -> tuple[str, ...]:
         return self._auto_approval_policies
 
     async def _require_auto_approval_policy(self, policy: str) -> None:
@@ -1548,7 +1548,7 @@ class PostgresAgentAuthority:
                 )
                 for row in reconnect_rows
             ),
-            auto_approval_policies=await self.available_auto_approval_policies(),
+            auto_approval_policies=self.available_auto_approval_policies(),
             default_auto_approval_policy=self._default_auto_approval_policy,
             form_token=form_token,
             upstream_authorization_url=interaction.upstream_authorization_url,

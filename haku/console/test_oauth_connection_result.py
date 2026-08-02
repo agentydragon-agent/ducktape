@@ -25,7 +25,7 @@ async def test_result_is_operator_bound_and_consumed_once(
         make_operator_client(operator_external_user_key="result-owner") as owner,
         make_operator_client(operator_external_user_key="other-operator") as other,
     ):
-        owner_id = operator_id(migrated_db_url, "result-owner")
+        owner_id = await operator_id(migrated_db_url, "result-owner")
         result_id = await result_store.create(
             operator_id=owner_id,
             result=OAuthConnectionSucceeded(
@@ -50,7 +50,7 @@ async def test_expired_result_is_not_returned(
     make_operator_client, migrated_db_url: str, result_store: PostgresOAuthConnectionResultStore
 ) -> None:
     with make_operator_client(operator_external_user_key="expired-result-owner") as owner:
-        owner_id = operator_id(migrated_db_url, "expired-result-owner")
+        owner_id = await operator_id(migrated_db_url, "expired-result-owner")
         result_id = await result_store.create(
             operator_id=owner_id, result=OAuthConnectionSucceeded(title="Connected", message="Ready.")
         )

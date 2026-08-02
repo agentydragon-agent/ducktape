@@ -298,7 +298,7 @@ class PostgresToolCallLedger:
         operator = self._require_operator_actor(actor)
         async with self._sessions.begin() as session:
             row, principal = await self._lock_pending(session, tool_call_id, operator)
-            self._require_executable_principal(session, principal, operator.operator_id)
+            await self._require_executable_principal(session, principal, operator.operator_id)
             row.status = ToolCallStatus.RUNNING
             row.updated_at = row.approved_at = datetime.datetime.now(datetime.UTC)
             return self._record_from_principal(row, principal)
@@ -366,7 +366,7 @@ class PostgresToolCallLedger:
                     await self._require_active_agent_binding(session, actor)
                     return actor.operator_id
                 case OperatorActor():
-                    return self._require_executable_principal(session, principal, actor.operator_id)
+                    return await self._require_executable_principal(session, principal, actor.operator_id)
                 case _:
                     raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
@@ -374,7 +374,7 @@ class PostgresToolCallLedger:
     # because the ledger is reachable from adapters that resolve an actor dynamically. Each caller
     # uses the narrowed value, so neither is a bare assertion.
     @staticmethod
-    async def _require_operator_actor(actor: ToolCallActor) -> OperatorActor:
+    def _require_operator_actor(actor: ToolCallActor) -> OperatorActor:
         match actor:
             case OperatorActor():
                 return actor
@@ -382,7 +382,7 @@ class PostgresToolCallLedger:
                 raise TypeError(f"operator actor required, got {type(actor).__name__}")
 
     @staticmethod
-    async def _require_agent_actor(actor: ToolCallActor) -> AgentActor:
+    def _require_agent_actor(actor: ToolCallActor) -> AgentActor:
         match actor:
             case AgentActor():
                 return actor
@@ -805,7 +805,7 @@ async def metadata_for_operator(
 
 
 @router.get("/api/tool-calls")
-async def list_tool_calls(
+async def list_tool_calls(  # noqa: PLR0917
     service: ToolCallServiceDep,
     actor: OperatorActorDep,
     status: Annotated[list[ToolCallStatus] | None, Query()] = None,
@@ -815,7 +815,7 @@ async def list_tool_calls(
     newest_first: bool = False,
 ) -> ToolCallListResponse:
     return ToolCallListResponse(
-        tool_calls=service.list_tool_calls(
+        tool_calls=await service.list_tool_calls(
             actor=actor,
             statuses=status,
             since=since,
@@ -836,7 +836,7 @@ async def get_tool_call(tool_call_id: str, service: ToolCallServiceDep, actor: O
 
 @router.get("/api/approvals/pending")
 async def pending_approvals(service: ToolCallServiceDep, actor: OperatorActorDep) -> PendingApprovalsResponse:
-    return PendingApprovalsResponse(approvals=service.pending_approvals(actor=actor))
+    return PendingApprovalsResponse(approvals=await service.pending_approvals(actor=actor))
 
 
 @router.post("/api/tool-calls/{tool_call_id}/decision")

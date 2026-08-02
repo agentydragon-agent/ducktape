@@ -398,16 +398,20 @@ async def export_mcp_tool_results_json() -> str:
     return json.dumps(await build_mcp_tool_results_schema(), indent=2, sort_keys=True) + "\n"
 
 
-def main() -> None:
+async def _main() -> None:
     # The same exporter serves both frontend catalogs: the arguments catalog by default, the
     # results catalog with `--results`. `js_json_schema` invokes this binary with no other args.
     match sys.argv[1:]:
         case ["--results"]:
-            print(asyncio.run(export_mcp_tool_results_json()), end="")
+            print(await export_mcp_tool_results_json(), end="")
         case []:
-            print(asyncio.run(export_mcp_tool_schemas_json()), end="")
+            print(await export_mcp_tool_schemas_json(), end="")
         case _:
             raise SystemExit(f"unexpected arguments: {' '.join(sys.argv[1:])}")
+
+
+def main() -> None:
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":

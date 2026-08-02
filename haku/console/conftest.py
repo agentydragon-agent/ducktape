@@ -9,7 +9,6 @@ to head (used by everything else, including `make_client`).
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import re
@@ -27,6 +26,7 @@ import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
@@ -35,7 +35,7 @@ from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings, WebPushConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
-from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
+from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
 from util.testing.postgres import force_drop_database_sync
@@ -133,7 +133,8 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
 def console_sessions(db_url: str) -> async_sessionmaker[AsyncSession]:
     """The shared async sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
     (production builds a single async engine/sessionmaker and passes it to every store)."""
-    return async_sessionmaker(create_async_engine(_async_url(db_url), pool_pre_ping=True), expire_on_commit=False)
+    async_url = make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    return async_sessionmaker(create_async_engine(async_url, pool_pre_ping=True), expire_on_commit=False)
 
 
 def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
@@ -146,14 +147,45 @@ def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
     )
 
 
-def operator_id(db_url: str, external_user_key: str) -> UUID:
-    """Resolve a controller-fed external user key to its canonical Operator UUID.
+async def _resolve_operator_identity(app: Any, external_user_key: str) -> ResolvedOperatorIdentity:
+    """Create the same issuer-scoped browser identity that the OIDC callback would persist."""
+    return await app.state.operator_identity_store.resolve_verified_identity(
+        VerifiedExternalIdentity(issuer=app.state.settings.operator_oidc.issuer, subject=external_user_key)
+    )
 
-    Uses ``asyncio.run`` because the store is async-backed and this helper is called from
-    both sync and async test code. ``asyncio.run`` creates a fresh event loop each time,
-    which is safe because we never call it from inside a running loop.
-    """
-    return asyncio.run(operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key))
+
+async def operator_id(db_url: str, external_user_key: str) -> UUID:
+    """Resolve a controller-fed external user key using the async identity store."""
+    engine = create_async_engine(
+        make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False), pool_pre_ping=True
+    )
+    try:
+        store = PostgresOperatorIdentityStore(
+            async_sessionmaker(engine, expire_on_commit=False),
+            OperatorIdentityTrust(
+                trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+            ),
+        )
+        return await store.resolve_configured_external_user_key(external_user_key)
+    finally:
+        await engine.dispose()
+
+
+async def resolve_operator_identity(db_url: str, *, issuer: str, subject: str) -> ResolvedOperatorIdentity:
+    """Resolve a test OIDC identity through a short-lived async engine."""
+    engine = create_async_engine(
+        make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False), pool_pre_ping=True
+    )
+    try:
+        store = PostgresOperatorIdentityStore(
+            async_sessionmaker(engine, expire_on_commit=False),
+            OperatorIdentityTrust(
+                trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({issuer})
+            ),
+        )
+        return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(scope="session")
@@ -172,7 +204,11 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
     admin_engine.dispose()
 
-    yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+    yield (
+        make_url(postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}")
+        .set(drivername="postgresql+asyncpg")
+        .render_as_string(hide_password=False)
+    )
 
     force_drop_database_sync(postgres_admin_url, db_name)
 
@@ -185,21 +221,10 @@ def migrated_db_url(db_url: str) -> str:
     return db_url
 
 
-def _async_url(url: str) -> str:
-    """Convert a psycopg database URL to the asyncpg driver for async SQLAlchemy."""
-    return url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
-
-
-@pytest.fixture
-def async_db_url(db_url: str) -> str:
-    """The per-test database URL with the asyncpg driver, for direct ``create_async_engine`` use."""
-    return _async_url(db_url)
-
-
 @pytest.fixture
 def migrated_async_db_url(migrated_db_url: str) -> str:
-    """Migrated per-test database URL with the asyncpg driver."""
-    return _async_url(migrated_db_url)
+    """Compatibility alias for tests that name the runtime async database URL explicitly."""
+    return migrated_db_url
 
 
 @pytest.fixture
@@ -239,37 +264,14 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             **settings_overrides,
         )
         app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process_servers)
-        operator_identity = None
-        if operator:
-            # Resolve operator identity using a sync engine — the async sessionmaker
-            # is bound to the pytest-asyncio event loop and can't be used via asyncio.run().
-            sync_engine = create_engine(migrated_db_url)
-            try:
-                with sync_engine.connect() as conn:
-                    row = conn.execute(
-                        text(
-                            "SELECT o.operator_id, oi.identity_id "
-                            "FROM operators o "
-                            "JOIN identity_anchors ia ON ia.operator_id = o.operator_id "
-                            "JOIN oidc_identities oi ON oi.anchor_id = ia.anchor_id "
-                            "WHERE ia.trust_domain = :trust_domain "
-                            "AND ia.stable_external_user_key = :external_key"
-                        ),
-                        {
-                            "trust_domain": settings.operator_identity.trust_domain,
-                            "external_key": operator_external_user_key,
-                        },
-                    ).one_or_none()
-                if row is not None:
-                    app.state.test_operator_actor = OperatorActor(operator_id=row.operator_id)
-            finally:
-                sync_engine.dispose()
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")
         with TestClient(app, base_url="https://testserver" if https else "http://testserver") as c:
             if operator:
-                assert operator_identity is not None
+                assert c.portal is not None
+                operator_identity = c.portal.call(_resolve_operator_identity, app, operator_external_user_key)
+                app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
                 c.headers["Origin"] = settings.public_base_url.rstrip("/")
                 c.cookies.set(
                     "session",

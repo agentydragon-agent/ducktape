@@ -8,6 +8,7 @@ from typing import Any
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, select, text
+from sqlalchemy.engine import make_url
 
 from haku.console.database_schema import metadata
 
@@ -36,11 +37,16 @@ def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
             conn.execute(select(table).limit(0))
 
 
+def sync_database_url(database_url: str) -> str:
+    """Render an application database URL for synchronous Alembic/psycopg access."""
+    return make_url(database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+
+
 def apply_migrations(database_url: str, revision: str = "head") -> None:
     """Upgrade the haku-console database to head. The explicit startup step (app.main) and the tests
     call this once against the shared database — migrations are an ownership of the process, not a
     side effect of constructing a ledger/store."""
-    engine = create_engine(database_url)
+    engine = create_engine(sync_database_url(database_url))
     try:
         with engine.begin() as conn:
             run_migrations_for_connection(conn, revision)
