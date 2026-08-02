@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 from kubernetes_asyncio import client as k8s_client
@@ -24,6 +23,7 @@ from haku.console.claude_chat import (
     _text_delta,
 )
 from haku.console.config import ClaudeRuntimeConfig
+from haku.console.database_schema import ClaudeChatSession
 
 
 class RecordingCustomObjectsApi:
@@ -50,13 +50,17 @@ class RecordingCoreV1Api:
         return self.pods[name]
 
 
+class FailingEngine:
+    def connect(self) -> Any:
+        raise RuntimeError("LISTEN unavailable")
+
+
 def _runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
     values: dict[str, object] = {
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
-        "prompt_poll_seconds": 0.25,
         "oauth_placeholder": "not-a-secret",
         "https_proxy": "http://proxy.test:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
@@ -216,54 +220,56 @@ def test_text_delta_ignores_non_text_stream_events() -> None:
     assert _text_delta({"type": "message_start"}) == ""
 
 
-class _RecordSessions:
-    def __init__(self, record: SimpleNamespace | None):
-        self.record = record
+async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
+    migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-test")
+    store = ClaudeChatStore(migrated_sessions, migrated_engine)
+    view, token = await store.create(operator_id)
+    session_id = view.session_id
 
-    @contextmanager
-    def begin(self):
-        yield self
+    assert await store.authenticate_bridge(session_id, token) == "accepted"
+    async with migrated_sessions() as db:
+        record = await db.get(ClaudeChatSession, session_id)
+        assert record is not None
+        assert record.status == "ready"
+        assert record.bridge_connected_at is not None
+        # Retain only the hash until claim deletion completes. It lets terminal retries prove that
+        # they belong to the stale claim without retaining or recovering the bearer itself.
+        assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
 
-    def get(self, model: object, session_id: UUID, **kwargs: object) -> SimpleNamespace | None:
-        del model, session_id, kwargs
-        return self.record
-
-
-def test_bridge_authentication_distinguishes_accept_terminal_and_rejected() -> None:
-    session_id = uuid4()
-    token = "one-use-rendezvous"
-    record = SimpleNamespace(
-        status="provisioning",
-        bridge_connected_at=None,
-        bridge_token_fingerprint=ClaudeChatStore._fingerprint(token),
-        updated_at=None,
-    )
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), database_url="postgresql://test")
-
-    assert store.authenticate_bridge(session_id, token) == "accepted"
-    assert record.status == "ready"
-    assert record.bridge_connected_at is not None
-    # Retain only the hash until claim deletion completes. It lets terminal retries prove that
-    # they belong to the stale claim without retaining or recovering the bearer itself.
-    assert record.bridge_token_fingerprint == ClaudeChatStore._fingerprint(token)
-
-    record.status = "failed"
-    assert store.authenticate_bridge(session_id, token) == "terminal"
-    assert store.authenticate_bridge(session_id, "wrong") == "rejected"
+    await store.fail(session_id, "runner failed")
+    assert await store.authenticate_bridge(session_id, token) == "terminal"
+    assert await store.authenticate_bridge(session_id, "wrong") == "rejected"
 
 
-def test_deliberate_close_is_not_reclassified_as_runner_failure() -> None:
-    session_id = uuid4()
-    record = SimpleNamespace(status="closing", error=None, bridge_token_fingerprint=b"cleanup-pending", updated_at=None)
-    store = ClaudeChatStore(cast(Any, _RecordSessions(record)), database_url="postgresql://test")
+async def test_listen_failure_is_not_reclassified_as_a_timeout() -> None:
+    store = ClaudeChatStore(cast(Any, object()), cast(Any, FailingEngine()))
 
-    store.fail(session_id, "sandbox runner disconnected")
-    assert record.status == "closing"
-    assert record.error is None
+    with pytest.raises(RuntimeError, match="LISTEN unavailable"):
+        await store.wait_for_prompt(uuid4(), timeout_seconds=0.01)
 
-    store.complete_claim_cleanup(session_id)
-    assert record.status == "closed"
-    assert record.bridge_token_fingerprint == b""
+
+async def test_deliberate_close_is_not_reclassified_as_runner_failure(
+    migrated_sessions, migrated_engine, migrated_identity_store
+) -> None:
+    operator_id = await migrated_identity_store.resolve_configured_external_user_key("claude-chat-close-test")
+    store = ClaudeChatStore(migrated_sessions, migrated_engine)
+    view, _token = await store.create(operator_id)
+
+    await store.request_close(operator_id, view.session_id)
+    await store.fail(view.session_id, "sandbox runner disconnected")
+    closing = await store.get(operator_id, view.session_id)
+    assert closing.status == "closing"
+    assert closing.error is None
+
+    await store.complete_claim_cleanup(view.session_id)
+    closed = await store.get(operator_id, view.session_id)
+    assert closed.status == "closed"
+    async with migrated_sessions() as db:
+        record = await db.get(ClaudeChatSession, view.session_id)
+        assert record is not None
+        assert record.bridge_token_fingerprint == b""
 
 
 class _LifecycleStore:
@@ -274,7 +280,7 @@ class _LifecycleStore:
         self.cleanup_completed: list[UUID] = []
         self.closed_sessions: list[UUID] = []
 
-    def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
+    async def create(self, operator_id: UUID) -> tuple[ClaudeChatSessionView, str]:
         del operator_id
         now = datetime.now(UTC)
         return (
@@ -289,20 +295,20 @@ class _LifecycleStore:
             self.token,
         )
 
-    def authenticate_bridge(self, session_id: UUID, token: str) -> str:
+    async def authenticate_bridge(self, session_id: UUID, token: str) -> str:
         assert session_id == self.session_id
         assert token == self.token
         self.status_value = "closing"
         return "accepted"
 
-    def status(self, session_id: UUID) -> str:
+    async def status(self, session_id: UUID) -> str:
         assert session_id == self.session_id
         return self.status_value
 
-    def complete_claim_cleanup(self, session_id: UUID) -> None:
+    async def complete_claim_cleanup(self, session_id: UUID) -> None:
         self.cleanup_completed.append(session_id)
 
-    def closed(self, session_id: UUID) -> None:
+    async def closed(self, session_id: UUID) -> None:
         self.closed_sessions.append(session_id)
 
 
@@ -332,13 +338,13 @@ class _ToolUseStore:
         self.updates: list[tuple[UUID, str, list[dict[str, Any]] | None, bool]] = []
         self.completed_turns: list[UUID] = []
 
-    def begin_assistant(self, session_id: UUID) -> UUID:
+    async def begin_assistant(self, session_id: UUID) -> UUID:
         del session_id
         message_id = uuid4()
         self.message_ids.append(message_id)
         return message_id
 
-    def update_assistant(
+    async def update_assistant(
         self,
         session_id: UUID,
         message_id: UUID,
@@ -350,7 +356,7 @@ class _ToolUseStore:
         del session_id
         self.updates.append((message_id, content, tool_uses, complete))
 
-    def complete_turn(self, session_id: UUID) -> None:
+    async def complete_turn(self, session_id: UUID) -> None:
         self.completed_turns.append(session_id)
 
 
@@ -461,11 +467,11 @@ class _TerminalStore:
     def __init__(self):
         self.completed: list[UUID] = []
 
-    def authenticate_bridge(self, session_id: UUID, token: str) -> str:
+    async def authenticate_bridge(self, session_id: UUID, token: str) -> str:
         del session_id, token
         return "terminal"
 
-    def complete_claim_cleanup(self, session_id: UUID) -> None:
+    async def complete_claim_cleanup(self, session_id: UUID) -> None:
         self.completed.append(session_id)
 
 
@@ -490,10 +496,10 @@ class _ReconcileStore:
         self.session_ids = session_ids
         self.completed: list[UUID] = []
 
-    def claim_cleanup_candidates(self) -> list[UUID]:
+    async def claim_cleanup_candidates(self) -> list[UUID]:
         return self.session_ids
 
-    def complete_claim_cleanup(self, session_id: UUID) -> None:
+    async def complete_claim_cleanup(self, session_id: UUID) -> None:
         self.completed.append(session_id)
 
 

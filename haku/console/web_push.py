@@ -54,7 +54,7 @@ from pydantic import BaseModel, Field
 from pywebpush import WebPusher
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import WebPushConfig, tool_call_console_url
 from haku.console.database_schema import PushSubscription
@@ -155,10 +155,10 @@ class WebPushIdentity:
 
 
 class PostgresPushSubscriptionStore:
-    def __init__(self, sessions: sessionmaker[Session]) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    def save(self, *, operator_id: UUID, endpoint: str, p256dh: str, auth: str, user_agent: str | None) -> None:
+    async def save(self, *, operator_id: UUID, endpoint: str, p256dh: str, auth: str, user_agent: str | None) -> None:
         """Record (or refresh) one device's subscription.
 
         Upsert rather than insert: a browser re-subscribes on its own schedule — after a
@@ -187,31 +187,33 @@ class PostgresPushSubscriptionStore:
                 },
             )
         )
-        with self._sessions.begin() as session:
-            session.execute(statement)
+        async with self._sessions.begin() as session:
+            await session.execute(statement)
 
-    def list_for(self, operator_id: UUID) -> list[PushSubscription]:
-        with self._sessions() as session:
+    async def list_for(self, operator_id: UUID) -> list[PushSubscription]:
+        async with self._sessions() as session:
             return list(
-                session.scalars(select(PushSubscription).where(PushSubscription.operator_id == operator_id)).all()
+                (
+                    await session.scalars(select(PushSubscription).where(PushSubscription.operator_id == operator_id))
+                ).all()
             )
 
-    def delete(self, *, operator_id: UUID, endpoint: str) -> bool:
+    async def delete(self, *, operator_id: UUID, endpoint: str) -> bool:
         """Drop one subscription. Scoped to its owner so an endpoint alone cannot unsubscribe it."""
-        with self._sessions.begin() as session:
-            subscription = session.get(PushSubscription, endpoint)
+        async with self._sessions.begin() as session:
+            subscription = await session.get(PushSubscription, endpoint)
             if subscription is None or subscription.operator_id != operator_id:
                 return False
-            session.delete(subscription)
+            await session.delete(subscription)
             return True
 
-    def drop_dead(self, endpoint: str) -> None:
-        with self._sessions.begin() as session:
-            session.execute(delete(PushSubscription).where(PushSubscription.endpoint == endpoint))
+    async def drop_dead(self, endpoint: str) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(delete(PushSubscription).where(PushSubscription.endpoint == endpoint))
 
-    def record_failure(self, endpoint: str) -> None:
-        with self._sessions.begin() as session:
-            subscription = session.get(PushSubscription, endpoint)
+    async def record_failure(self, endpoint: str) -> None:
+        async with self._sessions.begin() as session:
+            subscription = await session.get(PushSubscription, endpoint)
             if subscription is not None:
                 subscription.last_failure_at = datetime.datetime.now(tz=datetime.UTC)
 
@@ -270,7 +272,7 @@ class WebPushApprovalNotifier:
         await self._send(operator_id, PushRetract(tool_call_id=record.tool_call_id, outcome=_outcome(record)))
 
     async def _send(self, operator_id: UUID, message: PushMessage) -> None:
-        subscriptions = await asyncio.to_thread(self._subscriptions.list_for, operator_id)
+        subscriptions = await self._subscriptions.list_for(operator_id)
         if not subscriptions:
             return
         payload = message.model_dump_json().encode()
@@ -301,11 +303,11 @@ class WebPushApprovalNotifier:
             # produced it, but it is also not nothing — a silently dead channel is how an
             # operator stops trusting the notifications.
             logger.warning("web push send failed for %s", _redacted(subscription.endpoint), exc_info=True)
-            await asyncio.to_thread(self._subscriptions.record_failure, subscription.endpoint)
+            await self._subscriptions.record_failure(subscription.endpoint)
             return
         if response.status_code in _DEAD_SUBSCRIPTION_STATUSES:
             logger.info("pruning expired push subscription %s", _redacted(subscription.endpoint))
-            await asyncio.to_thread(self._subscriptions.drop_dead, subscription.endpoint)
+            await self._subscriptions.drop_dead(subscription.endpoint)
             return
         if response.is_error:
             logger.warning(
@@ -314,7 +316,7 @@ class WebPushApprovalNotifier:
                 response.status_code,
                 response.text[:200],
             )
-            await asyncio.to_thread(self._subscriptions.record_failure, subscription.endpoint)
+            await self._subscriptions.record_failure(subscription.endpoint)
 
 
 def _collapse_topic(tool_call_id: str) -> str:

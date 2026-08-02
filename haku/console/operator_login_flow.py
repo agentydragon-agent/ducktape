@@ -18,7 +18,6 @@ concurrent tabs would each overwrite the last one's value.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 import logging
 import secrets
@@ -27,7 +26,7 @@ from typing import Any, cast
 
 from authlib.integrations.starlette_client import OAuth, StarletteIntegration
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import OperatorLoginFlow
 
@@ -61,13 +60,13 @@ class PendingLogin:
 class PostgresOperatorLoginFlowStore:
     """The pending-login rows, plus the authlib-facing state accessors."""
 
-    def __init__(self, sessions: sessionmaker[Session]) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    def start(self, *, state: str, browser_binding: str, return_to: str | None, data: dict[str, Any]) -> None:
+    async def start(self, *, state: str, browser_binding: str, return_to: str | None, data: dict[str, Any]) -> None:
         now = datetime.datetime.now(datetime.UTC)
-        with self._sessions.begin() as session:
-            session.execute(delete(OperatorLoginFlow).where(OperatorLoginFlow.expires_at < now))
+        async with self._sessions.begin() as session:
+            await session.execute(delete(OperatorLoginFlow).where(OperatorLoginFlow.expires_at < now))
             session.add(
                 OperatorLoginFlow(
                     state=state,
@@ -79,37 +78,39 @@ class PostgresOperatorLoginFlowStore:
                 )
             )
 
-    def pending_login(self, state: str) -> PendingLogin | None:
+    async def pending_login(self, state: str) -> PendingLogin | None:
         """Read a live flow without consuming it — authlib's own exchange deletes the row."""
-        with self._sessions.begin() as session:
-            row = self._live_row(session, state)
+        async with self._sessions.begin() as session:
+            row = await self._live_row(session, state)
             return None if row is None else PendingLogin(browser_binding=row.browser_binding, return_to=row.return_to)
 
-    def state_data(self, state: str) -> dict[str, Any] | None:
-        with self._sessions.begin() as session:
-            row = self._live_row(session, state)
+    async def state_data(self, state: str) -> dict[str, Any] | None:
+        async with self._sessions.begin() as session:
+            row = await self._live_row(session, state)
             return None if row is None else dict(row.data)
 
-    def store_state_data(self, state: str, data: dict[str, Any]) -> None:
+    async def store_state_data(self, state: str, data: dict[str, Any]) -> None:
         """authlib re-states the flow's data after building the authorization URL. The row already
         exists (``start`` wrote it with the browser binding), so this only refreshes the payload."""
-        with self._sessions.begin() as session:
-            row = session.get(OperatorLoginFlow, state)
+        async with self._sessions.begin() as session:
+            row = await session.get(OperatorLoginFlow, state)
             if row is None:
                 logger.warning("operator login: no pending flow to store authorization data for")
                 return
             row.data = data
 
-    def discard(self, state: str) -> None:
-        with self._sessions.begin() as session:
-            session.execute(delete(OperatorLoginFlow).where(OperatorLoginFlow.state == state))
+    async def discard(self, state: str) -> None:
+        async with self._sessions.begin() as session:
+            await session.execute(delete(OperatorLoginFlow).where(OperatorLoginFlow.state == state))
 
     @staticmethod
-    def _live_row(session: Session, state: str) -> OperatorLoginFlow | None:
-        return session.execute(
-            select(OperatorLoginFlow)
-            .where(OperatorLoginFlow.state == state)
-            .where(OperatorLoginFlow.expires_at > datetime.datetime.now(datetime.UTC))
+    async def _live_row(session: AsyncSession, state: str) -> OperatorLoginFlow | None:
+        return (
+            await session.execute(
+                select(OperatorLoginFlow)
+                .where(OperatorLoginFlow.state == state)
+                .where(OperatorLoginFlow.expires_at > datetime.datetime.now(datetime.UTC))
+            )
         ).scalar_one_or_none()
 
 
@@ -129,17 +130,14 @@ class PostgresLoginStateIntegration(StarletteIntegration):
         return store
 
     async def get_state_data(self, session: dict[str, Any] | None, state: str) -> dict[str, Any]:
-        # An unknown state has no data. authlib's own implementation returns None here too — its
-        # type stub just does not say so — and `authorize_access_token` turns that into the
-        # MismatchingStateError the callback reports.
-        data = await asyncio.to_thread(self._store.state_data, state) if state else None
+        data = await self._store.state_data(state) if state else None
         return cast(dict[str, Any], data)
 
     async def set_state_data(self, session: dict[str, Any] | None, state: str, data: Any) -> None:
-        await asyncio.to_thread(self._store.store_state_data, state, data)
+        await self._store.store_state_data(state, data)
 
     async def clear_state_data(self, session: dict[str, Any] | None, state: str) -> None:
-        await asyncio.to_thread(self._store.discard, state)
+        await self._store.discard(state)
 
 
 class LoginFlowOAuth(OAuth):

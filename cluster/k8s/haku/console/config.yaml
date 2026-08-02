@@ -8,7 +8,6 @@ claude_runtime:
   warm_pool: haku-claude
   cwd: /workspace
   session_ttl_seconds: 7200
-  prompt_poll_seconds: 0.25
   oauth_placeholder: sk-ant-oat01-proxy-haku-claude-placeholder
   https_proxy: http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180
   ca_bundle: /egress-proxy-ca/ca-certificates.crt

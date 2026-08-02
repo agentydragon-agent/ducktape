@@ -25,7 +25,7 @@ class Broker:
         self.result = result or _ok_result().model_dump()
         self.error = error
 
-    def enqueue(self, *, daemon_id: str, backend: str, payload: dict[str, Any]) -> UUID:
+    async def enqueue(self, *, daemon_id: str, backend: str, payload: dict[str, Any]) -> UUID:
         if self.error:
             raise RuntimeError(self.error)
         self.enqueued.append((daemon_id, backend, payload))

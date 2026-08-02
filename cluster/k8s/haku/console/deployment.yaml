@@ -154,7 +154,7 @@ spec:
                   name: haku-console-db-app
                   key: dbname
             - name: HAKU_CONSOLE_DATABASE_URL
-              value: "postgresql+psycopg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
+              value: "postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
             # Haku's own backend static agent: the `haku` entry in config.yaml's `static_agents`
             # references these two env vars — the bearer (below) and controller-fed stable external
             # user key (further down). config.yaml owns the durable Agent UUID and display name.
@@ -255,7 +255,7 @@ spec:
             # strand it per-pod and is not a valid Haku OAuth mode). Backed by the console's own
             # Postgres (py-key-value's PostgreSQLStore auto-creates its table), so there is no
             # separate valkey to run. The URL is the asyncpg
-            # form (plain postgresql://), NOT the SQLAlchemy postgresql+psycopg:// the ORM uses.
+            # form (plain postgresql://), NOT the SQLAlchemy asyncpg URL the ORM uses.
             - name: HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND
               value: postgres
             - name: HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__URL

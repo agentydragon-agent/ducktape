@@ -6,27 +6,25 @@ import pytest
 import pytest_bazel
 from sqlalchemy import select
 
-from haku.console.conftest import console_sessions, operator_id, operator_identity_store
+from haku.console.conftest import operator_id
 from haku.console.database_schema import OAuthConnectionResult as OAuthConnectionResultRow
 from haku.console.oauth_connection_result import OAuthConnectionSucceeded, PostgresOAuthConnectionResultStore
 
 
 @pytest.fixture
-def result_store(migrated_db_url: str) -> PostgresOAuthConnectionResultStore:
-    return PostgresOAuthConnectionResultStore(
-        console_sessions(migrated_db_url), operator_identity_store=operator_identity_store(migrated_db_url)
-    )
+def result_store(migrated_sessions, migrated_identity_store) -> PostgresOAuthConnectionResultStore:
+    return PostgresOAuthConnectionResultStore(migrated_sessions, operator_identity_store=migrated_identity_store)
 
 
-def test_result_is_operator_bound_and_consumed_once(
-    make_operator_client, migrated_db_url: str, result_store: PostgresOAuthConnectionResultStore
+async def test_result_is_operator_bound_and_consumed_once(
+    make_operator_client, migrated_sessions, result_store: PostgresOAuthConnectionResultStore
 ) -> None:
     with (
         make_operator_client(operator_external_user_key="result-owner") as owner,
         make_operator_client(operator_external_user_key="other-operator") as other,
     ):
-        owner_id = operator_id(migrated_db_url, "result-owner")
-        result_id = result_store.create(
+        owner_id = await operator_id(migrated_sessions, "result-owner")
+        result_id = await result_store.create(
             operator_id=owner_id,
             result=OAuthConnectionSucceeded(
                 title="Connected to Google Calendar", message="The account is now available in Haku Console."
@@ -46,16 +44,16 @@ def test_result_is_operator_bound_and_consumed_once(
     assert replay.status_code == 404
 
 
-def test_expired_result_is_not_returned(
-    make_operator_client, migrated_db_url: str, result_store: PostgresOAuthConnectionResultStore
+async def test_expired_result_is_not_returned(
+    make_operator_client, migrated_sessions, result_store: PostgresOAuthConnectionResultStore
 ) -> None:
     with make_operator_client(operator_external_user_key="expired-result-owner") as owner:
-        owner_id = operator_id(migrated_db_url, "expired-result-owner")
-        result_id = result_store.create(
+        owner_id = await operator_id(migrated_sessions, "expired-result-owner")
+        result_id = await result_store.create(
             operator_id=owner_id, result=OAuthConnectionSucceeded(title="Connected", message="Ready.")
         )
-        with console_sessions(migrated_db_url).begin() as session:
-            row = session.scalar(
+        async with migrated_sessions.begin() as session:
+            row = await session.scalar(
                 select(OAuthConnectionResultRow).where(OAuthConnectionResultRow.result_id == result_id)
             )
             assert row is not None

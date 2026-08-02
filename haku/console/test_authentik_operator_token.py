@@ -27,9 +27,9 @@ def _utc(offset_seconds: int) -> datetime.datetime:
 
 
 @pytest.fixture
-def _env(migrated_db_url: str) -> tuple[PostgresAuthentikOperatorTokenStore, UUID]:
+async def _env(migrated_db_url: str) -> tuple[PostgresAuthentikOperatorTokenStore, UUID]:
     identity_store = operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("op-hostexec")
+    operator_id = await identity_store.resolve_configured_external_user_key("op-hostexec")
     sessions = console_sessions(migrated_db_url)
     store = PostgresAuthentikOperatorTokenStore(
         sessions,
@@ -53,7 +53,7 @@ def operator_id(_env: tuple[PostgresAuthentikOperatorTokenStore, UUID]) -> UUID:
 
 
 async def test_stores_and_reads_fresh_token(store: PostgresAuthentikOperatorTokenStore, operator_id: UUID) -> None:
-    store.store_login_token(
+    await store.store_login_token(
         operator_id=operator_id,
         access_token="at-1",
         refresh_token="rt-1",
@@ -70,7 +70,7 @@ async def test_missing_token_returns_none(store: PostgresAuthentikOperatorTokenS
 
 
 async def test_refreshes_expired_token(store: PostgresAuthentikOperatorTokenStore, operator_id: UUID) -> None:
-    store.store_login_token(
+    await store.store_login_token(
         operator_id=operator_id,
         access_token="at-old",
         refresh_token="rt-old",
@@ -96,7 +96,7 @@ async def test_refreshes_expired_token(store: PostgresAuthentikOperatorTokenStor
 async def test_expired_without_refresh_token_returns_none(
     store: PostgresAuthentikOperatorTokenStore, operator_id: UUID
 ) -> None:
-    store.store_login_token(
+    await store.store_login_token(
         operator_id=operator_id,
         access_token="at-old",
         refresh_token=None,
@@ -109,7 +109,7 @@ async def test_expired_without_refresh_token_returns_none(
 
 async def test_relogin_replaces_token(store: PostgresAuthentikOperatorTokenStore, operator_id: UUID) -> None:
     for access in ("at-1", "at-2"):
-        store.store_login_token(
+        await store.store_login_token(
             operator_id=operator_id,
             access_token=access,
             refresh_token="rt",

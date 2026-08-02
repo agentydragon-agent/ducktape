@@ -75,7 +75,7 @@ async def subscribe(
     user_agent: Annotated[str | None, Header()] = None,
 ) -> None:
     _require_identity(identity)
-    store.save(
+    await store.save(
         operator_id=actor.operator_id,
         endpoint=body.endpoint,
         p256dh=body.p256dh,
@@ -94,7 +94,7 @@ async def list_subscriptions(
             user_agent=subscription.user_agent,
             created_at=subscription.created_at.isoformat(),
         )
-        for subscription in store.list_for(actor.operator_id)
+        for subscription in await store.list_for(actor.operator_id)
     ]
 
 
@@ -102,5 +102,5 @@ async def list_subscriptions(
 async def unsubscribe(endpoint: str, actor: OperatorActorDep, store: PushSubscriptionStoreDep) -> None:
     """Forget one device. Idempotent: a browser that already dropped its subscription locally
     still gets a clean unsubscribe, and an endpoint this Operator never owned is not found."""
-    if not store.delete(operator_id=actor.operator_id, endpoint=endpoint):
+    if not await store.delete(operator_id=actor.operator_id, endpoint=endpoint):
         raise HTTPException(status_code=404, detail="no such push subscription for this operator")

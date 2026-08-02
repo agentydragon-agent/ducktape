@@ -23,8 +23,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
@@ -145,12 +144,12 @@ def create_app(
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
     # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
     # lifespan below, since the listen loop needs a running event loop.
-    database_url = settings.database_url.get_secret_value()
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
     # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
-    db_engine = create_engine(database_url, pool_pre_ping=True)
-    db_sessions = sessionmaker(db_engine, expire_on_commit=False)
+    database_url = settings.database_url.get_secret_value()
+    db_engine = create_async_engine(database_url, pool_pre_ping=True)
+    db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
     oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
@@ -158,9 +157,7 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.claude_runtime
-    claude_chat_store = (
-        claude_chat.ClaudeChatStore(db_sessions, database_url=database_url) if claude_runtime is not None else None
-    )
+    claude_chat_store = claude_chat.ClaudeChatStore(db_sessions, db_engine)
     claude_chat_service: claude_chat.ClaudeChatService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -236,20 +233,27 @@ def create_app(
         loaded_static_agents = (
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
-        static_agent_definitions = tuple(
-            StaticAgentDefinition(
+
+    async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
+        assert loaded_static_agents is not None
+
+        async def resolve_agent(agent: LoadedStaticAgent) -> StaticAgentDefinition:
+            return StaticAgentDefinition(
                 agent_id=agent.agent_id,
                 display_name=agent.display_name,
-                operator_id=operator_identity_store.resolve_configured_external_user_key(
+                operator_id=await operator_identity_store.resolve_configured_external_user_key(
                     agent.operator_external_user_key
                 ),
                 secret_reference=agent.secret_reference,
                 token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
                 auto_approval_policy=agent.auto_approval_policy,
             )
-            for agent in loaded_static_agents
-        )
-    if claude_runtime is not None and claude_chat_store is not None:
+
+        return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
+
+    # Resolving configured external identities is database I/O. Keep app construction pure and do
+    # this during the async lifespan, after the event loop exists.
+    if claude_runtime is not None:
         if loaded_static_agents is None:
             raise RuntimeError("Claude runtime requires loaded static Agent credentials")
         mcp_agent = next(
@@ -263,9 +267,14 @@ def create_app(
             claude_chat.KubernetesSandboxClaims(claude_runtime),
             mcp_token=mcp_agent.token,
         )
-    static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(
-        fingerprints=tuple(definition.token_fingerprint for definition in static_agent_definitions)
-    )
+    if static_agent_definitions is not None:
+        static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
+    else:
+        assert loaded_static_agents is not None
+        static_agent_fingerprints = tuple(
+            fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents
+        )
+    static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(fingerprints=static_agent_fingerprints)
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
     # Google access token, resolved from the provider-connection store. Auto-approval label lookups
@@ -352,7 +361,12 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        await agent_authority.reconcile_static_agents(static_agent_definitions)
+        static_definitions = (
+            static_agent_definitions
+            if static_agent_definitions is not None
+            else await _resolve_static_agent_definitions()
+        )
+        await agent_authority.reconcile_static_agents(static_definitions)
         if claude_chat_service is not None:
             await claude_chat_service.reconcile_terminal_claims()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run():
@@ -382,6 +396,10 @@ def create_app(
     app.router.routes.extend(mcp_auth.provider.get_well_known_routes(mcp_path=MCP_PATH))
     # The capability router reads settings off app.state (see haku.console.capabilities).
     app.state.settings = settings
+    # Expose the shared database resources to internal dependencies and diagnostics; every store
+    # above uses these same objects rather than creating a second pool.
+    app.state.db_engine = db_engine
+    app.state.db_sessions = db_sessions
     # The operator-login callback persists the operator's Authentik token only when hostexec is
     # configured (offline_access is requested for the same reason). Read at request time from here.
     app.state.hostexec_enabled = hostexec_config is not None

@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from mcp.shared.auth import OAuthToken
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import OAuthTokenState
 from haku.console.oauth_token_support import token_expires_at, token_is_fresh
@@ -207,15 +207,15 @@ class PostgresOAuthTokenStateStore:
     """Own the single freshness/claim/refresh/write algorithm for every OAuth association."""
 
     def __init__(
-        self, sessions: sessionmaker[Session], *, operator_identity_store: PostgresOperatorIdentityStore
+        self, sessions: async_sessionmaker[AsyncSession], *, operator_identity_store: PostgresOperatorIdentityStore
     ) -> None:
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
 
-    def _claim(self, *, token_state_id: UUID, operator_id: UUID) -> _ClaimResult:
-        with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            state = session.get(OAuthTokenState, token_state_id, with_for_update=True)
+    async def _claim(self, *, token_state_id: UUID, operator_id: UUID) -> _ClaimResult:
+        async with self._sessions.begin() as session:
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            state = await session.get(OAuthTokenState, token_state_id, with_for_update=True)
             if state is None or state.operator_id != operator_id:
                 return _Missing()
             now = _now()
@@ -235,16 +235,16 @@ class PostgresOAuthTokenStateStore:
             state.refresh_claim_expires_at = now + _REFRESH_CLAIM_TTL
             return _Claim(claim_id=claim_id, token_revision=state.token_revision, refresh_token=state.refresh_token)
 
-    def _release_claim(self, *, token_state_id: UUID, claim_id: UUID) -> None:
-        with self._sessions.begin() as session:
-            state = session.get(OAuthTokenState, token_state_id, with_for_update=True)
+    async def _release_claim(self, *, token_state_id: UUID, claim_id: UUID) -> None:
+        async with self._sessions.begin() as session:
+            state = await session.get(OAuthTokenState, token_state_id, with_for_update=True)
             if state is not None and state.refresh_claim_id == claim_id:
                 state.refresh_claim_id = None
                 state.refresh_claim_expires_at = None
 
-    def _store_failure(self, *, token_state_id: UUID, claim_id: UUID, error: Exception) -> None:
-        with self._sessions.begin() as session:
-            state = session.get(OAuthTokenState, token_state_id, with_for_update=True)
+    async def _store_failure(self, *, token_state_id: UUID, claim_id: UUID, error: Exception) -> None:
+        async with self._sessions.begin() as session:
+            state = await session.get(OAuthTokenState, token_state_id, with_for_update=True)
             if state is None or state.refresh_claim_id != claim_id:
                 return
             now = _now()
@@ -255,8 +255,6 @@ class PostgresOAuthTokenStateStore:
             else:
                 kind = OAuthRefreshFailureKind.INTERNAL
                 action = OAuthRefreshFailureAction.RETRYING
-                # Unknown exceptions can contain request bodies, DSNs, or other secrets. The full
-                # traceback remains in the caller's logs; persist only its safe class identity.
                 message = f"OAuth token refresh failed: {type(error).__name__}"
             if state.refresh_failure_count == 0:
                 state.refresh_failure_started_at = now
@@ -278,13 +276,13 @@ class PostgresOAuthTokenStateStore:
             state.refresh_claim_id = None
             state.refresh_claim_expires_at = None
 
-    def _store_refreshed(
+    async def _store_refreshed(
         self, *, token_state_id: UUID, operator_id: UUID, claim: _Claim, refreshed: OAuthToken
     ) -> str | None:
         now = _now()
-        with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            state = session.get(OAuthTokenState, token_state_id, with_for_update=True)
+        async with self._sessions.begin() as session:
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            state = await session.get(OAuthTokenState, token_state_id, with_for_update=True)
             if state is None or state.operator_id != operator_id:
                 return None
             if (
@@ -308,7 +306,7 @@ class PostgresOAuthTokenStateStore:
 
     async def access_token_for(self, *, token_state_id: UUID, operator_id: UUID, refresh: RefreshToken) -> str | None:
         while True:
-            match self._claim(token_state_id=token_state_id, operator_id=operator_id):
+            match await self._claim(token_state_id=token_state_id, operator_id=operator_id):
                 case _Fresh(access_token):
                     return access_token
                 case _Missing():
@@ -321,15 +319,15 @@ class PostgresOAuthTokenStateStore:
                     break
         try:
             refreshed = await refresh(claim.refresh_token)
-            return self._store_refreshed(
+            return await self._store_refreshed(
                 token_state_id=token_state_id, operator_id=operator_id, claim=claim, refreshed=refreshed
             )
         except Exception as error:
-            self._store_failure(token_state_id=token_state_id, claim_id=claim.claim_id, error=error)
+            await self._store_failure(token_state_id=token_state_id, claim_id=claim.claim_id, error=error)
             raise
         except BaseException:
             try:
-                self._release_claim(token_state_id=token_state_id, claim_id=claim.claim_id)
+                await self._release_claim(token_state_id=token_state_id, claim_id=claim.claim_id)
             except Exception:
                 logger.exception("Failed to release OAuth refresh claim for token state %s", token_state_id)
             raise

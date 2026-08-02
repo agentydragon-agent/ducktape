@@ -36,17 +36,17 @@ def node_daemon_service(migrated_db_url: str, monkeypatch: pytest.MonkeyPatch) -
 async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: NodeDaemonService) -> None:
     service = node_daemon_service
     instance_id = uuid4()
-    service.heartbeat(
+    await service.heartbeat(
         "wyrm2", HeartbeatRequest(instance_id=instance_id, version="test", backends=["hostexec"], capacity=1)
     )
-    execution_id = service.enqueue(daemon_id="wyrm2", backend="hostexec", payload={"cmd": "true"})
+    execution_id = await service.enqueue(daemon_id="wyrm2", backend="hostexec", payload={"cmd": "true"})
     claim = await service.claim("wyrm2", ClaimRequest(instance_id=instance_id, wait_seconds=0))
     assert claim is not None
     assert claim.execution_id == execution_id
-    assert service.statuses().daemons[0].status is NodeDaemonPresenceStatus.BUSY
-    service.renew("wyrm2", execution_id, LeaseRequest(instance_id=instance_id, lease_token=claim.lease_token))
+    assert (await service.statuses()).daemons[0].status is NodeDaemonPresenceStatus.BUSY
+    await service.renew("wyrm2", execution_id, LeaseRequest(instance_id=instance_id, lease_token=claim.lease_token))
     result = {"exit": {"kind": "exited", "exit_code": 0}, "stdout": "", "stderr": "", "duration_ms": 1}
-    service.finish(
+    await service.finish(
         "wyrm2",
         execution_id,
         ExecutionResultRequest(
@@ -54,7 +54,7 @@ async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: 
         ),
     )
     # A daemon may retry after the console committed the result but its response was lost.
-    service.finish(
+    await service.finish(
         "wyrm2",
         execution_id,
         ExecutionResultRequest(
@@ -64,16 +64,16 @@ async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: 
     assert await service.wait(execution_id) == result
 
 
-def test_presence_uses_enum(node_daemon_service: NodeDaemonService) -> None:
+async def test_presence_uses_enum(node_daemon_service: NodeDaemonService) -> None:
     service = node_daemon_service
-    assert service.statuses().daemons[0].status is NodeDaemonPresenceStatus.OFFLINE
+    assert (await service.statuses()).daemons[0].status is NodeDaemonPresenceStatus.OFFLINE
 
 
-def test_daemon_bearer_selects_identity(node_daemon_service: NodeDaemonService) -> None:
+async def test_daemon_bearer_selects_identity(node_daemon_service: NodeDaemonService) -> None:
     service = node_daemon_service
-    assert service.authenticate("Bearer wyrm2-secret") == "wyrm2"
+    assert await service.authenticate("Bearer wyrm2-secret") == "wyrm2"
     with pytest.raises(HTTPException, match="invalid node daemon bearer"):
-        service.authenticate("Bearer wrong")
+        await service.authenticate("Bearer wrong")
 
 
 if __name__ == "__main__":

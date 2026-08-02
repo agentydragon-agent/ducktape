@@ -47,7 +47,7 @@ TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DEN
 
 
 class ToolCallRepository(Protocol):
-    def submit(
+    async def submit(
         self,
         *,
         server: McpServerEntry,
@@ -58,9 +58,9 @@ class ToolCallRepository(Protocol):
         auto_denial_reason: str | None = None,
     ) -> ToolCallRecord: ...
 
-    def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord: ...
+    async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord: ...
 
-    def list_tool_calls(
+    async def list_tool_calls(
         self,
         *,
         actor: ToolCallActor,
@@ -71,17 +71,17 @@ class ToolCallRepository(Protocol):
         newest_first: bool = False,
     ) -> list[ToolCallRecord]: ...
 
-    def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
+    async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
 
-    def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord: ...
+    async def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord: ...
 
-    def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord: ...
+    async def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord: ...
 
-    def finish(
+    async def finish(
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord: ...
 
-    def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID: ...
+    async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID: ...
 
 
 class ToolExecutor(Protocol):
@@ -119,9 +119,9 @@ class OperatorOAuthTokenStore(Protocol):
 class ProviderConnectionTokenStore(Protocol):
     async def access_token_for(self, *, connection: str, operator_id: UUID) -> str | None: ...
 
-    def is_connected(self, *, connection: str, operator_id: UUID) -> bool: ...
+    async def is_connected(self, *, connection: str, operator_id: UUID) -> bool: ...
 
-    def is_provisioned(self, *, connection: str) -> bool: ...
+    async def is_provisioned(self, *, connection: str) -> bool: ...
 
 
 class AuthentikOperatorTokenStore(Protocol):
@@ -266,7 +266,7 @@ class ToolCallApplicationService:
             # Arguments failed an owned in-process schema: the call can never execute, so it is
             # persisted born-denied (full audit row, never pending) and the validation error goes
             # straight back to the caller to self-correct (operator directive 2026-07-16).
-            record = self._repository.submit(
+            record = await self._repository.submit(
                 server=server,
                 req=req,
                 actor=actor,
@@ -291,7 +291,7 @@ class ToolCallApplicationService:
         if auto_approval_policy_id is not None:
             auth_token = await self._backend_auth(server, actor.operator_id)
 
-        record = self._repository.submit(
+        record = await self._repository.submit(
             server=server,
             req=req,
             actor=actor,
@@ -326,10 +326,10 @@ class ToolCallApplicationService:
         )
         return await self._executor.execute(server, req.tool_name, req.arguments, auth_token)
 
-    def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
-        return self._repository.get(tool_call_id, actor=self._require_actor(actor))
+    async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
+        return await self._repository.get(tool_call_id, actor=self._require_actor(actor))
 
-    def list_tool_calls(
+    async def list_tool_calls(
         self,
         *,
         actor: ToolCallActor,
@@ -340,7 +340,7 @@ class ToolCallApplicationService:
         newest_first: bool = False,
     ) -> list[ToolCallRecord]:
         actor = self._require_actor(actor)
-        return self._repository.list_tool_calls(
+        return await self._repository.list_tool_calls(
             actor=actor,
             statuses=statuses,
             since=since,
@@ -349,16 +349,16 @@ class ToolCallApplicationService:
             newest_first=newest_first,
         )
 
-    def pending_approvals(self, *, actor: ToolCallActor) -> list[ToolCallRecord]:
+    async def pending_approvals(self, *, actor: ToolCallActor) -> list[ToolCallRecord]:
         operator = self._require_operator(actor)
-        return self._repository.list_tool_calls(actor=operator, statuses=[ToolCallStatus.PENDING_APPROVAL])
+        return await self._repository.list_tool_calls(actor=operator, statuses=[ToolCallStatus.PENDING_APPROVAL])
 
     async def decide(
         self, *, tool_call_id: str, decision: ApprovalDecisionRequest, actor: ToolCallActor
     ) -> ToolCallRecord:
         operator = self._require_operator(actor)
         if decision.decision is ApprovalDecision.DENY:
-            record = self._repository.deny(tool_call_id, decision.reason, actor=operator)
+            record = await self._repository.deny(tool_call_id, decision.reason, actor=operator)
             await self._publish(operator.operator_id, record.tool_call_id)
             await self._notify_resolved(operator.operator_id, record)
             logger.info(
@@ -372,10 +372,10 @@ class ToolCallApplicationService:
         if decision.decision is not ApprovalDecision.APPROVE:
             raise AssertionError(f"Unhandled approval {decision.decision=}")
 
-        pending = self._repository.get(tool_call_id, actor=operator)
+        pending = await self._repository.get(tool_call_id, actor=operator)
         server = _server_entry(self._settings, pending.server_id)
         auth_token = await self._backend_auth(server, operator.operator_id)
-        running = self._repository.mark_running(tool_call_id, actor=operator)
+        running = await self._repository.mark_running(tool_call_id, actor=operator)
         # The ask is settled the moment it is approved, even though the run has not started. Retract
         # here rather than at terminal, so a notification on another device stops offering buttons
         # for a decision that has already been made.
@@ -395,7 +395,7 @@ class ToolCallApplicationService:
         dismissed — destroying the distinction the status exists to draw.
         """
         agent = self._require_agent(actor)
-        record = self._repository.withdraw(tool_call_id, reason, actor=agent)
+        record = await self._repository.withdraw(tool_call_id, reason, actor=agent)
         logger.info(
             "tool call %s withdrawn server=%s tool=%s agent=%s reason=%r",
             record.tool_call_id,
@@ -417,19 +417,19 @@ class ToolCallApplicationService:
     ) -> ToolCallRecord:
         if record.status != ToolCallStatus.RUNNING:
             return record
-        execution_operator_id = self._repository.authorize_execution(record.tool_call_id, actor=actor)
+        execution_operator_id = await self._repository.authorize_execution(record.tool_call_id, actor=actor)
         cancellation: asyncio.CancelledError | None = None
         try:
             result = await self._executor.execute(server, record.tool_name, record.arguments, auth_token)
         except asyncio.CancelledError as error:
             cancellation = error
-            updated = self._repository.finish(
+            updated = await self._repository.finish(
                 record.tool_call_id, actor=actor, result=None, error="tool execution cancelled"
             )
         except Exception as error:
-            updated = self._repository.finish(record.tool_call_id, actor=actor, result=None, error=str(error))
+            updated = await self._repository.finish(record.tool_call_id, actor=actor, result=None, error=str(error))
         else:
-            updated = self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
+            updated = await self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
         # The durable row is authoritative. One invalidation after terminal persistence is enough:
         # observers re-read the complete record rather than replaying intermediate transitions.
         await self._publish(execution_operator_id, updated.tool_call_id)
@@ -508,7 +508,7 @@ class ToolCallApplicationService:
             logger.exception("failed to notify resolved approval %s", record.tool_call_id)
 
     async def _wait_terminal(self, tool_call_id: str, actor: ToolCallActor, wait_for_ms: int) -> ToolCallRecord:
-        record = self._repository.get(tool_call_id, actor=actor)
+        record = await self._repository.get(tool_call_id, actor=actor)
         if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
             return record
 
@@ -517,13 +517,13 @@ class ToolCallApplicationService:
         while True:
             remaining = deadline - loop.time()
             if remaining <= 0:
-                return self._repository.get(tool_call_id, actor=actor)
+                return await self._repository.get(tool_call_id, actor=actor)
 
             # Subscribe before re-reading the authoritative row. A transition committed between
             # the first read and subscription is then observed by the second read; a transition
             # committed after it wakes this subscription through PostgreSQL LISTEN/NOTIFY.
             async with self._invalidation_publisher.subscribe(actor.operator_id, tool_call_id) as changed:
-                record = self._repository.get(tool_call_id, actor=actor)
+                record = await self._repository.get(tool_call_id, actor=actor)
                 if record.status in TERMINAL_STATUSES:
                     return record
                 remaining = deadline - loop.time()
@@ -532,7 +532,7 @@ class ToolCallApplicationService:
                 try:
                     await asyncio.wait_for(changed.wait(), timeout=remaining)
                 except TimeoutError:
-                    return self._repository.get(tool_call_id, actor=actor)
+                    return await self._repository.get(tool_call_id, actor=actor)
 
     @staticmethod
     def _require_actor(actor: ToolCallActor) -> ToolCallActor:

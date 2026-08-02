@@ -252,20 +252,20 @@ def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
     return tool_call_console_url(settings.public_base_url, tool_call_id)
 
 
-def _passive_server_connection_statuses(
+async def _passive_server_connection_statuses(
     context: ConsoleMcpContext, actor: ToolCallActor
 ) -> McpServerConnectionStatusResponse:
     """Read connection rows without refreshing tokens or contacting an MCP/provider endpoint."""
     servers = _load_servers(context.settings)
     oauth_statuses = {
         status.server_id: status
-        for status in context.oauth_store.list_statuses(
-            servers=servers, operator_id=actor.operator_id, username="operator"
+        for status in (
+            await context.oauth_store.list_statuses(servers=servers, operator_id=actor.operator_id, username="operator")
         ).associations
     }
     provider_statuses = {
         status.connection: status
-        for status in context.provider_store.list_statuses(operator_id=actor.operator_id).connections
+        for status in (await context.provider_store.list_statuses(operator_id=actor.operator_id)).connections
     }
     result: list[McpServerConnectionStatus] = []
     for server in servers:
@@ -661,7 +661,7 @@ def build_console_mcp(
         discovery or execution attempt may refresh an expired token or prove that reconnect is needed.
         Cataloged provider accounts whose OAuth client is absent remain visible as ``unprovisioned``.
         """
-        return _passive_server_connection_statuses(context, actor)
+        return await _passive_server_connection_statuses(context, actor)
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def list_node_daemons(actor: ToolCallActor = current_actor_dependency) -> DaemonStatusResponse:
@@ -673,7 +673,11 @@ def build_console_mcp(
         read-only console-state view and does not contact a daemon or renew its lease.
         """
         _ = actor
-        return context.node_daemons.statuses() if context.node_daemons is not None else DaemonStatusResponse(daemons=[])
+        return (
+            await context.node_daemons.statuses()
+            if context.node_daemons is not None
+            else DaemonStatusResponse(daemons=[])
+        )
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(
@@ -692,7 +696,7 @@ def build_console_mcp(
             raise ToolError(f"unknown configured MCP server {server_id!r}")
         connection = next(
             status
-            for status in _passive_server_connection_statuses(context, actor).servers
+            for status in (await _passive_server_connection_statuses(context, actor)).servers
             if status.server_id == server_id
         )
         reflection = await metadata_for_operator(
@@ -711,7 +715,7 @@ def build_console_mcp(
     async def get_tool_call(tool_call_id: str, actor: ToolCallActor = current_actor_dependency) -> ToolCallView:
         """Read one tool call (resolve a promise): status, result/error, and its approval link."""
         try:
-            record = context.tool_calls.get(tool_call_id, actor=actor)
+            record = await context.tool_calls.get(tool_call_id, actor=actor)
         except (ToolCallNotFoundError, ToolCallStateConflictError) as error:
             raise ToolError(str(error)) from error
         return ToolCallView(call=record, url=_tool_call_url(context.settings, tool_call_id))
@@ -743,6 +747,7 @@ def build_console_mcp(
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def list_tool_calls(
+        *,
         status: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
         auto_approved: bool | None = None,
@@ -753,7 +758,7 @@ def build_console_mcp(
         """List recent tool calls (newest first by default), optionally filtered by status/since/
         auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that
         went through manual or no approval; omitted: no filter)."""
-        records = context.tool_calls.list_tool_calls(
+        records = await context.tool_calls.list_tool_calls(
             actor=actor,
             statuses=status,
             since=since,

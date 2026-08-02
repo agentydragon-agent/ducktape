@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import datetime
 import time
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Callable, Generator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, call
@@ -19,9 +19,8 @@ from fastapi.testclient import TestClient
 from fastmcp import FastMCP
 from mcp import types as mcp_types
 from pydantic import ValidationError
-from sqlalchemy import create_engine, event, select, text
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import event, select, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -52,6 +51,7 @@ from haku.console.mcp_approval import (
     DegradedReflection,
     McpServerDispatcher,
     PostgresToolCallLedger,
+    ToolCallRecord,
     _execution_auth,
     _mcp_result_to_json,
     metadata_for_operator,
@@ -171,10 +171,10 @@ def _build_test_mcp_server() -> FastMCP:
     return server
 
 
-@contextmanager
-def _serve_remote_oauth(
+@asynccontextmanager
+async def _serve_remote_oauth(
     *, preregistered_client_id: str | None = None, bearers: list[str | None] | None = None
-) -> Generator[str]:
+) -> AsyncGenerator[str]:
     """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
     `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
     Authentik (fronted by kubernetes-mcp-server), which has no DCR endpoint — so the test
@@ -278,14 +278,14 @@ def _serve_remote_oauth(
 
 
 @pytest.fixture
-def remote_oauth_url(upstream_bearers: list[str | None]) -> Generator[str]:
-    with _serve_remote_oauth(bearers=upstream_bearers) as url:
+async def remote_oauth_url(upstream_bearers: list[str | None]) -> AsyncGenerator[str]:
+    async with _serve_remote_oauth(bearers=upstream_bearers) as url:
         yield url
 
 
 @pytest.fixture
-def preregistered_remote_oauth_url() -> Generator[str]:
-    with _serve_remote_oauth(preregistered_client_id="preregistered-client") as url:
+async def preregistered_remote_oauth_url() -> AsyncGenerator[str]:
+    async with _serve_remote_oauth(preregistered_client_id="preregistered-client") as url:
         yield url
 
 
@@ -310,7 +310,7 @@ _STATIC_AGENTS = [
 
 
 @pytest.fixture(autouse=True)
-def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
+async def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
     monkeypatch.setenv(_AGENT_OPERATOR_ENV, "op-haku")
 
@@ -359,16 +359,18 @@ def mcp_server_url(monkeypatch: pytest.MonkeyPatch, upstream_bearers: list[str |
         yield url
 
 
-def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
+async def _enum_values(engine: AsyncEngine) -> dict[str, tuple[str, ...]]:
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    """
                 SELECT type.typname, enum.enumlabel
                 FROM pg_type AS type
                 JOIN pg_enum AS enum ON enum.enumtypid = type.oid
                 ORDER BY type.typname, enum.enumsortorder
                 """
+                )
             )
         ).all()
     return {
@@ -553,18 +555,21 @@ def _withdraw(client: TestClient, tool_call_id: str, reason: str | None, *, acto
 
 def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
     app = cast(FastAPI, client.app)
-    engine = create_engine(app.state.settings.database_url.get_secret_value())
-    try:
-        with Session(engine) as session:
-            binding_id, agent_id, operator_id = session.execute(
+
+    async def resolve() -> AgentActor:
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        async with sessions() as session:
+            result = await session.execute(
                 select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
                 .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
                 .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
                 .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
-            ).one()
+            )
+            binding_id, agent_id, operator_id = result.one()
         return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
-    finally:
-        engine.dispose()
+
+    assert client.portal is not None
+    return client.portal.call(resolve)
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:
@@ -605,6 +610,11 @@ def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID
 @pytest.fixture
 def gmail_client() -> Mock:
     return Mock()
+
+
+@pytest.fixture
+def routing_upstream(mcp_server_url: str, upstream_bearers: list[str | None]) -> tuple[str, list[str | None]]:
+    return mcp_server_url, upstream_bearers
 
 
 @pytest.mark.parametrize(
@@ -679,7 +689,7 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
     assert callback.status_code == 303, callback.text
 
 
-def test_operator_oauth_callback_is_bound_to_flow_operator(
+async def test_operator_oauth_callback_is_bound_to_flow_operator(
     make_operator_client, operator_oauth_config_file: Path
 ) -> None:
     with (
@@ -716,7 +726,7 @@ def test_operator_oauth_callback_is_bound_to_flow_operator(
     assert completed.status_code == 303, completed.text
 
 
-def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
+async def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
     result = mcp_types.CallToolResult(
         content=[
             mcp_types.TextContent(type="text", text="ok"),
@@ -733,7 +743,7 @@ def test_mcp_result_serialization_uses_mcp_wire_shape() -> None:
     }
 
 
-def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url: str) -> None:
+async def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url: str) -> None:
     first = _submit(operator_client)
     second = _submit(operator_client)
     assert first["tool_call_id"].startswith("tc_")
@@ -743,7 +753,7 @@ def test_submit_mints_tool_call_id(operator_client: TestClient, migrated_db_url:
     assert second["tool_call_id"] != first["tool_call_id"]
 
 
-def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
+async def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
     response = operator_client.post(
         "/api/tool-calls",
         headers={"Authorization": "Bearer tool-token"},
@@ -752,7 +762,7 @@ def test_rest_submission_route_is_retired(operator_client: TestClient) -> None:
     assert response.status_code == 405
 
 
-def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
+async def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
@@ -781,7 +791,7 @@ def test_haku_gmail_labels_list_auto_approves_executes_and_records_policy(
     assert pending["approvals"] == []
 
 
-def test_operator_gmail_labels_list_stays_pending(
+async def test_operator_gmail_labels_list_stays_pending(
     make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with make_operator_client(
@@ -799,7 +809,7 @@ def test_operator_gmail_labels_list_stays_pending(
     assert record["auto_approval_evaluation"] is None
 
 
-def test_list_tool_calls_filters_by_auto_approved(
+async def test_list_tool_calls_filters_by_auto_approved(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
@@ -847,7 +857,7 @@ def _agent_stock_add(amount: int = 1) -> SubmitToolCallRequest:
     )
 
 
-def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
+async def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
     make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_config: Path
 ) -> None:
     with (
@@ -876,7 +886,7 @@ def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_row(
     assert "not pending approval" in decision.json()["detail"]
 
 
-def test_websocket_receives_agent_withdrawal_invalidation(
+async def test_websocket_receives_agent_withdrawal_invalidation(
     make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_config: Path
 ) -> None:
     with (
@@ -896,7 +906,7 @@ def test_websocket_receives_agent_withdrawal_invalidation(
     assert event == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
 
 
-def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
+async def test_haku_gmail_nonmatching_policy_evaluation_is_recorded(
     make_client, make_operator_client, gmail_config_file: Path, gmail_client: Mock
 ) -> None:
     with (
@@ -959,10 +969,12 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
     assert finished["result"]["content"][0]["text"] == "stock_add:123:1"
 
 
-def test_configured_credential_approval_passes_canonical_operator_id(
+async def test_configured_credential_approval_passes_canonical_operator_id(
+    *,
     make_operator_client,
     console_config: Path,
     migrated_db_url: str,
+    migrated_sessions,
     upstream_bearers: list[str | None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -977,15 +989,17 @@ def test_configured_credential_approval_passes_canonical_operator_id(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [operator_id(migrated_db_url, "configured-credential-sub")]
+    assert execution_operator_ids == [await operator_id(migrated_sessions, "configured-credential-sub")]
     assert upstream_bearers == ["test-token"]
 
 
-def test_operator_oauth_association_drives_approved_tool_execution(
+async def test_operator_oauth_association_drives_approved_tool_execution(
+    *,
     make_operator_client,
     operator_oauth_config_file: Path,
     upstream_bearers: list[str | None],
     migrated_db_url: str,
+    migrated_sessions,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     execution_operator_ids = _record_execution_operator_ids(monkeypatch)
@@ -1021,13 +1035,13 @@ def test_operator_oauth_association_drives_approved_tool_execution(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [operator_id(migrated_db_url, "operator-oauth-sub")]
+    assert execution_operator_ids == [await operator_id(migrated_sessions, "operator-oauth-sub")]
     # The upstream saw exactly two requests: the unauthenticated probe that starts the DCR
     # challenge, then the approved execution carrying this Operator's own linked token.
     assert upstream_bearers == [None, "operator-access-token"]
 
 
-def test_operator_oauth_approval_requires_existing_association(
+async def test_operator_oauth_approval_requires_existing_association(
     make_operator_client, operator_oauth_config_file: Path, upstream_bearers: list[str | None]
 ) -> None:
     with make_operator_client(config_file=operator_oauth_config_file) as client:
@@ -1041,49 +1055,50 @@ def test_operator_oauth_approval_requires_existing_association(
     assert upstream_bearers == []
 
 
-def _seed_association(db_url: str, *, operator_external_user_key: str, access_token: str) -> None:
+async def _seed_association(
+    sessions: async_sessionmaker[AsyncSession], *, operator_external_user_key: str, access_token: str
+) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
-    engine = create_engine(db_url)
     now = datetime.datetime.now(datetime.UTC)
-    try:
-        with sessionmaker(engine)() as session, session.begin():
-            session.add(
-                McpOperatorOAuthAssociation(
-                    server_id="grocy-sf",
-                    operator_id=operator_id(db_url, operator_external_user_key),
-                    created_at=now,
-                    client_id="test-client",
-                    token_endpoint="http://unused.test/token",
-                    token_state=new_oauth_token_state(
-                        operator_id=operator_id(db_url, operator_external_user_key),
-                        access_token=access_token,
-                        refresh_token=None,
-                        token_type="Bearer",
-                        scope=None,
-                        expires_at=now + datetime.timedelta(hours=1),
-                        now=now,
-                    ),
-                )
+    resolved_operator_id = await operator_id(sessions, operator_external_user_key)
+    async with sessions.begin() as session:
+        session.add(
+            McpOperatorOAuthAssociation(
+                server_id="grocy-sf",
+                operator_id=resolved_operator_id,
+                created_at=now,
+                client_id="test-client",
+                token_endpoint="http://unused.test/token",
+                token_state=new_oauth_token_state(
+                    operator_id=resolved_operator_id,
+                    access_token=access_token,
+                    refresh_token=None,
+                    token_type="Bearer",
+                    scope=None,
+                    expires_at=now + datetime.timedelta(hours=1),
+                    now=now,
+                ),
             )
-    finally:
-        engine.dispose()
+        )
 
 
-def test_routing_executes_each_agent_as_its_own_operator(
+async def test_routing_executes_each_agent_as_its_own_operator(
+    *,
     make_client,
     tmp_path: Path,
     migrated_db_url: str,
+    migrated_sessions: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
-    mcp_server_url: str,
-    upstream_bearers: list[str | None],
+    routing_upstream: tuple[str, list[str | None]],
 ) -> None:
     """Two static agents bound to two operators: each agent's auto-approved operator_oauth call
     executes with *its* operator's token, with no crosstalk."""
     # `haku` (bearer tool-token → op-haku) comes from the autouse env; add a second agent `ops-bot`.
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
-    _seed_association(migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku")
-    _seed_association(migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops")
+    mcp_server_url, upstream_bearers = routing_upstream
+    await _seed_association(migrated_sessions, operator_external_user_key="op-haku", access_token="grocy-token-haku")
+    await _seed_association(migrated_sessions, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
     config = _config([_remote_server("grocy-sf", mcp_server_url, _dynamic_remote_oauth())])
     config["auto_approval_policies"] = [
@@ -1117,7 +1132,12 @@ def test_routing_executes_each_agent_as_its_own_operator(
 
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
             actor = _static_agent_actor(client, bearer)
-            listed = client.app.state.tool_call_service.list_tool_calls(actor=actor)
+
+            async def list_calls(actor: ToolCallActor = actor) -> list[ToolCallRecord]:
+                return cast(list[ToolCallRecord], await client.app.state.tool_call_service.list_tool_calls(actor=actor))
+
+            assert client.portal is not None
+            listed = client.portal.call(list_calls)
             assert [call.tool_call_id for call in listed] == [expected_call_id]
             assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
 
@@ -1125,7 +1145,7 @@ def test_routing_executes_each_agent_as_its_own_operator(
     assert upstream_bearers == ["grocy-token-haku", "grocy-token-ops"]
 
 
-def test_two_operator_two_agent_http_authorization_matrix(
+async def test_two_operator_two_agent_http_authorization_matrix(
     make_client, make_operator_client, tmp_path: Path, mcp_server_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     agent_specs = (
@@ -1237,7 +1257,7 @@ def test_two_operator_two_agent_http_authorization_matrix(
         assert denied.json()["tool_call"]["status"] == "denied"
 
 
-def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
+async def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
         f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "deny", "reason": "not today"}
@@ -1249,7 +1269,7 @@ def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestC
     assert tool_call["denial_reason"] == "not today"
 
 
-def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient) -> None:
+async def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient) -> None:
     body = _submit_request(
         operator_client,
         SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=1000),
@@ -1264,14 +1284,16 @@ def test_all_v1_tool_calls_require_console_approval(operator_client: TestClient)
     assert listed["tool_calls"][0]["tool_call_id"] == body["tool_call_id"]
 
 
-def test_unknown_oauth_server_maps_to_http_not_found(operator_client: TestClient) -> None:
+async def test_unknown_oauth_server_maps_to_http_not_found(operator_client: TestClient) -> None:
     connected = operator_client.post("/api/mcp/operator-auth/missing/connect")
 
     assert connected.status_code == 404
     assert connected.json()["detail"] == "unknown MCP server: missing"
 
 
-def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_client, console_config: Path) -> None:
+async def test_operator_tenants_cannot_read_or_decide_each_others_calls(
+    make_operator_client, console_config: Path
+) -> None:
     with (
         make_operator_client(
             config_file=console_config, operator_external_user_key="operator-a", operator_username="a@example.com"
@@ -1297,7 +1319,7 @@ def test_operator_tenants_cannot_read_or_decide_each_others_calls(make_operator_
         assert approved.json()["tool_call"]["status"] == "running"
 
 
-def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
+async def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) -> None:
     first = _submit(operator_client, amount=1)
     second = _submit(operator_client, amount=2)
     third = _submit(operator_client, amount=3)
@@ -1313,8 +1335,14 @@ def test_list_newest_first_keeps_the_most_recent(operator_client: TestClient) ->
     assert [r["tool_call_id"] for r in oldest["tool_calls"]] == ids
 
 
-def test_ledger_get_and_list_load_principal_projection_in_one_query(
-    make_client, make_operator_client, console_config: Path, migrated_db_url: str
+async def test_ledger_get_and_list_load_principal_projection_in_one_query(
+    *,
+    make_client,
+    make_operator_client,
+    console_config: Path,
+    migrated_db_url: str,
+    migrated_sessions,
+    migrated_engine: AsyncEngine,
 ) -> None:
     with (
         make_client(config_file=console_config) as agent,
@@ -1328,9 +1356,9 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         agent_call_id = cast(str, agent_record["tool_call_id"])
         operator_call_id = cast(str, _submit(operator)["tool_call_id"])
 
-    ledger_engine = create_engine(migrated_db_url, pool_pre_ping=True)
-    ledger = PostgresToolCallLedger(sessionmaker(ledger_engine, expire_on_commit=False))
-    actor = OperatorActor(operator_id=operator_id(migrated_db_url, "op-haku"))
+    ledger_engine = migrated_engine
+    ledger = PostgresToolCallLedger(migrated_sessions)
+    actor = OperatorActor(operator_id=await operator_id(migrated_sessions, "op-haku"))
     statements: list[str] = []
 
     def record_tool_call_query(
@@ -1339,9 +1367,9 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         if "mcp_tool_call" in statement.casefold():
             statements.append(statement)
 
-    event.listen(ledger_engine, "before_cursor_execute", record_tool_call_query)
+    event.listen(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
     try:
-        listed = ledger.list_tool_calls(actor=actor)
+        listed = await ledger.list_tool_calls(actor=actor)
         assert len(statements) == 1, statements
 
         by_id = {record.tool_call_id: record for record in listed}
@@ -1352,15 +1380,14 @@ def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert by_id[operator_call_id].caller == OperatorToolCallCaller()
 
         statements.clear()
-        fetched = ledger.get(agent_call_id, actor=actor)
+        fetched = await ledger.get(agent_call_id, actor=actor)
         assert len(statements) == 1, statements
         assert fetched == by_id[agent_call_id]
     finally:
-        event.remove(ledger_engine, "before_cursor_execute", record_tool_call_query)
-        ledger_engine.dispose()
+        event.remove(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
 
 
-def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
+async def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:
     with operator_client.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
         assert ws.receive_json() == {"event_type": "hello"}
         submitted = _submit(operator_client)
@@ -1369,7 +1396,7 @@ def test_websocket_receives_pending_approval_invalidation(operator_client: TestC
     assert operator_client.get("/api/approvals/events").status_code == 404
 
 
-def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
+async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
     make_operator_client, console_config: Path
 ) -> None:
     with (
@@ -1407,7 +1434,7 @@ def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
     assert expected_b.isdisjoint({event["tool_call_id"] for event in received_a})
 
 
-def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
+async def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
     make_operator_client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Expiry gets its own close code so the shell re-authenticates instead of showing the live
@@ -1427,7 +1454,7 @@ def test_websocket_reports_an_expired_session_apart_from_a_rejected_one(
     assert disconnected.value.code == console_events.OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 
 
-def test_websocket_rejects_cross_origin(make_operator_client) -> None:
+async def test_websocket_rejects_cross_origin(make_operator_client) -> None:
     with (
         make_operator_client() as client,
         pytest.raises(WebSocketDisconnect) as exc_info,
@@ -1437,7 +1464,7 @@ def test_websocket_rejects_cross_origin(make_operator_client) -> None:
     assert exc_info.value.code == 1008
 
 
-def test_audit_log_is_tenant_scoped_and_redacts_secrets(
+async def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     make_client, make_operator_client, console_config: Path
 ) -> None:
     with (
@@ -1466,7 +1493,9 @@ def test_audit_log_is_tenant_scoped_and_redacts_secrets(
     assert "tool-token" not in dumped
 
 
-def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: TestClient, db_url: str) -> None:
+async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
+    operator_client: TestClient, migrated_engine: AsyncEngine, migrated_sessions, migrated_db_url: str
+) -> None:
     submitted = _submit_request(
         operator_client,
         SubmitToolCallRequest(server_id="smoke", tool_name="echo", arguments={"text": "world"}, wait_for_ms=0),
@@ -1481,65 +1510,68 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     assert finished["status"] == "ok"
     assert finished["result"]["content"][0]["text"] == "echo:world"
 
-    engine = create_engine(db_url)
-    try:
-        with engine.connect() as conn:
-            tables = {
-                row["table_name"]
-                for row in conn.execute(
+    engine = migrated_engine
+    async with engine.connect() as conn:
+        tables = {
+            row["table_name"]
+            for row in (
+                await conn.execute(
                     text(
                         """
-                        SELECT table_name
-                        FROM information_schema.tables
-                        WHERE table_schema = 'public'
-                        """
+                            SELECT table_name
+                            FROM information_schema.tables
+                            WHERE table_schema = 'public'
+                            """
                     )
                 )
-                .mappings()
-                .all()
-            }
-            columns = {
-                row["column_name"]
-                for row in conn.execute(
+            )
+            .mappings()
+            .all()
+        }
+        columns = {
+            row["column_name"]
+            for row in (
+                await conn.execute(
                     text(
                         """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_name = 'mcp_tool_calls'
-                        """
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_name = 'mcp_tool_calls'
+                            """
                     )
                 )
-                .mappings()
-                .all()
-            }
-            principal_columns = {
-                row["column_name"]
-                for row in conn.execute(
+            )
+            .mappings()
+            .all()
+        }
+        principal_columns = {
+            row["column_name"]
+            for row in (
+                await conn.execute(
                     text(
                         """
-                        SELECT column_name
-                        FROM information_schema.columns
-                        WHERE table_name = 'mcp_tool_call_principals'
-                        """
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_name = 'mcp_tool_call_principals'
+                            """
                     )
                 )
-                .mappings()
-                .all()
-            }
-        with sessionmaker(engine)() as session:
-            persisted_call = session.get(McpToolCall, submitted["tool_call_id"])
-            persisted_principal = session.get(McpToolCallPrincipal, submitted["tool_call_id"])
-            assert persisted_call is not None
-            assert persisted_principal is not None
-            assert persisted_principal.operator_id == operator_id(db_url, "operator-sub")
-            assert persisted_call.server_id == "smoke"
-            assert persisted_call.tool_name == "echo"
-            assert persisted_call.status is ToolCallStatus.OK
-            assert persisted_call.arguments_json == {"text": "world"}
-            assert persisted_call.result_json is not None
-            assert persisted_call.result_json["content"][0]["text"] == "echo:world"
-    finally:
-        engine.dispose()
+            )
+            .mappings()
+            .all()
+        }
+    async with migrated_sessions() as session:
+        persisted_call = await session.get(McpToolCall, submitted["tool_call_id"])
+        persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
+        assert persisted_call is not None
+        assert persisted_principal is not None
+        assert persisted_principal.operator_id == await operator_id(migrated_sessions, "operator-sub")
+        assert persisted_call.server_id == "smoke"
+        assert persisted_call.tool_name == "echo"
+        assert persisted_call.status is ToolCallStatus.OK
+        assert persisted_call.arguments_json == {"text": "world"}
+        assert persisted_call.result_json is not None
+        assert persisted_call.result_json["content"][0]["text"] == "echo:world"
 
     assert {
         "operators",
@@ -1569,13 +1601,13 @@ def test_postgres_store_runs_alembic_and_persists_typed_ledger(operator_client: 
     assert principal_columns == {column.name for column in McpToolCallPrincipal.__table__.columns}
 
 
-def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
+async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_engine(db_url)
+    engine = create_async_engine(db_url)
     try:
-        baseline_values = _enum_values(engine)
+        baseline_values = await _enum_values(engine)
     finally:
-        engine.dispose()
+        await engine.dispose()
 
     current_values = {
         "agent_status": tuple(status.value for status in AgentStatus),
@@ -1602,7 +1634,7 @@ def test_server_entry_allows_in_process_backend() -> None:
     )  # ok: resolved via the in-process registry at runtime, not this model
 
 
-def test_config_rejects_unknown_operator_connection() -> None:
+async def test_config_rejects_unknown_operator_connection() -> None:
     with pytest.raises(ValidationError, match="unknown operator connection 'missing'"):
         ConsoleConfigFile.model_validate(
             {
@@ -1613,7 +1645,7 @@ def test_config_rejects_unknown_operator_connection() -> None:
         )
 
 
-def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
+async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -1641,7 +1673,7 @@ def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     assert list(config.operator_connections) == ["google_mail", "google_calendar"]
 
 
-def test_config_rejects_incompatible_registered_credential_kind() -> None:
+async def test_config_rejects_incompatible_registered_credential_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -1669,7 +1701,7 @@ def test_config_rejects_incompatible_registered_credential_kind() -> None:
         validate_in_process_server_bindings(config, {"google": registration})
 
 
-def test_remote_oauth_client_registration_variants_reject_each_others_fields() -> None:
+async def test_remote_oauth_client_registration_variants_reject_each_others_fields() -> None:
     with pytest.raises(ValidationError, match="client_id"):
         RemoteServerOAuthAuth.model_validate(
             {
@@ -1740,7 +1772,8 @@ async def test_dispatcher_reflects_in_process_server_tools() -> None:
 
 
 async def test_operator_connection_reflection_checks_presence_without_resolving_token() -> None:
-    provider_store = Mock()
+    provider_store = AsyncMock()
+    provider_store.is_provisioned.return_value = True
     provider_store.is_connected.return_value = True
     builder = Mock(return_value=_build_test_mcp_server())
     dispatcher = McpServerDispatcher(
@@ -1761,7 +1794,8 @@ async def test_operator_connection_reflection_checks_presence_without_resolving_
 
     assert isinstance(metadata, list)
     builder.assert_called_once_with(None)
-    provider_store.is_connected.assert_called_once_with(connection="google_workspace", operator_id=operator)
+    provider_store.is_provisioned.assert_awaited_once_with(connection="google_workspace")
+    provider_store.is_connected.assert_awaited_once_with(connection="google_workspace", operator_id=operator)
     provider_store.access_token_for.assert_not_called()
 
 

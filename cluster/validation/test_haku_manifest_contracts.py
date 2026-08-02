@@ -65,7 +65,6 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "warm_pool": "haku-claude",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
-        "prompt_poll_seconds": 0.25,
         "oauth_placeholder": "sk-ant-oat01-proxy-haku-claude-placeholder",
         "https_proxy": "http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180",
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",

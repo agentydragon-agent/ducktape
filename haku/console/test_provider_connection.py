@@ -12,12 +12,10 @@ import pytest_bazel
 from fastapi import HTTPException
 from mcp.shared.auth import OAuthToken
 from pydantic import SecretStr
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
-from haku.console.conftest import console_sessions, operator_identity_store
 from haku.console.database_schema import ProviderConnection
 from haku.console.mcp_config import (
     ConsoleConfigFile,
@@ -28,6 +26,7 @@ from haku.console.mcp_config import (
     OperatorConnectionProviderDefinition,
 )
 from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore, load_provider_clients
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
@@ -43,14 +42,13 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
 @pytest.fixture
-def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, UUID]:
-    identity_store = operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("op-provider")
-    sessions = console_sessions(migrated_db_url)
-    store = PostgresProviderConnectionStore(
-        sessions,
-        operator_identity_store=identity_store,
-        token_states=PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store),
+async def store(
+    migrated_sessions: async_sessionmaker, migrated_identity_store: PostgresOperatorIdentityStore
+) -> PostgresProviderConnectionStore:
+    return PostgresProviderConnectionStore(
+        migrated_sessions,
+        operator_identity_store=migrated_identity_store,
+        token_states=PostgresOAuthTokenStateStore(migrated_sessions, operator_identity_store=migrated_identity_store),
         provider_definitions={
             GOOGLE_MAIL: OperatorConnectionProviderDefinition(
                 kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"
@@ -74,17 +72,11 @@ def _store_env(migrated_db_url: str) -> tuple[PostgresProviderConnectionStore, U
             ),
         },
     )
-    return store, operator_id
 
 
 @pytest.fixture
-def store(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> PostgresProviderConnectionStore:
-    return _store_env[0]
-
-
-@pytest.fixture
-def operator_id(_store_env: tuple[PostgresProviderConnectionStore, UUID]) -> UUID:
-    return _store_env[1]
+async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) -> UUID:
+    return await migrated_identity_store.resolve_configured_external_user_key("op-provider")
 
 
 async def _connect(
@@ -151,19 +143,21 @@ async def test_callback_persists_connection(
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-1"
-    connections = store.list_statuses(operator_id=operator_id).connections
+    connections = (await store.list_statuses(operator_id=operator_id)).connections
     assert [(c.connection, c.display_name, c.provider, c.status) for c in connections] == [
         (GOOGLE_MAIL, "Google Mail", GOOGLE, "connected"),
         (GOOGLE_CALENDAR, "Google Calendar", GOOGLE, "unconnected"),
     ]
 
 
-def test_cataloged_connection_without_oauth_client_is_unprovisioned(
+async def test_cataloged_connection_without_oauth_client_is_unprovisioned(
     store: PostgresProviderConnectionStore, operator_id: UUID
 ) -> None:
     store._provider_clients.pop(GOOGLE_CALENDAR)
 
-    statuses = {status.connection: status for status in store.list_statuses(operator_id=operator_id).connections}
+    statuses = {
+        status.connection: status for status in (await store.list_statuses(operator_id=operator_id)).connections
+    }
 
     assert statuses[GOOGLE_MAIL].status == "unconnected"
     assert statuses[GOOGLE_CALENDAR].model_dump(mode="json") == {
@@ -173,7 +167,7 @@ def test_cataloged_connection_without_oauth_client_is_unprovisioned(
         "status": "unprovisioned",
         "detail": "OAuth client not provisioned on this console; see the console deployment README.",
     }
-    assert store.is_provisioned(connection=GOOGLE_CALENDAR) is False
+    assert await store.is_provisioned(connection=GOOGLE_CALENDAR) is False
 
 
 async def test_same_provider_connections_have_independent_grants(
@@ -187,14 +181,12 @@ async def test_same_provider_connections_have_independent_grants(
 
 
 async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token(
-    store: PostgresProviderConnectionStore, operator_id: UUID, migrated_db_url: str, monkeypatch: pytest.MonkeyPatch
+    store: PostgresProviderConnectionStore, operator_id: UUID, migrated_sessions, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch, access_token="at-1", refresh_token="rt-1")
 
-    engine = create_engine(migrated_db_url)
-    sessions = sessionmaker(engine, expire_on_commit=False)
-    with sessions.begin() as session:
-        row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
+    async with migrated_sessions.begin() as session:
+        row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         row.token_state.token_expires_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
         revision_before = row.token_state.token_revision
@@ -207,21 +199,20 @@ async def test_access_token_for_refreshes_when_stale_and_preserves_refresh_token
     monkeypatch.setattr(provider_connection_module, "_refresh_token", fake_refresh)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) == "at-2"
 
-    with sessions.begin() as session:
-        row = session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
+    async with migrated_sessions.begin() as session:
+        row = await session.get(ProviderConnection, (operator_id, GOOGLE_MAIL))
         assert row is not None
         assert row.token_state.token_revision == revision_before + 1
         assert row.token_state.refresh_token == "rt-1"
-    engine.dispose()
 
 
 async def test_disconnect_removes_connection(
     store: PostgresProviderConnectionStore, operator_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await _connect(store, operator_id, monkeypatch)
-    store.disconnect(connection=GOOGLE_MAIL, operator_id=operator_id)
+    await store.disconnect(connection=GOOGLE_MAIL, operator_id=operator_id)
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
-    connections = store.list_statuses(operator_id=operator_id).connections
+    connections = (await store.list_statuses(operator_id=operator_id)).connections
     assert [c.status for c in connections] == ["unconnected", "unconnected"]
 
 
@@ -238,7 +229,7 @@ async def test_access_token_for_unconnected_is_none(store: PostgresProviderConne
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
 
 
-def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {
@@ -255,7 +246,7 @@ def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.
     assert load_provider_clients(config) == {}
 
 
-def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "operator_connection_providers": {

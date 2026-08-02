@@ -14,7 +14,8 @@ from uuid import UUID
 
 import httpx
 from mcp.shared.auth import OAuthToken
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from haku.console.database_schema import OperatorAuthentikToken
 from haku.console.oauth_token_state import (
@@ -38,7 +39,7 @@ class PostgresAuthentikOperatorTokenStore:
 
     def __init__(
         self,
-        sessions: sessionmaker[Session],
+        sessions: async_sessionmaker[AsyncSession],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
         token_states: PostgresOAuthTokenStateStore,
@@ -46,19 +47,14 @@ class PostgresAuthentikOperatorTokenStore:
         client_secret: str,
         issuer: str,
     ) -> None:
-        # Migrations are applied once at startup (database_migrate.apply_migrations), not here. The
-        # engine/sessionmaker is created once in create_app and shared across every store.
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store
         self._token_states = token_states
         self._client_id = client_id
         self._client_secret = client_secret
-        # The Authentik token endpoint is derived lazily (only on refresh, which only happens when
-        # hostexec is actually used), so constructing the store never requires an Authentik-shaped
-        # issuer — a non-Authentik operator OIDC (e.g. a hermetic test IdP) that never refreshes is fine.
         self._issuer = issuer
 
-    def store_login_token(
+    async def store_login_token(
         self,
         *,
         operator_id: UUID,
@@ -70,9 +66,14 @@ class PostgresAuthentikOperatorTokenStore:
     ) -> None:
         """Upsert the operator's token captured at browser login (one row per Operator)."""
         now = _now()
-        with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(OperatorAuthentikToken, operator_id, with_for_update=True)
+        async with self._sessions.begin() as session:
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            row = await session.get(
+                OperatorAuthentikToken,
+                operator_id,
+                options=(selectinload(OperatorAuthentikToken.token_state),),
+                with_for_update=True,
+            )
             if row is None:
                 session.add(
                     OperatorAuthentikToken(
@@ -112,9 +113,9 @@ class PostgresAuthentikOperatorTokenStore:
         return await parse_token_response(response, label="Authentik operator token refresh")
 
     async def access_token_for(self, *, operator_id: UUID) -> str | None:
-        with self._sessions.begin() as session:
-            self._operator_identity_store.require_active_in_transaction(session, operator_id)
-            row = session.get(OperatorAuthentikToken, operator_id)
+        async with self._sessions.begin() as session:
+            await self._operator_identity_store.require_active_in_transaction(session, operator_id)
+            row = await session.get(OperatorAuthentikToken, operator_id)
             if row is None:
                 return None
             token_state_id = row.token_state_id

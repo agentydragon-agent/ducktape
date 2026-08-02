@@ -7,7 +7,7 @@ import json
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator
 from haku.console.operator_identity import (
@@ -34,23 +34,25 @@ class PostgresOperatorIdentityStore:
     correctness still comes from the unique database constraints and the locked re-read.
     """
 
-    def __init__(self, sessions: sessionmaker[Session], trust: OperatorIdentityTrust) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], trust: OperatorIdentityTrust) -> None:
         # One shared engine/sessionmaker is created in create_app and injected into every store, so
         # the console opens a single connection pool rather than one per store.
         self._session_factory = sessions
         self.trust = trust
 
-    def resolve_verified_identity(self, external_identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
+    async def resolve_verified_identity(self, external_identity: VerifiedExternalIdentity) -> ResolvedOperatorIdentity:
         anchor_key = self.trust.anchor_key(external_identity)
         now = _now()
-        with self._session_factory.begin() as session:
-            self._lock_anchor(session, anchor_key)
-            existing = session.execute(
-                select(OidcIdentity, IdentityAnchor, Operator)
-                .join(IdentityAnchor, IdentityAnchor.anchor_id == OidcIdentity.anchor_id)
-                .join(Operator, Operator.operator_id == IdentityAnchor.operator_id)
-                .where(OidcIdentity.issuer == external_identity.issuer)
-                .where(OidcIdentity.subject == external_identity.subject)
+        async with self._session_factory.begin() as session:
+            await self._lock_anchor(session, anchor_key)
+            existing = (
+                await session.execute(
+                    select(OidcIdentity, IdentityAnchor, Operator)
+                    .join(IdentityAnchor, IdentityAnchor.anchor_id == OidcIdentity.anchor_id)
+                    .join(Operator, Operator.operator_id == IdentityAnchor.operator_id)
+                    .where(OidcIdentity.issuer == external_identity.issuer)
+                    .where(OidcIdentity.subject == external_identity.subject)
+                )
             ).one_or_none()
             if existing is not None:
                 oidc_identity, anchor, operator = existing
@@ -60,7 +62,7 @@ class PostgresOperatorIdentityStore:
                 anchor.updated_at = now
                 return ResolvedOperatorIdentity(operator_id=operator.operator_id, identity_id=oidc_identity.identity_id)
 
-            anchor, operator = self._get_or_create_anchor(session, anchor_key, now)
+            anchor, operator = await self._get_or_create_anchor(session, anchor_key, now)
             oidc_identity = OidcIdentity(
                 identity_id=uuid4(),
                 anchor_id=anchor.anchor_id,
@@ -72,35 +74,37 @@ class PostgresOperatorIdentityStore:
             session.add(oidc_identity)
             return ResolvedOperatorIdentity(operator_id=operator.operator_id, identity_id=oidc_identity.identity_id)
 
-    def resolve_configured_external_user_key(self, stable_external_user_key: str) -> UUID:
+    async def resolve_configured_external_user_key(self, stable_external_user_key: str) -> UUID:
         """Resolve a controller-fed Authentik user id without fabricating an OIDC identity row."""
         anchor_key = self.trust.configured_anchor_key(stable_external_user_key)
         now = _now()
-        with self._session_factory.begin() as session:
-            self._lock_anchor(session, anchor_key)
-            anchor, operator = self._get_or_create_anchor(session, anchor_key, now)
+        async with self._session_factory.begin() as session:
+            await self._lock_anchor(session, anchor_key)
+            anchor, operator = await self._get_or_create_anchor(session, anchor_key, now)
             anchor.updated_at = now
             return operator.operator_id
 
-    def resolve_active_session(self, *, operator_id: UUID, identity_id: UUID) -> ResolvedOperatorIdentity | None:
+    async def resolve_active_session(self, *, operator_id: UUID, identity_id: UUID) -> ResolvedOperatorIdentity | None:
         """Revalidate a signed browser session against current identity and Operator state."""
-        with self._session_factory() as session:
-            row = session.execute(
-                select(OidcIdentity.identity_id, IdentityAnchor.operator_id, Operator.status)
-                .join(IdentityAnchor, IdentityAnchor.anchor_id == OidcIdentity.anchor_id)
-                .join(Operator, Operator.operator_id == IdentityAnchor.operator_id)
-                .where(OidcIdentity.identity_id == identity_id)
-                .where(IdentityAnchor.operator_id == operator_id)
-                .where(IdentityAnchor.trust_domain == self.trust.trust_domain)
-                .where(OidcIdentity.issuer.in_(self.trust.trusted_issuers))
+        async with self._session_factory() as session:
+            row = (
+                await session.execute(
+                    select(OidcIdentity.identity_id, IdentityAnchor.operator_id, Operator.status)
+                    .join(IdentityAnchor, IdentityAnchor.anchor_id == OidcIdentity.anchor_id)
+                    .join(Operator, Operator.operator_id == IdentityAnchor.operator_id)
+                    .where(OidcIdentity.identity_id == identity_id)
+                    .where(IdentityAnchor.operator_id == operator_id)
+                    .where(IdentityAnchor.trust_domain == self.trust.trust_domain)
+                    .where(OidcIdentity.issuer.in_(self.trust.trusted_issuers))
+                )
             ).one_or_none()
             if row is None or row.status is not OperatorStatus.ACTIVE:
                 return None
             return ResolvedOperatorIdentity(operator_id=row.operator_id, identity_id=row.identity_id)
 
-    def is_active(self, operator_id: UUID) -> bool:
-        with self._session_factory() as session:
-            status = session.scalar(
+    async def is_active(self, operator_id: UUID) -> bool:
+        async with self._session_factory() as session:
+            status = await session.scalar(
                 select(Operator.status)
                 .join(IdentityAnchor, IdentityAnchor.operator_id == Operator.operator_id)
                 .where(Operator.operator_id == operator_id)
@@ -109,11 +113,11 @@ class PostgresOperatorIdentityStore:
             )
             return status is OperatorStatus.ACTIVE
 
-    def require_active(self, operator_id: UUID) -> None:
-        if not self.is_active(operator_id):
+    async def require_active(self, operator_id: UUID) -> None:
+        if not await self.is_active(operator_id):
             raise InactiveOperatorError("operator is disabled or missing")
 
-    def require_active_in_transaction(self, session: Session, operator_id: UUID) -> None:
+    async def require_active_in_transaction(self, session: AsyncSession, operator_id: UUID) -> None:
         """Lock and validate an Operator inside a caller-owned database transaction.
 
         Code that persists or returns an operator-owned capability after external I/O must make
@@ -122,11 +126,11 @@ class PostgresOperatorIdentityStore:
         committed while the I/O was in flight is observed here, while a later disable waits until
         the capability operation has committed.
         """
-        operator = session.get(Operator, operator_id, with_for_update=True)
+        operator = await session.get(Operator, operator_id, with_for_update=True)
         if operator is None:
             raise InactiveOperatorError("operator is missing")
         self._require_active(operator)
-        anchor_id = session.scalar(
+        anchor_id = await session.scalar(
             select(IdentityAnchor.anchor_id)
             .where(IdentityAnchor.operator_id == operator_id)
             .where(IdentityAnchor.trust_domain == self.trust.trust_domain)
@@ -137,11 +141,11 @@ class PostgresOperatorIdentityStore:
             raise InactiveOperatorError("operator is outside the current identity trust domain")
 
     @staticmethod
-    def _lock_anchor(session: Session, key: IdentityAnchorKey) -> None:
+    async def _lock_anchor(session: AsyncSession, key: IdentityAnchorKey) -> None:
         serialized = json.dumps(
             [key.trust_domain, key.stable_external_user_key], ensure_ascii=True, separators=(",", ":")
         )
-        session.execute(
+        await session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:identity_anchor_key, 0))"),
             {"identity_anchor_key": serialized},
         )
@@ -161,18 +165,21 @@ class PostgresOperatorIdentityStore:
         if operator.status is not OperatorStatus.ACTIVE:
             raise InactiveOperatorError("operator is disabled")
 
-    def _get_or_create_anchor(
-        self, session: Session, key: IdentityAnchorKey, now: datetime.datetime
+    @staticmethod
+    async def _get_or_create_anchor(
+        session: AsyncSession, key: IdentityAnchorKey, now: datetime.datetime
     ) -> tuple[IdentityAnchor, Operator]:
-        row = session.execute(
-            select(IdentityAnchor, Operator)
-            .join(Operator, Operator.operator_id == IdentityAnchor.operator_id)
-            .where(IdentityAnchor.trust_domain == key.trust_domain)
-            .where(IdentityAnchor.stable_external_user_key == key.stable_external_user_key)
+        row = (
+            await session.execute(
+                select(IdentityAnchor, Operator)
+                .join(Operator, Operator.operator_id == IdentityAnchor.operator_id)
+                .where(IdentityAnchor.trust_domain == key.trust_domain)
+                .where(IdentityAnchor.stable_external_user_key == key.stable_external_user_key)
+            )
         ).one_or_none()
         if row is not None:
             anchor, operator = row
-            self._require_active(operator)
+            PostgresOperatorIdentityStore._require_active(operator)
             return anchor, operator
 
         operator = Operator(operator_id=uuid4(), status=OperatorStatus.ACTIVE, created_at=now, updated_at=now)
@@ -188,7 +195,7 @@ class PostgresOperatorIdentityStore:
         # the graph. Flush each FK parent explicitly so SQLAlchemy cannot choose child-first insert
         # order when several new mapped objects have only scalar UUID fields connecting them.
         session.add(operator)
-        session.flush()
+        await session.flush()
         session.add(anchor)
-        session.flush()
+        await session.flush()
         return anchor, operator

@@ -12,6 +12,7 @@ from uuid import UUID
 import psycopg
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, ValidationError
+from sqlalchemy.engine import make_url
 
 from haku.console import operator_auth
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -66,7 +67,7 @@ class _RoutedConsoleEvent(BaseModel):
 
 
 def _psycopg_dsn(database_url: str) -> str:
-    return database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 class ConsoleEventHub:
@@ -193,7 +194,7 @@ class ConsoleEventHub:
                 waiter.set()
         if not self._connections:
             return
-        if not await asyncio.to_thread(self._operator_identity_store.is_active, event_operator_id):
+        if not await self._operator_identity_store.is_active(event_operator_id):
             disabled = [
                 websocket
                 for websocket, connected_operator_id in list(self._connections.items())
@@ -304,7 +305,7 @@ async def console_events_ws(websocket: WebSocket, actor: operator_auth.OperatorA
             if operator_auth.signed_operator_session(websocket) is None:
                 await websocket.close(code=OPERATOR_SESSION_EXPIRED_CLOSE_CODE, reason="operator session expired")
                 return
-            if await asyncio.to_thread(operator_auth.operator_session, websocket) is None:
+            if await operator_auth.operator_session(websocket) is None:
                 await websocket.close(code=1008, reason="operator is disabled or missing")
                 return
     except WebSocketDisconnect:

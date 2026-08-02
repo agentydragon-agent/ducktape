@@ -15,7 +15,6 @@ Pending logins live in Postgres, not the session cookie — see `operator_login_
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 import logging
 import secrets
@@ -193,15 +192,26 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
     )
 
 
-def operator_session(
-    conn: HTTPConnection, *, identity_store: PostgresOperatorIdentityStore | None = None
-) -> OperatorSession | None:
+async def operator_session(conn: HTTPConnection) -> OperatorSession | None:
     """The DB-revalidated browser session, or ``None`` when malformed, stale, or disabled."""
+    return await operator_session_for_identity_store(conn, _identity_store(conn))
+
+
+async def operator_session_for_identity_store(
+    conn: HTTPConnection, identity_store: PostgresOperatorIdentityStore
+) -> OperatorSession | None:
+    """Resolve a session against an explicitly supplied identity store.
+
+    The normal ``operator_session`` signature intentionally exposes only the request connection so
+    FastAPI can use it directly as a dependency. MCP's protocol adapter supplies its store
+    explicitly because it is constructed outside FastAPI's dependency graph.
+    """
     signed = signed_operator_session(conn)
     if signed is None:
         return None  # already logged with its distinguishing reason
-    store = identity_store if identity_store is not None else _identity_store(conn)
-    identity = store.resolve_active_session(operator_id=signed.operator_id, identity_id=signed.identity_id)
+    identity = await identity_store.resolve_active_session(
+        operator_id=signed.operator_id, identity_id=signed.identity_id
+    )
     if identity is None:
         _rejected(conn, "identity_inactive", operator_id=signed.operator_id)
         return None
@@ -214,11 +224,11 @@ def operator_session(
     )
 
 
-def operator_username(request: Request) -> str | None:
+async def operator_username(request: Request) -> str | None:
     """The authenticated operator's `preferred_username`, or None — for display/audit, never a key.
 
     Sourced only from a DB-revalidated app-owned OIDC session; no request-header fallback."""
-    session = operator_session(request)
+    session = await operator_session(request)
     return session.username if session is not None else None
 
 
@@ -284,8 +294,7 @@ async def login(request: Request, return_to: str | None = None) -> Response:
     state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     browser_binding = new_browser_binding()
     redirect_uri = _redirect_uri(request)
-    await asyncio.to_thread(
-        _login_flows(request).start,
+    await _login_flows(request).start(
         state=state,
         browser_binding=browser_binding,
         return_to=None if return_to is None else _validated_return_to(return_to),
@@ -334,7 +343,7 @@ def _login_failed(request: Request, message: str, *, retry: bool, return_to: str
 async def callback(request: Request) -> Response:
     flows = _login_flows(request)
     state = request.query_params.get("state")
-    pending = await asyncio.to_thread(flows.pending_login, state) if state is not None else None
+    pending = await flows.pending_login(state) if state is not None else None
     if (
         state is not None
         and pending is not None
@@ -343,7 +352,7 @@ async def callback(request: Request) -> Response:
         # RFC 6749 §10.12: the browser finishing an authorization must be the one that started it.
         # Restarting cannot help — either this browser never held the flow, or it is not keeping
         # cookies at all, and a fresh attempt would land here again.
-        await asyncio.to_thread(flows.discard, state)
+        await flows.discard(state)
         logger.info("operator browser login rejected: the flow was not started by this browser")
         return _login_failed(
             request,
@@ -380,7 +389,7 @@ async def callback(request: Request) -> Response:
     if username is None:
         raise HTTPException(status_code=401, detail="OIDC token missing valid username claim")
     try:
-        identity = _identity_store(request).resolve_verified_identity(
+        identity = await _identity_store(request).resolve_verified_identity(
             VerifiedExternalIdentity(issuer=issuer, subject=subject)
         )
     except OperatorIdentityError as error:
@@ -401,7 +410,7 @@ async def callback(request: Request) -> Response:
     # token). Only when hostexec is configured — otherwise there is no reader for this credential.
     # hostexec lives in the console config file, resolved to this flag at create_app.
     if request.app.state.hostexec_enabled:
-        _persist_operator_authentik_token(request, identity.operator_id, token)
+        await _persist_operator_authentik_token(request, identity.operator_id, token)
     logger.info("operator browser login: %s (operator_id=%s)", username, identity.operator_id)
     # The continuation rides the flow, not the session: it is this attempt's destination, so a
     # second tab logging in cannot redirect the first one somewhere it never asked to go.
@@ -414,7 +423,7 @@ async def callback(request: Request) -> Response:
     return response
 
 
-def _persist_operator_authentik_token(request: Request, operator_id: UUID, token: dict[str, Any]) -> None:
+async def _persist_operator_authentik_token(request: Request, operator_id: UUID, token: dict[str, Any]) -> None:
     """Best-effort: store the operator's Authentik token for hostexec. A failure never breaks login
     (hostexec just won't have a token); the exception is logged."""
     store = cast(PostgresAuthentikOperatorTokenStore, request.app.state.authentik_operator_token_store)
@@ -429,7 +438,7 @@ def _persist_operator_authentik_token(request: Request, operator_id: UUID, token
         else None
     )
     try:
-        store.store_login_token(
+        await store.store_login_token(
             operator_id=operator_id,
             access_token=access_token,
             refresh_token=token.get("refresh_token"),
@@ -449,14 +458,14 @@ async def logout(request: Request) -> RedirectResponse:
 
 @router.get("/me")
 async def me(request: Request) -> OperatorResponse:
-    session = operator_session(request)
+    session = await operator_session(request)
     if session is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return OperatorResponse(username=session.username, expires_at=session.expires_at)
 
 
-def _operator_actor(conn: HTTPConnection) -> OperatorActor:
-    session = operator_session(conn)
+async def _operator_actor(conn: HTTPConnection) -> OperatorActor:
+    session = await operator_session(conn)
     if session is None:
         raise HTTPException(status_code=401, detail="no active authenticated operator on the request")
     return OperatorActor(operator_id=session.operator_id)

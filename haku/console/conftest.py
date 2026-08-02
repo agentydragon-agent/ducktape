@@ -14,10 +14,10 @@ import json
 import re
 import textwrap
 import time
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import itsdangerous
@@ -26,14 +26,16 @@ import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings, WebPushConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
-from haku.console.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
+from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
 from util.testing.postgres import force_drop_database_sync
@@ -128,10 +130,11 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     )
 
 
-def console_sessions(db_url: str) -> sessionmaker[Session]:
-    """The shared sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
-    (production builds a single engine/sessionmaker and passes it to every store)."""
-    return sessionmaker(create_engine(db_url, pool_pre_ping=True), expire_on_commit=False)
+def console_sessions(db_url: str) -> async_sessionmaker[AsyncSession]:
+    """The shared async sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
+    (production builds a single async engine/sessionmaker and passes it to every store)."""
+    async_url = make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    return async_sessionmaker(create_async_engine(async_url, pool_pre_ping=True), expire_on_commit=False)
 
 
 def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
@@ -144,9 +147,36 @@ def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
     )
 
 
-def operator_id(db_url: str, external_user_key: str) -> UUID:
-    """Resolve a controller-fed external user key to its canonical Operator UUID."""
-    return operator_identity_store(db_url).resolve_configured_external_user_key(external_user_key)
+async def _resolve_operator_identity(app: Any, external_user_key: str) -> ResolvedOperatorIdentity:
+    """Create the same issuer-scoped browser identity that the OIDC callback would persist."""
+    return cast(
+        ResolvedOperatorIdentity,
+        await app.state.operator_identity_store.resolve_verified_identity(
+            VerifiedExternalIdentity(issuer=app.state.settings.operator_oidc.issuer, subject=external_user_key)
+        ),
+    )
+
+
+async def operator_id(sessions: async_sessionmaker[AsyncSession], external_user_key: str) -> UUID:
+    """Resolve a controller-fed external user key using the caller's async sessionmaker."""
+    store = PostgresOperatorIdentityStore(
+        sessions,
+        OperatorIdentityTrust(
+            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+        ),
+    )
+    return await store.resolve_configured_external_user_key(external_user_key)
+
+
+async def resolve_operator_identity(
+    sessions: async_sessionmaker[AsyncSession], *, issuer: str, subject: str
+) -> ResolvedOperatorIdentity:
+    """Resolve a test OIDC identity using the caller's async sessionmaker."""
+    store = PostgresOperatorIdentityStore(
+        sessions,
+        OperatorIdentityTrust(trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({issuer})),
+    )
+    return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
 
 
 @pytest.fixture(scope="session")
@@ -165,7 +195,11 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
     admin_engine.dispose()
 
-    yield postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+    yield (
+        make_url(postgres_admin_url.rsplit("/", 1)[0] + f"/{db_name}")
+        .set(drivername="postgresql+asyncpg")
+        .render_as_string(hide_password=False)
+    )
 
     force_drop_database_sync(postgres_admin_url, db_name)
 
@@ -176,6 +210,37 @@ def migrated_db_url(db_url: str) -> str:
     explicit startup step, not inside a store constructor)."""
     apply_migrations(db_url)
     return db_url
+
+
+@pytest.fixture
+async def migrated_engine(migrated_db_url: str) -> AsyncGenerator[AsyncEngine]:
+    """A shared async engine for tests that need direct database access.
+
+    The fixture owns disposal so tests can share the same pool without leaking one engine per
+    helper call.
+    """
+    engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def migrated_sessions(migrated_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Sessionmaker bound to the shared migrated test engine."""
+    return async_sessionmaker(migrated_engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def migrated_identity_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
+    """Operator identity store bound to the shared migrated test engine."""
+    return PostgresOperatorIdentityStore(
+        migrated_sessions,
+        OperatorIdentityTrust(
+            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+        ),
+    )
 
 
 @pytest.fixture
@@ -215,18 +280,14 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             **settings_overrides,
         )
         app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process_servers)
-        operator_identity = None
-        if operator:
-            operator_identity = app.state.operator_identity_store.resolve_verified_identity(
-                VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
-            )
-            app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
         # When the session cookie is Secure (https public_base_url → https_only), drive the client
         # over https so the middleware's re-signed cookie is retained and resent across requests.
         https = settings.public_base_url.startswith("https://")
         with TestClient(app, base_url="https://testserver" if https else "http://testserver") as c:
             if operator:
-                assert operator_identity is not None
+                assert c.portal is not None
+                operator_identity = c.portal.call(_resolve_operator_identity, app, operator_external_user_key)
+                app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
                 c.headers["Origin"] = settings.public_base_url.rstrip("/")
                 c.cookies.set(
                     "session",
