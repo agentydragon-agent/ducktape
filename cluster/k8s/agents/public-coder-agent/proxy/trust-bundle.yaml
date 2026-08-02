@@ -25,3 +25,4 @@ spec:
           operator: In
           values:
             - public-coder-agent
+            - public-coder-devbox

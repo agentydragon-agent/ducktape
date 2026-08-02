@@ -531,6 +531,10 @@
           # switch. Published by vm-images-publisher with IMAGE_OUTPUT=agent-box-image,
           # OBJECT_PREFIX=agent-box. cloud-init still injects the persisted host key.
           agent-box-image = self.nixosConfigurations.agent-box.config.system.build.images.qemu-efi;
+          # Full public-coder-devbox host image. Published by vm-images-publisher
+          # with IMAGE_OUTPUT=public-coder-devbox-image and
+          # OBJECT_PREFIX=public-coder-devbox.
+          public-coder-devbox-image = self.nixosConfigurations.public-coder-devbox.config.system.build.images.qemu-efi;
         };
 
       homeConfigurations = {
@@ -632,6 +636,20 @@
               };
             }
           ];
+        };
+
+        # public-coder-devbox - isolated NixOS build/test VM for the public-coder
+        # OpenClaw agent. It is intentionally separate from agent-box so the
+        # agent's toolchain and egress policy can evolve independently.
+        public-coder-devbox = mkNixos {
+          hostname = "public-coder-devbox";
+          username = "coder";
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          inlineHomeManager = {
+            enableGui = false;
+            isK8sWorker = false;
+            module = ./nix/home/hosts/public-coder-devbox.nix;
+          };
         };
 
         # Gecko - headless CLI-only KubeVirt VM for Claude Code / Codex

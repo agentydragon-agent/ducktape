@@ -15,6 +15,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: public-coder-agent-namespace
+    - name: public-coder-devbox-namespace
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector
