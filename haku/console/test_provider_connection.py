@@ -27,7 +27,7 @@ from haku.console.mcp_config import (
     OperatorConnectionProviderDefinition,
 )
 from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
-from haku.console.operator_identity import PostgresOperatorIdentityStore
+from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore, load_provider_clients
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
