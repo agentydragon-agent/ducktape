@@ -123,8 +123,14 @@ def _enrollment_service(request: Request) -> AgentEnrollmentService:
     return cast(AgentEnrollmentService, request.app.state.agent_enrollment_service)
 
 
+async def _operator_session(request: Request) -> OperatorSession | None:
+    """FastAPI-compatible adapter: hides operator_session's internal ``identity_store`` keyword
+    parameter so FastAPI does not try to inject it as a request-scoped field."""
+    return await operator_session(request)
+
+
 EnrollmentServiceDep = Annotated[AgentEnrollmentService, Depends(_enrollment_service)]
-OperatorSessionDep = Annotated[OperatorSession | None, Depends(operator_session)]
+OperatorSessionDep = Annotated[OperatorSession | None, Depends(_operator_session)]
 
 
 def _browser(session: OperatorSession) -> EnrollmentBrowserSession:
