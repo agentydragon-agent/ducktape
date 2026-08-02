@@ -18,7 +18,6 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import metadata
@@ -556,7 +555,7 @@ def _create_static_agent(conn: Connection, *, identity: IdentityIds, label: str,
 
 def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         with engine.connect() as conn:
             context = MigrationContext.configure(conn, opts={"compare_type": True})
@@ -567,7 +566,7 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
 
 def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: str) -> None:
     apply_migrations(db_url, "0015")
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     operator_id = uuid4()
     now = _now()
     expires_at = now + datetime.timedelta(hours=1)
@@ -670,7 +669,7 @@ def test_oauth_token_state_migration_preserves_all_association_tokens(db_url: st
 
 def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db_url: str) -> None:
     apply_migrations(db_url, "0012")
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     operator_id = uuid4()
     now = _now()
     try:
@@ -741,7 +740,7 @@ def test_operator_connection_key_migration_discards_ambiguous_provider_grants(db
 
 def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE provider_connections DROP COLUMN provider_name CASCADE"))
@@ -754,7 +753,7 @@ def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) 
 
 def test_database_already_at_head_is_unchanged(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     operator_id = uuid4()
     try:
         with engine.connect() as conn:
@@ -791,7 +790,7 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
 
 def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         # NFKC + Unicode casefold need not equal PostgreSQL lower(display_name). The database owns
         # nonempty/global uniqueness and immutability; application naming code owns normalization.
@@ -854,7 +853,7 @@ def test_create_issue_complete_and_first_use_activation_form_one_graph(db_url: s
 
 def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         graph = _create_oauth_graph(engine, "name-owner", display_name="Straße ⑨", display_name_key="strasse 9")
         _activate_agent(engine, graph)
@@ -928,7 +927,7 @@ def test_agent_names_are_required_globally_unique_and_owned_by_current_agent(db_
 
 def test_interaction_phase_identity_and_exact_tuple_are_one_time(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         with engine.begin() as conn:
             identity = _seed_identity(conn, "interaction")
@@ -1155,7 +1154,7 @@ def test_interaction_phase_identity_and_exact_tuple_are_one_time(db_url: str) ->
 
 def test_grant_owner_scope_subtype_and_provenance_fail_closed(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         with engine.begin() as conn:
             owner = _seed_identity(conn, "grant-owner")
@@ -1279,7 +1278,7 @@ def _insert_static_replacement(
 
 def test_binding_generation_predecessor_and_activation_are_compare_and_set(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         with engine.begin() as conn:
             identity = _seed_identity(conn, "binding")
@@ -1426,7 +1425,7 @@ def _insert_tool_call(conn: Connection, tool_call_id: str) -> None:
 
 def test_tool_call_principal_is_an_exact_immutable_union_and_events_derive_it(db_url: str) -> None:
     apply_migrations(db_url)
-    engine = create_async_engine(db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1))
+    engine = create_engine(db_url)
     try:
         with engine.begin() as conn:
             identity = _seed_identity(conn, "principal")

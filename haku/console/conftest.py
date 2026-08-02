@@ -9,6 +9,7 @@ to head (used by everything else, including `make_client`).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -219,8 +220,10 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process_servers)
         operator_identity = None
         if operator:
-            operator_identity = app.state.operator_identity_store.resolve_verified_identity(
-                VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
+            operator_identity = asyncio.run(
+                app.state.operator_identity_store.resolve_verified_identity(
+                    VerifiedExternalIdentity(issuer=settings.operator_oidc.issuer, subject=operator_external_user_key)
+                )
             )
             app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
         # When the session cookie is Secure (https public_base_url → https_only), drive the client

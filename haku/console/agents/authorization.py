@@ -1460,7 +1460,7 @@ class PostgresAgentAuthority:
 
     async def _require_browser_identity(self, session: AsyncSession, browser: EnrollmentBrowserSession) -> None:
         try:
-            self._operator_identities.require_active_in_transaction(session, browser.operator_id)
+            await self._operator_identities.require_active_in_transaction(session, browser.operator_id)
         except InactiveOperatorError as error:
             raise EnrollmentBrowserBindingError from error
         operator_id = await session.scalar(
