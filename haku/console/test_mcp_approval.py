@@ -51,6 +51,7 @@ from haku.console.mcp_approval import (
     DegradedReflection,
     McpServerDispatcher,
     PostgresToolCallLedger,
+    ToolCallRecord,
     _execution_auth,
     _mcp_result_to_json,
     metadata_for_operator,
@@ -1131,7 +1132,12 @@ async def test_routing_executes_each_agent_as_its_own_operator(
 
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
             actor = _static_agent_actor(client, bearer)
-            listed = await client.app.state.tool_call_service.list_tool_calls(actor=actor)
+
+            async def list_calls(actor: ToolCallActor = actor) -> list[ToolCallRecord]:
+                return cast(list[ToolCallRecord], await client.app.state.tool_call_service.list_tool_calls(actor=actor))
+
+            assert client.portal is not None
+            listed = client.portal.call(list_calls)
             assert [call.tool_call_id for call in listed] == [expected_call_id]
             assert client.get("/api/tool-calls", headers={"Authorization": f"Bearer {bearer}"}).status_code == 401
 
@@ -1361,7 +1367,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         if "mcp_tool_call" in statement.casefold():
             statements.append(statement)
 
-    event.listen(ledger_engine, "before_cursor_execute", record_tool_call_query)
+    event.listen(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
     try:
         listed = await ledger.list_tool_calls(actor=actor)
         assert len(statements) == 1, statements
@@ -1378,7 +1384,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert len(statements) == 1, statements
         assert fetched == by_id[agent_call_id]
     finally:
-        event.remove(ledger_engine, "before_cursor_execute", record_tool_call_query)
+        event.remove(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
 
 
 async def test_websocket_receives_pending_approval_invalidation(operator_client: TestClient) -> None:

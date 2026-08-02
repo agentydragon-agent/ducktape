@@ -454,7 +454,7 @@ class ToolCallApplicationService:
         self._execution_tasks.add(task)
         task.add_done_callback(self._on_execution_done)
 
-    async def _on_execution_done(self, task: asyncio.Task[ToolCallRecord]) -> None:
+    def _on_execution_done(self, task: asyncio.Task[ToolCallRecord]) -> None:
         self._execution_tasks.discard(task)
         # _execute_and_publish records failures on the row and only re-raises CancelledError, so a
         # non-cancelled exception escaping here is a bug in the orchestration itself — surface it.
