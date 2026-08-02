@@ -243,6 +243,7 @@ def oidc_key_pair() -> tuple[RSAPrivateKey, RSAPublicKey]:
 @pytest.fixture
 async def token_chain_harness(
     migrated_db_url: str,
+    migrated_sessions,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     oidc_key_pair: tuple[RSAPrivateKey, RSAPublicKey],
@@ -328,7 +329,7 @@ async def token_chain_harness(
                 ),
             ),
         )
-        operator_id = await resolve_operator_id(migrated_db_url, _OPERATOR_SUBJECT)
+        operator_id = await resolve_operator_id(migrated_sessions, _OPERATOR_SUBJECT)
         stored_reference = await console.state.mcp_operator_oauth_store.access_token_for(
             server=server_entry, operator_id=operator_id
         )

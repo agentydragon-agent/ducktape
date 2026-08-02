@@ -964,9 +964,11 @@ def test_approval_executes_tool_and_records_terminal_result(operator_client: Tes
 
 
 async def test_configured_credential_approval_passes_canonical_operator_id(
+    *,
     make_operator_client,
     console_config: Path,
     migrated_db_url: str,
+    migrated_sessions,
     upstream_bearers: list[str | None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -981,15 +983,17 @@ async def test_configured_credential_approval_passes_canonical_operator_id(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [await operator_id(migrated_db_url, "configured-credential-sub")]
+    assert execution_operator_ids == [await operator_id(migrated_sessions, "configured-credential-sub")]
     assert upstream_bearers == ["test-token"]
 
 
 async def test_operator_oauth_association_drives_approved_tool_execution(
+    *,
     make_operator_client,
     operator_oauth_config_file: Path,
     upstream_bearers: list[str | None],
     migrated_db_url: str,
+    migrated_sessions,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     execution_operator_ids = _record_execution_operator_ids(monkeypatch)
@@ -1025,7 +1029,7 @@ async def test_operator_oauth_association_drives_approved_tool_execution(
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["tool_call"]["status"] == "running"
-    assert execution_operator_ids == [await operator_id(migrated_db_url, "operator-oauth-sub")]
+    assert execution_operator_ids == [await operator_id(migrated_sessions, "operator-oauth-sub")]
     # The upstream saw exactly two requests: the unauthenticated probe that starts the DCR
     # challenge, then the approved execution carrying this Operator's own linked token.
     assert upstream_bearers == [None, "operator-access-token"]
@@ -1046,11 +1050,11 @@ async def test_operator_oauth_approval_requires_existing_association(
 
 
 async def _seed_association(
-    sessions: async_sessionmaker[AsyncSession], db_url: str, *, operator_external_user_key: str, access_token: str
+    sessions: async_sessionmaker[AsyncSession], *, operator_external_user_key: str, access_token: str
 ) -> None:
     """Insert a connected operator_oauth association for grocy-sf (bypassing the DCR/PKCE flow)."""
     now = datetime.datetime.now(datetime.UTC)
-    resolved_operator_id = await operator_id(db_url, operator_external_user_key)
+    resolved_operator_id = await operator_id(sessions, operator_external_user_key)
     async with sessions.begin() as session:
         session.add(
             McpOperatorOAuthAssociation(
@@ -1087,12 +1091,8 @@ async def test_routing_executes_each_agent_as_its_own_operator(
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
     mcp_server_url, upstream_bearers = routing_upstream
-    await _seed_association(
-        migrated_sessions, migrated_db_url, operator_external_user_key="op-haku", access_token="grocy-token-haku"
-    )
-    await _seed_association(
-        migrated_sessions, migrated_db_url, operator_external_user_key="op-ops", access_token="grocy-token-ops"
-    )
+    await _seed_association(migrated_sessions, operator_external_user_key="op-haku", access_token="grocy-token-haku")
+    await _seed_association(migrated_sessions, operator_external_user_key="op-ops", access_token="grocy-token-ops")
 
     config = _config([_remote_server("grocy-sf", mcp_server_url, _dynamic_remote_oauth())])
     config["auto_approval_policies"] = [
@@ -1347,7 +1347,7 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
 
     ledger_engine = migrated_engine
     ledger = PostgresToolCallLedger(migrated_sessions)
-    actor = OperatorActor(operator_id=await operator_id(migrated_db_url, "op-haku"))
+    actor = OperatorActor(operator_id=await operator_id(migrated_sessions, "op-haku"))
     statements: list[str] = []
 
     def record_tool_call_query(
@@ -1554,7 +1554,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         persisted_principal = await session.get(McpToolCallPrincipal, submitted["tool_call_id"])
         assert persisted_call is not None
         assert persisted_principal is not None
-        assert persisted_principal.operator_id == await operator_id(migrated_db_url, "operator-sub")
+        assert persisted_principal.operator_id == await operator_id(migrated_sessions, "operator-sub")
         assert persisted_call.server_id == "smoke"
         assert persisted_call.tool_name == "echo"
         assert persisted_call.status is ToolCallStatus.OK

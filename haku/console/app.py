@@ -251,9 +251,7 @@ def create_app(
         )
 
     # Resolving configured external identities is database I/O. Keep app construction pure and do
-    # this during the async lifespan, after the event loop exists. Tests that already provide
-    # canonical definitions skip the lookup entirely.
-    resolved_static_agent_definitions = static_agent_definitions
+    # this during the async lifespan, after the event loop exists.
     if claude_runtime is not None:
         if loaded_static_agents is None:
             raise RuntimeError("Claude runtime requires loaded static Agent credentials")
@@ -361,10 +359,12 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal resolved_static_agent_definitions
-        if resolved_static_agent_definitions is None:
-            resolved_static_agent_definitions = await _resolve_static_agent_definitions()
-        await agent_authority.reconcile_static_agents(resolved_static_agent_definitions)
+        static_definitions = (
+            static_agent_definitions
+            if static_agent_definitions is not None
+            else await _resolve_static_agent_definitions()
+        )
+        await agent_authority.reconcile_static_agents(static_definitions)
         if claude_chat_service is not None:
             await claude_chat_service.reconcile_terminal_claims()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run():

@@ -154,38 +154,26 @@ async def _resolve_operator_identity(app: Any, external_user_key: str) -> Resolv
     )
 
 
-async def operator_id(db_url: str, external_user_key: str) -> UUID:
-    """Resolve a controller-fed external user key using the async identity store."""
-    engine = create_async_engine(
-        make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False), pool_pre_ping=True
+async def operator_id(sessions: async_sessionmaker[AsyncSession], external_user_key: str) -> UUID:
+    """Resolve a controller-fed external user key using the caller's async sessionmaker."""
+    store = PostgresOperatorIdentityStore(
+        sessions,
+        OperatorIdentityTrust(
+            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
+        ),
     )
-    try:
-        store = PostgresOperatorIdentityStore(
-            async_sessionmaker(engine, expire_on_commit=False),
-            OperatorIdentityTrust(
-                trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-            ),
-        )
-        return await store.resolve_configured_external_user_key(external_user_key)
-    finally:
-        await engine.dispose()
+    return await store.resolve_configured_external_user_key(external_user_key)
 
 
-async def resolve_operator_identity(db_url: str, *, issuer: str, subject: str) -> ResolvedOperatorIdentity:
-    """Resolve a test OIDC identity through a short-lived async engine."""
-    engine = create_async_engine(
-        make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False), pool_pre_ping=True
+async def resolve_operator_identity(
+    sessions: async_sessionmaker[AsyncSession], *, issuer: str, subject: str
+) -> ResolvedOperatorIdentity:
+    """Resolve a test OIDC identity using the caller's async sessionmaker."""
+    store = PostgresOperatorIdentityStore(
+        sessions,
+        OperatorIdentityTrust(trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({issuer})),
     )
-    try:
-        store = PostgresOperatorIdentityStore(
-            async_sessionmaker(engine, expire_on_commit=False),
-            OperatorIdentityTrust(
-                trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({issuer})
-            ),
-        )
-        return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
-    finally:
-        await engine.dispose()
+    return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
 
 
 @pytest.fixture(scope="session")

@@ -192,7 +192,7 @@ class _Harness:
 
 
 @pytest.fixture
-async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harness]:
+async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> AsyncGenerator[_Harness]:
     gmail_client = Mock()
     # labels_list is a generated read: it dispatches through gmail_client.service, returning raw Gmail JSON.
     gmail_client.service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
@@ -251,8 +251,8 @@ async def harness(migrated_db_url: str, tmp_path: Path) -> AsyncGenerator[_Harne
         calendar_tools.GOOGLE_CALENDAR_SERVER_ID: const_in_process_server(calendar_tools.build_mcp(calendar_client)),
     }
     app = create_app(settings, gmail_client=gmail_client, in_process_servers=in_process)
-    operator_id = await resolve_operator_id(migrated_db_url, "42")
-    other_operator_id = await resolve_operator_id(migrated_db_url, "99")
+    operator_id = await resolve_operator_id(migrated_sessions, "42")
+    other_operator_id = await resolve_operator_id(migrated_sessions, "99")
     with serve_app_sync(app) as base:
         yield _Harness(
             base=base,
@@ -701,7 +701,7 @@ def _console_config(tmp_path: Path, upstream_url: str) -> Path:
     )
 
 
-async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_path: Path) -> None:
+async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> None:
     with _serve_upstream() as upstream_url:
         console_port = pick_free_port()
         settings = console_settings(
@@ -711,7 +711,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
         )
         app = create_app(settings)
         operator_identity = await resolve_operator_identity(
-            migrated_db_url, issuer=settings.operator_oidc.issuer, subject="42"
+            migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
         )
         with serve_app_sync(app, port=console_port) as base:
             async with httpx.AsyncClient() as anon:
@@ -832,7 +832,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, tmp_p
 
 
 async def test_tool_surface_tracks_each_operators_connected_servers(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    migrated_db_url: str, migrated_sessions, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with _serve_upstream() as upstream_url:
         config_file = write_config(
@@ -845,8 +845,8 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
             },
         )
         app = create_app(console_settings(migrated_db_url, config_file=config_file))
-        operator_id = await resolve_operator_id(migrated_db_url, "42")
-        other_operator_id = await resolve_operator_id(migrated_db_url, "99")
+        operator_id = await resolve_operator_id(migrated_sessions, "42")
+        other_operator_id = await resolve_operator_id(migrated_sessions, "99")
         connected = {operator_id}
 
         async def access_token_for(*, server: object, operator_id: UUID) -> str | None:
