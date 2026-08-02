@@ -489,7 +489,7 @@ class PostgresToolCallLedger:
         return cls._record_from_principal(row, principal)
 
     @staticmethod
-    async def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
+    def _record_from_principal(row: McpToolCall, principal: _ResolvedToolCallPrincipal) -> ToolCallRecord:
         caller: ToolCallCaller
         if isinstance(principal, _OperatorToolCallPrincipal):
             caller = OperatorToolCallCaller()
