@@ -5,7 +5,7 @@ generatorOptions:
 secretGenerator:
   - name: public-coder-devbox-cloud-init
     files:
-      - userdata=cloud-init.yaml
+      - userdata=cloud-init.txt
 
 resources:
   - host-key.sops.yaml
