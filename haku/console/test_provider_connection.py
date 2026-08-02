@@ -46,7 +46,7 @@ _CALLBACK = "https://haku.test/api/provider-connections/callback"
 async def _identity(migrated_db_url: str) -> tuple[PostgresOperatorIdentityStore, UUID]:
     """Shared operator identity for provider-connection tests."""
     identity_store = operator_identity_store(migrated_db_url)
-    operator_id = identity_store.resolve_configured_external_user_key("op-provider")
+    operator_id = await identity_store.resolve_configured_external_user_key("op-provider")
     return identity_store, operator_id
 
 
