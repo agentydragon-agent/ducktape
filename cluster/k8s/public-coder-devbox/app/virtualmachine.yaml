@@ -13,10 +13,10 @@ spec:
       spec:
         source:
           s3:
-            # Replace this with the object published by vm-images-publisher
-            # using IMAGE_OUTPUT=public-coder-devbox-image after the first image
-            # build from this branch.
-            url: "https://s3.allegedly.works/vm-images/public-coder-devbox/TO_BE_PUBLISHED.qcow2"
+            # Start from the shared minimal bootstrap image. cloud-init then
+            # switches the persistent VM to the declarative public-coder-devbox
+            # NixOS configuration from the merged devel branch.
+            url: "https://s3.allegedly.works/vm-images/bootstrap/f484cb3f043f7dab65528c4ad22330dace7b9fdb.qcow2"
             secretRef: public-coder-devbox-vm-images-s3-reader
         pvc:
           accessModes:

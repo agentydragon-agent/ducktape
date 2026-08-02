@@ -531,10 +531,6 @@
           # switch. Published by vm-images-publisher with IMAGE_OUTPUT=agent-box-image,
           # OBJECT_PREFIX=agent-box. cloud-init still injects the persisted host key.
           agent-box-image = self.nixosConfigurations.agent-box.config.system.build.images.qemu-efi;
-          # Full public-coder-devbox host image. Published by vm-images-publisher
-          # with IMAGE_OUTPUT=public-coder-devbox-image and
-          # OBJECT_PREFIX=public-coder-devbox.
-          public-coder-devbox-image = self.nixosConfigurations.public-coder-devbox.config.system.build.images.qemu-efi;
         };
 
       homeConfigurations = {

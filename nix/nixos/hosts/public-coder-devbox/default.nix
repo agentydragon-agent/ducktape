@@ -40,7 +40,11 @@ in
       path = "/etc/ssh/ssh_host_ed25519_key";
     }
   ];
-  services.openssh.settings.PermitRootLogin = lib.mkForce "no";
+  # The VM is intentionally a root-administered build box. Its egress is
+  # still enforced outside the guest by the Cilium policy on virt-launcher.
+  services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
+
+  users.users.root.openssh.authorizedKeys.keys = [ keys.publicCoderDevbox ];
 
   users.users.coder = {
     isNormalUser = true;

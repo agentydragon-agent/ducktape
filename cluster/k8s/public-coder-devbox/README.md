@@ -35,15 +35,16 @@ assembles the runtime CA bundle. CA rotation therefore follows the declarative
 cert-manager/trust-manager resources without a generated certificate being
 committed here.
 
-## Image publication
+## Bootstrap and switch
 
-The VM boots the full `.#public-coder-devbox-image` output. Publish it with the
-VM image publisher using:
+The VM starts from the existing minimal bootstrap qcow2. Its cloud-init seed
+installs the stable host key, root's authorized key, and the proxy/CA settings
+needed for the first manual switch. After the VM is reachable, run:
 
 ```text
-IMAGE_OUTPUT=public-coder-devbox-image
-OBJECT_PREFIX=public-coder-devbox
+nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#public-coder-devbox
 ```
 
-Then replace the bootstrap placeholder in `app/virtualmachine.yaml` with the
-published content-addressed object before enabling the VM reconciliation.
+The root disk is persistent, so subsequent boots use the switched NixOS
+configuration directly. Keeping the switch manual makes the bootstrap failure
+mode easy to inspect and avoids hiding a failed first deployment in cloud-init.
