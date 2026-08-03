@@ -65,7 +65,7 @@ locals {
   ]
   # Real Anthropic models (ANTHROPIC_MODELS in generate_litellm.py) — the
   # dispatcher's classifier gate.
-  classifier_models = ["claude-sonnet-5", "claude-haiku-4-5"]
+  classifier_models = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
   # Tana-UI models fronted through tana-litellm (_tana_entries in generate_litellm.py).
   tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
   # Codex-subscription models fronted through CLIProxyAPI (_cliproxy_entries).
@@ -387,18 +387,20 @@ data "sops_file" "zai_clients_key" {
 # zai-clients team: proxy-side catch-all routing Claude Code's claude-* slugs to
 # z.ai GLM. Attached to the zai_clients virtual key below (laptop z-claude alias +
 # agent-box zai user). Two mechanisms:
-#  - model_aliases: rewrite the two real Claude deployments (which ARE in
+#  - model_aliases: rewrite the real Claude deployments (which ARE in
 #    model_list and would otherwise reach real Anthropic) to GLM.
 #  - router_settings.fallbacks [{"*": [...]}]: any claude-* slug NOT in
-#    model_list (future Anthropic releases, claude-sonnet-4-5, etc.) hits
+#    model_list (future or retired Anthropic slugs, etc.) hits
 #    NotFoundError and falls back to GLM — zero maintenance on new versions.
 # Non-claude/non-GLM slugs are still blocked by the key's models allowlist
 # (claude-* + glm-*-anthropic), so z.ai-only containment holds.
 resource "litellm_team" "zai_clients" {
   team_alias = "zai-clients"
   model_aliases = {
-    "claude-sonnet-5"  = "glm-5.2-anthropic"
-    "claude-haiku-4-5" = "glm-5.2-anthropic"
+    "claude-opus-5"             = "glm-5.2-anthropic"
+    "claude-sonnet-5"           = "glm-5.2-anthropic"
+    "claude-fable-5"            = "glm-5.2-anthropic"
+    "claude-haiku-4-5-20251001" = "glm-5.2-anthropic"
   }
   router_settings = {
     fallbacks = [

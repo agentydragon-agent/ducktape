@@ -13,7 +13,7 @@
 # TF-managed vault (tf/gitops/haku-cloud-agent, published to the haku-cloud-agent-ids
 # Secret); both agents reference it. (Runtime C, haku/runtime/agent, is env-driven via
 # HAKU_MODEL — a separate architecture, not covered here.)
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 # Every toolset -> permission policy: mcp toolsets keyed by MCP server name, the
 # fixed in-sandbox bash/read/write/edit/glob/grep toolset by its type. All
 # always_allow — the execution sandbox is the trust boundary, and each MCP is bounded

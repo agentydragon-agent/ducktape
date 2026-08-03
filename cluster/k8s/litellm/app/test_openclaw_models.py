@@ -1,9 +1,8 @@
-import json
-
+import json5
 import pytest_bazel
 import yaml
 
-from cluster.k8s.litellm.app.generate_litellm import OPENCLAW_CODEX_MODELS, generate
+from cluster.k8s.litellm.app.generate_litellm import ANTHROPIC_MODELS, OPENCLAW_CODEX_MODELS, generate
 from util.bazel.runfiles import get_required_path
 
 # Measured, not published, and the published figures are wrong in both
@@ -22,12 +21,18 @@ CODEX_CONTEXT_WINDOW = 372_000
 CODEX_MAX_TOKENS = 128_000
 
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
+_HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
 
 
 def _public_coder_agent_codex_models() -> list[dict]:
-    config = json.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
+    config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     models: list[dict] = config["models"]["providers"]["litellm-subscription"]["models"]
     return models
+
+
+def _haku_claude_models() -> tuple[dict, dict]:
+    config = json5.loads(get_required_path(_HAKU_OPENCLAW_CONFIG).read_text())
+    return config, config["agents"]["defaults"]["models"]
 
 
 def test_litellm_generates_a_route_per_declared_codex_model() -> None:
@@ -45,11 +50,29 @@ def test_litellm_generates_a_route_per_declared_codex_model() -> None:
         }
 
 
+def test_current_anthropic_roster_matches_haku_openclaw() -> None:
+    assert ANTHROPIC_MODELS == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+
+    config, models = _haku_claude_models()
+    assert list(models) == [f"anthropic/{model}" for model in sorted(ANTHROPIC_MODELS)]
+    assert config["agents"]["defaults"]["model"]["primary"] == "anthropic/claude-opus-5"
+    assert config["agents"]["defaults"]["cliBackends"]["claude-cli"]["modelAliases"] == {
+        "fable": "claude-fable-5",
+        "haiku": "claude-haiku-4-5-20251001",
+        "opus": "claude-opus-5",
+        "sonnet": "claude-sonnet-5",
+    }
+
+    litellm_models = {entry["model_name"]: entry for entry in yaml.safe_load(generate())["model_list"]}
+    for model_id in ANTHROPIC_MODELS:
+        assert litellm_models[model_id]["litellm_params"]["model"] == f"anthropic/{model_id}"
+
+
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     """The agent's catalog is pinned to the generated routes."""
     assert [model["id"] for model in _public_coder_agent_codex_models()] == OPENCLAW_CODEX_MODELS
 
-    config = json.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
+    config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     provider = config["models"]["providers"]["litellm-subscription"]
     assert provider["api"] == "anthropic-messages"
     assert config["agents"]["defaults"]["model"]["primary"] in {

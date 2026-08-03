@@ -15,7 +15,7 @@ Usage:
     adapter = CriticAdapter(
         hydrator, critic_client, grader_client, db_config,
         run_dir=run_dir,
-        reflection_model="claude-sonnet-4-6"
+        reflection_model="claude-sonnet-5"
     )
     trainset, valset = await load_datasets()  # Loads from database
 

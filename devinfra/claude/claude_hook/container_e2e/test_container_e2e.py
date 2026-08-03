@@ -152,7 +152,7 @@ def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None
             "transcript_path": "/tmp/transcript.json",
             "permission_mode": "default",
             "source": "startup",
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5",
         }
     )
 

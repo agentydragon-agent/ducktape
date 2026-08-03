@@ -539,14 +539,14 @@ mod tests {
             "cwd": "/project",
             "permission_mode": "default",
             "source": "startup",
-            "model": "claude-sonnet-4-6"
+            "model": "claude-sonnet-5"
         }"#;
         let input: AnyHookInput = serde_json::from_str(json).unwrap();
         match input {
             AnyHookInput::SessionStart(s) => {
                 assert_eq!(s.base.session_id, "test-123");
                 assert_eq!(s.source, "startup");
-                assert_eq!(s.model.as_deref(), Some("claude-sonnet-4-6"));
+                assert_eq!(s.model.as_deref(), Some("claude-sonnet-5"));
             }
             _ => panic!("expected SessionStart"),
         }

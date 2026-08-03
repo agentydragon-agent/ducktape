@@ -30,7 +30,10 @@ filegroup(
 
 filegroup(
     name = "openclaw_model_config",
-    srcs = ["agents/public-coder-agent/app/openclaw.json"],
+    srcs = [
+        "agents/haku-openclaw-spike/app/openclaw.json",
+        "agents/public-coder-agent/app/openclaw.json",
+    ],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )
 

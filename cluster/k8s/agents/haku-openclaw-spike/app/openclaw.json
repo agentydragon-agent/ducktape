@@ -13,7 +13,10 @@
         "claude-cli": {
           "command": "/usr/local/bin/claude",
           "modelAliases": {
-            "claude-opus-4-8": "opus"
+            "fable": "claude-fable-5",
+            "haiku": "claude-haiku-4-5-20251001",
+            "opus": "claude-opus-5",
+            "sonnet": "claude-sonnet-5"
           },
           "reseedFromRawTranscriptWhenUncompacted": true
         }
@@ -24,14 +27,32 @@
         "sources": ["memory"]
       },
       "model": {
-        "primary": "anthropic/claude-opus-4-8"
+        "primary": "anthropic/claude-opus-5"
       },
       "models": {
-        "anthropic/claude-opus-4-8": {
+        "anthropic/claude-fable-5": {
+          "agentRuntime": {
+            "id": "claude-cli"
+          },
+          "alias": "Fable"
+        },
+        "anthropic/claude-haiku-4-5-20251001": {
+          "agentRuntime": {
+            "id": "claude-cli"
+          },
+          "alias": "Haiku"
+        },
+        "anthropic/claude-opus-5": {
           "agentRuntime": {
             "id": "claude-cli"
           },
           "alias": "Opus"
+        },
+        "anthropic/claude-sonnet-5": {
+          "agentRuntime": {
+            "id": "claude-cli"
+          },
+          "alias": "Sonnet"
         }
       },
       "sandbox": {

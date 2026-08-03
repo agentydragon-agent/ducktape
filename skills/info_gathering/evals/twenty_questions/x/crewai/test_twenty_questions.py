@@ -171,7 +171,7 @@ def test_correct_answer_tool_sets_state():
 
 
 def test_crewai_model_name_anthropic():
-    assert crewai_model_name("anthropic", "claude-sonnet-4-20250514") == "anthropic/claude-sonnet-4-20250514"
+    assert crewai_model_name("anthropic", "claude-sonnet-5") == "anthropic/claude-sonnet-5"
 
 
 def test_crewai_model_name_openai():

@@ -85,7 +85,7 @@ CREATE TABLE messages (
 ```python
 class RunSubagentInput(BaseModel):
     prompt: str
-    model: str = "claude-sonnet-4.5"
+    model: str = "claude-sonnet-5"
     mcp_config: dict = {}
     timeout_secs: int = 300
 
@@ -107,7 +107,7 @@ async def run_subagent(input: RunSubagentInput) -> RunSubagentOutput:
 ```python
 class SpawnSubagentInput(BaseModel):
     prompt: str
-    model: str = "claude-sonnet-4.5"
+    model: str = "claude-sonnet-5"
     mcp_config: dict = {}
     timeout_secs: int = 300
 

@@ -35,7 +35,7 @@ _CASES = {"empty": validate_empty_work, "reference": validate_reference_work}
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    add_common_flags(parser, default_model="anthropic/claude-sonnet-4-6")
+    add_common_flags(parser, default_model="anthropic/claude-sonnet-5")
     parser.add_argument("--case", choices=sorted(_CASES), required=True, help="Which validation case to run.")
     args = parser.parse_args()
 

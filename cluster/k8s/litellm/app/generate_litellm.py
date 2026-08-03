@@ -97,7 +97,7 @@ _CHATGPT_MODELS: list[str] = [
 # mirror of the spend-capped haku-cloud workspace key. Consumers: the haku
 # dispatcher's classifier virtual key (tf/gitops/litellm-keys) — main LiteLLM is
 # cluster-reachable, so access control is per-key model allowlists.
-ANTHROPIC_MODELS: list[str] = ["claude-sonnet-5", "claude-haiku-4-5"]
+ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
 
 
 # Groq (fast open-model inference: Llama chat + Whisper ASR). Key from the
