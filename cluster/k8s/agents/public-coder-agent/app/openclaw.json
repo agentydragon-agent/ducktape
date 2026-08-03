@@ -187,6 +187,9 @@
       "haku-console": {
         "url": "https://haku.allegedly.works/mcp",
         "transport": "streamable-http",
+        // Haku can synchronously wait up to 60s for a terminal result. Keep this
+        // client timeout above that so Haku returns a non-terminal stub instead
+        // of OpenClaw surfacing an MCP protocol-level timeout.
         "requestTimeoutMs": 70000,
         "headers": {
           "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
