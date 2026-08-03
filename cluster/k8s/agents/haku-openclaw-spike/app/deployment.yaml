@@ -139,11 +139,20 @@ spec:
               value: http://forgejo-http.forgejo:3000/haku/haku-state.git
             - name: NODE_USE_ENV_PROXY
               value: "1"
+            # Keep both cases: Node honors the uppercase variables, while
+            # curl/libcurl (and therefore Git over plain HTTP) require the
+            # lowercase form and intentionally ignore uppercase HTTP_PROXY.
             - name: HTTP_PROXY
               value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
             - name: HTTPS_PROXY
               value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
             - name: NO_PROXY
+              value: 127.0.0.1,localhost
+            - name: http_proxy
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+            - name: https_proxy
+              value: http://haku-openclaw-spike-proxy.haku-egress-proxy.svc.cluster.local:8181
+            - name: no_proxy
               value: 127.0.0.1,localhost
             - name: NODE_EXTRA_CA_CERTS
               value: /etc/ssl/certs/ca-certificates.crt
