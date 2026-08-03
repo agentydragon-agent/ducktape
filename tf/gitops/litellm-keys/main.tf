@@ -58,15 +58,15 @@ locals {
     "${m}-anthropic"
   ]
   # Only the models the Codex/ChatGPT-account backend actually serves
-  # (see _CHATGPT_MODELS in generate_litellm.py).
+  # (see _CHATGPT_MODELS in test_litellm_config.py).
   oai_lane_models = [
     for m in ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"] :
     "${m}-chatgpt"
   ]
-  # Real Anthropic models (ANTHROPIC_MODELS in generate_litellm.py) — the
+  # Real Anthropic models (ANTHROPIC_MODELS in model_rosters.py) — the
   # dispatcher's classifier gate.
   classifier_models = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
-  # Tana-UI models fronted through tana-litellm (_tana_entries in generate_litellm.py).
+  # Tana-UI models fronted through tana-litellm (_TANA_MODELS in test_litellm_config.py).
   tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
   # Codex-subscription models fronted through CLIProxyAPI (_cliproxy_entries).
   codex_client_models = [
@@ -77,13 +77,13 @@ locals {
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
   ]
-  # Gemini embeddings (GEMINI_EMBEDDING_MODELS in generate_litellm.py). Granted to
+  # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
   # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
   # route to it and should not gain one just to embed. Routing embeddings through
   # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
   embedding_client_models = ["gemini-embedding-2", "gemini-embedding-001"]
-  # Google Gemini models (GEMINI_MODELS in generate_litellm.py) fronted through the
+  # Google Gemini models (GEMINI_MODELS in test_litellm_config.py) fronted through the
   # `gemini/` provider. Consumed by the laptop gemini-claude alias.
   gemini_client_models = [
     "gemini-3-pro-preview",

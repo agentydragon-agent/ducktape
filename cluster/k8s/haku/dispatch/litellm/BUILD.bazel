@@ -7,7 +7,7 @@ py_library(
     srcs = ["generate_workers_litellm.py"],
     visibility = ["//haku/dispatch:__pkg__"],
     deps = [
-        "//cluster/k8s/litellm/app:generate_litellm",
+        "//cluster/k8s/litellm/app:model_rosters",
         "//devinfra:prettier",
         "//util/bazel:workspace",
         "@pypi//pyyaml",

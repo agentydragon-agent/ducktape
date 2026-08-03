@@ -8,7 +8,7 @@
 # Keys are minted declaratively by tf/gitops/litellm-keys (see
 # haku/plans/multi_agent.md).
 # Models deliberately stay in the generated config, NOT the DB — see
-# general_settings.store_model_in_db in generate_litellm.py.
+# general_settings.store_model_in_db in proxy-config.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

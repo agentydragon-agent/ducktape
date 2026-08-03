@@ -1,8 +1,10 @@
+import re
+
 import json5
 import pytest_bazel
 import yaml
 
-from cluster.k8s.litellm.app.generate_litellm import ANTHROPIC_MODELS, OPENCLAW_CODEX_MODELS, generate
+from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, OPENCLAW_CODEX_MODELS
 from util.bazel.runfiles import get_required_path
 
 # Measured, not published, and the published figures are wrong in both
@@ -22,6 +24,13 @@ CODEX_MAX_TOKENS = 128_000
 
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
+_LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
+_LITELLM_KEYS_TF = "ducktape/tf/gitops/litellm-keys/main.tf"
+_TANA_MODELS = {
+    "tana-claude-haiku-4-5": "claude-haiku-4-5-20251001",
+    "tana-claude-opus-4-6": "claude-opus-4-6/high",
+    "tana-claude-sonnet-4-6": "claude-sonnet-4-6/medium",
+}
 
 
 def _public_coder_agent_codex_models() -> list[dict]:
@@ -35,9 +44,28 @@ def _haku_claude_models() -> tuple[dict, dict]:
     return config, config["agents"]["defaults"]["models"]
 
 
-def test_litellm_generates_a_route_per_declared_codex_model() -> None:
-    """Every model the agents may name must exist as a generated LiteLLM route."""
-    litellm_models = {entry["model_name"]: entry for entry in yaml.safe_load(generate())["model_list"]}
+def _litellm_models() -> dict[str, dict]:
+    config = yaml.safe_load(get_required_path(_LITELLM_CONFIG).read_text())
+    return {entry["model_name"]: entry for entry in config["model_list"]}
+
+
+def _hcl_string_list(source: str, name: str) -> list[str]:
+    match = re.search(rf"(?ms)^\s*{re.escape(name)}\s*=\s*\[(.*?)\]", source)
+    assert match is not None, f"missing HCL list {name}"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def _zai_model_aliases(source: str) -> dict[str, str]:
+    resource = re.search(r'(?ms)^resource "litellm_team" "zai_clients" \{(.*?\n\})', source)
+    assert resource is not None, "missing zai_clients team"
+    aliases = re.search(r"(?ms)^\s*model_aliases\s*=\s*\{(.*?)^\s*\}", resource.group(1))
+    assert aliases is not None, "missing zai_clients model aliases"
+    return dict(re.findall(r'^\s*"([^"]+)"\s*=\s*"([^"]+)"', aliases.group(1), flags=re.MULTILINE))
+
+
+def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
+    """Every model the agents may name must exist in the committed LiteLLM config."""
+    litellm_models = _litellm_models()
     for model_id in OPENCLAW_CODEX_MODELS:
         assert litellm_models[model_id] == {
             "model_name": model_id,
@@ -54,7 +82,12 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     assert ANTHROPIC_MODELS == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
 
     config, models = _haku_claude_models()
-    assert list(models) == [f"anthropic/{model}" for model in sorted(ANTHROPIC_MODELS)]
+    assert models == {
+        "anthropic/claude-fable-5": {"agentRuntime": {"id": "claude-cli"}, "alias": "Fable"},
+        "anthropic/claude-haiku-4-5-20251001": {"agentRuntime": {"id": "claude-cli"}, "alias": "Haiku"},
+        "anthropic/claude-opus-5": {"agentRuntime": {"id": "claude-cli"}, "alias": "Opus"},
+        "anthropic/claude-sonnet-5": {"agentRuntime": {"id": "claude-cli"}, "alias": "Sonnet"},
+    }
     assert config["agents"]["defaults"]["model"]["primary"] == "anthropic/claude-opus-5"
     assert config["agents"]["defaults"]["cliBackends"]["claude-cli"]["modelAliases"] == {
         "fable": "claude-fable-5",
@@ -63,13 +96,40 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
         "sonnet": "claude-sonnet-5",
     }
 
-    litellm_models = {entry["model_name"]: entry for entry in yaml.safe_load(generate())["model_list"]}
+    litellm_models = _litellm_models()
     for model_id in ANTHROPIC_MODELS:
-        assert litellm_models[model_id]["litellm_params"]["model"] == f"anthropic/{model_id}"
+        assert litellm_models[model_id] == {
+            "model_name": model_id,
+            "litellm_params": {"model": f"anthropic/{model_id}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
+
+def test_terraform_anthropic_rosters_match_the_generator() -> None:
+    source = get_required_path(_LITELLM_KEYS_TF).read_text()
+
+    assert _hcl_string_list(source, "classifier_models") == ANTHROPIC_MODELS
+    assert _zai_model_aliases(source) == dict.fromkeys(ANTHROPIC_MODELS, "glm-5.2-anthropic")
+
+
+def test_tana_compatibility_roster_remains_explicitly_pinned() -> None:
+    litellm_models = _litellm_models()
+
+    assert {name for name in litellm_models if name.startswith("tana-claude-")} == _TANA_MODELS.keys()
+    for exposed, downstream in _TANA_MODELS.items():
+        assert litellm_models[exposed] == {
+            "model_name": exposed,
+            "litellm_params": {
+                "model": f"anthropic/{downstream}",
+                "api_base": "http://tana-litellm.litellm.svc.cluster.local:4000",
+                "api_key": "os.environ/LITELLM_MASTER_KEY",
+            },
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
 
 
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
-    """The agent's catalog is pinned to the generated routes."""
+    """The agent's catalog is pinned to the committed LiteLLM routes."""
     assert [model["id"] for model in _public_coder_agent_codex_models()] == OPENCLAW_CODEX_MODELS
 
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())

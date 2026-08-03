@@ -18,11 +18,11 @@ Already the norm; no gap.
 ### C3/C4 — multi-provider LLM routing via LiteLLM + Langfuse
 
 **Reuse, with known rough edges, not a clean win.** Already wired
-(`cluster/k8s/litellm/app/generate_litellm.py`): Ollama, z.ai/GLM, plain Anthropic,
+(`cluster/k8s/litellm/app/test_litellm_config.py`): Ollama, z.ai/GLM, plain Anthropic,
 Groq, Gemini, and **two** Codex/ChatGPT-subscription paths:
 
 1. Native LiteLLM `chatgpt/*` provider — OAuth device-code flow, tokens cached on a
-   PVC seeded from `litellm-chatgpt-auth-seed` (`generate_litellm.py:70-75`;
+   PVC seeded from `litellm-chatgpt-auth-seed` (`test_litellm_config.py:70-75`;
    `chatgpt-deployment.yaml:116`). **Known bugs, still open as of this research:**
    - Usable only via streaming (`/v1/responses`) due to unfixed upstream
      [BerriAI/litellm#25429](https://github.com/BerriAI/litellm/issues/25429).
@@ -48,7 +48,7 @@ Groq, Gemini, and **two** Codex/ChatGPT-subscription paths:
      1.83.0+) — worth remembering given this proxy holds OAuth session tokens.
 2. **CLIProxyAPI** (`cli-proxy-api` in-cluster service) — correctly translates
    `function_call`→`tool_use`, exposed as `anthropic/`-shaped `codex-gpt-*` model
-   entries (`generate_litellm.py:145-159`). This is the **more robust of the two
+   entries (`test_litellm_config.py:145-159`). This is the **more robust of the two
    paths** and should likely be the default rather than the native `chatgpt/`
    provider, given the open bugs above.
 
@@ -67,7 +67,7 @@ API-shape/auth-proxying problems entirely — [Codex headless docs](https://deve
 ### C4 — Langfuse
 
 Reuse: `callbacks: ["langfuse_otel", "prometheus"]` already set
-(`generate_litellm.py:299`). **Known gap**: `/v1/responses` calls — i.e. exactly the
+(`test_litellm_config.py:299`). **Known gap**: `/v1/responses` calls — i.e. exactly the
 Codex/ChatGPT-subscription lane — do **not** produce Langfuse traces, root-caused to
 LiteLLM 1.86.3's Responses-to-chat bridge returning before the Responses-specific
 logging hook runs (`cluster/debug/2026-06-05-litellm-responses-langfuse-otel.md`,

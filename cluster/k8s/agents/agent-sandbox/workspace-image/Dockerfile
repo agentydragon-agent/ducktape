@@ -26,7 +26,7 @@ RUN usermod --login workspace --home /home/workspace --move-home node \
 
 # z-claude parity (nix/home/claude_code/z-claude.nix): WebFetch/WebSearch are
 # denied because GLM's tool-call shape differs from Anthropic's (see
-# cluster/k8s/litellm/app/generate_litellm.py) — the calls fail confusingly
+# cluster/k8s/litellm/app/model_rosters.py) — the calls fail confusingly
 # through the GLM lane. Model pinning comes from the SandboxTemplate env.
 COPY --chown=workspace:workspace claude-settings.json /home/workspace/.claude/settings.json
 
