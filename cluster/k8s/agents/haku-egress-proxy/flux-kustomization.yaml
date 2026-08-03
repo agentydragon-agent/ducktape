@@ -14,6 +14,8 @@ spec:
   dependsOn:
     - name: haku-egress-proxy-namespace
     - name: haku-claude-namespace
+    - name: haku-openclaw-spike-namespace
+    - name: haku-state # proxy-held Forgejo and Haku Console credentials
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector

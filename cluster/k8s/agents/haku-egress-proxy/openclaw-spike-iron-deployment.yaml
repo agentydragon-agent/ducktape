@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-openclaw-spike-proxy
+  namespace: haku-egress-proxy
+  labels:
+    app.kubernetes.io/name: haku-openclaw-spike-proxy
+  annotations:
+    description: Holds Haku OpenClaw spike credentials and substitutes placeholders only for exact destination hosts.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-openclaw-spike-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-openclaw-spike-proxy
+    spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: iron-proxy
+          image: git.allegedly.works/ducktape-ci/public-coder-iron-proxy:devel-20260731032842-683f674 # {"$imagepolicy": "flux-system:public-coder-iron-proxy"}
+          args: ["-config", "/etc/iron-proxy/iron.yaml"]
+          env:
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-claude-oauth-token
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+            - name: HAKU_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
+            - name: HAKU_CONSOLE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-agent-api
+                  key: token
+          ports:
+            - name: proxy
+              containerPort: 8181
+            - name: metrics
+              containerPort: 9090
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/iron-proxy
+              readOnly: true
+            - name: ca
+              mountPath: /ca
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: haku-openclaw-spike-proxy-config
+        - name: ca
+          secret:
+            secretName: haku-egress-proxy-ca

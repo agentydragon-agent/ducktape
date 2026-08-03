@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - forgejo-images-creds-eso.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy-ingress.yaml
+  - networkpolicy-egress.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: haku-openclaw-spike-config
+    namespace: haku-openclaw-spike
+    files:
+      - openclaw.json
+      - claude.json

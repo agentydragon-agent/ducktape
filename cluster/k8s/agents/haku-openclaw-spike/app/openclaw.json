@@ -1,0 +1,125 @@
+{
+  "auth": {
+    "profiles": {
+      "anthropic:claude-cli": {
+        "mode": "token",
+        "provider": "claude-cli"
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "cliBackends": {
+        "claude-cli": {
+          "command": "/usr/local/bin/claude",
+          "modelAliases": {
+            "claude-opus-4-8": "opus"
+          },
+          "reseedFromRawTranscriptWhenUncompacted": true
+        }
+      },
+      "memorySearch": {
+        "enabled": true,
+        "provider": "none",
+        "sources": ["memory"]
+      },
+      "model": {
+        "primary": "anthropic/claude-opus-4-8"
+      },
+      "models": {
+        "anthropic/claude-opus-4-8": {
+          "agentRuntime": {
+            "id": "claude-cli"
+          },
+          "alias": "Opus"
+        }
+      },
+      "sandbox": {
+        "mode": "off"
+      },
+      "skills": []
+    },
+    "list": [
+      {
+        "id": "haku",
+        "name": "Haku"
+      }
+    ]
+  },
+  "commands": {
+    "config": false,
+    "mcp": false,
+    "restart": false
+  },
+  "cron": {
+    "enabled": false
+  },
+  "gateway": {
+    "auth": {
+      "mode": "trusted-proxy",
+      "trustedProxy": {
+        "allowLoopback": true,
+        "allowUsers": ["agentydragon"],
+        "requiredHeaders": ["x-authentik-email", "x-forwarded-host", "x-forwarded-proto"],
+        "userHeader": "x-authentik-username"
+      }
+    },
+    "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"],
+      "dangerouslyDisableDeviceAuth": true
+    },
+    "mode": "local",
+    "trustedProxies": ["10.0.0.0/8"]
+  },
+  "hooks": {
+    "internal": {
+      "entries": {
+        "session-memory": {
+          "enabled": true,
+          "llmSlug": false,
+          "messages": 15
+        }
+      }
+    }
+  },
+  "mcp": {
+    "servers": {
+      "haku-console": {
+        "headers": {
+          "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
+        },
+        "requestTimeoutMs": 60000,
+        "transport": "streamable-http",
+        "url": "https://haku.allegedly.works/mcp"
+      }
+    }
+  },
+  "tools": {
+    "allow": [
+      "exec",
+      "process",
+      "read",
+      "write",
+      "edit",
+      "apply_patch",
+      "memory_get",
+      "memory_search",
+      "session_status",
+      "bundle-mcp"
+    ],
+    "elevated": {
+      "enabled": false
+    },
+    "exec": {
+      "ask": "off",
+      "security": "full"
+    },
+    "fs": {
+      "workspaceOnly": true
+    },
+    "sessions": {
+      "visibility": "agent"
+    }
+  }
+}

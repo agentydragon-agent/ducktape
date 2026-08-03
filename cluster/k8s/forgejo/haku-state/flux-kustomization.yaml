@@ -27,3 +27,4 @@ spec:
     # The git-creds Secret lands in both target namespaces; wait for each to exist.
     - name: haku-namespace
     - name: haku-console-namespace
+    - name: haku-egress-proxy-namespace

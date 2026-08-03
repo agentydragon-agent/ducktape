@@ -124,7 +124,9 @@ resources:
   - agents/mitmproxy-namespace/flux-kustomization.yaml
   - agents/mitmproxy/flux-kustomization.yaml
   - agents/haku-egress-proxy-namespace/flux-kustomization.yaml
+  - agents/haku-openclaw-spike/namespace/flux-kustomization.yaml
   - agents/haku-egress-proxy/flux-kustomization.yaml
+  - agents/haku-openclaw-spike/app/flux-kustomization.yaml
   - agents/haku-zones-mitmproxy-namespace/flux-kustomization.yaml
   - agents/haku-zones-mitmproxy/flux-kustomization.yaml
   - agents/loki-read-proxy/flux-kustomization.yaml # namespace-filtered read-only Loki queries for Haku

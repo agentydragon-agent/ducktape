@@ -5,6 +5,8 @@ resources:
   - agent-workspace-image-policy.yaml
   - haku-sandbox-image-repository.yaml
   - haku-sandbox-image-policy.yaml
+  - haku-openclaw-spike-image-repository.yaml
+  - haku-openclaw-spike-image-policy.yaml
   - codex-pod-image-repository.yaml
   - codex-pod-image-policy.yaml
   - public-coder-iron-proxy-image-repository.yaml

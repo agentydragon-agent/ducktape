@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-openclaw-spike-app
+  namespace: flux-system
+  annotations:
+    description: Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/agents/haku-openclaw-spike/app
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: haku-openclaw-spike-namespace
+    - name: haku-egress-proxy
+    - name: external-secrets-config
+    - name: forgejo-images
+    - name: flux-image-automation-forgejo
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: haku-openclaw-spike
+      namespace: haku-openclaw-spike

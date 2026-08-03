@@ -98,6 +98,9 @@ resource "forgejo_collaborator" "claude" {
 # Write credentials for the haku-state git consumers, delivered to:
 #   - haku-sandbox: in-cluster scan runs / the self-hosted worker + the haku-ui
 #     backend (operator clicks/feedback → Forgejo writes).
+#   - haku-egress-proxy: the isolated OpenClaw spike's iron-proxy substitutes
+#     the password into Forgejo Authorization headers; the agent sees only a
+#     placeholder.
 #   - flux-system: basic auth for the haku-state GitRepository, which the
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
 #     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
@@ -111,7 +114,7 @@ resource "kubernetes_secret" "haku_forgejo_git" {
   # haku-sandbox already covers the Haku sandbox pods: the pool lives IN haku-sandbox
   # (cluster/k8s/haku/workspaces/) and the box uses this one haku-account credential for
   # both in-cluster git fetches (ducktape_haku module git_override + haku-state clone).
-  for_each = toset(["haku-sandbox", "flux-system"])
+  for_each = toset(["haku-sandbox", "haku-egress-proxy", "flux-system"])
 
   metadata {
     name      = "haku-forgejo-git"
@@ -143,9 +146,10 @@ resource "random_password" "haku_console_agent_api" {
 # Shared static-Agent bearer for the haku-ui backend / Haku worker -> haku-console MCP server.
 # It does NOT approve calls; approval stays in trusted console chrome. Haku can see
 # this through haku-ui/Haku-owned pods, which is fine: it lets Haku call proxied tools and
-# list/read its own MCP promises but not approve a gated call by itself.
+# list/read its own MCP promises but not approve a gated call by itself. The copy in
+# haku-egress-proxy is consumed only by the spike's destination-scoped substitution proxy.
 resource "kubernetes_secret" "haku_console_agent_api" {
-  for_each = toset(["haku-sandbox", "haku-console"])
+  for_each = toset(["haku-sandbox", "haku-console", "haku-egress-proxy"])
 
   metadata {
     name      = "haku-console-agent-api"
