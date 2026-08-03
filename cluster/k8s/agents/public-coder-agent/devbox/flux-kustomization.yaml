@@ -39,6 +39,10 @@ spec:
       kind: DataVolume
       name: public-coder-devbox-root
       namespace: public-coder-agent
+    - apiVersion: cdi.kubevirt.io/v1beta1
+      kind: DataVolume
+      name: public-coder-devbox-root-v2
+      namespace: public-coder-agent
     - apiVersion: kubevirt.io/v1
       kind: VirtualMachine
       name: public-coder-devbox

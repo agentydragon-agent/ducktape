@@ -80,7 +80,7 @@ spec:
       volumes:
         - name: rootdisk
           dataVolume:
-            name: public-coder-devbox-root
+            name: public-coder-devbox-root-v2
         - name: proxy-ca
           configMap:
             name: public-coder-agent-proxy-ca-cert

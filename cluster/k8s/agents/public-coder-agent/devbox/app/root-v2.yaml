@@ -1,0 +1,21 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: public-coder-devbox-root-v2
+  namespace: public-coder-agent
+  labels:
+    app.kubernetes.io/name: public-coder-devbox
+    app.kubernetes.io/component: root-disk
+spec:
+  source:
+    s3:
+      url: "https://s3.allegedly.works/vm-images/public-coder-devbox/3b1eed43befc230db0056680a5ded42e74233426.qcow2"
+      secretRef: public-coder-devbox-vm-images-s3-reader
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 80Gi
+    storageClassName: local-path-ovh
+    volumeMode: Filesystem

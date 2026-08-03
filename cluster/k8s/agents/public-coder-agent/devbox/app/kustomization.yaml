@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - host-key.sops.yaml
   - vm-images-s3-reader.yaml
+  - root-v2.yaml
   - virtualmachine.yaml
   - service.yaml
   - networkpolicy-ingress.yaml
