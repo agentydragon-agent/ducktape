@@ -129,6 +129,13 @@ spec:
             # exact destination hosts.
             - name: CLAUDE_CODE_OAUTH_TOKEN
               value: sk-ant-oat01-proxy-haku-openclaw-placeholder
+            # OpenClaw clears ambient Claude credentials by default so auth
+            # profiles cannot accidentally inherit host credentials. This
+            # deployment intentionally supplies its proxy-mediated OAuth token
+            # through the environment, so preserve that one variable for the
+            # managed Claude CLI child process.
+            - name: OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV
+              value: CLAUDE_CODE_OAUTH_TOKEN
             - name: HAKU_CONSOLE_TOKEN
               value: proxy-haku-console-placeholder
             - name: HAKU_GIT_USERNAME
