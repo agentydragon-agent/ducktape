@@ -197,6 +197,20 @@
       }
     }
   },
+  "plugins": {
+    "allow": [],
+    "deny": ["*"]
+  },
+  "security": {
+    "installPolicy": {
+      "enabled": true,
+      "targets": ["skill", "plugin"],
+      "exec": {
+        "source": "exec",
+        "command": "false"
+      }
+    }
+  },
   "tools": {
     "allow": [
       "exec",
