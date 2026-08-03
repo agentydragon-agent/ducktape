@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: seed-state
-          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:latest # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
+          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:devel-20260803023538-b413362 # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
           command:
             - sh
             - -c
@@ -114,7 +114,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: openclaw
-          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:latest # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
+          image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:devel-20260803023538-b413362 # {"$imagepolicy": "flux-system:haku-openclaw-spike"}
           env:
             - name: HOME
               value: /home/openclaw
@@ -124,7 +124,6 @@ spec:
               value: /home/openclaw/.cache/npm
             - name: OPENCLAW_LOG_LEVEL
               value: debug
-
             # All three are non-secret placeholders. The dedicated iron-proxy
             # replaces them only in matching Authorization headers for their
             # exact destination hosts.
@@ -138,7 +137,6 @@ spec:
               value: proxy-haku-forgejo-placeholder
             - name: HAKU_STATE_REPO_URL
               value: http://forgejo-http.forgejo:3000/haku/haku-state.git
-
             - name: NODE_USE_ENV_PROXY
               value: "1"
             - name: HTTP_PROXY
