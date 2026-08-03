@@ -13,10 +13,9 @@ spec:
       spec:
         source:
           s3:
-            # Start from the shared minimal bootstrap image. cloud-init then
-            # switches the persistent VM to the declarative public-coder-devbox
-            # NixOS configuration from the merged devel branch.
-            url: "https://s3.allegedly.works/vm-images/bootstrap/f484cb3f043f7dab65528c4ad22330dace7b9fdb.qcow2"
+            # This is the full declarative public-coder-devbox image. Its NixOS
+            # systemd units consume the host-key and proxy-CA disks directly.
+            url: "https://s3.allegedly.works/vm-images/public-coder-devbox/3b1eed43befc230db0056680a5ded42e74233426.qcow2"
             secretRef: public-coder-devbox-vm-images-s3-reader
         pvc:
           accessModes:
@@ -61,9 +60,6 @@ spec:
               bootOrder: 1
               disk:
                 bus: virtio
-            - name: cloudinitdisk
-              disk:
-                bus: virtio
             - name: proxy-ca
               serial: pcproxyca
               disk:
@@ -85,10 +81,6 @@ spec:
         - name: rootdisk
           dataVolume:
             name: public-coder-devbox-root
-        - name: cloudinitdisk
-          cloudInitNoCloud:
-            secretRef:
-              name: public-coder-devbox-cloud-init
         - name: proxy-ca
           configMap:
             name: public-coder-agent-proxy-ca-cert
