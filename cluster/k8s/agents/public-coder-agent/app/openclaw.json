@@ -33,7 +33,10 @@
     "restart": false
   },
   "cron": {
-    "enabled": false
+    "enabled": true,
+    "triggers": {
+      "enabled": true
+    }
   },
   "gateway": {
     "auth": {
