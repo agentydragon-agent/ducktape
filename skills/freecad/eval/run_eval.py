@@ -2,7 +2,7 @@
 
 Usage:
   ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/eval-output
-  ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/out --model claude-opus-4-6
+  ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/out --model claude-opus-5
 """
 
 import argparse
@@ -199,9 +199,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Run FreeCAD skill evaluation")
     parser.add_argument("output_dir", type=Path, help="Directory for eval outputs")
-    parser.add_argument(
-        "--model", default="claude-sonnet-4-6", help="Model ID (e.g. claude-sonnet-4-6, claude-opus-4-6)"
-    )
+    parser.add_argument("--model", default="claude-sonnet-5", help="Model ID (e.g. claude-sonnet-5, claude-opus-5)")
     args = parser.parse_args()
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -24,7 +24,7 @@
 #                                          "opus[1m]"   - Opus with 1M context window
 #                                          "sonnet[1m]" - Sonnet with 1M context window
 #                                          "opusplan"   - Opus for planning, Sonnet for execution
-#                                          full model ID (e.g. "claude-sonnet-4-6") also works
+#                                          full model ID (e.g. "claude-sonnet-5") also works
 #   effortLevel               : string   : Persist effort across sessions ("low","medium","high","xhigh")
 #   availableModels           : array    : Restrict model selection (enterprise)
 #   modelOverrides            : object   : Map Anthropic IDs to provider-specific IDs (Bedrock/Vertex/Foundry)

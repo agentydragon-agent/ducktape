@@ -14,7 +14,7 @@ lists (cross-checked by the test here).
 
 import yaml
 
-from cluster.k8s.litellm.app.generate_litellm import ZAI_ANTHROPIC_MODELS
+from cluster.k8s.litellm.app.model_rosters import ZAI_ANTHROPIC_MODELS
 from devinfra.prettier import prettier_format_in_place
 from util.bazel.workspace import get_build_workspace_directory
 

@@ -190,7 +190,7 @@ class RubricGrade(TypedDict):
     confidence: NotRequired[Literal["low", "medium", "high"]]
 
 
-_DEFAULT_JUDGE_MODEL = "anthropic/claude-sonnet-4-6"
+_DEFAULT_JUDGE_MODEL = "anthropic/claude-sonnet-5"
 _GRADER_IMAGE = "python:3.13-slim"
 
 # Sample.metadata key carrying the host directory whose contents will be

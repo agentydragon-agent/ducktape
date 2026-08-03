@@ -25,7 +25,7 @@ For the architecture and design rationale see <PLAN.md>.
 bb run //skills/reverse_engineer/evals/x:run
 
 # Eval — Sonnet
-bb run //skills/reverse_engineer/evals/x:run -- --model anthropic/claude-sonnet-4-6
+bb run //skills/reverse_engineer/evals/x:run -- --model anthropic/claude-sonnet-5
 
 # OpenAI-compatible
 bb run //skills/reverse_engineer/evals/x:run -- --model openai/gpt-4o-mini

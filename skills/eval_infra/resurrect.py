@@ -146,7 +146,7 @@ def main() -> None:
     parser.add_argument("--question", required=True, help="Follow-up question to append as a user message.")
     parser.add_argument("--output", type=Path, required=True, help="Where to write the extended transcript.")
     parser.add_argument("--api", choices=["anthropic", "openai"], default="anthropic")
-    parser.add_argument("--model", default="claude-sonnet-4-6")
+    parser.add_argument("--model", default="claude-sonnet-5")
     args = parser.parse_args()
 
     if args.api == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):

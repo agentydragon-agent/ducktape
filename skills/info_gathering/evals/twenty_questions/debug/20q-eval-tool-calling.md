@@ -57,7 +57,7 @@ an `api_key` even though Ollama doesn't need one. No `api_key` was configured
 in the model entry.
 
 **Fix**: Added `api_key: "ollama"` to all openai-chat model entries in
-`generate_litellm.py`. Ollama accepts any API key value.
+`test_litellm_config.py`. Ollama accepts any API key value.
 
 ### 3. Direct Ollama access: auth proxy broken
 
@@ -158,7 +158,7 @@ The `before_sleep` callback logs retry attempts with the error.
 
 | File                                                | Fix                                                | Issue                         |
 | --------------------------------------------------- | -------------------------------------------------- | ----------------------------- |
-| `cluster/k8s/litellm/generate_litellm.py`           | Add `api_key: "ollama"` for openai-chat models     | LiteLLM openai-chat 500 error |
+| `cluster/k8s/litellm/app/test_litellm_config.py`    | Add `api_key: "ollama"` for openai-chat models     | LiteLLM openai-chat 500 error |
 | `cluster/k8s/litellm/proxy-config.yaml`             | Regenerated                                        | (derived from above)          |
 | `cluster/k8s/ollama/nginx-auth-proxy.conf.template` | Escape `${OLLAMA_DIRECT_TOKEN}` as `$${}` for Flux | Ollama direct auth 401        |
 | `cluster/k8s/litellm/deployment.yaml`               | Directory mount instead of `subPath`               | ConfigMap auto-update         |

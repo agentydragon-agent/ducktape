@@ -30,7 +30,7 @@ FULL_INPUT_JSON = json.dumps(
         "cwd": "/home/user/code",
         "session_id": "abc12345xyz",
         "transcript_path": "/tmp/transcript.jsonl",
-        "model": {"id": "claude-opus-4-6", "display_name": "Opus 4.6 (1M context)"},
+        "model": {"id": "claude-opus-5", "display_name": "Opus 5 (1M context)"},
         "workspace": {"current_dir": "/home/user/code/ducktape", "project_dir": "/home/user/code/ducktape"},
         "version": "1.0.80",
         "output_style": {"name": "default"},
@@ -72,8 +72,8 @@ def test_parse_full_input():
     data = Input.model_validate_json(FULL_INPUT_JSON)
     assert data.session_id == "abc12345xyz"
     assert data.model is not None
-    assert data.model.display_name == "Opus 4.6 (1M context)"
-    assert data.model.id == "claude-opus-4-6"
+    assert data.model.display_name == "Opus 5 (1M context)"
+    assert data.model.id == "claude-opus-5"
     assert data.workspace is not None
     assert data.workspace.current_dir == "/home/user/code/ducktape"
     assert data.cost is not None
@@ -348,14 +348,14 @@ def test_format_context_colors(pct: float, expected_text: str, expected_style: s
         ),
         pytest.param(
             "https://unknown-proxy.example",
-            "claude-opus-4-6",
+            "claude-opus-5",
             QuotaRoute(provider=None, label="proxy→?"),
             id="ambiguous_proxy",
         ),
         pytest.param(
-            "https://api.anthropic.com", "claude-opus-4-6", QuotaRoute(provider="claude"), id="default_anthropic"
+            "https://api.anthropic.com", "claude-opus-5", QuotaRoute(provider="claude"), id="default_anthropic"
         ),
-        pytest.param("", "claude-opus-4-6", QuotaRoute(provider="claude"), id="unset"),
+        pytest.param("", "claude-opus-5", QuotaRoute(provider="claude"), id="unset"),
     ],
 )
 def test_detect_quota_route(base_url: str, model_id: str, expected: QuotaRoute):

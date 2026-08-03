@@ -55,7 +55,7 @@ _SESSION_START = {
     "transcript_path": "/tmp/transcript.json",
     "permission_mode": "default",
     "source": "startup",
-    "model": "claude-sonnet-4-6",
+    "model": "claude-sonnet-5",
 }
 
 _REPL_BASE: dict[str, object] = {

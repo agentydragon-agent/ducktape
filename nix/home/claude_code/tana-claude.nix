@@ -3,7 +3,7 @@
 # tf/gitops/litellm-keys). LiteLLM fronts the DB-less tana-litellm with the `anthropic/`
 # provider; the upstream reaches tana-litellm with the in-cluster master key, so this key
 # never carries it. Tana encodes reasoning effort in the model name, so each entry is one
-# family at its default effort (see cluster/k8s/litellm/app/generate_litellm.py). See
+# family at its default effort (see cluster/k8s/litellm/app/test_litellm_config.py). See
 # ./gateway.nix for the shared wrapper pattern.
 { pkgs }:
 let

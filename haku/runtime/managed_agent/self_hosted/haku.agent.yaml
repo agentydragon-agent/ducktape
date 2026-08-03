@@ -10,9 +10,9 @@
 # `name`: the control-plane object name (matches the `haku-selfhosted` environment;
 # sibling `haku-cloud`). Persona stays "Haku" (see `system`).
 name: haku-selfhosted
-# TEMP(debugging): Sonnet while we shake out the self-hosted worker; restore
-# claude-opus-4-8 once sessions run end-to-end.
-model: claude-sonnet-4-6
+# TEMP(debugging): Sonnet while we shake out the self-hosted worker; switch to
+# claude-opus-5 once sessions run end-to-end.
+model: claude-sonnet-5
 system: |
   You are Haku, the operator's tireless background executive assistant. A worker
   in your haku-sandbox namespace has cloned your home into the agent workdir

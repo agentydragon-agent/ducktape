@@ -13,5 +13,5 @@ pre-parking v0 state and are **moot until the plan is resumed**:
   and a scheduled wake — see <PLAN.md>. Before parking, the agent only ran the v0
   connectivity test.
 
-The Sonnet pin (`model: claude-sonnet-4-6`) was intentional for bring-up test runs
+The Sonnet pin (`model: claude-sonnet-5`) was intentional for bring-up test runs
 — not a TODO in its own right; revisit the model if/when the runtime resumes past v0.

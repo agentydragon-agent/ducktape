@@ -18,7 +18,7 @@ def test_missing_permission_mode_defaults_to_none() -> None:
             "transcript_path": "/tmp/t.json",
             "hook_event_name": "SessionStart",
             "source": "resume",
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5",
         }
     )
     assert result.permission_mode is None
@@ -33,7 +33,7 @@ def test_explicit_permission_mode() -> None:
             "hook_event_name": "SessionStart",
             "source": "startup",
             "permission_mode": "plan",
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5",
         }
     )
     assert result.permission_mode == PermissionMode.PLAN
@@ -49,7 +49,7 @@ def test_all_permission_modes(permission_mode: PermissionMode) -> None:
             "hook_event_name": "SessionStart",
             "source": "startup",
             "permission_mode": permission_mode,
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5",
         }
     )
     assert result.permission_mode == permission_mode

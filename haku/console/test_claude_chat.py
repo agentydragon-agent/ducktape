@@ -367,10 +367,10 @@ class _ToolUseClaudeClient:
     async def receive_response(self):
         yield AssistantMessage(
             content=[ToolUseBlock(id="toolu_01", name="mcp__haku-console__haku-console__list_mcp_servers", input={})],
-            model="claude-sonnet-4-6",
+            model="claude-sonnet-5",
         )
         yield AssistantMessage(
-            content=[TextBlock(text="The Haku Console catalog is available.")], model="claude-sonnet-4-6"
+            content=[TextBlock(text="The Haku Console catalog is available.")], model="claude-sonnet-5"
         )
         yield ResultMessage(
             subtype="success",

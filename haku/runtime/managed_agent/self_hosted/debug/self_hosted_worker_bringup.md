@@ -114,8 +114,8 @@ empty-output command, masked by the agent's `2>/dev/null | head`.
 
 ## Temporary settings to revert
 
-- `haku.agent.yaml` model is **Sonnet** (`TEMP(debugging)`); restore
-  `claude-opus-4-8` and re-pin the deployment.
+- `haku.agent.yaml` model is **Sonnet** (`TEMP(debugging)`); switch to
+  `claude-opus-5` and re-pin the deployment.
 - ~~`ANT_DEBUG=1`~~ — gone with the `ant` worker; `worker.py` logs at `INFO`.
 - mitmproxy `ignore_hosts` is a keeper, but has a `TODO` to tighten (currently
   passes all of `api.anthropic.com`).

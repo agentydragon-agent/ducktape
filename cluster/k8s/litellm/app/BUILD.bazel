@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
@@ -11,25 +11,14 @@ exports_files(
 )
 
 py_library(
-    name = "generate_litellm",
-    srcs = ["generate_litellm.py"],
+    name = "model_rosters",
+    srcs = ["model_rosters.py"],
     visibility = ["//cluster/k8s/haku/dispatch/litellm:__pkg__"],
-    deps = [
-        "//devinfra:prettier",
-        "//util/bazel:workspace",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_binary(
-    name = "generate_litellm_bin",
-    main_module = "cluster.k8s.litellm.app.generate_litellm",
-    deps = [":generate_litellm"],
 )
 
 py_test(
-    name = "test_generate_litellm",
-    srcs = ["test_generate_litellm.py"],
+    name = "test_litellm_config",
+    srcs = ["test_litellm_config.py"],
     data = [
         "chatgpt-deployment.yaml",
         "chatgpt-proxy-config.yaml",
@@ -41,9 +30,8 @@ py_test(
         "service.yaml",
     ],
     deps = [
-        ":generate_litellm",
+        ":model_rosters",
         "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -52,10 +40,15 @@ py_test(
 py_test(
     name = "test_openclaw_models",
     srcs = ["test_openclaw_models.py"],
-    data = ["//cluster/k8s:openclaw_model_config"],
+    data = [
+        "proxy-config.yaml",
+        "//cluster/k8s:openclaw_model_config",
+        "//tf/gitops/litellm-keys:main.tf",
+    ],
     deps = [
-        ":generate_litellm",
+        ":model_rosters",
         "//util/bazel:runfiles",
+        "@pypi//json5",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

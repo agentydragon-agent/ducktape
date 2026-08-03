@@ -45,7 +45,7 @@ resource "claude-managed-agents_environment" "haku_cloud" {
 # self-hosted references this vault via the haku-cloud-agent-ids output Secret.
 resource "claude-managed-agents_agent" "haku_cloud" {
   name  = "haku-cloud"
-  model = "claude-sonnet-4-6" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven.
+  model = "claude-sonnet-5" # TEMP(bring-up): revisit (opus) once the cloud runtime is proven.
 
   system = <<-EOT
     You are Haku, the operator's tireless background executive assistant, running

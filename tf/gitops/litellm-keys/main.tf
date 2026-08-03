@@ -58,15 +58,15 @@ locals {
     "${m}-anthropic"
   ]
   # Only the models the Codex/ChatGPT-account backend actually serves
-  # (see _CHATGPT_MODELS in generate_litellm.py).
+  # (see _CHATGPT_MODELS in test_litellm_config.py).
   oai_lane_models = [
     for m in ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.3-codex-spark"] :
     "${m}-chatgpt"
   ]
-  # Real Anthropic models (ANTHROPIC_MODELS in generate_litellm.py) — the
+  # Real Anthropic models (ANTHROPIC_MODELS in model_rosters.py) — the
   # dispatcher's classifier gate.
-  classifier_models = ["claude-sonnet-5", "claude-haiku-4-5"]
-  # Tana-UI models fronted through tana-litellm (_tana_entries in generate_litellm.py).
+  classifier_models = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
+  # Tana-UI models fronted through tana-litellm (_TANA_MODELS in test_litellm_config.py).
   tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
   # Codex-subscription models fronted through CLIProxyAPI (_cliproxy_entries).
   codex_client_models = [
@@ -77,13 +77,13 @@ locals {
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
   ]
-  # Gemini embeddings (GEMINI_EMBEDDING_MODELS in generate_litellm.py). Granted to
+  # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
   # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
   # route to it and should not gain one just to embed. Routing embeddings through
   # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
   embedding_client_models = ["gemini-embedding-2", "gemini-embedding-001"]
-  # Google Gemini models (GEMINI_MODELS in generate_litellm.py) fronted through the
+  # Google Gemini models (GEMINI_MODELS in test_litellm_config.py) fronted through the
   # `gemini/` provider. Consumed by the laptop gemini-claude alias.
   gemini_client_models = [
     "gemini-3-pro-preview",
@@ -387,18 +387,20 @@ data "sops_file" "zai_clients_key" {
 # zai-clients team: proxy-side catch-all routing Claude Code's claude-* slugs to
 # z.ai GLM. Attached to the zai_clients virtual key below (laptop z-claude alias +
 # agent-box zai user). Two mechanisms:
-#  - model_aliases: rewrite the two real Claude deployments (which ARE in
+#  - model_aliases: rewrite the real Claude deployments (which ARE in
 #    model_list and would otherwise reach real Anthropic) to GLM.
 #  - router_settings.fallbacks [{"*": [...]}]: any claude-* slug NOT in
-#    model_list (future Anthropic releases, claude-sonnet-4-5, etc.) hits
+#    model_list (future or retired Anthropic slugs, etc.) hits
 #    NotFoundError and falls back to GLM — zero maintenance on new versions.
 # Non-claude/non-GLM slugs are still blocked by the key's models allowlist
 # (claude-* + glm-*-anthropic), so z.ai-only containment holds.
 resource "litellm_team" "zai_clients" {
   team_alias = "zai-clients"
   model_aliases = {
-    "claude-sonnet-5"  = "glm-5.2-anthropic"
-    "claude-haiku-4-5" = "glm-5.2-anthropic"
+    "claude-opus-5"             = "glm-5.2-anthropic"
+    "claude-sonnet-5"           = "glm-5.2-anthropic"
+    "claude-fable-5"            = "glm-5.2-anthropic"
+    "claude-haiku-4-5-20251001" = "glm-5.2-anthropic"
   }
   router_settings = {
     fallbacks = [

@@ -34,9 +34,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_common_flags(parser, default_model="anthropic/claude-haiku-4-5-20251001")
     parser.add_argument("--message-limit", type=int, default=1000)
-    parser.add_argument(
-        "--judge-model", default=None, help="Rubric judge model (default: anthropic/claude-sonnet-4-6)."
-    )
+    parser.add_argument("--judge-model", default=None, help="Rubric judge model (default: anthropic/claude-sonnet-5).")
     parser.add_argument(
         "--time-limit",
         type=int,
@@ -53,7 +51,7 @@ def main() -> None:
         # rollout that produced it.
         os.environ["RE_EVAL_SNAPSHOT_DIR"] = str(log_dir)
 
-    judge_model = args.judge_model or "anthropic/claude-sonnet-4-6"
+    judge_model = args.judge_model or "anthropic/claude-sonnet-5"
 
     run_eval(
         args=args,
