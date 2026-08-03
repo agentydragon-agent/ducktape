@@ -49,34 +49,46 @@ The persistent SSH host key is a separate SOPS-encrypted Secret attached as a
 KubeVirt disk. The image's systemd first-boot unit consumes that disk directly,
 so no composed cloud-init blob is needed for the devbox.
 
-## Bootstrap and switch
+## Why this VM exists
 
-The VM is built from the purpose-specific `.#public-coder-devbox-image`
-output. The image already contains the full NixOS and Home Manager build/test
-configuration, so no first-boot `nixos-rebuild` is needed.
+The OpenClaw container keeps its workspace and runtime local, but it does not
+have the full NixOS/Bazel/BuildBuddy toolchain needed for Ducktape development.
+This separate VM provides that toolchain without making the OpenClaw image
+larger or coupling its lifecycle to the build environment. It is deliberately
+private, disposable, and GitOps-managed rather than a second personal
+workstation.
 
-At boot, a NixOS systemd unit mounts the SOPS-provided host-key disk and installs
-its persisted host key before `sshd` starts. A second unit mounts the live proxy
-CA ConfigMap disk and assembles the runtime CA bundle. SSH authorized keys,
-proxy variables, and Nix proxy settings are part of the image configuration.
+## How it works
 
-The root disk is persistent, so subsequent boots use the same declarative
-configuration directly. The generic bootstrap image remains available for
-other VMs that intentionally use the manual-switch workflow.
+- **KubeVirt + CDI:** Flux manages the VM and its persistent root DataVolume.
+  The DataVolume imports a commit-addressed qcow2 from the in-cluster S3
+  publisher, so rebuilding an image never mutates an existing disk in place.
+- **Purpose-built image:** `.#public-coder-devbox-image` contains the complete
+  NixOS and Home Manager build/test configuration. No first-boot
+  `nixos-rebuild` or cloud-init step is required.
+- **Stable SSH identity:** A SOPS-encrypted host-key Secret is attached as a
+  read-only virtio disk. A first-boot systemd unit installs that key before
+  `sshd` starts, keeping the service key stable across VM recreation.
+- **Proxy trust:** A trust-manager CA ConfigMap is attached as a read-only
+  virtio disk. Another systemd unit assembles the runtime CA bundle. Proxy
+  variables are configured for login shells and explicitly for `nix-daemon`;
+  Nix uses the assembled CA through `ssl-cert-file`/`NIX_SSL_CERT_FILE`.
+- **Egress boundary:** Cilium permits the virt-launcher Pod to reach only DNS
+  and the `public-coder-agent` iron-proxy. Guest proxy settings are necessary
+  for applications, but the network policy is the actual security boundary.
 
-## Image publication
+## Updating the image
 
-Build and publish the image from the in-cluster `vm-images-publisher`:
+The in-cluster `vm-images-publisher` builds and uploads the selected flake
+output with these settings:
 
-```bash
-job_name="publish-devbox-$(date +%s)"
-kubectl create job --from=cronjob/vm-images-publisher "$job_name" \
-  -n vm-images-publisher
-kubectl -n vm-images-publisher set env "job/$job_name" \
-  IMAGE_OUTPUT=public-coder-devbox-image OBJECT_PREFIX=public-coder-devbox
+```text
+IMAGE_OUTPUT=public-coder-devbox-image
+OBJECT_PREFIX=public-coder-devbox
 ```
 
-After publication, update the VM's root S3 URL to
-`public-coder-devbox/<sha>.qcow2`. The VM
-manifest can then drop the cloud-init disk and Secret entirely; only the
-persisted host-key and proxy-CA virtio disks remain.
+The resulting object is named `public-coder-devbox/<git-sha>.qcow2`. A GitOps
+change then pins the VM manifest to that exact object. For a new disk, use a
+new DataVolume name or recreate the VM: CDI treats an already-succeeded
+DataVolume as immutable and will not re-import it merely because its S3 URL
+changed.
