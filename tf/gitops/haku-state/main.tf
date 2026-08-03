@@ -95,27 +95,28 @@ resource "forgejo_collaborator" "claude" {
   permission    = "read"
 }
 
-# Write credentials for the haku-state git consumers, delivered to:
-#   - haku-sandbox: in-cluster scan runs / the self-hosted worker + the haku-ui
-#     backend (operator clicks/feedback → Forgejo writes).
+# Write credentials for the haku-state git consumers. Terraform owns one canonical
+# Secret in haku-sandbox; Reflector mirrors it into:
+#   - haku-egress-proxy: the isolated OpenClaw spike's iron-proxy substitutes
+#     the password into Forgejo Authorization headers; the agent sees only a
+#     placeholder.
 #   - flux-system: basic auth for the haku-state GitRepository, which the
 #     haku-state-workloads Kustomization reconciles into haku-sandbox under a
 #     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
-# (The console no longer consumes this: it became a bare trusted shell with no
-# haku-state write path — feedback/trace moved into haku-ui.)
-# The haku-sandbox namespace is created by its own Flux kustomization (the wrapping
-# forgejo/haku-state Kustomization dependsOn it); flux-system always exists. This
-# resource retries until each namespace exists.
+# The canonical copy serves in-cluster scan runs / the self-hosted worker + the
+# haku-ui backend (operator clicks/feedback → Forgejo writes). The console no
+# longer consumes this: feedback/trace moved into haku-ui.
 resource "kubernetes_secret" "haku_forgejo_git" {
-  # haku-sandbox already covers the Haku sandbox pods: the pool lives IN haku-sandbox
-  # (cluster/k8s/haku/workspaces/) and the box uses this one haku-account credential for
-  # both in-cluster git fetches (ducktape_haku module git_override + haku-state clone).
-  for_each = toset(["haku-sandbox", "flux-system"])
-
   metadata {
     name      = "haku-forgejo-git"
-    namespace = each.value
+    namespace = "haku-sandbox"
+    annotations = {
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-egress-proxy,flux-system"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-egress-proxy,flux-system"
+    }
   }
 
   data = {
@@ -125,13 +126,16 @@ resource "kubernetes_secret" "haku_forgejo_git" {
   }
 }
 
-# Renamed from haku-state-git-write (2026-07-23): this is the haku Forgejo *account*
-# credential (login + password), not a haku-state-specific write token — it authenticates
-# every repo the haku user can reach (haku-state r/w, the ducktape mirror r/o, …). The
-# metadata.name change replaces the Secret objects, but the value is stable (derived from
-# random_password.haku), so no credential rotation.
+# Preserve the original singleton -> per-namespace migration, then collapse the
+# haku-sandbox instance back into one canonical Secret without rotating its data.
+# Reflector owns the target copies.
 moved {
   from = kubernetes_secret.haku_state_git_write
+  to   = kubernetes_secret.haku_forgejo_git["haku-sandbox"]
+}
+
+moved {
+  from = kubernetes_secret.haku_forgejo_git["haku-sandbox"]
   to   = kubernetes_secret.haku_forgejo_git
 }
 
@@ -141,20 +145,31 @@ resource "random_password" "haku_console_agent_api" {
 }
 
 # Shared static-Agent bearer for the haku-ui backend / Haku worker -> haku-console MCP server.
-# It does NOT approve calls; approval stays in trusted console chrome. Haku can see
-# this through haku-ui/Haku-owned pods, which is fine: it lets Haku call proxied tools and
-# list/read its own MCP promises but not approve a gated call by itself.
+# It does NOT approve calls; approval stays in trusted console chrome. Terraform owns the
+# canonical copy beside Haku Console, and Reflector mirrors it into haku-sandbox and the
+# spike's destination-scoped substitution proxy namespace.
 resource "kubernetes_secret" "haku_console_agent_api" {
-  for_each = toset(["haku-sandbox", "haku-console"])
-
   metadata {
     name      = "haku-console-agent-api"
-    namespace = each.value
+    namespace = "haku-console"
+    annotations = {
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-sandbox,haku-egress-proxy"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-sandbox,haku-egress-proxy"
+    }
   }
 
   data = {
     token = random_password.haku_console_agent_api.result
   }
+}
+
+# Preserve the existing haku-console instance as the canonical Secret; Reflector
+# replaces the former Terraform-owned target copies.
+moved {
+  from = kubernetes_secret.haku_console_agent_api["haku-console"]
+  to   = kubernetes_secret.haku_console_agent_api
 }
 
 # Source credential for forgejo-token-rotation. The rotator uses Basic auth only

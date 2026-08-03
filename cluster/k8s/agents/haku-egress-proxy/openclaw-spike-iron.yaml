@@ -1,0 +1,68 @@
+dns:
+  enabled: false
+
+proxy:
+  tunnel_listen: ":8181"
+
+tls:
+  mode: "mitm"
+  ca_cert: "/ca/tls.crt"
+  ca_key: "/ca/tls.key"
+
+transforms:
+  - name: allowlist
+    config:
+      domains:
+        - "api.anthropic.com"
+        - "haku.allegedly.works"
+        - "forgejo-http.forgejo"
+        - "pypi.org"
+        - "files.pythonhosted.org"
+        - "registry.npmjs.org"
+        - "cache.nixos.org"
+        - "nixos.org"
+        - "channels.nixos.org"
+        - "releases.bazel.build"
+        - "bcr.bazel.build"
+        - "github.com"
+        - "codeload.github.com"
+        - "objects.githubusercontent.com"
+        - "release-assets.githubusercontent.com"
+        - "raw.githubusercontent.com"
+        - "ftp.gnu.org"
+        - "nodejs.org"
+        - "snapshot.debian.org"
+        - "code.forgejo.org"
+        - "data.forgejo.org"
+  - name: secrets
+    config:
+      secrets:
+        - source:
+            type: env
+            var: CLAUDE_CODE_OAUTH_TOKEN
+          replace:
+            proxy_value: "sk-ant-oat01-proxy-haku-openclaw-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "api.anthropic.com"
+        - source:
+            type: env
+            var: HAKU_GIT_PASSWORD
+          replace:
+            # iron-proxy also substitutes the placeholder inside base64 Basic
+            # authorization, which is how git-over-HTTP carries this password.
+            proxy_value: "proxy-haku-forgejo-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "forgejo-http.forgejo"
+        - source:
+            type: env
+            var: HAKU_CONSOLE_TOKEN
+          replace:
+            proxy_value: "proxy-haku-console-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "haku.allegedly.works"
+
+log:
+  level: "info"

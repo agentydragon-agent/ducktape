@@ -1,0 +1,10 @@
+{
+  "hasCompletedOnboarding": true,
+  "theme": "dark",
+  "projects": {
+    "/home/openclaw/.openclaw/workspace": {
+      "hasTrustDialogAccepted": true,
+      "hasCompletedProjectOnboarding": true
+    }
+  }
+}

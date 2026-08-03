@@ -10,6 +10,10 @@ resources:
   - claude-iron-service.yaml
   - claude-networkpolicy.yaml
   - claude-code-oauth-token.sops.yaml
+  - openclaw-spike-iron-deployment.yaml
+  - openclaw-spike-iron-service.yaml
+  - openclaw-spike-networkpolicy.yaml
+  - openclaw-spike-cnp-egress.yaml
   - networkpolicy.yaml
   - cnp-haku-cloud-api-egress.yaml
   - cnp-haku-claude-egress.yaml
@@ -21,6 +25,10 @@ configMapGenerator:
     namespace: haku-egress-proxy
     files:
       - iron.yaml=claude-iron.yaml
+  - name: haku-openclaw-spike-proxy-config
+    namespace: haku-egress-proxy
+    files:
+      - iron.yaml=openclaw-spike-iron.yaml
 
 patches:
   # The encrypted object was moved byte-for-byte from the compatibility spike so no plaintext

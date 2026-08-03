@@ -17,11 +17,15 @@ manifests depend on.
   header. Only the dedicated `haku-claude-sandbox` namespace may connect to its
   listener; Haku's general `haku-sandbox` compute authority cannot use the
   subscription proxy. The shared mitmproxy remains unchanged.
+- `haku-openclaw-spike-proxy` is a second isolated iron-proxy listener for the
+  OpenClaw compatibility spike. It substitutes separate placeholders for Claude
+  OAuth, Haku's Forgejo password, and the Haku Console bearer, each scoped to its
+  exact destination host. Only `haku-openclaw-spike` may connect to it.
 - Reflector mirrors the Secret into `cert-manager`, which is trust-manager's
   source namespace in this cluster.
 - trust-manager writes `ConfigMap/haku-egress-proxy-ca-cert` into `haku-sandbox`,
-  `haku-claude-sandbox`, **and `haku-ci`** (the `Bundle` `namespaceSelector` in
-  `trust-bundle.yaml`).
+  `haku-claude-sandbox`, `haku-openclaw-spike`, **and `haku-ci`** (the `Bundle`
+  `namespaceSelector` in `trust-bundle.yaml`).
 - Kyverno mounts that ConfigMap into haku sandbox pods and points common TLS
   clients at `/egress-proxy-ca/ca-certificates.crt`; `haku-ci` mounts it via its
   own Deployment/runner config (not Kyverno) — see <../../haku-ci/>.
