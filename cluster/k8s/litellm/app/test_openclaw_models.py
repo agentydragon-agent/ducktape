@@ -82,19 +82,20 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     assert ANTHROPIC_MODELS == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
 
     config, models = _haku_claude_models()
-    assert models == {
-        "anthropic/claude-fable-5": {"agentRuntime": {"id": "claude-cli"}, "alias": "Fable"},
-        "anthropic/claude-haiku-4-5-20251001": {"agentRuntime": {"id": "claude-cli"}, "alias": "Haiku"},
-        "anthropic/claude-opus-5": {"agentRuntime": {"id": "claude-cli"}, "alias": "Opus"},
-        "anthropic/claude-sonnet-5": {"agentRuntime": {"id": "claude-cli"}, "alias": "Sonnet"},
-    }
-    assert config["agents"]["defaults"]["model"]["primary"] == "anthropic/claude-opus-5"
-    assert config["agents"]["defaults"]["cliBackends"]["claude-cli"]["modelAliases"] == {
-        "fable": "claude-fable-5",
-        "haiku": "claude-haiku-4-5-20251001",
-        "opus": "claude-opus-5",
-        "sonnet": "claude-sonnet-5",
-    }
+    expected_refs = {f"anthropic/{model_id}" for model_id in ANTHROPIC_MODELS}
+    defaults = config["agents"]["defaults"]
+
+    # The shared roster, selectable policy, and configured catalog must describe
+    # the same models; the first roster entry is the intentional default.
+    assert set(models) == expected_refs
+    assert set(defaults["modelPolicy"]["allow"]) == expected_refs
+    assert defaults["model"]["primary"] == f"anthropic/{ANTHROPIC_MODELS[0]}"
+
+    # These Anthropic refs are subscription-backed Claude Code invocations, not
+    # direct Anthropic API calls. Keep runtime, plugin ownership, and auth aligned.
+    assert {entry["agentRuntime"]["id"] for entry in models.values()} == {"claude-cli"}
+    assert config["plugins"]["entries"]["anthropic"]["enabled"] is True
+    assert config["auth"]["profiles"]["anthropic:claude-cli"]["provider"] == "claude-cli"
 
     litellm_models = _litellm_models()
     for model_id in ANTHROPIC_MODELS:
