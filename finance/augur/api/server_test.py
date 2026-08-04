@@ -241,7 +241,7 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert sp500["label"] == "SP500 Proxy"
     assert sp500["symbol"] == "VOO"
     assert sp500["security_kind"] == "etf"
-    assert sp500["value_series"] == {"kind": "security", "symbol": "SPY"}
+    assert sp500["asset"] == {"kind": "security", "symbol": "VOO"}
     assert sp500["unit_value_usd"] == 500.0
     assert sp500["quantity"] == 1_500.0
     assert sp500["current_value_usd"] == 750_000.0
@@ -252,21 +252,21 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert [lot["cost_basis_usd"] for lot in sp500["lots"]] == [300_000.0, 250_000.0]
     assert [lot["cost_basis_per_unit_usd"] for lot in sp500["lots"]] == [400.0, 333.3333333333333]
     btc = positions_by_id["btc_holding"]
-    assert btc["symbol"] == "BTC"
+    assert btc["symbol"] == "btc"
     assert btc["security_kind"] == "cryptocurrency"
-    assert btc["value_series"] == {"kind": "security", "symbol": "btc"}
+    assert btc["asset"] == {"kind": "security", "symbol": "btc"}
     assert btc["unit_value_usd"] == 75_000.0
     assert btc["current_value_usd"] == 75_000.0
     eth = positions_by_id["eth_holding"]
-    assert eth["symbol"] == "ETH"
+    assert eth["symbol"] == "eth"
     assert eth["security_kind"] == "cryptocurrency"
-    assert eth["value_series"] == {"kind": "security", "symbol": "eth"}
+    assert eth["asset"] == {"kind": "security", "symbol": "eth"}
     assert eth["unit_value_usd"] == 2_100.0
     assert eth["current_value_usd"] == 10_500.0
     pha = positions_by_id["private_holding_a"]
     assert pha["symbol"] == "PHA"
-    assert pha["security_kind"] == "private_equity"
-    assert pha["value_series"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
+    assert pha.get("security_kind") is None
+    assert pha["asset"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
     assert pha["unit_value_usd"] == 25.0
     assert pha["current_value_usd"] == 25_000.0
     assert pha["total_cost_basis_usd"] == 5_000.0
@@ -363,7 +363,7 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
         "month_index": 0,
         "amount_usd": 50_000.0,
         "kind": "holding_sale",
-        "asset": {"kind": "security", "symbol": "SPY"},
+        "asset": {"kind": "security", "symbol": "VOO"},
         "asset_label": "SP500 Proxy (VOO)",
         "units": pytest.approx(100.0),
         "proceeds_usd": 50_000.0,
@@ -467,7 +467,7 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 20_000.0,
-            "sell_order": ["SPY"],
+            "sell_order": ["VOO"],
         },
     }
 
@@ -516,7 +516,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 500_000.0,
-            "sell_order": ["SPY"],
+            "sell_order": ["VOO"],
         },
     }
 

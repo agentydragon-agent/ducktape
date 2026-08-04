@@ -5,24 +5,23 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.api.portfolio import (
-    HoldingPositionConfig,
     HoldingTaxLotConfig,
     PortfolioAccountConfig,
     PortfolioConfig,
+    SecurityHoldingConfig,
 )
-from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
+from finance.augur.model.series import SecurityKey, SecuritySymbol
 
 
 def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
     portfolio = PortfolioConfig(
         accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a", label="Taxable"),),
         holdings=(
-            HoldingPositionConfig(
+            SecurityHoldingConfig(
                 position_id="voo_position",
                 account_id="taxable_brokerage",
-                symbol="VOO",
+                symbol=SecuritySymbol("VOO"),
                 security_kind="etf",
-                value_series=SecurityKey(symbol=SP500_SYMBOL),
                 unit_value_usd=500.0,
                 lots=(
                     HoldingTaxLotConfig(
@@ -45,8 +44,8 @@ def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
     assert portfolio.holdings[0].total_cost_basis_usd == 39_000.0
     assert portfolio.total_holdings_value_usd == 60_000.0
     assert [(lot.lot_id, lot.agent_id, lot.account_id, lot.asset, lot.purchase_month_index) for lot in lots] == [
-        ("voo_2024_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SP500_SYMBOL), -24),
-        ("voo_2026_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SP500_SYMBOL), 0),
+        ("voo_2024_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), -24),
+        ("voo_2026_05_20", "agent_a", "taxable_brokerage", SecurityKey(symbol=SecuritySymbol("VOO")), 0),
     ]
     assert lots[0].quantity == 100.0
     assert lots[0].cost_basis_per_unit_usd == 300.0
@@ -57,12 +56,11 @@ def test_one_account_can_hold_multiple_holding_positions() -> None:
     portfolio = PortfolioConfig(
         accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a"),),
         holdings=(
-            HoldingPositionConfig(
+            SecurityHoldingConfig(
                 position_id="voo_position",
                 account_id="taxable_brokerage",
-                symbol="VOO",
+                symbol=SecuritySymbol("VOO"),
                 security_kind="etf",
-                value_series=SecurityKey(symbol=SP500_SYMBOL),
                 unit_value_usd=500.0,
                 lots=(
                     HoldingTaxLotConfig(
@@ -70,14 +68,11 @@ def test_one_account_can_hold_multiple_holding_positions() -> None:
                     ),
                 ),
             ),
-            HoldingPositionConfig(
+            SecurityHoldingConfig(
                 position_id="goog_position",
                 account_id="taxable_brokerage",
-                symbol="GOOG",
+                symbol=SecuritySymbol("GOOG"),
                 security_kind="stock",
-                # Distinct asset key from the VOO position above — two positions only
-                # need a shared unit_value when they share a value_series.
-                value_series=SecurityKey(symbol=SecuritySymbol("eth")),
                 unit_value_usd=180.0,
                 lots=(
                     HoldingTaxLotConfig(
@@ -96,12 +91,11 @@ def test_holding_positions_must_reference_known_accounts() -> None:
         PortfolioConfig(
             accounts=(),
             holdings=(
-                HoldingPositionConfig(
+                SecurityHoldingConfig(
                     position_id="voo_position",
                     account_id="missing",
-                    symbol="VOO",
+                    symbol=SecuritySymbol("VOO"),
                     security_kind="etf",
-                    value_series=SecurityKey(symbol=SP500_SYMBOL),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -119,12 +113,11 @@ def test_holding_lot_ids_must_be_unique() -> None:
         PortfolioConfig(
             accounts=(account,),
             holdings=(
-                HoldingPositionConfig(
+                SecurityHoldingConfig(
                     position_id="voo_position",
                     account_id=account.account_id,
-                    symbol="VOO",
+                    symbol=SecuritySymbol("VOO"),
                     security_kind="etf",
-                    value_series=SecurityKey(symbol=SP500_SYMBOL),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -135,12 +128,11 @@ def test_holding_lot_ids_must_be_unique() -> None:
                         ),
                     ),
                 ),
-                HoldingPositionConfig(
+                SecurityHoldingConfig(
                     position_id="goog_position",
                     account_id=account.account_id,
-                    symbol="GOOG",
+                    symbol=SecuritySymbol("GOOG"),
                     security_kind="stock",
-                    value_series=SecurityKey(symbol=SecuritySymbol("eth")),
                     unit_value_usd=180.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -161,12 +153,11 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
         PortfolioConfig(
             accounts=(account,),
             holdings=(
-                HoldingPositionConfig(
+                SecurityHoldingConfig(
                     position_id="sp500_a",
                     account_id=account.account_id,
-                    symbol="SP500",
+                    symbol=SecuritySymbol("VOO"),
                     security_kind="other",
-                    value_series=SecurityKey(symbol=SP500_SYMBOL),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -177,12 +168,11 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
                         ),
                     ),
                 ),
-                HoldingPositionConfig(
+                SecurityHoldingConfig(
                     position_id="sp500_b",
                     account_id=account.account_id,
-                    symbol="SP500",
+                    symbol=SecuritySymbol("VOO"),
                     security_kind="other",
-                    value_series=SecurityKey(symbol=SP500_SYMBOL),
                     unit_value_usd=600.0,
                     lots=(
                         HoldingTaxLotConfig(
