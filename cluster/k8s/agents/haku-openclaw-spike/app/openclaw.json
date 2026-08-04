@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "migrations": {
+      "modelPolicyAllowlist": true
+    }
+  },
   "auth": {
     "profiles": {
       "anthropic:claude-cli": {
@@ -9,23 +14,6 @@
   },
   "agents": {
     "defaults": {
-      "cliBackends": {
-        "claude-cli": {
-          "command": "/usr/local/bin/claude",
-          "modelAliases": {
-            "fable": "claude-fable-5",
-            "haiku": "claude-haiku-4-5-20251001",
-            "opus": "claude-opus-5",
-            "sonnet": "claude-sonnet-5"
-          },
-          "reseedFromRawTranscriptWhenUncompacted": true
-        }
-      },
-      "memorySearch": {
-        "enabled": true,
-        "provider": "none",
-        "sources": ["memory"]
-      },
       "model": {
         "primary": "anthropic/claude-opus-5"
       },
@@ -55,17 +43,31 @@
           "alias": "Sonnet"
         }
       },
+      "modelPolicy": {
+        "allow": [
+          "anthropic/claude-fable-5",
+          "anthropic/claude-haiku-4-5-20251001",
+          "anthropic/claude-opus-5",
+          "anthropic/claude-sonnet-5"
+        ]
+      },
       "sandbox": {
         "mode": "off"
       },
       "skills": []
     },
-    "list": [
-      {
-        "id": "haku",
+    "entries": {
+      "haku": {
+        "default": true,
         "name": "Haku"
       }
-    ]
+    }
+  },
+  "memory": {
+    "search": {
+      // TODO: Enable semantic memory search after wiring an embedding provider.
+      "enabled": false
+    }
   },
   "commands": {
     "config": false,
@@ -87,8 +89,7 @@
     },
     "bind": "lan",
     "controlUi": {
-      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"],
-      "dangerouslyDisableDeviceAuth": true
+      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"]
     },
     "mode": "local",
     "trustedProxies": ["10.0.0.0/8"]
@@ -116,6 +117,13 @@
       }
     }
   },
+  "plugins": {
+    "entries": {
+      "anthropic": {
+        "enabled": true
+      }
+    }
+  },
   "tools": {
     "allow": [
       "exec",
@@ -133,8 +141,7 @@
       "enabled": false
     },
     "exec": {
-      "ask": "off",
-      "security": "full"
+      "mode": "full"
     },
     "fs": {
       "workspaceOnly": true
