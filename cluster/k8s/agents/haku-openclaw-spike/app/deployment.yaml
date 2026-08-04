@@ -44,6 +44,13 @@ spec:
                 cp /cfg/claude.json /home/openclaw/.claude.json
               fi
 
+              # OpenClaw 2026.7.2 upgrades the persisted agent database before
+              # auth profiles may be written. Doctor also normalizes config, so
+              # restore the reviewed JSON5 source immediately after migration.
+              openclaw doctor --fix --non-interactive
+              cp /cfg/openclaw.json /home/openclaw/.openclaw/openclaw.json
+              rm -f /home/openclaw/.openclaw/openclaw.json.last-good /home/openclaw/.openclaw/openclaw.json.bak*
+
               # OpenClaw deliberately strips inherited Claude auth variables
               # from CLI-backend subprocesses. Store the token-shaped proxy
               # placeholder in OpenClaw's per-agent auth database so it can be
