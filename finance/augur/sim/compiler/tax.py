@@ -9,15 +9,18 @@ capital-gain-agent index also live here since they're tax-routing concerns."""
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.helpers import StringTable, slot
+from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import usd_to_cents
-from finance.augur.sim.jurisdictions import Jurisdiction
-from finance.augur.sim.scenario import FilingStatus, Scenario
+from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, load_jurisdiction
+from finance.augur.sim.scenario import FilingStatus, InterestIncome, Scenario, TransferIncomeCategory
 
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
 SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
@@ -83,6 +86,44 @@ class TaxCompileOutput:
     link_ltcg_upper: NDArray[np.int64]
     link_ltcg_rate: NDArray[np.float64]
     link_ltcg_count: NDArray[np.int64]
+    buckets: IncomeBuckets
+    link_income_mask: NDArray[np.int64]
+
+
+class IncomeTagged(Protocol):
+    """Anything that can hand an agent taxable income. Transfers and property cashflows are
+    unrelated models that happen to share this one field, so the walk below needs the shape
+    named rather than falling back to their common `BaseModel` base."""
+
+    income_category: TransferIncomeCategory | None
+
+
+def collect_income_sources(scenario: Scenario) -> set[TransferIncomeCategory]:
+    """Every income source the scenario references, as the tags themselves.
+
+    The tag IS the axis key — `OrdinaryIncome()` and `InterestIncome(issuer=...)` are
+    already distinct, hashable values, so there is no sentinel-string vocabulary to invent
+    and nothing for a jurisdiction id to collide with.
+    """
+
+    tagged: tuple[IncomeTagged, ...] = (
+        *scenario.scheduled_transfers,
+        *scenario.recurring_transfers,
+        *scenario.scheduled_property_cashflows,
+        *scenario.recurring_property_cashflows,
+    )
+    return {item.income_category for item in tagged if item.income_category is not None}
+
+
+def _source_is_taxed_by(
+    source: TransferIncomeCategory, jurisdiction: Jurisdiction, issuer_levels: Mapping[str, JurisdictionLevel]
+) -> bool:
+    """Whether `jurisdiction` includes this kind of income in its ordinary base."""
+
+    if not isinstance(source, InterestIncome):
+        return True
+    issuer = source.issuer_jurisdiction_id
+    return jurisdiction.taxes_interest_from(issuer, issuer_levels[issuer] if issuer is not None else None)
 
 
 def compile_tax(
@@ -145,6 +186,25 @@ def compile_tax(
             ltcg_brackets.append(ltcg)
 
     link_count = len(link_profile)
+
+    # Which buckets each link's ordinary base includes. Built here, at compile time, from the
+    # jurisdiction's own rules — the engine never asks "is this exempt?", it multiplies.
+    buckets = IncomeBuckets.for_sources(collect_income_sources(scenario), profile_count=len(scenario.tax_profiles))
+    issuer_levels = {
+        source.issuer_jurisdiction_id: load_jurisdiction(source.issuer_jurisdiction_id).level
+        for source in buckets.source_ids
+        if isinstance(source, InterestIncome) and source.issuer_jurisdiction_id is not None
+    }
+    # Integer, not float: these multiply int64 cent amounts, and a float mask would promote
+    # the engine's fixed-point money to float64 — losing cents above 2^53 and quietly
+    # abandoning the exact-integer accounting the rest of the engine maintains.
+    income_mask = np.zeros((max(1, link_count), max(1, buckets.row_count)), dtype=np.int64)
+    for link_index, profile_index in enumerate(link_profile):
+        jurisdiction = jurisdictions[strings.values[link_jurisdiction[link_index]]]
+        for source in buckets.source_ids:
+            if _source_is_taxed_by(source, jurisdiction, issuer_levels):
+                income_mask[link_index, buckets.bucket(profile_index, source)] = 1
+
     ordinary_upper = np.zeros((max(1, link_count), max_ord), dtype=np.int64)
     ordinary_rate = np.zeros((max(1, link_count), max_ord), dtype=np.float64)
     ordinary_count = np.zeros(max(1, link_count), dtype=np.int64)
@@ -175,6 +235,8 @@ def compile_tax(
         link_standard_deduction=np.asarray(standard_deduction, dtype=np.int64),
         link_has_ltcg=np.asarray(has_ltcg, dtype=np.int64),
         link_section_1250_rate=np.asarray(section_1250_rate, dtype=np.float64),
+        buckets=buckets,
+        link_income_mask=income_mask,
         link_ordinary_upper=ordinary_upper,
         link_ordinary_rate=ordinary_rate,
         link_ordinary_count=ordinary_count,

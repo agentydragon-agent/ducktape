@@ -20,7 +20,6 @@ from finance.augur.sim.scenario import FixedAmount, SeriesIndexedAmount
 NO_CODE = -1
 AMOUNT_FIXED = 0
 AMOUNT_SERIES_INDEXED = 1
-ORDINARY_INCOME_CATEGORY = "ordinary"
 ORDINARY_DEDUCTION_CATEGORY = "ordinary"
 
 

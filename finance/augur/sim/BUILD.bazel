@@ -67,6 +67,7 @@ py_library(
     srcs = ["jurisdictions.py"],
     data = [":jurisdiction_data"],
     deps = [
+        ":enums",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -144,10 +145,23 @@ py_test(
     ],
 )
 
+py_test(
+    name = "income_buckets_test",
+    srcs = ["compiler/income_buckets_test.py"],
+    deps = [
+        ":compiler",
+        ":scenario",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
+        ":enums",
         ":tlh_harvest",
         "//finance/augur/model:series_model",
         "//finance/augur/product:asset_key",
@@ -232,6 +246,7 @@ py_library(
         "compiler/assets.py",
         "compiler/deductions.py",
         "compiler/helpers.py",
+        "compiler/income_buckets.py",
         "compiler/lifecycle.py",
         "compiler/liquidity.py",
         "compiler/obligations.py",
@@ -440,6 +455,19 @@ py_test(
         ":simulate",
         "@pypi//polars",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_income_category_e2e",
+    size = "medium",
+    srcs = ["test_income_category_e2e.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
 )
