@@ -3,6 +3,10 @@ dns:
 
 proxy:
   tunnel_listen: ":8181"
+  # Forgejo generates a full-history Git pack before returning response
+  # headers. The default 30s cap aborts that request with HTTP 502, while
+  # shallow fetches finish in time. Keep a bounded but practical limit.
+  upstream_response_header_timeout: "5m"
 
 tls:
   mode: "mitm"
