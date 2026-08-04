@@ -28,6 +28,7 @@ transforms:
         - "channels.nixos.org"
         - "releases.bazel.build"
         - "bcr.bazel.build"
+        - "api.github.com"
         - "github.com"
         - "codeload.github.com"
         - "objects.githubusercontent.com"
@@ -69,6 +70,18 @@ transforms:
             match_headers: ["Authorization"]
           rules:
             - host: "haku.allegedly.works"
+        - source:
+            type: env
+            var: GITHUB_TOKEN
+          replace:
+            # The placeholder may appear as a Bearer token for API requests or
+            # inside base64 Basic auth for Git over HTTPS.
+            proxy_value: "proxy-github-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "api.github.com"
+            - host: "github.com"
+            - host: "codeload.github.com"
 
 log:
   level: "info"

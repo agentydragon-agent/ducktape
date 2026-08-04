@@ -108,6 +108,7 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     haku_env = _haku_openclaw_env()
     assert haku_env["OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV"] == "CLAUDE_CODE_OAUTH_TOKEN"
     assert haku_env["CLAUDE_CODE_OAUTH_TOKEN"].startswith("sk-ant-oat01-")
+    assert haku_env["GH_PAT"] == "proxy-github-placeholder"
 
     litellm_models = _litellm_models()
     for model_id in ANTHROPIC_MODELS:
