@@ -13,12 +13,22 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    model_validator,
+)
 
 from finance.augur.model.series import IndexSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import AssetKey
 from finance.augur.sim.enums import IncomeCategory
+from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
@@ -301,6 +311,77 @@ class RecurringObligation(BaseModel):
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+
+
+class BondHolding(BaseModel):
+    """A bond held at scenario start, bought at par and held to maturity.
+
+    Like `InitialLot`, this is a position that already exists — it moves no cash when the
+    simulation starts, so a scenario buying into a ladder states its initial cash net of
+    the purchase. `purchase_month_index` may pre-date the horizon.
+
+    A bond is not a tax lot. Lots are priced off `external_values` and counted in liquid
+    net worth; a held-to-maturity bond is neither marked nor liquid, so it gets its own
+    table and its exclusion from liquid net worth is structural rather than a rule someone
+    has to remember.
+
+    Phase 1 is par-only. The engine has no discount curve, so a bond bought at a discount
+    or premium cannot be valued or amortized — `purchase_price_usd` is required, and
+    required to equal the face, so that a real holding bought at 98.5 raises instead of
+    being silently treated as par.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    bond_id: str
+    agent_id: str
+    # No default: which account the coupons land in is a real decision, and a bond pointing
+    # at an account that does not exist resolves to no slot at all — the coupon would be
+    # scattered into the dump row and vanish silently rather than raise.
+    account_id: str
+    # The taxing authority that issued the debt — `federal_us` for a Treasury, `california`
+    # for a CA muni, `None` for a corporate issuer. Whether any given holder owes tax on the
+    # coupon is a relation between this issuer and that holder's jurisdictions, never a
+    # property of the bond: "in-state" is holder-relative.
+    issuer_jurisdiction_id: str | None = None
+    face_value_usd: PositiveFloat
+    purchase_price_usd: PositiveFloat
+    annual_coupon_rate: NonNegativeFloat
+    coupon_period_months: PositiveInt = 6
+    purchase_month_index: int
+    maturity_month_index: int
+
+    @model_validator(mode="after")
+    def _reject_non_par_purchase(self) -> BondHolding:
+        # Compared in cents, not as floats: the scenario surface speaks in dollars, and two
+        # amounts that are the same money can differ in binary floating point (a price that
+        # round-trips through JSON as 99999.99999999999 is par). A cent is the precision the
+        # rest of the engine accounts in, so it is the precision "at par" should mean.
+        if usd_to_cents(self.purchase_price_usd) != usd_to_cents(self.face_value_usd):
+            raise ValueError(
+                f"bond {self.bond_id!r} was bought away from par "
+                f"({self.purchase_price_usd=} vs {self.face_value_usd=}). Phase 1 supports par "
+                "purchases held to maturity only: valuing a discount or premium requires the "
+                "purchase yield, which is a discount factor, and phase 1 has no discount curve. "
+                "Pricing bonds away from par is phase 2."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _reject_unaligned_term(self) -> BondHolding:
+        term = self.maturity_month_index - self.purchase_month_index
+        if term <= 0:
+            raise ValueError(
+                f"bond {self.bond_id!r} matures at or before purchase "
+                f"({self.maturity_month_index=}, {self.purchase_month_index=})"
+            )
+        if term % self.coupon_period_months:
+            raise ValueError(
+                f"bond {self.bond_id!r} has a term of {term} months, which is not a whole number "
+                f"of {self.coupon_period_months}-month coupon periods. A stub period would need a "
+                "day-count convention and an accrued-interest calculation, neither of which phase 1 has."
+            )
+        return self
 
 
 class InitialLot(BaseModel):
@@ -741,6 +822,7 @@ class Scenario(BaseModel):
     agents: list[Agent]
     initial_cash: list[InitialAccountBalance]
     initial_lots: list[InitialLot] = Field(default_factory=list)
+    initial_bonds: list[BondHolding] = Field(default_factory=list)
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
     scheduled_property_cashflows: list[ScheduledPropertyCashflow] = Field(default_factory=list)

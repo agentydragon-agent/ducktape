@@ -145,6 +145,35 @@ py_test(
     ],
 )
 
+py_library(
+    name = "bonds",
+    srcs = ["bonds.py"],
+)
+
+py_test(
+    name = "bonds_test",
+    srcs = ["bonds_test.py"],
+    deps = [
+        ":bonds",
+        ":scenario",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bond_e2e",
+    srcs = ["test_bond_e2e.py"],
+    deps = [
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "income_buckets_test",
     srcs = ["compiler/income_buckets_test.py"],
@@ -162,6 +191,7 @@ py_library(
     srcs = ["scenario.py"],
     deps = [
         ":enums",
+        ":fixed_point",
         ":tlh_harvest",
         "//finance/augur/model:series_model",
         "//finance/augur/product:asset_key",
@@ -244,6 +274,7 @@ py_library(
     srcs = [
         "compiler/__init__.py",
         "compiler/assets.py",
+        "compiler/bonds.py",
         "compiler/deductions.py",
         "compiler/helpers.py",
         "compiler/income_buckets.py",
@@ -261,6 +292,7 @@ py_library(
         "compiler/transfers.py",
     ],
     deps = [
+        ":bonds",
         ":enums",
         ":external_series",
         ":fixed_point",
@@ -341,6 +373,7 @@ py_library(
         ":scenario",
         ":tensor_fifo",
         "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
         "@pypi//jax",
         "@pypi//numpy",
     ],
