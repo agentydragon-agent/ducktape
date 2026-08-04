@@ -47,6 +47,11 @@ spec:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: haku-openclaw-spike-github-token
+                  key: GITHUB_TOKEN
           ports:
             - name: proxy
               containerPort: 8181

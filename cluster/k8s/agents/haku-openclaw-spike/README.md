@@ -8,8 +8,9 @@ tools.
 
 ## Trust boundary
 
-- The OpenClaw pod contains no real Claude OAuth token, Haku Forgejo password,
-  or Haku Console bearer. It receives token-shaped placeholders only. The init
+- The OpenClaw pod contains no real Claude OAuth token, GitHub PAT, Haku
+  Forgejo password, or Haku Console bearer. It receives token-shaped
+  placeholders only. The init
   container registers the Claude placeholder in OpenClaw's per-agent auth store
   because the `claude-cli` runtime intentionally strips inherited auth variables.
 - `haku-openclaw-spike-proxy` in `haku-egress-proxy` holds the real values and
@@ -57,7 +58,10 @@ new branch/remote of `haku/haku-state` using:
 - `HAKU_GIT_PASSWORD` — a non-secret proxy placeholder.
 
 A placeholder-only `.netrc` and Git author identity are planted so ordinary
-`git clone`, fetch, and push use the mediated credential. Repository layout and
+`git clone`, fetch, and push use the mediated Forgejo credential. The same
+`.netrc` contains the non-secret GitHub placeholder, while `GH_PAT` supports
+explicit GitHub API authentication. The proxy replaces either form with the
+`agentydragon-agent` PAT only for exact GitHub hosts. Repository layout and
 branch policy remain agent/operator decisions rather than GitOps bootstrap.
 
 ## Scope
