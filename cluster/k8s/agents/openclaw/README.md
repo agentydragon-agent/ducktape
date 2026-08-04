@@ -14,15 +14,28 @@ costs real effort to re-mint:
 | `openclaw-openai-api-key`     | `openclaw-gateway` | OpenAI project key with a $100/mo project budget |
 | `openclaw-telegram-bot-token` | `openclaw-gateway` | `@agentydragonopenclawbot` from @BotFather       |
 
-**`openclaw-gateway` is not yet clean.** The 2026-07-31 teardown left an
-`OpenClawInstance/openclaw` behind — Flux pruned its manifest, but its finalizer
-has no controller left to run it, so it lingers and keeps a scaled-to-zero
-`StatefulSet/openclaw` and two orphaned PVCs alive (`openclaw-data`, 20Gi on the
-Proxmox-pinned `local-path-proxmox`; and `openshell-data-openshell-gateway-0`,
-1Gi). The three `openclaw.rocks` CRDs survived too, as Helm does not remove CRDs
-on uninstall. Clearing that up is tracked in <../../TODO.md> § "Retire the
-`openclaw-*` namespaces"; until then, read the sections below as describing what
-_should_ be here, not everything that is.
+**The OpenClaw debris was cleared on 2026-08-04.** The 2026-07-31 teardown had
+left an `OpenClawInstance/openclaw` behind — Flux pruned its manifest, but its
+finalizer had no controller left to run it, so it lingered and held a
+scaled-to-zero `StatefulSet/openclaw` plus 21Gi of PVCs. Clearing the finalizer
+let GC take the StatefulSet, both PVCs and the rest of its managed objects
+(Service, NetworkPolicy, PDB, Role/RoleBinding, ServiceAccount, ConfigMap,
+gateway token); the three `openclaw.rocks` CRDs that Helm left on uninstall were
+deleted after it.
+
+Gotcha worth keeping, if a stuck CR ever needs the same treatment: clearing a
+dangling finalizer takes a **merge patch** (`finalizers: null`) and cluster-admin.
+A server-side apply cannot do it — `metadata.finalizers` is a set-type list, and
+SSA will not remove an entry owned by another field manager, so the apply reports
+success and changes nothing.
+
+A second layer surfaced underneath it, from the OpenShell stack deleted the same
+day — a ConfigMap, the `openshell-gateway-certgen` SA/Role/RoleBinding, and four
+`openshell-*` TLS/JWT Secrets, none managed by Flux, Helm or the reflector. Those
+went the same day.
+
+`openclaw-gateway` now holds only the three credentials above, two reflector
+mirrors (`github-token`, `litellm-key-openclaw`) and the cluster built-ins.
 
 **`ibkr-flex-query-credentials` was deleted on 2026-08-04**, along with its
 `sandbox-secrets` Kustomization and the two `*.interactivebrokers.com` hosts in
@@ -37,9 +50,9 @@ that field.** Re-homing them into `shared-secrets` is not a text edit — it nee
 cluster age key and a `sops` round-trip. Keeping the namespaces was the option that
 loses nothing and requires no key.
 
-`openclaw-sandbox` is genuinely empty; `openclaw-gateway` is not, per the note
-above. The privileged Pod Security labels that `openclaw-sandbox` carried for
-OpenShell's supervisor are gone, and
+Neither namespace runs anything since the 2026-08-04 cleanup; both hold only
+Secrets — the three above plus reflector mirrors. The privileged Pod Security
+labels that `openclaw-sandbox` carried for OpenShell's supervisor are gone, and
 `openclaw-gateway` opts out of Goldilocks since there is nothing to right-size.
 
 Not to be confused with the `openclaw` **ImageRepository/ImagePolicy** under
