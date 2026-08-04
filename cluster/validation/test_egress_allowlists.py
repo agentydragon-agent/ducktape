@@ -242,6 +242,7 @@ class Unconfined:
 # themselves, so the assertion and the entry cannot drift apart.
 OPERATOR_DATA_FENCE = "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml"
 GITHUB_API_FENCE = "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml"
+HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
 
 # Keyed by manifest path: the file is the fence's only real identifier, so there
 # is no second name to keep in sync, and a failure names the file to open.
@@ -253,8 +254,8 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
     # Haku's OpenClaw + Claude Code spike (namespace `haku-openclaw-spike`),
     # through its own iron proxy. Not public-coder-agent, which runs the same
     # OpenClaw image behind a different fence.
-    "agents/haku-egress-proxy/openclaw-spike-iron.yaml": IronConfined(
-        allows=BUILD_REGISTRIES | ANTHROPIC | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
+    HAKU_OPENCLAW_FENCE: IronConfined(
+        allows=BUILD_REGISTRIES | ANTHROPIC | GITHUB_API | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
         dns_manifest="agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
     ),
     # The console-owned Claude runner pool (`haku-claude-sandbox`). Deliberately
@@ -378,9 +379,9 @@ def test_operator_data_reaches_only_haku_sandbox() -> None:
 
 
 def test_github_api_reaches_only_declared_holders() -> None:
-    """`api.github.com` is a write surface, so it is granted one fence at a time."""
+    """`api.github.com` is a write surface, so every grant is named explicitly."""
     holders = {path for path, entry in ALLOWLISTS.items() if entry.allows & GITHUB_API}
-    assert holders == {GITHUB_API_FENCE}
+    assert holders == {GITHUB_API_FENCE, HAKU_OPENCLAW_FENCE}
 
 
 if __name__ == "__main__":

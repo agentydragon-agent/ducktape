@@ -36,6 +36,7 @@ spec:
             dns:
               - matchPattern: "**.cluster.local"
               - matchName: api.anthropic.com
+              - matchName: api.github.com
               - matchName: bcr.bazel.build
               - matchName: cache.nixos.org
               - matchName: channels.nixos.org
