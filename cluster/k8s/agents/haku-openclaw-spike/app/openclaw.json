@@ -4,14 +4,6 @@
       "modelPolicyAllowlist": true
     }
   },
-  "auth": {
-    "profiles": {
-      "anthropic:claude-cli": {
-        "mode": "token",
-        "provider": "claude-cli"
-      }
-    }
-  },
   "agents": {
     "defaults": {
       "model": {

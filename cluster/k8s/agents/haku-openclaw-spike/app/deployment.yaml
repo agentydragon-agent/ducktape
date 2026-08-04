@@ -45,22 +45,13 @@ spec:
               fi
 
               # OpenClaw 2026.7.2 upgrades the persisted agent database before
-              # auth profiles may be written. Doctor also normalizes config, so
-              # restore the reviewed JSON5 source immediately after migration.
+              # auth profiles may be changed. Claude Code cannot read OpenClaw's
+              # socket-backed credential FD, so remove the old selected profile
+              # and use the preserved CLAUDE_CODE_OAUTH_TOKEN environment path.
               openclaw doctor --fix --non-interactive
+              openclaw models auth logout --agent haku --yes anthropic:claude-cli || true
               cp /cfg/openclaw.json /home/openclaw/.openclaw/openclaw.json
               rm -f /home/openclaw/.openclaw/openclaw.json.last-good /home/openclaw/.openclaw/openclaw.json.bak*
-
-              # OpenClaw deliberately strips inherited Claude auth variables
-              # from CLI-backend subprocesses. Store the token-shaped proxy
-              # placeholder in OpenClaw's per-agent auth database so it can be
-              # passed to Claude through the supported runtime auth path. The
-              # real subscription token remains in iron-proxy.
-              printf '%s\n' "$CLAUDE_CODE_OAUTH_TOKEN" \
-                | openclaw models auth paste-token \
-                    --provider claude-cli \
-                    --profile-id anthropic:claude-cli \
-                    --expires-in 876000h
 
               git config --global user.name haku
               git config --global user.email haku@allegedly.works

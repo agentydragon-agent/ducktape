@@ -31,6 +31,7 @@ filegroup(
 filegroup(
     name = "openclaw_model_config",
     srcs = [
+        "agents/haku-openclaw-spike/app/deployment.yaml",
         "agents/haku-openclaw-spike/app/openclaw.json",
         "agents/public-coder-agent/app/openclaw.json",
     ],
