@@ -9,7 +9,7 @@ from more_itertools import one
 from finance.augur.api.config import Config, LocationConfig
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.api.wire import ActorRole, Property
-from finance.augur.model.series import CryptoKey, InflationKey, IssuerId, LocationId, RentKey
+from finance.augur.model.series import InflationKey, IssuerId, LocationId, RentKey
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.product.wire import (
     CapitalImprovementEventWire,
@@ -766,27 +766,26 @@ def _cash_buffer_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount 
 def _asset_preference_chain_from_sell_order(
     funding_policy: FundingPolicy, *, initial_lots: tuple[InitialLot, ...]
 ) -> list[AssetKey]:
-    """Translate the wire's `sell_order` tuple to a deduplicated `AssetKey` list for the sim.
+    """Resolve the wire's `sell_order` symbols to a deduplicated `AssetKey` list for the sim.
 
-    `stocks` covers anything that isn't crypto or private equity — ETFs, individual stocks,
-    mutual funds; `crypto` covers `CryptoKey` holdings. Private equity is *never* included
-    in any liquidity-sale bucket: it's only saleable at sparse tender events, dispatched by
-    `PrivateEquityTenderPolicy` outside the liquidity-policy path. A bucket absent from
-    `sell_order` means "don't auto-sell from this bucket"; an empty `sell_order` yields an
-    empty chain (hard-demand failures still fire).
+    The sell order names SYMBOLS, in priority order, because that is the granularity the
+    owner actually holds and reasons about — "sell VTI before BTC" is a statement about two
+    positions, not about two asset classes, and asset classes could not express "sell BTC but
+    not ETH" at all. `None` means "any sellable holding", in portfolio order; `()` means
+    "never auto-sell" (hard-demand failures still fire). A symbol naming nothing held is a
+    no-op, so a sell order can outlive the position it mentions.
+
+    Private equity cannot appear: `PrivateEquityAssetKey` has no symbol, so no sell order can
+    name it. That the tender path is its only exit is now structural rather than a filter
+    someone has to remember.
     """
 
-    assets: list[AssetKey] = []
-    for bucket in funding_policy.sell_order:
-        if bucket == "stocks":
-            assets.extend(
-                lot.asset for lot in initial_lots if not isinstance(lot.asset, CryptoKey | PrivateEquityAssetKey)
-            )
-        elif bucket == "crypto":
-            assets.extend(lot.asset for lot in initial_lots if isinstance(lot.asset, CryptoKey))
-        else:
-            raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
-    return list(dict.fromkeys(assets))
+    sellable = [lot.asset for lot in initial_lots if not isinstance(lot.asset, PrivateEquityAssetKey)]
+    if funding_policy.sell_order is None:
+        return list(dict.fromkeys(sellable))
+    return list(
+        dict.fromkeys(asset for symbol in funding_policy.sell_order for asset in sellable if asset.symbol == symbol)
+    )
 
 
 def _source_account_ids_from_sell_order(

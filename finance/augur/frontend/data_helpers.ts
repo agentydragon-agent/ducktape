@@ -325,17 +325,15 @@ const dueWithShortfallDetail = (event, currencyDisplay) =>
   formatDueWithShortfall(event.amountDueUsd, event.shortfallUsd, currencyDisplay);
 
 // A human-friendly name for the typed `AssetKey` an event carries — the display fallback when
-// no curated `assetLabel` is set. Derived from the kind's own identifying field (crypto ticker,
-// PE issuer, the S&P index name), not the old `crypto:btc`-style wire string.
+// no curated `assetLabel` is set. Derived from the kind's own identifying field (the security's
+// symbol, the PE issuer), not the old `crypto:btc`-style wire string.
 function assetDisplayName(asset) {
   if (!asset) return undefined;
   switch (asset.kind) {
-    case "crypto":
+    case "security":
       return asset.symbol.toUpperCase();
     case "private_equity":
       return asset.issuerId;
-    case "sp500":
-      return "S&P 500";
     default:
       return undefined;
   }
@@ -487,25 +485,26 @@ export function eventTitle(event, currencyDisplay) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), currencyDisplay)}`;
 }
 
-export function portfolioHasBucket(portfolio, bucketName) {
-  const holdings = portfolio?.holdings ?? [];
-  if (bucketName === "crypto") {
-    return holdings.some((position) => position.securityKind === "cryptocurrency");
+// Rows a sell order may name, in portfolio order, keyed by the SERIES symbol the sim acts on —
+// not the holding's display ticker, which can differ (a VOO holding is priced by the SPY series)
+// and which the backend would then fail to match, silently disabling auto-sale. Two holdings
+// sharing one series collapse into a single row, because the sim cannot tell them apart either.
+// Private equity is absent because its key carries no symbol: it leaves only via a tender event.
+export function sellableSecurities(portfolio) {
+  const bySymbol = new Map();
+  for (const position of portfolio?.holdings ?? []) {
+    const symbol = isPrivateSecurityPosition(position) ? null : position.valueSeries?.symbol;
+    if (!symbol) continue;
+    const label = position.label || position.symbol || symbol;
+    const row = bySymbol.get(symbol);
+    if (row) row.labels.push(label);
+    else bySymbol.set(symbol, { symbol, labels: [label] });
   }
-  // Match the backend sell-order compiler: private equity is handled by tender policies, not the
-  // liquid "stocks" sale bucket.
-  if (bucketName === "stocks") {
-    return holdings.some((position) => isStockBucketPosition(position));
-  }
-  return false;
+  return [...bySymbol.values()].map(({ symbol, labels }) => ({ symbol, label: labels.join(" + ") }));
 }
 
 export function isPrivateSecurityPosition(position) {
   return position?.securityKind === "private_equity";
-}
-
-export function isStockBucketPosition(position) {
-  return position != null && position.securityKind !== "cryptocurrency" && !isPrivateSecurityPosition(position);
 }
 
 export function firstSaleMonth(events) {

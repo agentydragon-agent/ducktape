@@ -12,7 +12,7 @@ once and every helper below derives from it rather than restating it. Adding a k
 is a row; adding a role is a row plus a request channel.
 
 Frames carry only a sub-id column (symbol / location_id) or nothing for a singleton
-— never a magic-prefix `series_id` string. The sample/consume path is typed by
+kind — never a magic-prefix `series_id` string. The sample/consume path is typed by
 `LevelSeriesKey`, and the typed per-role request channels keep a lot from
 being priced by inflation as a mypy error rather than a convention.
 """
@@ -32,8 +32,6 @@ from finance.augur.frames import concat_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import (
     AssetPriceKey,
-    CryptoKey,
-    CryptoSymbol,
     HomeValueKey,
     IndexSeriesKey,
     InflationKey,
@@ -43,7 +41,8 @@ from finance.augur.model.series import (
     LocationId,
     PropertyValueKey,
     RentKey,
-    SP500Key,
+    SecurityKey,
+    SecuritySymbol,
 )
 
 # Frame SHAPES. Several kinds share a shape (home_value and rent are both location-keyed);
@@ -86,9 +85,8 @@ class LevelKindSpec:
 
 
 LEVEL_KIND_SPECS: Mapping[LevelSeriesKind, LevelKindSpec] = {
-    LevelSeriesKind.SP500: LevelKindSpec(SeriesRole.ASSET_PRICES, SCALAR_LEVELS_SCHEMA, None, lambda _: SP500Key()),
-    LevelSeriesKind.CRYPTO: LevelKindSpec(
-        SeriesRole.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: CryptoKey(symbol=CryptoSymbol(s))
+    LevelSeriesKind.SECURITY: LevelKindSpec(
+        SeriesRole.ASSET_PRICES, SYMBOL_LEVELS_SCHEMA, "symbol", lambda s: SecurityKey(symbol=SecuritySymbol(s))
     ),
     LevelSeriesKind.HOME_VALUE: LevelKindSpec(
         SeriesRole.PROPERTY_VALUES,
@@ -143,6 +141,37 @@ class LevelFrames:
 
     def by_role(self, role: SeriesRole) -> dict[LevelSeriesKind, pl.DataFrame]:
         return {kind: frame for kind, frame in self.by_kind.items() if LEVEL_KIND_SPECS[kind].role is role}
+
+    def value_rows(self) -> list[tuple[LevelSeriesKey, pl.DataFrame]]:
+        """Every distinct series as `(key, (rollout_index, month_index, value) frame)`.
+
+        Ordered by `wire_id` so a consumer that assigns row indices from this order (the sim's
+        compiled cube) gets the same assignment for the same content — polars `unique` alone
+        returns hash order, which would re-trace the jitted program on every other compile.
+        """
+
+        rows: list[tuple[LevelSeriesKey, pl.DataFrame]] = []
+        for kind, spec in LEVEL_KIND_SPECS.items():
+            frame = self.frame(kind)
+            if frame.is_empty():
+                continue
+            if spec.subid_column is None:
+                rows.append((spec.key_for_subid(""), frame))
+                continue
+            subid_column = spec.subid_column
+            rows.extend(
+                (
+                    spec.key_for_subid(subid),
+                    frame.filter(pl.col(subid_column) == subid).select("rollout_index", "month_index", "value"),
+                )
+                for subid in sorted(_string_values(frame, subid_column))
+            )
+        return sorted(rows, key=lambda row: row[0].wire_id)
+
+    def series_keys(self) -> frozenset[LevelSeriesKey]:
+        """The distinct typed keys present across all roles."""
+
+        return frozenset(key for key, _ in self.value_rows())
 
 
 @dataclass(frozen=True)
@@ -340,39 +369,6 @@ def _reject_duplicate_subids(left: pl.DataFrame, right: pl.DataFrame, *, subid_c
     duplicate = sorted(_string_values(left, subid_column) & _string_values(right, subid_column))
     if duplicate:
         raise ValueError(f"composite exogenous providers produced duplicate {label}: {duplicate}")
-
-
-def level_value_rows(sampled: SampledExogenousBundle) -> list[tuple[LevelSeriesKey, pl.DataFrame]]:
-    """Yield `(key, (rollout_index, month_index, value) frame)` for every distinct series.
-
-    The model-side export the sim handoff builds its flat index from — the sim stamps
-    `series_id = key.wire_id` (or builds a typed intern table). No `series_id` strings are
-    constructed here.
-    """
-
-    rows: list[tuple[LevelSeriesKey, pl.DataFrame]] = []
-    for kind, spec in LEVEL_KIND_SPECS.items():
-        frame = sampled.levels.frame(kind)
-        if frame.is_empty():
-            continue
-        if spec.subid_column is None:
-            rows.append((spec.key_for_subid(""), frame))
-            continue
-        subid_column = spec.subid_column
-        rows.extend(
-            (
-                spec.key_for_subid(subid),
-                frame.filter(pl.col(subid_column) == subid).select("rollout_index", "month_index", "value"),
-            )
-            for subid in sorted(_string_values(frame, subid_column))
-        )
-    return rows
-
-
-def level_keys_in_bundle(sampled: SampledExogenousBundle) -> frozenset[LevelSeriesKey]:
-    """The distinct typed keys present across all level roles."""
-
-    return frozenset(key for key, _ in level_value_rows(sampled))
 
 
 def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled: SampledExogenousBundle) -> None:

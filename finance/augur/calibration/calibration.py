@@ -71,7 +71,6 @@ from finance.augur.model.exogenous import (
     SampledExogenousBundle,
     Sampler,
     anchor_sampled_series_levels,
-    level_keys_in_bundle,
 )
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
@@ -147,7 +146,7 @@ class CleanRow(BaseModel):
     url: str
     platform: str
     # The model channel that scored this market: a PE issuer id (for event markets) or a
-    # level-series wire id ("sp500", "inflation"). `= None` keeps it optional on the wire schema.
+    # level-series wire id ("security:SPY", "inflation"). `= None` keeps it optional on the wire schema.
     channel: str | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
@@ -760,7 +759,7 @@ def build_anchored_level_paths(
     for any threshold against a real index to be meaningful. A referenced+emitted series
     with no resolved anchor raises.
     """
-    emitted = level_keys_in_bundle(sampled)
+    emitted = sampled.levels.series_keys()
     keys = {parse_level_series_key(wire) for wire in requested_wire_ids} & emitted
     anchor_map: dict[LevelSeriesKey, float] = {}
     for key in keys:
