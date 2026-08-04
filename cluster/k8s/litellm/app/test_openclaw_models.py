@@ -24,6 +24,7 @@ CODEX_MAX_TOKENS = 128_000
 
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
+_HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
 _LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
 _LITELLM_KEYS_TF = "ducktape/tf/gitops/litellm-keys/main.tf"
 _TANA_MODELS = {
@@ -42,6 +43,14 @@ def _public_coder_agent_codex_models() -> list[dict]:
 def _haku_claude_models() -> tuple[dict, dict]:
     config = json5.loads(get_required_path(_HAKU_OPENCLAW_CONFIG).read_text())
     return config, config["agents"]["defaults"]["models"]
+
+
+def _haku_openclaw_env() -> dict[str, str]:
+    deployment = yaml.safe_load(get_required_path(_HAKU_OPENCLAW_DEPLOYMENT).read_text())
+    container = next(
+        entry for entry in deployment["spec"]["template"]["spec"]["containers"] if entry["name"] == "openclaw"
+    )
+    return {entry["name"]: entry["value"] for entry in container["env"] if "value" in entry}
 
 
 def _litellm_models() -> dict[str, dict]:
@@ -95,7 +104,10 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
     # direct Anthropic API calls. Keep runtime, plugin ownership, and auth aligned.
     assert {entry["agentRuntime"]["id"] for entry in models.values()} == {"claude-cli"}
     assert config["plugins"]["entries"]["anthropic"]["enabled"] is True
-    assert config["auth"]["profiles"]["anthropic:claude-cli"]["provider"] == "claude-cli"
+    assert "auth" not in config
+    haku_env = _haku_openclaw_env()
+    assert haku_env["OPENCLAW_LIVE_CLI_BACKEND_PRESERVE_ENV"] == "CLAUDE_CODE_OAUTH_TOKEN"
+    assert haku_env["CLAUDE_CODE_OAUTH_TOKEN"].startswith("sk-ant-oat01-")
 
     litellm_models = _litellm_models()
     for model_id in ANTHROPIC_MODELS:
