@@ -10,7 +10,9 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   healthChecks:
     - apiVersion: grafana.integreatly.org/v1beta1
       kind: GrafanaServiceAccount

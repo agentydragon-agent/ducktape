@@ -12,7 +12,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     - name: budget-namespace
     - name: budget-ledger # provisions budget-ledger-git-creds in the budget ns

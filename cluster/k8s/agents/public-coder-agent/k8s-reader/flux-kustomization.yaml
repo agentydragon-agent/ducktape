@@ -12,6 +12,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: ducktape
+    namespace: ducktape-flux
   timeout: 5m
   retryInterval: 1m
   dependsOn:

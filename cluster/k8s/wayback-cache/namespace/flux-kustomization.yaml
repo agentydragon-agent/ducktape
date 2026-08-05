@@ -10,6 +10,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: ducktape
+    namespace: ducktape-flux
   path: ./cluster/k8s/wayback-cache/namespace
   prune: false
   wait: true

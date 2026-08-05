@@ -12,7 +12,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   # Wait for the Terraform apply (creates the Forgejo user + props secrets) so
   # the dependent `props` Kustomization only proceeds once they exist.
   healthChecks:

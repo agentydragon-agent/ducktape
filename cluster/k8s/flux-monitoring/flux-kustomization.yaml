@@ -11,7 +11,9 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
     - name: monitoring-stack
@@ -19,5 +21,5 @@ spec:
   healthChecks:
     - apiVersion: monitoring.coreos.com/v1
       kind: PodMonitor
-      name: flux-system
+      name: ducktape
       namespace: flux-system

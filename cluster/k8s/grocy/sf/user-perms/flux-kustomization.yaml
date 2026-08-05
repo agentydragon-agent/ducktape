@@ -9,7 +9,9 @@ spec:
   timeout: 5m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   path: ./cluster/k8s/grocy/sf/user-perms
   prune: true
   # Run only after grocy-sf is up (and self-migrated via its postStart hook); the

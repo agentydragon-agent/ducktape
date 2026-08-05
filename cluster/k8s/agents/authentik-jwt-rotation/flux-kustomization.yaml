@@ -9,7 +9,9 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     - name: github-secrets-sync-secrets
     - name: agent-machine-access-tf

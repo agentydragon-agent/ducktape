@@ -11,7 +11,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     - name: haku-console # the Service whose `metrics` port this selects
     - name: monitoring-stack # the ServiceMonitor CRD

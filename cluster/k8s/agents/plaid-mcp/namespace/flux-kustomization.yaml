@@ -7,7 +7,9 @@ spec:
   interval: 10m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   path: ./cluster/k8s/agents/plaid-mcp/namespace
   prune: true
   timeout: 2m

@@ -12,7 +12,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   # Wait for the Terraform apply (creates the Forgejo repo + service users + the
   # augur-evidence-git-{write,read} Secrets) so the scraper/git-sync can depend on it.
   healthChecks:

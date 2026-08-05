@@ -15,7 +15,8 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   timeout: 10m
   dependsOn:
     - name: ollama-namespace
