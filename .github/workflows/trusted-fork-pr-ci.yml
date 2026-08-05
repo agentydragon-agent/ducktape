@@ -31,8 +31,8 @@ jobs:
       # All other forks wait for a trusted-pr-ci environment review.
       environment: >-
         ${{
-          !(github.event.pull_request.head.repo.full_name == 'agentydragon-agent/ducktape' &&
-            github.event.pull_request.user.login == 'agentydragon-agent') &&
+          (github.event.pull_request.head.repo.full_name != 'agentydragon-agent/ducktape' ||
+            github.event.pull_request.user.login != 'agentydragon-agent') &&
           'trusted-pr-ci' || ''
         }}
       # GitHub can emit pull_request_target with a current head SHA but a stale
@@ -56,8 +56,8 @@ jobs:
     with:
       environment: >-
         ${{
-          !(github.event.pull_request.head.repo.full_name == 'agentydragon-agent/ducktape' &&
-            github.event.pull_request.user.login == 'agentydragon-agent') &&
+          (github.event.pull_request.head.repo.full_name != 'agentydragon-agent/ducktape' ||
+            github.event.pull_request.user.login != 'agentydragon-agent') &&
           'trusted-pr-ci' || ''
         }}
       source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
