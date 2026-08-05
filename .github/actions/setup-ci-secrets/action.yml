@@ -37,6 +37,10 @@ runs:
       env:
         SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
       run: |
+        if [[ -z "${SOPS_AGE_KEY:-}" ]]; then
+          echo "SOPS age key not provided, skipping CI SOPS secret setup"
+          exit 0
+        fi
         source devinfra/secrets/ci_env.sh
         # Mask secret values so they don't appear in logs.
         # GITHUB_TOKEN / GHCR_TOKEN are intentionally absent — GHCR pushes
