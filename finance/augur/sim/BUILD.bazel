@@ -191,6 +191,24 @@ py_test(
 )
 
 py_test(
+    name = "test_asset_purchase_e2e",
+    srcs = ["test_asset_purchase_e2e.py"],
+    deps = [
+        ":scenario",
+        ":simulate",
+        "//finance/augur/model:deterministic",
+        "//finance/augur/model:level_series_groups",
+        "//finance/augur/model:series",
+        "//finance/augur/model:series_model",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/product:decode",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_bond_e2e",
     srcs = ["test_bond_e2e.py"],
     deps = [
