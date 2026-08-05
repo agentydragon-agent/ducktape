@@ -35,9 +35,8 @@ keys:
   # Secret) so TF can decrypt this one file via sops_external — it is NOT the broad
   # cluster SOPS key, so the runner can decrypt nothing else.
   - &litellm-zai-clients age165jt8xt99jzfjk9y03tkt34hxcpx0ues3fmzdpgh9vq9gva28adqdarctz
-  # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
+  # CI key (GitHub Actions, narrow access to CI-only SOPS secrets)
   # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
-  # Manual paste into BuildBuddy org secrets.
   - &ci age1zl5lv4g0lzd4pcwx9q4vvq0w4rpmkde5r68k4n2zu89urmnx9svs3c2mef
   # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
   # Private key stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted).
