@@ -11,8 +11,7 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
   timeout: 2m
   # Independent of the app layer per the agent RBAC convention: a failing app
   # kustomization must not block the RBAC that exists to debug it.

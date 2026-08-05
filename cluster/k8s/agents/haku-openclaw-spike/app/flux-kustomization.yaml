@@ -14,8 +14,7 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    name: ducktape
   dependsOn:
     - name: haku-openclaw-spike-namespace
     - name: haku-egress-proxy

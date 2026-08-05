@@ -9,7 +9,5 @@ spec:
   prune: false
   sourceRef:
     kind: GitRepository
-    name: flux-system
-    # The bootstrap source remains in flux-system during the staged migration.
-    namespace: flux-system
+    name: ducktape
   timeout: 2m
