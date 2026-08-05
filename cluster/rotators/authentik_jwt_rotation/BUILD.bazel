@@ -7,6 +7,9 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "rotate",
     srcs = ["rotate.py"],
+    # //cluster/validation:test_rotations_config validates the shipped
+    # rotations.yaml against this package's model.
+    visibility = ["//cluster/validation:__pkg__"],
     deps = [
         "//devinfra:prettier_cli",
         "@pypi//httpx",

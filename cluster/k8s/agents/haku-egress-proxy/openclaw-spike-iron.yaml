@@ -19,6 +19,13 @@ transforms:
       domains:
         - "api.anthropic.com"
         - "haku.allegedly.works"
+        # The kube-apiserver, via the terminate+re-encrypt Gateway route.
+        # NOT api.allegedly.works: that route is TLS passthrough to the
+        # apiserver's cluster-CA cert, which this MITM proxy cannot validate
+        # on the upstream leg. kubeapi.allegedly.works terminates the public
+        # LE wildcard at the Gateway and was added for exactly this class of
+        # caller -- see cluster/k8s/kube-api-proxy/README.md.
+        - "kubeapi.allegedly.works"
         - "forgejo-http.forgejo"
         - "pypi.org"
         - "files.pythonhosted.org"
@@ -82,6 +89,19 @@ transforms:
             - host: "api.github.com"
             - host: "github.com"
             - host: "codeload.github.com"
+        - source:
+            type: env
+            var: HAKU_KUBE_JWT
+          replace:
+            # An Authentik client_credentials JWT for the `haku` k8s group,
+            # minted and rotated by agents/authentik-jwt-rotation. The apiserver
+            # derives oidc-ksbx-groups:haku from it, so what this runtime may do
+            # in the cluster is RBAC on that group -- this proxy only delivers
+            # the bearer, it cannot tell `get pods` from `delete ns`.
+            proxy_value: "proxy-haku-kube-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            - host: "kubeapi.allegedly.works"
 
 log:
   level: "info"

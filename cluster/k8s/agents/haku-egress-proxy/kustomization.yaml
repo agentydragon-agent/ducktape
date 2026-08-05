@@ -15,6 +15,13 @@ resources:
   - openclaw-spike-iron-service.yaml
   - openclaw-spike-networkpolicy.yaml
   - openclaw-spike-cnp-egress.yaml
+  - openclaw-spike-kube-token-probe-rbac.yaml
+  # Two-step, deliberately. authentik-jwt-rotation's first run commits
+  # openclaw-spike-kube-token.sops.yaml here (rotations.yaml: haku-k8s-openclaw);
+  # listing it before that file exists breaks `kustomize build` for this whole
+  # namespace, which is the sole egress path for the spike. Add the resource line
+  # once the rotator has landed the file -- until then HAKU_KUBE_JWT is an
+  # optional secretKeyRef and kubectl simply 401s.
   - networkpolicy.yaml
   - cnp-haku-cloud-api-egress.yaml
   - cnp-haku-claude-egress.yaml

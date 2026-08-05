@@ -151,6 +151,13 @@ spec:
             # iron-proxy replaces it only in GitHub Authorization headers.
             - name: GH_PAT
               value: proxy-github-placeholder
+            # Read-only kubeconfig from the config ConfigMap. Its token field is
+            # the placeholder above's sibling: iron-proxy swaps in the real
+            # Authentik JWT for kubeapi.allegedly.works only. The pod still has
+            # automountServiceAccountToken: false -- there is no SA token here,
+            # and this path grants exactly what RBAC binds to oidc-ksbx-groups:haku.
+            - name: KUBECONFIG
+              value: /cfg/kubeconfig
             - name: HAKU_STATE_REPO_URL
               value: http://forgejo-http.forgejo:3000/haku/haku-state.git
             - name: NODE_USE_ENV_PROXY
@@ -200,6 +207,9 @@ spec:
               cpu: "4"
               memory: 8Gi
           volumeMounts:
+            - name: config
+              mountPath: /cfg
+              readOnly: true
             # The complete home is persistent: OpenClaw state/workspace plus
             # Claude Code's native transcripts and resumable session metadata.
             - name: state

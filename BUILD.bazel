@@ -55,6 +55,14 @@ exports_files([
     "ruff.toml",
 ])
 
+# The SOPS creation_rules, pinned by //cluster/validation:test_rotations_config:
+# a rotation whose state file matches no rule cannot be encrypted at all.
+filegroup(
+    name = "sops_config",
+    srcs = [".sops.yaml"],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # Root conftest.py for shared pytest configuration
 # Tests can depend on this for pytest-asyncio auto mode and common markers
 py_library(

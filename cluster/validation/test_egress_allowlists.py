@@ -183,6 +183,13 @@ GITHUB_API = hosts("api.github.com")
 
 ANTHROPIC = hosts("api.anthropic.com")
 
+# The cluster's own API server, through the terminate+re-encrypt Gateway route.
+# Its own group because reaching it is not like reaching a registry: what a
+# holder may actually do is decided by the RBAC bound to the identity in its
+# bearer token, not by this list. A fence gaining this host is a privilege
+# change and should read as one in the diff.
+KUBE_API = hosts("kubeapi.allegedly.works")
+
 # Hosts serving the operator's own accounts. A prompt-injected agent holding
 # these reads the operator's mail, calendar, tasks, finances and study data, so
 # the group is named to keep `test_operator_data_reaches_only_haku_sandbox`
@@ -255,7 +262,11 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
     # through its own iron proxy. Not public-coder-agent, which runs the same
     # OpenClaw image behind a different fence.
     HAKU_OPENCLAW_FENCE: IronConfined(
-        allows=BUILD_REGISTRIES | ANTHROPIC | GITHUB_API | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
+        allows=BUILD_REGISTRIES
+        | ANTHROPIC
+        | GITHUB_API
+        | KUBE_API
+        | hosts("forgejo-http.forgejo", "haku.allegedly.works"),
         dns_manifest="agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
     ),
     # The console-owned Claude runner pool (`haku-claude-sandbox`). Deliberately
