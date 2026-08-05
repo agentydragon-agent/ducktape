@@ -81,7 +81,8 @@
     },
     "bind": "lan",
     "controlUi": {
-      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"]
+      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"],
+      "dangerouslyDisableDeviceAuth": true
     },
     "mode": "local",
     "trustedProxies": ["10.0.0.0/8"]
