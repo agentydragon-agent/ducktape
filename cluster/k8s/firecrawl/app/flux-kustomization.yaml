@@ -20,5 +20,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: firecrawl-namespace
+      namespace: ducktape-flux
     - name: firecrawl-db
     - name: gateway

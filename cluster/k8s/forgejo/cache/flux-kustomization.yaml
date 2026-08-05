@@ -15,5 +15,6 @@ spec:
   wait: true
   dependsOn:
     - name: forgejo-namespace
+      namespace: ducktape-flux
     - name: valkey
     - name: local-path-provisioner

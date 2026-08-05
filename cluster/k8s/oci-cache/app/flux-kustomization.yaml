@@ -24,6 +24,7 @@ spec:
       namespace: oci-cache
   dependsOn:
     - name: oci-cache-namespace
+      namespace: ducktape-flux
     # RedisReplication CRD (Opstree operator)
     - name: valkey
     # S3 backend: bucket + the s3-identity-registry-cache Secret that Reflector

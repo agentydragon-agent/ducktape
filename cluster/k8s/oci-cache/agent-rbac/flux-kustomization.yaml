@@ -15,4 +15,5 @@ spec:
   timeout: 2m
   dependsOn:
     - name: oci-cache-namespace
+      namespace: ducktape-flux
     - name: claude-rbac

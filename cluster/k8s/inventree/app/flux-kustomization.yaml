@@ -21,6 +21,7 @@ spec:
       namespace: inventree
   dependsOn:
     - name: inventree-namespace
+      namespace: ducktape-flux
     - name: inventree-db
     - name: inventree-secrets
     - name: authentik-blueprint-inventree-secret

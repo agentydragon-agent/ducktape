@@ -16,6 +16,7 @@ spec:
   dependsOn:
     - name: cnpg
     - name: study-casino-namespace
+      namespace: ducktape-flux
     - name: local-path-provisioner
     - name: reflector
   decryption:

@@ -20,6 +20,7 @@ spec:
       namespace: haku-dispatch
   dependsOn:
     - name: haku-dispatch-namespace
+      namespace: ducktape-flux
     - name: haku-dispatch-db
     # Mounts the TF-minted classifier key (reflected) + workers master key.
     - name: litellm-keys-tf

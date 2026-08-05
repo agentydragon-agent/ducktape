@@ -28,3 +28,4 @@ spec:
     - name: haku-namespace
     - name: haku-console-namespace
     - name: haku-egress-proxy-namespace
+      namespace: ducktape-flux

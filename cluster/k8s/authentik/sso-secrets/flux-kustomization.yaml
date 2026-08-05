@@ -19,3 +19,4 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: authentik-namespace
+      namespace: ducktape-flux

@@ -15,5 +15,6 @@ spec:
   wait: true
   dependsOn:
     - name: wayback-cache-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner
