@@ -340,9 +340,6 @@ resources:
   - headlamp/namespace/flux-kustomization.yaml
   - headlamp/app/flux-kustomization.yaml
 
-  # --- scanner ---
-  - scanner/flux-kustomization.yaml
-
   # --- paperless ---
   - paperless/namespace/flux-kustomization.yaml
   - paperless/secrets/flux-kustomization.yaml
