@@ -152,6 +152,18 @@ spec:
             # than a typo. F18.
             - name: NODE_EXTRA_CA_CERTS
               value: /etc/ssl/certs/ca-certificates.crt
+            # Python is the other runtime that ignores the mounted system
+            # bundle: pip trusts only its vendored certifi, and hermetic
+            # interpreters carry their own OpenSSL whose compiled-in CA path
+            # is not Debian's. Without these, pip fetches fail TLS against the
+            # egress proxy even though pypi.org is allowlisted. Mirrors the
+            # same vars in haku-openclaw-spike.
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: PIP_CERT
+              value: /etc/ssl/certs/ca-certificates.crt
           ports:
             - name: gateway
               containerPort: 18789
