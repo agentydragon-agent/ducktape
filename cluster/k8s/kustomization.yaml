@@ -385,11 +385,6 @@ resources:
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml
 
-  # --- arc ---
-  - arc/namespace/flux-kustomization.yaml
-  - arc/secrets/flux-kustomization.yaml
-  - arc/app/flux-kustomization.yaml
-
   # --- github-secrets-sync ---
   - github-secrets-sync/secrets/flux-kustomization.yaml
   - github-secrets-sync/flux-kustomization.yaml
