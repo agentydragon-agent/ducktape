@@ -25,4 +25,4 @@ configMapGenerator:
   - name: public-coder-agent-kubeconfig
     namespace: public-coder-agent
     files:
-      - kubeconfig=agent-kubeconfig.yaml
+      - config=agent-kubeconfig.yaml
