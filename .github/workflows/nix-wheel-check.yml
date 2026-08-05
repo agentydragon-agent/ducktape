@@ -16,6 +16,10 @@ name: Nix wheel check
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy remote execution and cache credential"
+        required: true
     inputs:
       environment:
         description: "Protected GitHub Environment to gate this job (optional)"
@@ -28,7 +32,7 @@ on:
         type: string
         default: ""
       source_ref:
-        description: "Ref to resolve after approval instead of trusting an event-time commit SHA"
+        description: "Ref to resolve after the caller's trust decision instead of trusting an event-time commit SHA"
         required: false
         type: string
         default: ""
@@ -38,7 +42,7 @@ on:
         type: string
         default: ""
       allow_unsafe_pr_checkout:
-        description: "Opt in to checkout's pull_request_target fork checkout after an external approval gate"
+        description: "Opt in to checkout's pull_request_target fork checkout after the caller establishes trust"
         required: false
         type: boolean
         default: false
@@ -60,12 +64,14 @@ env:
 jobs:
   nix-wheel-check:
     name: Build artifacts + imports check
-    # Fork revisions are checked by trusted-fork-pr-ci.yml after a maintainer
-    # approves that exact head through the trusted-pr-ci environment.
+    # Fork revisions are checked by trusted-fork-pr-ci.yml after its caller
+    # either recognizes the dedicated agent fork or gates the exact head.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -92,7 +98,7 @@ jobs:
           if [[ -n "$EXPECTED_HEAD_SHA" ]]; then
             actual_head=$(git rev-parse HEAD^2)
             if [[ "$actual_head" != "$EXPECTED_HEAD_SHA" ]]; then
-              echo "::error::merge head $actual_head, expected approved PR head $EXPECTED_HEAD_SHA"
+              echo "::error::merge head $actual_head, expected trusted PR head $EXPECTED_HEAD_SHA"
               exit 1
             fi
           fi
@@ -102,10 +108,6 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         with:
           package: citools
-
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       # Derive the Bazel target list + nix package list from the SSOT.
       # A release is in-gate when its `nixPackage: true`; every pin in an

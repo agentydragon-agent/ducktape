@@ -1,7 +1,8 @@
-# Privileged CI for fork pull requests, gated by a protected GitHub
+# BuildBuddy CI for fork pull requests. Revisions authored from the dedicated
+# agent fork run automatically because that agent already owns the BuildBuddy
+# credential; every other fork is gated by the protected trusted-pr-ci GitHub
 # Environment. pull_request_target intentionally loads this workflow and the
-# called reusable workflows from the base branch. Their jobs wait for approval
-# before checking out or executing the PR's synthetic merge commit.
+# called reusable workflows from the base branch before executing PR code.
 name: Trusted fork PR CI
 run-name: >-
   Trusted PR #${{ github.event.pull_request.number }} @
@@ -26,18 +27,26 @@ jobs:
       !github.event.pull_request.draft
     uses: ./.github/workflows/bazel-ci.yml
     with:
-      environment: trusted-pr-ci
+      # The exact agent fork/author already owns the only injected capability.
+      # All other forks wait for a trusted-pr-ci environment review.
+      environment: >-
+        ${{
+          !(github.event.pull_request.head.repo.full_name == 'agentydragon-agent/ducktape' &&
+            github.event.pull_request.user.login == 'agentydragon-agent') &&
+          'trusted-pr-ci' || ''
+        }}
       # GitHub can emit pull_request_target with a current head SHA but a stale
-      # merge_commit_sha. Resolve the live merge ref after approval instead;
+      # merge_commit_sha. Resolve the live merge ref after the trust decision;
       # the called workflow verifies its second parent against pr_head_sha.
       source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
       # actions/checkout v6 refuses fork code under pull_request_target unless
-      # explicitly opted in. The called job's trusted-pr-ci environment blocks
-      # before runner assignment, so this only takes effect after review.
+      # explicitly opted in. The called job either recognizes the exact agent
+      # fork or blocks on trusted-pr-ci before runner assignment.
       allow_unsafe_pr_checkout: true
-    secrets: inherit
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
   nix-wheel-check:
     if: >-
@@ -45,8 +54,14 @@ jobs:
       !github.event.pull_request.draft
     uses: ./.github/workflows/nix-wheel-check.yml
     with:
-      environment: trusted-pr-ci
+      environment: >-
+        ${{
+          !(github.event.pull_request.head.repo.full_name == 'agentydragon-agent/ducktape' &&
+            github.event.pull_request.user.login == 'agentydragon-agent') &&
+          'trusted-pr-ci' || ''
+        }}
       source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       allow_unsafe_pr_checkout: true
-    secrets: inherit
+    secrets:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
