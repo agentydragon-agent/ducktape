@@ -31,6 +31,12 @@ spec:
       kind: GitRepository
       name: flux-system
       namespace: flux-system
+    # Public Flux control objects retain a dedicated sparse checkout. Reconcile
+    # it immediately on a Ducktape push rather than waiting for its poll.
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: activitywatch
