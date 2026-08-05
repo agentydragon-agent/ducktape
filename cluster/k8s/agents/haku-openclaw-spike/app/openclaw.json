@@ -76,13 +76,16 @@
         "allowLoopback": true,
         "allowUsers": ["agentydragon"],
         "requiredHeaders": ["x-authentik-email", "x-forwarded-host", "x-forwarded-proto"],
-        "userHeader": "x-authentik-username"
+        "userHeader": "x-authentik-username",
+        "deviceAutoApprove": {
+          "enabled": true,
+          "scopes": ["operator.admin"]
+        }
       }
     },
     "bind": "lan",
     "controlUi": {
-      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"],
-      "dangerouslyDisableDeviceAuth": true
+      "allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"]
     },
     "mode": "local",
     "trustedProxies": ["10.0.0.0/8"]
