@@ -3,6 +3,10 @@ name: Bazel CI
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy remote execution and cache credential"
+        required: true
     inputs:
       rbe_image:
         description: "Override RBE container image (optional)"
@@ -20,7 +24,7 @@ on:
         type: string
         default: ""
       source_ref:
-        description: "Ref to resolve after approval instead of trusting an event-time commit SHA"
+        description: "Ref to resolve after the caller's trust decision instead of trusting an event-time commit SHA"
         required: false
         type: string
         default: ""
@@ -35,7 +39,7 @@ on:
         type: string
         default: ""
       allow_unsafe_pr_checkout:
-        description: "Opt in to checkout's pull_request_target fork checkout after an external approval gate"
+        description: "Opt in to checkout's pull_request_target fork checkout after the caller establishes trust"
         required: false
         type: boolean
         default: false
@@ -56,6 +60,8 @@ jobs:
     name: Test & Build
     environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -65,9 +71,9 @@ jobs:
           allow-unsafe-pr-checkout: ${{ inputs.allow_unsafe_pr_checkout }}
 
       # pull_request_target payloads can pair the current head SHA with an old
-      # merge_commit_sha. Resolve the live merge ref only after approval, then
-      # freeze it to this SHA and prove its second parent is the approved head
-      # before loading any PR-controlled local action.
+      # merge_commit_sha. Resolve the live merge ref only after the caller's
+      # trust decision, then freeze it to this SHA and prove its second parent
+      # is the trusted head before loading any PR-controlled local action.
       - name: Resolve and verify source revision
         id: source
         env:
@@ -87,7 +93,7 @@ jobs:
           if [[ -n "$EXPECTED_HEAD_SHA" ]]; then
             actual_head=$(git rev-parse HEAD^2)
             if [[ "$actual_head" != "$EXPECTED_HEAD_SHA" ]]; then
-              echo "::error::merge head $actual_head, expected approved PR head $EXPECTED_HEAD_SHA"
+              echo "::error::merge head $actual_head, expected trusted PR head $EXPECTED_HEAD_SHA"
               exit 1
             fi
           fi
@@ -97,10 +103,6 @@ jobs:
       - uses: ./.github/actions/setup-nix-devtools
         with:
           package: citools
-
-      - uses: ./.github/actions/setup-ci-secrets
-        with:
-          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       # Combined test + build in one bb-remote `--script` invocation:
       # - Saves one Firecracker VM allocation per CI run.
@@ -172,11 +174,11 @@ jobs:
                 echo "::error::pull_request CI expected github.sha to be a two-parent synthetic merge commit"
                 exit 1
               fi
-              # Only the HEAD parent (^2) must match the approved/event head. It
+              # Only the HEAD parent (^2) must match the trusted/event head. It
               # guards against a stale or subsequently advanced merge ref — we'd
-              # otherwise test code different from the revision the reviewer approved.
+              # otherwise test code different from the revision the caller trusted.
               if [ "$PR_HEAD" != "$PR_HEAD_SHA" ]; then
-                echo "::error::synthetic merge head parent ($PR_HEAD) != approved PR head ($PR_HEAD_SHA)"
+                echo "::error::synthetic merge head parent ($PR_HEAD) != trusted PR head ($PR_HEAD_SHA)"
                 exit 1
               fi
               # The BASE parent (^1) is whatever devel was when GitHub built the merge.

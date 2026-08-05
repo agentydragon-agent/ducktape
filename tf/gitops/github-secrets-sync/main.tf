@@ -91,13 +91,14 @@ resource "github_actions_secret" "buildbuddy_api_key" {
 }
 
 # Fork pull requests cannot receive repository Actions secrets, even after a
-# maintainer clicks GitHub's "Approve and run workflows" button.  This
+# maintainer clicks GitHub's "Approve and run workflows" button. This
 # environment is used by the base-branch-owned pull_request_target workflow:
-# each new PR head waits for an explicit review before any PR code runs with
-# the CI SOPS identity.
+# non-agent fork PR heads wait for an explicit review before any PR code runs.
+# The Terraform resource label remains stable to avoid an unnecessary state
+# address migration; the user-facing GitHub environment is `fork-ci-review`.
 resource "github_repository_environment" "trusted_pr_ci" {
   repository          = "ducktape"
-  environment         = "trusted-pr-ci"
+  environment         = "fork-ci-review"
   can_admins_bypass   = false
   prevent_self_review = true
 
