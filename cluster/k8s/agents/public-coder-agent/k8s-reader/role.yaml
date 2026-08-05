@@ -1,0 +1,71 @@
+# Namespace-scoped read-only Role for the public-coder-agent namespace.
+#
+# Deliberately narrow to start: the agent can observe its own deployment,
+# pods, config, events, and the resources that commonly fail in ways that
+# are visible here (PVCs, network policies, the proxy deployment). No
+# secrets, no exec, no write verbs.
+#
+# Expand by adding RoleBindings in other namespaces that reference this
+# ServiceAccount, or by graduating to a ClusterRole when the scope warrants it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: public-coder-agent-reader
+  namespace: public-coder-agent
+  annotations:
+    description: Read-only diagnostic access for the public-coder-agent-reader SA.
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - events
+      - services
+      - configmaps
+      - persistentvolumeclaims
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - networkpolicies
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+    verbs: ["get", "list", "watch"]
+  # Flux kustomizations and sources — useful for diagnosing reconciliation.
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["kustomizations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories", "ocirepositories"]
+    verbs: ["get", "list", "watch"]
+  # Pod metrics (metrics.k8s.io) — nodes_top / pods_top equivalents.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: public-coder-agent-reader
+  namespace: public-coder-agent
+  annotations:
+    description: Binds the reader SA to the reader Role in this namespace.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: public-coder-agent-reader
+    namespace: public-coder-agent
