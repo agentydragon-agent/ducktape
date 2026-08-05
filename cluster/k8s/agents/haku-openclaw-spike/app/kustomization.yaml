@@ -16,9 +16,13 @@ configMapGenerator:
     files:
       - openclaw.json
       - claude.json
-      # Mounted as /cfg/kubeconfig, but NOT named that on disk: cluster/.gitignore
-      # ignores `kubeconfig*` to keep terraform-generated cluster credentials out
-      # of git, and that guard silently swallowed this file. Bazel globs the
-      # filesystem rather than git, so it built fine locally and CI -- which only
-      # has what is committed -- failed. Keep the source name outside that pattern.
-      - kubeconfig=kube-client-config
+  # Separate ConfigMap for kubeconfig so it can be mounted at ~/.kube/config
+  # where kubectl finds it by default, matching public-coder-agent's convention.
+  # The source file is named kube-client-config because cluster/.gitignore
+  # ignores `kubeconfig*` to keep terraform-generated cluster credentials out
+  # of git; Bazel globs the filesystem rather than git, so it built fine locally
+  # and CI -- which only has what is committed -- failed.
+  - name: haku-openclaw-spike-kubeconfig
+    namespace: haku-openclaw-spike
+    files:
+      - config=kube-client-config
