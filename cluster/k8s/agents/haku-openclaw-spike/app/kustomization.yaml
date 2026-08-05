@@ -16,3 +16,4 @@ configMapGenerator:
     files:
       - openclaw.json
       - claude.json
+      - kubeconfig

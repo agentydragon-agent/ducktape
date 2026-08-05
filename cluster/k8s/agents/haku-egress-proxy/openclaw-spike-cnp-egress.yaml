@@ -49,6 +49,7 @@ spec:
               - matchName: ghcr.io
               - matchName: github.com
               - matchName: haku.allegedly.works
+              - matchName: kubeapi.allegedly.works
               - matchName: nixos.org
               - matchName: nodejs.org
               - matchName: objects.githubusercontent.com

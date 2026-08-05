@@ -426,6 +426,22 @@ py_test(
 )
 
 py_test(
+    name = "test_rotations_config",
+    srcs = ["test_rotations_config.py"],
+    data = [
+        "//:sops_config",
+        "//cluster/k8s:rotations_config",
+    ],
+    deps = [
+        "//cluster/rotators/authentik_jwt_rotation:rotate",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_ntfy_manifest_contract",
     srcs = ["test_ntfy_manifest_contract.py"],
     data = ["//cluster/k8s:ntfy_manifest_contract_files"],

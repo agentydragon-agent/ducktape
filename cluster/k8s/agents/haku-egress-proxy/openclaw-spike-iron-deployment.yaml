@@ -52,6 +52,28 @@ spec:
                 secretKeyRef:
                   name: haku-openclaw-spike-github-token
                   key: GITHUB_TOKEN
+            # Rotated roughly every 44 days by agents/authentik-jwt-rotation,
+            # which commits the Secret SOPS-encrypted straight into THIS
+            # namespace -- deliberately not via the shared claude-sandbox store
+            # that carries GITHUB_TOKEN above. That store is conditioned to four
+            # namespaces including public-coder-agent, the one deliberately
+            # unconfined fence in the cluster; a cluster-API bearer has exactly
+            # one consumer and should be readable by exactly one namespace.
+            # reloader.stakater.com/auto restarts this pod when Flux applies a
+            # rotation -- without it, kubectl would start 401ing ~44 days after
+            # it last worked with nothing visibly changed.
+            - name: HAKU_KUBE_JWT
+              valueFrom:
+                secretKeyRef:
+                  name: haku-openclaw-spike-kube-token
+                  key: jwt
+                  # Optional so this can land before the rotator's first run
+                  # publishes the Secret. A required ref would leave the pod
+                  # unschedulable -- and this proxy is the ONLY egress path for
+                  # the spike, so a missing kube token would take out Anthropic,
+                  # Forgejo and GitHub too. Unset simply means no substitution:
+                  # kubectl 401s, everything else is untouched.
+                  optional: true
           ports:
             - name: proxy
               containerPort: 8181

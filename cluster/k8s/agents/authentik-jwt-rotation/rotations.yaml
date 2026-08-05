@@ -43,6 +43,37 @@ rotations:
     # valid token gets 200 and a dead one 401.
     probe:
       url: https://kubeapi.allegedly.works/apis
+  - name: haku-k8s-openclaw
+    # A SECOND, independent token for the same `haku` identity, minted for the
+    # experimental OpenClaw runtime's direct kubectl path. Deliberately not a
+    # second publish target for haku-k8s above: Authentik's
+    # create_client_credentials_response builds a fresh AccessToken per mint and
+    # revokes nothing (contrast the refresh_token path, which sets revoked=True
+    # explicitly), so concurrent tokens are fine -- and two tokens can be
+    # expired or deleted independently, where one shared token cannot.
+    # Its own sops_file is required, not incidental: remaining_hours() reads that
+    # file's expires_unencrypted stamp to decide whether to re-mint, so sharing
+    # one would couple the two rotation schedules.
+    provider_slug: kubectl-sandbox-client-credentials
+    scopes: openid profile email groups
+    credential_mode: user_password
+    expected_group: haku
+    expected_audiences:
+      - kubectl-sandbox-client-credentials
+    credentials_dir: /var/run/secrets/authentik/haku-k8s
+    sops_file: secrets/haku-k8s-openclaw-jwt.yaml
+    token_field: jwt
+    # Published straight into the consuming namespace. NOT via the shared
+    # claude-sandbox ClusterSecretStore that carries GITHUB_TOKEN: that store is
+    # conditioned to four namespaces including public-coder-agent, the one
+    # deliberately unconfined fence in the cluster. A cluster-API bearer has one
+    # consumer and should be readable from one namespace.
+    k8s_secret:
+      path: cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml
+      name: haku-openclaw-spike-kube-token
+      namespace: haku-egress-proxy
+    probe:
+      url: https://kubeapi.allegedly.works/apis
   - name: agent-box-codex
     # Source JWT for the self-hosted Codex user on the agent-box VM. Issued by
     # the shared kubectl-sandbox-client-credentials provider using the
