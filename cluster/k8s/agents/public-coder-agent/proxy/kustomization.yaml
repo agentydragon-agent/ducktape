@@ -1,3 +1,6 @@
+# TODO: consider moving iron-proxy into its own namespace (separate from the
+# agent app) for cleaner blast-radius isolation — the proxy holds all mediated
+# credentials and the agent app does not need to share its namespace.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

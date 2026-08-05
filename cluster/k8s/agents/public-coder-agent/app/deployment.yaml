@@ -158,6 +158,9 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /home/openclaw/.openclaw }
             - { name: devbox-ssh-secret, mountPath: /run/secrets/public-coder-devbox-ssh, readOnly: true }
+            # Kubeconfig with the placeholder token. iron-proxy substitutes the
+            # real SA token on requests to kubeapi.allegedly.works.
+            - { name: kubeconfig, mountPath: /home/openclaw/.kube, readOnly: true }
             # Over the system trust store, not alongside it. The Bundle is built
             # with useDefaultCAs, so it already contains the public roots plus the
             # cluster root plus this proxy's interception root — replacing the
@@ -185,6 +188,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: public-coder-agent-state
+        - name: kubeconfig
+          configMap:
+            name: public-coder-agent-kubeconfig
         - name: devbox-ssh-secret
           secret:
             secretName: public-coder-devbox-ssh

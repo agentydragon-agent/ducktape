@@ -64,6 +64,14 @@ spec:
                 secretKeyRef:
                   name: haku-console-public-coder-agent
                   key: token
+            # Read-only K8s SA token, held by the proxy. iron.yaml substitutes it
+            # only for kubeapi.allegedly.works. The agent never possesses the
+            # real token — same pattern as GITHUB_TOKEN.
+            - name: KUBERNETES_READER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-reader-token
+                  key: token
           ports:
             - name: proxy
               containerPort: 8080

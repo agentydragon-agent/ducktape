@@ -22,3 +22,7 @@ configMapGenerator:
     namespace: public-coder-agent
     files:
       - openclaw.json
+  - name: public-coder-agent-kubeconfig
+    namespace: public-coder-agent
+    files:
+      - kubeconfig=agent-kubeconfig.yaml
