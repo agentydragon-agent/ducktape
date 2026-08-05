@@ -2,6 +2,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: public-coder-devbox-app
+  # Stays in flux-system during the pilot because its SOPS decryption key is
+  # namespace-local. Move it once that controller-only key replication is
+  # designed and validated separately.
   namespace: flux-system
 spec:
   interval: 10m
@@ -18,6 +21,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: public-coder-agent-proxy
+      namespace: ducktape-flux
     # The VM does not consume the agent's LiteLLM Secret or Deployment. The
     # main agent app retains its own dependency on litellm-keys-tf.
     - name: kubevirt

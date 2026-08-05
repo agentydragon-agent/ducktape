@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: public-coder-agent-agent-rbac
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Time-boxed read-and-exec access to the public-coder-agent instance, for GLM context measurement and the autonomous-PR test-drive. Remove after 2026-07-31.
 spec:
@@ -12,6 +12,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+    namespace: flux-system
   timeout: 2m
   # Independent of the app layer per the agent RBAC convention: a failing app
   # kustomization must not block the RBAC that exists to debug it.

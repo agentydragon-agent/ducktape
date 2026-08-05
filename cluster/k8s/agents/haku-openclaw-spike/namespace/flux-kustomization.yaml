@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-openclaw-spike-namespace
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 1h
   path: ./cluster/k8s/agents/haku-openclaw-spike/namespace
@@ -10,4 +10,5 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+    namespace: flux-system
   timeout: 2m

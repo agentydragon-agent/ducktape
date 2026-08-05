@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: public-coder-agent-k8s-reader
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Read-only ServiceAccount and RBAC for agent-mediated cluster diagnostics.
 spec:
@@ -12,6 +12,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+    namespace: flux-system
   timeout: 5m
   retryInterval: 1m
   dependsOn:
