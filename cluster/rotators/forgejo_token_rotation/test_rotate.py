@@ -104,6 +104,32 @@ def test_write_tea_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
     assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
 
 
+def test_build_tea_secret_preserves_configured_metadata_annotations(tmp_path: Path):
+    output = TeaSecretOutput(
+        path=tmp_path / "secret.sops.yaml",
+        name="forgejo-token",
+        namespace="target",
+        annotations={"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"},
+    )
+    rotation = Rotation(
+        name="test", credentials_dir=Path("/creds"), sops_file=Path("secrets/test.yaml"), tea_secret=output
+    )
+
+    manifest = build_secret_manifest(
+        output,
+        rotation,
+        ForgejoCredentials(
+            username="test", password="not-a-secret", api_url="http://forgejo", tea_url="https://forgejo"
+        ),
+        {"sha1": "token", "name": "forgejo-token-test", "token_last_eight": "token"},
+    )
+
+    assert manifest["metadata"]["annotations"] == {
+        "description": "Forgejo API token + tea config minted by forgejo-token-rotation.",
+        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+    }
+
+
 def test_default_scopes_are_full_non_admin_write_set():
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
     assert r.scopes == FULL_ACCOUNT_SCOPES

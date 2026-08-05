@@ -5,6 +5,10 @@ metadata:
   namespace: haku-sandbox
   annotations:
     description: Forgejo API token + tea config minted by forgejo-token-rotation.
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-ci
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-ci
 type: Opaque
 stringData:
   config.yml: ENC[AES256_GCM,data:ain/EjbPklrxo61hpvGgsz5HrzEHhCEA1Nh2OjVIEitsjv3hFFDIhYT9yCmBeks+OZaFZDcACUVAXhG9qFa5prsUv3FJ7Mwth47F842Mvyg0BOE+Co2llSjq9d6Vtp+HV6Ps9S2RLe8NVWc8qu2IJLHHim8eYB91VAGc70WvNdAToKImp0bGMOqsEqCgsyyeEI9UiRkt9SvzszxQ5M4/FvY=,iv:ICg19djX31YVGA9v139FJ7fmPvajYQ/LvBU5E1ybRDQ=,tag:MaZqCMTMxYVhteNrWuBAGQ==,type:str]

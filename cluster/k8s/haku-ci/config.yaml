@@ -102,16 +102,18 @@ container:
   # which broke `docker login` in every other job — `rename … device or resource busy`.
   # Removed 2026-07-05; see cluster/docs/harbor_pullthrough.md.)
   #
-  # Allow the runner's own CA bind mount + the persistent Bazel-cache mount above through
+  # Allow the runner's own CA bind mount + the pod-local Bazel-cache mount above through
   # act_runner's volume gate (a Haku-authored workflow still cannot mount arbitrary dind-host
-  # paths). `-v /bazel-cache:/root/.cache` maps the runner-owned PVC (deployment.yaml) onto
-  # each job container's ~/.cache, so the Bazel output base + --disk_cache + repo cache
-  # persist across the otherwise-ephemeral job containers. Same host-path bind mechanism as
-  # the CA mounts (resolved on the dind filesystem, where the PVC is mounted at /bazel-cache).
+  # paths). `-v /bazel-cache:/root/.cache` maps the runner pod's emptyDir (deployment.yaml)
+  # onto each job container's ~/.cache, so the Bazel output base + --disk_cache + repo cache
+  # persist across otherwise-ephemeral job containers on that pod. KEDA intentionally drops
+  # this cache with the pod when it scales the runner to zero. Same host-path bind mechanism as
+  # the CA mounts (resolved on the dind filesystem, where the emptyDir is mounted at
+  # /bazel-cache).
   valid_volumes:
     - /egress-proxy-ca/ca-certificates.crt
     - /bazel-cache
-# No act_runner cache server (that backs actions/cache) — the persistent Bazel cache is the
-# bind-mounted PVC above, not a tar'd-and-uploaded actions/cache blob.
+# No act_runner cache server (that backs actions/cache) — the pod-local Bazel cache is the
+# bind-mounted emptyDir above, not a tar'd-and-uploaded actions/cache blob.
 cache:
   enabled: false

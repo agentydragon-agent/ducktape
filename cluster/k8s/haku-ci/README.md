@@ -23,8 +23,9 @@ contained to roughly Haku's existing sandbox blast radius:
   attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks
   (see the paving section). The privileged pod's blast radius is bounded by this namespace
   being operator-only (no Haku RBAC), pinned **off the control planes**, and egress-fenced.
-- **Repo-scoped runner** registered only to the `haku-state` repo, so it only ever runs Haku's
-  jobs; `capacity: 1` (serial builds).
+- **Repo-scoped runners** registered only to the `haku-state` repo, so they only ever run Haku's
+  jobs; each has `capacity: 1`. KEDA adds up to four pods only while matching jobs queue.
+  Each pod registers under its own Kubernetes pod name so concurrent replicas cannot collide.
 - **Scoped creds**: pushes only to the `haku/*` Forgejo package namespace; commits back only to
   `haku-state`. No cluster creds (`automountServiceAccountToken: false`).
 
@@ -62,8 +63,8 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 | `namespace.yaml`     | the `haku-ci` namespace                                                                 |
 | `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                   |
 | `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts) |
-| `deployment.yaml`    | the act_runner + rootless `dind` sidecar (+ Bazel-cache init/mount)                     |
-| `pvc.yaml`           | persistent Bazel cache (output base + `--disk_cache`), bind-mounted into job containers |
+| `deployment.yaml`    | the KEDA-scaled act_runner + rootless `dind` sidecar (+ pod-local Bazel cache)          |
+| `scaledobject.yaml`  | KEDA Forgejo queue trigger (0–4 runner pods) and token authentication                   |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
@@ -71,3 +72,16 @@ not committed here.
 
 `flux-kustomization.yaml` (root-wired) applies this dir; `wait: false` because the runner stays
 pending until that token Secret lands.
+
+## Queue autoscaling
+
+Forgejo's Prometheus `/metrics` endpoint does **not** expose Actions queue depth. Instead, KEDA
+2.18's native `forgejo-runner` scaler calls Forgejo's authenticated,
+repo-scoped `/api/v1/repos/haku/haku-state/actions/runners/jobs?labels=haku-ci` endpoint. Its
+response is the set of jobs waiting for this runner label, so KEDA scales one pod per queued job,
+from zero to the hard cap of four.
+
+`haku-forgejo-tea` is minted by `forgejo-token-rotation` and reflected from `haku-sandbox` into
+this operator-only namespace. The runner pod does not mount that Secret; only KEDA reads it.
+Each runner uses an `emptyDir` cache, so it is warm for consecutive jobs on that pod but is
+intentionally discarded when KEDA scales down.
