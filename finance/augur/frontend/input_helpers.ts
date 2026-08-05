@@ -1,12 +1,5 @@
 import { clampInteger } from "./lib/format";
 
-// Sell-order is stored as a comma-joined list of security symbols, in priority order.
-// "VOO,BTC" means "sell VOO first, then BTC if needed"; "" disables auto liquidity sales
-// entirely; `null` (the default) means "any sellable holding". Storing it as a string rather
-// than an array keeps default-comparison and URL encoding trivial. The wire takes the same
-// symbols — there is no bucket vocabulary in between.
-export const SELL_ORDER_SEPARATOR = ",";
-
 // Rollout count is NOT a product-input field: it is a top-level control shared across the
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
 // run this many rollouts, so it lives in the app shell rather than in either tab's input.
@@ -17,10 +10,10 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
-  sellOrder: null,
-  cashBufferTriggerBelowUsd: 4000,
-  cashBufferSaleUsd: 10000,
-  cashBufferIndexToInflation: true,
+  sleeveWeights: null,
+  cashFloorUsd: 4000,
+  cashCeilingUsd: 10000,
+  cashBandIndexToInflation: true,
   peLnwFloorUsd: 0,
   peIndexFloorToInflation: true,
   monthlyRentUsd: 0,
@@ -82,7 +75,7 @@ export function productInputDefaults(bootstrap) {
   // Server-provided overrides (from the deployment's augur YAML's `product_input_defaults`).
   // Each field is `null` when the deployment didn't set it; we drop those entries so the
   // frontend's hard-coded base value stays. The decamelize layer in `client.js` already
-  // converted snake_case keys, so `cash_buffer_index_to_inflation` arrives as `cashBufferIndexToInflation`.
+  // converted snake_case keys, so `cash_band_index_to_inflation` arrives as `cashBandIndexToInflation`.
   const overrides = bootstrap.productInputDefaults ?? {};
   const overridesNotNull = Object.fromEntries(Object.entries(overrides).filter(([, value]) => value != null));
   const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull };
@@ -270,23 +263,36 @@ export function buildLifecycleEvents(events) {
     });
 }
 
-export function splitSellOrder(sellOrder) {
-  return String(sellOrder ?? "")
-    .split(SELL_ORDER_SEPARATOR)
-    .map((symbol) => symbol.trim())
-    .filter(Boolean);
+// Weights are seeded from what the owner currently HOLDS: each sellable position's share of
+// total holding value, as an integer out of 100. Opening the editor and changing nothing then
+// means "hold what you have" — the target matches today's portfolio, so the first sale does not
+// silently rebalance a 90/10 split to 50/50.
+//
+// `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
+// outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
+export function seedSleeveWeights(sellable) {
+  const held = (sellable ?? []).filter((row) => row.symbol && Number(row.valueUsd) > 0);
+  const total = held.reduce((sum, row) => sum + Number(row.valueUsd), 0);
+  if (!total) return [];
+  return held.map((row) => ({
+    symbol: row.symbol,
+    weight: Math.max(1, Math.round((100 * Number(row.valueUsd)) / total)),
+  }));
 }
 
-// `null` stays `null` on the wire (meaning "any sellable holding"); anything else becomes the
-// deduplicated symbol list, with "" collapsing to [] (auto-sale off).
-export function sellOrderSymbols(sellOrder) {
-  if (sellOrder == null) return null;
-  return [...new Set(splitSellOrder(sellOrder))];
+// `null` is UI state meaning "not edited yet", and never reaches the wire: it resolves to the
+// hold-what-you-have seed here, so `FundingPolicy.sleeve_weights` is always an explicit list.
+// An explicit list is taken as-is, including the empty one — that is how auto-sale is turned off,
+// and it has to stay distinguishable from "not edited".
+export function resolveSleeveWeights(sleeveWeights, sellable) {
+  if (sleeveWeights == null) return seedSleeveWeights(sellable);
+  return sleeveWeights
+    .filter((sleeve) => sleeve.symbol)
+    .map((sleeve) => ({ symbol: sleeve.symbol, weight: Math.max(0, Math.trunc(Number(sleeve.weight) || 0)) }));
 }
 
-export function productScenario(input, bootstrap, modelId, horizonMonths) {
-  const sellOrder = sellOrderSymbols(input.sellOrder);
-  const autoSellEnabled = sellOrder == null || sellOrder.length > 0;
+export function productScenario(input, bootstrap, modelId, horizonMonths, sellable) {
+  const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
@@ -295,10 +301,13 @@ export function productScenario(input, bootstrap, modelId, horizonMonths) {
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
     fundingPolicy: {
-      cashBufferTriggerBelowUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
-      cashBufferSaleUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
-      cashBufferIndexToInflation: Boolean(input.cashBufferIndexToInflation),
-      sellOrder,
+      cashFloorUsd: Math.max(0, Number(input.cashFloorUsd) || 0),
+      cashCeilingUsd: Math.max(
+        Math.max(0, Number(input.cashFloorUsd) || 0),
+        Math.max(0, Number(input.cashCeilingUsd) || 0)
+      ),
+      cashBandIndexToInflation: Boolean(input.cashBandIndexToInflation),
+      sleeveWeights,
     },
     peTenderPolicy: {
       liquidNetWorthFloorUsd: Math.max(0, Number(input.peLnwFloorUsd) || 0),
@@ -314,11 +323,12 @@ export function productScenario(input, bootstrap, modelId, horizonMonths) {
 
 // The tab-shared controls (rollout count, exogenous model, horizon — plus the fixed first seed) are
 // passed in `shared` rather than read from `input`, since the app shell owns them
-// (see `?n=`/`?x=`/`?h=`).
+// (see `?n=`/`?x=`/`?h=`). `sellable` rides along for the same reason: it comes from the fetched
+// portfolio the shell owns, and an unedited target allocation is seeded from it.
 export function productMetricFanRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, firstSeed, model, horizonMonths } = shared;
+  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
-    scenario: productScenario(input, bootstrap, model, horizonMonths),
+    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
     firstSeed: clampFirstSeed(firstSeed),
     rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
@@ -327,9 +337,9 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
 }
 
 export function productTerminalDistributionRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, firstSeed, model, horizonMonths } = shared;
+  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
-    scenario: productScenario(input, bootstrap, model, horizonMonths),
+    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
     firstSeed: clampFirstSeed(firstSeed),
     rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
