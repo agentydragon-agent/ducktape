@@ -13,6 +13,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: agents-mitmproxy-namespace
+      namespace: ducktape-flux
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector

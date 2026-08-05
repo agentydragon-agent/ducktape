@@ -14,6 +14,7 @@ spec:
   timeout: 10m
   dependsOn:
     - name: haku-dispatch-namespace
+      namespace: ducktape-flux
     - name: haku-dispatch-db
     - name: litellm
     # Mounts the TF-minted zone key + workers master/salt keys.

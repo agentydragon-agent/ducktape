@@ -21,6 +21,7 @@ spec:
       namespace: forgejo
   dependsOn:
     - name: forgejo-namespace
+      namespace: ducktape-flux
     - name: forgejo-db
     - name: forgejo-cache # shared valkey for cache + queue (HA prerequisite)
     - name: gateway

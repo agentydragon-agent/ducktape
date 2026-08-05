@@ -24,6 +24,7 @@ spec:
       namespace: wayback-cache
   dependsOn:
     - name: wayback-cache-namespace
+      namespace: ducktape-flux
     - name: wayback-archive-db
     - name: seaweedfs-wayback-archive-bucket
     - name: seaweedfs-secrets

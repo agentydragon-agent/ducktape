@@ -16,5 +16,6 @@ spec:
   wait: true
   dependsOn:
     - name: firecrawl-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner

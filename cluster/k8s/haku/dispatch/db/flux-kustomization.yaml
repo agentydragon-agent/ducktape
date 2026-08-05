@@ -15,6 +15,7 @@ spec:
   wait: true
   dependsOn:
     - name: haku-dispatch-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner
     # ESO Password generator + ExternalSecret (db-role-secrets.yaml).

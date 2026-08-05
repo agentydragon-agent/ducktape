@@ -21,5 +21,6 @@ spec:
   wait: true
   dependsOn:
     - name: harbor-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner

@@ -22,6 +22,7 @@ spec:
       namespace: harbor
   dependsOn:
     - name: harbor-namespace
+      namespace: ducktape-flux
     - name: harbor-db
     - name: gateway
     - name: harbor-secrets
