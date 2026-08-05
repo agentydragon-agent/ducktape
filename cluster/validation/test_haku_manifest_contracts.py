@@ -124,5 +124,53 @@ def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:
     assert "HAKU_CONSOLE_MCP_OAUTH__PUBLIC_BASE_URL" not in {entry["name"] for entry in server["env"]}
 
 
+def test_haku_ci_keda_scales_only_the_repo_scoped_forgejo_queue(k8s_dir: Path) -> None:
+    """The privileged dind runner may scale only from its own Forgejo queue."""
+    keda_repository, keda_release = list(
+        yaml.safe_load_all((k8s_dir / "keda/helmrelease.yaml").read_text(encoding="utf-8"))
+    )
+    assert keda_repository["spec"]["url"] == "https://kedacore.github.io/charts"
+    assert keda_release["spec"]["chart"]["spec"]["version"] == "2.18.0"
+    assert keda_release["spec"]["values"]["watchNamespace"] == "haku-ci"
+
+    deployment = yaml.safe_load((k8s_dir / "haku-ci/deployment.yaml").read_text(encoding="utf-8"))
+    assert "replicas" not in deployment["spec"], "Flux must not overwrite KEDA's HPA replica count"
+    runner = next(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "runner")
+    runner_env = {entry["name"]: entry for entry in runner["env"]}
+    assert runner_env["RUNNER_NAME"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.name"
+    cache = next(
+        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "bazel-cache"
+    )
+    assert cache == {"name": "bazel-cache", "emptyDir": {}}
+
+    documents = list(yaml.safe_load_all((k8s_dir / "haku-ci/scaledobject.yaml").read_text(encoding="utf-8")))
+    auth, scaled_object = documents
+    assert auth["kind"] == "TriggerAuthentication"
+    assert auth["spec"]["secretTargetRef"] == [{"parameter": "token", "name": "haku-forgejo-tea", "key": "token"}]
+    assert scaled_object["kind"] == "ScaledObject"
+    assert scaled_object["spec"]["scaleTargetRef"] == {"name": "haku-runner"}
+    assert scaled_object["spec"]["minReplicaCount"] == 0
+    assert scaled_object["spec"]["maxReplicaCount"] == 4
+    assert scaled_object["spec"]["triggers"] == [
+        {
+            "type": "forgejo-runner",
+            "metadata": {
+                "address": "http://forgejo-http.forgejo:3000",
+                "owner": "haku",
+                "repo": "haku-state",
+                "labels": "haku-ci",
+            },
+            "authenticationRef": {"name": "haku-ci-forgejo"},
+        }
+    ]
+
+    token_manifest = yaml.safe_load((k8s_dir / "haku/managed-agent/haku-forgejo-tea.sops.yaml").read_text())
+    annotations = token_manifest["metadata"]["annotations"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed"] == "true"
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == "haku-ci"
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-enabled"] == "true"
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "haku-ci"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

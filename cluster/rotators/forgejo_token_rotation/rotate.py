@@ -47,6 +47,9 @@ class TeaSecretOutput(BaseModel):
     path: Path = Field(description="Repo-relative path for the Secret manifest (under cluster/k8s/, *.sops.yaml)")
     name: str
     namespace: str
+    annotations: dict[str, str] = Field(
+        default_factory=dict, description="Additional plaintext metadata annotations to preserve on each rotation"
+    )
     config_key: str = "config.yml"
     token_key: str = "token"
     username_key: str = "username"
@@ -295,7 +298,10 @@ def build_secret_manifest(
         "metadata": {
             "name": out.name,
             "namespace": out.namespace,
-            "annotations": {"description": "Forgejo API token + tea config minted by forgejo-token-rotation."},
+            "annotations": {
+                "description": "Forgejo API token + tea config minted by forgejo-token-rotation.",
+                **out.annotations,
+            },
         },
         "type": "Opaque",
         "stringData": {

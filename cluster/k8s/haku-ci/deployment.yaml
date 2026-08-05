@@ -6,7 +6,8 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-runner
 spec:
-  replicas: 1
+  # KEDA owns the replica count (0–4; see scaledobject.yaml). Do not set this
+  # field here: Flux would otherwise continually reset KEDA's HPA to one.
   strategy:
     type: Recreate
   selector:
@@ -36,21 +37,6 @@ spec:
                     values: ["hil"]
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
-      initContainers:
-        # Ensure the Bazel-cache PVC dir is world-writable before dind and the job
-        # containers use it. Job containers run as (rootless-dind-remapped) root, so they
-        # write to the bind-mounted ~/.cache as a non-owning UID; 0777 on the top dir lets
-        # them create their own subtrees (bazel/, bazel-disk/, bazelisk/). Reuses the dind
-        # image (already pulled) to avoid a new image dependency; runs as root to chmod a
-        # root-owned local-path dir. Idempotent — re-runs harmlessly on each pod restart.
-        - name: prep-bazel-cache
-          image: docker:27-dind-rootless
-          command: ["sh", "-c", "mkdir -p /bazel-cache && chmod 0777 /bazel-cache"]
-          securityContext:
-            runAsUser: 0
-          volumeMounts:
-            - name: bazel-cache
-              mountPath: /bazel-cache
       containers:
         # The Forgejo Actions runner: registers (ephemerally) with the haku-state
         # repo via the registration token, long-polls for jobs, and runs them in
@@ -74,7 +60,11 @@ spec:
             - name: FORGEJO_INSTANCE_URL
               value: http://forgejo-http.forgejo:3000
             - name: RUNNER_NAME
-              value: haku-ci
+              # Every scaled replica registers separately. A fixed name would
+              # race or overwrite registrations when KEDA starts additional pods.
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: DOCKER_HOST
               value: tcp://localhost:2375
             # Route the runner's external egress (fetching `uses:` actions from
@@ -179,9 +169,10 @@ spec:
             - name: egress-proxy-ca
               mountPath: /egress-proxy-ca
               readOnly: true
-            # The persistent Bazel cache. dind resolves the `-v /bazel-cache:/root/.cache`
-            # job-container bind mount (config.yaml) against its own filesystem, so the PVC
-            # must be mounted here in dind, not just in the runner.
+            # dind resolves the `-v /bazel-cache:/root/.cache` job-container bind mount
+            # (config.yaml) against its own filesystem, so the pod-local emptyDir must be
+            # mounted here rather than just in the runner. It lasts across jobs handled by
+            # this runner pod, then intentionally dies when KEDA scales it to zero.
             - name: bazel-cache
               mountPath: /bazel-cache
           resources:
@@ -205,11 +196,11 @@ spec:
           emptyDir: {}
         - name: docker-data
           emptyDir: {}
-        # Persistent Bazel cache (output base + --disk_cache + repo cache), bind-mounted
-        # into each ephemeral job container's ~/.cache via config.yaml `options`. See pvc.yaml.
+        # Pod-local Bazel cache (output base + --disk_cache + repo cache), bind-mounted into
+        # each ephemeral job container's ~/.cache. It only warms successive jobs on this pod;
+        # KEDA is free to discard it on scale-to-zero or replacement.
         - name: bazel-cache
-          persistentVolumeClaim:
-            claimName: haku-bazel-cache
+          emptyDir: {}
         # haku-egress-proxy CA trust bundle, written into this namespace by the
         # trust-manager Bundle (agents/haku-egress-proxy/trust-bundle.yaml). Mounted into
         # both the runner and dind so intercepted external TLS validates.

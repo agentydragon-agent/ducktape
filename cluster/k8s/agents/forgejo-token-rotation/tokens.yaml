@@ -10,6 +10,13 @@ rotations:
       path: cluster/k8s/haku/managed-agent/haku-forgejo-tea.sops.yaml
       name: haku-forgejo-tea
       namespace: haku-sandbox
+      # KEDA is the only extra consumer. Reflector creates the destination
+      # Secret, and the haku-ci runner itself never mounts it.
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-ci
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-ci
   - name: claude
     credentials_dir: /var/run/secrets/forgejo/claude
     sops_file: secrets/claude-forgejo-tea-token.yaml
