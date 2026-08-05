@@ -68,6 +68,29 @@ class K8sSecretOutput(BaseModel):
     for Flux + admin. The token's `exp` epoch is written alongside so consumers
     that need a monotonic "the token changed" signal (e.g. a Terraform write-only
     `*_wo_version`) have one without decrypting the token.
+
+    Adding a `k8s_secret` is a TWO-file change and the rotator only writes one
+    of them: it commits `path`, but nothing teaches any kustomization to
+    reference it. Two constraints bite in opposite directions --
+
+    - reference the path before the first mint and `kustomize build` fails for
+      the whole namespace (missing resource), and
+    - leave it unreferenced after the first mint and `test_no_orphaned_files`
+      goes red on `devel`, since the CronJob commits straight to the shared
+      branch.
+
+    So there is no safe window to defer the wiring into: satisfy both in one
+    change. Committing an encrypted seed placeholder at `path` alongside the
+    resource line does that -- the file exists for `kustomize build`, is
+    referenced from the start, and the first run overwrites it (a stale
+    `expires_unencrypted` forces the mint). That is exactly the failure mode
+    `probe` exists to catch: "a seed placeholder never overwritten".
+
+    `haku-openclaw-spike-kube-token` is the worked example of getting
+    this wrong -- #3772 deferred the resource line behind a comment asking a
+    human to remember, the rotator landed the manifest 4.5 min later, and CI on
+    `devel` stayed red ~4h48m until #3780 added the line. A comment promising a
+    follow-up is not a mechanism.
     """
 
     path: Path = Field(description="Repo-relative path for the Secret manifest (under cluster/k8s/, *.sops.yaml)")
