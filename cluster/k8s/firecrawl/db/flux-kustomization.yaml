@@ -10,7 +10,8 @@ spec:
   timeout: 10m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   path: ./cluster/k8s/firecrawl/db
   prune: true
   wait: true

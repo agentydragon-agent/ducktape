@@ -9,7 +9,9 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     # nix-cache provides the attic deployment that the rotators kubectl-exec into.
     - name: nix-cache

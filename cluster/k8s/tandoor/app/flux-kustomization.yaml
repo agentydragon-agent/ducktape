@@ -11,7 +11,9 @@ spec:
   timeout: 5m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   path: ./cluster/k8s/tandoor/app
   prune: true
   wait: true

@@ -12,7 +12,8 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   # Wait for the Terraform apply (creates the Forgejo repo + service user + the
   # haku-forgejo-git Secret) so scan runs can depend on it.
   healthChecks:

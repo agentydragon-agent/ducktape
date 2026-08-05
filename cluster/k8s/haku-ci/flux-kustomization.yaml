@@ -14,6 +14,8 @@ spec:
   wait: false
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     - name: forgejo # Forgejo (with Actions enabled, #2556) must be up first

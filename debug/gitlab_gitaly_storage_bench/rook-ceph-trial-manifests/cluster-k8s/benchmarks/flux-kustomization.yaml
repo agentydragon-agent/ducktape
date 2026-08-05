@@ -14,7 +14,7 @@ spec:
   force: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
   dependsOn:
     - name: rook-ceph-trial-forgejo-bench
   healthChecks:

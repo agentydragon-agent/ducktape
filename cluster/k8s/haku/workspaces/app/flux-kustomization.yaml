@@ -14,7 +14,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     - name: agent-sandbox-controller # shared CRDs + controller
     - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs

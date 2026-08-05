@@ -12,7 +12,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   # Wait for the Terraform apply (creates the Forgejo repo + service user + the
   # budget-ledger-git-creds Secret) so the exporter/Fava can depend on it.
   healthChecks:

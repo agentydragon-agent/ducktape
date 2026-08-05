@@ -11,7 +11,9 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   # Explicitly health-check the InvenTree HelmRelease so the Job starts only after
   # InvenTree pods are ready (HelmRelease wait:true guarantees this).
   healthChecks:

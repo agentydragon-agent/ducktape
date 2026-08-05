@@ -14,7 +14,9 @@ spec:
   wait: false
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   dependsOn:
     # The forgejo/haku-state Terraform apply provisions the haku-state repo and the
     # haku-forgejo-git Secret (now also reflected into flux-system for the

@@ -11,7 +11,9 @@ spec:
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   targetNamespace: kube-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
