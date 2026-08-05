@@ -1,8 +1,9 @@
-# BuildBuddy CI for fork pull requests. Revisions authored from the dedicated
-# agent fork run automatically because that agent already owns the BuildBuddy
-# credential; every other fork is gated by the protected fork-ci-review GitHub
-# Environment. pull_request_target intentionally loads this workflow and the
-# called reusable workflows from the base branch before executing PR code.
+# BuildBuddy CI for fork pull requests. Revisions authored by the dedicated
+# agent identity run automatically because that agent already owns the
+# BuildBuddy credential; every other author is gated by the protected
+# fork-ci-review GitHub Environment. pull_request_target intentionally loads
+# this workflow and the called reusable workflows from the base branch before
+# executing PR code.
 name: Trusted fork PR CI
 run-name: >-
   Trusted PR #${{ github.event.pull_request.number }} @
@@ -27,12 +28,11 @@ jobs:
       !github.event.pull_request.draft
     uses: ./.github/workflows/bazel-ci.yml
     with:
-      # The exact agent fork/author already owns the only injected capability.
-      # All other forks wait for a fork-ci-review environment review.
+      # PRs authored by the agent identity already own the only injected
+      # capability. All other authors wait for a fork-ci-review review.
       environment: >-
         ${{
-          (github.event.pull_request.head.repo.full_name != 'agentydragon-agent/ducktape' ||
-            github.event.pull_request.user.login != 'agentydragon-agent') &&
+          github.event.pull_request.user.login != 'agentydragon-agent' &&
           'fork-ci-review' || ''
         }}
       # GitHub can emit pull_request_target with a current head SHA but a stale
@@ -42,8 +42,8 @@ jobs:
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
       pr_base_sha: ${{ github.event.pull_request.base.sha }}
       # actions/checkout v6 refuses fork code under pull_request_target unless
-      # explicitly opted in. The called job either recognizes the exact agent
-      # fork or blocks on fork-ci-review before runner assignment.
+      # explicitly opted in. The called job either recognizes the agent author
+      # or blocks on fork-ci-review before runner assignment.
       allow_unsafe_pr_checkout: true
     secrets:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -56,8 +56,7 @@ jobs:
     with:
       environment: >-
         ${{
-          (github.event.pull_request.head.repo.full_name != 'agentydragon-agent/ducktape' ||
-            github.event.pull_request.user.login != 'agentydragon-agent') &&
+          github.event.pull_request.user.login != 'agentydragon-agent' &&
           'fork-ci-review' || ''
         }}
       source_ref: refs/pull/${{ github.event.pull_request.number }}/merge
