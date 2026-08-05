@@ -1,0 +1,40 @@
+# Read-only image-publisher diagnostics for the public coder.
+#
+# This permits status inspection of image-build Jobs and their Pods, but
+# deliberately excludes pods/log: publisher Pods receive both S3 writer and
+# Attic credentials, and a faulty build script could print those values.
+# It also grants no Secrets, exec, create, delete, patch, or update capability.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: public-coder-agent-metadata-reader
+  namespace: vm-images-publisher
+  annotations:
+    description: Secret-free read-only VM image publisher diagnostics for public-coder-agent.
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - events
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: public-coder-agent-metadata-reader
+  namespace: vm-images-publisher
+  annotations:
+    description: Binds public-coder-agent-reader to VM image publisher metadata diagnostics.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-metadata-reader
+subjects:
+  - kind: ServiceAccount
+    name: public-coder-agent-reader
+    namespace: public-coder-agent

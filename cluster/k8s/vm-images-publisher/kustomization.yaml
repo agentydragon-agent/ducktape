@@ -5,6 +5,7 @@ resources:
   - s3-credentials.yaml
   - attic-reader-netrc.sops.yaml
   - cronjob.yaml
+  - public-coder-agent-metadata-reader.yaml
 configMapGenerator:
   - name: vm-images-publisher-scripts
     namespace: vm-images-publisher
