@@ -3,6 +3,9 @@ kind: Kustomization
 resources:
   # --- flux ---
   - flux-system/
+  # Public-repository Flux control objects live separately from gaffer-private
+  # so diagnostic RBAC can be scoped to the public reconciliation graph.
+  - ducktape-flux/
   - flux-webhook-token/flux-kustomization.yaml
   - flux-webhook/flux-kustomization.yaml
   - flux-monitoring/flux-kustomization.yaml

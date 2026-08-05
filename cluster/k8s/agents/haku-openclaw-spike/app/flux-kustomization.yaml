@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-openclaw-spike-app
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Isolated OpenClaw gateway using Claude Code subscription inference through the Haku credential proxy.
 spec:
@@ -15,12 +15,17 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+    namespace: flux-system
   dependsOn:
     - name: haku-openclaw-spike-namespace
     - name: haku-egress-proxy
+      namespace: flux-system
     - name: external-secrets-config
+      namespace: flux-system
     - name: forgejo-images
+      namespace: flux-system
     - name: flux-image-automation-forgejo
+      namespace: flux-system
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
