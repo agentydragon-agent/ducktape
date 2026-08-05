@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# CI environment: common secrets + registry/release credentials.
+# CI environment: CI-only SOPS credentials + registry/release credentials.
 # Usage: source devinfra/secrets/ci_env.sh
 #
-# Age recipients: ci (+ admin via _common.sh)
+# Age recipients: ci (+ admin via the individual CI secret files)
 #   secrets/ci/*.sops.yaml:             admin, ci
 #
 # Consumed by:

@@ -3,7 +3,7 @@
 # Not intended to be run directly — sourced by cli_env.sh, web_env.sh, ci_env.sh.
 #
 # Age recipients that can decrypt secrets in this file:
-#   buildbuddy.yaml: admin, all user keys, claude-web, ci
+#   buildbuddy.yaml: admin, all user keys, claude-web
 #
 # On failure, writes diagnostics to stderr. Scripts export vars directly
 # into the current shell — source them, don't eval their stdout.
@@ -105,10 +105,7 @@ try_export() {
   export "$var_name=$value"
 }
 
-# --- Common secrets (shared across all contexts) ---
-
-# BuildBuddy API key
-try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]' "BuildBuddy remote cache/execution (bbr)"
+# --- Common helpers ---
 
 # CLEANUP(added 2026-06-11): The external-RBE docker-ci path is dormant. docker-ci's
 # PKI moved to cert-manager (cluster-internal-ca) and the SOPS client key was

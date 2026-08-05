@@ -107,11 +107,11 @@ resource "github_repository_environment" "trusted_pr_ci" {
   }
 }
 
-resource "github_actions_environment_secret" "trusted_pr_ci_sops_age_key" {
-  repository      = "ducktape"
-  environment     = github_repository_environment.trusted_pr_ci.environment
-  secret_name     = "SOPS_AGE_KEY"
-  plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
+removed {
+  from = github_actions_environment_secret.trusted_pr_ci_sops_age_key
+  lifecycle {
+    destroy = true
+  }
 }
 
 resource "github_actions_secret" "pr_visuals_access_key" {
