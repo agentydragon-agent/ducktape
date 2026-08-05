@@ -8,7 +8,7 @@
 #     with:
 #       sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 #
-#   # Subsequent steps have BUILDBUDDY_API_KEY, etc. in env
+#   # Subsequent steps have CI-only SOPS credentials in env
 name: Setup CI Secrets
 description: Decrypt SOPS-encrypted CI secrets and export as env vars
 
@@ -42,7 +42,7 @@ runs:
         # GITHUB_TOKEN / GHCR_TOKEN are intentionally absent — GHCR pushes
         # now use the workflow-scoped secrets.GITHUB_TOKEN plumbed directly
         # through bb remote env_overrides (see push-images.yml).
-        for var in BUILDBUDDY_API_KEY ATTIC_TOKEN \
+        for var in ATTIC_TOKEN \
                    PROPS_REGISTRY_PASSWORD FORGEJO_IMAGES_PASSWORD GH_RELEASE_PAT; do
           val="${!var:-}"
           if [ -n "$val" ]; then
@@ -50,4 +50,4 @@ runs:
           fi
         done
         # Export to GITHUB_ENV for subsequent steps
-        env | grep -E '^(BUILDBUDDY_API_KEY|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|FORGEJO_IMAGES_USERNAME|FORGEJO_IMAGES_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"
+        env | grep -E '^(ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|FORGEJO_IMAGES_USERNAME|FORGEJO_IMAGES_PASSWORD|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"

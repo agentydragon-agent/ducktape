@@ -14,6 +14,10 @@
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# BuildBuddy remote cache/execution (bbr). CI receives this separately as a
+# GitHub Actions repository secret; it is intentionally not part of CI SOPS.
+try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]' "BuildBuddy remote cache/execution (bbr)"
+
 # Bootstrap note: after the first deploy of the Alloy JWT rotator, the SOPS
 # file may be absent until the first successful rotation job writes it.
 try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-token.yaml" '["token"]' "OTEL bearer token — traces to Grafana Alloy"

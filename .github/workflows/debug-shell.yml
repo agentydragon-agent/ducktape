@@ -8,6 +8,8 @@ jobs:
     name: Benchmark
     runs-on: ducktape-runners
     timeout-minutes: 180
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
       - name: Check out code
         uses: actions/checkout@v6
@@ -18,7 +20,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bazel
         with:
-          buildbuddy_api_key: ${{ env.BUILDBUDDY_API_KEY }}
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: bazel build -k //...
         id: build

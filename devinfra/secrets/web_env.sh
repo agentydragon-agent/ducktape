@@ -23,6 +23,10 @@
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# BuildBuddy remote cache/execution (bbr). CI receives this separately as a
+# GitHub Actions repository secret; it is intentionally not part of CI SOPS.
+try_export BUILDBUDDY_API_KEY "$REPO_ROOT/secrets/buildbuddy.yaml" '["buildbuddy_api_key"]' "BuildBuddy remote cache/execution (bbr)"
+
 # Machine-user GitHub PAT (agentydragon-agent)
 try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically."
 

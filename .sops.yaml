@@ -807,7 +807,7 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # Shared dev secrets (all users + claude-web agent + codex agent + CI)
+  # Shared dev secrets (all users + claude-web agent + codex agent)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:
       - age:
@@ -822,7 +822,6 @@ creation_rules:
           - *agent-box-codex-user
           - *agent-box-zai-user
           - *haku
-          - *ci
   # Hetzner Robot webservice credentials (admin + all user keys)
   - path_regex: secrets/hetzner-robot\.sops\.yaml$
     encrypted_regex: ^password$
