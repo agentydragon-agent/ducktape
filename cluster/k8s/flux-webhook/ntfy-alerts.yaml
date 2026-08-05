@@ -21,7 +21,16 @@ spec:
   eventSources:
     - kind: Kustomization
       name: "*"
+      namespace: flux-system
+    - kind: Kustomization
+      name: "*"
+      namespace: ducktape-flux
     - kind: HelmRelease
       name: "*"
+      namespace: flux-system
     - kind: GitRepository
       name: "*"
+      namespace: flux-system
+    - kind: GitRepository
+      name: "*"
+      namespace: ducktape-flux
