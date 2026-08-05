@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: haku-openclaw-spike-kube-token
+  namespace: haku-egress-proxy
+  annotations:
+    description: Authentik JWT minted by authentik-jwt-rotation (rotated ~biweekly).
+type: Opaque
+stringData:
+  jwt: ENC[AES256_GCM,data:snsik0dBTQR+UVWt52X96r7kFehPYfMivVfg8jhXG9E5XotsR79TY/luFOMJ0DvwjQcVLe5YCf02gwIWBlWow8Or5BQPsHngQax7LCFR+Eq+Wk9FXCLQJtOtgE8wMYb09jd3DQGeLJ5aE23wN7slQ4ZW1rOK8yLkgwSknKDfQgCrlzplgRDQiaQVWXWD2SdUTR3kRnYNqH1kbhyc4wUnaJhSMDW94v9MzCbRaZzhhSZ2R/5fHxmoPtBtggn1Ow1vSwr3I03LD3kHq9wycHSi8anMglbHJ/MlyoMO/nhwJACNmTYMPu7aLmxR2tDT+dlNOGZbCbTe5p3b4C8UzH3Z8SscDkjDiw/irPfPffm3T9KioFeiicRHGDQbvTAlrMslGs2xGzpf2Sw7QnxM1Y5M0RQAQ08U4S5CwLIVaqsCJIquWWduDGfI+tlYd2L0/KHHwUHJQvItrkMzzPSDtUnO3WJKIlUGs5Yt3/jedTe3B7JB9R85hivAhsOYPu5vRn83TBoguF59/2g9FNmkFdvG0mSGMXwEn9ra8ZVn0ARGiG9AA9FVsfnIpr+P1J7rwtzG23Af3jFeOCJ21+AKFiFMVKL9pWKrUdYfitwtyMercL8si1HbLOKCI4IH7NEDPA2tbQFVvl3gsHzohJRgNrCjUXjOJvlcgxCk7Mywj2NTaRqEYrJTX2Ejs5THFT/maIePO5KofP1tIIMFh2629UQ/3lHfffTHm8rNJRTcl/cUjonzFFaaBS/W9/O9Wrw1Xzb2iEObVpLqqJiBhE3lE5E/RtTAw/uCGFW8BHs+h2jHrg9IbKafJkHwfQQP3/WjXJr3JTG2/ICPaAm3177IJCsM87MrPiPT1BDiUGOk+bwKfqwphD0yYNVRe/XY4K5lKQjy2Tcc6HcteKk9DrLeM03uYFldA/T73OAAS3NhoxyvD8hzOQHmUxMZ69TkGqJ2Ga+rJLznz0jtNA7KOm2hUkUJYMYa/jRaPqytPXOG+H77v2usEtZSzHaLVkfHobDSvsM3A4QCyZQuXFIQ77+9V1oVygELpCr3f3P5NFOXxg1UpX2bHaD3h7jeQMV6U17qlVuroYuqSFfunOJAcFWwgdvJyHf0XH+ixst/JzJ1N4yDTM+ZTmNHY+p+wZM8yGCmXnwJ1PesTlbWY8p1VIOWNBQwfzPbpRRLWdfHb7YmYlRzYTSWf5hK49921YVocb+mOVU5dBz3YzJe7WzlUtmoPwjVbyLD5Mw0NqVHNBAAGsK5fGzeEJHVHnrNZBDdKPOIpnHwBcHMOe2qpGDP/oQYLCQmguCSXUxCp778cj8ysngzUnkRn5xdk+VcYvPsNPm7+5QvzxRyJbGegXYPEq+XxSgIT2crRjAq/4n3BthOWKapwODxQEtXgwj709LCb0b8Q1wTsf3txdy+PvbUrDTmg6tEd7Nji5t3f/MXdglpE1DleL83nWNOqMhTqYO2aMDfeWiBn1N53cs1TNX7OMxvF3ys6gEg2YViiT/Inb0RjVUfodc1wDI+Yfq32TQVfcFi/sj1GTiSD3SToqSA2QQ9Ob/oihTIWb8uySXyW4ZNdoOuIMJu53Iewgc4R4wP+pLjMUPmWw6Ii+PxAwHjyTy9/Lz47+jvZdLImwHaYB3+5WL9kdqRX2i7wKkou3DVa7lia3X7bXfDeshpfHURdFTQpZywFemSlnRvuXqN6e8o53+yJhZSyXGUp1siNEcDWF6P38npg9lpnlaU25kiq4IsGMStR4TtYTgqq+8S8/RKOe7fcWWNvamXvPmw2iGxm9mdyTErU0OiAd0NUzzqpPC2Gx8PcC2fRfT33MEfoVhHGIUdEiws/sk53nJg0jxa/LBGsX7YpPjHde9o3fiFGYQH/C9/HDkKpVMVPLq8NQtHDhGtY+EhmsIFVVycwCrxngPZlN0qNRRrz0BtlgyO9ePWU7rtI2kwPIUlB2wVmlO8W28JjnTlA3rPCKyt0K2CIhMcF+iB6m4BRwbnufOXtskm0dO27TnnQ2Shw66PyAHenC7VqSTD5jUP0suhfm6nsFPsZIOzP6tJyGHi1FGQbRkR6vEkGJDh8EEhrZH+5SD3YfFEyZiD/yAa6SZA4emb2QyVqCNkpTRwXMFM1K0x2n3/7Hhn6QJhbCHi6Iex03HZ+0yW5tx0UPbYq+DM90yQ5ngH3R+F1sJfuqMrxh5hhgYM0e8wgYibVSppzdBUdfbNB16HUh+athmNIbtHgT+/K3BGBTzCU48WwrLdBIYJcXD6AWOowdVOWFOknCX1S7HDwHDzZKvKSM9CRiIEC/8MTxYbeK0R2d4qzKttJzf0rb0=,iv:MtfCscg9/3Kmp56eeM1XDzoGi+8u5G5QsSbA5QDRI0k=,tag:Y+542eOIbA5rJf6yG1xpIw==,type:str]
+  token-exp: ENC[AES256_GCM,data:1JxF7PjnN9JsQQ==,iv:iKJz7uwLaMXUSNZhUh1275XLNDloAGFGFFOcAURVwXU=,tag:GOSMvXzKgZ9y9lLE0Ukyjw==,type:str]
+sops:
+  kms: []
+  gcp_kms: []
+  azure_kv: []
+  hc_vault: []
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhT1c5ei9Lc2NSbjBTWjJ0
+        a3dtN05uWVI1RTZ5d2lRSTREZDh4NXM3RndjCkhhdVhkOUpmblBXK2dJMktlWWdm
+        TTlHVk1GdWdDZCs2dWNLZDFQa2EzRWsKLS0tIHZzbFk1SjdwdEIxWjRqT1dZVW80
+        VUtxUzFCaDY2YmIyK2doUzM5T2dpTVUKkYuJ09xlbyE4g6ziD4xjQ0cQrDPBkIOg
+        aMhP7PykuQ/R4sOeN8nO3gwIh29fPoOjb3ZuxU9EUY8GJetH46gMrQ==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBMZ2ZEWU40RVFOZzZWYnZV
+        TE42d004TXRlTDdIa1BLS0hEY1p1bHVvZVFNClh2L3crcWR3ckVqQTVnMnBwN1dN
+        M2ZYZUtKOEk2QjJ6SDYzKy9FV0p2RE0KLS0tIHZENmwyYWdaRUNObHliU0s4MWlu
+        eGlkSUYzS0p6ZXQvaUlVdnpkcWdhRncKFySTfHB7TPWHjOE7y23RYgiXWQYLavxN
+        mQiyxZd0pNce8/wSM9Iy4Jtp3bGXKGf3pxGQ5roMXFqrsRqtue0QnA==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-08-05T13:20:02Z"
+  mac: ENC[AES256_GCM,data:61dEK6vclBdz0dcAGa2o2jPBIZfbuyciopmyvXke5c415JRNILEuWLyLaKfm6f8q4hdP0Jb/3U83Ce8U11EqXv1K1t6J9lXYFJV+fBazvfIBnOkQi4ys5AIFIWzi64QDK8XsV1avASzv8XheiEqAwyoarhfWItUNiwAdnmWAblI=,iv:K9cmNbRHJG/PBHUJd61pJExdKYQV6ioklFURiFnTZwM=,tag:nL/WcU1QmSo33g5KRvs0Bg==,type:str]
+  pgp: []
+  encrypted_regex: ^(data|stringData)$
+  version: 3.9.4
