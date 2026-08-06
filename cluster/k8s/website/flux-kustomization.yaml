@@ -24,7 +24,7 @@ spec:
       namespace: flux-system
     # Creates the reflected namespace-local ConfigMap consumed by postBuild.
     - name: reflector
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: gateway
       namespace: flux-system
     - name: cert-manager-environment
