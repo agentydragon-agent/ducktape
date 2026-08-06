@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: harbor
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: true
   retryInterval: 1m
@@ -26,6 +26,7 @@ spec:
       namespace: ducktape-flux
     - name: harbor-db
     - name: gateway
+      namespace: flux-system
     - name: harbor-secrets
     # Phase 1: Deploy without Authentik dependency
     # Phase 2: Add harbor-sso after Harbor is running
