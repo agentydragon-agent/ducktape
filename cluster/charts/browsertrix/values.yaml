@@ -216,11 +216,6 @@ emails_cpu: "10m"
 
 emails_memory: "75Mi"
 
-# if set, maps the emails service to a fixed port on host machine
-# must be between 30000 - 32767
-# use for deployments on localhost
-local_emails_port: 30872
-
 # Nginx Image
 # =========================================
 frontend_image: "docker.io/webrecorder/browsertrix-frontend:1.24.2"
@@ -229,12 +224,6 @@ frontend_pull_policy: "IfNotPresent"
 frontend_cpu: "10m"
 
 frontend_memory: "64Mi"
-
-# if set, maps nginx to a fixed port on host machine
-# must be between 30000 - 32767
-# use for deployments on localhost when not using ingress
-# if using ingress, this value is ignored
-local_service_port: 30870
 
 frontend_alias: "http://browsertrix-cloud-frontend"
 
@@ -563,9 +552,4 @@ fqdn_suffix: .svc.cluster.local
 #     service.beta.kubernetes.io/aws-load-balancer-internal: "true"
 #     helm.sh/resource-policy: keep
 
-# Admin services (see Chart.yaml's dependencies)
-# note: see `chart/examples/local-logging.yaml`
-addons:
-  admin:
-    logging: false
 # metacontroller:

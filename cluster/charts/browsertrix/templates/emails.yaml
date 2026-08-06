@@ -107,12 +107,6 @@ spec:
       port: 3000
       name: emails
 
-  {{- if .Values.local_emails_port }}
-      nodePort: {{ .Values.local_emails_port }}
-
-  type: NodePort
-  {{- end }}
-
 {{- if gt (int .Values.emails_max_replicas) 1 }}
 ---
 apiVersion: autoscaling/v2

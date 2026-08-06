@@ -32,10 +32,13 @@ in-cluster SeaweedFS S3 bucket. Mutable crawler and rclone image tags are pinned
 for reproducible deployments.
 
 This production-only fork intentionally deletes the upstream Ingress and
-bundled MinIO templates. Ducktape publishes Browsertrix exclusively through its
-Cilium Gateway and stores archives exclusively in SeaweedFS. When refreshing
-from a newer upstream tag, do not restore `templates/ingress.yaml` or
-`templates/minio.yaml`; retain the Gateway-only origin and external storage
+bundled MinIO templates, the optional Elasticsearch/Kibana/Fluentd logging
+subchart, and local-development NodePort support. Ducktape publishes Browsertrix
+exclusively through its Cilium Gateway, stores archives exclusively in
+SeaweedFS, and uses the cluster's existing logging stack. When refreshing from
+a newer upstream tag, do not restore `templates/ingress.yaml`,
+`templates/minio.yaml`, `admin/logging/`, or the frontend/email NodePort values
+and template branches; retain the Gateway-only origin and external storage
 proxy changes in `configmap.yaml` and `frontend.yaml`.
 
 ## Updating from upstream
@@ -44,7 +47,7 @@ proxy changes in `configmap.yaml` and `frontend.yaml`.
    update the provenance fields above.
 2. Compare that commit's `chart/` directory with this directory. Copy updates
    only for retained files; continue excluding `test/`, `examples/`, Ingress,
-   and bundled MinIO.
+   bundled MinIO, the admin logging subchart, and local NodePort support.
 3. Reapply and review the dedicated-ServiceAccount, token-automount, node
    selector, Gateway origin, SeaweedFS proxy, image-pin, and crawler-network
    policy changes described above.

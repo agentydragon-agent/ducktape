@@ -55,10 +55,6 @@ spec:
       password: unused
     backend_password_secret: unused
 
-    # Setting these ports to zero prevents local-development NodePorts.
-    local_service_port: 0
-    local_emails_port: 0
-
     # Pin ReplayWeb.page instead of loading an unversioned npm latest build.
     rwp_base_url: https://cdn.jsdelivr.net/npm/replaywebpage@2.4.6/
 

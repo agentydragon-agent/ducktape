@@ -8,10 +8,6 @@ icon: https://webrecorder.net/assets/icon.png
 version: 1.24.2-ducktape.1
 
 dependencies:
-  - name: btrix-admin-logging
-    version: 0.1.0
-    condition: addons.admin.logging
-    repository: file://./admin/logging
   - name: btrix-crds
     version: 0.2.0
     repository: file://./btrix-crds

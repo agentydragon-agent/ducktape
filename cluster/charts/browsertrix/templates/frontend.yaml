@@ -124,12 +124,6 @@ spec:
       port: 80
       name: frontend
 
-  {{- if .Values.local_service_port }}
-      nodePort: {{ .Values.local_service_port }}
-
-  type: NodePort
-  {{- end }}
-
 
 {{- if gt (int .Values.frontend_max_replicas) 1 }}
 ---
