@@ -25,4 +25,4 @@ spec:
     - name: inventree # InvenTree HelmRelease is fully deployed
     - name: inventree-secrets # SOPS-managed sandbox-agent password
     - name: claude-rbac
-      namespace: flux-system # claude-sandbox namespace exists
+      namespace: ducktape-flux # claude-sandbox namespace exists

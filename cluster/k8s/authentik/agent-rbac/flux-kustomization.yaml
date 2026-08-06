@@ -18,3 +18,4 @@ spec:
     - name: authentik-namespace
       namespace: ducktape-flux
     - name: claude-rbac
+      namespace: ducktape-flux

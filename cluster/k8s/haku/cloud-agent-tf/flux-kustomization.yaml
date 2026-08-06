@@ -31,3 +31,4 @@ spec:
     # The agent reaches the cluster through this MCP; its first deployment run
     # needs it serving.
     - name: kubectl-machine-mcp
+      namespace: ducktape-flux

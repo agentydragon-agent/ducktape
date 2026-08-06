@@ -17,3 +17,4 @@ spec:
   dependsOn:
     - name: ollama-namespace
     - name: claude-rbac
+      namespace: ducktape-flux

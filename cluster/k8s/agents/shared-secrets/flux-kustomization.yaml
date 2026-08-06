@@ -13,6 +13,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: claude-rbac
+      namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:

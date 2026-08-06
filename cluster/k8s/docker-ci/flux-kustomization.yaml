@@ -28,3 +28,4 @@ spec:
     - name: gateway
     - name: cert-manager-environment
     - name: claude-rbac
+      namespace: ducktape-flux

@@ -17,3 +17,4 @@ spec:
   dependsOn:
     - name: kube-system
     - name: claude-rbac
+      namespace: ducktape-flux

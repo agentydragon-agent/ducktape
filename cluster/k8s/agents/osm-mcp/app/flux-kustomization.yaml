@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: osm-mcp
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
@@ -27,4 +27,6 @@ spec:
     # forgejo-images-creds-eso.yaml): the ClusterSecretStore + the reflected
     # source credential in flux-system must exist first.
     - name: external-secrets-config
+      namespace: flux-system
     - name: forgejo-images
+      namespace: flux-system

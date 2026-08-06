@@ -18,3 +18,4 @@ spec:
   dependsOn:
     - name: cli-proxy-api
     - name: claude-rbac
+      namespace: ducktape-flux
