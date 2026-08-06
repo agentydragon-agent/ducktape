@@ -18,3 +18,4 @@ spec:
     - name: plaid-mcp-namespace
       namespace: ducktape-flux
     - name: claude-rbac
+      namespace: ducktape-flux

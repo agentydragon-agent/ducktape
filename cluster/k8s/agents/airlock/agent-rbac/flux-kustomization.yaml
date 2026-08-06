@@ -17,3 +17,4 @@ spec:
   dependsOn:
     - name: airlock
     - name: claude-rbac
+      namespace: ducktape-flux

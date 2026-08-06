@@ -5,7 +5,7 @@ metadata:
   # change. Renaming it directly would delete the old Kustomization and may prune
   # its inventory before the replacement owns the same RBAC resources.
   name: claude-rbac
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Lightweight base for agent RBAC. Claude sandbox namespace + shared ClusterRoles. Must not depend on service or database kustomizations.
 spec:
@@ -19,6 +19,7 @@ spec:
   timeout: 2m
   dependsOn:
     - name: kyverno-policies
+      namespace: flux-system
   healthChecks:
     - apiVersion: v1
       kind: Namespace

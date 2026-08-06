@@ -13,6 +13,7 @@ spec:
   dependsOn:
     - name: external-secrets-config # ClusterSecretStore + CRDs
     - name: claude-rbac # claude-sandbox namespace
+      namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox namespace
     - name: haku-claude-namespace
   timeout: 2m

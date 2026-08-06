@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: claude-zai-key
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/claude-zai-key
@@ -15,3 +15,4 @@ spec:
   dependsOn:
     - name: claude-rbac
     - name: external-secrets-config
+      namespace: flux-system

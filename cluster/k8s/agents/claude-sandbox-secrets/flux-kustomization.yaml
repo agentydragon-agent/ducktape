@@ -17,5 +17,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: claude-rbac
+      namespace: ducktape-flux
     - name: external-secrets-config
     - name: ollama-secrets

@@ -17,3 +17,4 @@ spec:
   dependsOn:
     - name: grocy-sf
     - name: claude-rbac
+      namespace: ducktape-flux

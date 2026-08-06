@@ -16,7 +16,7 @@ spec:
   timeout: 2m
   dependsOn:
     - name: claude-rbac
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: claude-sandbox-secrets
       namespace: flux-system
     - name: kvm-device-plugin

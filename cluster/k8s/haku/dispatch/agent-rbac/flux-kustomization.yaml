@@ -18,3 +18,4 @@ spec:
     - name: haku-dispatch-namespace
       namespace: ducktape-flux
     - name: claude-rbac
+      namespace: ducktape-flux

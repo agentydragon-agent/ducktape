@@ -17,3 +17,4 @@ spec:
   dependsOn:
     - name: cert-manager
     - name: claude-rbac
+      namespace: ducktape-flux
