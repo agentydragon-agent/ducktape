@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: cert-manager-agent-rbac
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Agent RBAC for cert-manager namespace. Lightweight — only RoleBindings. Depends on namespace existing + agent RBAC base for ClusterRoles.
 spec:
@@ -16,5 +16,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: cert-manager
+      namespace: flux-system
     - name: claude-rbac
       namespace: ducktape-flux
