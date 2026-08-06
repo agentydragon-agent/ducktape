@@ -21,9 +21,11 @@ spec:
     - name: haku-mailbox-namespace
     - name: haku-mailbox-db
     - name: cert-manager # Certificate CRD + controller
+      namespace: ducktape-flux
     - name: agent-machine-access-tf # Authentik provider + Haku mailbox identity
     - name: gateway # HTTPRoute parent for the JMAP/management API
     - name: external-secrets-config # ClusterSecretStore + CRDs (token mirror)
+      namespace: ducktape-flux
     - name: cert-manager-issuer-config # ${LETSENCRYPT_ISSUER}
       namespace: ducktape-flux
   postBuild:

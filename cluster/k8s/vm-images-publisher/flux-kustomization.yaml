@@ -20,6 +20,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-operator
+      namespace: ducktape-flux
     - name: seaweedfs-public-s3
   wait: true
   healthChecks:

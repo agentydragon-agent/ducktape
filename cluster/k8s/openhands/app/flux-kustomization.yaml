@@ -25,4 +25,4 @@ spec:
     - name: authentik
       namespace: flux-system
     - name: external-secrets-operator
-      namespace: flux-system
+      namespace: ducktape-flux

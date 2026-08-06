@@ -26,6 +26,7 @@ spec:
   dependsOn:
     - name: agent-shared-secrets # provides ankiweb-credentials in claude-sandbox
     - name: external-secrets-config # provides the claude-sandbox SecretStore
+      namespace: ducktape-flux
     - name: haku-namespace
     - name: haku-rbac
     - name: haku-state # provides the haku-forgejo-git secret in haku-sandbox

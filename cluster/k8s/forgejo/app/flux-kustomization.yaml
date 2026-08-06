@@ -30,6 +30,7 @@ spec:
     - name: forgejo-cache # shared valkey for cache + queue (HA prerequisite)
     - name: gateway
     - name: cert-manager
+      namespace: ducktape-flux
     - name: forgejo-secrets
     - name: seaweedfs-forgejo-bucket # S3 bucket for packages/LFS/attachments
     - name: seaweedfs-secrets # source of s3-identity-forgejo (mirrored into the namespace by reflector)

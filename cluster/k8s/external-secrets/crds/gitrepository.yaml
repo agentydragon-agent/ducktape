@@ -2,7 +2,7 @@ apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
   name: external-secrets-source
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 1h
   url: https://github.com/external-secrets/external-secrets.git

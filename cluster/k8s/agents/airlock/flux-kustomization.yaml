@@ -27,3 +27,4 @@ spec:
     - name: gateway
     - name: authentik
     - name: external-secrets-config
+      namespace: ducktape-flux

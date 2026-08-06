@@ -12,6 +12,7 @@ spec:
     name: flux-system
   dependsOn:
     - name: external-secrets-config # ClusterSecretStore + CRDs
+      namespace: ducktape-flux
     - name: claude-rbac # claude-sandbox namespace
       namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox namespace

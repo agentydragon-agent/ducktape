@@ -21,7 +21,7 @@ spec:
     - name: haku-egress-proxy
       namespace: flux-system
     - name: external-secrets-config
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: flux-system
     - name: flux-image-automation-forgejo

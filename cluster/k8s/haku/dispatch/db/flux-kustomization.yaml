@@ -24,3 +24,4 @@ spec:
     - name: local-path-provisioner
     # ESO Password generator + ExternalSecret (db-role-secrets.yaml).
     - name: external-secrets-config
+      namespace: ducktape-flux

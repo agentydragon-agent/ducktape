@@ -7,6 +7,7 @@ spec:
   retryInterval: 1m
   dependsOn:
     - name: kyverno # ClusterPolicy CRD
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/zones/policies
   prune: true

@@ -22,6 +22,7 @@ spec:
     - name: props-db
     - name: gateway
     - name: external-secrets-operator
+      namespace: ducktape-flux
     - name: forgejo-props # ensures the Forgejo `props` registry user exists
   healthChecks:
     - apiVersion: external-secrets.io/v1

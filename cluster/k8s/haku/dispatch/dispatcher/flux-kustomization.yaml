@@ -34,3 +34,4 @@ spec:
     - name: haku-zone-zai
     # ESO generators + the flux-system mirror store.
     - name: external-secrets-config
+      namespace: ducktape-flux

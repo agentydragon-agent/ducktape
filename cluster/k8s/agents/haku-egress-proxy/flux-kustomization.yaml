@@ -20,9 +20,11 @@ spec:
     - name: haku-state # proxy-held Forgejo and Haku Console credentials
     - name: cert-manager-environment
     - name: cert-manager-trust
+      namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
     - name: external-secrets-config
+      namespace: ducktape-flux
     - name: forgejo-images
   decryption:
     provider: sops
