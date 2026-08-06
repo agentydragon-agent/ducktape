@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: gatus-servicemonitor
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   path: ./cluster/k8s/gatus/servicemonitor
@@ -14,4 +14,6 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: gatus
+      namespace: flux-system
     - name: monitoring-stack
+      namespace: flux-system
