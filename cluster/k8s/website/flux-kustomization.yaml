@@ -15,17 +15,7 @@ spec:
   path: ./cluster/k8s/website
   prune: true
   wait: true
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   dependsOn:
-    - name: cert-manager-issuer-config
-      namespace: flux-system
-    # Creates the reflected namespace-local ConfigMap consumed by postBuild.
-    - name: reflector
-      namespace: ducktape-flux
+    # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
     - name: gateway
-      namespace: flux-system
-    - name: cert-manager-environment
       namespace: flux-system
