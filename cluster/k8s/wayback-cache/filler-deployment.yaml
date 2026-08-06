@@ -9,6 +9,8 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
 spec:
+  # Consider KEDA from a verified backlog signal; cap against Archive.org's
+  # upstream rate limits rather than cluster capacity.
   replicas: 5
   selector:
     matchLabels:

@@ -58,6 +58,8 @@ spec:
                 path: /spec/replicas
                 value: 0
   values:
+    # If self-hosted execution is re-enabled, consider KEDA only with a verified
+    # BuildBuddy queue/lease signal and a tight privileged-executor cap.
     replicas: 0
     resources:
       requests:
