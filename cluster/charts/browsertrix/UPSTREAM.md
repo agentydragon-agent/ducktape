@@ -19,5 +19,12 @@ The downstream patch removes anonymous access, gives the backend and generated
 background jobs a dedicated controller ServiceAccount, prevents unrelated
 workloads from mounting that token, supports arbitrary node selectors and a
 Gateway API deployment through `external_url`, and permits proxying the existing
-in-cluster SeaweedFS S3 bucket without deploying MinIO. Mutable crawler and
-rclone image tags are pinned for reproducible deployments.
+in-cluster SeaweedFS S3 bucket. Mutable crawler and rclone image tags are pinned
+for reproducible deployments.
+
+This production-only fork intentionally deletes the upstream Ingress and
+bundled MinIO templates. Ducktape publishes Browsertrix exclusively through its
+Cilium Gateway and stores archives exclusively in SeaweedFS. When refreshing
+from a newer upstream tag, do not restore `templates/ingress.yaml` or
+`templates/minio.yaml`; retain the Gateway-only origin and external storage
+proxy changes in `configmap.yaml` and `frontend.yaml`.

@@ -64,10 +64,9 @@ max_browser_windows: 8
 # =========================================
 name: browsertrix-cloud
 
-# Public origin used in generated links and authentication redirects. Unlike
-# ingress.host, this does not create an Ingress resource, so Gateway API users
-# can publish Browsertrix with an HTTPRoute.
-external_url: ""
+# Public origin used in generated links and authentication redirects. This
+# production fork is published exclusively through a Gateway API HTTPRoute.
+external_url: "https://browsertrix.example.invalid"
 
 # The backend and background jobs create and manage Browsertrix resources in
 # Kubernetes. Keep that authority off the namespace's default ServiceAccount.
@@ -477,59 +476,19 @@ crawler_enable_network_policy: true
 # time to wait for graceful stop
 grace_period: 1000
 
-# Local Minio Pod (optional)
-# =========================================
-# set to true to use a local minio image
-minio_local: true
-
-# Optionally expose an external, in-cluster S3-compatible bucket through the
+# Expose an external, in-cluster S3-compatible bucket through the
 # Browsertrix frontend's same-origin /data/ proxy. This avoids making the object
-# store public or configuring browser CORS. The frontend image already contains
-# this proxy; upstream normally enables it only for the bundled MinIO service.
+# store public or configuring browser CORS.
 storage_proxy:
   enabled: false
   host: ""
   bucket: ""
   access_path: "/data/"
 
-# enable to allow access to minio console via specified port
-# minio_local_console_port: 30091
-
-minio_scheme: "http"
-minio_host: "local-minio:9000"
-
-minio_image: docker.io/minio/minio:RELEASE.2022-10-24T18-35-07Z
-minio_pull_policy: "IfNotPresent"
-
-minio_local_bucket_name: &local_bucket_name "btrix-data"
-
-# path for serving from local minio bucket
-minio_access_path: &minio_access_path "/data/"
-
-minio_cpu: "10m"
-minio_memory: "1024Mi"
-
 # Storage
 # =========================================
-# should include the local minio bucket, if enabled, and any other available buckets for default storage
-
-storages:
-  - name: "default"
-    type: "s3"
-    access_key: "ADMIN"
-    secret_key: "PASSW0RD"
-    bucket_name: *local_bucket_name
-
-    endpoint_url: "http://local-minio:9000/"
-    access_endpoint_url: *minio_access_path
-
-    #access_addressing_style: 'path' or 'virtual'
-    # determine if bucket should be accessed as:
-    #  - virtual - https://<bucket>.<host>/<key>
-    #  - path - https://<host>/<bucket>/<key>
-    #
-    # if not specified, defaults to 'path' for local minio or
-    # 'virtual' for all other storages
+# Supplied by the deployment's Helm values and SOPS-backed credentials.
+storages: []
 
 # optional: duration in minutes for WACZ download links to be valid
 # used by webhooks and replay
@@ -559,30 +518,6 @@ email:
 
 # Deployment options
 # =========================================
-
-# Ingress (Optional)
-# Optional: if 'host' is set, a publicly accessible Ingress controller is created with an SSL cert (using letsencrypt)
-ingress:
-  #host: ""
-  cert_email: "test@example.com"
-  tls: false
-
-  # If set, will use the old 'kubernetes.io/ingress.class' annotation instead of the new ingressClassName
-  # also uses old http01.ingress.class in cert-manager instead of http01.ingress.ingressClassName
-  # provided for backwards compatibility
-  useOldClassAnnotation: false
-
-  # Optional: Uncomment to use your own cluster-issuer instead of default ACME https validation
-  # custom_cluster_issuer: custom_cluster_issuer-name
-
-  # Optional: Uncomment to apply custom annotations
-  # annotations:
-  #   alb.ingress.kubernetes.io/scheme: internet-facing
-  #   alb.ingress.kubernetes.io/target-type: ip
-  #   alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
-  #   alb.ingress.kubernetes.io/certificate-arn: "certificate-arn"
-
-ingress_class: nginx
 
 # Optional: Front-end injected script
 # This runs as a blocking script on the frontend, so usually you'll want to have it just add a single script tag to the page with the `defer` attribute. Useful for things like analytics and bug tracking.

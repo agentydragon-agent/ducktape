@@ -107,7 +107,7 @@ spec:
       port: 3000
       name: emails
 
-  {{- if and .Values.local_emails_port (not .Values.ingress.host) }}
+  {{- if .Values.local_emails_port }}
       nodePort: {{ .Values.local_emails_port }}
 
   type: NodePort

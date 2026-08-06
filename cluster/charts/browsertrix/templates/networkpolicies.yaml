@@ -67,24 +67,6 @@ spec:
         - port: 6379
           protocol: TCP
 
-
-    {{ if .Values.minio_local }}
-    # allow minio
-    - to:
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: {{ .Release.Namespace }}
-        podSelector:
-          matchLabels:
-            app: local-minio
-
-      ports:
-        - port: 9000
-          protocol: TCP
-
-    {{- end -}}
-
-
     {{ if .Values.signer.enabled }}
     # allow auth signer
     - to:

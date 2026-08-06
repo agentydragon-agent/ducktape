@@ -6,7 +6,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
 
 data:
-  APP_ORIGIN: {{ .Values.external_url | default (printf "%s://%s" (.Values.ingress.tls | ternary "https" "http") (or .Values.ingress.host (print "localhost:" (.Values.local_service_port | default 9870)))) | quote }}
+  APP_ORIGIN: {{ required "external_url is required; publish Browsertrix with Gateway API" .Values.external_url | quote }}
 
   BTRIX_ENV: "{{ .Values.btrix_env }}"
 
@@ -65,9 +65,9 @@ data:
 
   LOG_FAILED_CRAWL_LINES: "{{ .Values.log_failed_crawl_lines | default 0 }}"
 
-  IS_LOCAL_MINIO: "{{ .Values.minio_local }}"
+  IS_LOCAL_MINIO: "false"
 
-  LOCAL_MINIO_ACCESS_PATH: "{{ .Values.minio_access_path }}"
+  LOCAL_MINIO_ACCESS_PATH: "{{ .Values.storage_proxy.access_path }}"
 
   STORAGES_JSON: "/ops-configs/storages.json"
 

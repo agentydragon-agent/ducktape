@@ -55,13 +55,9 @@ spec:
       password: unused
     backend_password_secret: unused
 
-    # The cluster uses Gateway API rather than an Ingress controller. Setting
-    # these ports to zero prevents the chart's local-development NodePorts.
+    # Setting these ports to zero prevents local-development NodePorts.
     local_service_port: 0
     local_emails_port: 0
-    ingress:
-      tls: false
-      cert_email: admin@allegedly.works
 
     # Pin ReplayWeb.page instead of loading an unversioned npm latest build.
     rwp_base_url: https://cdn.jsdelivr.net/npm/replaywebpage@2.4.6/
@@ -84,8 +80,6 @@ spec:
     # WACZ files live in the retained SeaweedFS bucket. Browser downloads are
     # served through the Browsertrix frontend's same-origin /data/ proxy, so the
     # bucket and its credentials never need to be exposed through public-s3.
-    minio_local: false
-    minio_access_path: /data/
     storage_proxy:
       enabled: true
       host: seaweedfs-s3.seaweedfs.svc:8333
