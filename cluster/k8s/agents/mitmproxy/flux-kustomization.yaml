@@ -21,7 +21,3 @@ spec:
       namespace: flux-system
     - name: reflector
       namespace: ducktape-flux
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
