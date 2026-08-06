@@ -4,6 +4,8 @@ metadata:
   name: wayback-cache-namespace
   namespace: ducktape-flux
 spec:
+  # Do not recreate the namespace after the Wayback decommission.
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 1m
