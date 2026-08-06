@@ -29,5 +29,5 @@ spec:
     - name: sso-providers-tf # writes harbor-oauth-client-secret to authentik ns
       namespace: flux-system
     - name: reflector # mirrors harbor-oauth-client-secret to harbor ns
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: harbor # Harbor API must be running

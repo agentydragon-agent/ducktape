@@ -21,6 +21,7 @@ spec:
     - name: cert-manager-environment
     - name: cert-manager-trust
     - name: reflector
+      namespace: ducktape-flux
     - name: external-secrets-config
     - name: forgejo-images
   decryption:

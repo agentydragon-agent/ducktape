@@ -19,4 +19,5 @@ spec:
     # Reflector mirrors the Secret into haku-sandbox; haku-namespace creates
     # haku-sandbox (the reflection target).
     - name: reflector
+      namespace: ducktape-flux
     - name: haku-namespace

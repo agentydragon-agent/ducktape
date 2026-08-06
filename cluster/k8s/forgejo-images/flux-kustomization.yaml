@@ -29,3 +29,4 @@ spec:
     - name: tofu-controller
     - name: tofu-state-db
     - name: reflector # mirrors forgejo-images-creds to flux-system + image consumers
+      namespace: ducktape-flux

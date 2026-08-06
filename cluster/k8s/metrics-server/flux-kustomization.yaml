@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: metrics-server
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
@@ -22,3 +22,4 @@ spec:
       namespace: kube-system
   dependsOn:
     - name: kyverno # Kyverno webhook must be ready before creating workloads
+      namespace: flux-system
