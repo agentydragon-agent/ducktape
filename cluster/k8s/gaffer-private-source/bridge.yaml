@@ -23,3 +23,4 @@ spec:
     - name: authentik
     - name: gateway
     - name: cert-manager-issuer-config
+      namespace: ducktape-flux

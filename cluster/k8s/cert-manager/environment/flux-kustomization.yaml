@@ -27,7 +27,7 @@ spec:
     - name: cert-manager-trust
       namespace: flux-system
     - name: cert-manager-issuer-config
-      namespace: flux-system
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: cert-manager.io/v1
       kind: ClusterIssuer
