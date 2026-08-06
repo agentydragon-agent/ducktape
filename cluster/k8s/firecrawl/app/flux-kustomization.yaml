@@ -22,4 +22,5 @@ spec:
     - name: firecrawl-namespace
       namespace: ducktape-flux
     - name: firecrawl-db
+      namespace: ducktape-flux
     - name: gateway
