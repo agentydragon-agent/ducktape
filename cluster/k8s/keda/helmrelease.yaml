@@ -26,8 +26,9 @@ spec:
   chart:
     spec:
       chart: keda
-      # 2.18.0 includes the native forgejo-runner scaler used by haku-ci.
-      version: "2.18.0"
+      # 2.20.2 reports an empty Forgejo queue as inactive, allowing haku-ci
+      # to scale to zero.
+      version: "2.20.2"
       sourceRef:
         kind: HelmRepository
         name: keda

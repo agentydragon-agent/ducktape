@@ -76,7 +76,7 @@ pending until that token Secret lands.
 ## Queue autoscaling
 
 Forgejo's Prometheus `/metrics` endpoint does **not** expose Actions queue depth. Instead, KEDA
-2.18's native `forgejo-runner` scaler calls Forgejo's authenticated,
+2.20.2's native `forgejo-runner` scaler calls Forgejo's authenticated,
 repo-scoped `/api/v1/repos/haku/haku-state/actions/runners/jobs?labels=haku-ci` endpoint. Its
 response is the set of jobs waiting for this runner label, so KEDA scales one pod per queued job,
 from zero to the hard cap of four.
