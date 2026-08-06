@@ -20,6 +20,7 @@ spec:
   wait: true
   dependsOn:
     - name: snapshot-controller
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

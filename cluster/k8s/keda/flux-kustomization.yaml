@@ -21,4 +21,4 @@ spec:
       namespace: keda
   dependsOn:
     - name: kyverno
-      namespace: flux-system
+      namespace: ducktape-flux

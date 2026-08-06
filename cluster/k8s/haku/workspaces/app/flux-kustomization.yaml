@@ -26,5 +26,7 @@ spec:
     - name: haku-claude-namespace # isolated namespace for the OAuth-capable Console runners
     - name: haku-egress-proxy # the fence haku-sandbox is opted into
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
+      namespace: ducktape-flux
     - name: external-secrets-config # ClusterSecretStore + CRDs for the ESO
+      namespace: ducktape-flux
     - name: forgejo-images # mints the source forgejo-images-creds the ESO reflects

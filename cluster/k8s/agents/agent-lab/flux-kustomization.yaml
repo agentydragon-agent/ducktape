@@ -19,6 +19,7 @@ spec:
   timeout: 2m
   dependsOn:
     - name: kyverno-policies
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: v1
       kind: Namespace

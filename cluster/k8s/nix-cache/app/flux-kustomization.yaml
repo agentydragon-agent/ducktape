@@ -28,6 +28,6 @@ spec:
     - name: gateway
       namespace: flux-system
     - name: cert-manager
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: seaweedfs-cluster
       namespace: flux-system

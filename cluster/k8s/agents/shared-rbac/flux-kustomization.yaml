@@ -18,4 +18,4 @@ spec:
     - name: claude-rbac
       namespace: ducktape-flux
     - name: kyverno-policies
-      namespace: flux-system
+      namespace: ducktape-flux

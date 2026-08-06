@@ -2,15 +2,12 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: external-secrets-config
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m0s
   retryInterval: 30s
   path: ./cluster/k8s/external-secrets/config
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape
@@ -27,4 +24,4 @@ spec:
       name: kubernetes-flux-system-secret-store
   dependsOn:
     - name: external-secrets-operator
-      namespace: flux-system
+      namespace: ducktape-flux

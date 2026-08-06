@@ -38,4 +38,5 @@ spec:
     - name: authentik-secrets # Admin password, secret key, bootstrap token (SOPS)
     - name: authentik-sso-secrets # Supporting identity and Google OAuth inputs
     - name: cert-manager # Wait for cert-manager for TLS certificates
+      namespace: ducktape-flux
     - name: gateway # Wait for Gateway API for external access

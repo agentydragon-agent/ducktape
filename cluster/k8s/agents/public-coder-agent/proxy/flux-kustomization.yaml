@@ -19,7 +19,7 @@ spec:
     - name: cert-manager-environment
       namespace: flux-system
     - name: cert-manager-trust
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
     - name: forgejo-images

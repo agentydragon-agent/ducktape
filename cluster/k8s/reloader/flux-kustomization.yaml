@@ -21,4 +21,4 @@ spec:
       namespace: kube-system
   dependsOn:
     - name: kyverno
-      namespace: flux-system
+      namespace: ducktape-flux

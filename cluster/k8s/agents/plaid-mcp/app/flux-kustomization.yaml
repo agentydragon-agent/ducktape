@@ -27,3 +27,4 @@ spec:
       namespace: ducktape-flux
     - name: plaid-mcp-db
     - name: external-secrets-config
+      namespace: ducktape-flux

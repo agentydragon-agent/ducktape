@@ -15,4 +15,4 @@ spec:
   dependsOn:
     - name: claude-rbac
     - name: external-secrets-config
-      namespace: flux-system
+      namespace: ducktape-flux

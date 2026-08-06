@@ -16,6 +16,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: cert-manager
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux

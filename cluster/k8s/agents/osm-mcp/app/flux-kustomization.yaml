@@ -27,6 +27,6 @@ spec:
     # forgejo-images-creds-eso.yaml): the ClusterSecretStore + the reflected
     # source credential in flux-system must exist first.
     - name: external-secrets-config
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: flux-system

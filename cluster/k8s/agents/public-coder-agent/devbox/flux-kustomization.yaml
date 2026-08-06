@@ -27,6 +27,7 @@ spec:
     - name: kubevirt
     - name: cdi
     - name: external-secrets-operator
+      namespace: ducktape-flux
     - name: seaweedfs-public-s3
     - name: local-path-provisioner
   wait: true
