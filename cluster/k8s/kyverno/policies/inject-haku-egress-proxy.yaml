@@ -10,10 +10,26 @@
 # creation, volumes/env/mounts get duplicated. With autogen off, only
 # Pod admission is mutated.
 #
-# All rules restrict to CREATE operations only: the "add /-" append has no
-# idempotency check, so re-evaluating on UPDATE would duplicate volume/env/mount
-# entries and the API server would reject the request (and break the Job
-# controller's finalizer PATCH). Injection only needs to happen at pod creation.
+# All rules restrict to CREATE operations only, so injection happens once per pod
+# and never on the Job controller's finalizer PATCH.
+#
+# CREATE-only is NOT sufficient on its own, which is why every rule also carries a
+# precondition asserting the thing it is about to append is not already there.
+# Kyverno's webhook is registered `reinvocationPolicy: IfNeeded`, so a webhook
+# ordered after it that mutates the pod causes Kyverno to run AGAIN within the SAME
+# CREATE, reading its own output as input. "add /-" appends unconditionally, so the
+# second pass duplicated the volume and its mount, and the API server rejects a
+# duplicate volume name outright:
+#
+#   Pod "haku-ui-0" is invalid: [spec.volumes[3].name: Duplicate value:
+#   "haku-egress-proxy-ca-cert", spec.containers[0].volumeMounts[3].mountPath:
+#   Invalid value: "/egress-proxy-ca": must be unique]
+#
+# That was a real outage (2026-08-05): haku-sandbox runs VPA in Auto mode, VPA's
+# webhook sorts after Kyverno's and patches resource requests, and haku-ui sat at
+# 1/2 with haku-ui-0 permanently uncreatable. It presented as intermittent because
+# VPA patches nothing when its recommendation already matches the pod. Pinned by
+# cluster/validation/test_proxy_injection.py, which applies each policy twice.
 #
 # Keep *.allegedly.works out of the proxy path. Those names resolve to the
 # public hostNetwork Cilium Gateway IPs, but they are still cluster-owned
@@ -95,6 +111,11 @@ spec:
               kinds: [Pod]
               namespaces: [haku-sandbox]
               operations: [CREATE]
+      preconditions:
+        all:
+          - key: "{{ (request.object.spec.volumes || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+            operator: Equals
+            value: 0
       mutate:
         patchesJson6902: |-
           - op: add
@@ -114,6 +135,11 @@ spec:
       mutate:
         foreach:
           - list: "request.object.spec.containers"
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
             patchesJson6902: |-
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
@@ -172,6 +198,11 @@ spec:
       mutate:
         foreach:
           - list: "request.object.spec.initContainers"
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='haku-egress-proxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
             patchesJson6902: |-
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
