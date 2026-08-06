@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: monitoring-rules
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   path: ./cluster/k8s/monitoring/rules
@@ -14,3 +14,4 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: monitoring-stack
+      namespace: flux-system
