@@ -24,6 +24,9 @@ exclude: |
     # Generated content
     llm/instruct_logseq/.*|
 
+    # Vendored upstream source; validate the chart with Helm instead.
+    cluster/charts/browsertrix/.*|
+
     # Specimens committed snapshot code
     props/specimens/[^/]+/[^/]+/code/.*
   )$

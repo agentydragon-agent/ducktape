@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: browsertrix
+  namespace: seaweedfs
+spec:
+  name: browsertrix
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: browsertrix
+      actions: [Read, Write, List, Tagging]

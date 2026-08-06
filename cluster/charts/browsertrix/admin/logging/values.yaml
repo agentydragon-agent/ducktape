@@ -1,0 +1,28 @@
+logging:
+  namespace: btrix-admin
+  enabled: true
+  dedicatedNode:
+    enabled: true
+    nodeType: admin
+  fileMode: true
+  ingress:
+    tls: false
+    host: localhost
+    path: /kibana
+  elasticsearch:
+    local: false
+    cpu: 1
+    mem: 4Gi
+    opt: -Xms2g -Xmx2g
+    volumeEnabled: false
+    volumeSize: 1Gi
+  kibana:
+    local: false
+    cpu: 1
+    mem: 1Gi
+    opt: --max-old-space-size=1024
+  fluentd:
+    logVar: /var/log
+    logPathContainers: /var/lib/docker/containers
+    cpu: 60m
+    mem: 200Mi

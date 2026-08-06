@@ -10,7 +10,9 @@
   //   markdownlint-cli2 'cluster/**/*.md' 'website/**/*.md'
   "ignores": [
     // Vendored terraform providers
-    "**/.terraform/**"
+    "**/.terraform/**",
+    // Vendored upstream chart documentation is kept close to its source.
+    "cluster/charts/browsertrix/**"
   ],
   // Base rule configuration
   "config": {
