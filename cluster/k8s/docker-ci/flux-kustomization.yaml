@@ -14,6 +14,9 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/docker-ci
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   healthChecks:
     - apiVersion: apps/v1

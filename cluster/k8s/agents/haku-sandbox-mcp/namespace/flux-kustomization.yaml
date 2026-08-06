@@ -11,6 +11,9 @@ spec:
   timeout: 2m
   path: ./cluster/k8s/agents/haku-sandbox-mcp/namespace
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository

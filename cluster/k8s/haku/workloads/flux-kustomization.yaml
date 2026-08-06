@@ -9,6 +9,9 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/haku/workloads
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   # Don't gate on the inner haku-state-workloads Kustomization's readiness — it's
   # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
   wait: false

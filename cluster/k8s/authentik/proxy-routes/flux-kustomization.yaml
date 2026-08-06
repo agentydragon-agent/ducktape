@@ -12,6 +12,9 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/authentik/proxy-routes
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   dependsOn:
     - name: gateway
     - name: authentik

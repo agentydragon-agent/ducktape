@@ -9,6 +9,9 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/haku-ci
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   # The runner pod stays pending until its registration-token Secret
   # (haku-ci-runner-token) is provisioned during paving — don't block on health.
   wait: false
