@@ -41,6 +41,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 
 from cluster.validation.kyverno import apply_policy
 from util.bazel.runfiles import get_required_path
@@ -136,6 +137,61 @@ def mutated(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[Injection, 
     assert result.ok, result.stdout
     pod = next(doc for doc in result.mutated_resources if doc["kind"] == "Pod")
     return injection, [*pod["spec"]["initContainers"], *pod["spec"]["containers"]]
+
+
+@pytest.fixture(params=sorted(POLICIES), ids=lambda p: Path(p).stem)
+def reinvoked(request: pytest.FixtureRequest, tmp_path: Path) -> dict:
+    """The probe pod after the policy ran **twice** — one CREATE, two Kyverno passes.
+
+    This is not a hypothetical. Kyverno's mutating webhook is registered
+    `reinvocationPolicy: IfNeeded`, so when a webhook ordered after it mutates the pod,
+    Kyverno runs again on the same CREATE and sees its own output as input.
+    """
+    injection = POLICIES[request.param]
+    policy = get_required_path(f"_main/{request.param}")
+
+    resource = tmp_path / "pod.yaml"
+    resource.write_text(_pod(injection.namespace))
+    first = apply_policy(policy, resource)
+    assert first.ok, first.stdout
+
+    once = tmp_path / "pod-once.yaml"
+    once.write_text(yaml.safe_dump(next(d for d in first.mutated_resources if d["kind"] == "Pod")))
+    second = apply_policy(policy, once)
+    assert second.ok, second.stdout
+    return next(d for d in second.mutated_resources if d["kind"] == "Pod")
+
+
+def _dupes(names: list[str]) -> list[str]:
+    return sorted({n for n in names if names.count(n) > 1})
+
+
+def test_injection_is_idempotent_under_reinvocation(reinvoked: dict) -> None:
+    """Injecting twice must equal injecting once.
+
+    The patches are RFC 6902 `add` against `/-`, which appends unconditionally. Applied a
+    second time they append a second copy, and a duplicate volume name or mountPath is
+    rejected outright by the API server:
+
+        Pod "haku-ui-0" is invalid: [spec.volumes[3].name: Duplicate value:
+        "haku-egress-proxy-ca-cert", spec.containers[0].volumeMounts[3].mountPath:
+        Invalid value: "/egress-proxy-ca": must be unique]
+
+    That is a real outage, seen 2026-08-05: `haku-ui` sat at 1/2 with `haku-ui-0`
+    permanently uncreatable, because the namespace runs VPA in `Auto` mode and VPA's
+    webhook mutates resource requests *after* Kyverno — triggering the reinvocation. It is
+    intermittent only because VPA patches nothing when its recommendation already matches
+    the pod, which is what let the surviving replica in.
+
+    Duplicate `env` entries are legal (last wins) and so cannot be caught at admission,
+    but they are the same defect and are asserted here too.
+    """
+    spec = reinvoked["spec"]
+    assert _dupes([v["name"] for v in spec["volumes"]]) == []
+    for container in [*spec["initContainers"], *spec["containers"]]:
+        assert _dupes([m["name"] for m in container["volumeMounts"]]) == [], container["name"]
+        assert _dupes([m["mountPath"] for m in container["volumeMounts"]]) == [], container["name"]
+        assert _dupes([e["name"] for e in container["env"]]) == [], container["name"]
 
 
 def _env(container: dict) -> dict[str, str]:

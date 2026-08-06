@@ -21,6 +21,24 @@
 # happen at pod creation, matching CREATE-only avoids the re-mutation
 # entirely.
 #
+# CREATE-only is NOT sufficient on its own, which is why every rule also carries
+# a precondition asserting the thing it is about to append is not already there.
+# Kyverno's webhook is registered `reinvocationPolicy: IfNeeded`, so a webhook
+# ordered after it that mutates the pod causes Kyverno to run AGAIN within the
+# SAME CREATE, reading its own output as input — and "add /-" appends again:
+#
+#   Pod "haku-ui-0" is invalid: [spec.volumes[3].name: Duplicate value:
+#   "haku-egress-proxy-ca-cert", spec.containers[0].volumeMounts[3].mountPath:
+#   Invalid value: "/egress-proxy-ca": must be unique]
+#
+# That was a real outage in the sibling haku-egress-proxy policy (2026-08-05):
+# haku-sandbox runs VPA in Auto mode, VPA's webhook sorts after Kyverno's and
+# patches resource requests, and haku-ui sat at 1/2 with haku-ui-0 permanently
+# uncreatable. It presented as intermittent because VPA patches nothing when its
+# recommendation already matches the pod. This policy had the identical defect
+# and is fixed alongside it; pinned by cluster/validation/test_proxy_injection.py,
+# which applies each policy twice.
+#
 # NO_PROXY entry by entry, injected identically into containers and
 # initContainers:
 #
@@ -79,6 +97,11 @@ spec:
               kinds: [Pod]
               namespaces: [claude-sandbox]
               operations: [CREATE]
+      preconditions:
+        all:
+          - key: "{{ (request.object.spec.volumes || `[]`)[?name=='mitmproxy-ca-cert'] | length(@) }}"
+            operator: Equals
+            value: 0
       mutate:
         patchesJson6902: |-
           - op: add
@@ -98,6 +121,11 @@ spec:
       mutate:
         foreach:
           - list: "request.object.spec.containers"
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='mitmproxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
             patchesJson6902: |-
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
@@ -156,6 +184,11 @@ spec:
       mutate:
         foreach:
           - list: "request.object.spec.initContainers"
+            preconditions:
+              all:
+                - key: "{{ (element.volumeMounts || `[]`)[?name=='mitmproxy-ca-cert'] | length(@) }}"
+                  operator: Equals
+                  value: 0
             patchesJson6902: |-
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
