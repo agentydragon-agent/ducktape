@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: paperless
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   retryInterval: 1m
@@ -16,7 +16,12 @@ spec:
   timeout: 10m
   dependsOn:
     - name: paperless-namespace
+      namespace: ducktape-flux
     - name: paperless-secrets
+      namespace: flux-system
     - name: paperless-cache
+      namespace: ducktape-flux
     - name: paperless-db
+      namespace: ducktape-flux
     - name: gateway
+      namespace: flux-system
