@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: tandoor
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   # Suspended — currently using Grocy instead.
   suspend: true
@@ -21,4 +21,6 @@ spec:
     - name: tandoor-namespace
     - name: tandoor-db
     - name: gateway
+      namespace: flux-system
     - name: authentik
+      namespace: flux-system

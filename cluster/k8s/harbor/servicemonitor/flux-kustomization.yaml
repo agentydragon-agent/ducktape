@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: harbor-servicemonitor
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: true
   interval: 10m
@@ -16,3 +16,4 @@ spec:
   dependsOn:
     - name: harbor
     - name: monitoring-stack
+      namespace: flux-system
