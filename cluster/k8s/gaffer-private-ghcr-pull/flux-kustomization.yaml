@@ -21,6 +21,7 @@ spec:
     - name: tofu-state-db
     - name: gaffer-private
     - name: reflector
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform

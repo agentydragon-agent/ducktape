@@ -18,5 +18,7 @@ spec:
     - name: langfuse-secrets
     - name: gateway
     - name: reflector
+      namespace: ducktape-flux
     - name: tana-mcp
     - name: reloader
+      namespace: ducktape-flux

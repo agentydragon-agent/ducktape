@@ -21,7 +21,7 @@ spec:
     - name: cert-manager-trust
       namespace: flux-system
     - name: reflector
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: flux-system
     # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.

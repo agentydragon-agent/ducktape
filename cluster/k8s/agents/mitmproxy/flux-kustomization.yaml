@@ -20,7 +20,7 @@ spec:
     - name: cert-manager-trust
       namespace: flux-system
     - name: reflector
-      namespace: flux-system
+      namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:

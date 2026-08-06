@@ -34,7 +34,7 @@ spec:
     - name: seaweedfs-secrets
       namespace: flux-system
     - name: reflector
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: flux-image-automation-ghcr
       namespace: flux-system
     - name: monitoring-stack # ServiceMonitor CRD

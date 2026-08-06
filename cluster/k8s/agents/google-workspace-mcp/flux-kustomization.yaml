@@ -22,4 +22,4 @@ spec:
     - name: local-path-provisioner
       namespace: flux-system
     - name: reflector
-      namespace: flux-system
+      namespace: ducktape-flux

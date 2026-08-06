@@ -31,6 +31,7 @@ spec:
     - name: seaweedfs-forgejo-bucket # S3 bucket for packages/LFS/attachments
     - name: seaweedfs-secrets # source of s3-identity-forgejo (mirrored into the namespace by reflector)
     - name: reflector # Mirrors forgejo-oauth-client-secret + s3-identity-forgejo into the namespace
+      namespace: ducktape-flux
     - name: sso-providers-tf # Writes forgejo-oauth-client-secret to authentik namespace
     - name: authentik # Authentik must be running for OIDC
     # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).

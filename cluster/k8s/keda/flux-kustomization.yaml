@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: keda
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
@@ -21,3 +21,4 @@ spec:
       namespace: keda
   dependsOn:
     - name: kyverno
+      namespace: flux-system

@@ -19,6 +19,7 @@ spec:
       namespace: ducktape-flux
     - name: local-path-provisioner
     - name: reflector
+      namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
