@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: local-path-storage-agent-rbac
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Agent RBAC for local-path-storage namespace. Lightweight — only RoleBindings. Depends on namespace existing + agent RBAC base for ClusterRoles.
 spec:
@@ -16,5 +16,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: local-path-provisioner
+      namespace: flux-system
     - name: claude-rbac
       namespace: ducktape-flux
