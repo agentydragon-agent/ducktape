@@ -9,6 +9,9 @@ spec:
   timeout: 2m
   path: ./cluster/k8s/agent-box/namespace
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape

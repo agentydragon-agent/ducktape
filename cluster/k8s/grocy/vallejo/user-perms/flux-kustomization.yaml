@@ -14,6 +14,9 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/grocy/vallejo/user-perms
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
   # the Job-completion healthcheck makes this kustomization Ready only once the
   # policy in policy.yaml has actually been applied — so a fresh cluster converges

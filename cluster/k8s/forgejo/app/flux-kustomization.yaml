@@ -13,6 +13,9 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/forgejo/app
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   # Health check ensures Forgejo is fully operational with SSO
   healthChecks:

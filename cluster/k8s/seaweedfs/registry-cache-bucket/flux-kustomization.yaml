@@ -8,6 +8,9 @@ spec:
   retryInterval: 1m
   path: ./cluster/k8s/seaweedfs/registry-cache-bucket
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape

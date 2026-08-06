@@ -9,6 +9,9 @@ spec:
   timeout: 10m
   path: ./cluster/k8s/forgejo/cpap-data
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository

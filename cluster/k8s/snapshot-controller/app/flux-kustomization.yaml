@@ -12,6 +12,9 @@ spec:
     namespace: flux-system
   path: ./deploy/kubernetes/snapshot-controller
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   timeout: 5m
   dependsOn:
