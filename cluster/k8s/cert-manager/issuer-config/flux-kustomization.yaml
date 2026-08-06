@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: cert-manager-issuer-config
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
@@ -14,7 +14,4 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/cert-manager/issuer-config
   prune: true
-  # Temporary handoff guard: the next PR moves this Kustomization to
-  # ducktape-flux, while its ConfigMap remains in flux-system.
-  deletionPolicy: Orphan
   wait: true

@@ -18,6 +18,7 @@ spec:
   dependsOn:
     - name: gateway
     - name: cert-manager-issuer-config
+      namespace: ducktape-flux
     - name: cert-manager-environment
     - name: authentik
     - name: volsync
