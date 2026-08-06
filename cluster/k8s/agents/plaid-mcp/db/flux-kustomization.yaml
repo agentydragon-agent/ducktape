@@ -18,6 +18,7 @@ spec:
   dependsOn:
     - name: cnpg
     - name: plaid-mcp-namespace
+      namespace: ducktape-flux
     - name: local-path-provisioner
     - name: external-secrets-config
   healthChecks:

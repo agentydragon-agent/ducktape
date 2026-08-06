@@ -16,4 +16,5 @@ spec:
   timeout: 2m
   dependsOn:
     - name: plaid-mcp-namespace
+      namespace: ducktape-flux
     - name: claude-rbac
