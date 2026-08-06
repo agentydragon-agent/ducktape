@@ -24,6 +24,7 @@ spec:
     - name: gateway
     - name: home-assistant
     - name: ha-mcp-namespace
+      namespace: ducktape-flux
     - name: ha-mcp-credentials
     - name: valkey
     - name: agent-machine-access-tf

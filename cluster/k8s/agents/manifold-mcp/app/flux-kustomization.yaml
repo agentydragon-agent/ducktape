@@ -25,5 +25,6 @@ spec:
   dependsOn:
     - name: gateway
     - name: manifold-mcp-namespace
+      namespace: ducktape-flux
     - name: valkey
     - name: agent-machine-access-tf

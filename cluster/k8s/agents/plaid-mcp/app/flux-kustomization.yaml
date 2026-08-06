@@ -24,5 +24,6 @@ spec:
       namespace: plaid-mcp
   dependsOn:
     - name: plaid-mcp-namespace
+      namespace: ducktape-flux
     - name: plaid-mcp-db
     - name: external-secrets-config

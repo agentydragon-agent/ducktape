@@ -28,14 +28,19 @@ spec:
     # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
     # namespace, so that namespace must exist first.
     - name: kubectl-sandbox-mcp-namespace
+      namespace: ducktape-flux
     # Same for manifold-mcp.
     - name: manifold-mcp-namespace
+      namespace: ducktape-flux
     # Same for postscanmail-mcp.
     - name: postscanmail-mcp-namespace
+      namespace: ducktape-flux
     # TF writes the `ha-mcp-oidc` Secret into the HA-MCP namespace.
     - name: ha-mcp-namespace
+      namespace: ducktape-flux
     # Same for plaid-mcp.
     - name: plaid-mcp-namespace
+      namespace: ducktape-flux
     # TF writes the `haku-console-oidc` secret (MCP OIDCProxy + operator-login client
     # credentials + session secret) into the `haku-console` namespace.
     - name: haku-console-namespace
