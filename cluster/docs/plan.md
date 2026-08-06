@@ -48,6 +48,50 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **Docker CI**: `docker-ci` — parked.
 - **Firecrawl**: `firecrawl-{namespace,db,app}` — parked.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
+- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`): scaled to 0 on 2026-08-06,
+  superseded by [CLIProxyAPI](../k8s/cli-proxy-api/README.md). It was a second LiteLLM
+  Deployment inside the `litellm` namespace holding its **own** ChatGPT/Codex OAuth
+  session on a PVC, serving the `*-chatgpt` models over the Responses API so Codex CLI
+  could use the Codex subscription. CLIProxyAPI arrived later for a different client —
+  Claude Code, which needs Anthropic-shaped tool calls that LiteLLM's Responses bridge
+  mistranslates.
+  [#3198] gave it its own single-replica `Recreate` deployment because LiteLLM builds the
+  ChatGPT authenticator during ASGI startup: an expired token sends that call into the
+  device-code flow, the pod never binds its port, and it dies to its own startup probe —
+  which in the main proxy took Ollama, z.ai, Anthropic, Groq and Gemini down too. That
+  split worked and is not why this was retired.
+  **What stayed painful was re-authenticating it.** LiteLLM has no in-place login, so a
+  new token meant: run `codex login` interactively somewhere with a browser, reshape the
+  result into LiteLLM's _different_ flat `auth.json` schema (see the seed Secret's own
+  description — "flattened from a Codex `codex login`"), SOPS-encrypt it, commit, push,
+  wait for Flux, and then rely on an init-container guard to actually replace the copy on
+  the PVC. That guard was wrong twice: `[ -f auth.json ]` could not replace a half-written
+  file holding only `device_code_requested_at` ([#3199]), and its replacement
+  `grep -q '"refresh_token"'` could not replace a present-but-revoked token (2026-08-06,
+  ~3h of crashlooping). Both tested the file's shape; neither could test whether the
+  credential works, which is the only property that decides whether the pod starts.
+  CLIProxyAPI replaces that whole ritual with one command against the running pod
+  (`-codex-device-login`), writing straight to its PVC, picked up by a file watcher
+  without a restart and kept alive by a 15m refresh worker. Note it has SOPS secrets too
+  (`config.sops.yaml`, `client-key.sops.yaml`) — but those hold the **inbound** client
+  key, i.e. how LiteLLM authenticates _to_ it, which is static and rotates by editing two
+  files. The **upstream** ChatGPT OAuth session is never in git there; its init container
+  only does `mkdir -p /data/auth`. That is the whole difference: a credential that
+  rotates on use and can only be minted interactively is a bad fit for a checked-in
+  secret, which is why the copy-if-absent guard kept being wrong.
+  CLIProxyAPI also serves `/v1/responses` directly, so it can front Codex CLI as well as
+  Claude Code and this instance buys nothing.
+
+  [#3198]: https://github.com/agentydragon/ducktape/pull/3198
+
+  [#3199]: <https://github.com/agentydragon/ducktape/pull/3199> **Not yet deleted**: the 6 `*-chatgpt` entries in
+  `k8s/litellm/app/proxy-config.yaml` still point here, and through them the baked Codex
+  configs in `k8s/agents/agent-sandbox/workspace-image/codex-config.toml` and
+  `x/codex_pod_image/home.nix`. Repoint those entries at CLIProxyAPI's `/v1/responses`
+  (the model _names_ can stay, so no image rebuild), confirm Codex CLI works, then
+  delete the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret and the Gatus
+  check.
+
 - **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
   parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
   registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
