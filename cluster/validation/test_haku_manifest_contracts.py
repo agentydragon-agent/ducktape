@@ -130,7 +130,7 @@ def test_haku_ci_keda_scales_only_the_repo_scoped_forgejo_queue(k8s_dir: Path) -
         yaml.safe_load_all((k8s_dir / "keda/helmrelease.yaml").read_text(encoding="utf-8"))
     )
     assert keda_repository["spec"]["url"] == "https://kedacore.github.io/charts"
-    assert keda_release["spec"]["chart"]["spec"]["version"] == "2.18.0"
+    assert keda_release["spec"]["chart"]["spec"]["version"] == "2.20.2"
     assert keda_release["spec"]["values"]["watchNamespace"] == "haku-ci"
 
     deployment = yaml.safe_load((k8s_dir / "haku-ci/deployment.yaml").read_text(encoding="utf-8"))
