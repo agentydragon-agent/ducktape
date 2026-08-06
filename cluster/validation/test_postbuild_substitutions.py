@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest_bazel
+
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec, PostBuild, SubstituteFrom
 from cluster.validation.k8s import parse_k8s_resources
@@ -15,7 +17,9 @@ def _consumer(namespace: str = "ducktape-flux", *, optional: bool = False) -> Pa
         flux_kustomizations={
             "consumer": FluxKustomizationSpec(
                 namespace=namespace,
-                post_build=PostBuild(substitute_from=[SubstituteFrom(kind="ConfigMap", name="settings", optional=optional)]),
+                post_build=PostBuild(
+                    substitute_from=[SubstituteFrom(kind="ConfigMap", name="settings", optional=optional)]
+                ),
             )
         }
     )
@@ -71,3 +75,7 @@ def test_accepts_an_explicit_reflector_auto_copy() -> None:
 
 def test_allows_an_optional_missing_source() -> None:
     assert check_postbuild_substitution_sources(_consumer(optional=True)) == []
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

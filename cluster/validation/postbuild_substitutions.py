@@ -53,7 +53,9 @@ def check_postbuild_substitution_sources(cluster: ParsedCluster) -> list[str]:
         for source in spec.post_build.substitute_from:
             if source.optional or not source.name:
                 continue
-            matching = [resource for resource in resources if resource.kind == source.kind and resource.name == source.name]
+            matching = [
+                resource for resource in resources if resource.kind == source.kind and resource.name == source.name
+            ]
             if any(resource.namespace == spec.namespace for resource in matching):
                 continue
             if any(_is_auto_reflected_to(resource, spec.namespace) for resource in matching):
