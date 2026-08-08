@@ -10,12 +10,15 @@ control file resolution (and tests can inject malformed data);
 
 from __future__ import annotations
 
+import io
 import json
 import math
 import os
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import assert_never
 
 import polars as pl
 
@@ -149,6 +152,66 @@ def yahoo_adjusted_close_frame(data: bytes, source: EvidenceSource, *, minimum_s
     return frame
 
 
+# A French factors file carries a monthly section AND an annual one, under identical column
+# headers, separated only by a blank line and the words "Annual Factors". The two are told
+# apart by the width of the date field: `192607` against `1927`.
+FRENCH_MONTHLY_DATE_WIDTH = 6
+_FRENCH_COLUMN_COUNT = 5
+
+
+def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
+    """Ken French's factors ZIP to a monthly `(month, market_total_return, risk_free_rate)` frame.
+
+    Both returned columns are DECIMAL monthly simple returns; the file publishes percent.
+    `market_total_return` is `Mkt-RF + RF` — the CRSP value-weighted return on all listed US
+    equity, dividends included — and `risk_free_rate` is the one-month T-bill, which is why one
+    fetch supplies both the equity leg and the short rate back to 1926-07.
+
+    **The annual section is the trap.** It repeats the same four column names further down the
+    same file, and its rows look like plausible monthly returns (`29.44` for 1927). Appending
+    them would add 99 outliers to 1200 observations and inflate every fitted volatility without
+    producing a single malformed value. Rows are therefore taken only where the date field is
+    exactly six digits, and the count is asserted against the date span so a format change that
+    silently drops the monthly section fails here rather than downstream.
+    """
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = archive.namelist()
+        if len(names) != 1:
+            raise ValueError(f"{source.provenance_label} archive holds {len(names)} members, expected exactly 1")
+        # latin-1: the file carries a copyright sign, and it is not UTF-8.
+        text = archive.read(names[0]).decode("latin-1")
+
+    months: list[date] = []
+    market: list[float] = []
+    risk_free: list[float] = []
+    for line in text.splitlines():
+        fields = [field.strip() for field in line.split(",")]
+        if len(fields) != _FRENCH_COLUMN_COUNT:
+            continue
+        stamp = fields[0]
+        if len(stamp) != FRENCH_MONTHLY_DATE_WIDTH or not stamp.isdigit():
+            continue
+        months.append(date(int(stamp[:4]), int(stamp[4:]), 1))
+        market.append((float(fields[1]) + float(fields[4])) / 100.0)
+        risk_free.append(float(fields[4]) / 100.0)
+
+    if not months:
+        raise ValueError(f"{source.provenance_label} contains no monthly rows")
+    frame = pl.DataFrame(
+        {"month": months, "market_total_return": market, "risk_free_rate": risk_free},
+        schema={"month": pl.Date, "market_total_return": pl.Float64, "risk_free_rate": pl.Float64},
+    ).sort("month")
+
+    span = (months[-1].year - months[0].year) * 12 + months[-1].month - months[0].month + 1
+    if frame.height != span:
+        raise ValueError(
+            f"{source.provenance_label} has {frame.height} monthly rows spanning {span} months "
+            f"({months[0]}..{months[-1]}); the series must be gapless"
+        )
+    return frame
+
+
 def monthly_last(series: pl.DataFrame) -> pl.DataFrame:
     """Collapse a `(date, value)` frame to `(month, value)` keeping the last observation per month."""
     out = (
@@ -182,6 +245,13 @@ def read_monthly_levels(evidence_dir: Path, source: EvidenceSource) -> list[Mont
             raw = yahoo_adjusted_close_frame(source_bytes(evidence_dir, source), source)
         case EvidenceKind.ZILLOW:
             raise ValueError(f"{source.provenance_label}: Zillow is a wide city table, not a single level series")
+        case EvidenceKind.FRENCH:
+            raise ValueError(
+                f"{source.provenance_label}: a French factors file is several RETURN series, not one level "
+                f"series; use french_factors_frame and compound the column you want"
+            )
+        case _ as unreachable:
+            assert_never(unreachable)
     monthly = monthly_last(raw)
     return [
         MonthlyLevel(month=month, value=value)
