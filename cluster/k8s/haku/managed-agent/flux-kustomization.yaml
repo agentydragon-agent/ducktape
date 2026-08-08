@@ -28,6 +28,8 @@ spec:
     - name: external-secrets-config # provides the claude-sandbox SecretStore
       namespace: ducktape-flux
     - name: haku-namespace
+      namespace: ducktape-flux
     - name: haku-rbac
+      namespace: ducktape-flux
     - name: haku-state # provides the haku-forgejo-git secret in haku-sandbox
     - name: haku-egress-proxy # injects the egress proxy + CA the worker imports

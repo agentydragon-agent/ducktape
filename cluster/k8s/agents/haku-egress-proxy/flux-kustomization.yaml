@@ -15,6 +15,7 @@ spec:
     - name: haku-egress-proxy-namespace
       namespace: ducktape-flux
     - name: haku-claude-namespace
+      namespace: ducktape-flux
     - name: haku-openclaw-spike-namespace
       namespace: ducktape-flux
     - name: haku-state # proxy-held Forgejo and Haku Console credentials

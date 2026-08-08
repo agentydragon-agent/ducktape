@@ -32,6 +32,7 @@ spec:
     - name: haku-dispatch-litellm
     # rbac-zone-zai.yaml creates a Role inside the zone namespace.
     - name: haku-zone-zai
+      namespace: ducktape-flux
     # ESO generators + the flux-system mirror store.
     - name: external-secrets-config
       namespace: ducktape-flux
