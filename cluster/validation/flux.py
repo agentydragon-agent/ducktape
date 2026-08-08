@@ -57,6 +57,24 @@ class Decryption(BaseModel):
     secret_ref: SecretRef | None = None
 
 
+class SubstituteFrom(BaseModel):
+    """A namespace-local ConfigMap or Secret used for Flux post-build substitution."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str = "ConfigMap"
+    name: str = ""
+    optional: bool = False
+
+
+class PostBuild(BaseModel):
+    """Flux post-build substitution configuration."""
+
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
+
+    substitute_from: list[SubstituteFrom] = []
+
+
 class FluxKustomizationSpec(BaseModel):
     """Parsed spec from a Flux Kustomization CR."""
 
@@ -75,6 +93,7 @@ class FluxKustomizationSpec(BaseModel):
     wait: bool = False
     suspend: bool = False
     decryption: Decryption | None = None
+    post_build: PostBuild | None = None
 
     def local_dir(self, k8s_dir: Path, k8s_subpath: str = "cluster/k8s") -> Path | None:
         """Resolve spec.path to a local directory under k8s_dir, or None if external."""

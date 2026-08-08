@@ -33,6 +33,7 @@ from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
+from cluster.validation.postbuild_substitutions import check_postbuild_substitution_sources
 from cluster.validation.terraform_backends import check_terraform_backends
 from util.bazel.runfiles import get_required_path
 
@@ -131,6 +132,12 @@ def test_flux_bootstrap_auth_split(cluster: ParsedCluster, k8s_dir: Path) -> Non
 def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """Active flux kustomizations rendering a SOPS Secret must declare decryption.provider: sops."""
     errors = check_sops_decryption_blocks(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_postbuild_substitution_sources_are_namespace_local(cluster: ParsedCluster) -> None:
+    """postBuild ConfigMaps/Secrets must be local or explicitly auto-reflected."""
+    errors = check_postbuild_substitution_sources(cluster)
     assert not errors, "\n".join(errors)
 
 
