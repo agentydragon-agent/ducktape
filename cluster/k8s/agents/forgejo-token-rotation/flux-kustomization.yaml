@@ -2,14 +2,11 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: forgejo-token-rotation
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/forgejo-token-rotation
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape
@@ -17,8 +14,13 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: github-secrets-sync-secrets
+      namespace: flux-system
     - name: authentik-jwt-rotation # owns the agents-infra namespace
+      namespace: ducktape-flux
     - name: forgejo-claude
+      namespace: flux-system
     - name: haku-state
+      namespace: flux-system
     - name: forgejo-agentydragon-repos
+      namespace: flux-system
   timeout: 2m

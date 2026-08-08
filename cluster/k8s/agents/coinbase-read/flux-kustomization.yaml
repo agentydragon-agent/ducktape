@@ -21,3 +21,4 @@ spec:
     - name: reflector
       namespace: ducktape-flux
     - name: haku-namespace
+      namespace: ducktape-flux

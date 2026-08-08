@@ -30,6 +30,8 @@ spec:
     - name: tofu-state-db
     # The git-creds Secret lands in both target namespaces; wait for each to exist.
     - name: haku-namespace
+      namespace: ducktape-flux
     - name: haku-console-namespace
+      namespace: ducktape-flux
     - name: haku-egress-proxy-namespace
       namespace: ducktape-flux

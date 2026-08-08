@@ -20,5 +20,6 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: haku-console-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner

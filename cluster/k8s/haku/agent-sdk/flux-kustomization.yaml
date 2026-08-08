@@ -24,5 +24,6 @@ spec:
       namespace: haku-claude-sandbox
   dependsOn:
     - name: haku-claude-namespace
+      namespace: ducktape-flux
     - name: haku-egress-proxy
     - name: alloy-otlp-bearer

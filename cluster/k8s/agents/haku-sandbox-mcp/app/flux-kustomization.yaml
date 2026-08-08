@@ -21,6 +21,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: haku-sandbox-mcp-namespace
+      namespace: ducktape-flux
     - name: haku-workspaces # the pool (in haku-sandbox) the Role/claims target
   healthChecks:
     - apiVersion: apps/v1

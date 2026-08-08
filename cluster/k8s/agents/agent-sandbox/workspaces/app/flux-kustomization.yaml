@@ -23,6 +23,7 @@ spec:
   dependsOn:
     - name: agent-sandbox-controller # CRDs + controller
     - name: agent-workspaces-namespace
+      namespace: ducktape-flux
     - name: litellm-keys-tf # mints + reflects litellm-key-agent-workspaces
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
       namespace: ducktape-flux

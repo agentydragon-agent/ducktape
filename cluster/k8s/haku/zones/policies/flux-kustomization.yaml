@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-zones-policies
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   dependsOn:
@@ -11,9 +11,6 @@ spec:
   interval: 10m
   path: ./cluster/k8s/haku/zones/policies
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape

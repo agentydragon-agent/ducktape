@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: agent-workspaces-namespace
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Dedicated namespace + quota for disposable agent workspaces (claude-sandbox is Claude's own in-cluster scratch space, not a hosting namespace).
 spec:
@@ -11,9 +11,6 @@ spec:
   timeout: 2m
   path: ./cluster/k8s/agents/agent-sandbox/workspaces/namespace
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
