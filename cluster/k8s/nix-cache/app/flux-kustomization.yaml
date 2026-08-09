@@ -24,7 +24,7 @@ spec:
       namespace: nix-cache
   dependsOn:
     - name: attic-db
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: gateway
       namespace: flux-system
     - name: cert-manager
