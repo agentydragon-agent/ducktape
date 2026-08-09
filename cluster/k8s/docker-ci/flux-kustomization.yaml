@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: docker-ci
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
@@ -14,9 +14,6 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/docker-ci
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   healthChecks:
     - apiVersion: apps/v1
@@ -29,6 +26,8 @@ spec:
     # and agent-rbac-base for the claude-sandbox namespace the client Certificate
     # lives in.
     - name: gateway
+      namespace: flux-system
     - name: cert-manager-environment
+      namespace: flux-system
     - name: claude-rbac
       namespace: ducktape-flux
