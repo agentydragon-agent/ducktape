@@ -133,25 +133,39 @@ def test_haku_ci_keda_scales_only_the_repo_scoped_forgejo_queue(k8s_dir: Path) -
     assert keda_release["spec"]["chart"]["spec"]["version"] == "2.20.2"
     assert keda_release["spec"]["values"]["watchNamespace"] == "haku-ci"
 
-    deployment = yaml.safe_load((k8s_dir / "haku-ci/deployment.yaml").read_text(encoding="utf-8"))
-    assert "replicas" not in deployment["spec"], "Flux must not overwrite KEDA's HPA replica count"
-    runner = next(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "runner")
-    runner_env = {entry["name"]: entry for entry in runner["env"]}
-    assert runner_env["RUNNER_NAME"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.name"
-    cache = next(
-        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "bazel-cache"
-    )
-    assert cache == {"name": "bazel-cache", "emptyDir": {}}
-
-    documents = list(yaml.safe_load_all((k8s_dir / "haku-ci/scaledobject.yaml").read_text(encoding="utf-8")))
-    auth, scaled_object = documents
+    auth, scaled_job = list(yaml.safe_load_all((k8s_dir / "haku-ci/scaledjob.yaml").read_text(encoding="utf-8")))
     assert auth["kind"] == "TriggerAuthentication"
     assert auth["spec"]["secretTargetRef"] == [{"parameter": "token", "name": "haku-forgejo-tea", "key": "token"}]
-    assert scaled_object["kind"] == "ScaledObject"
-    assert scaled_object["spec"]["scaleTargetRef"] == {"name": "haku-runner"}
-    assert scaled_object["spec"]["minReplicaCount"] == 0
-    assert scaled_object["spec"]["maxReplicaCount"] == 4
-    assert scaled_object["spec"]["triggers"] == [
+
+    # ScaledJob, not ScaledObject: the queue-depth trigger may only ever CREATE pods.
+    # Driving an HPA with it scaled back down the instant a runner picked a job up,
+    # and the HPA deleted whichever pod it liked — reaping in-flight builds.
+    assert scaled_job["kind"] == "ScaledJob"
+    assert scaled_job["spec"]["maxReplicaCount"] == 4
+    # "immediate" would delete running Jobs on every Flux reconcile of this file.
+    assert scaled_job["spec"]["rollout"]["strategy"] == "gradual"
+
+    job = scaled_job["spec"]["jobTargetRef"]
+    assert (job["parallelism"], job["completions"]) == (1, 1), "one CI job per pod"
+    # A failed build exits 0, so a non-zero exit is an infrastructure fault; the retry
+    # is the job staying queued for the next poll, not a Kubernetes-level restart.
+    assert job["backoffLimit"] == 0
+    pod = job["template"]["spec"]
+    assert pod["restartPolicy"] == "Never"
+    # dind must be a NATIVE SIDECAR (initContainer + restartPolicy: Always) or it never
+    # exits and the Job never completes — and it must outlive the runner's own shutdown.
+    dind = next(c for c in pod["initContainers"] if c["name"] == "dind")
+    assert dind["restartPolicy"] == "Always"
+
+    runner = next(c for c in pod["containers"] if c["name"] == "runner")
+    runner_env = {entry["name"]: entry for entry in runner["env"]}
+    assert runner_env["RUNNER_NAME"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.name"
+    # Without --ephemeral the registration outlives the pod; the repo accumulated 529.
+    assert "--ephemeral" in "\n".join(runner["args"])
+    cache = next(volume for volume in pod["volumes"] if volume["name"] == "bazel-cache")
+    assert cache == {"name": "bazel-cache", "emptyDir": {}}
+
+    assert scaled_job["spec"]["triggers"] == [
         {
             "type": "forgejo-runner",
             "metadata": {

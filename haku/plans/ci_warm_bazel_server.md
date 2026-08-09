@@ -224,7 +224,7 @@ in-cluster, all behind the egress fence.
 
 ### What changes, by file
 
-- **`cluster/k8s/haku-ci/deployment.yaml`** (this repo): add a PVC (`local-path-ovh-hdd`,
+- **`cluster/k8s/haku-ci/scaledjob.yaml`** (this repo): add a PVC (`local-path-ovh-hdd`,
   ~30–50 GiB) mounted into the `dind` container; back `haku-bazel-cache` with it. **Deviation**
   from the repo's `seaweedfs-ovh` default (`cluster/AGENTS.md` § Storage Selection): the cache
   is regenerable and latency-sensitive, so node-local wins — exactly the case the default
