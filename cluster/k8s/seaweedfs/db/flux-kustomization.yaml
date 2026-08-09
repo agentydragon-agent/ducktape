@@ -21,4 +21,5 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: seaweedfs-namespace
+      namespace: ducktape-flux
     - name: cnpg

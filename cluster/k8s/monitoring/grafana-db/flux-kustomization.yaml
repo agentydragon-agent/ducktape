@@ -24,4 +24,5 @@ spec:
       namespace: monitoring
   dependsOn:
     - name: monitoring-namespace
+      namespace: ducktape-flux
     - name: cnpg

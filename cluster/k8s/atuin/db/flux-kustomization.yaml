@@ -20,5 +20,6 @@ spec:
   wait: true
   dependsOn:
     - name: atuin-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner

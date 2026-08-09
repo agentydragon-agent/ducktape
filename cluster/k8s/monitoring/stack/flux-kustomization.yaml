@@ -24,6 +24,7 @@ spec:
   timeout: 10m
   dependsOn:
     - name: monitoring-namespace
+      namespace: ducktape-flux
     - name: gateway
     - name: cert-manager-environment
     - name: monitoring-stack-secrets

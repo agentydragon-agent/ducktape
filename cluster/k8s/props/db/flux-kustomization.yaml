@@ -21,4 +21,5 @@ spec:
   dependsOn:
     - name: cnpg
     - name: props-namespace
+      namespace: ducktape-flux
     - name: local-path-provisioner
