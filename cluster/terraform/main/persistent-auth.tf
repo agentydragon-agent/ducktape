@@ -163,3 +163,31 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
 
   depends_on = [kubernetes_namespace.flux_system]
 }
+
+# Flux Kustomizations resolve spec.decryption.secretRef in their own namespace.
+# Keep this second copy of the existing cluster age identity while public
+# Kustomizations move from flux-system to ducktape-flux:
+#
+# 1. Confirm this Secret exists without reading or logging its contents.
+# 2. Move and verify a single low-impact SOPS controller.
+# 3. Migrate the remaining SOPS controllers in service-family batches.
+# 4. Complete the flux-system bootstrap-controller cutover.
+# 5. Only then remove kubernetes_secret.sops_age_cluster_secrets, which deletes
+#    the old flux-system Secret on the final reviewed OpenTofu apply.
+#
+# This depends on the Flux bootstrap so a fresh cluster creates ducktape-flux
+# through GitOps before OpenTofu attempts to create this Secret there.
+resource "kubernetes_secret" "sops_age_cluster_secrets_ducktape_flux" {
+  metadata {
+    name      = "sops-age-cluster-secrets"
+    namespace = "ducktape-flux"
+  }
+
+  data = {
+    "age.agekey" = data.sops_file.cluster_secrets_age.data["age_secret_key"]
+  }
+
+  type = "Opaque"
+
+  depends_on = [null_resource.flux_bootstrap]
+}
