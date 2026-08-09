@@ -25,3 +25,4 @@ spec:
       namespace: nvidia-device-plugin
   dependsOn:
     - name: node-feature-discovery
+      namespace: ducktape-flux
