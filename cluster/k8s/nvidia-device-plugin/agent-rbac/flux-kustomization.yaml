@@ -16,6 +16,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: nvidia-device-plugin
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux

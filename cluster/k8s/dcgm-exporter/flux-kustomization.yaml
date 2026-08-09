@@ -16,7 +16,7 @@ spec:
   dependsOn:
     # RuntimeClass "nvidia" + the containerd nvidia runtime.
     - name: nvidia-device-plugin
-      namespace: flux-system
+      namespace: ducktape-flux
     # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
     - name: monitoring-stack
       namespace: flux-system
