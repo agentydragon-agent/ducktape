@@ -26,6 +26,7 @@ spec:
     # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack
     - name: monitoring-stack
     - name: grafana-helmrepository
+      namespace: ducktape-flux
     # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
     # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
     - name: seaweedfs-cluster

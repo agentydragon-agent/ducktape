@@ -25,3 +25,4 @@ spec:
   dependsOn:
     - name: mimir
     - name: grafana-helmrepository
+      namespace: ducktape-flux

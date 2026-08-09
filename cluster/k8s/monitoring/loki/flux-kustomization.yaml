@@ -23,4 +23,5 @@ spec:
   timeout: 10m
   dependsOn:
     - name: grafana-helmrepository
+      namespace: ducktape-flux
     - name: seaweedfs-cluster
