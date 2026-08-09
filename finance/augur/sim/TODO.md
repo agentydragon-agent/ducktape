@@ -416,6 +416,39 @@ Sketch:
 Defer until a scenario actually needs the dynamic threshold; the
 absolute band covers today's product surface.
 
+## Bonds
+
+`BondHolding` covers one shape well and only one: a par bond bought before the horizon
+starts and held to maturity, indexed or not. Everything below is what that shape excludes.
+
+- [ ] **Bond pricing: the model emits PRICES, the curve stays internal.** No bond is marked
+      today, which is exactly right for held-to-maturity and wrong for everything else. The
+      rule the fund side already follows applies here too — emit dollar primitives, never a
+      rate the simulator divides by (`sim/bonds.py` records why). Blocked on the model carrying
+      a curve that reaches past 10 years at all (SPEC gap 8): today it clamps flat, so a 30-year
+      rung and a 10-year one price identically.
+- [ ] **Mark-to-market and secondary sale.** A rung cannot be sold early, so a ladder is
+      strictly untradeable. That is a conservatism rather than a bug for a study whose
+      recommendation is a SHALLOW ladder (sell-flexibility only helps the deep one), which is
+      why it has stayed deferred. It can also be BOUNDED without being built: run the ladder as
+      `BondHolding` beside a control holding the same money in a duration-matched marked fund,
+      which is expressible today. Reality is between the two, and if the survival curves agree
+      the build is unnecessary.
+
+      Once a real curve exists this gets much cheaper than its deferral implies: a rung prices
+      itself off the curve at its REMAINING term, which rolls down and converges to par on its
+      own. The blocker was never the sale mechanics, it was having nothing to mark against —
+      `InstrumentSpec.duration_years` is a constant, right for a fund that rolls and wrong for a
+      bond that ages.
+
+- [ ] **Non-par purchase.** `purchase_price_usd` is required to EQUAL face, so a real holding
+      bought at 98.5 raises rather than being silently treated as par. Amortizing a
+      discount/premium needs the discount curve above.
+- [ ] **A ladder that rolls**, which needs a real yield and a policy trigger. Full write-up in
+      the parent `augur/TODO.md` under Liquidity Policy; the one-line version is that TIPS come
+      in 5/10/30-year terms only, so ~30 years is the longest floor anyone can contract for, and
+      a simulator that buys once and holds never samples a bad roll.
+
 ## Explicitly deferred
 
 Documented to prevent re-discovery; intentionally not on the roadmap.
