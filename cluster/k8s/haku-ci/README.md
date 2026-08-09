@@ -23,9 +23,10 @@ contained to roughly Haku's existing sandbox blast radius:
   attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks
   (see the paving section). The privileged pod's blast radius is bounded by this namespace
   being operator-only (no Haku RBAC), pinned **off the control planes**, and egress-fenced.
-- **Repo-scoped runners** registered only to the `haku-state` repo, so they only ever run Haku's
-  jobs; each has `capacity: 1`. KEDA adds up to four pods only while matching jobs queue.
-  Each pod registers under its own Kubernetes pod name so concurrent replicas cannot collide.
+- **Repo-scoped, single-use runners** registered only to the `haku-state` repo, so they only ever
+  run Haku's jobs. Each pod registers ephemerally under its own Kubernetes pod name (so concurrent
+  pods cannot collide), runs exactly one job, and exits — a hostile build cannot outlive its own
+  job or observe the next one. KEDA creates up to four pods, only while matching jobs queue.
 - **Scoped creds**: pushes only to the `haku/*` Forgejo package namespace; commits back only to
   `haku-state`. No cluster creds (`automountServiceAccountToken: false`).
 
@@ -58,13 +59,12 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File                 | Role                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `namespace.yaml`     | the `haku-ci` namespace                                                                 |
-| `networkpolicy.yaml` | egress fence (DNS + registries/npm/pypi + in-cluster)                                   |
-| `config.yaml`        | the act_runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts) |
-| `deployment.yaml`    | the KEDA-scaled act_runner + rootless `dind` sidecar (+ pod-local Bazel cache)          |
-| `scaledobject.yaml`  | KEDA Forgejo queue trigger (0–4 runner pods) and token authentication                   |
+| File                           | Role                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------- |
+| `namespace.yaml`               | the `haku-ci` namespace                                                                     |
+| `ccnp-force-proxy-egress.yaml` | egress fence (DNS + in-cluster + haku-egress-proxy only)                                    |
+| `config.yaml`                  | the forgejo-runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts) |
+| `scaledjob.yaml`               | KEDA `ScaledJob`: the one-job runner pod + rootless `dind` native sidecar, the Forgejo queue trigger, and token authentication |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
 (a `hashicorp/http` GET of the repo's runner registration-token API, written to the Secret) —
@@ -83,23 +83,70 @@ from zero to the hard cap of four.
 
 `haku-forgejo-tea` is minted by `forgejo-token-rotation` and reflected from `haku-sandbox` into
 this operator-only namespace. The runner pod does not mount that Secret; only KEDA reads it.
-Each runner uses an `emptyDir` cache, so it is warm for consecutive jobs on that pod but is
-intentionally discarded when KEDA scales down.
 
-**Gotcha: the trigger counts QUEUED jobs, so a running job reads as zero demand.** Nothing tells
-the HPA which pod is busy, so once `stabilizationWindowSeconds` (600s) elapses it will delete a
-pod that is mid-build. Two settings make that survivable, and **both are required** — either one
-alone still drops the job:
+### Why `ScaledJob` and not `ScaledObject`
 
-| setting                                            | where             | value |
-| -------------------------------------------------- | ----------------- | ----- |
-| `runner.shutdown_timeout`                          | `config.yaml`     | 30m   |
-| `spec.template.spec.terminationGracePeriodSeconds` | `deployment.yaml` | 2100  |
+**The trigger counts QUEUED jobs, so a job that has started reads as zero demand.** That is
+correct for the metric and fatal for a Deployment. Under the original `ScaledObject`, the same
+number that scaled up also scaled down: the moment a runner picked a job up the metric returned
+to zero, and once `stabilizationWindowSeconds` (600s) elapsed the HPA deleted a pod — with no
+way to know which pod was mid-build. Only `bazel-ci / image` was long enough to be exposed, and
+it died on essentially every ducktape repin.
 
-The first tells act_runner to finish the running job on SIGTERM; the second stops the kubelet
-SIGKILLing it 30 seconds in (the default, and the reason `bazel-ci / image` died on every
-ducktape repin — the only builds long enough to outlive the window). Keep `shutdown_timeout` at
-or below the grace period, and both at or above `runner.timeout`.
+Two settings were added to make a reaped build survivable — `runner.shutdown_timeout: 30m` and
+`terminationGracePeriodSeconds: 2100` — and **they did not work**. On PR #98 the runner pod was
+deleted at 23:44:36Z and the job failed at 23:44:57Z, twenty-one seconds later, with both
+settings live. The reason is that `dind` was an ordinary container: ordinary containers are
+SIGTERMed **in parallel**, so dockerd died alongside the runner and destroyed the build
+containers underneath it. The runner then waited its full graceful 30 minutes on a job that no
+longer had anywhere to run. (It also explains the silent failure: the `if: failure()` log-publish
+step needs Docker to start a container, and Docker was what died.)
 
-This makes a reaped job survive; it does not stop the reaping. The metric would have to count
-in-progress jobs as well as queued ones for the HPA to stop wanting the pod gone.
+Under a `ScaledJob` the queued-jobs metric is only ever a **create** signal. KEDA turns "N jobs
+queued" into "create N Kubernetes Jobs", never deletes a running one, and each pod ends its own
+life when its single CI job finishes — so there is no scale-down decision to get wrong. The
+failure mode is structurally absent rather than mitigated. This is also the shape the scaler is
+[documented for](https://keda.sh/docs/2.20/scalers/forgejo/).
+
+`dind` is correspondingly a **native sidecar** (an `initContainer` with `restartPolicy: Always`),
+which is now doing two jobs: it fixes the termination ordering above, and it is what lets the
+Job ever complete — an ordinary `dind` container would never exit, so the Job would hang forever.
+
+### Ephemeral registration
+
+Each pod runs `forgejo-runner register --ephemeral` and then `one-job --wait`. `--ephemeral`
+instructs Forgejo to delete the registration once the runner has run one job; it requires Forgejo
+15+ (this instance is 15.0.3) and is refused outright by older servers, so it fails loudly rather
+than drifting.
+
+The old Deployment's comment claimed its per-pod registration was "ephemeral", but the flag was
+absent, and nothing ever deregistered. By 2026-08-09 `haku/haku-state` had accumulated **529
+runner registrations, 525 of them offline**. Those pre-existing dead entries are harmless (the
+scaler matches on labels, not runner identity) but should be swept once.
+
+### What this costs: Bazel cache locality
+
+The `emptyDir` Bazel cache used to warm **successive** jobs on a surviving runner pod. One job
+per pod means it now only spans the Bazel invocations **within** a CI job — `bazel-ci`'s `Test`
+step then its `Build` step, which is still most of the benefit. It was already discarded whenever
+KEDA scaled to zero (`cooldownPeriod: 600`), so bursty runs more than ten minutes apart were
+already cold; this makes that the norm rather than the common case. `runner.timeout` was raised
+30m → 1h to absorb it, since `bazel-ci / image` had been observed at 27m03s against the old 30m
+ceiling.
+
+If that proves too slow, the fix is a shared `--disk_cache` (content-addressed and safe for
+concurrent readers, unlike the output base) on a real volume rather than reverting the
+architecture.
+
+### Upgrading the runner image
+
+The image is pinned (`12.13.2`) rather than floating on `:6` as before. That jump crosses
+**8.0.0, which added strict schema validation of workflow files** — a workflow that ran on 6.x
+but does not parse will now be **refused**, not run. Validate before bumping:
+
+```bash
+forgejo-runner exec --event unknown --workflows .forgejo/workflows/bazel-ci.yaml
+```
+
+8.0.0 also changed default label resolution and falls back to `sh` when `bash` is absent; neither
+affects this runner, which sets its image explicitly via the `haku-ci:docker://...` label.

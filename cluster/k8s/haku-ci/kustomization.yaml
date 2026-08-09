@@ -2,19 +2,28 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # No top-level `namespace:` transformer: ccnp-force-proxy-egress.yaml is a
 # cluster-scoped CiliumClusterwideNetworkPolicy and must NOT be stamped with a
-# namespace. deployment.yaml already sets `namespace: haku-ci` explicitly, and the
+# namespace. scaledjob.yaml already sets `namespace: haku-ci` explicitly, and the
 # generated ConfigMap (which would otherwise land namespaceless and make Flux fail
 # the whole apply with "namespace not specified") gets its namespace from the
 # per-generator field below.
 resources:
   - namespace.yaml
   - ccnp-force-proxy-egress.yaml
-  - deployment.yaml
-  - scaledobject.yaml
+  - scaledjob.yaml
 configMapGenerator:
-  # Hashed name (kustomize rewrites the Deployment's volume reference) so editing
-  # config.yaml rolls the runner — it carries no reloader annotation.
+  # No name-suffix hash, unlike the Deployment this replaced.
+  #
+  # The hash existed to roll long-lived runner pods when config.yaml changed. Runner
+  # pods are now one-CI-job Kubernetes Jobs, so the next job picks up the new ConfigMap
+  # on its own and there is nothing to roll. Dropping the hash also sidesteps a real
+  # trap: kustomize's nameReference transformer rewrites ConfigMap references only in
+  # field paths it knows, and it does not know
+  # `ScaledJob.spec.jobTargetRef.template.spec.volumes[].configMap.name`. A hashed name
+  # would silently not be substituted there, and every runner pod would fail to start
+  # on a missing ConfigMap.
   - name: haku-runner-config
     namespace: haku-ci
+    options:
+      disableNameSuffixHash: true
     files:
       - config.yaml
