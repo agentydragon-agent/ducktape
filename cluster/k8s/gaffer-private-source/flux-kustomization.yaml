@@ -18,6 +18,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: flux-image-automation-ghcr
+      namespace: ducktape-flux
     - name: tofu-controller
     - name: tofu-state-db
   healthChecks:

@@ -25,4 +25,5 @@ spec:
   dependsOn:
     - name: monitoring-stack
     - name: grafana-helmrepository
+      namespace: ducktape-flux
     - name: seaweedfs-cluster

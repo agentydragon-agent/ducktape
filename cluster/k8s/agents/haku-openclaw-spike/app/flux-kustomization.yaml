@@ -25,7 +25,7 @@ spec:
     - name: forgejo-images
       namespace: flux-system
     - name: flux-image-automation-forgejo
-      namespace: flux-system
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
