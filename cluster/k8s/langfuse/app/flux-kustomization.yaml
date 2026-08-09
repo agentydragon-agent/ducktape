@@ -24,6 +24,7 @@ spec:
       namespace: langfuse
   dependsOn:
     - name: langfuse-namespace
+      namespace: ducktape-flux
     - name: langfuse-secrets
     - name: langfuse-cache
     - name: langfuse-db

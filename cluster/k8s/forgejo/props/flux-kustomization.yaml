@@ -30,3 +30,4 @@ spec:
     - name: tofu-controller
     - name: tofu-state-db
     - name: props-namespace
+      namespace: ducktape-flux

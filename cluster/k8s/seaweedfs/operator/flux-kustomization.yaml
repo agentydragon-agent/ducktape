@@ -19,7 +19,7 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-namespace
-      namespace: flux-system
+      namespace: ducktape-flux
   wait: true
   timeout: 5m
   healthChecks:

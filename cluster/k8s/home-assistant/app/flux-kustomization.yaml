@@ -20,6 +20,7 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: home-assistant-namespace
+      namespace: ducktape-flux
     - name: local-path-provisioner
     - name: volsync
     - name: gateway

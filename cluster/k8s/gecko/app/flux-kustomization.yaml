@@ -18,6 +18,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: gecko-namespace
+      namespace: ducktape-flux
     - name: kubevirt
     - name: cdi
     - name: external-secrets-operator

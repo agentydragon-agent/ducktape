@@ -18,6 +18,7 @@ spec:
   timeout: 10m
   dependsOn:
     - name: props-namespace
+      namespace: ducktape-flux
     - name: props-secrets
     - name: props-db
     - name: gateway

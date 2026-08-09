@@ -19,5 +19,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-state-namespace
+      namespace: ducktape-flux
     - name: cnpg
     - name: local-path-provisioner

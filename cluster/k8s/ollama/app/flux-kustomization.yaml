@@ -20,6 +20,7 @@ spec:
   timeout: 10m
   dependsOn:
     - name: ollama-namespace
+      namespace: ducktape-flux
     - name: ollama-secrets
     - name: gateway
     - name: cert-manager-environment
