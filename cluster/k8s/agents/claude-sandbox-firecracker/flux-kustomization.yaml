@@ -20,4 +20,4 @@ spec:
     - name: claude-sandbox-secrets
       namespace: flux-system
     - name: kvm-device-plugin
-      namespace: flux-system
+      namespace: ducktape-flux

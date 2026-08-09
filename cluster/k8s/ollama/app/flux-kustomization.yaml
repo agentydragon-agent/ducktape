@@ -25,3 +25,4 @@ spec:
     - name: gateway
     - name: cert-manager-environment
     - name: nvidia-device-plugin
+      namespace: ducktape-flux
