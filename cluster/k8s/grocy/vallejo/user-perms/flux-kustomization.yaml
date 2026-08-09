@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: grocy-vallejo-user-perms
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
@@ -14,9 +14,6 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/grocy/vallejo/user-perms
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   # Run only after grocy-vallejo is up (and self-migrated via its postStart hook);
   # the Job-completion healthcheck makes this kustomization Ready only once the
   # policy in policy.yaml has actually been applied — so a fresh cluster converges
@@ -24,7 +21,9 @@ spec:
   wait: true
   dependsOn:
     - name: forgejo-images
+      namespace: flux-system
     - name: grocy-vallejo
+      namespace: flux-system
   healthChecks:
     - apiVersion: batch/v1
       kind: Job

@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: study-casino
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   retryInterval: 1m
@@ -14,9 +14,6 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/study-casino/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   healthChecks:
     - apiVersion: apps/v1
@@ -25,6 +22,8 @@ spec:
       namespace: study-casino
   dependsOn:
     - name: gateway
+      namespace: flux-system
     - name: study-casino-namespace
       namespace: ducktape-flux
     - name: study-casino-db
+      namespace: flux-system
