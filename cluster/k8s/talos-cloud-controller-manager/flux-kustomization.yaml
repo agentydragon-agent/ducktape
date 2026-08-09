@@ -2,15 +2,12 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: talos-cloud-controller-manager
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 30m
   path: ./cluster/k8s/talos-cloud-controller-manager
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
