@@ -59,11 +59,11 @@ rejections are handled by `oci-cache`'s Zot `http.compat: ["docker2s2"]` setting
 
 ## What's here
 
-| File                           | Role                                                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `namespace.yaml`               | the `haku-ci` namespace                                                                     |
-| `ccnp-force-proxy-egress.yaml` | egress fence (DNS + in-cluster + haku-egress-proxy only)                                    |
-| `config.yaml`                  | the forgejo-runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts) |
+| File                           | Role                                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `namespace.yaml`               | the `haku-ci` namespace                                                                                                        |
+| `ccnp-force-proxy-egress.yaml` | egress fence (DNS + in-cluster + haku-egress-proxy only)                                                                       |
+| `config.yaml`                  | the forgejo-runner config (labels, dind `DOCKER_HOST`, capacity, job-container `-v` mounts)                                    |
 | `scaledjob.yaml`               | KEDA `ScaledJob`: the one-job runner pod + rootless `dind` native sidecar, the Forgejo queue trigger, and token authentication |
 
 The registration-token Secret (`haku-ci-runner-token`) is provisioned by `tf/gitops/haku-state`
