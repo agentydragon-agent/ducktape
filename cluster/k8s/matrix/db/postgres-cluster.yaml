@@ -4,7 +4,11 @@ metadata:
   name: matrix-db
   namespace: matrix
 spec:
-  instances: 1
+  # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
+  # shape this had before the namespace was parked: Synapse's media store is on
+  # SeaweedFS now, whose CSI node plugin only runs on the OVH nodes, so the app
+  # moved there and R5 requires the database to follow it.
+  instances: 2
 
   probes:
     liveness:
@@ -13,11 +17,11 @@ spec:
 
   affinity:
     nodeSelector:
-      topology.kubernetes.io/region: proxmox
+      topology.kubernetes.io/zone: hil-ovh
+    topologyKey: kubernetes.io/hostname
 
   storage:
-    # CLEANUP(added 2026-04-02): Migrate to local-path-proxmox
-    storageClass: local-path
+    storageClass: local-path-ovh
     size: 10Gi
 
   monitoring:
