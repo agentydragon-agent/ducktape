@@ -33,11 +33,12 @@ for reproducible deployments.
 
 This production-only fork intentionally deletes the upstream Ingress and
 bundled MinIO templates, the optional Elasticsearch/Kibana/Fluentd logging
-subchart, and local-development NodePort support. Ducktape publishes Browsertrix
+subchart, the unused crawler egress-proxy helper subchart, and
+local-development NodePort support. Ducktape publishes Browsertrix
 exclusively through its Cilium Gateway, stores archives exclusively in
 SeaweedFS, and uses the cluster's existing logging stack. When refreshing from
 a newer upstream tag, do not restore `templates/ingress.yaml`,
-`templates/minio.yaml`, `admin/logging/`, or the frontend/email NodePort values
+`templates/minio.yaml`, `admin/logging/`, `proxies/`, or the frontend/email NodePort values
 and template branches; retain the Gateway-only origin and external storage
 proxy changes in `configmap.yaml` and `frontend.yaml`.
 

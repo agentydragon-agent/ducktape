@@ -14,7 +14,3 @@ dependencies:
   - name: metacontroller-helm
     version: 4.16.5
     repository: "oci://ghcr.io/metacontroller"
-  - name: btrix-proxies
-    version: 0.2.0
-    condition: btrix-proxies.enabled
-    repository: file://./proxies/
