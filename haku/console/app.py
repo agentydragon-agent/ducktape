@@ -29,7 +29,6 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
     capabilities,
-    claude_chat,
     connection_metrics,
     console_events,
     mcp_agent_auth,
@@ -70,7 +69,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
-from haku.console.x import matrix_sync
+from haku.console.x import claude_chat, matrix_session, matrix_sync
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -215,14 +214,6 @@ def create_app(
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
     )
-    # Matrix chat surface. Absent config is a supported state, not a failure: the bot
-    # password is reflected in from the matrix namespace and is legitimately missing on a
-    # first deploy, and the console must serve its approval queue regardless (R10.3b).
-    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
-    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_sync_service = matrix_sync.MatrixSyncService(
-            matrix_config, matrix_config.password, db_engine, matrix_sync.MatrixSyncStore(db_sessions)
-        )
     node_daemon_service = (
         node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
         if console_config.node_daemons is not None
@@ -262,6 +253,28 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
+    # Matrix chat surface. Absent config is a supported state, not a failure: the bot
+    # password is reflected in from the matrix namespace and is legitimately missing on a
+    # first deploy, and the console must serve its approval queue regardless (R10.3b).
+    # Split around the Claude runtime below: ingress has to exist before the service, which
+    # takes the reply sink, and the supervisor has to come after it.
+    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
+    matrix_conversations: matrix_session.MatrixConversationStore | None = None
+    matrix_reply_sink: matrix_session.MatrixReplySink | None = None
+    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
+        matrix_conversations = matrix_session.MatrixConversationStore(db_sessions)
+        matrix_sync_service = matrix_sync.MatrixSyncService(
+            matrix_config,
+            matrix_config.password,
+            db_engine,
+            matrix_sync.MatrixSyncStore(db_sessions),
+            matrix_conversations,
+            matrix_session.MatrixTurns(matrix_config, matrix_conversations, claude_chat_store, operator_identity_store),
+        )
+        matrix_reply_sink = matrix_session.MatrixReplySink(
+            matrix_config, matrix_conversations, matrix_sync_service.reply
+        )
+
     # Resolving configured external identities is database I/O. Keep app construction pure and do
     # this during the async lifespan, after the event loop exists.
     if claude_runtime is not None:
@@ -277,7 +290,27 @@ def create_app(
             claude_chat_store,
             claude_chat.KubernetesSandboxClaims(claude_runtime),
             mcp_token=mcp_agent.token,
+            reply_sink=matrix_reply_sink.deliver if matrix_reply_sink is not None else None,
         )
+    # The supervisor comes after the Claude runtime it provisions through, and announces via
+    # the sync service, which holds the only Matrix credential — one login, one device,
+    # whoever is speaking.
+    matrix_supervisor: matrix_session.MatrixSessionSupervisor | None = None
+    if (
+        matrix_config is not None
+        and matrix_sync_service is not None
+        and matrix_conversations is not None
+        and claude_chat_service is not None
+    ):
+        matrix_supervisor = matrix_session.MatrixSessionSupervisor(
+            matrix_config,
+            matrix_conversations,
+            claude_chat_service,
+            claude_chat_store,
+            operator_identity_store,
+            matrix_sync_service.announce,
+        )
+
     if static_agent_definitions is not None:
         static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
     else:
@@ -381,7 +414,11 @@ def create_app(
         if claude_chat_service is not None:
             await claude_chat_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running:
+        # A sibling of the sync loop, not a child of it: sharing the advisory lock keeps one
+        # replica provisioning, while staying a separate task keeps a stalled sandbox claim
+        # from wedging ingress, which must keep enqueueing with no sandbox up (R1.4).
+        supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising:
             await console_event_hub.start()
             try:
                 # Pre-warm the OIDCProxy client-state store so the first OAuth request isn't slowed by a
