@@ -2,17 +2,19 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: ha-mcp
-  # In flux-system, not ducktape-flux: decryption.secretRef resolves in the
-  # Kustomization's OWN namespace, and sops-age-cluster-secrets exists only here.
-  # Same placement as haku-sandbox-mcp-app, the other static-bearer MCP facade.
-  namespace: flux-system
+  # Flux resolves decryption.secretRef in the Kustomization's own namespace.
+  # sops-age-cluster-secrets is reflected here from its Terraform-owned source
+  # in flux-system, so this serves as the first SOPS migration canary.
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+
+    namespace: ducktape-flux
   path: ./cluster/k8s/agents/ha-mcp/app
   prune: true
   wait: true
