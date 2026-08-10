@@ -25,7 +25,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: plaid-web
-          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260810043808-511c6d1 # {"$imagepolicy": "flux-system:plaid-mcp-server"}
+          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260810050712-8060d58 # {"$imagepolicy": "flux-system:plaid-mcp-server"}
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
