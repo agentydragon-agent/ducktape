@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: forgejo
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
@@ -13,9 +13,6 @@ spec:
     namespace: ducktape-flux
   path: ./cluster/k8s/forgejo/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   # Health check ensures Forgejo is fully operational with SSO
   healthChecks:
@@ -27,7 +24,9 @@ spec:
     - name: forgejo-namespace
       namespace: ducktape-flux
     - name: forgejo-db
+      namespace: ducktape-flux
     - name: forgejo-cache # shared valkey for cache + queue (HA prerequisite)
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager
@@ -35,11 +34,14 @@ spec:
     - name: forgejo-secrets
       namespace: ducktape-flux
     - name: seaweedfs-forgejo-bucket # S3 bucket for packages/LFS/attachments
+      namespace: flux-system
     - name: seaweedfs-secrets # source of s3-identity-forgejo (mirrored into the namespace by reflector)
       namespace: ducktape-flux
     - name: reflector # Mirrors forgejo-oauth-client-secret + s3-identity-forgejo into the namespace
       namespace: ducktape-flux
     - name: sso-providers-tf # Writes forgejo-oauth-client-secret to authentik namespace
+      namespace: ducktape-flux
     - name: authentik # Authentik must be running for OIDC
+      namespace: ducktape-flux
     # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
     # Other SSO apps (Harbor, Matrix, Grafana) validate lazily at first login, so they don't need this.

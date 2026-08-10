@@ -21,7 +21,7 @@ spec:
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: forgejo-images
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: flux-image-automation-forgejo
       namespace: ducktape-flux
   healthChecks:

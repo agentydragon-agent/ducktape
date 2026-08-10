@@ -18,9 +18,9 @@ spec:
     - name: authentik-jwt-rotation # owns the agents-infra namespace
       namespace: ducktape-flux
     - name: forgejo-claude
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: haku-state
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: forgejo-agentydragon-repos
-      namespace: flux-system
+      namespace: ducktape-flux
   timeout: 2m

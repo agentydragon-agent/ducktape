@@ -23,6 +23,6 @@ spec:
     - name: gateway
       namespace: ducktape-flux
     - name: authentik
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux

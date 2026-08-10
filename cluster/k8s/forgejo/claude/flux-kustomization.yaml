@@ -2,23 +2,21 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: forgejo-claude
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 10m
   path: ./cluster/k8s/forgejo/claude
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
-  # Wait for the Terraform apply (creates the claude Forgejo service user + the
-  # claude-forgejo-credentials Secret) so repo read-grants (e.g. gaffer-private
-  # tf/thrive-scrape) and agent sessions can depend on it.
+    name: ducktape
+    # Wait for the Terraform apply (creates the claude Forgejo service user + the
+    # claude-forgejo-credentials Secret) so repo read-grants (e.g. gaffer-private
+    # tf/thrive-scrape) and agent sessions can depend on it.
+    namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
@@ -26,6 +24,7 @@ spec:
       namespace: flux-system
   dependsOn:
     - name: forgejo # Forgejo API must be up (provider target)
+      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

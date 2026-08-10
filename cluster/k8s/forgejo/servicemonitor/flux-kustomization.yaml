@@ -14,6 +14,6 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: forgejo
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: monitoring-stack
       namespace: flux-system

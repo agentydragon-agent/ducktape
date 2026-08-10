@@ -23,7 +23,7 @@ spec:
     # Reflector mirrors forgejo-images-creds here; forgejo-images dependsOn
     # reflector, so this one entry covers the source secret and the mirror.
     - name: forgejo-images
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: flux-image-automation-forgejo
       namespace: ducktape-flux
   healthChecks:

@@ -22,6 +22,7 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: forgejo # Forgejo (with Actions enabled, #2556) must be up first
+      namespace: ducktape-flux
     - name: keda # supplies the ScaledObject and TriggerAuthentication CRDs
       namespace: ducktape-flux
     # Reflector mirrors haku-forgejo-tea from the completed managed-agent

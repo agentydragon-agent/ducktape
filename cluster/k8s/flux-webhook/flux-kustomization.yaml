@@ -18,6 +18,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: flux-webhook-token
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux

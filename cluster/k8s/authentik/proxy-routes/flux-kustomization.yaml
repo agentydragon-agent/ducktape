@@ -16,4 +16,4 @@ spec:
     - name: gateway
       namespace: ducktape-flux
     - name: authentik
-      namespace: flux-system
+      namespace: ducktape-flux
