@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: archivebox-config
+data:
+  # ArchiveBox persists its generated Django SECRET_KEY in the local data PVC
+  # during quick-init, so do not inject a value that would rotate per Pod.
+  ALLOWED_HOSTS: archivebox.allegedly.works
+  PUBLIC_INDEX: "False"
+  PUBLIC_SNAPSHOTS: "False"
+  PUBLIC_ADD_VIEW: "False"
+  REVERSE_PROXY_USER_HEADER: X-authentik-username
+  # Authentik's outpost reaches the Service from a cluster Pod IP. The ingress
+  # policy permits that port only from Authentik server/outpost pods, which is
+  # the actual spoofing boundary; this CIDR lets ArchiveBox accept those Pod IPs.
+  REVERSE_PROXY_WHITELIST: 10.0.0.0/8
+  SAVE_ARCHIVE_DOT_ORG: "False"
+  TIMEOUT: "120"

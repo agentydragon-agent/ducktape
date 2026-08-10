@@ -1,0 +1,26 @@
+# SQLite, ArchiveBox.conf, logs, and transient working state need low-latency
+# fsync semantics. Keep these on local storage, not the FUSE-backed CSI volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: archivebox-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path-ovh
+  resources:
+    requests:
+      storage: 10Gi
+---
+# ArchiveBox's artifact hierarchy contains WARC/HTML/PDF/PNG payloads and
+# backwards-compatible symlinks, so it needs a mounted POSIX filesystem rather
+# than direct S3 API credentials. SeaweedFS CSI supplies that at /data/archive.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: archivebox-archive
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 100Gi

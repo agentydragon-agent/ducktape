@@ -1,0 +1,24 @@
+# ArchiveBox trusts X-authentik-username to create/authenticate its Django user.
+# Any other Pod reaching port 8000 could forge that identity, so permit only the
+# shared Authentik server/outpost path that injects the header.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: archivebox-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: archivebox
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
+      ports:
+        - port: 8000
+          protocol: TCP
