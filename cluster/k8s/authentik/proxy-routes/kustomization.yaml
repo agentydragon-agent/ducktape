@@ -13,6 +13,7 @@ resources:
   - proxmox-httproute.yaml
   - google-workspace-mcp-httproute.yaml
   - plaid-mcp-httproute.yaml
+  - browsertrix-httproute.yaml
   - goldilocks-httproute.yaml
   - tandoor-httproute.yaml
   - sdr-httproute.yaml

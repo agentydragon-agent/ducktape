@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - browsertrix-secrets.sops.yaml
   - helmrelease.yaml
-  - httproute.yaml
   - mongo-backup.yaml
