@@ -30,7 +30,7 @@ spec:
       namespace: ducktape-flux
     - name: wayback-archive-db
     - name: seaweedfs-wayback-archive-bucket
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: seaweedfs-secrets
       namespace: ducktape-flux
     - name: reflector
