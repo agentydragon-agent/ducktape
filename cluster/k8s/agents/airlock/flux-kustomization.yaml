@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: airlock
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   retryInterval: 1m
@@ -10,12 +10,10 @@ spec:
   timeout: 5m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   path: ./cluster/k8s/agents/airlock
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   decryption:
     provider: sops
@@ -28,6 +26,8 @@ spec:
       namespace: airlock
   dependsOn:
     - name: gateway
+      namespace: flux-system
     - name: authentik
+      namespace: flux-system
     - name: external-secrets-config
       namespace: ducktape-flux

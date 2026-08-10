@@ -16,5 +16,5 @@ spec:
   timeout: 2m
   dependsOn:
     - name: tana-mcp
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: claude-rbac

@@ -17,6 +17,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: cli-proxy-api
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux

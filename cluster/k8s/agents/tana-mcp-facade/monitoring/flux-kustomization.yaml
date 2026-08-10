@@ -18,6 +18,6 @@ spec:
   # they exist to report. ServiceMonitor/PrometheusRule apply independently.
   dependsOn:
     - name: tana-mcp
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: monitoring-stack
       namespace: flux-system

@@ -24,6 +24,6 @@ spec:
     - name: reflector
       namespace: ducktape-flux
     - name: tana-mcp
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: reloader
       namespace: ducktape-flux

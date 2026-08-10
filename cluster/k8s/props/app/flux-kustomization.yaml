@@ -17,7 +17,7 @@ spec:
     - name: props-namespace
       namespace: ducktape-flux
     - name: props-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: props-db
       namespace: flux-system
     - name: gateway
