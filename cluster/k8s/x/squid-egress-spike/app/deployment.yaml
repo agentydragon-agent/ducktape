@@ -35,7 +35,7 @@ spec:
         # squid.conf cannot read environment variables -- its ${...} covers only
         # process_name/process_number/service_name.
         - name: prepare
-          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:squid-ssl"}
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260810042548-63dbb72 # {"$imagepolicy": "flux-system:squid-ssl"}
           envFrom:
             - configMapRef:
                 name: squid-spike-fake-credentials
@@ -58,14 +58,14 @@ spec:
               envsubst < /etc/squid-template/credentials.conf.tmpl > /run/squid-secrets/credentials.conf
               echo "rendered credential rules:"; grep -c request_header_add /run/squid-secrets/credentials.conf
           volumeMounts:
-            - { name: ca-src, mountPath: /run/squid-ca-src, readOnly: true }
-            - { name: ca, mountPath: /run/squid-ca }
-            - { name: cache, mountPath: /var/cache/squid }
-            - { name: secrets, mountPath: /run/squid-secrets }
-            - { name: template, mountPath: /etc/squid-template, readOnly: true }
+            - {name: ca-src, mountPath: /run/squid-ca-src, readOnly: true}
+            - {name: ca, mountPath: /run/squid-ca}
+            - {name: cache, mountPath: /var/cache/squid}
+            - {name: secrets, mountPath: /run/squid-secrets}
+            - {name: template, mountPath: /etc/squid-template, readOnly: true}
       containers:
         - name: squid
-          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:squid-ssl"}
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260810042548-63dbb72 # {"$imagepolicy": "flux-system:squid-ssl"}
           args: ["-f", "/etc/squid/squid.conf", "-N"]
           ports:
             - name: proxy
@@ -75,17 +75,17 @@ spec:
             capabilities:
               drop: ["ALL"]
           resources:
-            requests: { cpu: 100m, memory: 256Mi }
-            limits: { cpu: "1", memory: 1Gi }
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
           volumeMounts:
-            - { name: config, mountPath: /etc/squid/squid.conf, subPath: squid.conf, readOnly: true }
-            - { name: ca, mountPath: /run/squid-ca }
-            - { name: cache, mountPath: /var/cache/squid }
-            - { name: secrets, mountPath: /run/squid-secrets, readOnly: true }
-            - { name: run, mountPath: /run/squid }
+            - {name: config, mountPath: /etc/squid/squid.conf, subPath: squid.conf, readOnly: true}
+            - {name: ca, mountPath: /run/squid-ca}
+            - {name: cache, mountPath: /var/cache/squid}
+            - {name: secrets, mountPath: /run/squid-secrets, readOnly: true}
+            - {name: run, mountPath: /run/squid}
             # Squid dies at startup on shm_open without this; a musl/container
             # interaction rather than a config error.
-            - { name: dshm, mountPath: /dev/shm }
+            - {name: dshm, mountPath: /dev/shm}
       volumes:
         - name: config
           configMap:
@@ -101,17 +101,17 @@ spec:
         # The rendered credential rules and the CA private key live on tmpfs,
         # never on disk and never in a ConfigMap.
         - name: secrets
-          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
         - name: ca
-          emptyDir: { medium: Memory, sizeLimit: 4Mi }
+          emptyDir: {medium: Memory, sizeLimit: 4Mi}
         - name: dshm
-          emptyDir: { medium: Memory, sizeLimit: 64Mi }
+          emptyDir: {medium: Memory, sizeLimit: 64Mi}
         - name: run
-          emptyDir: { sizeLimit: 8Mi }
+          emptyDir: {sizeLimit: 8Mi}
         # Certificate store only; the HTTP cache is cache_mem, so nothing here
         # can outlive the pod.
         - name: cache
-          emptyDir: { sizeLimit: 256Mi }
+          emptyDir: {sizeLimit: 256Mi}
 ---
 apiVersion: v1
 kind: Service
