@@ -16,4 +16,4 @@ spec:
     - name: atuin
       namespace: ducktape-flux
     - name: user-agentydragon
-      namespace: flux-system
+      namespace: ducktape-flux

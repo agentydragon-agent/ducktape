@@ -30,3 +30,4 @@ spec:
     - name: tofu-controller
     - name: tofu-state-db
     - name: cpap-sync # the git-creds Secrets land in the cpap-sync namespace
+      namespace: ducktape-flux

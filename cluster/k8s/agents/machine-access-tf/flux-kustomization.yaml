@@ -28,6 +28,7 @@ spec:
     - name: grocy-sf
     - name: grocy-vallejo
     - name: tana-mcp
+      namespace: ducktape-flux
     # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
     # namespace, so that namespace must exist first.
     - name: kubectl-sandbox-mcp-namespace

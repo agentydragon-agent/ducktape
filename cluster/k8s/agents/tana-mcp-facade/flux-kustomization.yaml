@@ -24,7 +24,7 @@ spec:
     - name: gateway
       namespace: flux-system
     - name: tana-mcp
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: valkey
       namespace: flux-system
     - name: agent-machine-access-tf
