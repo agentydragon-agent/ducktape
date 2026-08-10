@@ -7,7 +7,7 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 1m
-  path: ./cluster/k8s/browsertrix/namespace
+  path: ./cluster/k8s/x/browsertrix/namespace
   prune: true
   wait: true
   sourceRef:

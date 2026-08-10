@@ -1,9 +1,11 @@
-# Browsertrix private web archive
+# Browsertrix private web archive trial
 
-Browsertrix captures websites with real browsers and stores portable WACZ files
-in the retained SeaweedFS `browsertrix` bucket. The application is available at
-`https://archive.allegedly.works`; registration and public sharing are disabled
-by default, and Browsertrix's own login protects the UI.
+This is an experimental Browsertrix deployment. It captures websites with real
+browsers and stores portable WACZ files in the retained SeaweedFS `browsertrix`
+bucket. The application is available at `https://archive.allegedly.works` only
+through the shared Authentik proxy outpost; registration and public sharing are
+disabled by default. Browsertrix retains its local superuser for application
+administration, but Authentik is the external access boundary.
 
 The upstream Browsertrix chart is vendored at `cluster/charts/browsertrix` and
 records its source plus downstream changes in `UPSTREAM.md`. In particular, the

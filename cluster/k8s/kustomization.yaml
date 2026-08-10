@@ -402,8 +402,8 @@ resources:
   - agent-box/namespace/flux-kustomization.yaml
   - agent-box/app/flux-kustomization.yaml
   - website/flux-kustomization.yaml
-  - browsertrix/namespace/flux-kustomization.yaml
-  - browsertrix/app/flux-kustomization.yaml
+  - x/browsertrix/namespace/flux-kustomization.yaml
+  - x/browsertrix/app/flux-kustomization.yaml
 
   # --- cpap-sync ---
   - cpap-sync/flux-kustomization.yaml

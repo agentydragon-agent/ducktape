@@ -7,7 +7,7 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 25m
-  path: ./cluster/k8s/browsertrix/app
+  path: ./cluster/k8s/x/browsertrix/app
   prune: true
   wait: true
   decryption:
