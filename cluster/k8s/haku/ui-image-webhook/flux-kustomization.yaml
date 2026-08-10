@@ -16,4 +16,4 @@ spec:
     # haku-state provisions the forgejo-webhook-token Secret (the Receiver's secretRef)
     # and the Forgejo package webhook that targets this receiver.
     - name: haku-state
-      namespace: flux-system
+      namespace: ducktape-flux

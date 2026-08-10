@@ -25,7 +25,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: forgejo-props # ensures the Forgejo `props` registry user exists
-      namespace: flux-system
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret

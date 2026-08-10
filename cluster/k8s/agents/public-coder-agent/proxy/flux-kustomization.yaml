@@ -23,7 +23,7 @@ spec:
     - name: reflector
       namespace: ducktape-flux
     - name: forgejo-images
-      namespace: flux-system
+      namespace: ducktape-flux
     # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.
     - name: agent-machine-access-tf
       namespace: flux-system

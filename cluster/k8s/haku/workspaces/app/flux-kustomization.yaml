@@ -32,3 +32,4 @@ spec:
     - name: external-secrets-config # ClusterSecretStore + CRDs for the ESO
       namespace: ducktape-flux
     - name: forgejo-images # mints the source forgejo-images-creds the ESO reflects
+      namespace: ducktape-flux

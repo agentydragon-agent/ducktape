@@ -27,4 +27,4 @@ spec:
     # namespace, so the source credential must exist first. forgejo-images
     # itself dependsOn reflector, so this covers both.
     - name: forgejo-images
-      namespace: flux-system
+      namespace: ducktape-flux

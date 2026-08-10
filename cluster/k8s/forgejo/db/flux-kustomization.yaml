@@ -2,19 +2,17 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: forgejo-db
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   path: ./cluster/k8s/forgejo/db
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   # Required to apply forgejo-db-ssd-creds.sops.yaml (Forgejo's DB app creds, which CNPG
   # syncs onto the -ssd forgejo role); without it Flux applies the ciphertext.

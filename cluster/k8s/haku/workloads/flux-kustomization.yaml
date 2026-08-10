@@ -25,3 +25,4 @@ spec:
     # haku-forgejo-git Secret (now also reflected into flux-system for the
     # GitRepository's basic auth).
     - name: haku-state
+      namespace: ducktape-flux

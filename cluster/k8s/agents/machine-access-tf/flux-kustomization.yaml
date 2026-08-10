@@ -26,6 +26,7 @@ spec:
     - name: tofu-state-db
       namespace: ducktape-flux
     - name: authentik
+      namespace: ducktape-flux
     # TF writes grocy-mcp-oidc secrets into per-household namespaces.
     - name: grocy-sf
     - name: grocy-vallejo

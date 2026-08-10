@@ -21,7 +21,7 @@ spec:
   wait: true
   dependsOn:
     - name: forgejo-images
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: grocy-vallejo
       namespace: flux-system
   healthChecks:

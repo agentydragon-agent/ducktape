@@ -32,5 +32,6 @@ spec:
     - name: monitoring-stack-secrets
       namespace: ducktape-flux
     - name: sso-providers-tf
+      namespace: ducktape-flux
     - name: grafana-db
       namespace: ducktape-flux

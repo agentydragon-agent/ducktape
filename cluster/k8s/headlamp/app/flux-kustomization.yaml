@@ -25,4 +25,4 @@ spec:
     - name: gateway
       namespace: ducktape-flux
     - name: sso-providers-tf
-      namespace: flux-system
+      namespace: ducktape-flux

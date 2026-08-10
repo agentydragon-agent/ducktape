@@ -26,5 +26,6 @@ spec:
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: authentik
+      namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux

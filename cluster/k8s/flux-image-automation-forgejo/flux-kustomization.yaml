@@ -16,6 +16,6 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: forgejo-images # source credential (reflected into flux-system)
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: flux-image-automation-ghcr # the all-images ImageUpdateAutomation lives there
       namespace: ducktape-flux

@@ -2,19 +2,15 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: sso-providers-tf
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/authentik/sso-providers-tf
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -28,5 +24,6 @@ spec:
     - name: tofu-state-db
       namespace: ducktape-flux
     - name: authentik
+      namespace: ducktape-flux
     - name: authentik-sso-secrets
       namespace: ducktape-flux
