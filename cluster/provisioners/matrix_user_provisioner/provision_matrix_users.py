@@ -1,4 +1,4 @@
-"""Provision Matrix users on Synapse: admin + OpenClaw bot.
+"""Provision Matrix users on Synapse: the provisioner admin + the Haku bot.
 
 Two-phase idempotent provisioning:
   Phase 1: Register provisioner as admin via shared-secret endpoint.
@@ -8,6 +8,11 @@ Two-phase idempotent provisioning:
            on an existing user invalidates all access tokens (Synapse re-hashes
            with bcrypt and deletes all devices/tokens), which breaks the bot's
            active Matrix session.
+
+This deliberately does **not** mint an access token for the bot. haku-console
+holds the bot password and logs in for itself, so it can replace its own token
+the moment Synapse stops accepting one, rather than waiting for this Job to run
+again. See haku/plans/matrix_chat_runtime.md R10.3.
 
 Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, BOT_PASSWORD env vars.
 """
@@ -25,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 SYNAPSE_URL = "http://matrix-synapse.matrix.svc.cluster.local:8008"
 ADMIN_USERNAME = "provisioner"
-BOT_USERNAME = "openclaw"
-BOT_DISPLAYNAME = "OpenClaw"
+ADMIN_DEVICE_ID = "matrix-user-provisioner"
+BOT_USERNAME = "haku"
+BOT_DISPLAYNAME = "Haku"
 SERVER_NAME = "allegedly.works"
 
 
@@ -59,6 +65,26 @@ def register_admin(client: SynapseClient, registration_secret: str, admin_passwo
     logger.info("Phase 1: Registered admin @%s", resp.json()["user_id"])
 
 
+def admin_login(client: SynapseClient, admin_password: str) -> str:
+    """Log in as the provisioner admin and return its access token.
+
+    Pins `device_id` so re-runs reuse one device instead of leaving a new one
+    behind each time. This Job is recreated on every Flux reconcile, so an
+    unpinned login would accumulate admin devices indefinitely.
+    """
+    resp = client.post(
+        f"{SYNAPSE_URL}/_matrix/client/v3/login",
+        json={
+            "type": "m.login.password",
+            "identifier": {"type": "m.id.user", "user": ADMIN_USERNAME},
+            "password": admin_password,
+            "device_id": ADMIN_DEVICE_ID,
+        },
+    )
+    resp.raise_for_status()
+    return str(resp.json()["access_token"])
+
+
 def _admin_user_url(encoded_mxid: str) -> str:
     return f"{SYNAPSE_URL}/_synapse/admin/v2/users/{encoded_mxid}"
 
@@ -74,29 +100,18 @@ def _bot_exists(client: SynapseClient, access_token: str, encoded_mxid: str) -> 
     return "name" in resp.json()
 
 
-def upsert_bot(client: SynapseClient, admin_password: str, bot_password: str) -> None:
-    """Phase 2: Log in as admin, then ensure bot user exists via admin API."""
-    login_resp = client.post(
-        f"{SYNAPSE_URL}/_matrix/client/v3/login",
-        json={
-            "type": "m.login.password",
-            "identifier": {"type": "m.id.user", "user": ADMIN_USERNAME},
-            "password": admin_password,
-        },
-    )
-    login_resp.raise_for_status()
-    access_token = login_resp.json()["access_token"]
-    logger.info("Phase 2: Logged in as @%s:%s", ADMIN_USERNAME, SERVER_NAME)
-
+def upsert_bot(client: SynapseClient, admin_token: str, bot_password: str) -> None:
+    """Phase 2: Ensure the bot user exists via the admin API."""
     bot_mxid = f"@{BOT_USERNAME}:{SERVER_NAME}"
     encoded_mxid = urllib.parse.quote(bot_mxid)
-    auth = {"Authorization": f"Bearer {access_token}"}
+    auth = {"Authorization": f"Bearer {admin_token}"}
     url = _admin_user_url(encoded_mxid)
 
-    if _bot_exists(client, access_token, encoded_mxid):
+    if _bot_exists(client, admin_token, encoded_mxid):
         # User exists — update displayname only. Do NOT include password:
         # Synapse invalidates all access tokens on password change, even if
-        # the value is identical (bcrypt rehash triggers device purge).
+        # the value is identical (bcrypt rehash triggers device purge), which
+        # would log haku-console out on every reconcile.
         resp = client.put(url, json={"displayname": BOT_DISPLAYNAME, "admin": False}, headers=auth)
         resp.raise_for_status()
         logger.info("Phase 2: Updated %s (displayname: %s)", bot_mxid, resp.json().get("displayname", "n/a"))
@@ -116,7 +131,9 @@ def main() -> None:
 
     with httpx.Client(timeout=30) as client:
         register_admin(client, registration_secret, admin_password)
-        upsert_bot(client, admin_password, bot_password)
+        admin_token = admin_login(client, admin_password)
+        logger.info("Logged in as @%s:%s", ADMIN_USERNAME, SERVER_NAME)
+        upsert_bot(client, admin_token, bot_password)
     logger.info("Done: all Matrix users provisioned")
 
 

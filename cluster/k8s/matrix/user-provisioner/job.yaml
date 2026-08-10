@@ -31,5 +31,5 @@ spec:
             - name: BOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: openclaw-matrix-bot-password
+                  name: haku-matrix-bot-password
                   key: password

@@ -1,5 +1,5 @@
 """Matrix/Synapse user provisioner OCI image — registers the admin user and
-upserts the OpenClaw bot via the Synapse admin API.
+upserts the Haku bot via the Synapse admin API.
 """
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
