@@ -53,7 +53,7 @@ Expected, and the point of the exercise:
 | Request                                                 | Origin should see                    |
 | ------------------------------------------------------- | ------------------------------------ |
 | `Bearer spike-bearer-placeholder` to the echo origin    | `Bearer fake-real-bearer-do-not-use` |
-| `Bearer spike-bearer-placeholder` to **any other host** | placeholder **not** substituted      |
+| `Bearer spike-bearer-placeholder` to **any other host** | the placeholder, unmodified          |
 | `Bearer something-else`                                 | passed through untouched             |
 | no `Authorization`                                      | stays absent                         |
 
@@ -93,6 +93,80 @@ calls archival, and the whole point of the spike is to answer questions about th
 Squid a fence would actually run. The bump means run 1's TLS finding is history
 and the four open questions get answered on 7.6. Anything below that predates the
 bump is labelled with the version it was observed on.
+
+**Run 2, 2026-08-10, Squid 7.6-VCS on `alpine:3.23` — all five questions
+answered.** Squid started clean on the new base, so the `/dev/shm` workaround and
+the `security_file_certgen` init both survived the OpenSSL/musl move.
+
+Verdict per question: (1) 7.x port — **yes**, with the `DONT_VERIFY_PEER` trap
+above; (2) destination scoping — **security property holds**, and the strip
+semantics have since been settled below; (3) several credentials — **yes**; (4) base64 `Basic`
+— **yes**; (5) caching — `cache deny has_auth` **works**, hit path not
+demonstrated.
+
+Observed:
+
+- `Bearer spike-bearer-placeholder` → origin saw
+  `Bearer fake-real-bearer-do-not-use`. Substitution works post-bump on 7.6.
+- `Basic c3Bpa2U6cGxhY2Vob2xkZXI=` → origin saw
+  `Basic c3Bpa2U6ZmFrZS1yZWFsLXBhc3N3b3Jk`. Matching a base64 blob in a
+  `req_header` ACL behaves, so the git-over-HTTPS shape is fine.
+- `Bearer something-else` passed through untouched, and a request with no
+  `Authorization` stayed without one. Two rules on the same header coexisted, each
+  matching only its own placeholder.
+- **The security property holds.** `Bearer spike-other-placeholder`, whose rule
+  names `example.invalid`, was **not** substituted at the echo origin. A
+  placeholder is not redeemable at a destination its rule does not name.
+- Authenticated responses were not cached (`Cache-Status: …;detail=no-cache`),
+  so `cache deny has_auth` does what it says.
+
+### Decided and fixed: a placeholder at an allowed host passes through
+
+Case (b) did not arrive _unchanged_ — the `Authorization` header arrived
+**absent**. That is because each rule's two halves are scoped differently:
+
+```squid
+request_header_access Authorization deny ph_other                # every destination
+request_header_add    Authorization "Bearer …" ph_other to_elsewhere  # one destination
+```
+
+The `deny` strips the header wherever the placeholder matches; only the `add` is
+destination-scoped. So a placeholder presented to the wrong host is deleted
+rather than forwarded.
+
+It **fails safe** — no real credential leaks — but it is a different contract
+from the one this design wants, and it was an accident of how the rules were
+written rather than a decision.
+
+**Resolved: pass it through.** Substitution is meant to be a swap the caller can
+opt out of by sending something else; silently eating an unrelated header is not
+that. A placeholder aimed at a host that is otherwise allowed should reach it
+unmodified, and a host that is _not_ allowed is already refused by the allowlist,
+so nothing rests on the strip. The destination ACL now appears on both lines of
+every rule — Squid ANDs the ACLs on a directive line:
+
+```squid
+request_header_access Authorization deny ph_other to_elsewhere
+request_header_add    Authorization "Bearer …" ph_other to_elsewhere
+```
+
+Leaking the placeholder string to an allowed host costs nothing: the agent
+already holds it, and redeeming it still requires the destination its rule names.
+`credentials.conf.tmpl` carries this as an invariant, since scoping only the
+`add` is the easy mistake and it is invisible until someone tests the negative
+case. **Not yet re-run** — case (b) should now echo `Bearer
+spike-other-placeholder` instead of nothing.
+
+### Two things this run could not show
+
+- **`X-Spike-Client` was `127.0.0.1`.** The test drives curl from inside the
+  squid container, so `%>a` correctly reported loopback. The mechanism works; a
+  meaningful caller identity needs a request from a second pod.
+- **No cache hit was demonstrated.** Both unauthenticated fetches reported
+  `fwd=stale`, because the echo origin returns responses with no freshness
+  information. Measuring a hit rate needs an origin that sends cacheable
+  responses — the `cache deny has_auth` half is the security-relevant one and it
+  is confirmed.
 
 ## Pull credential
 
