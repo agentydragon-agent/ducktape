@@ -14,7 +14,7 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-cluster
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: seaweedfs-secrets
       namespace: ducktape-flux
   wait: true

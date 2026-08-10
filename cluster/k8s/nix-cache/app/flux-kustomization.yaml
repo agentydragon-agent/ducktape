@@ -33,4 +33,4 @@ spec:
     - name: cert-manager
       namespace: ducktape-flux
     - name: seaweedfs-cluster
-      namespace: flux-system
+      namespace: ducktape-flux

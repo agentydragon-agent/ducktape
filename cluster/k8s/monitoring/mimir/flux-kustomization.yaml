@@ -33,4 +33,4 @@ spec:
     # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our
     # mimir-blocks / mimir-ruler Bucket resources reference (buckets.yaml).
     - name: seaweedfs-cluster
-      namespace: flux-system
+      namespace: ducktape-flux

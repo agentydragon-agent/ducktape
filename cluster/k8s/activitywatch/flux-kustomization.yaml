@@ -23,4 +23,4 @@ spec:
     - name: local-path-provisioner
       namespace: ducktape-flux
     - name: seaweedfs-csi
-      namespace: flux-system
+      namespace: ducktape-flux

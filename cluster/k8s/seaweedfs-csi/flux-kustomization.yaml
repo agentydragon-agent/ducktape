@@ -21,3 +21,4 @@ spec:
       namespace: seaweedfs-csi-system
   dependsOn:
     - name: seaweedfs-cluster
+      namespace: ducktape-flux
