@@ -25,6 +25,7 @@ spec:
       namespace: haku-sandbox
   dependsOn:
     - name: agent-shared-secrets # provides ankiweb-credentials in claude-sandbox
+      namespace: ducktape-flux
     - name: external-secrets-config # provides the claude-sandbox SecretStore
       namespace: ducktape-flux
     - name: haku-namespace
