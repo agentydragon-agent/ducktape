@@ -213,10 +213,6 @@ spec:
         - secretRef:
             name: {{ storage_secret }}
 
-      {% if signing_secret %}
-        - secretRef:
-            name: {{ signing_secret }}
-      {% endif %}
 
       env:
         - name: HOME

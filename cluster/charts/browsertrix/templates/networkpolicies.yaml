@@ -67,20 +67,5 @@ spec:
         - port: 6379
           protocol: TCP
 
-    {{ if .Values.signer.enabled }}
-    # allow auth signer
-    - to:
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: {{ .Release.Namespace }}
-        podSelector:
-          matchLabels:
-            app: auth-signer
-
-      ports:
-        - port: {{ .Values.signer.port | default "5053" }}
-          protocol: TCP
-
-    {{- end -}}
   {{- end -}}
 {{- end -}}

@@ -230,7 +230,6 @@ data:
 {{ .Values.crawler_node_selector | toYaml | indent 6 }}
     redis_node_type: "{{ .Values.redis_node_type }}"
 
-    signing_secret: {{ and .Values.signer.enabled (not (empty .Values.signer.auth_token)) | ternary "signing-secret" "" }}
 
 ---
 apiVersion: v1
