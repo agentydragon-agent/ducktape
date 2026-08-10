@@ -29,7 +29,9 @@ spec:
       namespace: ducktape-flux
     # TF writes grocy-mcp-oidc secrets into per-household namespaces.
     - name: grocy-sf
+      namespace: ducktape-flux
     - name: grocy-vallejo
+      namespace: ducktape-flux
     - name: tana-mcp
       namespace: ducktape-flux
     # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`

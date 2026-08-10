@@ -22,6 +22,7 @@ spec:
     - name: ollama-namespace
       namespace: ducktape-flux
     - name: ollama-secrets
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager-environment
