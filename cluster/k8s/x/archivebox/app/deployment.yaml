@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: archivebox
+  labels:
+    app.kubernetes.io/name: archivebox
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: archivebox
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: archivebox
+    spec:
+      # seaweedfs-ovh is mounted only on the OVH nodes. This also keeps the
+      # local SQLite PVC and its single writer in the same storage locality.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 911
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: archivebox
+          # Pinned official stable multi-architecture v0.7.4 image index.
+          image: archivebox/archivebox@sha256:1a5a37331091d9df865ead2b9c231aa5a892fc26fe0422ce6140d9e2d9532327
+          # Override the image's root-requiring Docker entrypoint. The image
+          # already owns its browser runtime as UID/GID 911; fsGroup makes both
+          # PVCs writable without granting the workload Linux capabilities.
+          command: ["archivebox"]
+          args: ["server", "--quick-init", "0.0.0.0:8000"]
+          envFrom:
+            - configMapRef:
+                name: archivebox-config
+          ports:
+            - name: http
+              containerPort: 8000
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 911
+            runAsGroup: 911
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: archive
+              mountPath: /data/archive
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: archivebox-data
+        - name: archive
+          persistentVolumeClaim:
+            claimName: archivebox-archive
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: archivebox
+  labels:
+    app.kubernetes.io/name: archivebox
+spec:
+  selector:
+    app.kubernetes.io/name: archivebox
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
