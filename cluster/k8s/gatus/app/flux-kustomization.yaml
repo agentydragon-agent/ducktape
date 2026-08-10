@@ -28,4 +28,4 @@ spec:
     - name: gatus-sso-tf
       namespace: ducktape-flux
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux

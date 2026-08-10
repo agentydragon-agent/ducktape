@@ -30,6 +30,8 @@ spec:
   dependsOn:
     - name: forgejo # Forgejo API must be up (provider target)
     - name: tofu-controller
+      namespace: ducktape-flux
     - name: tofu-state-db
+      namespace: ducktape-flux
     - name: reflector # mirrors forgejo-images-creds to flux-system + image consumers
       namespace: ducktape-flux

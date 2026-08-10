@@ -14,6 +14,6 @@ spec:
   prune: true
   dependsOn:
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: authentik
       namespace: flux-system

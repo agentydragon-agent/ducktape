@@ -23,6 +23,7 @@ spec:
       namespace: ducktape-flux
     - name: haku-state # proxy-held Forgejo and Haku Console credentials
     - name: cert-manager-environment
+      namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
     - name: reflector

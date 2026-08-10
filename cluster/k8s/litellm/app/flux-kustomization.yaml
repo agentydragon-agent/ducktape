@@ -20,4 +20,6 @@ spec:
       namespace: ducktape-flux
     - name: litellm-db
     - name: gateway
+      namespace: ducktape-flux
     - name: cert-manager-environment
+      namespace: ducktape-flux

@@ -28,6 +28,6 @@ spec:
       namespace: flux-system
     - name: reflector # mirrors matrix-oidc-config into the matrix namespace
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: local-path-provisioner # local-path-proxmox media store PVC
-      namespace: flux-system
+      namespace: ducktape-flux

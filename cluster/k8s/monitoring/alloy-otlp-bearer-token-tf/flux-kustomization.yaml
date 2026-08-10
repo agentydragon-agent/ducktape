@@ -24,7 +24,9 @@ spec:
   timeout: 10m
   dependsOn:
     - name: tofu-controller
+      namespace: ducktape-flux
     - name: tofu-state-db
+      namespace: ducktape-flux
     # authentik-jwt-rotation owns the agents-infra namespace this secret's
     # rotator runs in, and rotates the alloy-otlp bearer token committed here.
     - name: authentik-jwt-rotation

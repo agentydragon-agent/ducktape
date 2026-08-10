@@ -25,7 +25,9 @@ spec:
   dependsOn:
     # tofu-controller runs the Terraform CR.
     - name: tofu-controller
+      namespace: ducktape-flux
     - name: tofu-state-db
+      namespace: ducktape-flux
     # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux

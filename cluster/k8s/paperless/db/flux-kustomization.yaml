@@ -20,6 +20,6 @@ spec:
     - name: paperless-namespace
       namespace: ducktape-flux
     - name: cnpg
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: local-path-provisioner
-      namespace: flux-system
+      namespace: ducktape-flux

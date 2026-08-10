@@ -27,6 +27,6 @@ spec:
     - name: inventree-secrets
     - name: authentik-blueprint-inventree-secret
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: authentik
       namespace: flux-system

@@ -32,7 +32,9 @@ spec:
     - name: external-creds
       namespace: ducktape-flux
     - name: tofu-controller
+      namespace: ducktape-flux
     - name: tofu-state-db
+      namespace: ducktape-flux
     # The agent reaches the cluster through this MCP; its first deployment run
     # needs it serving.
     - name: kubectl-machine-mcp

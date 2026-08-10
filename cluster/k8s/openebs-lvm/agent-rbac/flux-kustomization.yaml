@@ -16,6 +16,6 @@ spec:
   timeout: 2m
   dependsOn:
     - name: openebs-lvm
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: claude-rbac
       namespace: ducktape-flux

@@ -26,3 +26,4 @@ spec:
     - name: seaweedfs-namespace
       namespace: ducktape-flux
     - name: cnpg
+      namespace: ducktape-flux
