@@ -20,4 +20,4 @@ spec:
     - name: tana-mcp
       namespace: ducktape-flux
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

@@ -14,4 +14,4 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

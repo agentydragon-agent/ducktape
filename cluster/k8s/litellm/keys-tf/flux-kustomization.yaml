@@ -8,16 +8,13 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: litellm-keys-tf
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 10m
   path: ./cluster/k8s/litellm/keys-tf
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   # Decrypt litellm-zai-clients-sops-age-key.sops.yaml (the narrow SOPS_AGE_KEY for
   # the tf-runner) so sops_file in tf/gitops/litellm-keys can read the virtual-key
   # SSOT. Added when that SOPS file arrived — previously this dir held only plain YAML.
@@ -27,7 +24,8 @@ spec:
       name: sops-age-cluster-secrets
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -37,6 +35,7 @@ spec:
   dependsOn:
     # The app must serve (with its DB) before keys can mint.
     - name: litellm
+      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

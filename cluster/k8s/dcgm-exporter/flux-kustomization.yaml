@@ -19,7 +19,7 @@ spec:
       namespace: ducktape-flux
     # PodMonitor CRD ships with kube-prometheus-stack in monitoring-stack.
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: apps/v1

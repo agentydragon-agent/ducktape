@@ -21,7 +21,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: grafana-instance
       namespace: ducktape-flux
     - name: grafana-operator

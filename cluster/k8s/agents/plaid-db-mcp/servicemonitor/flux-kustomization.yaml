@@ -15,4 +15,4 @@ spec:
   dependsOn:
     - name: plaid-db-mcp
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

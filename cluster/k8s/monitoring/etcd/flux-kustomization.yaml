@@ -18,7 +18,7 @@ spec:
   dependsOn:
     # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack.
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: monitoring.coreos.com/v1

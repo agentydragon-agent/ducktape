@@ -38,4 +38,4 @@ spec:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
     - name: monitoring-stack # ServiceMonitor CRD
-      namespace: flux-system
+      namespace: ducktape-flux

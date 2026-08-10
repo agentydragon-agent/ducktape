@@ -16,7 +16,7 @@ spec:
   dependsOn:
     # loki-write is the log sink.
     - name: loki
-      namespace: flux-system
+      namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: apps/v1

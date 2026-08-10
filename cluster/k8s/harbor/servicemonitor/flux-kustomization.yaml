@@ -16,4 +16,4 @@ spec:
   dependsOn:
     - name: harbor
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

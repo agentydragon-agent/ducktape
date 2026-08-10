@@ -2,19 +2,17 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: tempo
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/monitoring/tempo
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -27,6 +25,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: monitoring-stack
+      namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux
     - name: seaweedfs-cluster

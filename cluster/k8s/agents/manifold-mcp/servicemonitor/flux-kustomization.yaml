@@ -16,4 +16,4 @@ spec:
     - name: manifold-mcp
       namespace: ducktape-flux
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux
