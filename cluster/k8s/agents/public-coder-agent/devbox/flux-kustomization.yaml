@@ -33,6 +33,7 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-public-s3
     - name: local-path-provisioner
+      namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: external-secrets.io/v1

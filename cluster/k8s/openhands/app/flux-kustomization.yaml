@@ -21,7 +21,7 @@ spec:
     - name: openhands-secrets
     - name: openhands-sandboxes
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: authentik
       namespace: flux-system
     - name: external-secrets-operator

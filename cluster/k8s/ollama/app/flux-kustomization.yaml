@@ -23,6 +23,8 @@ spec:
       namespace: ducktape-flux
     - name: ollama-secrets
     - name: gateway
+      namespace: ducktape-flux
     - name: cert-manager-environment
+      namespace: ducktape-flux
     - name: nvidia-device-plugin
       namespace: ducktape-flux

@@ -29,6 +29,7 @@ spec:
     - name: forgejo-db
     - name: forgejo-cache # shared valkey for cache + queue (HA prerequisite)
     - name: gateway
+      namespace: ducktape-flux
     - name: cert-manager
       namespace: ducktape-flux
     - name: forgejo-secrets

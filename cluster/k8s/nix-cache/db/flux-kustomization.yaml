@@ -19,4 +19,4 @@ spec:
     - name: nix-cache-namespace
       namespace: ducktape-flux
     - name: cnpg
-      namespace: flux-system
+      namespace: ducktape-flux

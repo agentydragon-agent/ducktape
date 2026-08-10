@@ -23,6 +23,6 @@ spec:
   dependsOn:
     - name: headlamp-namespace
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: flux-system

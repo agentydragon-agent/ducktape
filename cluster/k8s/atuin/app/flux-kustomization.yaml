@@ -27,6 +27,6 @@ spec:
     - name: atuin-db
       namespace: flux-system
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: cert-manager-environment
-      namespace: flux-system
+      namespace: ducktape-flux

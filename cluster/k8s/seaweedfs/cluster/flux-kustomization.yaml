@@ -24,6 +24,6 @@ spec:
     - name: seaweedfs-filer-db # Filer is configured with postgres2 backend.
       namespace: flux-system
     - name: local-path-provisioner
-      namespace: flux-system
+      namespace: ducktape-flux
   wait: false
   timeout: 5m

@@ -24,4 +24,4 @@ spec:
     - name: paperless-db
       namespace: ducktape-flux
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux

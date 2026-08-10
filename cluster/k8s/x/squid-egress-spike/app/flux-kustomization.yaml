@@ -19,7 +19,7 @@ spec:
   dependsOn:
     - name: squid-egress-spike-namespace
     - name: cert-manager-environment
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: flux-system
     - name: flux-image-automation-forgejo

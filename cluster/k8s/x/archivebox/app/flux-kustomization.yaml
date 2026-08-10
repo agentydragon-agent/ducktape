@@ -24,7 +24,7 @@ spec:
     - name: seaweedfs-csi
       namespace: flux-system
     - name: local-path-provisioner
-      namespace: flux-system
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

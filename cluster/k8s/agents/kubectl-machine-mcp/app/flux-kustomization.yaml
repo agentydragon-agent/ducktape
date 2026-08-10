@@ -23,7 +23,7 @@ spec:
       namespace: kubectl-machine-mcp
   dependsOn:
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     # The kubectl-sandbox-client-credentials Authentik provider (whose OIDC
     # discovery + JWKS this server validates against) is created by this TF.
     - name: agent-machine-access-tf

@@ -21,8 +21,8 @@ spec:
   timeout: 10m
   dependsOn:
     - name: tofu-controller
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: tofu-state-db
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: authentik
       namespace: flux-system

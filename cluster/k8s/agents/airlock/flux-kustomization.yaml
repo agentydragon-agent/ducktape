@@ -26,7 +26,7 @@ spec:
       namespace: airlock
   dependsOn:
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: authentik
       namespace: flux-system
     - name: external-secrets-config

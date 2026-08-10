@@ -18,4 +18,4 @@ spec:
   dependsOn:
     # TLS is owned by the shared Gateway; Website only supplies an HTTPRoute.
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux

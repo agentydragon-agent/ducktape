@@ -19,6 +19,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: cert-manager-environment
-      namespace: flux-system
+      namespace: ducktape-flux

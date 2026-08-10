@@ -22,7 +22,7 @@ spec:
       namespace: study-casino
   dependsOn:
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: study-casino-namespace
       namespace: ducktape-flux
     - name: study-casino-db

@@ -26,6 +26,7 @@ spec:
     - name: haku-console-db # distributed approval ledger
     - name: haku-state # provisions the shared haku-ui/backend -> haku-console MCP static-Agent token
     - name: gateway
+      namespace: ducktape-flux
     - name: authentik
     # TF mints the console's Authentik OAuth2 providers + the haku-console-oidc Secret
     # (operator_oidc + mcp_oauth client credentials + session secret) into this namespace;

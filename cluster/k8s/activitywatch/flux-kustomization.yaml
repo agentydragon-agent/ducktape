@@ -21,6 +21,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: local-path-provisioner
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: seaweedfs-csi
       namespace: flux-system

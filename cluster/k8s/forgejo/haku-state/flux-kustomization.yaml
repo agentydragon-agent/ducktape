@@ -27,7 +27,9 @@ spec:
   dependsOn:
     - name: forgejo # Forgejo API must be up (provider target)
     - name: tofu-controller
+      namespace: ducktape-flux
     - name: tofu-state-db
+      namespace: ducktape-flux
     # The git-creds Secret lands in both target namespaces; wait for each to exist.
     - name: haku-namespace
       namespace: ducktape-flux

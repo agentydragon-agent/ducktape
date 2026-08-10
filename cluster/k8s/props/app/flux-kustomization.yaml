@@ -21,7 +21,7 @@ spec:
     - name: props-db
       namespace: flux-system
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: forgejo-props # ensures the Forgejo `props` registry user exists

@@ -19,6 +19,7 @@ spec:
     - name: haku-zones-mitmproxy-namespace
       namespace: ducktape-flux
     - name: cert-manager-environment
+      namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
     - name: reflector

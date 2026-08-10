@@ -26,7 +26,7 @@ spec:
       namespace: ducktape-flux
     - name: harbor-db
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: harbor-secrets
     # Phase 1: Deploy without Authentik dependency
     # Phase 2: Add harbor-sso after Harbor is running

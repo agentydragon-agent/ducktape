@@ -20,4 +20,4 @@ spec:
     - name: flux-webhook-token
       namespace: flux-system
     - name: gateway
-      namespace: flux-system
+      namespace: ducktape-flux

@@ -16,7 +16,7 @@ spec:
     - name: agents-mitmproxy-namespace
       namespace: ducktape-flux
     - name: cert-manager-environment
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
     - name: reflector
