@@ -12,6 +12,9 @@ spec:
     name: flux-system
   path: ./cluster/k8s/seaweedfs/db
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   # Required to apply seaweedfs-filer-db-ssd-creds.sops.yaml (the filer DB app creds
   # CNPG syncs onto the -ssd seaweedfs role); without it Flux applies the ciphertext.
