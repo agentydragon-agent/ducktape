@@ -8,6 +8,9 @@ spec:
   interval: 10m
   path: ./cluster/k8s/monitoring/loki
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: flux-system

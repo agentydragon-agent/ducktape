@@ -13,6 +13,9 @@ spec:
     name: flux-system
   path: ./cluster/k8s/agents/airlock
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   decryption:
     provider: sops

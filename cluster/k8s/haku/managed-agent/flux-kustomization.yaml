@@ -10,6 +10,9 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/haku/managed-agent
   prune: true
+  # Temporary controller-handoff guard. Remove after this Kustomization
+  # has been recreated in ducktape-flux.
+  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
