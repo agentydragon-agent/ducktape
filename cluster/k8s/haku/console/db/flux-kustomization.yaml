@@ -2,21 +2,17 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-console-db
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 5m
   path: ./cluster/k8s/haku/console/db
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   dependsOn:
     - name: haku-console-namespace

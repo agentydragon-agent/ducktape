@@ -19,7 +19,7 @@ spec:
   dependsOn:
     - name: haku-openclaw-spike-namespace
     - name: haku-egress-proxy
-      namespace: flux-system
+      namespace: ducktape-flux
     # Reflector mirrors forgejo-images-creds here; forgejo-images dependsOn
     # reflector, so this one entry covers the source secret and the mirror.
     - name: forgejo-images

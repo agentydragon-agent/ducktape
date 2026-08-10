@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-managed-agent
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   interval: 10m
@@ -10,13 +10,11 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/haku/managed-agent
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -38,3 +36,4 @@ spec:
     - name: haku-state # provides the haku-forgejo-git secret in haku-sandbox
       namespace: ducktape-flux
     - name: haku-egress-proxy # injects the egress proxy + CA the worker imports
+      namespace: ducktape-flux

@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: agent-sandbox-controller
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: kubernetes-sigs/agent-sandbox controller + CRDs (Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool).
 spec:
@@ -11,14 +11,10 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/agents/agent-sandbox/controller
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2

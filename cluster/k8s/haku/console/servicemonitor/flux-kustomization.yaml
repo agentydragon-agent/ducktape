@@ -16,6 +16,6 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     - name: haku-console # the Service whose `metrics` port this selects
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: monitoring-stack # the ServiceMonitor CRD
       namespace: ducktape-flux
