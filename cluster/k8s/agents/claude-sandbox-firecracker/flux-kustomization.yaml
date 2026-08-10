@@ -18,6 +18,6 @@ spec:
     - name: claude-rbac
       namespace: ducktape-flux
     - name: claude-sandbox-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: kvm-device-plugin
       namespace: ducktape-flux

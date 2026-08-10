@@ -28,3 +28,4 @@ spec:
     - name: tofu-state-db
     # Provides github-secrets-sync-pat (Administration:R/W on ducktape).
     - name: github-secrets-sync-secrets
+      namespace: ducktape-flux

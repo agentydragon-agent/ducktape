@@ -28,6 +28,7 @@ spec:
     # Reflects the BuildBuddy API key consumed directly by the agent. It cannot
     # remain proxy-only while `bb remote` forwards the key to a hosted runner.
     - name: agent-shared-secrets
+      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: litellm-keys-tf

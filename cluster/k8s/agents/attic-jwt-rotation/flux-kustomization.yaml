@@ -19,5 +19,5 @@ spec:
     # github-secrets-sync provides the GitHub PAT (reflected from flux-system to
     # nix-cache by emberstack reflector via reflection-auto-namespaces).
     - name: github-secrets-sync-secrets
-      namespace: flux-system
+      namespace: ducktape-flux
   timeout: 2m

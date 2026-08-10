@@ -26,4 +26,5 @@ spec:
     - name: tofu-controller
     - name: tofu-state-db
     - name: github-secrets-sync-secrets
+      namespace: ducktape-flux
     - name: seaweedfs-public-s3
