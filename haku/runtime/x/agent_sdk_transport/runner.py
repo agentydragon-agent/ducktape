@@ -5,19 +5,20 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import anyio
 from websockets.asyncio.client import ClientConnection, connect
 
 from haku.runtime.x.agent_sdk_transport.protocol import (
+    CONSOLE_TO_RUNNER,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    SetupOutput,
     TextWebSocket,
-    decode_frame,
     decode_object,
-    encode_frame,
     encode_object,
 )
 
@@ -59,7 +60,7 @@ async def _forward_cli_line(websocket: TextWebSocket, line: bytes) -> None:
     """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
-    await websocket.send_text(encode_frame(ClaudeMessage(payload=decode_object(stripped.decode()))))
+    await websocket.send_text(ClaudeMessage(payload=decode_object(stripped.decode())).model_dump_json())
 
 
 async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteReceiveStream) -> None:
@@ -75,15 +76,17 @@ async def _send_cli_output(websocket: TextWebSocket, stdout: anyio.abc.ByteRecei
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
     while True:
-        match decode_frame(await websocket.receive_text()):
+        match CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()):
             case EndInput():
                 await stdin.aclose()
                 return
             case ClaudeMessage(payload=payload):
                 await stdin.send((encode_object(payload) + "\n").encode())
             case ClaudeLaunch():
-                # Sent once, before this loop starts; a second one mid-conversation would
-                # mean the console thinks it is talking to a runner that has not launched.
+                # Not a direction error — `start` is the console's to send — but a sequencing
+                # one: it comes once, before this loop, so a second means the console thinks
+                # it is talking to a runner that has not launched. The types cannot say that,
+                # so this check stays where the two above went.
                 raise ValueError("console sent a second launch frame mid-conversation")
 
 
@@ -135,7 +138,7 @@ async def bridge_websocket_to_claude(websocket: TextWebSocket, *, claude_path: P
         await websocket.close()
 
 
-async def prepare_workspace(setup_path: Path, *, cwd: str) -> None:
+async def prepare_workspace(setup_path: Path, *, cwd: str, websocket: TextWebSocket | None = None) -> None:
     """Run the shared sandbox bootstrap: git credentials and Haku's own checkouts.
 
     The same script the haku-sandbox exec target runs — see
@@ -143,14 +146,30 @@ async def prepare_workspace(setup_path: Path, *, cwd: str) -> None:
     the same `.netrc` and the same haku-state working copy rather than a second
     implementation that drifts from it.
 
-    Run here, in the runner, rather than as an image entrypoint wrapper, because the socket
-    has to be open for the console to be able to narrate what is happening.
+    Run here, in the runner, rather than as an image entrypoint wrapper, so that `websocket`
+    exists to narrate it: a clone is the longest thing between "provisioning" and an answer,
+    and the console cannot report a step it cannot see.
+
+    Its output is forwarded verbatim, in whatever chunks it arrives in, and written unchanged
+    to this process's own stdout so the pod log keeps the same record the room gets. No
+    decoding, no line-splitting, no filtering here — see `SetupOutput` for why that is the
+    console's job.
 
     **Fatal on failure.** Without the checkout the session has no manual, and a Claude Code
     that starts anyway is the generic-assistant failure the system prompt exists to prevent —
     silent, and indistinguishable from Haku having a bad day.
     """
-    process = await anyio.open_process([str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=None, stderr=None)
+    process = await anyio.open_process(
+        [str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
+    assert process.stdout is not None
+    async for chunk in process.stdout:
+        # `sys.stdout.buffer`, not `print`: the local log gets the same bytes the console does,
+        # rather than a decoded-and-maybe-replaced rendering of them.
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+        if websocket is not None:
+            await websocket.send_text(SetupOutput(data=chunk).model_dump_json())
     if (status := await process.wait()) != 0:
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
 
@@ -163,10 +182,10 @@ async def run(websocket_url: str, claude_path: Path, bearer_token: str | None, s
 
     async with connect(websocket_url, additional_headers=headers) as connection:
         websocket = ClientWebSocketAdapter(connection)
-        if not isinstance(launch := decode_frame(await websocket.receive_text()), ClaudeLaunch):
+        if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), ClaudeLaunch):
             raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
         if setup_path is not None:
-            await prepare_workspace(setup_path, cwd=launch.cwd)
+            await prepare_workspace(setup_path, cwd=launch.cwd, websocket=websocket)
         await bridge_websocket_to_claude(websocket, claude_path=claude_path, launch=launch)
 
 

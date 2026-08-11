@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from functools import partial
 from pathlib import Path
 
@@ -14,11 +15,11 @@ from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITra
 from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
 from haku.runtime.x.agent_sdk_transport.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
+    RUNNER_TO_CONSOLE,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
-    decode_frame,
-    encode_frame,
+    SetupOutput,
 )
 from haku.runtime.x.agent_sdk_transport.runner import (
     bridge_websocket_to_claude,
@@ -124,12 +125,14 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(partial(bridge_websocket_to_claude, runner_socket, claude_path=fake_claude, launch=launch))
         message = {"type": "user", "message": {"role": "user", "content": "hello"}}
-        await console_socket.send_text(encode_frame(ClaudeMessage(payload=message)))
+        await console_socket.send_text(ClaudeMessage(payload=message).model_dump_json())
         with anyio.fail_after(5):
             # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo
             # proves the runner strips and restores the envelope rather than passing it through.
-            assert decode_frame(await console_socket.receive_text()) == ClaudeMessage(payload=message)
-        await console_socket.send_text(encode_frame(EndInput()))
+            assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == ClaudeMessage(
+                payload=message
+            )
+        await console_socket.send_text(EndInput().model_dump_json())
 
     assert runner_socket.closed
 
@@ -148,6 +151,25 @@ async def test_workspace_setup_runs_in_the_launch_directory(tmp_path: Path) -> N
     await prepare_workspace(setup, cwd=str(workspace))
 
     assert (workspace / "marker").read_text().strip() == str(workspace)
+
+
+async def test_workspace_setup_streams_its_output_verbatim(tmp_path: Path) -> None:
+    """The runner is a pipe: raw bytes, stderr included, no decoding and no line-splitting."""
+    console_socket, runner_socket = memory_websocket_pair()
+    # \xff is not valid UTF-8. The previous decode-in-the-runner design replaced it with
+    # U+FFFD before the console ever saw it; nothing here is allowed to touch it.
+    setup = executable(tmp_path / "setup.sh", r"printf 'cloning\n\xff\n'" + "\necho 'trouble' >&2")
+
+    await prepare_workspace(setup, cwd=str(tmp_path), websocket=runner_socket)
+    await runner_socket.close()
+
+    forwarded = b""
+    with contextlib.suppress(EOFError):
+        while True:
+            frame = RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text())
+            assert isinstance(frame, SetupOutput)
+            forwarded += frame.data
+    assert forwarded == b"cloning\n\xff\ntrouble\n"
 
 
 async def test_workspace_setup_failure_is_fatal(tmp_path: Path) -> None:
