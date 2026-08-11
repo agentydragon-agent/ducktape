@@ -13,9 +13,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: ducktape
-  # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
-  # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
-  # bogus key/token (401).
+    # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
+    # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
+    # bogus key/token (401).
     namespace: ducktape-flux
   decryption:
     provider: sops
