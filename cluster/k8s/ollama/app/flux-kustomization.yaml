@@ -13,6 +13,8 @@ spec:
   interval: 10m
   path: ./cluster/k8s/ollama/app
   prune: true
+  # Preserve managed resources while this controller is recreated in ducktape-flux.
+  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
     name: ducktape
