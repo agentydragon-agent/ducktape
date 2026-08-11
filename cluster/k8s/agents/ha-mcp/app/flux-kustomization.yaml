@@ -31,7 +31,7 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: home-assistant
-      namespace: flux-system
+      namespace: ducktape-flux
     - name: ha-mcp-namespace
       namespace: ducktape-flux
     - name: ha-mcp-credentials
