@@ -4,6 +4,9 @@ metadata:
   name: gecko
   namespace: ducktape-flux
 spec:
+  # Keep this controller inactive while the unschedulable legacy VM is retired.
+  # Its VM and local disk remain untouched until explicitly deleted.
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 30m
