@@ -1,12 +1,14 @@
 # Matrix as Haku's chat surface — requirements
 
-Status: **Phase 0 done; no agent attached yet.** The homeserver, the `@haku` bot, and a
-console sync loop that joins the operator's DM and echoes are all live — a message typed
-in Element comes back echoed (Build order → Phase 0). Phase 1 attaches the Agent SDK. This
-is a requirements document, not a design: it fixes what the system must do so the design
-can be argued about separately. Requirements marked **[v1]** are the first cut; **[later]**
-marks something deliberately deferred with its shape recorded so it is not redesigned from
-scratch.
+Status: **Phases 0 and 1 are live, and the wake path under them is now hardened.** The
+homeserver, the `@haku` bot, the sync loop, the room binding and the session supervisor all
+run in production: a message typed in Element drives a real Agent SDK turn and the answer
+comes back into the room. What followed Phase 1 was a run of reliability work in the
+session substrate rather than in the Matrix ends (Build order → Phase 1). Phase 2 gives
+that session an identity. This is a requirements document, not a design: it fixes what the
+system must do so the design can be argued about separately. Requirements marked **[v1]**
+are the first cut; **[later]** marks something deliberately deferred with its shape
+recorded so it is not redesigned from scratch.
 
 Companion to <agent_sdk_sandbox_runtime.md>, which owns the Agent SDK runtime this
 plugs into. That runtime is not re-specified here.
@@ -16,9 +18,14 @@ plugs into. That runtime is not re-specified here.
 The operator chat surface today is `haku/console/claude_chat.py` (~1000 lines: sessions,
 message rows, WebSocket streaming, sandbox claims, reconciliation) plus
 `console/frontend/claude_chat_page.tsx` and the markdown / scroll / code-block modules
-around it. Routing chat through Matrix retires that surface in favour of an existing
-client ecosystem: mobile push, offline history, multi-client sync, and search — none of
-which the console gets otherwise, and all of which would be built by hand.
+around it. Routing chat through Matrix buys an existing client ecosystem instead: mobile
+push, offline history, multi-client sync, and search — none of which the console gets
+otherwise, and all of which would be built by hand.
+
+The SPA surface is **not** retired by this. The two run side by side as separate
+experiments over one piece of session machinery, and whether the SPA view survives is a
+decision for after Matrix has proven itself (Build order → The decision that gates
+Phase 1).
 
 What Matrix does **not** change: the console remains the session owner, the credential
 holder, and the approval authority. Matrix is a transport for prose.
@@ -152,9 +159,24 @@ for whenever this is picked up:
   Discards the in-flight step, though completed tool calls stay in the session transcript,
   so it loses less than it appears to. The only path that reaches a turn producing pure
   text with no tool calls.
-- **Hooks.** `PreToolUse` fires at the right moment, but whether its return value can
-  inject conversational context (rather than only allow/deny/modify) is **unverified** and
-  needs a probe before being counted on.
+- **Hooks — the chosen mechanism if steering is ever built.** `PreToolUse` fires at the
+  right moment, and its return value **can** carry text: `PreToolUseHookSpecificOutput`
+  declares `additionalContext: NotRequired[str]` (as do `PostToolUse`,
+  `PostToolUseFailure`, `UserPromptSubmit`, `SessionStart`, `Notification`,
+  `SubagentStart`). Verified at the type level; only the runtime behaviour still wants a
+  probe. It dominates the tool-result piggyback on the same evidence: identical "only at a tool boundary" limitation, but it
+  fires for **every** tool including the built-ins rather than only console-brokered MCP
+  calls, and it does not overload what a tool result means.
+
+**On `interrupt()` being wire-level.** It is not a client-side abort: `interrupt()` writes
+`{"type":"control_request","request_id":…,"request":{"subtype":"interrupt"}}` to the CLI's
+stdin and blocks up to 60s for a correlated `control_response`. There is a whole control
+channel beside the message stream — `initialize`, `mcp_status`, `get_context_usage`,
+`set_permission_mode`, `set_model`, `rewind_files`, `mcp_reconnect`, `mcp_toggle`,
+`stop_task`, `interrupt` — and because `agent_sdk_transport` tunnels SDK stdio over the
+bridge WebSocket, every one of them already reaches the CLI in the sandbox. So the gap is
+specific and worth stating precisely: the channel is rich, and **none of its subtypes adds
+input to a running turn**. Interrupt exists; steer does not.
 
 ### R3 — Session and sandbox lifecycle
 
@@ -166,10 +188,101 @@ for whenever this is picked up:
   down when idle**. Every message pays no cold start. This makes the existing
   `session_ttl_seconds` cap (86400) and the `SandboxClaim` `shutdownTime` the wrong shape:
   the claim is renewed or replaced by a lifetime that does not expire on a timer.
+- **R3.2a [v1] Always-up is a renewed lease, not an absent deadline.** Deleting the deadline
+  removes the only thing that reclaims a sandbox when the console is not there to delete it,
+  and "the console died" is precisely when a 2-vCPU claim should not be pinned forever. So
+  the deadline stays and the supervisor renews it while the session is live: sandbox lives
+  as long as something is tending it, and is reclaimed by the controller shortly after
+  nothing is. **There is a precedent to copy rather than invent** — `sandbox_mcp`'s `_renew`
+  slides `shutdownTime` forward on every exec, with a `test` on `resourceVersion` and a
+  retry on 409. Two gaps: the console's Role
+  (<../../cluster/k8s/haku/workspaces/app/haku-console-claude-claim-role.yaml>) grants
+  `create`/`delete`/`get` and no `patch`, and nothing renews on a schedule today because
+  nothing needed to.
+- **R3.2b [v1] The reaper that actually bounds the sandbox is the Kyverno janitor, and it
+  fires at 24 hours.** `haku-claude-workspace-janitor`
+  (<../../cluster/k8s/haku/workspaces/app/cleanuppolicy-haku-claude-janitor.yaml>) deletes
+  every `Sandbox`/`SandboxClaim` in `haku-claude-sandbox` older than 24h by
+  `creationTimestamp` — not by idleness, not by deadline, so a renewed lease does not
+  survive it and neither does removing `shutdownTime`. **Always-up therefore tops out at one
+  day until that policy changes**, and rotation is a _daily_ event rather than a rare one.
+  The janitor is not wrong to exist: its job is catching claims whose owner forgot to delete
+  them, and by `creationTimestamp` alone a healthy always-up claim is indistinguishable from
+  a leaked one. What distinguishes them is the lease — so the fence moves from age to
+  expiry: raise the age fence well past a day and let the controller's own `shutdownTime`
+  handling do the reclaiming, with the janitor demoted to what its sibling in `haku-sandbox`
+  already is, a 7-day backstop for claims the controller somehow did not collect. That also
+  makes the reaper finer-grained: the controller acts on a timestamp, the janitor on an
+  hourly cron.
 - **R3.3 [v1] Context exhaustion is handled by compaction, not rotation.** The session
   compacts in place and its ID survives, so the runtime does nothing and the operator sees
   no seam. Rotation to a fresh session ID remains possible (R3.4) but is a **failure and
   manual path**, not a routine one — the room stays continuous across it either way.
+- **R3.3a [v1] A replacement session is re-awakened, not started blank.** Rotation will
+  happen eventually however long-lived the sandbox is, and a fresh session with no context
+  is not a rotation — it is amnesia, announced as a notice. So the first prompt of a
+  replacement session tells it: that it lives in this room, which session it now is (R7.3),
+  enough recent messages to pick the thread back up, and how to read further back itself.
+
+  **The target shape is a compaction that crossed a process boundary.** R3.3 treats
+  compaction as the normal path and rotation as the failure path, but they should look the
+  same from the agent's side, because the agent's problem is identical either way: it has
+  lost its context and needs enough to continue. So the re-awakening prompt has four parts —
+  **standing instructions** (R8, static), a **summary of what has been going on**, the
+  **last few messages** verbatim, and **how to reach the rest** (the query API in Open
+  questions). Only the third is trivially available.
+
+  **[v1] Start without the summary.** The first cut is the last N conversational messages
+  plus how to read the room — no checkpoint, nothing running while the session is healthy.
+  It degrades honestly: a rotation mid-topic loses the thread's earlier reasoning, and the
+  operator can say so and be answered from the room. That is a good trade for not building
+  summarisation before there is evidence about how often rotation actually happens.
+
+  **Control messages are excluded from that N, by an explicit mark.** Lifecycle notices are
+  already `m.notice` while conversation is `m.text`, so the distinction half exists — but
+  `msgtype` is a rendering hint clients may treat loosely, so the contract should be a
+  namespaced key in the event content (`works.allegedly.haku.kind`), with `m.notice` kept
+  for how clients style it. Re-awakening a session with its own status chatter as context
+  is both noise and slightly self-referential.
+
+  **Gotcha: the history read filters differently from ingress.** Ingress excludes Haku's own
+  messages, because answering yourself is a loop (R1.5). History must _include_ them — half
+  a conversation is not context. Same room, same API, opposite rule on the same events, so
+  the two read paths cannot share a filter.
+
+  **[later] Where would the summary come from?** The session that held the context is gone by
+  definition, so it cannot produce one at the moment it is needed. Three shapes, with
+  different costs: the live session maintains a rolling checkpoint (cheap at rotation, pays
+  continuously); the replacement reconstructs one by reading the room (pays only on
+  rotation — but that is exactly when things are already degraded, and it is a summarisation
+  pass over unbounded history); or the SDK's own compaction artifact is persisted and
+  reused (free if its shape is reusable, unknown whether it is). This is the piece to settle
+  before building the prompt, because it decides whether anything must happen while the
+  session is _healthy_.
+
+  **How often this fires is not a guess — it is 24 hours (R3.2b), and that is an argument
+  for fixing the reaper before accepting summary-less re-awakening.** "Loses the thread's
+  earlier reasoning, and the operator can say so" is a fair trade for a rare event and a
+  poor one for a daily one: every morning would open with an agent that does not know what
+  yesterday was about. The trade is only honest once rotation is rare, which is Phase 3's
+  job. Sequenced the other way — summary first — is building the expensive half to
+  compensate for a fence that a one-line policy change removes.
+
+  **The room is the primary source, not the database.** Matrix already holds the
+  conversation, it is what the operator sees, and the recovery path is `/messages`
+  pagination the console already runs for gap recovery (R1.7). The console's own tables hold
+  something different and complementary — the _trace_: tool calls, results, timings, the
+  things the room never showed. Reading the room reconstructs the conversation; reading the
+  trace reconstructs the work.
+
+  **[later] Reading the trace needs a link that is currently discarded.** Rotation
+  overwrites the conversation's `session_id`, and `claude_chat_sessions` carries no room
+  reference, so nothing connects a room to the sessions that served it — "what happened
+  before" is unanswerable from the database today, by construction. Preserving that chain
+  (a room-scoped session history, or a conversation reference on the session) is the
+  prerequisite for any trace-reading tool, and it is cheap to do before the history that
+  would have populated it is thrown away.
+
 - **R3.4 [v1]** Losing the sandbox is survivable, not merely fatal-with-a-restart: pending
   work causes it to be re-provisioned without an operator HTTP request, and the session
   resumes or rotates (R3.3).
@@ -243,9 +356,62 @@ for whenever this is picked up:
 - **R5.3 [v1]** Matrix tools do not accept a room identifier. The console resolves the room
   from the calling session, so reaching another room is not expressible rather than merely
   denied.
+- **R5.1a** _Scope note, because R5.1 is easy to over-read._ It constrains the **Matrix**
+  credential specifically, and says there is one holder of it. It is not a rule that the
+  sandbox may hold no credentials — this deployment has two established shapes for that,
+  and both put something in the sandbox. **Substitution:** the sandbox holds
+  `sk-ant-oat01-proxy-haku-claude-placeholder` and `haku-claude-oauth-proxy` swaps in the
+  real token only for `api.anthropic.com`, so the agent never sees it. **Per-session
+  minting:** the bridge token is already a console-minted credential injected into the
+  sandbox. Future credential decisions should pick one of those rather than assume a
+  prohibition. Note the substitution proxy is HTTP-shaped — it rewrites a header for a known
+  host — so it does not transfer to a different wire protocol for free.
 - **R5.4 [v1] Reading only.** The surface is read: fetch by event ID, fetch around an
   event, paginate history. There is no send, edit, react, redact, join, invite, leave, or
-  room-state tool. Speaking happens by auto-forward (R11.1) and needs no tool.
+  room-state capability. Speaking happens by auto-forward (R11.1) and needs nothing.
+
+- **R5.4a [open] Reads should not be a reimplemented Matrix API.** `/messages`, `/context`
+  and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is
+  reimplementation, and it also fences the agent out of anything not anticipated — threads,
+  relations, redactions. Three shapes, and the deciding factor is not convenience:
+  - **Credential substitution on `@haku`'s own token** — the chosen shape. The sandbox
+    carries a placeholder and the egress proxy substitutes the real value only for the
+    homeserver host, exactly as `haku-claude-oauth-proxy` already does for
+    `api.anthropic.com` (R5.1a). The agent uses the real client-server API with ordinary
+    Matrix tooling — nothing reimplemented, nothing fenced off — and an exfiltrated
+    placeholder is worth nothing anywhere, so the capability dies with the sandbox. Still
+    one Matrix credential, still none of it in the sandbox, so R5.1 holds.
+  - **A second read-only account** (`@haku-reader`, sending blocked by power levels) was
+    preferred until the membership cost showed up: a reader can only read rooms it has
+    joined, so every conversation becomes a **three-member room**. That is not a DM any
+    more — Element stops presenting it as one, it contradicts R3.5, and "just start a DM
+    with Haku" grows a step. The console could auto-invite on binding, but the third member
+    is permanent and visible. What it would have bought is a server-side backstop: Synapse
+    refusing a send regardless of proxy bugs. That is worth less than it sounds, because
+    **the agent can already cause messages in this room** — its turn output is auto-forwarded
+    (R11.1) — so a proxy that wrongly permitted a send would grant something it effectively
+    has. The allowlist's real job is everything else: other rooms, admin endpoints, account
+    management, joins.
+  - **A read route on the console, authenticated by the bridge token.** Needs no new
+    credential, no new account, and no proxy configuration, and the room resolves from the
+    session — R5.3's "another room is not expressible" comes out structurally. The cost is
+    that it _is_ the reimplementation this requirement is trying to avoid: every endpoint
+    worth having has to be re-exposed by hand.
+  - **A standalone read-only proxy** in front of Synapse. Same containment as substitution
+    but a new deployment and a path allowlist to get right; no advantage over the first
+    option, which reuses a proxy that already exists.
+
+  What still has to be decided: how much of the CS API to expose, and whether responses come
+  back verbatim (nothing to build, verbose in context) or trimmed. Worth checking before
+  choosing — `/messages` accepts a `filter` with `types`/`not_types`, so Matrix's own filter
+  may do the trimming server-side, including dropping lifecycle notices once they carry the
+  namespaced key (R3.3a). If it can, verbatim and cheap-in-context stop being in tension.
+
+  **Scoping is the real difference between the top two.** Substitution scopes by _account
+  membership_ — the reader can reach any room it is in — while a console route scopes by
+  _session_. Equivalent today with one room and one agent, divergent under R3.6a's
+  `(operator, agent)` generalization, where a shared reader account would see every
+  conversation. Whichever is chosen should be revisited there.
 
 ### R6 — Status and presence
 
@@ -446,7 +612,7 @@ was designed in: the new env vars are inert to the old image, and the password i
 `optional` `secretKeyRef` behind an optional config (R10.3b), so neither half of the pair
 fails on the other's absence.
 
-### Phase 1 — Wire the existing session machinery to it
+### Phase 1 — Wire the existing session machinery to it — **done**
 
 Most of this exists. `claude_chat.py` already has the store (sessions, messages, Postgres
 `LISTEN/NOTIFY`, `next_prompt` / `wait_for_prompt`), the SandboxClaim, the WebSocket
@@ -454,8 +620,8 @@ bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends
 
 - **Ingress**: the sync loop calls `enqueue_prompt` instead of echoing.
 - **Egress**: `_run_turn`'s `final_text` goes to a Matrix send **as well as** the DB row.
-  Not instead of: the SPA chat view is staying as its own experiment (Open questions), so
-  the rows still have a reader, and the Matrix path is a delivery port on the service
+  Not instead of: the SPA chat view stays as its own experiment, so the rows still have a
+  reader, and the Matrix path is a delivery port on the service
   rather than Matrix knowledge inside it. Streaming (R11.1) is off for Matrix only — the
   `StreamEvent` branch and its `asyncio.wait` abort dance survive for the SPA, and the
   simplification the original plan expected here is deferred with that decision.
@@ -470,20 +636,98 @@ bridge, and the `handle_runner` turn loop. The Matrix path replaces the two ends
 
 Stopping here yields a working system.
 
-### Phase 2 — Survive
+**What it actually cost.** The four bullets above landed in #3906, with room adoption
+(#3913) and the supervisor's missing lock (#3926) close behind. Eight further PRs then went
+into the wake path and its observability — none of them anticipated here, and none of them
+in the Matrix ends:
 
-Always-up sandbox (R3.2) — the claim's `shutdownTime` and `session_ttl_seconds` both exist
-to expire it, so both must change. Reconnect rather than terminal failure: `handle_runner`
+- The listener was written against psycopg3's API while running on an asyncpg engine, so it
+  raised on **every** call and killed every session (#3929). The tests passed throughout,
+  because a fake store stood in for the real one.
+- Aborts went through an in-process registry, which is correct on one replica and wrong
+  about half the time on two (#3933).
+- `LISTEN`/`NOTIFY` was lifted out of `ClaudeChatStore` into its own module (#3936), both
+  listeners moved onto one async driver (#3937), and the three per-kind channels became one
+  `claude_chat` channel carrying a typed event (#3938, #3940, #3941). Session transitions
+  became observable as they happen rather than only in aggregate (#3930).
+
+The lesson is not any one of those. This phase was scoped as "most of this exists" — and
+the part that existed had never run cross-replica, on the real driver, or with the fake
+removed. **A substrate that has only ever served one browser session is not evidence for
+anything the plan assumes of it.** Phase 3 inherits exactly that question about the sandbox
+lifecycle, which has likewise only ever been exercised the short way.
+
+Two consequences later phases should budget for, both documented where the code is
+(<../console/x/README.md>): anything that must reach a running turn goes through Postgres
+`NOTIFY` rather than process memory, and renaming a wake channel is a two-release
+expand/contract gated on the roll having converged — not a single merge.
+
+### Phase 2 — Be Haku
+
+**The operator's actual minimum for using this**, which is not survival — it is being able
+to do real work in one session. Ahead of Phase 3 because a session that survives for days
+without an identity, its state, or a guard against losing work is not worth surviving.
+
+1. **The session starts as Haku.** Today it does not start as anything: `setting_sources=[]`
+   and no `system_prompt`, so the agent receives the raw batch and nothing else. That is why
+   the first live turn answered as a generic assistant. It needs its identity, its room and
+   session ID (R7.3), the harness contract (R8.1–R8.5), the recent conversational messages
+   (R3.3a), and the standing instructions. **Where those instructions live is now its own
+   question** — they are in ducktape's `haku/base/` today, so a sandbox that has only the
+   haku-state clone cannot reach them without a second repo and a second credential path.
+   <instructions_ownership.md> proposes splitting them by writability, which would answer
+   this cleanly: a small authority core rendered into the system prompt (stronger than a
+   read-only file — the agent cannot edit a system prompt at all), and the craft read from
+   the clone that has to exist anyway. **Open** until that proposal is settled; the
+   alternatives if it is declined are pointing `setting_sources` at a ducktape clone as
+   well, or having the console render all 52 KB.
+
+2. **haku-state is cloned into the sandbox.** `cwd` is `/workspace` and it is empty; Haku
+   confirmed as much when asked. **No new credential is needed** — Haku's Forgejo token
+   already exists, produced by the GitOps controller as root `AGENTS.md` requires, and the
+   creds proxy already substitutes placeholders per host (`claude-iron.yaml`'s `proxy_value`
+   plus host rules; the OpenClaw spike does this for a GitHub token alongside the Anthropic
+   one). So this is wiring an existing credential, not minting one. **Open:** clone at
+   provisioning (SandboxTemplate) or at session start (the runner). **Wrinkle:** the
+   substitutions in place today inject a bearer, while git-over-HTTPS authenticates with
+   `Authorization: Basic` or a credential helper — so the rule is not a copy of the
+   Anthropic one, and `git.allegedly.works` also has to be in the egress allowlist. **Also flagged:** this
+   needs git in the sandbox, which contradicts the "MCP-only tool surface" decision in
+   <agent_sdk_sandbox_runtime.md>. That decision is already not what ships — no
+   `disallowed_tools` is set, so the built-ins are live — so it wants revisiting explicitly
+   rather than being quietly outgrown.
+
+3. **A Stop hook against unpushed work in haku-state**, in the shape the ducktape agent
+   sandboxes already use. **The gap:** SDK hooks are in-process in the _console_, and the
+   console's service account deliberately has no `exec` into `haku-claude-sandbox` — so the
+   hook cannot inspect the sandbox's git state itself. Two ways out: widen the console's SA,
+   which moves a boundary that was drawn on purpose; or route the check through
+   `haku-sandbox-mcp`, which already has that capability and is already in the console's
+   catalog. Prefer the second — the console keeps its narrow authority and nothing new is
+   granted. **Open:** whether that call goes through the approval queue or executes directly
+   as console-internal work.
+
+### Phase 3 — Survive
+
+Always-up sandbox (R3.2) — but the ordering inside this phase is decided by which reaper
+binds. `session_ttl_seconds` (7200 in the deployed config) is the one that fires today; the
+Kyverno janitor at 24h (R3.2b) is the one that fires next and is the real ceiling. **Do the
+janitor first**: raising the TTL without it buys 22 hours and leaves rotation daily, whereas
+moving the fence from age to lease (R3.2a) is what makes "always up" mean anything. The
+order is then janitor fence → `patch` on the console's Role → renewal in the supervisor →
+drop `session_ttl_seconds`, and only the last of those is a config value.
+
+Reconnect rather than terminal failure: `handle_runner`
 today calls `store.fail()` on `WebSocketDisconnect` and closes the session, which is
 precisely wrong once the sandbox is meant to outlive a connection (R3.4). Then `event_id`
 dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
 
-### Phase 3 — Make it pleasant
+### Phase 4 — Make it pleasant
 
 Debounce and batch rendering with provenance (R2.1, R2.4, R2.7); typing indicator (R6.1);
 `m.notice` lifecycle messages carrying the session ID (R7).
 
-### Phase 4 — Reads
+### Phase 5 — Reads
 
 The SDK-hosted in-process MCP server and its read tools (R5.2, R11.3). A new pattern for
 this repo, and independent of everything above — which is why it comes last despite being
@@ -499,21 +743,23 @@ for after Matrix has proven itself, not before.
 
 ### Risks, in the order they will be met
 
-1. **Always-up contradicts the current sandbox lifecycle.** Phase 2 is a change of shape,
+1. **Always-up contradicts the current sandbox lifecycle.** Phase 3 is a change of shape,
    not a config value.
 2. **Subscription OAuth over a genuinely long-lived session.** The compatibility smoke
    test ran for 11 seconds, and <agent_sdk_sandbox_runtime.md> lists expiry, revocation
    and rotation as unproven. A pod that never restarts is exactly the case that finds out.
 
-The risk that used to head this list — mounting an appservice registration file into a
-chart with no support for one — is gone with the appservice itself.
-
 ## Open questions
 
 - **Batch cap** (R2.6): what value, and does an overflow split get told it is a split?
-- ~~**A second invite**~~ — settled as R3.6a: one room at a time, refuse the rest for now.
-  Phase 0 joins every operator invite, which is harmless only because nothing is bound to a
-  room yet; Phase 1 has to implement the restriction.
+- **How does the agent reach past traces?** Settled: whatever the transport, it is an **API
+  the agent queries**, not a tool that pours history into context — the useful operations
+  are search and slice, and a dump is both expensive and worse than reading the room. Two
+  candidate shapes, genuinely open: an SDK-hosted in-process tool the console backs with its
+  own query (R5.2's mechanism, room-scoping structural), or an **RLS-scoped Postgres role**
+  minted per session (R5.1a's second shape), which buys a real query language and pushes
+  scoping into the database instead of into a closure. Deferred until there is history worth
+  querying — which is also the argument for keeping the session/room link now (R3.3a).
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?
@@ -522,13 +768,6 @@ chart with no support for one — is gone with the appservice itself.
   the room a live narration, at the cost of no clean "the answer" to point at.
 - **Status message lifetime** (R6.5): redact on answer, or edit the status into the answer
   so a turn is one message?
-- **What does a rotation look like from the room?** (R3.3) Compaction is seamless, but the
-  failure path that forces a fresh session ID is not — does the new session get told what
-  the old one was doing, or does it start from the room?
-- ~~**Does the console chat surface stay?**~~ — settled: it stays for now, as its own
-  experiment rather than as the surface Matrix is replacing. So there are deliberately two
-  ingress paths into the same session machinery, and the streaming path lives on. Revisit
-  once Matrix has run long enough to say whether the SPA view is still earning its keep.
 
 ## Non-goals, stated so they are not re-litigated
 
