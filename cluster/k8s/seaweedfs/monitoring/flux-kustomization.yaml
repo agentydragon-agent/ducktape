@@ -17,4 +17,4 @@ spec:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

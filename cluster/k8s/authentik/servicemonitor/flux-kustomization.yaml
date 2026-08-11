@@ -16,4 +16,4 @@ spec:
     - name: authentik
       namespace: ducktape-flux
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

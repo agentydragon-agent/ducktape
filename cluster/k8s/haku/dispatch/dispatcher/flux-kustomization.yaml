@@ -28,6 +28,7 @@ spec:
     - name: haku-dispatch-db
     # Mounts the TF-minted classifier key (reflected) + workers master key.
     - name: litellm-keys-tf
+      namespace: ducktape-flux
     # Key minting target; also transitively orders the zone keys.
     - name: haku-dispatch-litellm
     # rbac-zone-zai.yaml creates a Role inside the zone namespace.

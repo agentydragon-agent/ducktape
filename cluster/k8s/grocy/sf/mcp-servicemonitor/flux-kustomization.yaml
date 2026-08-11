@@ -16,4 +16,4 @@ spec:
     - name: grocy-mcp-sf
       namespace: flux-system
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

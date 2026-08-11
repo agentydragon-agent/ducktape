@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: langfuse-db
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   retryInterval: 1m
@@ -11,13 +11,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   path: ./cluster/k8s/langfuse/db
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   dependsOn:
     - name: langfuse-namespace

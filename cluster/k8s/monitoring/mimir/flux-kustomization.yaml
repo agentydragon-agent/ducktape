@@ -2,19 +2,17 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: mimir
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   suspend: false
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/monitoring/mimir
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -28,6 +26,7 @@ spec:
   dependsOn:
     # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack
     - name: monitoring-stack
+      namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux
     # seaweedfs-cluster provides the Seaweed CR + Bucket CRD that our

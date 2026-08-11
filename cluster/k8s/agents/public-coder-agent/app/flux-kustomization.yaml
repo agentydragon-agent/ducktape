@@ -35,6 +35,7 @@ spec:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: litellm-keys-tf
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

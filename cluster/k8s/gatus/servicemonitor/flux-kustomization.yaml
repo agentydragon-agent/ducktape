@@ -16,4 +16,4 @@ spec:
     - name: gatus
       namespace: ducktape-flux
     - name: monitoring-stack
-      namespace: flux-system
+      namespace: ducktape-flux

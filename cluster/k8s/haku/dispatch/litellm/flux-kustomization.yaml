@@ -21,5 +21,7 @@ spec:
       namespace: ducktape-flux
     - name: haku-dispatch-db
     - name: litellm
+      namespace: ducktape-flux
     # Mounts the TF-minted zone key + workers master/salt keys.
     - name: litellm-keys-tf
+      namespace: ducktape-flux
