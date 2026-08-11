@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: agent-workspaces-app
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Disposable agent workspace template + warm pool in agent-workspaces. See agents/agent-sandbox/README.md for usage.
 spec:
@@ -11,17 +11,14 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/agents/agent-sandbox/workspaces/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   dependsOn:
     - name: agent-sandbox-controller # CRDs + controller
+      namespace: ducktape-flux
     - name: agent-workspaces-namespace
       namespace: ducktape-flux
     - name: litellm-keys-tf # mints + reflects litellm-key-agent-workspaces

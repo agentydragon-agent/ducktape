@@ -2,23 +2,21 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-cloud-agent
-  namespace: flux-system
+  namespace: ducktape-flux
 spec:
   interval: 10m
   retryInterval: 1m
   timeout: 10m
   path: ./cluster/k8s/haku/cloud-agent-tf
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
-  # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
-  # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
-  # bogus key/token (401).
+    name: ducktape
+    # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
+    # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
+    # bogus key/token (401).
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:

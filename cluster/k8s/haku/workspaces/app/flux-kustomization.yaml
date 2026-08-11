@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-workspaces
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: General Haku workspaces in haku-sandbox plus Console-owned Claude runners in the isolated haku-claude-sandbox namespace.
 spec:
@@ -11,22 +11,20 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/haku/workspaces/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
     name: ducktape
-
     namespace: ducktape-flux
   dependsOn:
     - name: agent-sandbox-controller # shared CRDs + controller
+      namespace: ducktape-flux
     - name: haku-rbac # haku-sandbox ns + haku-sandbox-admin Role the SA rolebinding needs
       namespace: ducktape-flux
     - name: haku-claude-namespace # isolated namespace for the OAuth-capable Console runners
       namespace: ducktape-flux
     - name: haku-egress-proxy # the fence haku-sandbox is opted into
+      namespace: ducktape-flux
     - name: kyverno-policies # cleanup-controller ClusterRole the janitor needs
       namespace: ducktape-flux
     - name: external-secrets-config # ClusterSecretStore + CRDs for the ESO

@@ -2,7 +2,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: haku-sandbox-mcp-app
-  namespace: flux-system
+  namespace: ducktape-flux
   annotations:
     description: Sandbox-provisioning MCP server (haku/sandbox_mcp). Its claim/exec RBAC into haku-sandbox lives in the pool kustomization (haku/workspaces/app). Fronted by haku-console (register separately — operator perimeter).
 spec:
@@ -11,13 +11,11 @@ spec:
   timeout: 5m
   path: ./cluster/k8s/agents/haku-sandbox-mcp/app
   prune: true
-  # Temporary controller-handoff guard. Remove after this Kustomization
-  # has been recreated in ducktape-flux.
-  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
+    name: ducktape
+    namespace: ducktape-flux
   decryption:
     provider: sops
     secretRef:
@@ -26,6 +24,7 @@ spec:
     - name: haku-sandbox-mcp-namespace
       namespace: ducktape-flux
     - name: haku-workspaces # the pool (in haku-sandbox) the Role/claims target
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
