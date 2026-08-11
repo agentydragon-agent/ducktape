@@ -56,6 +56,11 @@ spec:
       labels:
         app.kubernetes.io/name: haku-console
     spec:
+      # Same zone as this console's Postgres and the public ingress. Unpinned, a replica landed
+      # 166ms from the database, which every read pays several round trips of: 4.6ms of query
+      # took ~2s. Costs no availability — the database is node-pinned here anyway.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       # Narrow Claude-runtime identity: create/delete/get haku-claude SandboxClaims and read
       # their assigned Sandbox + Pod in the dedicated haku-claude-sandbox namespace so the
       # Operator UI can explain provisioning. It has no list/watch, Secret, log, exec, or
