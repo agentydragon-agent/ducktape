@@ -30,3 +30,4 @@ spec:
     - name: grafana-helmrepository
       namespace: ducktape-flux
     - name: seaweedfs-cluster
+      namespace: ducktape-flux

@@ -34,5 +34,6 @@ spec:
     # S3 backend: bucket + the s3-identity-registry-cache Secret that Reflector
     # mirrors into oci-cache for Zot's AWS_* env.
     - name: seaweedfs-registry-cache-bucket
+      namespace: ducktape-flux
     - name: seaweedfs-secrets
       namespace: ducktape-flux

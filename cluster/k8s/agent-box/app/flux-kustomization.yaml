@@ -27,6 +27,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-public-s3
+      namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux
   wait: true

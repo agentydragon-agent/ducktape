@@ -25,6 +25,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: seaweedfs-public-s3
+      namespace: ducktape-flux
   wait: true
   healthChecks:
     - apiVersion: external-secrets.io/v1

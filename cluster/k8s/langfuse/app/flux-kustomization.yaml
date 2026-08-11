@@ -30,5 +30,6 @@ spec:
     - name: langfuse-cache
     - name: langfuse-db
     - name: seaweedfs-langfuse-bucket
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
