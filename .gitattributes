@@ -83,9 +83,9 @@ cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=tru
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
-cluster/k8s/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
+cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
+cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
 # haku-console config, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/haku/console/config.yaml cluster-manifest-ignored=true
 # iron-proxy config for the coder agent's egress proxy, mounted via
@@ -114,3 +114,8 @@ x/k8s_old/** rules-lint-ignored=true
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
 cluster/docs/inference/model_comparison/** rules-lint-ignored=true
+# Retired Haku z.ai dispatch-lane manifests; preserved as non-runnable reference material.
+cluster/k8s/x/haku-zai-dispatch-README.md rules-lint-ignored=true
+cluster/k8s/x/haku/** cluster-manifest-ignored=true
+cluster/k8s/x/agents/haku-zones-mitmproxy/** cluster-manifest-ignored=true
+cluster/k8s/x/agents/haku-zones-mitmproxy-namespace/** cluster-manifest-ignored=true

@@ -1,6 +1,11 @@
-# `haku-dispatch` — dispatch-plane cluster wiring
+# `haku-dispatch` — retired dispatch-plane cluster wiring
 
-The in-cluster half of the Haku dispatch plane: the dispatcher service, the shared
+This directory is retained as historical reference material. The z.ai Haku
+dispatch lane was retired in August 2026; these manifests are no longer
+egistered in the active Flux root. The application code remains in `haku/dispatch/`
+for possible future re-use, but this cluster wiring is not runnable as-is.
+
+The in-cluster half of the former Haku dispatch plane: the dispatcher service, the shared
 second-layer **workers-LiteLLM**, and the CNPG database they share. Application code:
 <../../../../haku/dispatch/README.md>. Zone perimeters (where the workers actually run):
 <../zones/README.md>. Design + roadmap: <../../../../haku/plans/multi_agent.md>.
@@ -69,11 +74,11 @@ keeps provider credentials out of the database entirely.
 - Optional `dispatcher-classifier-context` Secret (SOPS, `sops -e -i` only — never
   plaintext) sharpens the classifier with private specifics; absent = base policy.
 
-## Retirement sequence
+## Retirement record
 
-The z.ai lane is being retired. Before removing the active root Flux references,
-set `deletionPolicy: Delete` on the two namespace Kustomizations that previously
-used `prune: false`, merge, and confirm that policy reconciles. Only then archive
-the dispatch, zone, and zone-proxy manifests under `k8s/x/` and remove their
-root references. This lets Flux prune every live object instead of retaining the
-two namespaces.
+The retirement was performed in two PRs. First, #3982 changed the two namespace
+Kustomizations to `deletionPolicy: Delete` and was merged only after the policy
+change could reconcile. The follow-up then moved this dispatch tree, the z.ai
+zone, and the shared zone proxy under `cluster/k8s/x/` and removed their active
+root registrations. This allowed Flux to prune the two live namespaces and
+their contents instead of silently orphaning them.

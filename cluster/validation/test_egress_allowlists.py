@@ -65,12 +65,12 @@ operator-facing version is in `haku/docs/security.md`.
 
 - TODO: collapse the fences. Six manifests express about three distinct
   policies — one host (`api.anthropic.com`), build registries plus a model API,
-  and the operator-data tier. `agents/haku-zones-mitmproxy` fences a single
+  and the operator-data tier.
   namespace (`haku-sandbox-zai`) whose future is undecided, and
   `agents/public-coder-agent` is a waiver rather than a fence. Done when the
   dict below has one entry per policy, not one per proxy deployment.
 - TODO: converge on one proxy. mitmproxy (`agents/haku-egress-proxy`,
-  `agents/mitmproxy`, `agents/haku-zones-mitmproxy`) has no credential
+  `agents/mitmproxy`) has no credential
   placeholders, so `haku-sandbox` sends real unredacted tokens upstream where
   iron would send a placeholder and substitute in a trusted pod. Moving those to
   iron is blocked on three mitmproxy behaviours whose iron equivalents are
@@ -116,7 +116,6 @@ operator-facing version is in `haku/docs/security.md`.
 Deliberately out of scope here: which pod is *routed* through which proxy. That
 pairing lives in the force-proxy `CiliumClusterwideNetworkPolicy` manifests
 (`agents/haku-egress-proxy/ccnp-haku-{proxy,claude-sandbox}-egress.yaml`,
-`agents/haku-zones-mitmproxy/ccnp-zones-force-proxy-egress.yaml`,
 `agents/mitmproxy/ccnp-sandbox-proxy-egress.yaml`,
 `haku-ci/ccnp-force-proxy-egress.yaml`) and is unverified — a selector that
 matches nothing bypasses the fence entirely while every assertion here stays
@@ -253,10 +252,9 @@ class Unconfined:
     allows: frozenset[str] = field(default=frozenset(), init=False)
 
 
-# The two fences the assertions below single out. They are the dict keys
+# The fences the assertions below single out. They are the dict keys
 # themselves, so the assertion and the entry cannot drift apart.
 OPERATOR_DATA_FENCE = "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml"
-GITHUB_API_FENCE = "agents/haku-zones-mitmproxy/cnp-zones-egress.yaml"
 HAKU_CLAUDE_FENCE = "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml"
 HAKU_OPENCLAW_FENCE = "agents/haku-egress-proxy/openclaw-spike-iron.yaml"
 
@@ -291,10 +289,6 @@ ALLOWLISTS: dict[str, Confined | IronConfined | Unconfined] = {
         | ANTHROPIC
         | hosts("api.openai.com", "generativelanguage.googleapis.com", "docker-ci.allegedly.works")
     ),
-    # `haku-sandbox-zai`, the one "zone" namespace today —
-    # ccnp-zones-force-proxy-egress.yaml selects a list, so a second zone would
-    # share this fence rather than get its own.
-    GITHUB_API_FENCE: Confined(allows=BUILD_REGISTRIES | GITHUB_API),
     "agents/public-coder-agent/proxy/cnp-egress.yaml": Unconfined(
         reason=(
             "Scoped waiver for this agent only: both its Cilium toFQDNs rules and its "
@@ -406,7 +400,7 @@ def test_operator_data_reaches_only_haku_sandbox() -> None:
 def test_github_api_reaches_only_declared_holders() -> None:
     """`api.github.com` is a write surface, so every grant is named explicitly."""
     holders = {path for path, entry in ALLOWLISTS.items() if entry.allows & GITHUB_API}
-    assert holders == {GITHUB_API_FENCE, HAKU_OPENCLAW_FENCE, HAKU_CLAUDE_FENCE}
+    assert holders == {HAKU_OPENCLAW_FENCE, HAKU_CLAUDE_FENCE}
 
 
 if __name__ == "__main__":

@@ -10,10 +10,6 @@ terraform {
       source  = "ncecere/litellm"
       version = "~> 2.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.7.0"
-    }
     sops = {
       source  = "carlpett/sops"
       version = "~> 1.0"
@@ -72,9 +68,6 @@ locals {
     "gpt-5.6-luna-chatgpt",
     "gpt-5.3-codex-spark-chatgpt",
   ]
-  # Real Anthropic models (ANTHROPIC_MODELS in model_rosters.py) — the
-  # dispatcher's classifier gate.
-  classifier_models = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
   # Tana-UI models fronted through tana-litellm (_TANA_MODELS in test_litellm_config.py).
   tana_client_models = ["tana-claude-sonnet-4-6", "tana-claude-opus-4-6", "tana-claude-haiku-4-5"]
   # Codex-subscription models fronted through CLIProxyAPI (_cliproxy_entries).
@@ -111,148 +104,9 @@ locals {
 # they authenticate to the proxy with per-job tokens). Budgets are the coarse
 # lane-level cap; per-job budgets are enforced by the lane proxy.
 
-resource "litellm_key" "haku_lane_zai" {
-  key_alias       = "haku-lane-zai"
-  models          = local.zai_lane_models
-  max_budget      = 25
-  budget_duration = "30d"
-  metadata = {
-    lane = "zai"
-  }
-}
-
-resource "litellm_key" "haku_lane_oai" {
-  key_alias       = "haku-lane-oai"
-  models          = local.oai_lane_models
-  max_budget      = 25
-  budget_duration = "30d"
-  metadata = {
-    lane = "oai"
-  }
-}
-
-# Both zone keys reflect into haku-dispatch, where the shared workers-LiteLLM
-# mounts them as upstream credentials (haku/plans/multi_agent.md → key
-# containment). Worker pods never see them — workers hold only per-job virtual
-# keys minted on the workers-LiteLLM.
-
-resource "kubernetes_secret" "haku_lane_zai" {
-  metadata {
-    name      = "litellm-key-haku-lane-zai"
-    namespace = "litellm"
-    annotations = {
-      description                                                     = "LiteLLM virtual key for the haku zai worker zone (GLM models only); reflected into haku-dispatch as the workers-LiteLLM upstream credential"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-dispatch"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-dispatch"
-    }
-  }
-
-  data = {
-    api-key = litellm_key.haku_lane_zai.key
-  }
-}
-
-resource "kubernetes_secret" "haku_lane_oai" {
-  metadata {
-    name      = "litellm-key-haku-lane-oai"
-    namespace = "litellm"
-    annotations = {
-      description                                                     = "LiteLLM virtual key for the haku oai worker zone (chatgpt models only); reflected into haku-dispatch as the workers-LiteLLM upstream credential"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-dispatch"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-dispatch"
-    }
-  }
-
-  data = {
-    api-key = litellm_key.haku_lane_oai.key
-  }
-}
-
-# Control credentials for the second-layer workers-LiteLLM (haku-dispatch): its
-# master key (held by it and by the gate-validator, which mints per-job virtual
-# keys with it — never by workers or L0) and its salt key (encrypts key material
-# in haku-dispatch-db; set once, NEVER rotate).
-
-resource "random_password" "workers_litellm_master_key" {
-  length  = 48
-  special = false
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
-resource "kubernetes_secret" "workers_litellm_master_key" {
-  metadata {
-    name      = "workers-litellm-master-key"
-    namespace = "haku-dispatch"
-  }
-
-  data = {
-    api-key = random_password.workers_litellm_master_key.result
-  }
-}
-
-resource "random_password" "workers_litellm_salt_key" {
-  length  = 48
-  special = false
-
-  lifecycle {
-    ignore_changes  = [length, special]
-    prevent_destroy = true
-  }
-}
-
-resource "kubernetes_secret" "workers_litellm_salt_key" {
-  metadata {
-    name      = "workers-litellm-salt-key"
-    namespace = "haku-dispatch"
-  }
-
-  data = {
-    key = random_password.workers_litellm_salt_key.result
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# The dispatcher's classifier key: claude-* only, so the classifier gate runs
-# through LiteLLM (Langfuse logging, budget, kill switch) instead of the
-# dispatcher holding a raw Anthropic key. Reflected into haku-dispatch.
-
-resource "litellm_key" "dispatcher_classifier" {
-  key_alias       = "haku-dispatcher-classifier"
-  models          = local.classifier_models
-  max_budget      = 10
-  budget_duration = "30d"
-  metadata = {
-    consumer = "haku-dispatcher"
-  }
-}
-
-resource "kubernetes_secret" "dispatcher_classifier" {
-  metadata {
-    name      = "litellm-key-dispatcher-classifier"
-    namespace = "litellm"
-    annotations = {
-      description                                                     = "LiteLLM virtual key for the haku dispatcher's classifier gate (claude-* only); reflected into haku-dispatch"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-dispatch"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-dispatch"
-    }
-  }
-
-  data = {
-    api-key = litellm_key.dispatcher_classifier.key
-  }
-}
+# The former Haku z.ai/oai dispatch-lane keys and workers-LiteLLM credentials
+# were retired with the dispatch plane. Interactive z.ai clients, agent
+# workspaces, and the public coder retain their own separately scoped keys below.
 
 # ============================================================================
 # codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod

@@ -4,11 +4,11 @@ and the namespace matches the stamped perimeter."""
 
 import pytest_bazel
 
-from cluster.k8s.haku.dispatch.litellm.generate_workers_litellm import zai_zone_model_names
+from cluster.k8s.x.haku.dispatch.litellm.generate_workers_litellm import zai_zone_model_names
 from haku.dispatch.config import load_zones
 from util.bazel.runfiles import get_required_path
 
-_ZONES = load_zones(get_required_path("ducktape/cluster/k8s/haku/dispatch/dispatcher/zones.yaml"))
+_ZONES = load_zones(get_required_path("ducktape/cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml"))
 
 
 def test_zai_zone_wiring():

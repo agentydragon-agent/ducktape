@@ -169,7 +169,7 @@ py_test(
 py_test(
     name = "test_k8s_jobs",
     srcs = ["test_k8s_jobs.py"],
-    data = ["//cluster/k8s/haku/dispatch/dispatcher:job-template.yaml"],
+    data = ["//cluster/k8s/x/haku/dispatch/dispatcher:job-template.yaml"],
     deps = [
         ":k8s_jobs",
         ":models",
@@ -181,10 +181,10 @@ py_test(
 py_test(
     name = "test_zones_config",
     srcs = ["test_zones_config.py"],
-    data = ["//cluster/k8s/haku/dispatch/dispatcher:zones.yaml"],
+    data = ["//cluster/k8s/x/haku/dispatch/dispatcher:zones.yaml"],
     deps = [
         ":config",
-        "//cluster/k8s/haku/dispatch/litellm:generate_workers_litellm",
+        "//cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],

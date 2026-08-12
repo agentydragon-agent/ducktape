@@ -1,4 +1,6 @@
-# Haku worker zones
+# Haku worker zones — retired reference
+
+This is historical reference material for the retired Haku z.ai worker lane. It is no longer registered in the active Flux root.
 
 A **zone** is the concrete per-provider infrastructure track a worker runs in: a
 namespace + its egress perimeter + the harness + the Job templates that run there. Trust
@@ -9,7 +11,7 @@ Design + trust model + the not-yet-built zones: <../../../../haku/plans/multi_ag
 The dispatcher that stamps Jobs into these namespaces:
 <../dispatch/README.md>. Security contract: <../../../../haku/docs/security.md>.
 
-## Live zones
+## Former live zones
 
 | Zone  | Namespace          | Provider | Admits in context           | Harness         |
 | ----- | ------------------ | -------- | --------------------------- | --------------- |
@@ -26,7 +28,7 @@ perimeter: namespace + ResourceQuota + LimitRange + a **no-grants worker Service
 nothing via the API, not even its own zone's secrets, only what its pod mounts).
 
 Egress is forced through the shared **`haku-zones-mitmproxy`**
-(`cluster/k8s/agents/haku-zones-mitmproxy/`) — the `haku-egress-proxy` pattern minus the
+(`cluster/k8s/x/agents/haku-zones-mitmproxy/`) — the `haku-egress-proxy` pattern minus the
 Google FQDNs, with a clusterwide policy carrying **no `toEntities: cluster` and no
 kube-apiserver** (much tighter than `haku-sandbox`'s fence). The proxy's own egress CNP is
 the FQDN allowlist: v1 = git hosting (`github.com` + friends) + package indexes

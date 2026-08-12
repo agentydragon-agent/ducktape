@@ -11,7 +11,7 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
-  path: ./cluster/k8s/haku/dispatch/dispatcher
+  path: ./cluster/k8s/x/haku/dispatch/dispatcher
   prune: true
   wait: true
   healthChecks:

@@ -6,7 +6,7 @@ import pytest_bazel
 from haku.dispatch.k8s_jobs import job_name, render_job, render_secret
 from util.bazel.runfiles import get_required_path
 
-_TEMPLATE = get_required_path("_main/cluster/k8s/haku/dispatch/dispatcher/job-template.yaml").read_text()
+_TEMPLATE = get_required_path("_main/cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml").read_text()
 
 
 def test_job_name_deterministic_and_dns_safe():
