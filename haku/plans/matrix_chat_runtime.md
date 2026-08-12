@@ -555,6 +555,31 @@ that.
 - **R11.6 [v1] Forwarding failure is visible.** A reply that was produced but not delivered
   is retried and, if it lands late, marked as possibly duplicated. A produced reply must
   never be lost silently.
+- **R11.7 [v1] A reply arrives formatted.** Emphasis, code, lists, tables and links display
+  as themselves in the room, not as their source. The event carries both forms — `body` stays
+  the Markdown, which is the spec's fallback and what a plain-text client should show, and
+  `format: "org.matrix.custom.html"` plus `formatted_body` carries the rendering. Lifecycle
+  `m.notice` messages stay plain; they are one line of status.
+- **R11.7a The harness formats, and the agent is not asked to.** The agent writes Markdown,
+  which is what models write natively; being told to emit Matrix's HTML subset instead would
+  make every reply a chance to emit a tag that is **silently** dropped, and would cost the tag
+  list in prompt budget on every turn. Formatting is a property of the surface, not a choice
+  the agent makes.
+
+  What the agent is told is the smaller, stable thing: which affordances exist. Matrix's
+  subset says several things Markdown has no syntax for — `<details>`, spoiler and colour
+  spans, `<u>`, `<sub>`/`<sup>`, a table `<caption>` — and those pass through to the room, so
+  an agent that reaches for one gets it.
+
+- **R11.7b Conversion is against the spec's allowlist, applied to the output.** Everything
+  outside it is unwrapped to its text here, where the fallback is deliberate, rather than at
+  the far end where it is silent. Applying it to the output rather than trusting the input is
+  what makes raw HTML the agent typed safe: Markdown passes it through, so it arrives as real
+  tags either way. Two cases a stock renderer gets wrong against the allowlist, both losing
+  content rather than styling: **task lists** emit `<input type="checkbox">`, which is not
+  allowlisted, so a checklist arrives as bare bullets with its state gone — Haku writes
+  checklists, so the state becomes `☐`/`☑` text; and **external images** are dropped, since
+  `src` must be `mxc://`, so an image becomes its alt text.
 
 ## Build order
 
@@ -785,7 +810,27 @@ for after Matrix has proven itself, not before.
 - No streaming. Matrix has no streaming primitive, and R6 covers the affordance that
   actually matters.
 - Matrix is not an approval channel (R9.5).
-- No write surface for the agent beyond its own replies (R5.4).
+- No write surface for the agent beyond its own replies (R5.4) — **for now**. Reactions,
+  edits, threads and uploads are real Element affordances a future version may want, and an
+  edit in particular would suit progress reporting better than a stream of notices. They
+  would arrive as an in-process MCP server on the console (the `gmail` / `haku_routine`
+  shape), so the credential stays where R5.1 puts it and R5.3's no-room-argument rule holds.
+- **Not: give the agent a Matrix account and let it drive the API.** Considered and declined
+  2026-08-12. It is the simpler thing to describe — "here are credentials, process what the
+  operator sends" — and the simplicity is entirely in the prompt. The agent would own its own
+  read watermark, and an agent's read state lives in its context, which is lost on a schedule:
+  compaction, and rotation at 24h (R3.2b). It would also discard properties that are built and
+  tested rather than argued — the `/sync` watermark doubling as the `/messages` cursor, R1.7's
+  "no message is lost" (verified by the scale-to-zero test in Phase 0), the batching, and the
+  hold-until-ready behaviour. A durable guarantee would be traded for a judgment the model
+  makes with no memory across rotations.
+
+  The split that survives the argument, and the rule to apply if write tools are added later:
+  **the harness owns ingress and the reply channel; agent tools are write-side extras and
+  targeted reads, never the delivery path.** Ingress especially must stay single-owner — a
+  harness delivering user turns _and_ an agent calling `/sync` itself is double processing and
+  the answering-yourself loop R1.5 exists to prevent.
+
 - No mention gating, sender allowlists, or multi-bot loop protection. These matter in a
   shared room; this is a DM (R3.5).
 - Reusing `x/agent_server/`'s Matrix code is explicitly declined. Its design notes in
