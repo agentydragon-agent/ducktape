@@ -1,9 +1,9 @@
-# Zone wiring for the dispatcher (haku/dispatch/config.py load_zones):
+# Zone wiring for the dispatcher (haku/x/dispatch/config.py load_zones):
 # namespace + workers-LiteLLM model allowlist per zone. Mounted via
 # configMapGenerator; NOT a k8s manifest (kubeconform-excluded,
 # cluster-manifest-ignored). Model lists must match the zone key in
 # tf/gitops/litellm-keys/main.tf and the generated workers-LiteLLM config —
-# parity-tested by //haku/dispatch:test_zones_config. The oai zone joins here
+# parity-tested by //haku/x/dispatch:test_zones_config. The oai zone joins here
 # at build-order step 5.
 zai:
   namespace: haku-sandbox-zai

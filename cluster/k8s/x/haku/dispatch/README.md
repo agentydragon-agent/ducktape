@@ -2,12 +2,12 @@
 
 This directory is retained as historical reference material. The z.ai Haku
 dispatch lane was retired in August 2026; these manifests are no longer
-egistered in the active Flux root. The application code remains in `haku/dispatch/`
+registered in the active Flux root. The application code remains in `haku/x/dispatch/`
 for possible future re-use, but this cluster wiring is not runnable as-is.
 
 The in-cluster half of the former Haku dispatch plane: the dispatcher service, the shared
 second-layer **workers-LiteLLM**, and the CNPG database they share. Application code:
-<../../../../haku/dispatch/README.md>. Zone perimeters (where the workers actually run):
+<../../../../haku/x/dispatch/README.md>. Zone perimeters (where the workers actually run):
 <../zones/README.md>. Design + roadmap: <../../../../haku/plans/multi_agent.md>.
 
 Everything here is ducktape-reviewed — Haku can reach the dispatcher's API but has no

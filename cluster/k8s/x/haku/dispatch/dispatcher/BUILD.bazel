@@ -1,10 +1,10 @@
-# The Job template is data for haku/dispatch's stamping parity test.
+# The Job template is data for haku/x/dispatch's stamping parity test.
 exports_files(
     [
         "job-template.yaml",
         "zones.yaml",
     ],
-    visibility = ["//haku/dispatch:__pkg__"],
+    visibility = ["//haku/x/dispatch:__pkg__"],
 )
 
 # Cluster manifests for cluster/validation's flux-build test (the

@@ -3,7 +3,7 @@ a parity check that the template and the stamper agree on placeholders."""
 
 import pytest_bazel
 
-from haku.dispatch.k8s_jobs import job_name, render_job, render_secret
+from haku.x.dispatch.k8s_jobs import job_name, render_job, render_secret
 from util.bazel.runfiles import get_required_path
 
 _TEMPLATE = get_required_path("_main/cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml").read_text()

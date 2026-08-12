@@ -1,4 +1,4 @@
-"""API models for the dispatcher (haku/dispatch/README.md)."""
+"""API models for the dispatcher (haku/x/dispatch/README.md)."""
 
 from datetime import datetime
 from enum import StrEnum

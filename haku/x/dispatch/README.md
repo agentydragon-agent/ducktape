@@ -5,10 +5,10 @@ cheaper, lower-trust worker agents running in per-provider **zones**, without ev
 holding a credential for the worker's model provider. Haku can call this plane but not
 modify it, so it structurally cannot bypass its own admission gate.
 
-Design context and the not-yet-built roadmap: <../plans/multi_agent.md>. Security
-contract (enforcement inventory rows): <../docs/security.md>. Cluster wiring:
-<../../cluster/k8s/x/haku/dispatch/README.md>; zone perimeters:
-<../../cluster/k8s/x/haku/zones/README.md>.
+Design context and the not-yet-built roadmap: <../../plans/multi_agent.md>. Security
+contract (enforcement inventory rows): <../../docs/security.md>. Cluster wiring:
+<../../../cluster/k8s/x/haku/dispatch/README.md>; zone perimeters:
+<../../../cluster/k8s/x/haku/zones/README.md>.
 
 ## Request flow (`POST /jobs`)
 
@@ -51,12 +51,19 @@ result worker-authored — no credential is ever stored. `JobRequest`/`JobRecord
 > `@pypi//asyncpg` is an explicit BUILD dep — tests run on `sqlite+aiosqlite` and cannot
 > catch its absence (it shipped a startup `ModuleNotFoundError` once; see git history).
 
-## Former worker image
+## Worker image (`worker/`)
 
-The retired lane used one worker image carrying both Claude Code CLI and Codex CLI
-harnesses. The image and its build workflow were retired with the z.ai lane; this
-application directory remains as a design reference for a possible future dispatch
-implementation.
+One image (`ghcr.io/agentydragon/haku-zone-worker`, built by
+`formerly built by .github/workflows/haku-zone-worker-image.yml`) carries both zone harnesses — **Claude
+Code CLI** for the zai zone's Anthropic wire shape and **Codex CLI** for the future oai
+zone's Responses shape — plus git and a stdlib-only `entrypoint.py`. It holds **no
+credentials**; the per-job key and result token arrive only via the Job's Secret.
+
+The entrypoint (contract in `worker/entrypoint.py`): read the prompt from the mounted
+Secret, run the zone's harness headless in an empty `/workspace` (a job that needs a repo
+is told in the prompt to `git clone` it — public GitHub only), then **after the harness
+exits** POST `/output/result.md` + exit status to the dispatcher with the job-scoped
+token. Missing result file → a descriptive placeholder, never silence.
 
 ## How Haku uses it
 
@@ -68,7 +75,7 @@ state repo (`memory/dispatch.md`), not here.
 ## Build & test
 
 ```bash
-bbr test //haku/dispatch/...
+bbr test //haku/x/dispatch/...
 ```
 
 `test_zones_config.py` parity-tests the zone model allowlists against the generated

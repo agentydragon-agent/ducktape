@@ -1,6 +1,6 @@
 import pytest_bazel
 
-from haku.dispatch import result_tokens
+from haku.x.dispatch import result_tokens
 
 
 def test_roundtrip():

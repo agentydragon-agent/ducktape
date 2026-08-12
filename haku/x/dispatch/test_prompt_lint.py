@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from haku.dispatch.prompt_lint import find_credentials
+from haku.x.dispatch.prompt_lint import find_credentials
 
 
 def test_clean_brief_passes():

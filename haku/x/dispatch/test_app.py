@@ -1,7 +1,7 @@
 import pytest_bazel
 
-from haku.dispatch import result_tokens
-from haku.dispatch.k8s_jobs import job_name
+from haku.x.dispatch import result_tokens
+from haku.x.dispatch.k8s_jobs import job_name
 
 _REQUEST = {
     "prompt": ("Clone https://github.com/agentydragon/ducktape, run ruff over loom/, and fix lint findings."),

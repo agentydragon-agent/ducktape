@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable
 from anthropic import AsyncAnthropic
 from anthropic.types import ToolChoiceToolParam, ToolParam
 
-from haku.dispatch.models import ClassifierVerdict
+from haku.x.dispatch.models import ClassifierVerdict
 
 logger = logging.getLogger(__name__)
 

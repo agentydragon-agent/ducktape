@@ -197,6 +197,6 @@ that. Untrusted workloads stay in the haku zones perimeter until then.
   door.
 - **Web UI**: `coder/agentapi` (Apache-2.0) per sandbox behind an
   Authentik-guarded `HTTPRoute`.
-- **Haku dispatch**: `haku/dispatch/k8s_jobs.py` could stamp `SandboxClaim`s
+- **Haku dispatch**: `haku/x/dispatch/k8s_jobs.py` could stamp `SandboxClaim`s
   instead of `Job`s to gain warm starts and pause/resume; the zone perimeter
   (namespace + Kyverno mitmproxy injection) applies to sandbox pods unchanged.

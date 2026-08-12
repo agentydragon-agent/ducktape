@@ -90,7 +90,7 @@ py_library(
 
 py_binary(
     name = "server",
-    main_module = "haku.dispatch.app",
+    main_module = "haku.x.dispatch.app",
     deps = [":app"],
 )
 

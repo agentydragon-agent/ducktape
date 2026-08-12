@@ -7,7 +7,7 @@ plan holds only what is **not yet built**.
 
 Built, documented elsewhere:
 
-- Dispatcher service + worker image: <../dispatch/README.md>
+- Dispatcher service + worker image: <../x/dispatch/README.md>
 - Cluster wiring (workers-LiteLLM, CNPG, the three-hop key chain): <../../cluster/k8s/x/haku/dispatch/README.md>
 - Zone perimeters and the trust model: <../../cluster/k8s/x/haku/zones/README.md>
 - Security contract (enforcement inventory): <../docs/security.md>
@@ -44,7 +44,7 @@ credential lint → Anthropic classifier → per-job key mint → k8s Job in `ha
 
 Deferred: grocery-order bounded-write MCP; PII check as a required CI status on PRs.
 
-New local-inference follow-up: <local_dispatch_zone.md>. It adapts the existing zone
+New local-inference follow-up: <../x/dispatch/local_dispatch_zone.md>. It adapts the existing zone
 perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
 not thrash model residency by running agents across multiple models at once.
 

@@ -14,7 +14,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from haku.dispatch.models import JobRecord, JobStatus
+from haku.x.dispatch.models import JobRecord, JobStatus
 
 SessionMaker = async_sessionmaker[AsyncSession]
 

@@ -1,7 +1,7 @@
 """Dispatcher: classifier-gated dispatch of worker Jobs into zone namespaces.
 
 The one bespoke service in the multi-agent dispatch plane
-(haku/dispatch/README.md). POST /jobs = lint + classifier
+(haku/x/dispatch/README.md). POST /jobs = lint + classifier
 + per-job key mint + Job stamp; results flow back worker→dispatcher→Postgres.
 
 Haku reads the jobs/results tables directly with a read-only Postgres role
@@ -27,11 +27,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.exc import IntegrityError
 
-from haku.dispatch import db, k8s_jobs, prompt_lint, result_tokens
-from haku.dispatch.classifier import ClassifyFn, make_classifier
-from haku.dispatch.config import Settings, ZoneConfig, load_zones
-from haku.dispatch.litellm_keys import LiteLLMKeyClient
-from haku.dispatch.models import (
+from haku.x.dispatch import db, k8s_jobs, prompt_lint, result_tokens
+from haku.x.dispatch.classifier import ClassifyFn, make_classifier
+from haku.x.dispatch.config import Settings, ZoneConfig, load_zones
+from haku.x.dispatch.litellm_keys import LiteLLMKeyClient
+from haku.x.dispatch.models import (
     ClassifierVerdict,
     JobRecord,
     JobRequest,

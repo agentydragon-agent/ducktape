@@ -3,12 +3,12 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 
-from haku.dispatch import db
-from haku.dispatch.app import AppResources, create_app
-from haku.dispatch.config import Settings, ZoneConfig
-from haku.dispatch.k8s_jobs import ZoneJobStamper
-from haku.dispatch.litellm_keys import LiteLLMKeyClient
-from haku.dispatch.models import ClassifierVerdict
+from haku.x.dispatch import db
+from haku.x.dispatch.app import AppResources, create_app
+from haku.x.dispatch.config import Settings, ZoneConfig
+from haku.x.dispatch.k8s_jobs import ZoneJobStamper
+from haku.x.dispatch.litellm_keys import LiteLLMKeyClient
+from haku.x.dispatch.models import ClassifierVerdict
 
 
 def pytest_configure(config: pytest.Config) -> None:
