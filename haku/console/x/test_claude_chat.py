@@ -8,20 +8,32 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
+from claude_agent_sdk.types import StreamEvent
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSurface, FrameDirection
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import ClaudeChatSession
+from haku.console.database_schema import ClaudeChatFrame, ClaudeChatSession
 from haku.console.x.chat_notifications import ChatEventKind
-from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatStore, KubernetesSandboxClaims, _text_delta
+from haku.console.x.claude_chat import (
+    BridgeAuthentication,
+    ClaudeChatStore,
+    KubernetesSandboxClaims,
+    MatrixSession,
+    RecordingWebSocket,
+    SpaSession,
+    _text_delta,
+)
 from haku.console.x.conftest import runtime_config
+from haku.runtime.x.agent_sdk_transport.protocol import ClaudeMessage, SetupOutput
 
 
 class RecordingCustomObjectsApi:
@@ -205,7 +217,7 @@ def test_text_delta_ignores_non_text_stream_events() -> None:
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
     chat_store, operator_id, migrated_sessions
 ) -> None:
-    view, token = await chat_store.create(operator_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
     session_id = view.session_id
 
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -226,7 +238,7 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
     chat_store, operator_id, migrated_sessions
 ) -> None:
-    view, _token = await chat_store.create(operator_id)
+    view, _token = await chat_store.create(operator_id, SpaSession())
 
     await chat_store.request_close(operator_id, view.session_id)
     await chat_store.fail(view.session_id, "sandbox runner disconnected")
@@ -270,11 +282,15 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
     chat_store, chat_service, operator_id
 ) -> None:
     """A tool-use block and the text after it are two messages, not one merged row."""
-    view, token = await chat_store.create(operator_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     await chat_service._run_turn(
-        cast(Any, _ToolUseClaudeClient()), view.session_id, "Check the Haku MCP catalog", abort_event=asyncio.Event()
+        cast(Any, _ToolUseClaudeClient()),
+        view.session_id,
+        "Check the Haku MCP catalog",
+        room_id=None,
+        abort_event=asyncio.Event(),
     )
 
     messages = [
@@ -340,7 +356,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
 ) -> None:
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
     with patch("haku.console.x.claude_chat.ClaudeSDKClient", _ClosingClaudeClient):
@@ -372,7 +388,7 @@ async def test_terminal_runner_retry_deletes_its_stale_claim(
     """A runner presenting a valid credential for an already-closed session is turned away."""
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, SpaSession())
     await chat_store.request_close(operator_id, session.session_id)
 
     await chat_service.handle_runner(
@@ -392,7 +408,7 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
 
     session_ids = []
     for _ in range(2):
-        session = await chat_service.create(operator_id)
+        session = await chat_service.create(operator_id, SpaSession())
         await chat_store.request_close(operator_id, session.session_id)
         session_ids.append(session.session_id)
 
@@ -440,7 +456,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
     """
     # The store mints the real bridge token; no claim is created because handle_runner only
     # ever deletes one on the way out, and Kubernetes is not what this test is about.
-    view, token = await chat_store.create(operator_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
 
     with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
         runner = asyncio.create_task(
@@ -480,7 +496,7 @@ async def test_abort_is_refused_when_no_turn_is_in_flight(chat_store, operator_i
     is true for the whole life of the runner bridge — so aborting an idle session set the
     event, and the next turn aborted the instant it started.
     """
-    view, token = await chat_store.create(operator_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
     # The bridge handshake is what takes a session from provisioning to ready, and only a
     # ready session accepts a prompt.
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -502,7 +518,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     engines is what reproduces that; a single store would pass on the in-process path this
     change removes.
     """
-    view, token = await chat_store.create(operator_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "work")
 
@@ -515,6 +531,173 @@ async def test_abort_reaches_the_replica_running_the_turn(
                 await aborted.wait()
     finally:
         await other_engine.dispose()
+
+
+async def test_a_session_records_the_surface_it_was_created_for(chat_store, migrated_sessions, operator_id) -> None:
+    """Which surface a conversation belonged to has to outlive the conversation.
+
+    `matrix_conversation` holds one binding, so before this the room link vanished the moment
+    the supervisor replaced a session, and a past Matrix session read as an SPA one.
+    """
+    spa, _ = await chat_store.create(operator_id, SpaSession())
+    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:allegedly.works"))
+
+    async with migrated_sessions() as db:
+        assert (await db.get(ClaudeChatSession, spa.session_id)).surface == ChatSurface.SPA
+        assert (await db.get(ClaudeChatSession, spa.session_id)).room_id is None
+        assert (await db.get(ClaudeChatSession, matrix.session_id)).surface == ChatSurface.MATRIX
+        assert (await db.get(ClaudeChatSession, matrix.session_id)).room_id == "!room:allegedly.works"
+
+
+async def test_a_room_cannot_be_recorded_without_the_matrix_surface(migrated_sessions, operator_id) -> None:
+    """The pairing is a schema rule, not only a call-signature one — the columns outlive it."""
+    async with migrated_sessions.begin() as db:
+        db.add(
+            ClaudeChatSession(
+                session_id=uuid4(),
+                operator_id=operator_id,
+                surface=ChatSurface.SPA,
+                room_id="!room:allegedly.works",
+                status=ChatSessionStatus.PROVISIONING,
+                bridge_token_fingerprint=b"x" * 32,
+                bridge_connected_at=None,
+                error=None,
+                lease_expires_at=datetime.now(UTC) + timedelta(minutes=10),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await db.flush()
+
+
+class _ReplayingWebSocket:
+    """An inner socket that hands back a scripted sequence of already-encoded frames."""
+
+    def __init__(self, inbound: list[str]):
+        self._inbound = list(inbound)
+        self.sent: list[str] = []
+
+    async def send_text(self, data: str) -> None:
+        self.sent.append(data)
+
+    async def receive_text(self) -> str:
+        return self._inbound.pop(0)
+
+    async def close(self) -> None:
+        pass
+
+
+async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[ClaudeChatFrame]:
+    async with sessions() as db:
+        return list(
+            await db.scalars(
+                select(ClaudeChatFrame)
+                .where(ClaudeChatFrame.session_id == session_id)
+                .order_by(ClaudeChatFrame.frame_seq)
+            )
+        )
+
+
+async def test_the_rollout_records_both_directions_and_skips_only_partials(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """What the agent did is only recoverable from the wire.
+
+    Tool results arrive as `user` frames, which the turn loop drops entirely — it keeps the
+    `tool_use` blocks that asked and nothing that answered. So the record has to be taken here,
+    where every frame passes, rather than from the SDK objects the loop unpacks.
+    """
+    view, _ = await chat_store.create(operator_id, SpaSession())
+    tool_result = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "42"}]}}
+    inner = _ReplayingWebSocket(
+        [
+            ClaudeMessage(payload={"type": "stream_event", "event": {"type": "content_block_delta"}}).model_dump_json(),
+            ClaudeMessage(payload=tool_result).model_dump_json(),
+            SetupOutput(data=b"cloning haku-state\n").model_dump_json(),
+        ]
+    )
+    socket = RecordingWebSocket(cast(Any, inner), chat_store, view.session_id)
+
+    await socket.send_text(ClaudeMessage(payload={"type": "user", "message": {"role": "user"}}).model_dump_json())
+    for _ in range(3):
+        await socket.receive_text()
+
+    recorded = await _frames(migrated_sessions, view.session_id)
+    assert [(frame.direction, frame.kind) for frame in recorded] == [
+        (FrameDirection.TO_AGENT, "user"),
+        (FrameDirection.FROM_AGENT, "user"),
+    ]
+    # Verbatim: a reader gets the tool result the SDK dataclasses never carried.
+    assert recorded[1].payload == tool_result
+    assert all(frame.partial is False for frame in recorded)
+
+
+def _text_delta_frame(text: str) -> StreamEvent:
+    return StreamEvent(
+        uuid="u", session_id="s", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}
+    )
+
+
+class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
+    """Streams two deltas, then ends the turn without ever completing the message."""
+
+    def query(self, prompt: str):
+        async def _noop() -> None:
+            self.prompt = prompt
+
+        return _noop()
+
+    def receive_response(self):
+        async def _messages():
+            yield _text_delta_frame("half an ")
+            yield _text_delta_frame("answer")
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=1,
+                duration_api_ms=1,
+                is_error=False,
+                num_turns=1,
+                session_id="s",
+                result="",
+            )
+
+        return _messages()
+
+
+async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
+    chat_store, chat_service, migrated_sessions, operator_id
+) -> None:
+    """Written as it streams, not reconstructed at the end, because the end may never come.
+
+    The deltas are not kept as frames, so an interrupted turn would otherwise stop mid-answer
+    in the log — and reconstructing it in a finalizer would miss the case worth having, since
+    a replica losing its pod raises `CancelledError` straight past one.
+    """
+    view, token = await chat_store.create(operator_id, SpaSession())
+
+    with patch("haku.console.x.claude_chat.ClaudeSDKClient", _DyingMidStreamClaudeClient):
+        runner = asyncio.create_task(
+            chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
+        )
+        try:
+            for _ in range(75):
+                if await chat_store.status(view.session_id) == ChatSessionStatus.READY:
+                    break
+                await asyncio.sleep(0.2)
+            await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
+            for _ in range(75):
+                if [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]:
+                    break
+                await asyncio.sleep(0.2)
+        finally:
+            runner.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await runner
+
+    [reconstructed] = [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]
+    assert reconstructed.kind == "assistant"
+    assert reconstructed.payload["message"]["content"][0]["text"] == "half an answer"
 
 
 async def _age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID, *, seconds_ago: int) -> None:
@@ -533,7 +716,7 @@ async def test_a_live_session_whose_holder_stopped_renewing_is_failed(
     other observer used to treat that as healthy — so the room was never answered and never
     told why. The expired lease is the evidence that makes it reclaimable by anyone.
     """
-    view, _ = await chat_store.create(operator_id)
+    view, _ = await chat_store.create(operator_id, SpaSession())
     await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
 
     assert await chat_store.expire_stale_leases() == 1
@@ -545,7 +728,7 @@ async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
     chat_store, migrated_sessions, operator_id
 ) -> None:
     """A busy replica must not have its session reclaimed out from under it."""
-    view, _ = await chat_store.create(operator_id)
+    view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.renew_lease(view.session_id)
 
     assert await chat_store.expire_stale_leases() == 0
@@ -554,7 +737,7 @@ async def test_a_session_whose_holder_is_still_renewing_is_left_alone(
 
 async def test_an_ended_session_is_not_reclassified_by_the_sweep(chat_store, migrated_sessions, operator_id) -> None:
     """Only a *live* status is a lie worth correcting; a terminal one is already the truth."""
-    view, _ = await chat_store.create(operator_id)
+    view, _ = await chat_store.create(operator_id, SpaSession())
     await chat_store.fail(view.session_id, "something else went wrong first")
     await _age_lease(migrated_sessions, view.session_id, seconds_ago=1)
 
@@ -570,7 +753,7 @@ async def test_a_cancelled_runner_records_the_shutdown_instead_of_going_quiet(
     So neither `except` clause saw it: the session kept its live status, the replica went
     away, and the room waited forever. The status must end terminal, and say so.
     """
-    view, token = await chat_store.create(operator_id)
+    view, token = await chat_store.create(operator_id, SpaSession())
 
     with patch("haku.console.x.claude_chat.ClaudeSDKClient", _RealDbClaudeClient):
         runner = asyncio.create_task(

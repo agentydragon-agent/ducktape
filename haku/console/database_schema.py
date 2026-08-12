@@ -9,10 +9,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     LargeBinary,
     Text,
@@ -30,7 +32,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus
+from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSessionStatus, ChatSurface, FrameDirection
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -841,6 +843,13 @@ class ClaudeChatSession(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
+    # Null means "predates attribution" — a row written before 0030, or by a replica still on
+    # the previous image during a roll. Deliberately not defaulted to `spa`: a wrong label is
+    # worse than an absent one, since nothing downstream can tell the two apart afterwards.
+    surface: Mapped[ChatSurface | None] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=True)
+    # The Matrix room this session serves, denormalized from `matrix_conversation` because that
+    # table keeps only the current binding and this one has to outlive it.
+    room_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[ChatSessionStatus] = mapped_column(TextBackedStrEnumColumn(ChatSessionStatus), nullable=False)
     bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -859,6 +868,12 @@ class ClaudeChatSession(Base):
             "status IN ('provisioning','ready','responding','closing','closed','failed')",
             name="ck_claude_chat_sessions_status",
         ),
+        CheckConstraint("surface IS NULL OR surface IN ('spa','matrix')", name="ck_claude_chat_sessions_surface"),
+        # A room without a Matrix surface, or a Matrix session with no room, are both states
+        # nothing could act on sensibly. Two one-way constraints rather than an equivalence,
+        # because a legacy row has neither and must stay legal.
+        CheckConstraint("room_id IS NULL OR surface = 'matrix'", name="ck_claude_chat_sessions_room_is_matrix"),
+        CheckConstraint("surface <> 'matrix' OR room_id IS NOT NULL", name="ck_claude_chat_sessions_matrix_has_room"),
         Index("idx_claude_chat_sessions_operator", "operator_id", "created_at"),
         Index(
             "idx_claude_chat_sessions_expired_lease",
@@ -889,6 +904,57 @@ class ClaudeChatMessage(Base):
         CheckConstraint("role IN ('user','assistant')", name="ck_claude_chat_messages_role"),
         CheckConstraint("status IN ('pending','streaming','complete','failed')", name="ck_claude_chat_messages_status"),
         Index("idx_claude_chat_messages_session_created", "session_id", "created_at"),
+    )
+
+
+class ClaudeChatFrame(Base):
+    """One line of the agent's own newline-delimited JSON protocol, as it crossed the wire.
+
+    The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
+    `claude_chat_messages` keeps an assistant message's `tool_use` blocks and not the frames
+    carrying the results, so on its own it records every question and no answer
+    (haku/plans/matrix_chat_runtime.md R5.5).
+
+    **The payload is the wire, not our parse of it.** Storing the SDK's dataclasses instead
+    would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
+    are dropped by the turn loop's extraction, as is a result's cost and usage — and it would
+    have to be migrated when the console starts reading the CLI's jsonl directly for an adopted
+    turn (cli_protocol_ownership.md, design B).
+    """
+
+    __tablename__ = "claude_chat_frames"
+
+    # Database-assigned so ordering needs no per-session counter in a process that can be
+    # replaced mid-conversation. Gaps are expected and mean nothing; only the order does.
+    frame_seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("claude_chat_sessions.session_id", ondelete="CASCADE"), nullable=False
+    )
+    direction: Mapped[FrameDirection] = mapped_column(TextBackedStrEnumColumn(FrameDirection), nullable=False)
+    # The frame's own top-level `type`, lifted out so a reader can select `assistant` frames
+    # without scanning JSONB.
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # The one row the console writes rather than observes: an assistant message still streaming,
+    # rebuilt from the deltas the log does not keep, rewritten in place as they arrive and
+    # deleted when the completed frame supersedes it. So a `partial` row that outlives its turn
+    # is not a bookkeeping leftover — it is the record of a turn that never finished, which is
+    # exactly the case a reader most wants explained.
+    #
+    # Written as it goes rather than reconstructed at the end, because the end does not always
+    # arrive: a replica losing its pod mid-turn raises `CancelledError` past any finalizer, and
+    # that is the turn worth having. It costs one extra write per delta, alongside the one
+    # `update_assistant` already does.
+    partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_claude_chat_frames_direction"),
+        Index("idx_claude_chat_frames_session", "session_id", "frame_seq"),
+        # One in-flight reconstruction per session, as a schema property rather than a rule the
+        # turn loop has to keep: there is only ever one assistant message streaming at a time.
+        Index("uq_claude_chat_frames_partial", "session_id", unique=True, postgresql_where=text("partial")),
     )
 
 
