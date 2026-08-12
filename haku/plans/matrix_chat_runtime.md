@@ -561,18 +561,20 @@ input to a running turn**. Interrupt exists; steer does not.
   Typing notifications are set by the harness around the turn and refreshed for its
   duration, and cleared on **every** terminal path including failure — a stuck typing
   indicator is a recurring bug in other harnesses.
-- **R6.2 [v1]** For slow turns, a status message reports what is happening now. It is
+- **R6.2 [built]** For slow turns, a status message reports what is happening now. It is
   created lazily, after a latency threshold, so short exchanges do not leave a
   status/answer pair behind.
-- **R6.3 [v1]** Status is a **coarse state**, not a description of the work. Where a tool
+- **R6.3 [built]** Status is a **coarse state**, not a description of the work. Where a tool
   is named, its identifier is passed through verbatim. There is no per-tool copy and no
   mapping table to maintain as the tool surface grows.
-- **R6.4 [v1]** Status is derived by the console from the SDK message stream it is already
-  consuming — **any** message to or from the agent, not specifically `PreToolUse`. A short
-  serialization of the latest message is an acceptable implementation; the point is that
-  the console never has to ask the model what it is doing.
-- **R6.5 [v1]** Status editing is rate-limited, and the status message is removed or
-  replaced when the answer posts.
+- **R6.4 [built]** Status is derived by the console from the frame stream it is already
+  consuming — **any** frame, not specifically `PreToolUse`. In the event it is derived from
+  two: the `tool_use` names on an `assistant` frame, and the `description` the CLI itself
+  writes on `system/task_started` and `task_progress`. The console never asks the model what
+  it is doing.
+- **R6.5 [built]** Status editing is rate-limited, and the status message is removed or
+  replaced when the answer posts. One `m.replace` edit at most every five seconds; redacted
+  on every terminal path, failure included.
 
 ### R7 — System-emitted messages
 
@@ -930,10 +932,28 @@ transcript with every tool result missing (R5.5):
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it
    was already shown.
-4. **`list_conversations` / `read_conversation` / `read_turn`** (R11.3a). A **drilldown, not a
-   dump** — find the conversation, skim its turns, open the one turn that matters — so no tool
-   can return a whole session's rollout and each call's payload stays bounded. Context is the
-   scarce resource here, not rows.
+4. **`list_conversations` / `read_rollout`** (R11.3a) — **built**. A **drilldown, not a dump** — find the
+   conversation, skim it, read the part that matters — so no tool can return a whole session's
+   rollout and each call's payload stays bounded. Context is the scarce resource here, not rows.
+
+   **Shaped as a cursor over the frame log, not as turns.** `read_rollout(session_id, after_seq,
+limit, kinds)` pages `claude_chat_frames` by its `frame_seq`, and skimming is a `kinds`
+   filter — assistant text and tool names — rather than a coarser unit. Three reasons it is
+   better than the turn-shaped version this used to specify. It needs no schema change, so it is
+   buildable today. Bounded payloads come from the page size, which is what the drilldown
+   requirement was actually asking for. And a turn is our interpretation where the log is the
+   record: the CLI folds a mid-turn prompt into a running turn, so one `result` can answer two
+   prompts, and a turn-shaped read would have to pick a lie about which prompt an exchange
+   belonged to. Turns still get a table (<chat_runtime_cleanup.md> §1) — for the abort race, for
+   cost and usage, for re-adoption — and a `read_turn` can be added over that later as a range
+   query. It is not a prerequisite for reading.
+
+   Hosted as an in-process MCP server on the console's existing `/mcp` (`haku_conversations`),
+   the same pattern as `gmail` and `haku_routine`: credential-free, since the corpus is the
+   console's own database, and both tools in the Haku agent's unconditional auto-approval set
+   so a read is a pass-through rather than an approval prompt. `sdkMcpServers` would have
+   worked and was the other candidate; `/mcp` reuses the audit ledger and the policy that
+   already governs every other read tool.
 
 **Search is deliberately not in this phase.** When it comes back it is embeddings over the
 same frame rows, which is why the frames are the granularity to store.
@@ -966,10 +986,10 @@ for after Matrix has proven itself, not before.
   (R5.4a, Phase 5's drilldown), over frames the console persists as they cross the transport
   (R5.5). Of the two shapes left open here, SDK-hosted tools were rejected outright (R5.2a)
   and the **RLS-scoped Postgres role** was not: it still buys a real query language and pushes
-  scoping into the database, and it is the thing to revisit if three fixed tools turn out to
-  be the wrong shape. It is not the thing to build first — a per-session Postgres role plus
-  row-level policies is a lot of machinery to discover that what was wanted was
-  `read_turn`.
+  scoping into the database, and it is the thing to revisit if a handful of fixed tools turn out
+  to be the wrong shape. It is not the thing to build first — a per-session Postgres role plus
+  row-level policies is a lot of machinery to discover that what was wanted was a paged read of
+  one session's frames.
 - **Debounce window** (R2.7): a concrete value. Other harnesses run 1.5–5s depending on
   channel.
 - **Age fence** (R2.8): how old is "context, not work"?

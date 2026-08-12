@@ -27,7 +27,6 @@ that want to name a turn have to name something else instead:
   abort for a turn that does not exist and `MatrixTurns.offer` refuses batches on it.
 - The comment in `handle_runner` — "an abort notified just as the previous turn ended … needs
   the abort to name a turn rather than a session" — is a bug documented instead of fixed.
-- `claude_chat_frames` has nothing to slice on, so Phase 5's `read_turn` has no key.
 
 **What a turn is**: one exchange, from the harness handing the agent a prompt to the harness
 having a final answer or a failure — exactly `_run_turn`'s span. It contains many assistant
@@ -38,9 +37,9 @@ Matrix message (R2.1 coalesces a batch into one prompt).
 **Store it as a bracket, not a label.** A `turn_id` stamped on each frame would write our
 interpretation into the record of the wire, and the wire does not agree with it: the CLI can
 fold a second prompt into a running turn (§2), so one `result` frame can cover two prompts.
-The turn row records a **range** instead — `first_frame_seq`, `last_frame_seq | None` — so
-`read_turn` is a range query, the log stays verbatim, and re-bracketing later is an update to
-our table rather than a rewrite of the record.
+The turn row records a **range** instead — `first_frame_seq`, `last_frame_seq | None` — so the
+log stays verbatim, anything turn-scoped is a range query over it, and re-bracketing later is an
+update to our table rather than a rewrite of the record.
 
 ```text
 turn(turn_id, session_id, first_frame_seq, last_frame_seq | None,
@@ -57,6 +56,12 @@ cost/usage/duration gets somewhere to live instead of being read for the error c
 discarded; and re-adoption gets a durable handle for the in-flight exchange
 (<cli_protocol_ownership.md> wants to route an adopted turn "by session", which is the wrong key
 when a session can outlive many turns).
+
+**Not on that list: the reading API.** Phase 5 used to specify a `read_turn`, which made this a
+prerequisite for reading past conversations. It is not one — a cursor over `frame_seq` with a
+`kinds` filter gives the bounded drilldown that requirement wanted, needs no schema change, and
+does not have to decide which prompt a folded exchange belonged to. Every reason above is a
+runtime problem, and that is the whole case for a turn table.
 
 ## 2. Mid-turn steering works and we are not using it
 
@@ -87,14 +92,14 @@ abort means "stop, and drop what I asked for next", which is `interrupt` with
 
 ## 2a. `system/task_*` frames are a status line we already store and ignore
 
-The same run showed `system/task_started` and `system/task_notification` carrying
-`tool_use_id`, a `task_type`, and a human-readable `description` — "Sleep 4 seconds (step 1)".
-That is R6's "what is Haku doing right now" without inventing anything: the frames are already
-in `claude_chat_frames`, and the SDK's `Message` union has no variant for them, so the typed
-layer drops them and only the raw store has them. Today the room's only progress signal is the
-sandbox bootstrap's stdout, which stops the moment the session starts working.
+**Done.** `system/task_started` and `task_progress` carry `tool_use_id`, a `task_type` and a
+human-readable `description` — "Running Count regular files in the directory" — which is R6's
+"what is Haku doing right now" without inventing anything. The turn loop now derives a coarse
+state from those and from each `assistant` frame's `tool_use` names, and the room shows it on a
+single lazily-created, rate-limited, redacted-on-finish line.
 
-Folding is also what makes §1's `turn_prompt` many-to-one rather than a column.
+What remains of R6 is R6.1: typing notifications for the turn's duration, cleared on every
+terminal path.
 
 ## 3. The user message row is a queue _and_ a transcript
 
@@ -115,13 +120,17 @@ landed, the frames hold both, verbatim. One reader —
 `frontend/x/claude_chat_page.tsx` — so re-sourcing it from frames would also give the SPA the
 tool _results_ it cannot show today, after which the column goes.
 
-## 5. Frame recording should move onto the transport
+## 5. Frame recording belongs on the protocol client
 
-`RecordingWebSocket` decorates the socket to avoid "the shared transport learning about the
-console's database" — but `WebSocketTransport` already takes `on_progress: ProgressSink`,
-which is exactly that shape. An `on_frame` callback beside it is one parse instead of two, and
-one place that knows the envelope instead of two. The rule the decorator was written to
-respect is one the file does not itself follow.
+`RecordingWebSocket` decorates the socket, below the transport, and re-decodes each frame's
+envelope to see what crossed — a second `json.loads` of every frame.
+
+This item used to propose an `on_frame` callback on `WebSocketTransport`, beside the
+`on_progress: ProgressSink` it already takes. That is no longer the best shape. `ClaudeCli` now
+owns the reader and **already has each frame parsed** (§0), so recording there is one parse
+instead of two and one place that knows the envelope instead of two — without the shared
+transport learning about the console's database, which is what the decorator was written to
+avoid in the first place.
 
 ## 6. The lease means two things and never says who holds it
 
@@ -137,6 +146,18 @@ an expired lease to mean **unowned** (adoptable) rather than **dead**.
 Twenty-odd methods across session lifecycle, prompt queue, transcript, frames, leases and
 claim-cleanup bookkeeping. It splits along the seams §1 and §3 create: sessions/leases,
 prompts, transcript, rollout.
+
+## 7a. `agent_sdk_transport` is named after a dependency it no longer has
+
+The package holds the bridge envelope, the websocket channel, the CLI protocol client and the
+launch builder. None of it is an Agent SDK transport; the SDK is gone from the code, and what
+remains of the wheel is a build-time source for the `claude` binary (§0's note on moving that to
+npm). `runtime/x/claude_bridge` or similar would say what the package is.
+
+Mechanical but not free: imports across the console and the runner, the Bazel target paths, the
+`runner_image`/`runner_bin` labels, and whatever in `cluster/` names them. The same applies to
+`HAKU_AGENT_SDK_RUNNER_TOKEN`, which is a deploy contract — a Secret key and env var in eight
+places — so renaming that one wants a two-step expand/contract rather than a sweep.
 
 ## 8. Smaller, mechanical
 

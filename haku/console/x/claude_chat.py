@@ -9,15 +9,15 @@ import hashlib
 import json
 import logging
 import secrets
-from collections.abc import AsyncIterator, Awaitable, Callable
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 from uuid import UUID, uuid4
 
-from claude_agent_sdk import ClaudeAgentOptions
-from claude_agent_sdk.types import SystemPromptPreset
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -39,9 +39,10 @@ from haku.console.chat_models import (
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatMessage, ClaudeChatSession
 from haku.console.operator_auth import OperatorActorDep
+from haku.console.tools.conversations import Conversation, RolloutFrame
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
 from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
-from haku.runtime.x.agent_sdk_transport.options import build_claude_launch, enable_fine_grained_streaming
+from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.agent_sdk_transport.protocol import (
     CONSOLE_TO_RUNNER,
     RUNNER_TO_CONSOLE,
@@ -525,6 +526,54 @@ class ClaudeChatStore:
                 )
             )
 
+    async def list_conversations(self, *, limit: int) -> list[Conversation]:
+        """Past sessions, newest first, for the `haku_conversations` read tools.
+
+        Unscoped by R5.3a: every session, whichever room it served.
+        """
+        async with self._sessions() as db:
+            rows = (
+                await db.scalars(select(ClaudeChatSession).order_by(ClaudeChatSession.created_at.desc()).limit(limit))
+            ).all()
+        return [
+            Conversation(
+                session_id=str(row.session_id),
+                surface=row.surface,
+                room_id=row.room_id,
+                status=row.status,
+                created_at=row.created_at,
+                error=row.error,
+            )
+            for row in rows
+        ]
+
+    async def read_frames(
+        self, session_id: str, *, after_seq: int | None, limit: int, kinds: Sequence[str] | None
+    ) -> list[RolloutFrame]:
+        """One page of a session's rollout, in wire order.
+
+        Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
+        cannot skip or repeat a row the way an offset would once new frames land between pages.
+        """
+        query = select(ClaudeChatFrame).where(ClaudeChatFrame.session_id == UUID(session_id))
+        if after_seq is not None:
+            query = query.where(ClaudeChatFrame.frame_seq > after_seq)
+        if kinds:
+            query = query.where(ClaudeChatFrame.kind.in_(kinds))
+        async with self._sessions() as db:
+            rows = (await db.scalars(query.order_by(ClaudeChatFrame.frame_seq).limit(limit))).all()
+        return [
+            RolloutFrame(
+                frame_seq=row.frame_seq,
+                direction=row.direction,
+                kind=row.kind,
+                created_at=row.created_at,
+                payload=row.payload,
+                partial=row.partial,
+            )
+            for row in rows
+        ]
+
     async def update_partial_frame(self, session_id: UUID, text: str) -> None:
         """Record the assistant message streaming right now, replacing any earlier state of it.
 
@@ -812,6 +861,81 @@ class RecordingWebSocket(TextWebSocket):
             await self._store.record_frame(self._session_id, direction, frame.payload)
 
 
+# How long a turn runs before the room is told anything about it (R6.2). Below this the
+# answer itself is the status, and a status/answer pair for a five-second exchange is
+# clutter.
+STATUS_AFTER_SECONDS = 8.0
+
+
+def _coarse_status(frame: dict[str, Any]) -> str | None:
+    """What the room should be told this frame means, or None if it means nothing to it.
+
+    Coarse by rule, not by taste (R6.3): where a tool is named, the CLI's own identifier is
+    passed through verbatim, and where the CLI wrote a human-readable description of a task
+    it is used as-is. There is deliberately no per-tool copy and no mapping table, because
+    both would need maintaining every time the tool surface grows.
+    """
+    match frame.get("type"):
+        case "assistant":
+            names = [block["name"] for block in _content_blocks(frame) if block.get("type") == "tool_use"]
+            return f"running {', '.join(names)}" if names else "writing"
+        case "system":
+            match frame.get("subtype"):
+                # `description` here is the CLI's own prose for the step in flight, e.g.
+                # "Running Count regular files in the directory" — better than anything the
+                # console could reconstruct from a tool name and its arguments.
+                case "task_started" | "task_progress":
+                    return str(frame.get("description") or "working")
+    return None
+
+
+class _TurnStatus:
+    """Drives the room's status line for one turn.
+
+    A polled driver rather than a write on every frame, because the two things that decide
+    whether to speak are both about elapsed time — the lazy-creation threshold and the edit
+    floor — and a turn can go a long while between frames. Frames set the state; the loop
+    decides when the room hears about it.
+    """
+
+    def __init__(self, show: Callable[[str], Awaitable[None]], clear: Callable[[], Awaitable[None]]):
+        self._show = show
+        self._clear = clear
+        self._state: str | None = None
+        self._started = time.monotonic()
+        self._task: asyncio.Task[None] | None = None
+
+    def note(self, frame: dict[str, Any]) -> None:
+        if (state := _coarse_status(frame)) is not None:
+            self._state = state
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._run())
+
+    async def _run(self) -> None:
+        while True:
+            await asyncio.sleep(1.0)
+            if self._state is not None and time.monotonic() - self._started >= STATUS_AFTER_SECONDS:
+                await self._show(self._state)
+
+    async def finish(self) -> None:
+        """Stop driving and retire the line, on every path out of the turn including failure."""
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        await self._clear()
+
+
+async def _ignore_status(text: str) -> None:
+    del text
+
+
+async def _ignore_clear() -> None:
+    pass
+
+
 class RoomSurface(Protocol):
     """The front end for sessions that serve a room, for the parts a turn cannot do itself.
 
@@ -833,6 +957,10 @@ class RoomSurface(Protocol):
     async def deliver(self, room_id: str, text: str) -> None: ...
 
     async def report(self, room_id: str, detail: str) -> None: ...
+
+    async def show_status(self, room_id: str, text: str) -> None: ...
+
+    async def clear_status(self, room_id: str) -> None: ...
 
 
 class ClaudeChatService:
@@ -918,23 +1046,29 @@ class ClaudeChatService:
         """
         return None if self._room_surface is None else await self._store.room_of(session_id)
 
-    async def _preset_with(self, session_id: UUID, room_id: str | None) -> SystemPromptPreset | None:
-        """Claude Code's own system prompt, plus who this session is.
+    async def _appended_prompt(self, session_id: UUID, room_id: str | None) -> str | None:
+        """Who this session is, appended to Claude Code's own system prompt.
 
-        `append` rather than a bare string, which would *replace* the preset: the built-ins
-        (Read, Bash, Edit) are live in the sandbox and the preset is what tells the model how
-        to drive them. Haku's identity is an addition to that, not a substitute for it.
-
-        The literal is the SDK's own `SystemPromptPreset` TypedDict, so mypy checks its keys
-        and the two `Literal` values against the pinned SDK rather than trusting this spelling.
+        Appended rather than replacing it: the built-ins (Read, Bash, Edit) are live in the
+        sandbox and the preset is what tells the model how to drive them. Haku's identity is an
+        addition to that, not a substitute for it — which is why the launch sends
+        `--append-system-prompt` and never `--system-prompt`.
         """
         if self._room_surface is None or room_id is None:
             return None
-        return {
-            "type": "preset",
-            "preset": "claude_code",
-            "append": await self._room_surface.system_prompt(session_id, room_id),
-        }
+        return await self._room_surface.system_prompt(session_id, room_id)
+
+    def _turn_status(self, room_id: str | None) -> _TurnStatus:
+        """A status driver for one turn, wired to the room if this session serves one.
+
+        A session with no room still gets a driver rather than a `None` to branch on: the SPA
+        reads the message rows, so there is simply nothing for its status to do, and the turn
+        loop should not have to know which surface it is on.
+        """
+        surface, room = self._room_surface, room_id
+        if surface is None or room is None:
+            return _TurnStatus(_ignore_status, _ignore_clear)
+        return _TurnStatus(lambda text: surface.show_status(room, text), lambda: surface.clear_status(room))
 
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
         """Log every sandbox progress report, and show it to the room if there is one."""
@@ -962,7 +1096,7 @@ class ClaudeChatService:
         # generic-assistant bug this prompt exists to fix, and it would be invisible.
         try:
             room_id = await self._room_of(session_id)
-            preset = await self._preset_with(session_id, room_id)
+            appended = await self._appended_prompt(session_id, room_id)
         except Exception as error:
             logger.exception("Claude system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
@@ -971,24 +1105,17 @@ class ClaudeChatService:
             return
         await websocket.accept()
         adapter = RecordingWebSocket(StarletteTextWebSocket(websocket), self._store, session_id)
-        options = enable_fine_grained_streaming(
-            ClaudeAgentOptions(
-                system_prompt=preset,
-                cwd=self._config.cwd,
-                env=self._config.claude_environment(),
-                mcp_servers={
-                    "haku-console": {
-                        "type": "http",
-                        "url": self._config.mcp_url,
-                        "headers": {"Authorization": f"Bearer {self._mcp_token.get_secret_value()}"},
-                    }
-                },
-                strict_mcp_config=True,
-                permission_mode="bypassPermissions",
-                setting_sources=[],
-            )
+        session = ClaudeSession(
+            append_system_prompt=appended,
+            cwd=Path(self._config.cwd),
+            environment=self._config.claude_environment(),
+            mcp_servers={
+                "haku-console": HttpMcpServer(
+                    url=self._config.mcp_url, headers={"Authorization": f"Bearer {self._mcp_token.get_secret_value()}"}
+                )
+            },
         )
-        client = cli_over_websocket(adapter, build_claude_launch(options), self._progress_reporter(session_id, room_id))
+        client = cli_over_websocket(adapter, build_claude_launch(session), self._progress_reporter(session_id, room_id))
         abort_event = asyncio.Event()
         # Two nested handlers because Python forbids `except` and `except*` on one `try`, and
         # the two are about different things: the inner one unwraps whatever the task group
@@ -1115,6 +1242,8 @@ class ClaudeChatService:
         streamed = ""
         saw_assistant_message = False
         result: dict[str, Any] | None = None
+        status = self._turn_status(room_id)
+        status.start()
         try:
             while True:
                 done, pending = await asyncio.wait(
@@ -1143,6 +1272,7 @@ class ClaudeChatService:
                     if not isinstance(completed, dict):
                         continue
                     frame = completed
+                    status.note(frame)
                     match frame.get("type"):
                         case "stream_event":
                             if not (delta := _text_delta(frame.get("event", {}))):
@@ -1209,6 +1339,10 @@ class ClaudeChatService:
             if assistant_id is not None:
                 await self._store.fail(session_id, str(error), assistant_id)
             raise
+        finally:
+            # Every terminal path, failure included: a line still saying "running Bash" after
+            # the turn died is the stuck-typing-indicator bug R6.1 calls out, in another form.
+            await status.finish()
 
     async def _deliver_reply(self, session_id: UUID, room_id: str | None, final_text: str) -> None:
         """Speak the answer into the room, if this session serves one.

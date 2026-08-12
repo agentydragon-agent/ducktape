@@ -23,13 +23,16 @@ from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ClaudeChatFrame, ClaudeChatSession
 from haku.console.x.chat_notifications import ChatEventKind
 from haku.console.x.claude_chat import (
+    STATUS_AFTER_SECONDS,
     BridgeAuthentication,
     ClaudeChatStore,
     KubernetesSandboxClaims,
     MatrixSession,
     RecordingWebSocket,
     SpaSession,
+    _coarse_status,
     _text_delta,
+    _TurnStatus,
 )
 from haku.console.x.conftest import runtime_config
 from haku.runtime.x.agent_sdk_transport.protocol import ClaudeMessage, SetupOutput
@@ -449,6 +452,127 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
 
     assert sorted(recording_claims.deleted) == sorted(session_ids)
     assert await chat_store.claim_cleanup_candidates() == []
+
+
+def test_a_tool_call_becomes_a_status_naming_the_tool_verbatim() -> None:
+    """R6.3: the CLI's own identifier, with no per-tool copy to maintain."""
+    frame = _assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}})
+
+    assert _coarse_status(frame) == "running Bash"
+
+
+def test_a_task_frame_reuses_the_description_the_cli_already_wrote() -> None:
+    frame = {"type": "system", "subtype": "task_progress", "description": "Running the test suite"}
+
+    assert _coarse_status(frame) == "Running the test suite"
+
+
+def test_frames_the_room_has_no_use_for_produce_no_status() -> None:
+    assert _coarse_status({"type": "result", "subtype": "success"}) is None
+    assert _coarse_status({"type": "system", "subtype": "commands_changed"}) is None
+
+
+async def test_a_short_turn_leaves_no_status_behind() -> None:
+    """R6.2: below the threshold the answer is the status, and a pair of them is clutter."""
+    shown: list[str] = []
+    status = _TurnStatus(_appender(shown), _noop)
+    status.start()
+    status.note(_assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}))
+    await asyncio.sleep(1.2)
+    await status.finish()
+
+    assert shown == []
+
+
+async def test_a_slow_turn_says_what_it_is_doing_and_then_retires_the_line() -> None:
+    shown: list[str] = []
+    cleared: list[bool] = []
+
+    async def clear() -> None:
+        cleared.append(True)
+
+    status = _TurnStatus(_appender(shown), clear)
+    status._started -= STATUS_AFTER_SECONDS  # the turn has already been running a while
+    status.start()
+    status.note(_assistant({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}))
+    await asyncio.sleep(1.2)
+    await status.finish()
+
+    assert shown == ["running Bash"]
+    assert cleared == [True]
+
+
+async def test_the_line_is_retired_even_when_the_turn_fails() -> None:
+    """A line still saying \"running Bash\" after the turn died is the stuck-indicator bug."""
+    cleared: list[bool] = []
+
+    async def clear() -> None:
+        cleared.append(True)
+
+    status = _TurnStatus(_appender([]), clear)
+    status.start()
+    await status.finish()
+
+    assert cleared == [True]
+
+
+def _appender(sink: list[str]) -> Callable[[str], Awaitable[None]]:
+    async def show(text: str) -> None:
+        sink.append(text)
+
+    return show
+
+
+async def _noop() -> None:
+    pass
+
+
+async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_store, operator_id) -> None:
+    """Keyset, not offset: the log is append-only, so new frames landing between pages would
+    make an offset skip or repeat a row."""
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    for kind in ("user", "assistant", "result"):
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, {"type": kind})
+
+    first = await chat_store.read_frames(str(session.session_id), after_seq=None, limit=2, kinds=None)
+    rest = await chat_store.read_frames(str(session.session_id), after_seq=first[-1].frame_seq, limit=2, kinds=None)
+
+    assert [frame.kind for frame in first] == ["user", "assistant"]
+    assert [frame.kind for frame in rest] == ["result"]
+
+
+async def test_the_kinds_filter_skims_without_paging_through_everything(chat_store, operator_id) -> None:
+    session, _ = await chat_store.create(operator_id, SpaSession())
+    for kind in ("user", "system", "assistant", "system", "result"):
+        await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, {"type": kind})
+
+    frames = await chat_store.read_frames(
+        str(session.session_id), after_seq=None, limit=25, kinds=["assistant", "result"]
+    )
+
+    assert [frame.kind for frame in frames] == ["assistant", "result"]
+
+
+async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
+    mine, _ = await chat_store.create(operator_id, SpaSession())
+    theirs, _ = await chat_store.create(operator_id, SpaSession())
+    await chat_store.record_frame(mine.session_id, FrameDirection.FROM_AGENT, {"type": "assistant"})
+    await chat_store.record_frame(theirs.session_id, FrameDirection.FROM_AGENT, {"type": "result"})
+
+    frames = await chat_store.read_frames(str(mine.session_id), after_seq=None, limit=25, kinds=None)
+
+    assert [frame.kind for frame in frames] == ["assistant"]
+
+
+async def test_conversations_come_back_newest_first_with_the_room_they_served(chat_store, operator_id) -> None:
+    await chat_store.create(operator_id, SpaSession())
+    matrix, _ = await chat_store.create(operator_id, MatrixSession(room_id="!room:example.org"))
+
+    conversations = await chat_store.list_conversations(limit=10)
+
+    assert conversations[0].session_id == str(matrix.session_id)
+    assert conversations[0].room_id == "!room:example.org"
+    assert conversations[1].room_id is None
 
 
 if __name__ == "__main__":

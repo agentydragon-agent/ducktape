@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
 from uuid import UUID
 
@@ -16,7 +17,7 @@ from haku.console.x.chat_notifications import ChatNotifications
 from haku.console.x.claude_chat import BridgeAuthentication, ClaudeChatService, ClaudeChatStore, SpaSession
 from haku.console.x.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER, runtime_config
 from haku.console.x.matrix_client import InboundMessage, MatrixError
-from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface, RecentHistory
+from haku.console.x.matrix_session import MatrixConversationStore, MatrixSessionSupervisor, MatrixSurface
 from haku.console.x.system_prompt import SystemPromptTemplate
 
 
@@ -184,8 +185,33 @@ async def bound(conversations: MatrixConversationStore, chat_store: ClaudeChatSt
     return view.session_id
 
 
-async def _unused(_: str) -> None:
-    raise AssertionError("the prompt path does not speak into the room")
+# What `RoomChannel.recent_history` is, as a callable the fake room can be handed. Lives here
+# rather than in the module now that the port declares the method itself.
+RecentHistory = Callable[[int], Awaitable[Sequence[InboundMessage]]]
+
+
+class _RecordingRoom:
+    """A `RoomChannel` that keeps what it was told instead of speaking to a homeserver."""
+
+    def __init__(self, history: RecentHistory) -> None:
+        self._history = history
+        self.shown: list[str] = []
+        self.cleared = 0
+
+    async def recent_history(self, limit: int) -> Sequence[InboundMessage]:
+        return await self._history(limit)
+
+    async def announce(self, body: str) -> None:
+        raise AssertionError("the prompt path does not speak into the room")
+
+    async def reply(self, body: str) -> None:
+        raise AssertionError("the prompt path does not speak into the room")
+
+    async def show_status(self, body: str) -> None:
+        self.shown.append(body)
+
+    async def clear_status(self) -> None:
+        self.cleared += 1
 
 
 def surface(history: RecentHistory) -> MatrixSurface:
@@ -193,9 +219,7 @@ def surface(history: RecentHistory) -> MatrixSurface:
         MATRIX_CONFIG,
         runtime_config(),
         SystemPromptTemplate("{{ room_id }} {{ session_id }} {{ recent_messages | length }}"),
-        history,
-        _unused,
-        _unused,
+        _RecordingRoom(history),
     )
 
 
