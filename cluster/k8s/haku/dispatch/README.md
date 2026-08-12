@@ -68,3 +68,12 @@ keeps provider credentials out of the database entirely.
   copy per zone namespace.
 - Optional `dispatcher-classifier-context` Secret (SOPS, `sops -e -i` only — never
   plaintext) sharpens the classifier with private specifics; absent = base policy.
+
+## Retirement sequence
+
+The z.ai lane is being retired. Before removing the active root Flux references,
+set `deletionPolicy: Delete` on the two namespace Kustomizations that previously
+used `prune: false`, merge, and confirm that policy reconciles. Only then archive
+the dispatch, zone, and zone-proxy manifests under `k8s/x/` and remove their
+root references. This lets Flux prune every live object instead of retaining the
+two namespaces.

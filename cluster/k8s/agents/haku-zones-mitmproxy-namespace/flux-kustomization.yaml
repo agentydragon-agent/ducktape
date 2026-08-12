@@ -7,6 +7,9 @@ spec:
   interval: 1h
   path: ./cluster/k8s/agents/haku-zones-mitmproxy-namespace
   prune: false
+  # The follow-up archive PR removes this controller from the active root.
+  # Delete the namespace then; do not silently orphan it.
+  deletionPolicy: Delete
   sourceRef:
     kind: GitRepository
     name: ducktape
