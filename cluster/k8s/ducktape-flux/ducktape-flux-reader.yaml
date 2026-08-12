@@ -1,4 +1,4 @@
-# Permanent public-Flux diagnostics for public-coder-agent.
+# Permanent public-Flux diagnostics for trusted agent identities.
 #
 # This intentionally grants only the two public control-plane CRDs in the
 # ducktape-flux namespace. In particular it grants no access to the
@@ -6,10 +6,10 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: public-coder-agent-flux-reader
+  name: ducktape-flux-reader
   namespace: ducktape-flux
   annotations:
-    description: Read-only public Ducktape Flux diagnostics for public-coder-agent.
+    description: Read-only public Ducktape Flux diagnostics.
 rules:
   - apiGroups: ["kustomize.toolkit.fluxcd.io"]
     resources: ["kustomizations"]
@@ -21,15 +21,31 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: public-coder-agent-flux-reader
+  name: public-coder-agent-ducktape-flux-reader
   namespace: ducktape-flux
   annotations:
     description: Binds public-coder-agent-reader to public Ducktape Flux diagnostics.
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: public-coder-agent-flux-reader
+  name: ducktape-flux-reader
 subjects:
   - kind: ServiceAccount
     name: public-coder-agent-reader
     namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-ducktape-flux-reader
+  namespace: ducktape-flux
+  annotations:
+    description: Binds the Haku OIDC group to public Ducktape Flux diagnostics.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ducktape-flux-reader
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
