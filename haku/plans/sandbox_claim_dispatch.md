@@ -7,7 +7,7 @@ pause/resume.
 
 ## What would change
 
-`haku/dispatch/k8s_jobs.py` stamps a validator-gated `Job` + per-job `Secret`
+`haku/x/dispatch/k8s_jobs.py` stamps a validator-gated `Job` + per-job `Secret`
 into the zone namespace. The sandbox variant stamps a `SandboxClaim`
 referencing a per-zone `SandboxWarmPool`; the controller hands the claim an
 already-running pod.
