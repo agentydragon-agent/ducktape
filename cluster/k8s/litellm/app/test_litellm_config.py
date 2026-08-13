@@ -302,13 +302,10 @@ def test_terraform_codex_lanes_match_the_cliproxy_model_list() -> None:
 
 
 # main.tf's own comment: "Model names must match generated model_name entries in
-# cluster/k8s/litellm/app/proxy-config.yaml". These are the locals that spell names out
-# literally, so every element must resolve. zai_lane_models is the one that still builds
-# its names with a for-expression; the zai test in cluster/k8s/x/haku/dispatch/litellm
-# covers it.
+# cluster/k8s/litellm/app/proxy-config.yaml". These are the remaining live-key
+# locals that spell names out literally, so every element must resolve.
 _TF_LITERAL_MODEL_LOCALS = [
     "oai_lane_models",
-    "classifier_models",
     "tana_client_models",
     "codex_client_models",
     "embedding_client_models",
