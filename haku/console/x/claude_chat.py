@@ -52,9 +52,9 @@ from haku.console.database_schema import (
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.tools.conversations import Conversation, RolloutFrame, TurnRecord
 from haku.console.x.chat_notifications import ChatEventKind, ChatNotifications, notify
-from haku.runtime.x.agent_sdk_transport.cli_client import ClaudeCli, cli_over_websocket
-from haku.runtime.x.agent_sdk_transport.options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.agent_sdk_transport.protocol import TextWebSocket
+from haku.runtime.x.claude_bridge.cli_client import ClaudeCli, cli_over_websocket
+from haku.runtime.x.claude_bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runtime.x.claude_bridge.protocol import TextWebSocket
 
 router = APIRouter(tags=["claude-chat"])
 internal_router = APIRouter(tags=["claude-chat-internal"])
@@ -122,7 +122,7 @@ class ClaudeChatToolUseView(BaseModel):
     # Absent while the call is still running, and on a turn that died before it answered — which
     # is a state worth seeing rather than one to hide. It comes from the rollout, because
     # `claude_chat_messages.tool_uses` never held it: the turn loop keeps the `tool_use` blocks
-    # that asked and drops the `user` frames that answered (§4).
+    # that asked and drops the `user` frames that answered.
     result: ClaudeChatToolResultView | None = None
 
 
