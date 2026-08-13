@@ -166,8 +166,8 @@ LLM kill switch.
 
 - `zai`: the template points `ANTHROPIC_BASE_URL` at
   `litellm.litellm.svc.cluster.local:4000` and reads `ANTHROPIC_AUTH_TOKEN`
-  from `litellm-key-agent-workspaces` (GLM-model allowlist shared with the
-  haku zai lane). `ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` both pin
+  from `litellm-key-agent-workspaces` (the same GLM model route used by the
+  interactive z-claude client). `ANTHROPIC_MODEL`/`ANTHROPIC_SMALL_FAST_MODEL` both pin
   `glm-5.2-anthropic` (z-claude parity) so Claude Code doesn't request
   `claude-*` names the key rejects.
 - `codex`: the image bakes `~/.codex/config.toml`
@@ -197,6 +197,6 @@ that. Untrusted workloads stay in the haku zones perimeter until then.
   door.
 - **Web UI**: `coder/agentapi` (Apache-2.0) per sandbox behind an
   Authentik-guarded `HTTPRoute`.
-- **Haku dispatch**: `haku/x/dispatch/k8s_jobs.py` could stamp `SandboxClaim`s
-  instead of `Job`s to gain warm starts and pause/resume; the zone perimeter
-  (namespace + Kyverno mitmproxy injection) applies to sandbox pods unchanged.
+- **Haku dispatch**: the archived `haku/x/dispatch/k8s_jobs.py` remains a design
+  reference for a future `SandboxClaim`-based launcher; the zone perimeter
+  (namespace + Kyverno mitmproxy injection) would apply to sandbox pods unchanged.

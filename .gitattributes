@@ -114,8 +114,7 @@ x/k8s_old/** rules-lint-ignored=true
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
 cluster/docs/inference/model_comparison/** rules-lint-ignored=true
-# Retired Haku z.ai dispatch-lane manifests; preserved as non-runnable reference material.
-cluster/k8s/x/haku-zai-dispatch-README.md rules-lint-ignored=true
+# Retired Haku dispatch-lane manifests; preserved as non-runnable reference material.
 cluster/k8s/x/haku/** cluster-manifest-ignored=true
 cluster/k8s/x/agents/haku-zones-mitmproxy/** cluster-manifest-ignored=true
 cluster/k8s/x/agents/haku-zones-mitmproxy-namespace/** cluster-manifest-ignored=true

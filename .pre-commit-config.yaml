@@ -297,11 +297,11 @@ repos:
             cluster/k8s/agents/haku-egress-proxy/openclaw-spike-iron\.yaml|
             cluster/k8s/litellm/app/(chatgpt-)?proxy-config\.yaml|
             cluster/k8s/litellm/tana/proxy-config\.yaml|
-            cluster/k8s/(x/)?haku/dispatch/litellm/workers-litellm-config\.yaml|
+            cluster/k8s/x/haku/dispatch/litellm/workers-litellm-config\.yaml|
             cluster/k8s/haku/console/config\.yaml|
             # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
-            cluster/k8s/(x/)?haku/dispatch/dispatcher/job-template\.yaml|
-            cluster/k8s/(x/)?haku/dispatch/dispatcher/zones\.yaml|
+            cluster/k8s/x/haku/dispatch/dispatcher/job-template\.yaml|
+            cluster/k8s/x/haku/dispatch/dispatcher/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest

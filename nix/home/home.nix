@@ -14,7 +14,7 @@ let
   toTOML = (pkgs.formats.toml { }).generate;
 
   # `z-claude`: Claude Code on z.ai GLM via the cluster LiteLLM proxy, reading
-  # $LITELLM_ZAI_KEY. See ./claude_code/z-claude.nix. Shared with the agent-box zai user.
+  # $LITELLM_ZAI_KEY. See ./claude_code/z-claude.nix.
   zClaude = import ./claude_code/z-claude.nix { inherit pkgs; };
 
   # `codex-claude`: Claude Code on ChatGPT/Codex via the in-cluster CLIProxyAPI gateway.
