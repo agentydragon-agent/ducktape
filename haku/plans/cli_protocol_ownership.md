@@ -152,10 +152,9 @@ stream directly for an adopted turn" does not turn the store into a migration.
   the CLI now outlives the connection, so an adopting console must not re-handshake a process
   that is already initialized. The runner owns the process lifetime, so it is the honest owner
   of the fact that the handshake happened. Consoles come and go around it.
-- **A resume point.** The runner keeps a bounded ring buffer of frames it has not seen
-  acknowledged; on adopt, the console says which sequence it already has. That means a
-  monotonic sequence number on runner → console frames — additive to the envelope, and by the
-  envelope's own `extra="forbid"` rule it costs a `PROTOCOL_VERSION` bump.
+- **A resume point, made safe by identity rather than by exactness.** The runner keeps a bounded
+  buffer of frames it has not seen acknowledged and re-sends from there on adopt. See below: what
+  makes that correct is that a replayed frame is recognisable, not that the cursor is right.
 - **An adopt path in `authenticate_bridge`.** It currently requires `status == PROVISIONING`
   and `bridge_connected_at is None`, so every reconnect is refused. Adoption must be gated on
   taking the lease — that is the arbitration that stops two replicas adopting one CLI.
@@ -165,6 +164,169 @@ stream directly for an adopted turn" does not turn the store into a migration.
   `claude_chat_turns` brackets.
 - **An idle timeout in the runner.** A CLI held open for a console that never returns trades a
   wedged room for a wedged sandbox.
+
+### Replay is safe because frames have identity — with one exception
+
+The first version of the resume point above wanted an exact, durable cursor: a monotonic sequence
+number on the envelope, and an acknowledgement the runner could trust. That is the expensive part —
+it is a `PROTOCOL_VERSION` bump, which is not atomic across two independently rolled images — and it
+is also the wrong thing to lean on. **A cursor cannot be the correctness argument, because the
+console can die between recording a frame and acknowledging it**; the frame is then replayed no
+matter how exact the cursor was. Something downstream has to tolerate seeing it twice.
+
+Once it does, the cursor stops being load-bearing: it bounds _how much_ is replayed, not whether
+replaying is safe. Deliver at least once, recognise duplicates, and the sequence number becomes an
+optimisation that can be added later or not at all.
+
+**The frames the console keeps already carry identity**, assigned by the agent rather than by us:
+
+| frame               | identity                                                              |
+| ------------------- | --------------------------------------------------------------------- |
+| `assistant`         | `message.id` (`msg_…`) — already stored as `agent_message_id`         |
+| `user`              | the `tool_use_id` of the `tool_result` block it carries; one per call |
+| `result`            | one per turn, and the console knows which turn is open                |
+| `command_lifecycle` | `(command_uuid, state)` — the uuid we stamped, plus which state it is |
+| `system/task_*`     | `task_id`, and `tool_use_id` where one applies                        |
+
+**The exception is `stream_event`, and it is the one place replay actively corrupts.** A delta has
+no identity — two identical ones are legitimately distinct — and the turn loop's `streamed += delta`
+would double-append the text on replay. But deltas are also the one class that never needs
+replaying: each is a preview of an `assistant` frame that arrives complete moments later, and the
+console already declines to record them (`RolloutRecorder` skips them, so the log stays readable).
+So the buffer's rule falls out of a rule that already exists for another reason: **the runner buffers
+everything except deltas.** Both halves of the system then agree that a delta is worth nothing once
+its message has landed.
+
+Two consequences worth building deliberately:
+
+- **Make it a schema property, not a rule.** A nullable `frame_uid` on `claude_chat_frames` with a
+  partial unique index on `(session_id, frame_uid)` makes "the same frame twice" unrepresentable
+  rather than something every writer has to remember — the shape `uq_claude_chat_turns_open` and
+  `uq_claude_chat_prompts_unclaimed` already use. Additive.
+- **Dedupe where the frame enters, not where it is stored.** The record is not the only thing a
+  frame touches: a replayed `assistant` frame that reached `_run_turn` would post the message into
+  the room a second time. The check belongs at ingestion, ahead of dispatch, so a duplicate is
+  neither recorded nor acted on. Matrix offers a second line for free — `send_text` currently passes
+  `txn_id=uuid4().hex`, so the homeserver cannot deduplicate a reply it has already seen. Derived
+  from the message's own `msg_…` id it could. (The reasoning that keeps _notices_ on fresh
+  transaction ids does not apply here: it is about derived counters resetting across a restart, and
+  an agent-assigned message id does not reset.)
+
+### The bridge protocol is versioned; the versioning is pointed the wrong way
+
+`PROTOCOL_VERSION` is 2, it rides on the `start` frame, and `ClaudeLaunch.protocol_version` is
+`Literal[2]` so a peer on another version fails validation immediately rather than further in with a
+stranger symptom. That is a real version, and it was the right one for a bridge whose two ends live
+and die together. Re-adoption breaks three of its assumptions at once.
+
+**It flows one way — from the end that cannot adapt to the end that must.** `start` is
+console → runner, so the runner validates the console's version and the console never learns the
+runner's. Today that is harmless, because a rejected session is replaced within ninety seconds by
+one launched from the current image. Under adoption it inverts: the runner's image is fixed when its
+claim is created and its process now outlives many console releases, while the console rolls six
+times a day. The end that has to be backward compatible is the console, and it is the end flying
+blind. The runner has to state its version — on connect, and again on adopt, since an adopting
+console did not launch it.
+
+**Exact match has no room to negotiate.** `Literal[2]` admits one value; there is no
+minimum-supported, no range, no "speak 2 to this peer and 3 to that one". A console that must serve
+both an old runner and a new one cannot, so the first release after this ships would kill every
+session older than itself — which is the thing being fixed.
+
+**`extra="forbid"` makes every additive field a fleet-wide breaking change.** That is deliberate and
+its reasoning is stated in `_Frame`: a frame this end does not fully understand is a version
+mismatch, and silently dropping an unknown field would let the two ends disagree about what was
+said — the cost being honest, since no frame change is atomic across two independently rolled
+images. Correct today. But the replay design above adds a field to the envelope, and under adoption
+"not atomic" stops meaning "a few sessions fail during the rollout" and starts meaning "every live
+session dies on every console release that touches the envelope".
+
+**The rule that gets both properties: evolve by adding kinds, not fields.** The envelope already
+discriminates on `kind`, so an unknown _kind_ fails the union parse — fail-closed, for free, exactly
+where a must-understand change belongs. An optional field added to a known kind is safe to ignore
+precisely because a receiver that ignores it behaves as it did before, which is the old version's
+correct behaviour. So:
+
+- unknown `kind` → reject, as now;
+- unknown field within a known kind → ignore rather than reject, which is what turns an additive
+  change from a fleet-wide break into a no-op for peers that predate it;
+- anything a peer **must** understand to stay correct arrives as a new kind, not as a field — the
+  adopt/resume frame this design needs is itself an example, and it is naturally fail-closed;
+- the version stops being an assertion and becomes a negotiation: the runner offers what it speaks,
+  the console picks the highest both know.
+
+`SetupOutput` is the precedent that this works — it exists because the envelope has somewhere to put
+a frame belonging to neither protocol, which is the same property being leaned on here.
+
+#### A supported range, and what it costs to have one
+
+The console keeps a range — `SUPPORTED = 2..N` — rather than a number, and speaks whatever a given
+runner speaks. Right, and four things follow that are easier to build in than to retrofit.
+
+**A range only stays cheap if unknown fields are ignored on receipt.** The console does not merely
+parse frames, it emits them, so "supporting v2" means being able to _produce_ v2-shaped frames. With
+`extra="forbid"` on the receiving end, a v2 runner rejects any frame carrying a field it predates —
+so a console supporting 2..4 would have to keep a serializer per version and pick one per
+connection. Relax forbid to ignore on receipt and that collapses: the console emits its newest
+shape, an older peer drops what it does not know, and behaves as its version correctly did. The
+range and the field policy are the same decision, not two.
+
+**Negotiation needs a fixed point, and today there is none.** The version rides on `start`, which is
+console → runner and the _first_ frame — so the console must choose a version before it has heard
+anything, and the runner cannot state its own until after it has decoded a frame whose shape is what
+is in question. The way out is that the runner speaks first: a minimal `hello` carrying nothing but
+its supported range, whose shape is then **frozen forever**, with the console replying `start` (a new
+session) or `resume` (an adoption) in the version it picked. Every negotiated protocol needs one
+frame that can never change; this is the moment to choose it and keep it as small as it can be.
+
+**Installing that is itself the last breaking change.** A v2 runner waits for `start` and rejects an
+unknown kind, so it will never send or accept a `hello`. The transition is a shim on the console
+side: wait briefly for a `hello`, and on silence assume a pre-negotiation peer and send the v2
+`start` it is waiting for. Bounded, deletable, and worth writing with the deletion condition in the
+comment — once no live session runs a runner image older than the negotiation, the shim goes. One
+more flag day buys the end of flag days.
+
+**Dropping a version from the low end is an operational step, not an edit.** Removing 2 from the
+range means a sandbox still speaking 2 can no longer be adopted by any console — so it has to be
+drained first, and "is anything still on it" is answerable: a session's runner image is fixed at
+claim creation, so the question is whether any live session predates that image. The same reasoning
+as the expand/contract migrations, with the roll being the runner fleet rather than the console's.
+
+**And a range needs a test per end of it.** This repo already runs the discipline for FastMCP — one
+exact version, adapter contract tests before a repin. A range inverts it: the contract tests run at
+the oldest and the newest supported version, or "we support 2" quietly becomes a claim nobody
+checks. `test_transport.py` and `test_runner.py` are where that matrix goes.
+
+### Letting the console own the whole lifecycle
+
+Today a session's outer bound is `shutdownTime` on the SandboxClaim, set to
+`now + session_ttl_seconds` (7200) **at creation and never patched**. So it is not an idle timeout —
+a conversation in full flow dies at exactly two hours, mid-turn, and the room is told the session
+failed. Removing it in favour of console-managed lifecycle is right, and cheaper than it looks
+because the TTL is not what prevents leaks: the Kyverno `CleanupPolicy` beside the template already
+reaps Sandboxes and SandboxClaims older than 24h, at the CR layer, precisely because the Agent
+Sandbox controller recreates deleted Pods. That janitor is the backstop; the TTL is a policy on top
+of it.
+
+So: drop `shutdownTime` to the janitor's horizon or omit it, and let the console release a sandbox
+when it decides the session is done — an idle timer, plus the lease as liveness, plus the janitor as
+the thing that catches a console that forgot both.
+
+**Order matters here.** Do not remove the TTL before rolls are survivable. Today it is quietly
+recycling sessions that wedged — a session whose runner is crashlooping into a refused reconnect is
+reclaimed by the TTL, not by anything that understands what happened
+(<../console/debug/2026_08_13_sessions_boot_and_die.md>). Remove the backstop first and those
+sessions stop being cleaned up at all.
+
+**And keep a bound, because the bound is the protocol-compatibility window.** A runner's image is
+fixed when its claim is created, so the oldest live runner is exactly as old as the longest-lived
+session — which is exactly how far back the console must still speak the bridge protocol. With a
+bound, the support policy is finite and derivable: at roughly six console releases a day, a 24h
+horizon means the console must speak whatever the runner images of the last day speak, and a version
+older than that cannot be connected to anything. Without a bound, "the console must remain
+compatible with every bridge version ever shipped" is the policy, whether or not anyone writes it
+down. Pick the horizon deliberately and derive the support window from it, rather than discovering
+the window when an eight-month-old sandbox refuses a handshake.
 
 ### The lease decision this revisits
 

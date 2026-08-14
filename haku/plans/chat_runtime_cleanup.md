@@ -1,89 +1,322 @@
-# Chat runtime cleanup
+# Chat runtime — what is wrong, and the order to fix it
 
-What is left of a design review of `haku/console/x/` and the schema it writes, taken after the
-runtime had been built iteratively across a dozen PRs. Findings are deleted from this file as they
-land, so everything below is work that has not been done. Nothing here is a bug report: the runtime
-works and is in production.
+Three sources feed this: a design review of `haku/console/x/` and its schema, a second review that
+read the code de novo once the first's findings had landed, and a live investigation into sessions
+that record nothing but a container boot and a death
+(<../console/debug/2026_08_13_sessions_boot_and_die.md>). Items are deleted from here as they land,
+so everything below is work that has not been done.
 
-Ordered by payoff, not by size.
+Two ambitions shape the ordering, both stated by the owner and neither of them a demand to
+generalize now: the runtime should keep a sandbox across a console roll, and it is
+single-Claude-CLI, single-Matrix-room by construction where both are eventually wanted plural. They
+matter here because several pieces of obvious tidying are the _wrong_ tidying if done without them
+in view, which is said at each such point.
 
-## The console drives the CLI protocol itself
+## How the stages are ordered
 
-Decided 2026-08-12 and written up separately, because it is a direction rather than a cleanup:
-<cli_protocol_ownership.md>. Most of what this review found sat on that seam — frames the SDK's
-typed layer dropped, and who parses them — so read it first; what remains of that direction is
-tracked there rather than here.
+Six constraints, and everything else is preference:
 
-## Mid-turn steering works and we are not using it
+1. **Diagnosis before change.** Today a failed session records a precise reason in a column nobody
+   reads and narrates an imprecise one where everyone is looking. Until that is inverted, every
+   change below is evaluated blind.
+2. **Survive a roll before removing the TTL.** The TTL is currently recycling sessions that wedged.
+   Remove the backstop first and they stop being cleaned up at all.
+3. **Sessions must survive being asked for before they are allocated on demand.** Allocating lazily
+   while the failure is still there moves it from "always" to "whenever somebody speaks", which is
+   when it costs a person something.
+4. **Version negotiation before anything that adds a field to the envelope.** The replay design adds
+   one, and under adoption a breaking envelope change stops meaning "some sessions fail during the
+   rollout" and starts meaning "every live session dies on every console release".
+5. **The frontend seam before the backend seam.** The first is smaller, is pure refactoring, and
+   does not touch the schema until its last step; the second changes where meaning is extracted.
+6. **Contract halves land when their roll converges**, independently of all of this.
 
-Measured, not inferred (<../cli_protocol/probes/steering.py>, 2026-08-12): a prompt written
-to the CLI while a turn is running is **absorbed at the next tool boundary**, the model acts
-on it, and one `result` frame covers both prompts. <matrix_chat_runtime.md> R2.2a defers this
-as having "no native mechanism"; that is now corrected there.
+## Stage 0 — make failures say why
 
-Nothing on our side is preventing it either — writing a prompt to the CLI is a bare
-`transport.write()` with no interlock. What prevents it is the shape of our loop: `_run_turn` drains
-to the `result` frame before looking for the next prompt.
+_No behaviour change. Everything after this is measured against it._
 
-So `MatrixTurns.offer` can stop refusing batches during a turn (R2.2 becomes fold-into-turn)
-and "actually, skip the calendar part" reaches Haku while it is working. The turn model landed the
-shape this needs — `claude_chat_turn_prompts` is many-to-one already — and deliberately did not turn
-it on: admission still refuses a second prompt while a turn is open, and a test says so.
+- **Announce the reason, not just the status.** `supervise_once` says `session … ended (failed);
+starting a new one` while `chat.error` — always set, and specific — stays in Postgres. It already
+  has the row.
+- **Stop discarding the CLI's stderr.** `bridge_websocket_to_claude` opens the process with
+  `stderr=subprocess.DEVNULL`, so a `claude` that fails to start yields `Claude Code exited with
+status N` and the sentence that said why is thrown away in the sandbox. Forward it as progress.
+- **Record `SetupOutput` into the rollout.** Bootstrap output reaches the pod's stdout and the room
+  and nothing durable, so it dies with the reaped pod — which is exactly the case worth reading.
+- **Guard `on_progress`.** `transport.py` awaits it per line inside the read loop with no guard, so
+  a room-side failure becomes a session-side one. This is also what stops a 429 during bootstrap
+  from being recorded as `Claude runtime failed: 429` over the real error.
+- **Run the three checks** in the debug note against production, and write the answer into it.
 
-A fold is confirmable rather than merely visible in what the model does next: `ClaudeCli.query`
-stamps a `uuid` on the prompt, which is what makes the CLI report `command_lifecycle`, and
-`completed` before the turn's `result` means folded.
+**Done when** a session that died says why in the room, and the first cause of the boot-and-die
+pattern is confirmed rather than argued.
 
-Two cautions. A turn with no tool call has no boundary to absorb at, so the fallback to
-next-turn delivery stays. And the events the bundled CLI documents are `@internal`, so this
-wants the same version-pinning discipline as the FastMCP adapter.
+## Stage 1 — survive a console roll
 
-**The abort path needs `cancel_queued`.** A bare `interrupt` cancels the running turn and the
-CLI then **starts the next queued prompt** — measured, <../cli_protocol/probes/steering.py>. Our
-abort means "stop, and drop what I asked for next", which is `interrupt` with
-`cancel_queued: true`; it reaches only uuid-stamped commands, which ours now are.
+_The measured cause: the console deployment took 41 image bumps in seven days (~6 rolls/day), and
+with the 12 daily TTL expiries a room's session dies about every 80 minutes, usually having done
+nothing in between._
 
-## The prompt queue's compatibility half is still in place
+The crashloop that amplifies each death is four reasonable facts in combination: the bridge
+credential is single-use, so every reconnect is refused; Kubernetes restarts the runner, since the
+pod template sets no `restartPolicy`; the runner has no retry, so it exits into the refusal; and
+nothing ends the session for ~90s, until the lease sweep. **Most rolls land on an idle session**,
+where both directions are empty and surviving one needs no buffering at all:
 
-`claude_chat_prompts` is the queue — one row per prompt, `claimed_at` for whether it is still
-waiting, a partial unique index making "one in flight per session" a property of the schema. What
-still runs beside it is the shape it replaced: the transcript row is minted `pending`, and
-`ClaudeChatStore` still falls back to scanning the transcript for one, so a prompt an old replica
-accepted mid-roll is still answered. Both are tombstoned in the code.
+- **The runner stops killing the CLI on disconnect.** `bridge_websocket_to_claude`'s `finally`
+  terminates the process — the single line that makes the sandbox disposable.
+- **The runner redials with backoff** instead of exiting, which retires the crashloop by
+  construction: a process that does not exit is not restarted.
+- **`authenticate_bridge` gains an adopt path**, gated on taking the lease — that gate is the
+  arbitration that stops both replicas adopting one CLI.
+- **The runner owns "already initialized"**, so an adopting console does not re-handshake a live
+  process. The one piece of the full design this subset needs.
+- **The console says goodbye.** It knows it is going away — the `CancelledError` path exists to
+  record it, inside a 30s grace with a shielded finalizer — so it can close with a code meaning
+  _rolling, reconnect_ rather than leaving the runner to infer a roll from a dropped socket.
+- **Separate planned ends from failures.** A TTL reap and a roll both present as `failed` with an
+  alarming string; while they do, no failure rate means anything.
 
-Once the roll converges, write the transcript row final and drop the `_legacy_pending` scan.
-`'pending'` stays in `ck_claude_chat_messages_status` — dropping it is a destructive migration for
-no benefit.
+**Done when** a deliberate console roll leaves the room still answering, pod `RESTARTS` stops
+climbing, and measured session lifetime exceeds the roll interval.
 
-## `tool_uses` is a column with almost no reader left
+## Stage 2 — make the room behave
 
-`claude_chat_messages.tool_uses` holds id/name/input and no result. The frames beside it hold both,
-verbatim, so `ClaudeChatSessionView` takes each call **and** its result from the rollout, joined by
-the agent's own `msg_…` id, which the transcript row records. The column is read only for a row with
-nothing to point at: one written before that pointer existed, or one the console synthesized rather
-than observed (a turn whose text arrived only on the `result` frame).
+_Independent of stages 1 and 3–7; can run in parallel with any of them._
 
-**Deleting it takes two more releases.** `tool_uses` is `nullable=False` with only a Python-side
-`default=list`, so the ORM attribute cannot go until the column has a server default
-(`SET DEFAULT '[]'::jsonb`), and the `drop_column` cannot share a release with that — an old
-replica's `_message_view` selects the mapped column by name. The synthesized-message case has to
-stop needing it first: either those rows get their calls recorded as frames, or they keep having
-none, which is what they have today.
+- **One paced send queue per room.** `STATUS_EDIT_INTERVAL_SECONDS` drops the value it refuses
+  rather than deferring it, and `_TurnStatus` has already marked that state shown — so a status
+  change inside the floor is lost until the next one. But a debounce is only correct for latest-wins
+  state: a reply, a bootstrap line, a `holding N message(s)` all lose information when dropped. So
+  the room wants FIFO for what must arrive with the status line collapsing into one pending slot,
+  and the pacer scoped to the room, because the limit is per room across every kind of send.
+- **Honour the server's answer.** `_unwrap` turns any `ErrorResponse` into
+  `MatrixError(f"{status_code}: {message}")`, discarding a 429's `retry_after_ms`; nio's own
+  `max_limit_exceeded_retries` is unset. Five seconds is a guess at `rc_message` on that homeserver,
+  never checked against what it actually said. The loudest senders are also the unpaced ones —
+  worst being the bootstrap narration at one notice per line.
+- **Count messages, not events.** `recent_messages` passes `limit` to `/messages` as the page size
+  and then filters to `RoomMessageText`, so `RE_AWAKENING_MESSAGES = 20` is a budget of timeline
+  events in a room that is mostly the console's own notices. A re-awakening can come back with two
+  or three real messages, or none, believing it asked for twenty — and it fails silently. `_backfill`
+  in the same file already pages until it has what it wants; this wants that shape.
+- **Tag what the console sends.** Every question about a room event is currently answered by a
+  proxy: msgtype for "is this conversational", sender for "is this ours", nothing at all for "which
+  transcript row is this". A namespaced content object naming the session, the transcript row, the
+  agent's `msg_…` and a `kind` replaces all three with statements — and makes delivery idempotent
+  for free, which is the ledger stage 4 would otherwise have to invent. Public and federated, so ids
+  and kinds only; stripped by redaction; absent on existing history, so today's msgtype rule stays
+  as the fallback.
+- **Delete `_sent_event_ids`.** An unbounded in-memory set that can never match: every event in it
+  was sent by the bot, and `MatrixClient._messages` has already dropped everything the bot sent.
 
-## An expired lease should mean unowned, not dead
+**Done when** the status line is never stale past the floor, a burst cannot 429 the session, and a
+re-awakening prompt contains the number of real messages it asked for.
 
-`lease_expires_at` is a creator-granted provisioning budget before a runner attaches
-(`PROVISION_LEASE`, ten minutes) and an owner heartbeat afterwards (`LEASE_TTL`, ninety seconds), and
-`lease_holder` now says which of the two is running and which pod holds it. What it still means when
-it expires is **dead**: `expire_stale_leases` fails the session and the supervisor provisions a
-replacement. <cli_protocol_ownership.md> wants it to mean **adoptable** instead — which cannot land
-before an adopter exists, since reinterpreting expiry on its own leaves a room silent behind a
-healthy-looking row.
+## Stage 3 — version the bridge so it can evolve
 
-## `ClaudeChatStore` is a god object
+_Before stage 4, which adds a field to the envelope._
 
-Twenty-odd methods across session lifecycle, prompt queue, transcript, frames, turns, leases and
-claim-cleanup bookkeeping. It splits along the seams the turn table and the prompt queue created:
-sessions/leases, prompts, transcript, rollout. Not as a PR of its own — a standalone reshuffle has no
-acceptance criterion and would conflict with everything else here; each split lands with the change
-that creates its seam.
+`PROTOCOL_VERSION` is 2 and rides on `start`, typed `Literal[2]`. Three properties are wrong for a
+world where the runner outlives many console releases: it flows from the end that cannot adapt to
+the end that must (the console never learns the runner's version); exact match cannot negotiate; and
+`extra="forbid"` makes every additive field a fleet-wide break.
+
+- **Evolve by adding kinds, not fields.** An unknown `kind` already fails the union parse —
+  fail-closed exactly where a must-understand change belongs — while an optional field a peer
+  ignores leaves it behaving as its version correctly did. So: unknown kind rejects, unknown field
+  is ignored, must-understand changes arrive as new kinds.
+- **A supported range, not a number**, which only stays cheap given the above: the console emits
+  frames as well as parsing them, so with `forbid` on the far end a range means one serializer per
+  version. The range and the field policy are one decision.
+- **The runner speaks first.** Negotiation needs a fixed point, and today the version rides on the
+  console's first frame — so the console must choose before hearing anything, and the runner cannot
+  state its range until it has decoded a frame whose shape is what is in question. A minimal `hello`
+  carrying only the supported range, its shape then **frozen forever**, with the console replying
+  `start` or `resume` in the chosen version.
+- **A deletable transition shim.** A v2 runner waits for `start` and rejects unknown kinds, so the
+  console waits briefly for a `hello` and on silence sends the v2 `start` the peer expects. One more
+  flag day buys the end of flag days; write the deletion condition into the tombstone.
+- **Contract tests at both ends of the range.** The repo runs this discipline for FastMCP as an
+  exact pin; a range inverts it, or "we support 2" becomes a claim nobody checks.
+
+**Done when** an old runner image and a current console interoperate in a test, and adding a field
+to the envelope breaks nothing.
+
+## Stage 4 — survive a roll mid-turn
+
+_Needs stage 3. This is where the queues earn their place._
+
+- **A bounded outbound buffer in the runner**, re-sent on adopt.
+- **Replay is safe because frames carry identity, not because the cursor is exact.** The console can
+  die between recording a frame and acknowledging it, so a frame is replayed however exact the
+  cursor was — which makes the cursor an optimisation and identity the correctness argument. The
+  frames the console keeps already carry agent-assigned identity: `assistant` → `message.id`, `user`
+  → the `tool_result`'s `tool_use_id`, `result` → its turn, `command_lifecycle` →
+  `(command_uuid, state)`, `system/task_*` → `task_id`.
+- **Except deltas, which is the one class replay corrupts.** A `stream_event` has no identity and
+  `streamed += delta` double-appends. It is also the class that never needs replaying, and the
+  recorder already drops them — so "buffer everything except deltas" is a rule that already exists
+  for another reason.
+- **Dedupe at ingestion, not at storage**, since a replayed `assistant` frame that reaches
+  `_run_turn` posts to the room a second time. A nullable `frame_uid` with a partial unique index on
+  `(session_id, frame_uid)` makes it a schema property; deriving Matrix's `txn_id` from the message
+  id (instead of `uuid4().hex`) makes the homeserver a second line of defence.
+- **Close the claimed-but-never-delivered window.** `next_prompt` claims the prompt and opens the
+  turn in one transaction; `_run_turn` writes it to the CLI afterwards. A replica dying in between
+  leaves a claimed prompt never asked and a turn that never ends — harmless while the session dies
+  with it, real once sessions survive. `command_lifecycle`'s `queued`/`started` is what distinguishes
+  "delivered, answer coming" from "never left".
+- **Route an adopted turn by turn**, not by session.
+
+**Done when** a roll during a turn loses no answer and posts nothing twice.
+
+## Stage 5 — let the console own the lifecycle
+
+_Needs stages 1 and 4 (constraint 2)._
+
+`shutdownTime` is set to `now + session_ttl_seconds` at claim creation and **never patched**, so it
+is not an idle timeout: a conversation in full flow dies at exactly two hours, mid-turn, and the room
+is told it failed. Removing it is cheaper than it looks, because the TTL is not what prevents leaks —
+the Kyverno `CleanupPolicy` reaps Sandboxes and SandboxClaims older than 24h at the CR layer, which
+is the real backstop.
+
+- Drop `shutdownTime` to the janitor's horizon or omit it; release on an idle timer instead, with the
+  lease as liveness and the janitor as what catches a console that forgot both.
+- **Keep a horizon, because it is the protocol-compatibility window.** A runner's image is fixed at
+  claim creation, so the oldest live runner is exactly as old as the longest-lived session — which is
+  exactly how far back the console must still speak the bridge protocol. Pick it deliberately and
+  derive the support range from it.
+- **An expired lease should mean unowned, not dead.** `expire_stale_leases` fails the session and
+  provisions a replacement; re-adoption wants adoptable, which could not land before an adopter
+  existed and now can.
+
+**Done when** no session dies on a clock, and an idle sandbox is released rather than reaped.
+
+## Stage 6 — allocate a sandbox because there is something to do
+
+_Needs stages 1 and 5 (constraint 3)._
+
+An idle room holds a sandbox permanently: the supervisor provisions whenever the room has no live
+session, the warm pool is `replicas: 0` so every claim is a cold start, and the cycle repeats on the
+TTL — twelve cold starts a day for a room nobody speaks in, each announcing itself and narrating its
+bootstrap there, holding ~1 CPU / 2Gi of an 8 CPU / 16Gi quota in between.
+
+The SPA has a gesture that means "I want a session" and Matrix has none, so the supervisor
+substitutes by assuming demand permanently. The prompt is the honest substitute, and the prompt
+queue already made it cheap: accepted and running were separated when `claude_chat_prompts` landed.
+
+- `create()` writes the row and stops, in a new **`idle`** status; `allocate()` mints the credential
+  and the claim and moves to `provisioning`.
+- Admission accepts on `idle`, so `enqueue_prompt` is what creates demand; the supervisor's trigger
+  becomes "an unclaimed prompt and no sandbox", waking on `ChatEventKind.PROMPT`.
+- `MatrixTurns.offer` stops refusing an unallocated session, so the batch enters the durable queue
+  rather than being left on the homeserver.
+- **`LIVE_SESSION_STATUSES` currently means both "worth keeping" and "has a lease to renew".** An
+  idle session is the first that is worth keeping with no holder to lose; split the set rather than
+  giving it a fake far-future lease.
+- **Adding an enum value is two releases here**, not additive: `TextBackedStrEnumColumn` parses the
+  column, so a replica on the previous image reading `idle` fails rather than degrading. Widen the
+  member and the CHECK first; write it next release.
+
+**Cost, stated plainly:** the first message after quiet pays the full cold start. Measure it rather
+than assume it away.
+
+**Done when** an idle room holds no sandbox and the first message provisions one.
+
+## Stage 7 — the two seams
+
+_Everything above is possible without these; they are what stop the next feature from being a
+rewrite._
+
+### The frontend seam — first, and mostly refactoring
+
+`RoomSurface` takes `room_id` on all six methods and `MatrixSurface` opens five of them with
+`del room_id`, because its channel is already bound to the one room. So the port reads as multi-room
+and behaves as one-room-globally, and `room_id: str | None` threads through the turn loop making four
+call sites re-ask a question answered once per connection — plus three no-op coroutines so
+`_TurnStatus` has something to call.
+
+1. A `ChatFrontend` port with **no address parameter**: a null implementation for the SPA, which
+   needs none of it because its client reads the message rows, and `MatrixSurface` bound at
+   construction as it effectively already is. Every `or room_id is None` and all three no-ops go.
+2. Then the schema half — `chat_attachment(session_id, surface, address, attached_at, detached_at)`
+   with a partial unique index on `(surface, address) where detached_at is null`. It subsumes
+   `claude_chat_sessions.surface`, `.room_id`, both check constraints tying them together, and
+   `matrix_conversation.session_id`; the pointer/history distinction those two tables document in
+   prose becomes `detached_at IS NULL`. Attach/detach within one session becomes a row.
+
+### The backend seam
+
+Launch and transport are already a package boundary, the transcript's shape is already neutral, and
+the frontends are a different question. What is welded is **meaning**: `_run_turn` matches on the
+CLI's own frame `type` and six helpers parse Anthropic content blocks, so the turn loop is a frame
+interpreter. Every branch of it reduces to five events naming nothing provider-specific —
+`TextDelta`, `MessageCompleted(id, text, calls)`, `ToolResult`, `Activity`,
+`TurnCompleted(outcome, text, cost, usage, duration)` — with one adapter per backend producing them.
+`ClaudeCli.frames()` already sits where that adapter goes; it yields wire dicts, which is why the
+console became the interpreter.
+
+Two corrections this forces on items that would otherwise look like cleanups:
+
+- **`tool_uses` must be deleted into a `tool_call` table**, written by the adapter — not into a parse
+  of Claude frames, which only sessions on that backend have. It answers the lossy-copy objection by
+  holding the result, and it is where the rollout join lands anyway.
+- **"Projection or primary" is settled against the projection.** The rollout is one protocol's wire
+  and cannot be the record a second backend shares. Transcript primary, rollout per-backend evidence
+  — so what to remove from the duplication is the double write and `agent_message_id`.
+
+**Done when** a second frontend and a second backend are representable without touching the turn
+loop's signatures.
+
+## Anytime — independent of the stages
+
+- **Every stream delta re-reads the whole session.** `update_assistant` NOTIFYs per delta →
+  `_sse_stream` wakes → `store.get` → `_rollout_calls` selects every `assistant`/`user` frame and
+  re-parses its content blocks. O(session) per token batch, paid only while the SPA is streaming.
+  Fix by indexing incrementally on the agent message id, or by scoping the read to the messages
+  asked about.
+- **Split `claude_chat.py`** (~2000 lines: view models, the Kubernetes claim client, the store, the
+  recorder, the status driver, the service, the turn loop, the port, the routes). The ~230 lines of
+  `KubernetesSandboxClaims` and its five dict-poking helpers have nothing to do with chat.
+  `ClaudeChatStore`'s twenty-odd methods split along the seams the turn table and the prompt queue
+  already created — each split landing with the change that creates it, never as a standalone
+  reshuffle with no acceptance criterion.
+- **Prune the archaeology.** Roughly 150 of `claude_chat.py`'s lines narrate what the code used to be
+  and which bug that caused; STYLE puts those under Remove. Keep the invariant as one imperative
+  line ("do not gate on session status: admission asks the turn"), move the story to `debug/`.
+- **`ClaudeChatFrame.kind` is filtered with `ChatMessageRole`** — different domains sharing two
+  spellings, which breaks the moment either gains a value. It wants its own `StrEnum` beside
+  `FrameDirection`.
+- **`bridge_token_fingerprint = b""`** is a cleanup-pending tri-state on a credential column, and the
+  zero value STYLE says never to use for absence. It wants to be `claim_cleaned_at`.
+- Smaller: `list_turns`/`read_frames` take `str` session ids and parse them, where the boundary is
+  the MCP tool; the store imports its read models from the MCP tool that reads it;
+  `_message_view`'s `_NO_CALLS` default serves one caller that structurally cannot need it;
+  `KubernetesSandboxClaims._clients()` is double-checked locking with four asserts;
+  `MatrixTurns.offer` pre-checks the status that `enqueue_prompt` then checks atomically, and its own
+  comment admits it races; `claude_chat_turn_prompts` has no reader until folding lands; "surface"
+  names five things and "turn" three.
+
+## When their rolls converge
+
+- **The prompt queue's compatibility half.** The transcript row is still minted `pending` and the
+  `_legacy_pending` scan still answers a prompt an old replica accepted. Both tombstoned. Write the
+  row final and drop the scan; `'pending'` stays in the CHECK constraint.
+- **`tool_uses`.** Server default first (`SET DEFAULT '[]'::jsonb`), then stop writing it, then
+  `drop_column` in a third release — an old replica's `_message_view` selects the mapped column by
+  name. Into the `tool_call` table of stage 7, not into a frame parse.
+
+## Later
+
+- **Mid-turn steering.** Measured to work: a prompt written while a turn runs is absorbed at the next
+  tool boundary and one `result` covers both. `claude_chat_turn_prompts` is many-to-one already and
+  admission deliberately still refuses, with a test saying so. Needs `interrupt` with
+  `cancel_queued: true`, since a bare interrupt starts the next queued prompt.
+- **Streaming the answer into the room.** Achievable only as a coarse refresh — the five-second floor
+  is Synapse's rate limit and what a person can read, and every edit is a permanent federated event.
+  Stream into the status line's mechanism (a notice, edited, redacted at the end) rather than editing
+  the reply, because editing the reply puts partial drafts into the tail `recent_messages` reads and
+  the msgtype trick that excludes chatter does not apply to an `m.text` edit.
+- **Source the CLI from npm** rather than out of the Agent SDK wheel
+  (<cli_protocol_ownership.md>).
