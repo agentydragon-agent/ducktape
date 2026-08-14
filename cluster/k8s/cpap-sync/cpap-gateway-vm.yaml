@@ -7,9 +7,7 @@ metadata:
     app.kubernetes.io/name: cpap-gateway
   annotations:
     description: >-
-      Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB
-      adapter stays physically attached to OptiPlex and is passed through to
-      this VM; the VM exposes only the card's HTTP API to the sync Service.
+      Always-on KubeVirt gateway for the CPAP ez Share WiFi card. The USB adapter stays physically attached to OptiPlex and is passed through to this VM; the VM exposes only the card's HTTP API to the sync Service.
 spec:
   runStrategy: Always
   template:
@@ -57,7 +55,7 @@ spec:
           containerDisk:
             # This is a stateless VM disk. Flux ImageUpdateAutomation updates
             # the tag from the cpap-gateway ImagePolicy after CI publishes it.
-            image: git.allegedly.works/ducktape-ci/cpap-gateway:devel-20260813000000-0000000 # {"$imagepolicy": "flux-system:cpap-gateway"}
+            image: git.allegedly.works/ducktape-ci/cpap-gateway:devel-20260814042408-069f0ff # {"$imagepolicy": "flux-system:cpap-gateway"}
             imagePullPolicy: IfNotPresent
         - name: cpap-secret
           secret:
