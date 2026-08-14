@@ -11,14 +11,17 @@ from pydantic import ValidationError
 
 from haku.runtime.x.claude_bridge.protocol import (
     CONSOLE_TO_RUNNER,
+    PROTOCOL_VERSION,
     RUNNER_TO_CONSOLE,
+    SUPPORTED_VERSIONS,
     ClaudeLaunch,
     ClaudeMessage,
     EndInput,
+    Hello,
     SetupOutput,
     encode_object,
 )
-from haku.runtime.x.claude_bridge.transport import WebSocketTransport
+from haku.runtime.x.claude_bridge.transport import HELLO_SECONDS, WebSocketTransport
 
 
 class MemoryWebSocket:
@@ -88,7 +91,12 @@ def test_launch_rejects_another_protocol_version() -> None:
 
 
 def test_an_unknown_frame_kind_is_refused() -> None:
-    """A kind from a newer peer is an error, not something to route somewhere plausible."""
+    """A kind from a newer peer is an error, not something to route somewhere plausible.
+
+    The other half of the same decision as the unknown-*field* test below: a peer that cannot name
+    the frame cannot act on it, so must-understand changes arrive as kinds and fail closed here,
+    while optional additions arrive as fields and are ignored.
+    """
     with pytest.raises(ValidationError, match="union_tag_invalid"):
         CONSOLE_TO_RUNNER.validate_json(encode_object({"kind": "a-kind-from-the-future"}))
 
@@ -99,10 +107,19 @@ def test_a_frame_missing_its_kind_is_refused() -> None:
         CONSOLE_TO_RUNNER.validate_json(encode_object({"type": "haku_transport", "subtype": "end_input"}))
 
 
-def test_a_frame_carrying_an_unknown_field_is_refused() -> None:
-    """`extra=forbid`: a field this end does not understand is a version mismatch, not noise."""
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "setup_output", "data": "aGk=", "severity": "warning"}))
+def test_a_frame_carrying_an_unknown_field_is_read_without_it() -> None:
+    """An optional addition from a newer peer. Ignoring it leaves this end behaving as its own
+    version correctly did, which is the whole point of adding one.
+
+    This used to be `extra=forbid` and assert the opposite. That made every additive field a
+    fleet-wide break: a live session's runner keeps its image for hours, so the release that added
+    a field killed every session still on the previous one.
+    """
+    frame = RUNNER_TO_CONSOLE.validate_json(
+        encode_object({"kind": "setup_output", "data": "aGk=", "severity": "warning"})
+    )
+
+    assert frame == SetupOutput(data=b"hi")
 
 
 def test_a_frame_missing_a_required_field_is_refused() -> None:
@@ -110,12 +127,78 @@ def test_a_frame_missing_a_required_field_is_refused() -> None:
         RUNNER_TO_CONSOLE.validate_json(encode_object({"kind": "setup_output"}))
 
 
+async def test_the_console_settles_the_version_on_what_the_runner_said() -> None:
+    """The handshake, in the direction it has to go: the runner speaks first because its image is
+    fixed when its claim is created, while the console is whatever rolled most recently."""
+    console_socket, runner_socket = memory_websocket_pair()
+    launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={})
+    transport = WebSocketTransport(console_socket, launch)
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(transport.connect)
+        await runner_socket.send_text(Hello().model_dump_json())
+        with anyio.fail_after(5):
+            started = CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
+
+    assert isinstance(started, ClaudeLaunch)
+    assert started.protocol_version == max(SUPPORTED_VERSIONS)
+
+
+async def test_a_runner_that_never_says_hello_is_still_launched() -> None:
+    """The transition shim. Silence is an older image, not a broken one — it waits for `start` and
+    says nothing before it, so the only way to tell it from a slow one is to stop waiting."""
+    console_socket, runner_socket = memory_websocket_pair()
+    launch = ClaudeLaunch(arguments=(), cwd="/workspace", environment={})
+    transport = WebSocketTransport(console_socket, launch)
+
+    with anyio.fail_after(HELLO_SECONDS + 5):
+        await transport.connect()
+        started = CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text())
+
+    assert isinstance(started, ClaudeLaunch)
+    assert started.protocol_version == PROTOCOL_VERSION
+
+
+async def test_a_runner_with_no_version_in_common_is_refused() -> None:
+    """Both ends of the range, which is the discipline a range needs or "we support 2" is a claim
+    nobody checks. A peer sharing nothing cannot be talked to, and saying so beats a launch it
+    cannot parse."""
+    console_socket, runner_socket = memory_websocket_pair()
+    transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
+
+    async with anyio.create_task_group() as tasks:
+
+        async def connect_expecting_refusal() -> None:
+            with pytest.raises(RuntimeError, match="no protocol version in common"):
+                await transport.connect()
+
+        tasks.start_soon(connect_expecting_refusal)
+        await runner_socket.send_text(Hello(supported=(99,)).model_dump_json())
+
+
+async def test_a_runner_that_speaks_before_saying_hello_is_a_sequencing_error() -> None:
+    console_socket, runner_socket = memory_websocket_pair()
+    transport = WebSocketTransport(console_socket, ClaudeLaunch(arguments=(), cwd="/workspace", environment={}))
+
+    async with anyio.create_task_group() as tasks:
+
+        async def connect_expecting_refusal() -> None:
+            with pytest.raises(RuntimeError, match="before saying hello"):
+                await transport.connect()
+
+        tasks.start_soon(connect_expecting_refusal)
+        await runner_socket.send_text(SetupOutput(data=b"cloning\n").model_dump_json())
+
+
 async def test_transport_preserves_fine_grained_tool_input_stream_events() -> None:
     console_socket, runner_socket = memory_websocket_pair()
     launch = ClaudeLaunch(arguments=("--verbose",), cwd="/workspace", environment={"SAFE": "value"})
     transport = WebSocketTransport(console_socket, launch)
-    await transport.connect()
-    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(transport.connect)
+        await runner_socket.send_text(Hello().model_dump_json())
+        with anyio.fail_after(5):
+            assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
 
     prompt = {"type": "user", "message": {"role": "user", "content": "search"}}
     await transport.write(encode_object(prompt) + "\n")

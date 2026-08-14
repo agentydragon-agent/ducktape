@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Final, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING"
 
@@ -28,6 +28,16 @@ FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMIN
 # Carried on the ``start`` frame only, because the version is a property of the connection
 # that its first frame settles — repeating it on every CLI payload would be noise.
 PROTOCOL_VERSION: Final = 2
+
+# Every version this image can speak, not the one it prefers. A runner's image is fixed when its
+# claim is created and a live session may outlast several console releases, so "what the console
+# is on" and "what the runner is on" are different numbers for hours at a time — an exact match
+# cannot express that, and cannot negotiate its way out of it either.
+#
+# A range is only affordable because of the field policy below: the console emits frames as well
+# as parsing them, so a peer that refused unknown fields would make a range mean one serializer
+# per version. Ignoring them instead means one serializer, and the range costs a `min()`.
+SUPPORTED_VERSIONS: Final = (2,)
 
 # The part of this contract that is not a frame: what ending the socket means.
 #
@@ -51,15 +61,24 @@ GOING_AWAY_CODE: Final = 1001
 
 
 class _Frame(BaseModel):
-    # `forbid` because a frame this end does not fully understand is a version mismatch, and
-    # `PROTOCOL_VERSION` is how that is meant to be reported — silently dropping an unknown
-    # field would let the two ends disagree about what was said. Additive evolution therefore
-    # costs a version bump, which is honest: the console and the runner are separate images
-    # that roll independently, so no frame change is ever atomic in production anyway.
+    # **Unknown kind rejects; unknown field is ignored.** The two halves are one decision.
+    #
+    # An unknown `kind` already fails the union parse below, which is fail-closed exactly where a
+    # must-understand change belongs: a peer that cannot name the frame cannot act on it, and
+    # pretending otherwise is worse than refusing. An unknown *field* is the opposite case — a
+    # peer that ignores it behaves as its own version correctly did, which is the whole point of
+    # an optional addition.
+    #
+    # This was `forbid`, on the reasoning that silently dropping a field lets the two ends
+    # disagree about what was said. True, and the wrong trade here: the console and the runner
+    # are separate images that roll independently, a live session's runner keeps its image for
+    # hours, so `forbid` made every additive field a fleet-wide break — every live session dying
+    # on the release that added one. Additive changes now cost nothing; must-understand changes
+    # arrive as new kinds, where the refusal still happens.
     # base64 for `bytes` fields, so raw program output crosses a JSON text frame without a
     # decode step that could mangle it. Only `SetupOutput` carries bytes, and it is a handful
     # of short lines per session, so the ~33% is nothing here.
-    model_config = ConfigDict(extra="forbid", frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
+    model_config = ConfigDict(extra="ignore", frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
 
 
 class ClaudeLaunch(_Frame):
@@ -71,10 +90,19 @@ class ClaudeLaunch(_Frame):
     """
 
     kind: Literal["start"] = "start"
-    # `Literal[2]` rather than a plain int, so a peer on another version fails validation
-    # here rather than somewhere further in with a stranger symptom. The default keeps the
-    # two spellings of the number checked against each other by the type checker.
-    protocol_version: Literal[2] = PROTOCOL_VERSION
+    # The version the console settled on after hearing the runner's `Hello`, which is why this
+    # is no longer `Literal[2]`: a negotiated number cannot be a constant. Validated against
+    # `SUPPORTED_VERSIONS` rather than left open, so a peer on a version this image cannot speak
+    # fails here rather than somewhere further in with a stranger symptom.
+    protocol_version: int = PROTOCOL_VERSION
+
+    @field_validator("protocol_version")
+    @classmethod
+    def _one_we_speak(cls, value: int) -> int:
+        if value not in SUPPORTED_VERSIONS:
+            raise ValueError(f"protocol version {value} is not one of {SUPPORTED_VERSIONS}")
+        return value
+
     arguments: tuple[str, ...]
     cwd: str = Field(min_length=1)
     environment: dict[str, str]
@@ -94,6 +122,23 @@ class EndInput(_Frame):
     """Console → runner: `Transport.end_input()`, i.e. close the CLI's stdin."""
 
     kind: Literal["end_input"] = "end_input"
+
+
+class Hello(_Frame):
+    """Runner → console, once, before anything else: the versions this runner can speak.
+
+    **The runner speaks first, and this shape is frozen forever.** Negotiation needs a fixed
+    point. The version used to ride on the console's first frame, which put the choice at the end
+    that cannot adapt — the console had to pick before hearing anything, and the runner could not
+    state its range until it had decoded a frame whose shape was the very thing in question. So
+    the first frame is the runner's, and it carries only a list of integers: anything richer would
+    be a shape that itself needs agreeing on, which is the regress this exists to stop.
+
+    The console replies with the highest version both ends have, on its `start`.
+    """
+
+    kind: Literal["hello"] = "hello"
+    supported: tuple[int, ...] = SUPPORTED_VERSIONS
 
 
 class SetupOutput(_Frame):
@@ -126,7 +171,7 @@ class SetupOutput(_Frame):
 # control_request/control_response do correlate, by an id inside `ClaudeMessage.payload`,
 # which rides inside `ClaudeMessage.payload` and is deliberately opaque here.)
 ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
-RunnerToConsole = ClaudeMessage | SetupOutput
+RunnerToConsole = ClaudeMessage | Hello | SetupOutput
 
 # Read with the adapter for the direction you are reading; write with the model's own
 # `model_dump_json`. A `TypeAdapter` rather than a model's `model_validate` because the parsed
