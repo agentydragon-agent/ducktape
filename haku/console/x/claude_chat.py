@@ -399,6 +399,19 @@ class TurnStart:
     prompt: str
 
 
+@dataclass(frozen=True, slots=True)
+class SessionOutcome:
+    """Where a session got to, and why if it ended badly.
+
+    The two travel together because every caller that acts on a dead session wants to say which
+    one it was: the supervisor announced `ended (failed)` into the room for years while the
+    sentence explaining it sat in `error`, reachable only by querying Postgres by hand.
+    """
+
+    status: ChatSessionStatus
+    error: str | None
+
+
 class ClaudeChatStore:
     """Async Postgres store for Claude chat sessions."""
 
@@ -649,8 +662,15 @@ class ClaudeChatStore:
             for row in rows
         ]
 
-    async def record_frame(self, session_id: UUID, direction: FrameDirection, payload: dict[str, Any]) -> None:
-        """Append one protocol frame to the session's rollout.
+    async def record_frame(
+        self, session_id: UUID, direction: FrameDirection, kind: str, payload: dict[str, Any]
+    ) -> None:
+        """Append one frame to the session's rollout, under the kind its own protocol gives it.
+
+        *kind* is passed rather than read out of the payload because the payload's discriminator
+        is not the console's to assume: a CLI frame keeps it in `type`, the bridge envelope keeps
+        it in `kind`, and deriving one from the other is what would make everything in this table
+        have to look like a CLI frame whether it was one or not.
 
         Failures are not swallowed. Every other write in a turn reaches the same database, so
         one that cannot record has already lost the session — and a rollout with quiet holes is
@@ -663,7 +683,7 @@ class ClaudeChatStore:
                 ClaudeChatFrame(
                     session_id=session_id,
                     direction=direction,
-                    kind=_frame_kind(payload),
+                    kind=kind,
                     payload=payload,
                     partial=False,
                     created_at=now,
@@ -844,10 +864,14 @@ class ClaudeChatStore:
         async with self._sessions() as db:
             return await db.scalar(select(ClaudeChatSession.room_id).where(ClaudeChatSession.session_id == session_id))
 
-    async def status(self, session_id: UUID) -> ChatSessionStatus | None:
+    async def outcome(self, session_id: UUID) -> SessionOutcome | None:
         async with self._sessions() as db:
             chat = await db.get(ClaudeChatSession, session_id)
-            return chat.status if chat is not None else None
+            return None if chat is None else SessionOutcome(status=chat.status, error=chat.error)
+
+    async def status(self, session_id: UUID) -> ChatSessionStatus | None:
+        outcome = await self.outcome(session_id)
+        return outcome.status if outcome is not None else None
 
     async def renew_lease(self, session_id: UUID) -> None:
         """Assert that this replica still holds *session_id* and is still working on it.
@@ -970,6 +994,25 @@ def _assistant_frame(text: str) -> dict[str, Any]:
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
 
 
+SETUP_OUTPUT_KIND = "setup_output"
+
+
+def _setup_output_frame(text: str) -> dict[str, Any]:
+    """One line the sandbox printed, as a rollout row.
+
+    **Console-authored, like `partial`, and it says so with its discriminator.** The bridge's
+    own frame is `SetupOutput(data: bytes)` — raw, unsplit, base64 on the wire — and what
+    arrives here is one line the transport has already decoded (`errors="replace"`) and split
+    for the room. So this is a rendering, not the wire, and putting it under `kind` rather than
+    the CLI's `type` is what keeps it from reading as a protocol frame that never existed.
+
+    It lives in the frame log rather than a table of its own because the question a reader asks
+    is "what happened in this session, in order" — and for a session that died before the CLI
+    produced anything, the answer is entirely here.
+    """
+    return {"kind": SETUP_OUTPUT_KIND, "text": text}
+
+
 def _frame_kind(payload: dict[str, Any]) -> str:
     kind = payload.get("type")
     if not isinstance(kind, str):
@@ -1000,7 +1043,7 @@ class RolloutRecorder:
 
     async def _record(self, direction: FrameDirection, payload: dict[str, Any]) -> None:
         if _frame_kind(payload) != _PARTIAL_FRAME_KIND:
-            await self._store.record_frame(self._session_id, direction, payload)
+            await self._store.record_frame(self._session_id, direction, _frame_kind(payload), payload)
 
 
 # How long a turn runs before the room is told anything about it (R6.2). Below this the
@@ -1264,10 +1307,20 @@ class ClaudeChatService:
         )
 
     def _progress_reporter(self, session_id: UUID, room_id: str | None) -> Callable[[str], Awaitable[None]]:
-        """Log every sandbox progress report, and show it to the room if there is one."""
+        """Record every sandbox progress report, log it, and show it to the room if there is one.
+
+        Recorded first because the rollout is the only durable copy. This narration is where a
+        bootstrap says why it failed and where the CLI's own stderr now arrives, and until this
+        it lived in the pod's log and in the room — the first reaped with the sandbox, the
+        second interleaved with everything else. A session that died before producing a single
+        CLI frame therefore explained itself nowhere.
+        """
 
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
+            await self._store.record_frame(
+                session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, _setup_output_frame(detail)
+            )
             if self._room_surface is not None and room_id is not None:
                 await self._room_surface.report(room_id, detail)
 
