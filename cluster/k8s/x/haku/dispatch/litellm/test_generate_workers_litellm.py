@@ -17,14 +17,9 @@ def test_workers_config_matches_generator() -> None:
         )
 
 
-def test_zone_key_allowlist_matches_tf() -> None:
-    """The zai zone key's model allowlist (tf/gitops/litellm-keys) must cover
-    exactly the models the workers-LiteLLM chains — drift here silently strands
-    models (in config but unusable) or over-grants (in the key but unserved)."""
-    tf_text = get_required_path("ducktape/tf/gitops/litellm-keys/main.tf").read_text()
-    for name in zai_zone_model_names():
-        base = name.removesuffix("-anthropic")
-        assert f'"{base}"' in tf_text, f"model {base!r} missing from tf/gitops/litellm-keys zai allowlist"
+def test_archived_zone_roster_is_nonempty() -> None:
+    """The archived generator still has an explicit historical model roster."""
+    assert zai_zone_model_names()
 
 
 if __name__ == "__main__":
