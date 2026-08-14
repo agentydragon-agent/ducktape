@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Secret
 metadata:
-    name: litellm-zai-clients-sops-age-key
+    name: litellm-clients-sops-age-key
     namespace: flux-system
     annotations:
-        description: Narrow SOPS age private key for the litellm-zai-clients virtual-key SSOT; mounted as SOPS_AGE_KEY into the litellm-keys tf-runner so sops_external can decrypt secrets/litellm-zai-clients-key.yaml. Single-purpose - decrypts only that file.
+        description: Narrow SOPS age private key for the litellm-clients virtual-key SSOT; mounted as SOPS_AGE_KEY into the litellm-keys tf-runner so sops_external can decrypt secrets/litellm-clients-key.yaml. Single-purpose - decrypts only that file.
 type: Opaque
 stringData:
     key: ENC[AES256_GCM,data:SKGDDPJmY8TdyQjbkhlPHtbwuURdSw5eh5P3rZ1U8YYOQ8IvcJC4gfJfLxJMbREr0SHWL360zRPmAIrHCPit2p6I0YQBXBMCPE0=,iv:J1rWK2Ja71AYzfOqeXv7/pUhXNHGUnlGQozxT25sofY=,tag:KveSh+LT3aY2POt0X0P2fg==,type:str]
