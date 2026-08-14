@@ -66,7 +66,6 @@ operator-facing version is in `haku/docs/security.md`.
 - TODO: collapse the fences. Six manifests express about three distinct
   policies — one host (`api.anthropic.com`), build registries plus a model API,
   and the operator-data tier.
-  namespace (`haku-sandbox-zai`) whose future is undecided, and
   `agents/public-coder-agent` is a waiver rather than a fence. Done when the
   dict below has one entry per policy, not one per proxy deployment.
 - TODO: converge on one proxy. mitmproxy (`agents/haku-egress-proxy`,

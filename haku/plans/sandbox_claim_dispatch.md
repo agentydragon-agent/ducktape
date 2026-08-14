@@ -1,4 +1,7 @@
-# Dispatch via SandboxClaim instead of Job — design probe
+# Dispatch via SandboxClaim instead of Job — archived design probe
+
+This is a historical probe. The original Haku dispatch plane is archived and
+not deployed; this document does not describe a currently supported launcher.
 
 Status: probe note (2026-07-17), no implementation. Motivated by the
 agent-sandbox workspaces lane (<../../cluster/k8s/agents/agent-sandbox/>)

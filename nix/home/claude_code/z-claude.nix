@@ -2,8 +2,8 @@
 # (a z.ai-scoped virtual key; SSOT in tf/gitops/litellm-keys). The proxy's zai-clients team
 # routes Claude Code's claude-* slugs to GLM, so both tiers pin to glm-5.2-anthropic.
 # WebFetch/WebSearch are disabled: GLM's tool-call shape differs from Anthropic's
-# (see cluster/k8s/litellm/app/model_rosters.py). Shared with the agent-box `zai` user
-# (nix/home/hosts/agent-box/zai.nix). See ./gateway.nix for the shared wrapper pattern.
+# (see cluster/k8s/litellm/app/model_rosters.py). See ./gateway.nix for the shared
+# wrapper pattern.
 { pkgs }:
 let
   inherit (pkgs) lib;

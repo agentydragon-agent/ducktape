@@ -226,9 +226,8 @@ resource "kubernetes_secret" "public_coder_agent" {
 # ============================================================================
 # zai-clients — z.ai-scoped key for interactive Claude-Code-on-GLM clients
 # ============================================================================
-# A LiteLLM virtual key for the laptop `z-claude` alias (nix/home/home.nix) and the
-# agent-box `zai` user (nix/home/hosts/agent-box/zai.nix), both driving Claude Code
-# against z.ai's GLM through this proxy. Scoped to GLM models only (the raw z.ai key
+# A LiteLLM virtual key for the laptop `z-claude` alias (nix/home/home.nix) driving
+# Claude Code against z.ai's GLM through this proxy. Scoped to GLM models only (the raw z.ai key
 # stays cluster-side as litellm-zai-key, used upstream by the glm-*-anthropic routes).
 # No budget — interactive, user-driven use; the model scope is the guardrail.
 #
@@ -238,7 +237,7 @@ resource "kubernetes_secret" "public_coder_agent" {
 # source (source_file), decrypting with a dedicated narrow age key (litellm-zai-clients)
 # mounted as SOPS_AGE_KEY into this module's tf-runner (see the litellm-keys Terraform
 # CR) — NOT the broad cluster SOPS key, so the runner can decrypt only this one file.
-# Laptops/agent-box read the same SOPS file via ducktape.sopsEnv (LITELLM_ZAI_KEY).
+# Laptops read the same SOPS file via ducktape.sopsEnv (LITELLM_ZAI_KEY).
 
 data "sops_file" "zai_clients_key" {
   source_file = "${path.module}/litellm-zai-clients-key.yaml"
@@ -246,7 +245,7 @@ data "sops_file" "zai_clients_key" {
 
 # zai-clients team: proxy-side catch-all routing Claude Code's claude-* slugs to
 # z.ai GLM. Attached to the zai_clients virtual key below (laptop z-claude alias +
-# agent-box zai user). Two mechanisms:
+# laptop z-claude alias). Two mechanisms:
 #  - model_aliases: rewrite the real Claude deployments (which ARE in
 #    model_list and would otherwise reach real Anthropic) to GLM.
 #  - router_settings.fallbacks [{"*": [...]}]: any claude-* slug NOT in
@@ -278,7 +277,7 @@ resource "litellm_key" "zai_clients" {
   models    = concat(["claude-*"], local.zai_lane_models)
   team_id   = litellm_team.zai_clients.id
   metadata = {
-    consumer = "laptop-z-claude, agent-box-zai"
+    consumer = "laptop-z-claude"
   }
 }
 

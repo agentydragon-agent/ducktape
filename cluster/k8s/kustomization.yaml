@@ -245,8 +245,6 @@ resources:
   #  self_hosted support; see haku/runtime/managed_agent/self_hosted/README.md)
   - haku/workloads/flux-kustomization.yaml # Flux reconciles Haku's haku-state k8s/ workloads under a constrained SA
   - haku/ui-image-webhook/flux-kustomization.yaml # operator-owned Receiver: Forgejo package webhook → reconcile the (Haku-owned) haku-ui ImageRepository
-  # --- haku worker zones + dispatch (haku/plans/multi_agent.md) ---
-
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
   - matrix/secrets/flux-kustomization.yaml
