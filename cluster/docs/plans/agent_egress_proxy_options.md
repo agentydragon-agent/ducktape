@@ -1176,12 +1176,13 @@ placeholder) and never the 34-character substituted secret, and neither
 time. Substitution still fires afterwards: the same placeholder sent in
 `passthrough` mode arrived at the origin as `Bearer fake-real-bearer-do-not-use`.
 
-This is the answer that decides the shape of step 2. **haku-console can be handed
-ICAP endpoints without being handed the credentials** — it sees and rules on the
-agent's placeholder, and `credentials.conf` redeems it downstream, out of
+This is the answer that opens the shape of step 2. **haku-console _can_ be handed
+ICAP endpoints without being handed the credentials** — it would see and rule on
+the agent's placeholder, and `credentials.conf` would redeem it downstream, out of
 console's sight. The `option A` objection at the top of this document ("an ICAP
-service that now holds the credentials") does not apply to REQMOD-for-policy; it
-applies only if substitution itself moves into the service. It should not.
+service that now holds the credentials") is not forced by REQMOD-for-policy; it
+binds only if substitution itself moves into the service. That makes it a choice
+rather than a consequence — see the decision below.
 
 **Squid ignored a `Preview: 0` offer and sent the whole body anyway.** The stub
 advertises `Preview: 0` in its `OPTIONS`; Squid encapsulated `req-body` and
@@ -1215,6 +1216,82 @@ Still unanswered from the step-1 list: whether `http_access` runs before
 adaptation. The spike is `http_access allow all`, so denied traffic never existed
 to observe; answering it needs a deny rule, and it only matters as an optimisation
 (keeping already-denied traffic away from console), not for correctness.
+
+#### Decided: console holds the substituted credentials (operator, 2026-08-15)
+
+Step 1 turned "console is in the secret path" from a consequence into a choice.
+Taking it deliberately: **console does policy _and_ substitution.** The
+placeholder-only variant — console rules, `credentials.conf` redeems — is not
+what we are building.
+
+This is the version this section originally described, and it keeps the win that
+motivated it: no credential lives in the proxy at all. No `envsubst`, no tmpfs
+render, no per-proxy SOPS secrets, no generated per-agent credential config. The
+secret exists in console, transits Squid per request, and is never at rest there.
+"Which fence holds which credential" is deleted rather than answered, and
+per-agent-vs-shared stops being a credential-partitioning question.
+
+What is accepted along with it, all of it measured rather than assumed:
+
+- **Console sees live credentials**, by design. It is the credential authority
+  now, not merely a policy oracle. The operator's earlier judgement that Squid
+  can be trusted on the secret path (2026-08-10) extends to console here.
+- **Every credentialed request body transits console.** Squid ignored the
+  `Preview: 0` offer and encapsulated the full body, so for the LLM API that is
+  every prompt. `adaptation_access` scoping is the only lever, and it cannot be
+  applied to the credentialed hosts — they are exactly the ones that must go
+  through.
+- **Console down means no LLM access**, not merely no new domains. The
+  critical-path inversion above is now the operating reality rather than a trade
+  under consideration, and `icap_service_failure_limit` makes a _flapping_
+  console hard-down rather than degraded. Console HA is a prerequisite for this
+  design carrying production agent traffic, not a later refinement.
+
+`credentials.conf`, `envsubst`, and the fake-credential ConfigMap stay in the
+spike: they are what the placeholder-redemption half is measured against, and
+step 1 used them to prove the ordering. They do not survive into the real fence.
+
+#### Decided: the ICAP server runs in-process in console (operator, 2026-08-15)
+
+Not a separate ICAP shim in front of console. The alternative considered was a
+standalone deployment speaking ICAP and calling console over HTTP for the
+decision — it would have isolated the protocol code from console's auth process
+and let the two scale and go HA independently. Rejected in favour of the simpler
+topology: one process, one deployment, direct access to the decision state and
+the credentials it already holds.
+
+**Consequence: console needs an inbound non-HTTP listener, which it has never
+had.** `app.py` is a FastAPI app behind uvicorn; its only "listen loop" is
+Postgres `LISTEN/NOTIFY`, which is outbound. ICAP is not HTTP and cannot be a
+FastAPI route, so this is an `asyncio.start_server` on 1344 started from the app
+lifespan, plus a Service port and a NetworkPolicy admitting Squid. Console is the
+credential authority under the decision above, so that surface deserves the same
+scrutiny as `/mcp`.
+
+##### The library survey, since "use a package" is the obvious question
+
+| library                                                   | language | last release       | model                 | adoption            |
+| --------------------------------------------------------- | -------- | ------------------ | --------------------- | ------------------- |
+| [pyicap](https://github.com/netom/pyicap)                 | Python   | April 2017         | threaded SocketServer | 106★                |
+| [icapserver](https://github.com/Peoplecantfly/icapserver) | Python   | no recent activity | threaded              | 31★                 |
+| [python-icap](https://github.com/nhoad/python-icap)       | Python   | abandoned          | asyncio               | 5★, "early stages"  |
+| [icap-rs](https://github.com/Eslrusgag/icap-rs)           | Rust     | 0.3.0, June 2026   | tokio                 | 1★, ~1.5k downloads |
+
+Every Python option is effectively dead, and the two with any adoption are
+threaded `SocketServer` — which fights console's asyncio directly. The only
+actively developed library is Rust, and in-process in console rules Rust out.
+
+So the protocol code is ours. That is a smaller commitment than it sounds,
+because step 1 shrank it: Squid never used preview, so the subset actually on the
+wire is `OPTIONS`, `REQMOD`, chunked bodies, `204`, and `100 Continue`. The stub
+in <../../k8s/x/squid-egress-spike/app/icap_stub.py> already implements exactly
+that and has been verified against the Squid 7.6 this will run behind — it is the
+starting point, ported from `socketserver` to `asyncio.start_server`.
+
+Revisit if the protocol surface grows (RESPMOD, real preview negotiation,
+streaming): at that point `icap-rs` in a separate deployment becomes the better
+answer, and the separation is a contained change because the ICAP entry point is
+one module either way.
 
 ### Direction: one Squid per _agent_, provisioned by haku-console
 
