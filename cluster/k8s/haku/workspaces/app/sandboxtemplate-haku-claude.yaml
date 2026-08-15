@@ -36,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: ghcr.io/agentydragon/haku-claude-runner:devel-20260815215104-03e3f10 # {"$imagepolicy": "flux-system:haku-claude-runner"}
+          image: ghcr.io/agentydragon/haku-claude-runner:devel-20260815232909-264260e # {"$imagepolicy": "flux-system:haku-claude-runner"}
           imagePullPolicy: Always
           workingDir: /workspace
           env:
