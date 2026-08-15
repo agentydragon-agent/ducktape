@@ -16,7 +16,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
@@ -25,8 +25,20 @@ from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
 from haku.console.config import ClaudeRuntimeConfig
+from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
+
+# Copying `sandbox_mcp`'s `_renew`: a few tries is enough for the resourceVersion `test` to win
+# against the controller's own status writes; a persistent conflict is a bug, not contention.
+_RENEW_ATTEMPTS = 3
+
+_CLAIM_API = ("extensions.agents.x-k8s.io", "v1beta1")
+_CLAIMS_PLURAL = "sandboxclaims"
+
+
+def _format_shutdown_time(when: datetime) -> str:
+    return when.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class ProvisioningStep(StrEnum):
@@ -61,6 +73,8 @@ class ClaudeSandboxProvisioningView(BaseModel):
 class SandboxClaims(Protocol):
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None: ...
 
+    async def renew(self, *, session_id: UUID, expires_at: datetime) -> None: ...
+
     async def delete(self, *, session_id: UUID) -> None: ...
 
     async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView: ...
@@ -74,11 +88,11 @@ class KubernetesSandboxClaims:
     def __init__(self, config: ClaudeRuntimeConfig):
         self._config = config
         self._api_client: ApiClient | None = None
-        self._custom_objects: CustomObjectsApi | None = None
+        self._custom_objects: CustomObjectsClient | None = None
         self._core_v1: CoreV1Api | None = None
         self._lock = asyncio.Lock()
 
-    async def _clients(self) -> tuple[CustomObjectsApi, CoreV1Api]:
+    async def _clients(self) -> tuple[CustomObjectsClient, CoreV1Api]:
         if self._custom_objects is not None:
             assert self._core_v1 is not None
             return self._custom_objects, self._core_v1
@@ -90,7 +104,8 @@ class KubernetesSandboxClaims:
                 except ConfigException as error:
                     raise RuntimeError("Kubernetes in-cluster configuration is unavailable") from error
                 self._api_client = ApiClient(configuration=configuration)
-                self._custom_objects = CustomObjectsApi(self._api_client)
+                # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+                self._custom_objects = cast(CustomObjectsClient, CustomObjectsApi(self._api_client))
                 self._core_v1 = CoreV1Api(self._api_client)
         assert self._custom_objects is not None
         assert self._core_v1 is not None
@@ -112,10 +127,7 @@ class KubernetesSandboxClaims:
             },
             "spec": {
                 "warmPoolRef": {"name": self._config.warm_pool},
-                "lifecycle": {
-                    "shutdownPolicy": "DeleteForeground",
-                    "shutdownTime": expires_at.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-                },
+                "lifecycle": {"shutdownPolicy": "DeleteForeground", "shutdownTime": _format_shutdown_time(expires_at)},
                 "env": [
                     {"name": "HAKU_CLAUDE_SESSION_ID", "value": str(session_id)},
                     {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": bridge_token},
@@ -123,9 +135,55 @@ class KubernetesSandboxClaims:
             },
         }
         client, _ = await self._clients()
-        await client.create_namespaced_custom_object(
-            "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", body
-        )
+        await client.create_namespaced_custom_object(*_CLAIM_API, self._config.namespace, _CLAIMS_PLURAL, body)
+
+    async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
+        """Slide this session's sandbox shutdown deadline forward while a replica is tending it.
+
+        The deadline is a lease, not a hard timer: the console pushes it out on the same heartbeat
+        that renews the session's console lease, so a conversation in full flow no longer dies at
+        exactly `session_ttl_seconds`, and the controller reclaims the sandbox soon after nothing
+        tends it. `test` on `resourceVersion` plus a 409 retry, copying `sandbox_mcp`'s `_renew`,
+        so a concurrent writer never clobbers the deadline.
+
+        Best effort: a slide that fails leaves the sandbox on its previous deadline and the sweep
+        handles the fallout, so it must not take the renewal heartbeat down with it.
+        """
+        client, _ = await self._clients()
+        name = self._claim_name(session_id)
+        shutdown_time = _format_shutdown_time(expires_at)
+        for attempt in range(_RENEW_ATTEMPTS):
+            try:
+                claim = await client.get_namespaced_custom_object(
+                    *_CLAIM_API, self._config.namespace, _CLAIMS_PLURAL, name
+                )
+            except k8s_client.ApiException as error:
+                if error.status != 404:
+                    logger.warning("could not read sandbox claim %s to slide its deadline: %s", name, error)
+                return  # a gone claim is the session ending; the lease sweep is what notices.
+            patch = [
+                {
+                    "op": "test",
+                    "path": "/metadata/resourceVersion",
+                    "value": _nested_string(claim, "metadata", "resourceVersion"),
+                },
+                {"op": "replace", "path": "/spec/lifecycle/shutdownTime", "value": shutdown_time},
+            ]
+            try:
+                await client.patch_namespaced_custom_object(
+                    *_CLAIM_API,
+                    self._config.namespace,
+                    _CLAIMS_PLURAL,
+                    name,
+                    patch,
+                    _content_type="application/json-patch+json",
+                )
+                return
+            except k8s_client.ApiException as error:
+                if error.status == 409 and attempt + 1 < _RENEW_ATTEMPTS:
+                    continue
+                logger.warning("could not slide sandbox deadline for %s: %s", name, error)
+                return
 
     async def delete(self, *, session_id: UUID) -> None:
         client, _ = await self._clients()
