@@ -109,6 +109,45 @@ broker:
 - Commercial PAM/JIT products exist as a separate market, but are intentionally not candidates
   under the no-purchase constraint. This review does not claim to be a complete vendor catalog.
 
+### Most plausible composition: Haku Console + Kube JIT controller
+
+The Kube JIT operator explicitly documents that it can run without its API and web UI, and be
+integrated with another approval system through its `JitRequest` CRD and status callback. That
+makes it the most concrete existing component to compose with Haku rather than replace Haku.
+
+```text
+Haku request -> Console approval + durable lease/outbox
+             -> narrowly privileged Haku-to-Kube-JIT adapter
+             -> approved JitRequest CRD -> Kube JIT operator -> temporary RoleBinding(s)
+             -> status callback / watch -> Console audit state
+
+Console revocation/expiry -> adapter deletes JitRequest -> operator removes RoleBinding(s)
+```
+
+The adapter, not a sandbox and not a general Haku tool, is the only client allowed to create or
+delete `JitRequest`s. It creates them only after consuming a committed Console approval/outbox
+record. The Console remains the system that decides whether to issue or revoke a lease; Kube JIT
+becomes the independent Kubernetes enforcement/reaping component.
+
+This is viable only within the upstream controller's current boundaries:
+
+- It approves a configured **ClusterRole name** allowlist and creates namespaced `RoleBinding`s;
+  its documented controller model does not create `ClusterRoleBinding`s. It is therefore a good
+  first composition for pre-reviewed, namespace-scoped profiles, not for cluster-wide or
+  break-glass-class leases.
+- `JitRequest` is cluster-scoped and includes the target role, namespaces, subject, time window,
+  and callback URL. The adapter must independently restrict fixed subjects, approved role/profile
+  versions, namespace allowlists, maximum duration, and a fixed internal callback endpoint. It
+  must not give Haku write access to `JitRequest` or `KubeJitConfig`.
+- The upstream manager role has broad CRUD over `RoleBinding`s across the cluster. Before use, its
+  RBAC and controller behavior need a threat-model review and likely a fork/hardening pass to
+  scope it to the intended namespaces. It is an enforcement engine, not an approval boundary.
+
+If this composition passes that review, it avoids writing a reaper/controller from scratch while
+keeping Haku Console's manual approval queue, audit record, and placeholder-facing proxy model.
+The bespoke lease broker remains necessary only for capabilities the controller cannot safely
+express (for example, arbitrary rules, cluster-scoped grants, or a stronger per-lease identity).
+
 ### Teleport in more detail
 
 Teleport is the only reviewed option that materially improves the _credential_ side of this
@@ -228,7 +267,9 @@ created before expiration.
 - [infrabroker README](https://github.com/luisgf/infrabroker/blob/main/README.md),
   [Kubernetes API](https://github.com/luisgf/infrabroker/blob/main/docs/API.md), and
   [HA assessment](https://github.com/luisgf/infrabroker/blob/main/docs/HA.md).
-- [Kube JIT README](https://github.com/samirtahir91/kube-jit/blob/main/README.md).
+- [Kube JIT README](https://github.com/samirtahir91/kube-jit/blob/main/README.md),
+  [operator README](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/README.md), and
+  [operator RBAC](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/config/rbac/role.yaml).
 - [Pinniped README](https://github.com/vmware-tanzu/pinniped/blob/main/README.md).
 - [SPIRE README](https://github.com/spiffe/spire/blob/main/README.md).
 - [akcess README](https://github.com/viveksinghggits/akcess/blob/master/README.md).
