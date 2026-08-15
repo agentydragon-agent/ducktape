@@ -51,10 +51,10 @@ py_library(
     deps = [
         ":claude_chat",
         ":matrix_session",
-        ":sandbox_claims",
         ":session_notifications",
         "//haku/console:config",
         "//haku/console:operator_identity_store",
+        "//haku/console/x/testing:recording_claims",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -84,18 +84,31 @@ py_test(
     deps = [
         ":claude_chat",
         ":conftest",
-        ":sandbox_claims",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/testing:recording_claims",
         "//haku/runtime/x/claude_bridge:protocol",
-        "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sandbox_claims",
+    srcs = ["test_sandbox_claims.py"],
+    deps = [
+        ":conftest",
+        ":sandbox_claims",
+        "//:conftest",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -117,6 +130,7 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/x/testing:recording_claims",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:asgi",
