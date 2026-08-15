@@ -11,13 +11,18 @@ from authlib.oauth2 import OAuth2Error
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from mcp.server.auth.provider import TokenError
 from prometheus_client import REGISTRY
 from starlette.exceptions import HTTPException
 from tenacity import wait_none
 
-from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy, RetryableRefreshOIDCProxy
+from mcp_infra.authentik_auth.fastmcp_proxy import (
+    DownstreamClientIdentityOIDCProxy,
+    RetryableJWTVerifier,
+    RetryableRefreshOIDCProxy,
+)
 
 
 def test_compatibility_layers_are_independently_named_without_changing_runtime_behavior() -> None:
@@ -188,6 +193,55 @@ async def test_retryable_refresh_proxy_local_token_errors_pass_through(proxy: Re
         await proxy.exchange_refresh_token(AsyncMock(), AsyncMock(), [])
     assert upstream.call_count == 1
     assert _failures("oauth") == before  # local churn never reached Authentik
+
+
+def test_get_token_verifier_returns_retryable_jwt_verifier(proxy: RetryableRefreshOIDCProxy) -> None:
+    """The per-request verifier FastMCP builds during __init__ must be the retrying
+    subclass, or JWKS-fetch blips go on 401ing every request during the blip."""
+    oidc_config = SimpleNamespace(jwks_uri="https://auth.example.com/jwks", issuer="https://auth.example.com")
+    proxy.oidc_config = cast(Any, oidc_config)
+    verifier = proxy.get_token_verifier()
+    assert isinstance(verifier, RetryableJWTVerifier)
+
+
+@pytest.fixture
+def jwt_verifier(monkeypatch: pytest.MonkeyPatch) -> RetryableJWTVerifier:
+    monkeypatch.setattr(RetryableJWTVerifier, "jwks_retry_wait", wait_none())
+    return RetryableJWTVerifier(jwks_uri="https://auth.example.com/jwks", issuer="https://auth.example.com")
+
+
+async def test_retryable_jwt_verifier_retries_transient_jwks_fetch_then_succeeds(
+    jwt_verifier: RetryableJWTVerifier,
+) -> None:
+    """A blip on the first JWKS fetch is absorbed by the in-process retry, so
+    load_access_token never sees it and can't collapse it into a plain None."""
+    jwks: dict[str, list[Any]] = {"keys": []}
+    with patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=[_http_error(503), jwks])) as upstream:
+        assert await jwt_verifier._fetch_jwks() is jwks
+    assert upstream.call_count == 2
+
+
+async def test_retryable_jwt_verifier_dns_failure_retries_then_gives_up(jwt_verifier: RetryableJWTVerifier) -> None:
+    """A persistent transient failure still raises after exhausting attempts —
+    it's not silently absorbed forever, just given a few chances to clear."""
+    dns_error = httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
+    with (
+        patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=dns_error)) as upstream,
+        pytest.raises(httpx.ConnectError),
+    ):
+        await jwt_verifier._fetch_jwks()
+    assert upstream.call_count == 3  # jwks_retry_stop = stop_after_attempt(3)
+
+
+async def test_retryable_jwt_verifier_genuine_4xx_is_not_retried(jwt_verifier: RetryableJWTVerifier) -> None:
+    """A non-5xx HTTP error from the JWKS endpoint says something about JWKS
+    config, not upstream flakiness — no point retrying it."""
+    with (
+        patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=_http_error(404))) as upstream,
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await jwt_verifier._fetch_jwks()
+    assert upstream.call_count == 1
 
 
 if __name__ == "__main__":
