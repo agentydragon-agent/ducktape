@@ -215,10 +215,8 @@ async def test_retryable_jwt_verifier_retries_transient_jwks_fetch_then_succeeds
 ) -> None:
     """A blip on the first JWKS fetch is absorbed by the in-process retry, so
     load_access_token never sees it and can't collapse it into a plain None."""
-    jwks = {"keys": []}
-    with patch.object(
-        JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=[_http_error(503), jwks])
-    ) as upstream:
+    jwks: dict[str, list[Any]] = {"keys": []}
+    with patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=[_http_error(503), jwks])) as upstream:
         assert await jwt_verifier._fetch_jwks() is jwks
     assert upstream.call_count == 2
 
@@ -227,8 +225,9 @@ async def test_retryable_jwt_verifier_dns_failure_retries_then_gives_up(jwt_veri
     """A persistent transient failure still raises after exhausting attempts —
     it's not silently absorbed forever, just given a few chances to clear."""
     dns_error = httpx.ConnectError("[Errno -3] Temporary failure in name resolution")
-    with patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=dns_error)) as upstream, pytest.raises(
-        httpx.ConnectError
+    with (
+        patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=dns_error)) as upstream,
+        pytest.raises(httpx.ConnectError),
     ):
         await jwt_verifier._fetch_jwks()
     assert upstream.call_count == 3  # jwks_retry_stop = stop_after_attempt(3)
@@ -237,9 +236,10 @@ async def test_retryable_jwt_verifier_dns_failure_retries_then_gives_up(jwt_veri
 async def test_retryable_jwt_verifier_genuine_4xx_is_not_retried(jwt_verifier: RetryableJWTVerifier) -> None:
     """A non-5xx HTTP error from the JWKS endpoint says something about JWKS
     config, not upstream flakiness — no point retrying it."""
-    with patch.object(
-        JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=_http_error(404))
-    ) as upstream, pytest.raises(httpx.HTTPStatusError):
+    with (
+        patch.object(JWTVerifier, "_fetch_jwks", AsyncMock(side_effect=_http_error(404))) as upstream,
+        pytest.raises(httpx.HTTPStatusError),
+    ):
         await jwt_verifier._fetch_jwks()
     assert upstream.call_count == 1
 
