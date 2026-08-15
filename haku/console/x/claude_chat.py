@@ -677,7 +677,7 @@ class ClaudeChatStore:
                     ClaudeChatFrame(
                         session_id=session_id,
                         direction=FrameDirection.FROM_AGENT,
-                        kind="assistant",
+                        kind=ASSISTANT_FRAME_KIND,
                         payload=_assistant_frame(text),
                         partial=True,
                         created_at=now,
@@ -892,19 +892,28 @@ class StarletteTextWebSocket(TextWebSocket):
         await self._websocket.close()
 
 
+# TODO(frame-vocabulary): these are not one vocabulary, and there is deliberately no enum over
+# them yet. Five of them are the CLI's own top-level `type`; `SETUP_OUTPUT_KIND` is the *bridge*
+# envelope's `kind` literal, put in the same column by a different sink. An enum over the union
+# would give a name to a concept the schema does not actually have — see `ClaudeChatFrame` and
+# stage 2 of <../../plans/chat_runtime_projection.md>, which is where this becomes one thing.
+
 # One token batch of an answer still being written. Hundreds per turn, and the completed
-# `assistant` frame repeats all of it — which is why `read_frames` leaves them out of the default
-# view, and why they were left out of the log entirely until the log had to be complete.
+# `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
+# view.
 DELTA_FRAME_KIND = "stream_event"
 
 # The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
 # sends `user` frames too, carrying tool results.
 PROMPT_FRAME_KIND = "user"
 
-# The frame that ends a turn, and the one that completes an assistant message. Both are read
-# back out of the log by `adopt_open_turn` to work out what a departed holder had got to.
+# The frame that ends a turn, and the one that completes an assistant message. Both are read back
+# out of the log by `adopt_open_turn` to work out what a departed holder had got to.
 RESULT_FRAME_KIND = "result"
 ASSISTANT_FRAME_KIND = "assistant"
+
+# The bridge's, not the CLI's — see the TODO above.
+SETUP_OUTPUT_KIND = "setup_output"
 
 
 def _assistant_frame(text: str) -> dict[str, Any]:
@@ -914,9 +923,6 @@ def _assistant_frame(text: str) -> dict[str, Any]:
     what says it was reconstructed rather than observed.
     """
     return {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
-
-
-SETUP_OUTPUT_KIND = "setup_output"
 
 
 def _setup_output_frame(text: str) -> dict[str, Any]:
@@ -1494,7 +1500,7 @@ class ClaudeChatService:
                     # ends a turn rather than the conversation.
                     while True:
                         remaining = await next_frame
-                        if remaining.get("type") == "result":
+                        if remaining.get("type") == RESULT_FRAME_KIND:
                             result = remaining
                             break
                         next_frame = asyncio.ensure_future(anext(frames))
@@ -1686,7 +1692,7 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
         select(ClaudeChatFrame.kind, ClaudeChatFrame.payload)
         .where(
             ClaudeChatFrame.session_id == session_id,
-            ClaudeChatFrame.kind.in_([ChatMessageRole.ASSISTANT, ChatMessageRole.USER]),
+            ClaudeChatFrame.kind.in_([ASSISTANT_FRAME_KIND, PROMPT_FRAME_KIND]),
         )
         .order_by(ClaudeChatFrame.frame_seq)
     )
@@ -1701,7 +1707,7 @@ async def _rollout_calls(db: AsyncSession, session_id: UUID) -> _RolloutCalls:
             if not isinstance(block, dict):
                 continue
             match block.get("type"):
-                case "tool_use" if kind == ChatMessageRole.ASSISTANT and agent_id:
+                case "tool_use" if kind == ASSISTANT_FRAME_KIND and agent_id:
                     by_message.setdefault(str(agent_id), []).append(
                         {"tool_use_id": block["id"], "name": block["name"], "input": block["input"]}
                     )
