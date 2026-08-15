@@ -34,25 +34,26 @@ and the cohort's namespace-local binding is in
 
 ## Executive decision
 
-No reviewed project is a drop-in fit. The preferred path is a small, Haku Console-integrated
-lease broker:
+No reviewed project is a completely drop-in fit. However, accepting pre-reviewed,
+namespace-scoped RoleBinding profiles makes an initial **Haku Console + Kube JIT operator**
+composition the preferred path. It avoids writing the expiry/reconciliation controller from
+scratch while retaining Haku Console as the approval authority:
 
 ```text
 Haku request -> Console approval + durable database lease
-             -> independent reconciler/reaper
-             -> generated temporary Role/ClusterRole + RoleBinding/ClusterRoleBinding
+             -> narrowly privileged Console-to-Kube-JIT adapter
+             -> Kube JIT JitRequest -> temporary RoleBinding(s) + expiry/reaping
              -> existing Haku proxy-mediated Kubernetes request path
 ```
 
-The preferred bespoke-broker request contains literal Kubernetes `PolicyRule`s. After approval it
-creates a fresh, lease-named Role or ClusterRole from those rules and binds it to the fixed Haku
-cohort. An initial integration may instead approve a named role/profile, provided the Console
-captures the selected role/policy's immutable version or resolved-permissions hash alongside the
-approver, reason, expiry, and audit trail. Kubernetes holds only generated enforcement objects
-with a lease ID, expiry, and either a canonical rules hash or policy-version reference.
+The first profile set should be narrow, named roles that are appropriate for namespace-scoped
+RoleBindings. The Console captures the selected role/profile's immutable version or
+resolved-permissions hash, approver, reason, expiry, and audit trail. The adapter materializes an
+approved request only after that durable record exists.
 
-This is smaller and easier to audit than installing a second identity platform, preserves
-placeholder-only sandboxes, and provides the clearest approver-visible permission semantics.
+The small bespoke lease broker remains the preferred extension path for needs Kube JIT cannot
+express safely: arbitrary rules, cluster-scoped grants, or stronger per-lease identities. Both
+approaches preserve placeholder-only sandboxes.
 
 ### Credential layering is compatible with the placeholder boundary
 
@@ -129,12 +130,16 @@ delete `JitRequest`s. It creates them only after consuming a committed Console a
 record. The Console remains the system that decides whether to issue or revoke a lease; Kube JIT
 becomes the independent Kubernetes enforcement/reaping component.
 
-This is viable only within the upstream controller's current boundaries:
+This is viable only within the upstream controller's current boundaries. The initial requirement
+accepts those boundaries: namespace-scoped RoleBindings are sufficient.
+
+- The first profile set should be limited to pre-reviewed ClusterRole names applied through
+  namespace RoleBindings. No ClusterRoleBinding or cluster-scoped grant is required for this
+  phase.
 
 - It approves a configured **ClusterRole name** allowlist and creates namespaced `RoleBinding`s;
-  its documented controller model does not create `ClusterRoleBinding`s. It is therefore a good
-  first composition for pre-reviewed, namespace-scoped profiles, not for cluster-wide or
-  break-glass-class leases.
+  its documented controller model does not create `ClusterRoleBinding`s. This is a feature for
+  the initial containment boundary; cluster-wide or break-glass-class leases remain out of scope.
 - `JitRequest` is cluster-scoped and includes the target role, namespaces, subject, time window,
   and callback URL. The adapter must independently restrict fixed subjects, approved role/profile
   versions, namespace allowlists, maximum duration, and a fixed internal callback endpoint. It
@@ -183,9 +188,10 @@ implementation for this one control.
 
 ## Recommended design
 
-### Model A — lease temporary native RBAC on the existing Haku identities
+### Model A — future custom lease of native RBAC on the existing Haku identities
 
-For the first implementation, keep the current identity/request route. The broker creates:
+If Kube JIT is not adopted or a capability outside its namespace-RoleBinding model is needed, keep
+the current identity/request route and use a bespoke broker. The broker creates:
 
 - a generated `Role` plus `RoleBinding` for namespace-scoped rules, or
 - a generated `ClusterRole` plus `ClusterRoleBinding` for genuinely cluster-scoped rules,
