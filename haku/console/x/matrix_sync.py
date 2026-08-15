@@ -40,6 +40,12 @@ _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
 LEADER_RETRY = datetime.timedelta(seconds=30)
 # Backoff after a failed sync, so a homeserver outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
+# Backoff after a refused batch. `sync_once` deliberately does not advance the watermark on
+# refusal (R2.2 — Matrix itself holds the message), but that means the same still-unread events
+# match the next `/sync` immediately: Synapse's long-poll only blocks waiting for *new* data,
+# and to it nothing looks new. Without this, a turn in flight while a message is waiting turns
+# into a hot loop bounded only by round-trip time to the homeserver (observed: ~20/s).
+REFUSED_BATCH_BACKOFF = datetime.timedelta(seconds=1)
 
 
 class MatrixSyncStore:
@@ -293,12 +299,14 @@ class MatrixSyncService:
             serviced.append(message)
         return serviced
 
-    async def sync_once(self, token: str) -> None:
+    async def sync_once(self, token: str) -> bool:
         """One `/sync` pass: act on what came back, then advance the watermark.
 
-        Returns without advancing when the session cannot take the batch. That is the whole
-        queue-until-turn-end mechanism (R2.2): the events stay unacknowledged on the
-        homeserver and the next pass re-offers them, so nothing needs to be held here.
+        Returns False, without advancing, when the session cannot take the batch. That is the
+        whole queue-until-turn-end mechanism (R2.2): the events stay unacknowledged on the
+        homeserver and the next pass re-offers them, so nothing needs to be held here. The
+        caller backs off on a False so re-offering does not become a hot loop against a
+        homeserver that only long-polls for genuinely new data (`REFUSED_BATCH_BACKOFF`).
         """
         state = await self._store.load(self._config.user_id)
         result = await self._client.sync(token, state.next_batch if state else None)
@@ -309,10 +317,11 @@ class MatrixSyncService:
         if messages := self._serviced(result.messages, live_room):
             if not await self._turns.offer(messages):
                 self._report_holding(live_room, len(messages))
-                return
+                return False
             self._holding = False
             logger.info("Matrix: handed %d message(s) to the session", len(messages))
         await self._store.save_batch(self._config.user_id, result.next_batch)
+        return True
 
     async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
@@ -353,7 +362,8 @@ class MatrixSyncService:
         token = await self._token()
         while True:
             try:
-                await self.sync_once(token)
+                if not await self.sync_once(token):
+                    await asyncio.sleep(REFUSED_BATCH_BACKOFF.total_seconds())
             except MatrixAuthError:
                 logger.warning("Matrix: access token rejected, logging in again")
                 token = await self._token()

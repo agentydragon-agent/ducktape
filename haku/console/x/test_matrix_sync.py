@@ -169,8 +169,9 @@ async def test_a_refused_batch_leaves_the_watermark_alone(service, matrix, turns
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
 
-    await service.sync_once("tok")
+    made_progress = await service.sync_once("tok")
 
+    assert made_progress is False, "the caller backs off on a refusal — see REFUSED_BATCH_BACKOFF"
     assert await watermark(sync_store) is None, "advancing here would drop the message the session refused"
     assert turns.offered == [["hello"]]
 
