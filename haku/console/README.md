@@ -7,7 +7,8 @@ reviewed ducktape code. It replaced the static nginx + git-sync dashboard (now r
 All product surfaces have **moved** to haku-state's `ui/` — Haku's own UI service
 (`haku-ui`), which the console frames **full-page** as a sandboxed cross-origin iframe. The
 console is now just the trusted outer shell: the capability tier (launch-routine) plus the
-bridge that brokers the iframe's privileged requests. It holds no haku-state write credential.
+bridge that brokers the iframe's privileged requests. It holds Haku's Forgejo credential, but
+only ever reads with it (the `haku_index` git corpus, below).
 
 **Trust boundary:** the console is reviewed/released ducktape code, so it runs in
 its **own `haku-console` namespace** — deliberately _not_ `haku-sandbox`, the
@@ -48,8 +49,9 @@ This capability path stays only until haku-ui submits `launch_routine` through i
 the `requestLaunch` bridge verb is dropped, at which point `capabilities.py` retires entirely.
 
 There is **no** low-privilege "trace" write tier anymore — operator feedback now writes
-straight into haku-state from haku-ui (which Haku already owns), so the console needs no
-haku-state git credential or clone at all.
+straight into haku-state from haku-ui (which Haku already owns), so nothing here writes to
+haku-state. The console does keep a **read-only bare mirror** of it, fetched by the index's
+sync sweep — see `haku_index` below.
 
 ## MCP approval queue — authored tool calls, console-approved
 
@@ -379,6 +381,24 @@ MCP servers from `@mcp.tool`-decorated functions:
   `list_event_instances` return focused recurrence-aware event models and auto-approve for
   authenticated Agents as transparent read tools. Deferred Calendar API affordances are inventoried
   in `TODO.md`.
+- **`haku_index`** (`haku.console.tools.state_index`): `search` is semantic recall over two
+  corpora — the files at haku-state's indexed tip and the console's own record of past chat
+  sessions — selected by a `corpus` argument and ranked together. It returns **pointers, not
+  content**: a path, commit and blob sha to read from a haku-state clone, or a session, room and
+  message ids to read through `haku_conversations`. `index_status` is the companion an empty
+  result needs, since an index that has fallen behind is indistinguishable from a subject that
+  never came up. Both auto-approve for Haku (`haku_recall_reads`, the same atom that grants the `haku_conversations` reads); both are unscoped across rooms
+  and operators, which is a decision recorded in <../state_index/README.md> § Read scoping rather
+  than an oversight. Listing the server in `config.yaml` is what builds it, and the console refuses
+  to start if it is listed without an embedder configured — search embeds its query, so a search
+  tool with nowhere to embed is a tool that can only fail. Credential-free: the corpus is the
+  console's own database, and embeddings come from Ollama. **Both corpora are kept current by this
+  process** (`state_index_sync.py`): a chat sweep every minute over the console's own tables, and a
+  haku-state poll every thirty seconds against a bare mirror on the pod's `/tmp` — an `ls-remote`
+  that pulls objects only when the tip actually moved. Each corpus has its
+  own Postgres advisory lock, so one replica syncs it and a long git fetch never delays a chat
+  sweep. The git half runs only when `haku_state_git` is configured; without it the console serves
+  the conversations corpus alone.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
   ordinary approval-gated tool call rather than a bespoke capability. It uses the
@@ -534,7 +554,9 @@ Two operational notes:
 | `push_routes.py`                   | Operator-browser `/api/push/*` surface: the public VAPID key the SPA subscribes with, plus subscription registration, listing, and removal.                                                                                                                                  |
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |
 | `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                              |
-| `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, and routine FastMCP servers, shared by the production app and schema exporter.                                                                                                                                     |
+| `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, routine, conversations, and index FastMCP servers, shared by the production app and schema exporter.                                                                                                               |
+| `state_index_reader.py`            | Binds the `haku_index` tools to the console's database and embedder; the one place the tool surface's `haku_state`/`conversations` vocabulary maps to the index's own `git`/`chat`.                                                                                          |
+| `state_index_sync.py`              | The sweeps that keep both index corpora current: chat from the console's own tables, haku-state from a bare mirror it fetches. One Postgres advisory lock per corpus, so one replica syncs each.                                                                             |
 | `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                                    |
 | `provider_connection.py`           | Deploy-named per-Operator connections to well-known external OAuth providers: fixed-client authorization-code + PKCE flow, connection-specific metadata, and the `/api/operator-connections/*` endpoints. Provider catalog: `provider_connection_registry.py`.               |
 | `oauth_token_state.py`             | Shared current-token persistence and refresh state machine for remote-server, provider, and Operator-login OAuth associations. A short database claim deduplicates foreground and background refreshes across replicas.                                                      |
@@ -640,7 +662,11 @@ redirect-URI origin), and each `static_agents` entry's env-referenced bearer + s
 `HAKU_CONSOLE_AGENT_HAKU_OPERATOR` / `operator_subject` label from the TF-fed `haku-console-oidc`
 Secret). That Authentik `sub_mode=user_id` value is used only to create/find an identity anchor and
 is immediately resolved to an Operator UUID; it is never carried as live request authority.
-It no longer holds a haku-state git credential — feedback/trace writes moved into haku-ui.
+It also holds Haku's own Forgejo credential (`haku-forgejo-git`, reflected in from haku-sandbox;
+`HAKU_CONSOLE_HAKU_STATE_GIT__*`), which the index's git sweep fetches haku-state with. Nothing in
+the console writes to haku-state — feedback/trace writes moved into haku-ui — but this credential
+_can_, which is the cost of reusing Haku's account instead of provisioning a second, read-only one
+(operator, 2026-08-15). The console is more trusted code than Haku, which already holds it.
 As trusted ducktape code in its own namespace it is **not** behind the `haku-egress-proxy`
 fence — it gets ordinary cluster egress (which the capability tier needs to reach the
 Anthropic fire URL). Security model: `haku/docs/security.md`; roadmap: `haku/PLAN.md` and the

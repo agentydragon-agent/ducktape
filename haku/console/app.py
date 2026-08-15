@@ -23,6 +23,7 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
+from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
@@ -50,7 +51,7 @@ from haku.console import (
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
-from haku.console.config import MCP_PATH, Settings
+from haku.console.config import MCP_PATH, EmbedderConfig, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
@@ -68,9 +69,13 @@ from haku.console.mcp_config import (
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.state_index_reader import PostgresIndexSearcher
+from haku.console.state_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
+from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import chat_notifications, claude_chat, matrix_session, matrix_sync, sandbox_claims
 from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.state_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
@@ -119,6 +124,14 @@ def _cache_control_for_path(path: str, status_code: int) -> str:
     if path.startswith(("/api/", "/mcp", "/auth/", "/.well-known/", "/metrics")) or path == "/healthz":
         return NO_STORE_CACHE_CONTROL
     return APP_SHELL_CACHE_CONTROL
+
+
+def _embedder(config: EmbedderConfig, *, timeout: float) -> OpenAIEmbedder:
+    return OpenAIEmbedder(
+        AsyncOpenAI(base_url=config.base_url, api_key=config.api_key.get_secret_value(), timeout=timeout),
+        model=config.model,
+        query_instruction=config.query_instruction,
+    )
 
 
 def _operator_identity_trust(settings: Settings) -> OperatorIdentityTrust:
@@ -351,6 +364,9 @@ def create_app(
     # standard queue), superseding the bespoke launch-routine capability tier. Same
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
+    # Built alongside the index's search tools below, and None when a test injects its own
+    # in-process servers: a test that wants the sweeps drives `StateIndexMaintenance` itself.
+    index_maintenance: StateIndexMaintenance | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -362,10 +378,34 @@ def create_app(
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
                 broker=node_daemon_service,
             )
+        # Configured rather than switched on separately: `config.yaml` is where the server is
+        # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
+        # could only ever disagree with it — a listed server with no builder fails the binding
+        # validation below.
+        index_searcher = None
+        if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers):
+            if settings.embedder is None:
+                raise ValueError(
+                    f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
+                    "search embeds its query, so it cannot run without one"
+                )
+            # Two clients over one configuration, differing only in patience. A search embeds one
+            # query on the request path and should fail rather than hang; a sweep embeds batches
+            # off it, where waiting out a cold model load is exactly what you want.
+            index_searcher = PostgresIndexSearcher(
+                db_sessions, _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds)
+            )
+            index_maintenance = StateIndexMaintenance(
+                db_engine,
+                db_sessions,
+                embedder=_embedder(settings.embedder, timeout=settings.embedder.sync_timeout_seconds),
+                git=settings.haku_state_git,
+            )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
                 routine_launcher=routine_launcher,
                 hostexec=hostexec_server,
+                index=index_searcher,
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
                 rollout=claude_chat_store if claude_runtime is not None else None,
@@ -436,7 +476,8 @@ def create_app(
         # replica provisioning, while staying a separate task keeps a stalled sandbox claim
         # from wedging ingress, which must keep enqueueing with no sandbox up (R1.4).
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising:
+        indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising, indexing:
             await console_event_hub.start()
             await claude_chat_notifications.start()
             try:

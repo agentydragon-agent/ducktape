@@ -62,6 +62,54 @@ def _postgres_connection_identity(raw_url: str) -> tuple[object, ...]:
     )
 
 
+class EmbedderConfig(BaseModel):
+    """Where the `haku_index` tools compute embeddings: any OpenAI-compatible `/v1/embeddings`.
+
+    Ollama today, LiteLLM or anything else that speaks the format tomorrow — which is why this is
+    a URL and a model name rather than a backend choice.
+
+    `model` is also the index's `model_key`, so it names the model and not the deployment: point
+    it at a different server serving the same model and every cached vector is still valid; point
+    it at a different model and the cache misses by construction rather than by anyone noticing.
+    """
+
+    base_url: str = Field(description="Base URL including the API version, e.g. http://haku-embedder:8080/v1")
+    model: str
+    # Instruction-aware models want queries prefixed and documents plain (Qwen3-Embedding, bge,
+    # E5). It belongs to the model rather than to the endpoint, so it is configured beside the
+    # model name; a model without that asymmetry leaves it empty.
+    query_instruction: str = ""
+    # The client library requires one; Ollama ignores it, a hosted endpoint would not.
+    api_key: SecretStr = SecretStr("not-used")
+    # Explicit because the client library's default is ten minutes, and this sits on the search
+    # request path: a slow embedder should fail a search, not hold a connection until the caller
+    # gives up. Generous enough for a cold model load, short enough to be an error rather than a
+    # hang — and it wants to be, since Ollama is a zone away from this pod.
+    timeout_seconds: float = Field(default=30.0, gt=0.0)
+    # The sync sweeps embed batches of documents off the request path, where waiting out a cold
+    # model load is what you want and giving up means the corpus simply never fills.
+    sync_timeout_seconds: float = Field(default=300.0, gt=0.0)
+
+
+class HakuStateGitConfig(BaseModel):
+    """The read side of haku-state, for the index's `git` corpus.
+
+    Configured means the console syncs that corpus; unset means it serves whatever the `chat`
+    corpus holds and nothing else. The credential is Haku's own Forgejo account (operator,
+    2026-08-15), reflected into this namespace — so the console now holds a credential that can
+    also *write* haku-state, which `haku/console/README.md` records. Nothing here writes: the
+    mirror is fetched, never pushed to.
+    """
+
+    repo_url: str
+    branch: str = "main"
+    username: str | None = None
+    password: SecretStr | None = None
+    # A bare mirror, on ephemeral pod storage by default: losing it costs a clone, not an
+    # embedding, since the chunk cache is content-addressed and lives in Postgres.
+    mirror_path: Path = Path("/tmp/haku-state-index/mirror.git")
+
+
 class LaunchRoutineConfig(BaseModel):
     """The `launch-routine` capability: the routine (trigger) id plus the bearer that
     authorizes firing it. Both come from the deployment env / `haku-routine-launch-token`
@@ -378,6 +426,13 @@ class Settings(BaseSettings):
     # budget, not a cache lifetime. 0 disables reuse across requests but still collapses concurrent
     # reflections of the same server.
     mcp_catalog_cache_ttl_seconds: float = Field(default=60.0, ge=0.0, le=900.0)
+
+    # Required when the config file lists the `haku_index` server, and unused otherwise: the
+    # console refuses to start with search configured and nowhere to embed a query.
+    embedder: EmbedderConfig | None = None
+    # Where the index's `git` corpus comes from. Unset leaves that corpus empty and only the
+    # `chat` corpus — which the console builds from its own tables — searchable.
+    haku_state_git: HakuStateGitConfig | None = None
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via

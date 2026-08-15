@@ -23,7 +23,7 @@ import pytest
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers.rlocations import POSTGRES_18, RYUK
-from util.oci import load_oci_image
+from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -55,8 +55,11 @@ def _onto_disk() -> Iterator[None]:
         handler.close()
 
 
-def start_postgres_container() -> PostgresContainer:
-    """Preload Ryuk + Postgres 18 (skipping any the daemon already has), then start the container.
+def start_postgres_container(image: OciImage = POSTGRES_18) -> PostgresContainer:
+    """Preload Ryuk + the Postgres image (skipping any the daemon already has), then start it.
+
+    `image` selects a different Postgres build — e.g. `PGVECTOR_PG18` for packages whose schema
+    needs the `vector` extension, which the stock image does not ship.
 
     **Every step says how long it took.** This runs in session fixture setup, before pytest has
     emitted a line, so when it wedges the whole test log is silence — which is how a five-minute
@@ -65,13 +68,11 @@ def start_postgres_container() -> PostgresContainer:
     daemon's own container start, so the least this can do is name where the time went.
     """
     with _onto_disk():
-        for image in (RYUK, POSTGRES_18):
-            load_oci_image(image)
-        container = PostgresContainer(
-            image=POSTGRES_18.tag, username="postgres", password="postgres", dbname="postgres"
-        )
+        for preloaded in (RYUK, image):
+            load_oci_image(preloaded)
+        container = PostgresContainer(image=image.tag, username="postgres", password="postgres", dbname="postgres")
         started = time.monotonic()
-        logger.info("Starting %s", POSTGRES_18.tag)
+        logger.info("Starting %s", image.tag)
         container.start()
         logger.info("Postgres ready in %.1fs", time.monotonic() - started)
         return container

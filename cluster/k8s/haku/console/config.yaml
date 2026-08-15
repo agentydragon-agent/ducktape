@@ -141,17 +141,26 @@ auto_approval_policies:
     type: gmail_label_namespace
     server: gmail
     label_prefix: haku/
-  - id: haku_conversation_reads
+  # Reading back what happened and what is written down: the rollout of a past session, and
+  # semantic search over the same sessions plus haku-state. One atom because they are one
+  # authority — every tool here reads a corpus Haku can already reach (it has a haku-state clone,
+  # and `read_rollout` already spans every session), so search adds discoverability rather than
+  # reachability. Worth knowing that both are unscoped across rooms and operators
+  # (haku/state_index/README.md § Read scoping).
+  - id: haku_recall_reads
     type: exact_tools
     tools:
       haku_conversations:
         - list_conversations
         - read_rollout
         - list_turns
+      haku_index:
+        - search
+        - index_status
   - id: haku_v1
     type: any_of
     policies:
-      - haku_conversation_reads
+      - haku_recall_reads
       - gmail_reads
       - google_calendar_reads
       - grocy_reads
@@ -352,6 +361,17 @@ mcp:
     # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
     # credential, so it needs no operator-resolved backend auth.
     - id: haku_routine
+      backend:
+        kind: in_process
+        credential:
+          kind: none
+    # `haku_index` (haku/console/tools/state_index.py): semantic search over haku-state's files
+    # and Haku's own past conversations. Listing it here is what builds the searcher, and the
+    # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
+    # Ollama) — search embeds its query. The same process keeps both corpora current
+    # (haku/console/state_index_sync.py): the conversations corpus from its own tables, and
+    # haku-state through a read-only mirror it fetches with `HAKU_CONSOLE_HAKU_STATE_GIT__*`.
+    - id: haku_index
       backend:
         kind: in_process
         credential:

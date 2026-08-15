@@ -213,3 +213,19 @@ of the bridge, `kind` becomes the envelope discriminator, and the CLI's type get
 along with what that costs (the sink has to move down to `WebSocketTransport`, and it is three
 releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
 scheduled**, and no other work depends on it.
+
+## Which past conversations may an agent read?
+
+`list_conversations`, `read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped by
+deliberate deferral — R5.3a in <../plans/matrix_chat_runtime.md> left the policy open rather than
+guess at a rule nobody stated. Any Haku may read any session, whichever room or operator it served.
+
+Semantic search over the same corpus (<../state_index/README.md>, `chat`) raises the stakes without
+changing the data: a drilldown makes reading another room's conversation a deliberate act, where
+ranked retrieval surfaces it by accident at the top of the results. That index is not exposed to any
+agent yet, and settling this is the prerequisite for exposing it.
+
+The full inventory of what a scope would touch — the search query, the drilldown tools it hands off
+to, the identity it keys on, the auto-approval config, and the RLS-scoped-Postgres-role alternative —
+is in <../state_index/README.md> § Read scoping. Record the decision in R5.3a once made, and in
+<../docs/security.md> if the answer turns out to be "any conversation".
