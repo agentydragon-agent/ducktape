@@ -181,8 +181,8 @@ the adapter's Kubernetes credential out of `haku-sandbox`.
 
 #### Console integration shape
 
-One new **in-process Haku Console MCP server** (for example,
-`haku_kubernetes_access`) is sufficient as the Agent-facing surface. Its tools should be small:
+One new **in-process Haku Console MCP server**, named `kube-jit`, is sufficient as the
+Agent-facing surface. Its tools should be small:
 
 - `list_access_profiles` and `get_grant` / `list_grants` are read-only discovery/status tools;
 - `request_namespaced_grant` takes a profile, allowed namespace, duration, and justification; and
