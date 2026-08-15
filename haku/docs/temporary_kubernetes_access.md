@@ -145,11 +145,15 @@ accepts those boundaries: namespace-scoped RoleBindings are sufficient.
   versions, namespace allowlists, maximum duration, and a fixed internal callback endpoint. It
   must not give Haku write access to `JitRequest` or `KubeJitConfig`.
 - The upstream Helm chart is **not deployable as-is at this trust boundary**: its manager
-  `ClusterRoleBinding` binds the operator ServiceAccount to Kubernetes `cluster-admin`, despite
-  also shipping a narrower generated manager `ClusterRole`. A fork/hardening pass must replace
-  that binding, scope role-binding operations to the intended namespaces, pin the image rather
-  than use `latest`, and review the controller behavior. It is an enforcement engine, not an
-  approval boundary.
+  `ClusterRoleBinding` binds the operator ServiceAccount to Kubernetes `cluster-admin`; its source
+  tree separately contains a narrower generated manager `ClusterRole`, but the chart does not bind
+  it. A fork/hardening pass must at least
+  replace that binding with a reviewed capability role, pin the image rather than use `latest`,
+  and review controller behavior. The first deployment may intentionally give it broad
+  cluster-wide `RoleBinding` lifecycle authority if it needs to serve many namespaces, but it
+  should still receive only the permissions it uses and a tightly named `bind` allowance for the
+  approved ClusterRole profiles—not unrelated Kubernetes API authority. It is an enforcement
+  engine, not an approval boundary.
 
 If this composition passes that review, it avoids writing a reaper/controller from scratch while
 keeping Haku Console's manual approval queue, audit record, and placeholder-facing proxy model.
@@ -169,15 +173,18 @@ CRD aggregation/metrics resources, pin the operator image, and replace the upstr
 `cluster-admin` binding with:
 
 - cluster-scoped read/write access only for Kube JIT's own CRDs and namespace discovery;
-- a namespace-local Role/RoleBinding pair for `RoleBinding` lifecycle operations in each approved
-  target namespace; and
+- `RoleBinding` lifecycle access across the target namespaces, plus `bind` restricted by
+  `resourceNames` to the reviewed ClusterRole profiles; and
 - namespace-local leader-election RBAC for the operator namespace.
 
-For one target namespace, this is roughly a low-teens object set plus a NetworkPolicy; each
-additional target namespace adds a Role/RoleBinding pair. An optional external adapter would add
-one small Deployment, ServiceAccount/RBAC, configuration, and egress policy. Alternatively, a
-reviewed Console background worker can be the adapter, avoiding that extra workload while keeping
-the adapter's Kubernetes credential out of `haku-sandbox`.
+The simple option is one reviewed cluster-scoped capability role for the operator: it is broad in
+namespace reach but materially narrower than `cluster-admin`. The stronger option uses a
+namespace-local Role/RoleBinding pair for each target namespace; it reduces compromise blast
+radius but adds two objects per namespace. Either option is roughly a low-teens base object set
+plus a NetworkPolicy. An optional external adapter would add one small Deployment,
+ServiceAccount/RBAC, configuration, and egress policy. Alternatively, a reviewed Console
+background worker can be the adapter, avoiding that extra workload while keeping the adapter's
+Kubernetes credential out of `haku-sandbox`.
 
 #### Console integration shape
 
