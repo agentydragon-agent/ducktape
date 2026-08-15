@@ -20,6 +20,11 @@ spec:
         app.kubernetes.io/name: grocy-mcp
         app.kubernetes.io/component: server
     spec:
+      # The OAuth state Valkey instances use local-path-ovh and are pinned to
+      # hil-ovh. Keep the MCP client in the same site: valkey-glide's default
+      # 250 ms request timeout is too small for the current cross-site path.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: server
           image: ghcr.io/agentydragon/grocy-mcp:devel-20260815045520-88846f1 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
