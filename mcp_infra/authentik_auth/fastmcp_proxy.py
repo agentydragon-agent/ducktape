@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from authlib.oauth2 import OAuth2Error
-from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from glide_shared.exceptions import TimeoutError as GlideTimeoutError
 from mcp.server.auth.provider import TokenError
 from prometheus_client import Counter
@@ -60,6 +61,41 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
     reached Authentik, and must not fire the upstream-failure alert.
     """
     return isinstance(exc, OAuth2Error | httpx.HTTPStatusError)
+
+
+class RetryableJWTVerifier(JWTVerifier):
+    """Retry transient JWKS-fetch failures before FastMCP swallows them.
+
+    `JWTVerifier._get_jwks_key` catches any `httpx.HTTPError` from `_fetch_jwks`
+    (including timeouts and connect errors, not just 5xx) and re-raises as
+    `ValueError`; `load_access_token` (both this class's own, and
+    `OAuthProxy.load_access_token` on every incoming request) then catches that
+    with a blanket `except Exception: return None`. A transient Authentik blip
+    while fetching JWKS is therefore indistinguishable from a genuinely invalid
+    bearer token by the time it reaches the caller, and surfaces as
+    `401 invalid_token` on every request presented during the blip — the same
+    failure shape `RetryableRefreshOIDCProxy` already bridges for token
+    refresh, in the sibling per-request verification path that never got that
+    fix (see the 2026-08-14 grocy-mcp-server 401 burst).
+
+    Retrying here, before `_get_jwks_key` converts the exception, bridges the
+    same class of sub-second blip.
+    """
+
+    jwks_retry_stop = stop_after_attempt(3)
+    jwks_retry_wait = wait_exponential(multiplier=0.5, max=2)
+
+    async def _fetch_jwks(self) -> dict[str, Any]:
+        async for attempt in AsyncRetrying(
+            retry=retry_if_exception(_transient_upstream_error),
+            stop=self.jwks_retry_stop,
+            wait=self.jwks_retry_wait,
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        ):
+            with attempt:
+                return await super()._fetch_jwks()
+        raise AssertionError("unreachable")  # the retry loop always returns or raises
 
 
 class RetryableRefreshOIDCProxy(OIDCProxy):
@@ -124,6 +160,30 @@ class RetryableRefreshOIDCProxy(OIDCProxy):
                 ) from e
             raise
         raise AssertionError("unreachable")  # the retry loop always returns or raises
+
+    def get_token_verifier(
+        self,
+        *,
+        algorithm: str | None = None,
+        audience: str | None = None,
+        required_scopes: list[str] | None = None,
+        timeout_seconds: int | None = None,
+    ) -> TokenVerifier:
+        """Swap in `RetryableJWTVerifier` for the default per-request token verifier.
+
+        Duplicates `OIDCProxy.get_token_verifier`'s construction (pinned by
+        test_fastmcp_proxy.py against the locked FastMCP version, same as the
+        rest of this file) rather than post-processing its result, since it
+        returns an already-constructed `JWTVerifier` with no supported way to
+        swap its class after the fact.
+        """
+        return RetryableJWTVerifier(
+            jwks_uri=str(self.oidc_config.jwks_uri),
+            issuer=str(self.oidc_config.issuer),
+            algorithm=algorithm,
+            audience=audience,
+            required_scopes=required_scopes,
+        )
 
 
 class DownstreamClientIdentityOIDCProxy(RetryableRefreshOIDCProxy):
