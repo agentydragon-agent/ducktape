@@ -156,6 +156,50 @@ keeping Haku Console's manual approval queue, audit record, and placeholder-faci
 The bespoke lease broker remains necessary only for capabilities the controller cannot safely
 express (for example, arbitrary rules, cluster-scoped grants, or a stronger per-lease identity).
 
+#### Deployment footprint
+
+Only the Kube JIT **operator** is relevant; do not deploy its upstream API, web UI, or PostgreSQL
+stack. The upstream operator Helm chart renders 21 Kubernetes objects: three CRDs, one Deployment,
+one ServiceAccount, nine CRD aggregation roles, leader-election RBAC, metrics resources, and the
+manager binding. A separate `KubeJitConfig` custom resource supplies the allowed role names and
+namespace regular expression.
+
+That is an upper bound, not a recommended manifest set. A hardened fork can remove the optional
+CRD aggregation/metrics resources, pin the operator image, and replace the upstream
+`cluster-admin` binding with:
+
+- cluster-scoped read/write access only for Kube JIT's own CRDs and namespace discovery;
+- a namespace-local Role/RoleBinding pair for `RoleBinding` lifecycle operations in each approved
+  target namespace; and
+- namespace-local leader-election RBAC for the operator namespace.
+
+For one target namespace, this is roughly a low-teens object set plus a NetworkPolicy; each
+additional target namespace adds a Role/RoleBinding pair. An optional external adapter would add
+one small Deployment, ServiceAccount/RBAC, configuration, and egress policy. Alternatively, a
+reviewed Console background worker can be the adapter, avoiding that extra workload while keeping
+the adapter's Kubernetes credential out of `haku-sandbox`.
+
+#### Console integration shape
+
+One new **in-process Haku Console MCP server** (for example,
+`haku_kubernetes_access`) is sufficient as the Agent-facing surface. Its tools should be small:
+
+- `list_access_profiles` and `get_grant` / `list_grants` are read-only discovery/status tools;
+- `request_namespaced_grant` takes a profile, allowed namespace, duration, and justification; and
+- `revoke_grant` removes an existing lease.
+
+The two mutation tools use Haku Console's existing MCP approval queue: an Agent submits the tool
+call, the trusted Console UI shows the normal approval card, and only an Operator approval causes
+the tool to commit a grant/revocation record. No second approval product or separate MCP deployment
+is needed.
+
+The MCP tool is only the entrance, not the Kubernetes authority. Console implementation still
+needs a grant/outbox database migration, profile validation, tool schemas/tests, and an adapter
+worker that creates or deletes `JitRequest`s idempotently after the approval commit. That worker
+may be a reviewed Console background worker or the small separate adapter described above; it must
+be the only principal with write access to Kube JIT CRDs. This is moderate integration work, with
+the Kube JIT chart hardening and least-privilege RBAC review likely exceeding the MCP-tool code.
+
 ### Teleport in more detail
 
 Teleport is the only reviewed option that materially improves the _credential_ side of this
@@ -277,8 +321,9 @@ created before expiration.
   [Kubernetes API](https://github.com/luisgf/infrabroker/blob/main/docs/API.md), and
   [HA assessment](https://github.com/luisgf/infrabroker/blob/main/docs/HA.md).
 - [Kube JIT README](https://github.com/samirtahir91/kube-jit/blob/main/README.md),
-  [operator README](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/README.md), and
-  [operator RBAC](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/config/rbac/role.yaml).
+  [operator README](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/README.md),
+  [upstream Helm manager binding](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/charts/kube-jit-operator/templates/manager-rbac.yaml), and
+  [operator RBAC source](https://github.com/samirtahir91/kube-jit/blob/main/controller/kube-jit-operator/config/rbac/role.yaml).
 - [Pinniped README](https://github.com/vmware-tanzu/pinniped/blob/main/README.md).
 - [SPIRE README](https://github.com/spiffe/spire/blob/main/README.md).
 - [akcess README](https://github.com/viveksinghggits/akcess/blob/master/README.md).
