@@ -144,9 +144,12 @@ accepts those boundaries: namespace-scoped RoleBindings are sufficient.
   and callback URL. The adapter must independently restrict fixed subjects, approved role/profile
   versions, namespace allowlists, maximum duration, and a fixed internal callback endpoint. It
   must not give Haku write access to `JitRequest` or `KubeJitConfig`.
-- The upstream manager role has broad CRUD over `RoleBinding`s across the cluster. Before use, its
-  RBAC and controller behavior need a threat-model review and likely a fork/hardening pass to
-  scope it to the intended namespaces. It is an enforcement engine, not an approval boundary.
+- The upstream Helm chart is **not deployable as-is at this trust boundary**: its manager
+  `ClusterRoleBinding` binds the operator ServiceAccount to Kubernetes `cluster-admin`, despite
+  also shipping a narrower generated manager `ClusterRole`. A fork/hardening pass must replace
+  that binding, scope role-binding operations to the intended namespaces, pin the image rather
+  than use `latest`, and review the controller behavior. It is an enforcement engine, not an
+  approval boundary.
 
 If this composition passes that review, it avoids writing a reaper/controller from scratch while
 keeping Haku Console's manual approval queue, audit record, and placeholder-facing proxy model.
