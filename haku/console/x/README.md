@@ -13,8 +13,17 @@ The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`
 SandboxClaim, the runner WebSocket bridge, and the `handle_runner` turn loop. Also the SPA chat
 surface's own HTTP routes and SSE stream, which is the older of the two experiments.
 
+**The tables are `sessions` and `session_*`, and the rename is mid-flight.** They were
+`claude_chat_*` — six backend-neutral concepts named after the one CLI that fills them, while the
+design requires a second backend to be representable. Migration `0040` renamed them and left each
+old name behind as an auto-updatable view, so a replica on the previous image keeps reading and
+writing the same rows for the length of a roll; `../test_session_table_compatibility.py` is what
+proves the views really carry the previous release's writes, `ON CONFLICT` inference included.
+**The contract migration that drops those views has not landed**, so nothing may assume the old
+names are gone yet.
+
 **A turn is a row, and it is a range over the frame log.** `next_prompt` dequeues a prompt and
-opens `claude_chat_turns` in one transaction; `_run_turn` is that turn's span and closes it on
+opens `session_turns` in one transaction; `_run_turn` is that turn's span and closes it on
 every exit, keeping what the `result` frame reported about cost, usage and duration. At most one
 turn per session is open (a partial unique index), and that is the single question behind three
 answers: whether a prompt may be admitted, whether there is anything to abort, and whether the
@@ -54,7 +63,7 @@ Two behaviours worth knowing before reading the code:
   no turn open and nothing pending, so when it refuses, the sync watermark is simply not advanced
   and the homeserver re-delivers next pass. Queue-until-turn-end (R2.2) and "nothing is silently
   dropped" (R1.6) come out of that, with no second durable queue. The gate asks
-  `claude_chat_turns` whether an exchange is in flight; it used to ask whether the session's
+  `session_turns` whether an exchange is in flight; it used to ask whether the session's
   status was `ready`, which happened to mean the same thing only because `enqueue_prompt` itself
   wrote `responding`.
 - **An event Haku cannot read is announced, not held.** `m.text` and `m.emote` are prose and are
@@ -105,19 +114,23 @@ wire the question is about: what Synapse does belongs in the e2e target, what th
 what Synapse said belongs in the unit tests — where an unknown tag kind or an exhausted backfill
 budget costs one dict rather than thousands of messages.
 
-## `chat_notifications.py` — the wake channel
+## `session_notifications.py` — the wake channel
 
-`LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `ClaudeChatStore`: a
+`LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `SessionStore`: a
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-**One channel, `claude_chat`, carrying a `ChatEvent`** — `{kind, session_id}`, where `kind`
+**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind`
 is `prompt`, `update`, or `abort`. It used to be three channels each carrying a bare session
 id, which left the event kind implicit in the channel name and every new kind costing
 another `LISTEN`. Waiters register on `(kind, session_id)`, so the fan-out is unchanged.
 `console_events.py` stays a separate channel and a separate connection: it is a different
 subsystem with a different payload and its own lifecycle, and the only thing the two share
 is the mechanism.
+
+**Right now it is two names, mid-expand.** `claude_chat` is `LEGACY_CHANNEL`, notified and
+listened on beside the new one so neither half of a roll goes deaf, and dropped in the contract
+release — see the constant for the gate.
 
 `test_notify_puts_a_readable_event_on_the_channel` is the one that pins the wire format —
 channel name and envelope, read off a raw connection. Nothing else would notice if either
@@ -134,13 +147,14 @@ wakes are lost for that window — the same expand/contract discipline a destruc
 migration needs. Notify on both names for one release, then drop the old — and gate that
 second release on the roll having **converged** (every pod on an image at or after the
 first), not on a release having elapsed, since `maxUnavailable: 0` means a bad image stalls
-the roll with the old replica still serving. The channel merge was done exactly that way.
+the roll with the old replica still serving. The channel merge was done exactly that way, and
+so is the `claude_chat` → `session_events` rename in flight now.
 
-The trap in the overlap phase, worth knowing before staging the next one: while both names
-are being notified, every wake is delivered twice, so a woken waiter proves nothing about
-which name woke it. Tests and production alike will look healthy with the new path entirely
-broken, right up until the old one is deleted. Cover the new path end to end on its own
-before contracting.
+The trap in the overlap phase: while both names are being notified, every wake is delivered
+twice, so a woken waiter proves nothing about which name woke it. Tests and production alike
+will look healthy with the new path entirely broken, right up until the old one is deleted.
+`test_an_event_on_one_channel_alone_wakes_the_waiter` is what answers it — it drives
+`pg_notify` on exactly one name, which `notify` itself can no longer do.
 
 ## Cross-replica state, and the trap it sets
 
@@ -160,7 +174,7 @@ dependency:
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the
   console does (R10.3b).
-- `ClaudeChatSession`, `ClaudeChatMessage`, `MatrixSyncState`, and `MatrixConversation` in
+- `Session`, `SessionMessage`, `MatrixSyncState`, and `MatrixConversation` in
   <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for the
   whole database.
 - The `ReplySink` port is defined next to the service that calls it (`claude_chat.py`), and
