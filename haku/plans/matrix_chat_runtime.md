@@ -222,6 +222,13 @@ input to a running turn**. Interrupt exists; steer does not.
 - **R3.1 [v1] One session.** There is a single long-running Agent SDK session, kept alive
   as long as it can be. Threads do not fork sessions; a thread root is context on the
   message, not a separate conversation.
+
+  **[later] "Bound to a room" becomes "one attached room plus N subscriptions".** A session's
+  transcript still lives in exactly one room; the others it watches and can write to are a
+  separate relation, owned by the agent rather than the session so a rotation does not lose them
+  (R5.4's note, and <information_trust_tiers.md> § Attachment and subscription). Only the
+  attachment is what R3.6a refuses a second of.
+
 - **R3.2 [v1] One long-lived sandbox, always up.** The sandbox backs that session
   continuously — not provisioned per turn, not expired on a short TTL, and **not scaled
   down when idle**. Every message pays no cold start. This makes the existing
@@ -342,6 +349,19 @@ input to a running turn**. Interrupt exists; steer does not.
   has one; a room for a _different_ operator or a _different_ agent would simply be its own
   binding. What that needs first is more than one of either, which is also what makes it
   premature to design now.
+
+  **Wanted now** (operator, 2026-08-15): more than one session at a time, and two rooms on the
+  one bot account would already be an improvement. The generalization above is still the target;
+  what makes the first step cheap is that **the session machinery already runs concurrent
+  sessions** — the SPA and Matrix surfaces are separate rows and separate sandboxes today — and
+  that `/sync` on one account already returns events for every joined room, so the sync loop and
+  its `MXSY` lock are unchanged for N rooms. Exactly three things enforce the singleton: this
+  binding's primary key, the supervisor and ingress loading that one row by configured bot user,
+  and the two advisory locks being global constants. Only the first is a migration. Budget the
+  sandboxes first — sessions are always-up, so N rooms hold N of them continuously, which is the
+  argument for landing <chat_runtime_cleanup.md> § stage 6 alongside rather than after. Fuller
+  note: <information_trust_tiers.md> § Running more than one agent at once.
+
   This is harness behaviour, not an agent capability, so R5.4's exclusion of a join tool
   stands — the agent still cannot reach a room the operator did not put it in.
 
@@ -414,6 +434,16 @@ input to a running turn**. Interrupt exists; steer does not.
   than fencing each session to its own. There is one operator, one Haku and one room, so the
   fence would separate Haku from its own history and nothing else.
 
+  **Superseded 2026-08-15, on exactly the condition this recorded.** With several agents at
+  several information trust levels, the premise ("one operator, one Haku and one room") no longer
+  holds, and reads become **tier-scoped**: an agent reads the transcripts and conversations its
+  tier gives it. The fence is the tier and not the room, so cross-room and cross-session reads
+  stay open within a tier — an agent keeps its own history and only edges crossing a boundary are
+  cut. What this paragraph got right is where it lands: a decision function at one console call
+  site, not scoping smeared through the transport. Design, and the three things it needs
+  (a tier column on `claude_chat_sessions`, unlabelled-reads-as-highest, and the index filter):
+  <information_trust_tiers.md>.
+
   It is a **policy** deferral, not an architectural one, and the distinction is what keeps it
   cheap to revisit. Every read goes through the console, which knows the calling Agent, the
   calling session and each conversation's owner — so "which Haku instances may read which past
@@ -440,6 +470,20 @@ input to a running turn**. Interrupt exists; steer does not.
 - **R5.4 [v1] Reading only.** The surface is read: fetch by event ID, fetch around an
   event, paginate history. There is no send, edit, react, redact, join, invite, leave, or
   room-state capability. Speaking happens by auto-forward (R11.1) and needs nothing.
+
+  **[later] A send tool arrives with subscriptions, and it takes a room id.** Once agents talk in
+  shared rooms (<information_trust_tiers.md>), an agent has **one attached room** — transcript
+  home, auto-forwarded, exactly today's behaviour — and **many subscribed rooms**, which it reads
+  as context and writes to through an explicit addressed tool. Auto-forward cannot serve the
+  second kind: it is 1:1 by construction, since "what the agent says is what the room sees" means
+  nothing with two candidate rooms. This relaxes R5.3's "not expressible rather than merely
+  denied" for that one tool, and what replaces the property is the console validating the room
+  against that agent's subscription set — server-side, small, and itself bounded by the room's
+  tier. A second tool may let the agent manage its **attention** — which of its rooms wake it —
+  which is safe because every option is already permitted; **membership** stays the console's, so
+  join, invite, leave and room-state stay out. R8.1's
+  "there is no send step to remember" becomes true of the attached room only, and R8.3's "one
+  room; it cannot address another" is what this supersedes.
 
 - **R5.4a [settled] Reads should not be a reimplemented Matrix API.** `/messages`, `/context`
   and `/event` are a public, well-documented read API; wrapping each in a bespoke tool is
@@ -611,6 +655,11 @@ instructions must convey, at minimum:
   any other source. The operator may hand over a bare event ID and expect it to be resolved
   rather than guessed at.
 - **R8.7 Its own session ID** (R7.3).
+- **R8.8 [later] Which rooms it is subscribed to**, once subscriptions exist (R5.4's note). They
+  are owned by the agent rather than the session precisely so they survive rotation, which means a
+  replacement session inherits a set it cannot discover — and would otherwise receive messages
+  stamped with room ids it has never heard of, making R2.4's provenance uninterpretable and any
+  addressed reply a guess. Same class of fact as R8.7: handed over because it cannot be derived.
 
 Whether this lives in `base/instructions.md`, in `haku-state`, or in the per-turn wakeup
 rendering is a design question — but R8.2, R8.3, and R8.4 describe the harness, so they
@@ -735,6 +784,27 @@ that.
   allowlisted, so a checklist arrives as bare bullets with its state gone — Haku writes
   checklists, so the state becomes `☐`/`☑` text; and **external images** are dropped, since
   `src` must be `mxc://`, so an image becomes its alt text.
+
+- **R11.8 [later] The operator can speak into the room from somewhere other than a Matrix client.**
+  The console's conversation view is a second surface onto the same session, and a message sent
+  from it must appear in the room — otherwise Element shows half a conversation, and R3.3a's
+  re-awakening restores Haku's answers with the questions missing. The console holds only
+  `@haku`'s credential (R5.1), so the operator's message is **relayed**: posted by Haku's account
+  under its own `RoomEventKind`, stating that the operator wrote it and Haku's account delivered
+  it. Ingress needs nothing — R1.5 already excludes Haku's sender, so a relay cannot loop back as
+  input — but `_is_conversational` must count a relay as conversation rather than as console
+  chatter, or a rotation loses the operator's half of every exchange. This is the operator
+  writing, not the agent, so R5.4's read-only tool surface is untouched. Staging, the enqueue/post
+  ordering, and why this wants the room outbox: <../console/plans/session_channels.md>.
+
+  Part of a larger direction set by the operator on 2026-08-15 — **Matrix and the console as two
+  channels onto one session**, each able to do broadly what the other can. Two consequences reach
+  this document. The room is no longer the only place a session's lifecycle is visible, so R7's
+  notices become a _rendering_ of recorded session events rather than the record itself (the
+  status line and typing indicator of R6 stay Matrix-only renderings of live state, and stay
+  unrecorded). And the one capability the console has that the room plainly lacks — aborting a
+  turn — is left open there rather than settled here, since it would be the first room message
+  that means something other than "talk to Haku".
 
 ## Build order
 
@@ -898,17 +968,30 @@ been escaping both handlers on every pod termination.
 That is **reclamation, not survival**: the session is failed and replaced, so the room
 recovers rather than going quiet. It is the floor this phase builds on, not the goal.
 
+Two of the three items that were still open here have since landed:
+
+- **Always-up sandbox** (R3.2) — **done**, #4064. `_renew_lease` slides the SandboxClaim's
+  `shutdownTime` on the same heartbeat that renews the console lease, so console lease and sandbox
+  deadline lapse together and nothing caps a tended session. The planned last step, "drop
+  `session_ttl_seconds`", is **not** what happened and the config value is still there: it was
+  repurposed from a hard session cap into the slide window each renewal grants. R3.2b holds
+  separately — the `creationTimestamp` CleanupPolicy under `cluster/k8s/haku/workspaces/` is
+  namespaced `haku-sandbox`, which is Haku's own workspace and not the chat runtime's
+  `haku-claude-sandbox`, so these sandboxes carry no age fence.
+- **Re-adoption rather than replacement** (R3.4) — **done**, design B. `run()` in
+  <../runtime/x/claude_bridge/runner.py> dials, serves and dials again, holding the CLI process
+  across the gap with a replay window; `handle_runner` calls `adopt_open_turn` and picks the
+  exchange up mid-flight. What made it safe is that an expired lease means unowned rather than
+  dead (#4048), so a dropped session is observable by another replica and adoptable by the
+  returning runner. <cli_protocol_ownership.md> § Session re-adoption is marked built and keeps
+  the design alternatives; this bullet used to point at it as unbuilt work.
+
 Still Phase 3:
 
-- **Always-up sandbox** (R3.2). Ordering unchanged, and decided by which reaper binds:
-  janitor fence (R3.2b) → `patch` on the console's Role → renewal in the supervisor → drop
-  `session_ttl_seconds`. Only the last is a config value.
-- **Re-adoption rather than replacement** (R3.4). `bridge_websocket_to_claude` still kills the
-  CLI when the socket closes, so a console roll ends the conversation even though the sandbox
-  outlives it. <cli_protocol_ownership.md> records the SDK/CLI protocol this needs, what the
-  runner and console each have to change, and the property of this deployment that makes it
-  tractable — no inbound control traffic to strand.
 - `event_id` dedupe (R1.2) and startup reconciliation from the last processed event (R1.7).
+  Unbuilt, and unchanged by the above: `matrix_sync_state` holds `next_batch` and nothing else, so
+  duplicate suppression is still the watermark alone and a crash between processing and persisting
+  it replays the batch.
 
 ### Phase 4 — Make it pleasant
 
@@ -923,12 +1006,14 @@ and the rollout the console already sees go past — unscoped for now by R5.3a.
 Ordered so the write side lands first, because a reader over today's tables would show a
 transcript with every tool result missing (R5.5):
 
-1. **`surface` + `room_id` on `claude_chat_sessions`** (R11.3a). Additive, standalone, and the
-   only item here that is losing data every day it is not done.
-2. **The rollout frame store** (R5.5a–c). One write at the transport boundary; nothing reads
-   it yet. Also independent of how the tools end up being hosted, so it can land while that is
-   still being proven.
-3. **`room_read_event` / `room_read_around` / `room_read_history`** — thin over the
+1. **`surface` + `room_id` on `claude_chat_sessions`** (R11.3a) — **done**, migration `0030`,
+   with the two check constraints tying them together. It was the item losing data every day it
+   was not done.
+2. **The rollout frame store** (R5.5a–c) — **done**, same migration. `RolloutRecorder` writes at
+   the transport boundary with **no exclusions**, deltas included, because a log with a hole in it
+   cannot be folded over; `read_frames` leaves deltas out of its default view instead.
+3. **`room_read_event` / `room_read_around` / `room_read_history`** — still open, and now the only
+   unbuilt item in this phase. Thin over the
    `matrix_client.py` calls that already exist, with `room_id` optional and defaulting to the
    calling session's room (R5.3a). Closes R11.3, and retires the system prompt's standing
    TODO: it tells the agent event IDs are citable while the harness can only resolve one it

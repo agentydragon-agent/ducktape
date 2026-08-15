@@ -1,8 +1,19 @@
-# Haku multi-agent architecture — remaining work
+# Haku multi-agent architecture — the retired zone experiment
 
-**This doc is forward-looking.** The former Haku dispatch plane is archived and no
-longer deployed. The archived implementation and manifests remain available as
-historical reference; this plan holds only what is **not yet built**.
+**Status: retired** (operator, 2026-08-15). The dispatch plane, the zai/oai/local **zones**, and
+the build order below were an earlier experiment; the plane is archived and not deployed, and the
+remaining steps are not pending work. Read this as history, not as a plan — the live design for
+several agents at different trust levels is <information_trust_tiers.md>, which keys agent kinds
+on their workspace repo rather than on dispatch zones.
+
+**What survives the retirement**, because it is observation rather than machinery, and is cited
+from the live plan: bounded-write MCP servers as how low-trust agents get safe write
+capabilities; a worker's output being untrusted input to Haku; the per-tier prompt floor; the
+argument for splitting `ui/` out of `haku-state`; and the Forgejo mirror + PR rights that any
+agent authoring ducktape changes still needs.
+
+The rest of this document is kept for the reasoning and the vendor research, which stay useful
+even though the zones do not.
 
 Archived, documented elsewhere:
 
@@ -53,10 +64,11 @@ bounded-write MCP line above into a first design pass for a kitchen/household-st
 subagent (operator, 2026-07-11) — a candidate first real workload for the oai or local zone,
 using the existing `grocy_mcp/eval` harness (already model-agnostic) to pick the tier.
 
-Capability-oriented follow-up: <capability_dispatch.md>. It generalizes zone dispatch into
-model + prompt + reviewed capability-profile launches, integrates dispatch through
-haku-console/MCP, and sketches Google-data, public-coding, garden, and specialist profiles
-without conflating provider trust with tool authority.
+Capability-oriented follow-up: <information_trust_tiers.md>. It owns what may flow between
+tiers — where the label lives, why the classifier has to run locally, and why "delegate a
+capability, not a corpus" is the shape that lands first. It replaces a forward reference to a
+`capability_dispatch.md` that was never written; that reference's subject (capability-profile
+launches without conflating provider trust with tool authority) is the new document's.
 
 Garden-maintenance follow-up (haku-state, 2026-07-12 — lives in state, not here, since it's
 Haku's own method): operator asked for a principled model of the propagation checklists as a

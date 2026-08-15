@@ -50,6 +50,16 @@ history holds the original full design rationale. The **actionable build checkli
 - **Capability registry** (a ConfigMap mapping `service → facade URL → secret name`) —
   a possible later formalization of today's ad-hoc `kubectl get secret` discovery; not
   required by the current model.
+- **Several agents at different information trust levels** (operator, 2026-08-15), with Haku
+  delegating unsensitive work — k8s diagnostics, ducktape code, kitchen — down to them. Design
+  sketch in <plans/information_trust_tiers.md>, which supersedes the retired zone experiment in
+  `plans/multi_agent.md`. The reframing it turns on: the trust level belongs to the
+  **model provider**, not the agent, since everything in an agent's context reaches its provider —
+  so the thing to label is the corpus, and the enforcement points (mounted workspace, reflected
+  credential, LiteLLM route, egress perimeter) are ones this deployment already has per zone. Two
+  findings worth knowing before picking it up: an information-flow classifier must run on local
+  GPUs or it discloses the content to the party it is deciding about, and the first workloads need
+  no classifier at all because they **delegate a capability, not a corpus**.
 
 ## Future: letting Haku take some actions itself (permission-elevation tokens)
 
@@ -139,8 +149,8 @@ Open design questions to work through before building anything:
   credential, same class of new capability surface as `haku-ui`/the console — it inherits
   Haku's security doctrine (`docs/security.md`), not a chat SDK trusting the model to behave.
 - Whether chat-dispatched one-off tasks run at Haku's own orchestrator privilege (like today's
-  launch-routine) or can ever route through the dispatch plane's worker zones
-  (`plans/multi_agent.md`).
+  launch-routine) or can ever route to a lower-trust agent. The worker zones this used to point
+  at are retired; the live question is <plans/information_trust_tiers.md>'s.
 
 ## Open questions
 

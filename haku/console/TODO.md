@@ -3,6 +3,42 @@
 Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
 actionable checklist. Remove entries once done.
 
+## The console as a channel, not a viewer
+
+Direction set 2026-08-15: Matrix and the console frontend should be two **messaging channels**
+onto one session, each able to do broadly what the other can. Today the console is split across
+two pages that are the same object, cannot show a session's lifecycle at all, and cannot speak.
+Design, the parity gaps it closes, and the traps in each: <plans/session_channels.md>.
+
+1. **Render bootstrap narration** — `setup_output` rows already exist in the frame log; nothing
+   but the console renders them. Smallest thing that makes it a channel.
+2. **Live updates over the existing `/api/events/ws`**, as a `SessionChangedEvent {session_id}`
+   the page refetches on — not a second SSE stream, and not a poll. **Coalesce per session**:
+   `ChatEventKind.UPDATE` fires per stream delta, and a full-transcript refetch per delta per open
+   tab is the O(session) cost <../plans/chat_runtime_cleanup.md> § Anytime flags on the SSE path.
+3. **Merge `/chat` into `/conversations`** as one sessions surface — list plus detail, with new /
+   compose / abort / close as actions on a session. Costs the per-token SSE stream; take it
+   knowingly.
+4. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
+   that never got past `provisioning` has a durable record. **Not** the status line or the typing
+   indicator — those are renderings of live state each channel derives for itself.
+5. **Reconcile a channel against the session** rather than sending to it: a loop per
+   `(channel, session)` over a cursor on cleanup stage 7's `chat_attachment`. A channel that holds
+   its own copy (Matrix) needs it; one that reads the record (the console) converges by refetching.
+6. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
+   so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
+   its true provenance. Under the loop the send only enqueues; the room being one message behind
+   is a divergence the reconciler already closes. The subtle part is `_is_conversational`, which
+   must count a relay as conversation or every rotation re-awakens a session with the operator's
+   half missing.
+
+Two more, outside that spine. **Slash commands** give Matrix the non-message actions the console
+has — abort first — as ingress interception rather than an agent tool, so R5.4 is untouched;
+watch out for Element consuming leading-slash verbs before they ever reach the room. And
+**interlink the two channels** now that sessions have a page: a link to the console session in
+the R7.2 notice, a `matrix.to` permalink back, session ↔ tool calls. A posted Matrix event is
+permanent and federated, so settle the session route (item 3) before minting links into a room.
+
 ## Notification text per tool kind
 
 A push notification is titled with the tool's shared action description
@@ -142,13 +178,6 @@ Two traps for whoever picks this up:
   wrong payload shape to `call_mcp_tool` — the exact failure the exposed reflection exists to
   prevent.
 
-## Approvals drawer
-
-- **A withdrawn call vanishes from the drawer with no explanation.** An agent withdrawal removes
-  the card from the queue mid-review; the operator sees a silent drop. Fixing it properly means
-  re-fetching disappeared ids in `applyToolApprovals` (`haku_ui_embed.tsx`) and surfacing the
-  withdrawal the way a decided call surfaces in "Recent".
-
 ## Operator browser auth — parked remainders
 
 From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #3516/#3519 except for:
@@ -163,6 +192,39 @@ From the login audit (<debug/2026_07_24_operator_login_audit.md>), fixed in #351
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
 
+## The chat runtime's timings are module constants, not configuration
+
+`ClaudeRuntimeConfig` carries the deploy wiring (namespace, warm pool, proxy, MCP URL) and exactly
+one timing — `session_ttl_seconds`. Every other number the runtime's behaviour depends on is a
+module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
+genuinely operational knobs should move onto the config model:
+
+- `x/claude_chat.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
+  `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`,
+  `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
+- `x/matrix_pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
+- `x/matrix_session.py` — `SUPERVISE_INTERVAL`, `LEADER_RETRY`, `PROVISION_BACKOFF`,
+  `RE_AWAKENING_MESSAGES` (the N of R3.3a).
+- `x/matrix_sync.py` — `ERROR_BACKOFF`, `REFUSED_BATCH_BACKOFF`, and `MAX_BACKFILL_PAGES` /
+  `TIMELINE_LIMIT` from `x/matrix_client.py`.
+- `runtime/x/claude_bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
+  `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
+  creation, so they are not console config at all: they reach a running sandbox only through the
+  launch, or not until it is replaced.
+
+**Not everything here is a knob, and the split is the point.** `TYPING_TIMEOUT_MS` and
+`SYNC_TIMEOUT_MS` are the homeserver's own semantics, `MAX_RATE_LIMIT_RETRIES` exists to bound a
+nio behaviour (<docs/chat_runtime_facts.md>), and the `*_FRAME_KIND` strings are wire vocabulary.
+Making those configurable would invite a deploy that contradicts a protocol. Move the timings;
+leave the facts where the code that depends on them can be read beside them.
+
+Two things worth settling in the same change, since they are the same question: the three values
+<../plans/matrix_chat_runtime.md> § Open questions never chose — **batch cap** (R2.6), **debounce
+window** (R2.7) and **age fence** (R2.8) — should arrive as config with a default rather than as
+another constant, because the whole reason they are unchosen is that the right value is an
+operational finding. And a value read per use rather than at startup is what makes tuning a
+ConfigMap edit instead of a roll.
+
 ## `request_close` wakes nobody
 
 `request_close` (`x/claude_chat.py`) sets `status = "closing"` and notifies nothing — it is the
@@ -173,19 +235,6 @@ only status mutation on that path that does not. A closing session's runner ther
 Since the channel merge (#3938, #3941) the event kind is an argument rather than a channel name, so
 the fix is one `await notify(db, ChatEventKind.PROMPT, session_id)` alongside the status write. It
 must stay **inside** that transaction: `pg_notify` delivers on commit.
-
-## No `startupProbe` on the console containers
-
-Both containers in <../../cluster/k8s/haku/console/deployment.yaml> carry a `livenessProbe`
-(`initialDelaySeconds: 10`, `periodSeconds: 30`) and no `startupProbe`. The API container applies the
-Alembic baseline at startup before it serves, so slow startup work competes with the liveness budget
-and a start that overruns it is killed and retried — worst exactly when a migration has the most to
-do.
-
-A `startupProbe` on the same endpoint with a generous `failureThreshold` separates "still starting"
-from "wedged" and lets the liveness budget stay tight for steady state. Deliberately not solved by
-loosening `livenessProbe`, which would blunt detection for the whole life of the pod to buy slack
-that is only needed once.
 
 ## `claude_chat_frames` does not map to one concept
 
@@ -214,18 +263,43 @@ along with what that costs (the sink has to move down to `WebSocketTransport`, a
 releases because flipping a column's meaning under a rolling deploy is not additive). **Nothing is
 scheduled**, and no other work depends on it.
 
-## Which past conversations may an agent read?
+## Scope conversation reads to the reader's trust tier
 
-`list_conversations`, `read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped by
-deliberate deferral — R5.3a in <../plans/matrix_chat_runtime.md> left the policy open rather than
-guess at a rule nobody stated. Any Haku may read any session, whichever room or operator it served.
+**The policy is decided** (operator, 2026-08-15) and now needs building. `list_conversations`,
+`read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped — any Haku may read any
+session, whichever room or operator it served — under R5.3a's deliberate deferral, whose stated
+condition for revisiting (more than one agent) has arrived. An agent reads the transcripts and
+conversations **its tier** gives it. The fence is the tier, **not** the room: cross-room and
+cross-session reads stay open within a tier, so an agent keeps its own history.
 
-Semantic search over the same corpus (<../state_index/README.md>, `chat`) raises the stakes without
-changing the data: a drilldown makes reading another room's conversation a deliberate act, where
-ranked retrieval surfaces it by accident at the top of the results. That index is not exposed to any
-agent yet, and settling this is the prerequisite for exposing it.
+Three things it needs, in order:
 
-The full inventory of what a scope would touch — the search query, the drilldown tools it hands off
-to, the identity it keys on, the auto-approval config, and the RLS-scoped-Postgres-role alternative —
-is in <../state_index/README.md> § Read scoping. Record the decision in R5.3a once made, and in
-<../docs/security.md> if the answer turns out to be "any conversation".
+1. **A tier on `claude_chat_sessions`**, beside the `surface`/`room_id` that landed in `0030` —
+   from the room's fixed tier for a Matrix session, from the agent kind otherwise, with the room's
+   authoritative where both exist.
+2. **Unlabelled reads as highest**, so every session predating the column is unreadable by a lower
+   tier rather than treated as unclassified-therefore-fine.
+3. **The decision function at the one call site** R5.3a identified, in the shape the approval
+   policy already has — never scoping smeared through the transport.
+
+**Semantic search is the urgent half, because it is already unscoped and live.** `haku_index`'s
+`search`/`index_status` were exposed to Haku unscoped on 2026-08-15 — a fair call then, since they
+granted no reachability `haku_conversations` did not already have — and
+<../state_index/README.md> § Read scoping names the condition for revisiting: the moment a room
+Haku should not see exists, ranked retrieval is where it leaks first. Several agents is that
+moment. A drilldown makes reading another conversation deliberate; ranked retrieval surfaces it by
+accident, at the top of the results.
+
+**Do it by naming indexes rather than filtering rows.** `Corpus` (<../state_index/schema.py>)
+stays the **type** — `git`/`chat`, deciding how content is chunked and addressed — and gains named
+**instances** configured per repo and per tier ("index `foobar` is of type `git`, indexes this
+remote"), in the discriminated shape `mcp.servers` already uses. The gate becomes "which indexes
+may this agent search", checked once in <state_index_reader.py>, which shrinks in the process:
+its hardcoded `haku_state`/`conversations` → `git`/`chat` mapping is replaced by config names, so
+what is left is the permission check. `haku_recall_reads` becomes per-index grants. That beats a
+per-row tier filter — a missed predicate on one read path leaks, an index an agent cannot name
+does not. `chunks` is untouched: it is a content-addressed embedding cache, identity lives on the
+occurrence rows, and the instance goes there. Full design:
+<../plans/information_trust_tiers.md>. The wider inventory — the drilldown tools, the identity it
+keys on, and the RLS-scoped-Postgres-role alternative — stays in <../state_index/README.md>
+§ Read scoping.

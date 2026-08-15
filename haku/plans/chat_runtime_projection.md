@@ -134,6 +134,24 @@ removes the "exactly one `anext` in flight" dance.
 
 `matrix_pacer`'s deque becomes rows. Delivery gains a retry and loses its guesswork.
 
+**The generalization to aim at, from <../console/plans/session_channels.md> § 1: a channel is
+reconciled against the session rather than sent to.** The outbox is the push half — deliver
+promptly; a per-attachment cursor on `chat_attachment` is the convergence half — deliver
+eventually and at most once, with repair as the normal path rather than a retry bolted on. Two
+consumers want the pair. Once lifecycle events are recorded rather than only announced, "the
+room's queue" becomes "bring each attached channel up to this session's record". And relaying an
+operator's console-sent message into the room stops being a feature at all: it is a transcript row
+the room lacks, which is the same divergence as an undelivered reply, so the loop already closes
+it. Build the cursor with the rows.
+
+**A third consumer changes this stage's priority from tidy-up to prerequisite.**
+<information_trust_tiers.md> puts a classifier in front of the drain, so that outgoing messages
+are checked before they reach a room rather than after they have federated — and a classifier
+needs somewhere durable to hold a message while it decides. An in-process deque cannot be that.
+The queue is also what makes the check asynchronous with respect to the agent while staying
+strictly before the room, which is the property that made the design worth having; the ordered
+drain is what makes "the first failed message halts" a rule rather than a race.
+
 ## The one thing to keep in view
 
 **The projector must be single-writer per session.** The lease gives that, and it is the reason none
