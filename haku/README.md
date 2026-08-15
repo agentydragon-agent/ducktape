@@ -24,6 +24,9 @@ Current work is iterating base and Haku's method until what it surfaces is genui
   `haku-state` repo (seeded from `state_template/`), not base.
 - **Threat model, enforcement inventory, and the invariants edits must preserve:**
   <docs/security.md> — the durable doctrine's canonical home; start a security review there.
+- **Research on operator-approved temporary Kubernetes elevation for Haku:**
+  <docs/temporary_kubernetes_access.md> — evaluated open-source options, maturity boundaries,
+  and the recommended Console-backed lease-broker design.
 - The run procedure: `run.md`; the web runtime: `runtime/claude_web_env/`.
 - The trusted console (capability tier + iframe shell): `console/README.md`;
   containment contract: `console/docs/containment.md`. Alternative runtimes
