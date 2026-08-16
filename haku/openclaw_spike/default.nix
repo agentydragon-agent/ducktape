@@ -67,6 +67,15 @@ pkgs.dockerTools.buildLayeredImage {
   contents = tools ++ [ proxySetup ];
   maxLayers = 100;
 
+  # The upstream CLI launcher uses `#!/usr/bin/env node`, but its otherwise
+  # minimal beta base does not contain coreutils' `env`. The old Dockerfile
+  # happened to add it through apt; make that FHS compatibility path explicit
+  # now that coreutils comes from Nix.
+  fakeRootCommands = ''
+    mkdir -p /usr/bin
+    ln -sf ${pkgs.coreutils}/bin/env /usr/bin/env
+  '';
+
   config = {
     User = "1000:1000";
     WorkingDir = "/app";
