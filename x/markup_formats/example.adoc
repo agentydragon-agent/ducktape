@@ -27,6 +27,9 @@ Term 2:: Definition of term 2
 
 https://example.com[Link text]
 
+// Relative path shown as its own link text
+link:docs/guide.adoc[]
+
 image::image.png[Alt text, 300, 200]
 
 .Image with caption
@@ -82,8 +85,7 @@ Reference it with <<custom-anchor>>.
 
 == Includes
 
-// Include another file (commented out since file doesn't exist)
-// include::other-file.adoc[]
+include::example-include.adoc[]
 
 == Variables/Attributes
 
@@ -91,9 +93,23 @@ Reference it with <<custom-anchor>>.
 
 The project is called {project-name}.
 
+== Attributes and Classes
+
+[.highlight]
+This paragraph has a CSS class.
+
 == Footnotes
 
 Here's a sentence with a footnote.footnote:[This is the footnote content.]
+
+== Math (LaTeX)
+
+Inline: stem:[E = mc^2]
+
+[stem]
+++++
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+++++
 
 == Blockquotes
 
@@ -108,3 +124,8 @@ ____
 ****
 This is a sidebar block.
 ****
+
+== Task Lists
+
+* [*] Completed task
+* [ ] Pending task
