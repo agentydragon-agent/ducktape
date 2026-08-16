@@ -548,11 +548,6 @@ py_library(
 )
 
 py_library(
-    name = "tool_execution_context",
-    srcs = ["tool_execution_context.py"],
-)
-
-py_library(
     name = "tool_call_service",
     srcs = ["tool_call_service.py"],
     deps = [
@@ -561,7 +556,6 @@ py_library(
         ":mcp_config",
         ":provider_connection_registry",
         ":tool_call_actor",
-        ":tool_execution_context",
         "//haku/console/tools:gmail",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
@@ -924,6 +918,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "kube_jit_worker",
+    srcs = ["kube_jit_worker.py"],
+    deps = [
+        ":kube_jit",
+        ":kube_jit_kubernetes",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_test(
     name = "test_kube_jit",
     srcs = ["test_kube_jit.py"],
@@ -950,6 +955,7 @@ py_library(
         ":in_process_servers",
         ":kube_jit",
         ":kube_jit_kubernetes",
+        ":kube_jit_worker",
         ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",

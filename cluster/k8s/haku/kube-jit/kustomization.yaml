@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - haku-jit-readonly-clusterrole.yaml
+  - serviceaccount.yaml
+  - deployment.yaml
   - kube-jit-rbac-haku-sandbox.yaml
   - kube-jit-rbac-haku-claude-sandbox.yaml

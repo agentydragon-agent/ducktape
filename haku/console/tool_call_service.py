@@ -40,7 +40,6 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-from haku.console.tool_execution_context import ToolExecutionContext, enter_tool_execution, leave_tool_execution
 from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 
 logger = logging.getLogger(__name__)
@@ -459,13 +458,6 @@ class ToolCallApplicationService:
             return record
         execution_operator_id = await self._repository.authorize_execution(record.tool_call_id, actor=actor)
         cancellation: asyncio.CancelledError | None = None
-        context_token = enter_tool_execution(
-            ToolExecutionContext(
-                tool_call_id=record.tool_call_id,
-                operator_id=execution_operator_id,
-                requester=getattr(record.caller, "display_name", record.caller.kind),
-            )
-        )
         try:
             result = await self._executor.execute(server, record.tool_name, record.arguments, auth_token)
         except asyncio.CancelledError as error:
@@ -477,8 +469,6 @@ class ToolCallApplicationService:
             updated = await self._repository.finish(record.tool_call_id, actor=actor, result=None, error=str(error))
         else:
             updated = await self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
-        finally:
-            leave_tool_execution(context_token)
         # The durable row is authoritative. One invalidation after terminal persistence is enough:
         # observers re-read the complete record rather than replaying intermediate transitions.
         await self._publish(execution_operator_id, updated.tool_call_id)

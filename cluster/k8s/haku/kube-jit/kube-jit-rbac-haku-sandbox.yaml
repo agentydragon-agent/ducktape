@@ -1,30 +1,31 @@
-# The Console reconciler may manage only its labelled RoleBindings in this one namespace.
-# `bind` remains narrowed to reviewed profile ClusterRoles: it cannot turn RoleBinding CRUD into
-# arbitrary privilege delegation. Haku's haku-sandbox ServiceAccount has none of this authority.
+# The worker is deliberately separate from haku-console. `escalate` is unavoidable for a
+# controller creating an explicit per-lease Role that can exceed its own read permissions;
+# confine it to this dedicated ServiceAccount and one namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: haku-console-jit-rolebinding-manager
+  name: haku-kube-jit-worker
   namespace: haku-sandbox
 rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["rolebindings"]
+    resources: ["roles", "rolebindings"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["clusterroles"]
-    resourceNames: ["haku-jit-readonly"]
-    verbs: ["bind"]
+    resources: ["roles"]
+    # Dynamic lease Role names prevent resourceNames narrowing. Both verbs are required by the
+    # apiserver's RBAC escalation checks: one to create the policy, one to bind it.
+    verbs: ["bind", "escalate"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: haku-console-jit-rolebinding-manager
+  name: haku-kube-jit-worker
   namespace: haku-sandbox
 subjects:
   - kind: ServiceAccount
-    name: haku-console
+    name: haku-kube-jit
     namespace: haku-console
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: haku-console-jit-rolebinding-manager
+  name: haku-kube-jit-worker

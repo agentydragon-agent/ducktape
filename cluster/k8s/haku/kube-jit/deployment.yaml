@@ -1,0 +1,82 @@
+# Independent reconciler for Console-approved temporary Kubernetes access. It uses the Console
+# image only as a reviewed code artifact; it does not serve Console HTTP and has a different SA.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-kube-jit
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-kube-jit
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-kube-jit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-kube-jit
+    spec:
+      serviceAccountName: haku-kube-jit
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: ghcr.io/agentydragon/haku-console:devel-20260816000037-e129df7 # {"$imagepolicy": "flux-system:haku-console"}
+          imagePullPolicy: Always
+          env:
+            - name: HAKU_CONSOLE_MODE
+              value: kube-jit-worker
+            - name: HAKU_KUBE_JIT_NAMESPACES
+              value: haku-sandbox,haku-claude-sandbox
+            - name: HAKU_KUBE_JIT_MAX_DURATION_SECONDS
+              value: "3600"
+            - name: HAKU_KUBE_JIT_CONFIRMATION_WINDOW_SECONDS
+              value: "300"
+            - name: HAKU_KUBE_JIT_RECONCILE_INTERVAL_SECONDS
+              value: "30"
+            - name: HAKU_KUBE_JIT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: username
+            - name: HAKU_KUBE_JIT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: password
+            - name: HAKU_KUBE_JIT_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: host
+            - name: HAKU_KUBE_JIT_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: port
+            - name: HAKU_KUBE_JIT_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-app
+                  key: dbname
+            - name: HAKU_KUBE_JIT_DATABASE_URL
+              value: "postgresql+asyncpg://$(HAKU_KUBE_JIT_DB_USER):$(HAKU_KUBE_JIT_DB_PASSWORD)@$(HAKU_KUBE_JIT_DB_HOST):$(HAKU_KUBE_JIT_DB_PORT)/$(HAKU_KUBE_JIT_DB_NAME)"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -r /var/run/secrets/kubernetes.io/serviceaccount/token"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

@@ -23,8 +23,6 @@ spec:
       namespace: ducktape-flux
     - name: haku-console-db # distributed approval ledger
       namespace: ducktape-flux
-    - name: haku-kube-jit-rbac # rolebinding lifecycle permission, kept outside haku-sandbox
-      namespace: ducktape-flux
     - name: haku-state # provisions the shared haku-ui/backend -> haku-console MCP static-Agent token
       namespace: ducktape-flux
     - name: gateway

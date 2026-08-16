@@ -20,7 +20,6 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:kube_jit",
-        "//haku/console:tool_execution_context",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],

@@ -430,14 +430,10 @@ node_daemons:
       token_env_var: HAKU_CONSOLE_NODE_DAEMON_RUGGED_TOKEN
       backends: [hostexec]
 
-# Phase one intentionally exposes one harmless, reviewed profile. Profiles are content-hashed
-# and copied into every lease; changing this policy makes old projections drift and fail closed.
+# Explicit policy rules are persisted with each approved lease. This merely sets the namespace
+# and duration guardrails; it does not define reusable permission profiles.
 kube_jit:
+  namespaces: [haku-sandbox, haku-claude-sandbox]
+  max_duration_seconds: 3600
   confirmation_window_seconds: 300
   reconcile_interval_seconds: 30
-  profiles:
-    - id: readonly
-      description: "Temporary read-only diagnostics in Haku sandbox namespaces."
-      cluster_role: haku-jit-readonly
-      namespaces: [haku-sandbox, haku-claude-sandbox]
-      max_duration_seconds: 3600

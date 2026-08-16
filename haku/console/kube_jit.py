@@ -1,15 +1,13 @@
-"""Fail-closed, Console-authoritative namespace RoleBinding leases.
+"""Console-authoritative, explicit-policy temporary namespace RBAC leases.
 
-This is deliberately a small enforcement mechanism, not a generic Kubernetes access product.
-The Console database is the authority for a lease; a managed RoleBinding is only the current
-Kubernetes enforcement projection.  The projection carries a short confirmation deadline.  A
-running reconciler refreshes that deadline only after it can read the durable Console record; when
-the database is unavailable it removes managed bindings after the deadline rather than preserving
-unverifiable elevation indefinitely.
+A Console grant stores the *canonical PolicyRule list that was approved*. The Console never
+creates Kubernetes RBAC objects. A separately deployed reconciler reads this durable ledger and
+projects each active lease to a lease-named Role plus a fixed-cohort RoleBinding.
 
-Native RoleBindings have no TTL.  This gives fail-closed behaviour while the reconciler can reach
-the Kubernetes API, but it cannot revoke access while the reconciler itself or the API is down.
-High-risk access still needs an inline policy/credential gateway later.
+The worker is intentionally a separate security and availability domain: it continues expiry and
+revocation processing through Console API crashes/restarts. Kubernetes requires a controller that
+creates arbitrary Roles to hold `escalate`; that broad capability is confined to this dedicated
+ServiceAccount and guarded by the policy validation below, never handed to Haku or the Console.
 """
 
 from __future__ import annotations
@@ -22,10 +20,10 @@ import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -37,153 +35,123 @@ logger = logging.getLogger(__name__)
 MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 MANAGED_BY_VALUE = "haku-kube-jit"
 LEASE_ID_ANNOTATION = "haku.allegedly.works/lease-id"
-PROFILE_HASH_ANNOTATION = "haku.allegedly.works/profile-hash"
+POLICY_HASH_ANNOTATION = "haku.allegedly.works/policy-hash"
 HARD_EXPIRY_ANNOTATION = "haku.allegedly.works/expires-at"
 CONFIRMED_UNTIL_ANNOTATION = "haku.allegedly.works/confirmed-until"
 
-# The initial cohort is deliberately not caller-configurable.  Haku may request a lease, but
-# cannot use the request API to substitute a different human, group, or ServiceAccount.
+# Haku may request an explicit policy but never pick who receives it.
 FIXED_SUBJECTS = (
     {"kind": "Group", "apiGroup": "rbac.authorization.k8s.io", "name": "oidc-ksbx-groups:haku"},
     {"kind": "ServiceAccount", "name": "haku", "namespace": "haku-sandbox"},
     {"kind": "ServiceAccount", "name": "haku-claude", "namespace": "haku-claude-sandbox"},
 )
+_FORBIDDEN_RESOURCES = frozenset({"secrets", "roles", "rolebindings", "clusterroles", "clusterrolebindings"})
+_FORBIDDEN_VERBS = frozenset({"bind", "escalate", "impersonate"})
 
 
-class AccessProfile(BaseModel):
-    """A deploy-reviewed namespace access profile.
+class PolicyRule(BaseModel):
+    """A deliberately conservative, namespaced Kubernetes RBAC rule.
 
-    The role is intentionally a ClusterRole, bound through a namespace RoleBinding.  This permits
-    one reviewed profile definition to be reused in explicit namespaces without granting any
-    cluster-scoped resource access.
+    Wildcards are prohibited rather than being normalized: approvals must display a finite,
+    concrete permission set. `nonResourceURLs` and cluster-scoped resources are out of phase one.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,62}$")
-    description: str = Field(min_length=1, max_length=500)
-    cluster_role: str = Field(min_length=1, max_length=253)
-    namespaces: tuple[str, ...] = Field(min_length=1)
-    max_duration_seconds: int = Field(ge=60, le=86_400)
+    api_groups: tuple[str, ...] = Field(min_length=1)
+    resources: tuple[str, ...] = Field(min_length=1)
+    verbs: tuple[str, ...] = Field(min_length=1)
+    resource_names: tuple[str, ...] = ()
 
-    @field_validator("namespaces")
+    @field_validator("api_groups", "resources", "verbs", "resource_names")
     @classmethod
-    def _namespaces_are_distinct_dns_labels(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+    def _deduplicate_and_reject_wildcards(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if len(set(value)) != len(value):
-            raise ValueError("namespaces must not contain duplicates")
-        for namespace in value:
-            if not namespace or len(namespace) > 63:
-                raise ValueError("namespace must be a non-empty DNS label")
-        return value
+            raise ValueError("rule values must not contain duplicates")
+        if any(not item or item == "*" for item in value):
+            raise ValueError("empty values and wildcards are prohibited in temporary access rules")
+        return tuple(sorted(value))
 
-    @property
-    def revision_hash(self) -> str:
-        """Stable content hash captured in both the DB record and RoleBinding annotation."""
-        canonical = json.dumps(self.model_dump(mode="json"), separators=(",", ":"), sort_keys=True)
-        return hashlib.sha256(canonical.encode()).hexdigest()
+    @model_validator(mode="after")
+    def _limit_phase_one_surface(self) -> PolicyRule:
+        if _FORBIDDEN_RESOURCES.intersection(self.resources):
+            raise ValueError("temporary access rules cannot grant Secrets or RBAC management")
+        if _FORBIDDEN_VERBS.intersection(self.verbs):
+            raise ValueError("temporary access rules cannot grant bind, escalate, or impersonate")
+        return self
+
+    def as_kubernetes(self) -> dict[str, object]:
+        result: dict[str, object] = {"apiGroups": list(self.api_groups), "resources": list(self.resources), "verbs": list(self.verbs)}
+        if self.resource_names:
+            result["resourceNames"] = list(self.resource_names)
+        return result
 
 
 class KubeJitConfig(BaseModel):
-    """Non-secret deploy configuration for the lease authority."""
+    """Deploy-reviewed guardrails, not a catalog of granted permissions."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    profiles: tuple[AccessProfile, ...] = ()
+    namespaces: tuple[str, ...] = Field(min_length=1)
+    max_duration_seconds: int = Field(default=3600, ge=60, le=86_400)
     confirmation_window_seconds: int = Field(default=300, ge=30, le=3600)
     reconcile_interval_seconds: int = Field(default=30, ge=5, le=300)
 
-    @field_validator("profiles")
+    @field_validator("namespaces")
     @classmethod
-    def _profile_ids_are_distinct(cls, value: tuple[AccessProfile, ...]) -> tuple[AccessProfile, ...]:
-        ids = [profile.id for profile in value]
-        if len(set(ids)) != len(ids):
-            raise ValueError("kube_jit profile ids must be unique")
-        return value
-
-    def profile(self, profile_id: str) -> AccessProfile:
-        for profile in self.profiles:
-            if profile.id == profile_id:
-                return profile
-        raise ValueError(f"unknown Kubernetes access profile {profile_id!r}")
+    def _valid_namespaces(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value) or any(not namespace or len(namespace) > 63 for namespace in value):
+            raise ValueError("namespaces must be distinct non-empty DNS labels")
+        return tuple(sorted(value))
 
 
 @dataclass(frozen=True, slots=True)
 class Grant:
     lease_id: UUID
-    tool_call_id: str
-    operator_id: UUID
-    requester: str
-    profile_id: str
-    profile_hash: str
     namespace: str
-    cluster_role: str
+    rules: tuple[PolicyRule, ...]
+    policy_hash: str
     issued_at: datetime.datetime
     expires_at: datetime.datetime
     state: KubernetesAccessGrantState
     revoked_at: datetime.datetime | None = None
 
     @property
-    def role_binding_name(self) -> str:
+    def role_name(self) -> str:
         return f"haku-jit-{self.lease_id.hex}"
+
+    @property
+    def role_binding_name(self) -> str:
+        return self.role_name
 
 
 class GrantStore(Protocol):
     async def create(
-        self,
-        *,
-        tool_call_id: str,
-        operator_id: UUID,
-        requester: str,
-        profile: AccessProfile,
-        namespace: str,
-        duration_seconds: int,
-        now: datetime.datetime,
+        self, *, namespace: str, rules: tuple[PolicyRule, ...], duration_seconds: int, now: datetime.datetime
     ) -> Grant: ...
-
     async def revoke(self, *, lease_id: UUID, now: datetime.datetime) -> Grant: ...
-
     async def get(self, lease_id: UUID) -> Grant | None: ...
-
     async def active(self, *, now: datetime.datetime) -> list[Grant]: ...
-
     async def expire_due(self, *, now: datetime.datetime) -> None: ...
 
 
 class PostgresGrantStore:
-    """The durable Console lease ledger.  Kubernetes state is intentionally not authoritative."""
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], config: KubeJitConfig) -> None:
+        self._sessions, self._config = sessions, config
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
-        self._sessions = sessions
-
-    async def create(
-        self,
-        *,
-        tool_call_id: str,
-        operator_id: UUID,
-        requester: str,
-        profile: AccessProfile,
-        namespace: str,
-        duration_seconds: int,
-        now: datetime.datetime,
-    ) -> Grant:
-        if namespace not in profile.namespaces:
-            raise ValueError(f"profile {profile.id!r} is not allowed in namespace {namespace!r}")
-        if duration_seconds > profile.max_duration_seconds:
-            raise ValueError(f"duration exceeds {profile.id!r} maximum of {profile.max_duration_seconds} seconds")
-        issued_at = _utc(now)
+    async def create(self, *, namespace: str, rules: tuple[PolicyRule, ...], duration_seconds: int, now: datetime.datetime) -> Grant:
+        if namespace not in self._config.namespaces:
+            raise ValueError(f"temporary access is not allowed in namespace {namespace!r}")
+        if duration_seconds > self._config.max_duration_seconds:
+            raise ValueError(f"duration exceeds maximum of {self._config.max_duration_seconds} seconds")
+        if not rules:
+            raise ValueError("at least one explicit policy rule is required")
+        canonical_rules = tuple(sorted(rules, key=lambda rule: json.dumps(rule.model_dump(mode="json"), sort_keys=True)))
+        instant = _utc(now)
         row = KubernetesAccessGrant(
-            lease_id=uuid4(),
-            tool_call_id=tool_call_id,
-            operator_id=operator_id,
-            requester=requester,
-            profile_id=profile.id,
-            profile_hash=profile.revision_hash,
-            namespace=namespace,
-            cluster_role=profile.cluster_role,
-            issued_at=issued_at,
-            expires_at=issued_at + datetime.timedelta(seconds=duration_seconds),
-            state=KubernetesAccessGrantState.PENDING,
-            revoked_at=None,
+            lease_id=uuid4(), namespace=namespace, policy_rules=[rule.model_dump(mode="json") for rule in canonical_rules],
+            policy_hash=_policy_hash(canonical_rules), issued_at=instant,
+            expires_at=instant + datetime.timedelta(seconds=duration_seconds), state=KubernetesAccessGrantState.PENDING, revoked_at=None,
         )
         async with self._sessions.begin() as session:
             session.add(row)
@@ -194,16 +162,14 @@ class PostgresGrantStore:
             row = await session.get(KubernetesAccessGrant, lease_id, with_for_update=True)
             if row is None:
                 raise LookupError("Kubernetes access grant not found")
-            if row.state in {KubernetesAccessGrantState.REVOKED, KubernetesAccessGrantState.EXPIRED}:
-                return _grant_from_row(row)
-            row.state = KubernetesAccessGrantState.REVOKED
-            row.revoked_at = _utc(now)
+            if row.state not in {KubernetesAccessGrantState.REVOKED, KubernetesAccessGrantState.EXPIRED}:
+                row.state, row.revoked_at = KubernetesAccessGrantState.REVOKED, _utc(now)
         return _grant_from_row(row)
 
     async def get(self, lease_id: UUID) -> Grant | None:
         async with self._sessions() as session:
             row = await session.get(KubernetesAccessGrant, lease_id)
-            return _grant_from_row(row) if row is not None else None
+            return _grant_from_row(row) if row else None
 
     async def active(self, *, now: datetime.datetime) -> list[Grant]:
         await self.expire_due(now=now)
@@ -211,111 +177,77 @@ class PostgresGrantStore:
             rows = (
                 await session.scalars(
                     select(KubernetesAccessGrant).where(
-                        KubernetesAccessGrant.state == KubernetesAccessGrantState.ACTIVE
+                        KubernetesAccessGrant.state.in_(
+                            (KubernetesAccessGrantState.PENDING, KubernetesAccessGrantState.ACTIVE)
+                        )
                     )
                 )
             ).all()
             return [_grant_from_row(row) for row in rows]
 
     async def expire_due(self, *, now: datetime.datetime) -> None:
-        instant = _utc(now)
         async with self._sessions.begin() as session:
-            rows = (
-                await session.scalars(
-                    select(KubernetesAccessGrant)
-                    .where(
-                        KubernetesAccessGrant.state.in_(
-                            (KubernetesAccessGrantState.PENDING, KubernetesAccessGrantState.ACTIVE)
-                        )
-                    )
-                    .where(KubernetesAccessGrant.expires_at <= instant)
-                    .with_for_update()
-                )
-            ).all()
+            rows = (await session.scalars(select(KubernetesAccessGrant).where(KubernetesAccessGrant.state.in_((KubernetesAccessGrantState.PENDING, KubernetesAccessGrantState.ACTIVE))).where(KubernetesAccessGrant.expires_at <= _utc(now)).with_for_update())).all()
             for row in rows:
                 row.state = KubernetesAccessGrantState.EXPIRED
 
     async def activate(self, *, lease_id: UUID) -> None:
-        """Mark an applied lease active.  Kept out of the public port: only the reconciler calls it."""
         async with self._sessions.begin() as session:
             row = await session.get(KubernetesAccessGrant, lease_id, with_for_update=True)
-            if row is not None and row.state is KubernetesAccessGrantState.PENDING:
+            if row and row.state == KubernetesAccessGrantState.PENDING:
                 row.state = KubernetesAccessGrantState.ACTIVE
 
 
-class RoleBindingClient(Protocol):
+class AccessClient(Protocol):
     async def apply(self, grant: Grant, *, confirmed_until: datetime.datetime) -> None: ...
-
     async def delete(self, *, namespace: str, name: str) -> None: ...
-
     async def managed(self, namespaces: Sequence[str]) -> list[dict[str, object]]: ...
-
     async def aclose(self) -> None: ...
 
 
 class LeaseReconciler:
-    """Projects active grants to RoleBindings and fails closed when authority cannot be read."""
-
-    def __init__(self, *, config: KubeJitConfig, grants: GrantStore, role_bindings: RoleBindingClient) -> None:
-        self._config = config
-        self._grants = grants
-        self._role_bindings = role_bindings
+    def __init__(self, *, config: KubeJitConfig, grants: GrantStore, access: AccessClient) -> None:
+        self._config, self._grants, self._access = config, grants, access
 
     async def reconcile_once(self, *, now: datetime.datetime) -> None:
         instant = _utc(now)
         try:
-            active = await self._grants.active(now=instant)
+            desired = {grant.lease_id: grant for grant in await self._grants.active(now=instant) if grant.expires_at > instant}
         except Exception:
-            # Do not leave a prior positive DB read valid indefinitely.  A managed binding has its
-            # own short confirmation deadline exactly for this failure mode.
-            logger.exception("kube-jit authority read failed; reaping stale managed RoleBindings")
+            logger.exception("kube-jit authority read failed; reaping stale managed RBAC")
             await self._reap_unconfirmed(now=instant)
             return
-
-        desired = {grant.lease_id: grant for grant in active if grant.expires_at > instant}
-        confirmed_until = instant + datetime.timedelta(seconds=self._config.confirmation_window_seconds)
+        deadline = instant + datetime.timedelta(seconds=self._config.confirmation_window_seconds)
         for grant in desired.values():
-            await self._role_bindings.apply(grant, confirmed_until=min(confirmed_until, grant.expires_at))
-            # The lease was persisted before the call.  This status is merely observed projection
-            # progress; a crash before it is written simply retries idempotently next cycle.
+            await self._access.apply(grant, confirmed_until=min(deadline, grant.expires_at))
             activate = getattr(self._grants, "activate", None)
-            if activate is not None:
+            if activate:
                 await activate(lease_id=grant.lease_id)
-
-        for binding in await self._role_bindings.managed(_configured_namespaces(self._config)):
-            lease_id = _binding_lease_id(binding)
-            metadata = _binding_metadata(binding)
-            namespace = metadata.get("namespace")
-            name = metadata.get("name")
-            if not isinstance(namespace, str) or not isinstance(name, str):
-                continue
-            expected = desired.get(lease_id) if lease_id is not None else None
-            if expected is None or not _binding_matches_grant(binding, expected):
-                await self._role_bindings.delete(namespace=namespace, name=name)
+        for resource in await self._access.managed(self._config.namespaces):
+            metadata = _metadata(resource)
+            namespace, name, lease_id = metadata.get("namespace"), metadata.get("name"), _lease_id(resource)
+            expected = desired.get(lease_id) if lease_id else None
+            if isinstance(namespace, str) and isinstance(name, str) and (expected is None or not _matches(resource, expected)):
+                await self._access.delete(namespace=namespace, name=name)
 
     async def _reap_unconfirmed(self, *, now: datetime.datetime) -> None:
-        for binding in await self._role_bindings.managed(_configured_namespaces(self._config)):
-            metadata = _binding_metadata(binding)
+        for resource in await self._access.managed(self._config.namespaces):
+            metadata = _metadata(resource)
             namespace, name = metadata.get("namespace"), metadata.get("name")
-            if not isinstance(namespace, str) or not isinstance(name, str):
-                continue
-            deadline = _annotation_time(binding, CONFIRMED_UNTIL_ANNOTATION)
-            hard_expiry = _annotation_time(binding, HARD_EXPIRY_ANNOTATION)
-            # Missing/malformed authority metadata is an unverifiable managed binding, so do not
-            # wait for an attacker-controlled or absent clock value.
-            if deadline is None or hard_expiry is None or deadline <= now or hard_expiry <= now:
-                await self._role_bindings.delete(namespace=namespace, name=name)
+            if isinstance(namespace, str) and isinstance(name, str):
+                deadline, expiry = _annotation_time(resource, CONFIRMED_UNTIL_ANNOTATION), _annotation_time(resource, HARD_EXPIRY_ANNOTATION)
+                if deadline is None or expiry is None or deadline <= now or expiry <= now:
+                    await self._access.delete(namespace=namespace, name=name)
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        """Run a bounded, cancellation-safe reconciliation loop for the Console lifespan."""
         task = asyncio.create_task(self._run_forever())
         try:
             yield
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-            await self._role_bindings.aclose()
+            await self._access.aclose()
 
     async def _run_forever(self) -> None:
         while True:
@@ -328,97 +260,46 @@ class LeaseReconciler:
             await asyncio.sleep(self._config.reconcile_interval_seconds)
 
 
+def role_manifest(grant: Grant, *, confirmed_until: datetime.datetime) -> dict[str, object]:
+    return {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role", "metadata": _metadata_for(grant, confirmed_until), "rules": [rule.as_kubernetes() for rule in grant.rules]}
+
+
 def role_binding_manifest(grant: Grant, *, confirmed_until: datetime.datetime) -> dict[str, object]:
-    """Build the only native authorization object this phase may create."""
-    return {
-        "apiVersion": "rbac.authorization.k8s.io/v1",
-        "kind": "RoleBinding",
-        "metadata": {
-            "name": grant.role_binding_name,
-            "namespace": grant.namespace,
-            "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE},
-            "annotations": {
-                LEASE_ID_ANNOTATION: str(grant.lease_id),
-                PROFILE_HASH_ANNOTATION: grant.profile_hash,
-                HARD_EXPIRY_ANNOTATION: _format_time(grant.expires_at),
-                CONFIRMED_UNTIL_ANNOTATION: _format_time(confirmed_until),
-            },
-        },
-        "subjects": list(FIXED_SUBJECTS),
-        "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": grant.cluster_role},
-    }
+    return {"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding", "metadata": _metadata_for(grant, confirmed_until), "subjects": list(FIXED_SUBJECTS), "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": grant.role_name}}
 
 
-def _configured_namespaces(config: KubeJitConfig) -> tuple[str, ...]:
-    return tuple(sorted({namespace for profile in config.profiles for namespace in profile.namespaces}))
+def _metadata_for(grant: Grant, confirmed_until: datetime.datetime) -> dict[str, object]:
+    return {"name": grant.role_name, "namespace": grant.namespace, "labels": {MANAGED_BY_LABEL: MANAGED_BY_VALUE}, "annotations": {LEASE_ID_ANNOTATION: str(grant.lease_id), POLICY_HASH_ANNOTATION: grant.policy_hash, HARD_EXPIRY_ANNOTATION: _format_time(grant.expires_at), CONFIRMED_UNTIL_ANNOTATION: _format_time(confirmed_until)}}
 
+def _metadata(value: dict[str, object]) -> dict[str, object]:
+    candidate = value.get("metadata")
+    return candidate if isinstance(candidate, dict) else {}
 
-def _binding_metadata(binding: dict[str, object]) -> dict[str, object]:
-    value = binding.get("metadata")
-    return value if isinstance(value, dict) else {}
-
-
-def _binding_lease_id(binding: dict[str, object]) -> UUID | None:
-    annotations = _binding_metadata(binding).get("annotations")
-    if not isinstance(annotations, dict):
-        return None
-    value = annotations.get(LEASE_ID_ANNOTATION)
-    if not isinstance(value, str):
-        return None
+def _lease_id(value: dict[str, object]) -> UUID | None:
+    annotations = _metadata(value).get("annotations")
     try:
-        return UUID(value)
+        return UUID(annotations[LEASE_ID_ANNOTATION]) if isinstance(annotations, dict) and isinstance(annotations.get(LEASE_ID_ANNOTATION), str) else None
     except ValueError:
         return None
 
+def _matches(value: dict[str, object], grant: Grant) -> bool:
+    annotations = _metadata(value).get("annotations")
+    return _metadata(value).get("namespace") == grant.namespace and _metadata(value).get("name") == grant.role_name and isinstance(annotations, dict) and annotations.get(POLICY_HASH_ANNOTATION) == grant.policy_hash
 
-def _binding_matches_grant(binding: dict[str, object], grant: Grant) -> bool:
-    metadata = _binding_metadata(binding)
-    annotations = metadata.get("annotations")
-    role_ref = binding.get("roleRef")
-    return (
-        metadata.get("name") == grant.role_binding_name
-        and metadata.get("namespace") == grant.namespace
-        and isinstance(annotations, dict)
-        and annotations.get(PROFILE_HASH_ANNOTATION) == grant.profile_hash
-        and isinstance(role_ref, dict)
-        and role_ref == {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": grant.cluster_role}
-        and binding.get("subjects") == list(FIXED_SUBJECTS)
-    )
-
-
-def _annotation_time(binding: dict[str, object], key: str) -> datetime.datetime | None:
-    annotations = _binding_metadata(binding).get("annotations")
-    value = annotations.get(key) if isinstance(annotations, dict) else None
-    if not isinstance(value, str):
-        return None
+def _annotation_time(value: dict[str, object], key: str) -> datetime.datetime | None:
+    annotations = _metadata(value).get("annotations")
     try:
-        return _utc(datetime.datetime.fromisoformat(value))
+        return _utc(datetime.datetime.fromisoformat(annotations[key])) if isinstance(annotations, dict) and isinstance(annotations.get(key), str) else None
     except ValueError:
         return None
 
-
+def _policy_hash(rules: tuple[PolicyRule, ...]) -> str:
+    return hashlib.sha256(json.dumps([rule.model_dump(mode="json") for rule in rules], separators=(",", ":"), sort_keys=True).encode()).hexdigest()
 def _format_time(value: datetime.datetime) -> str:
     return _utc(value).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
 def _utc(value: datetime.datetime) -> datetime.datetime:
-    if value.tzinfo is None:
-        raise ValueError("timestamps must be timezone-aware")
+    if value.tzinfo is None: raise ValueError("timestamps must be timezone-aware")
     return value.astimezone(datetime.UTC)
-
-
 def _grant_from_row(row: KubernetesAccessGrant) -> Grant:
-    return Grant(
-        lease_id=row.lease_id,
-        tool_call_id=row.tool_call_id,
-        operator_id=row.operator_id,
-        requester=row.requester,
-        profile_id=row.profile_id,
-        profile_hash=row.profile_hash,
-        namespace=row.namespace,
-        cluster_role=row.cluster_role,
-        issued_at=row.issued_at,
-        expires_at=row.expires_at,
-        state=row.state,
-        revoked_at=row.revoked_at,
-    )
+    rules = tuple(PolicyRule.model_validate(rule) for rule in row.policy_rules)
+    return Grant(lease_id=row.lease_id, namespace=row.namespace, rules=rules, policy_hash=row.policy_hash, issued_at=row.issued_at, expires_at=row.expires_at, state=row.state, revoked_at=row.revoked_at)

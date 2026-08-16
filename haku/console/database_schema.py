@@ -1347,29 +1347,21 @@ class MatrixHeldBatch(Base):
 class KubernetesAccessGrant(Base):
     """Console-authoritative lease for one temporary namespace RoleBinding.
 
-    The grant has an audit link to the approval-gated MCP call that requested it.  The
-    reconciler alone projects this record to Kubernetes; no Kubernetes object is used as
-    the source of truth for a grant.
+    The approval ledger already records the actor, request, decision, and result. The reconciler
+    alone projects this row to Kubernetes; no Kubernetes object is its source of truth.
     """
 
     __tablename__ = "kubernetes_access_grants"
     __table_args__ = (
         Index("idx_kubernetes_access_grants_active", "state", "expires_at"),
-        Index("idx_kubernetes_access_grants_tool_call", "tool_call_id"),
     )
 
     lease_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    tool_call_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
-    )
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="RESTRICT"), nullable=False
-    )
-    requester: Mapped[str] = mapped_column(Text, nullable=False)
-    profile_id: Mapped[str] = mapped_column(Text, nullable=False)
-    profile_hash: Mapped[str] = mapped_column(Text, nullable=False)
     namespace: Mapped[str] = mapped_column(Text, nullable=False)
-    cluster_role: Mapped[str] = mapped_column(Text, nullable=False)
+    # Exact canonical PolicyRule objects presented to the approving operator. A profile name is
+    # intentionally insufficient evidence: every elevated lease records what it actually grants.
+    policy_rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    policy_hash: Mapped[str] = mapped_column(Text, nullable=False)
     issued_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     state: Mapped[KubernetesAccessGrantState] = mapped_column(
