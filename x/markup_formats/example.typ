@@ -89,7 +89,7 @@ Reference with @custom-anchor.
 
 = Includes
 
-#include "other-file.typ"
+#include "example-include.typ"
 
 = Variables
 

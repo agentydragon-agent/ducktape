@@ -28,6 +28,11 @@ Superscript: E=mc^2 and subscript: H_2O
 
 [[https://example.com][Link text]]
 
+#+BEGIN_COMMENT
+Relative path shown as its own link text
+#+END_COMMENT
+[[file:docs/guide.org]]
+
 [[file:image.png]]
 
 #+CAPTION: Image with caption
@@ -86,7 +91,7 @@ Reference with [[custom-anchor]].
 
 * Includes
 
-#+INCLUDE: "other-file.org"
+#+INCLUDE: "example-include.org"
 
 * Properties and Metadata
 
@@ -95,6 +100,12 @@ Reference with [[custom-anchor]].
    :CUSTOM_ID: my-section
    :CATEGORY: examples
    :END:
+
+* Variables and Macros
+
+#+MACRO: project Ducktape
+
+The project is {{{project}}}.
 
 * Footnotes
 

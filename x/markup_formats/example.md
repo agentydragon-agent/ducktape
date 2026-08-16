@@ -35,6 +35,22 @@ def hello():
 | Alpha | 1     |
 | Beta  | 2     |
 
+## Definition Lists (Markdown Extra extension)
+
+Term 1
+: Definition of term 1
+
+Term 2
+: Definition of term 2
+
+## Auto TOC (GitLab extension)
+
+[[_TOC_]]
+
+## Attributes and Classes (Pandoc extension)
+
+[This paragraph has a class.]{.warning}
+
 ## Task Lists (GFM extension)
 
 - [x] Completed task
@@ -44,6 +60,25 @@ def hello():
 
 > This is a quote.
 > It can span multiple lines.
+
+## Admonitions (GitHub extension)
+
+> [!NOTE]
+> This is a note.
+
+## Math (extension)
+
+Inline: $E = mc^2$
+
+Block:
+
+$$
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+$$
+
+## Superscript and Subscript (Pandoc extension)
+
+E=mc^2^ and H~2~O
 
 ## Footnotes (extension, not CommonMark)
 

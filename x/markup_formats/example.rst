@@ -112,9 +112,7 @@ Reference with :ref:`custom-anchor`.
 Includes
 ========
 
-.. include:: /path/to/file.rst
-
-(Commented example - would include another file)
+.. include:: example-include.rst
 
 Substitutions (Variables)
 =========================
@@ -142,6 +140,10 @@ Roles and Directives
 ====================
 
 rST is extensible via roles (inline) and directives (block):
+
+.. class:: highlighted
+
+This paragraph has a CSS class.
 
 .. math::
 
