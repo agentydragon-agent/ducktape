@@ -14,9 +14,9 @@ let
     # host architecture while copying it; pinning the index prevents a mutable
     # tag from silently changing the deployed OpenClaw runtime.
     imageDigest = "sha256:d41807ff1e5c925ff75e71ed2b755cdea59da1431d1f4fde5051a16a3337e9ce";
-    # Filled from dockerTools' fixed-output-hash diagnostic in CI. The initial
-    # placeholder makes the otherwise opaque skopeo archive content explicit.
-    hash = pkgs.lib.fakeHash;
+    # Hash of dockerTools' skopeo-generated OCI archive for that immutable
+    # index. It makes the upstream base a fixed Nix input as well.
+    hash = "sha256-mtB/8YxZxg5qhVJIn5WSeMhSeSx/Vp+UpwrU6EHm5Ps=";
     finalImageName = "ghcr.io/openclaw/openclaw";
     finalImageTag = "2026.7.2-beta.7";
   };
