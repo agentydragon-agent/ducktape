@@ -44,7 +44,7 @@
         "sessionScope": "per-room"
       },
       "groupPolicy": "disabled",
-      "autoJoin": "off",
+      "autoJoin": "always",
       "threadReplies": "always"
     }
   },
@@ -140,6 +140,9 @@
     }
   },
   "plugins": {
+    "load": {
+      "paths": ["/opt/openclaw/plugins/matrix"]
+    },
     "entries": {
       "matrix": {
         "enabled": true

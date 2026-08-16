@@ -7,6 +7,16 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   gateway = nix-openclaw.packages.${system}.openclaw-gateway;
+  matrixPlugin = nix-openclaw.packages.${system}.openclaw-runtime-plugin-matrix;
+
+  # Runtime plugins are separate Nix outputs, not part of openclaw-gateway.
+  # Give the declarative OpenClaw config a stable in-image path instead of
+  # embedding an evaluation-specific /nix/store path in the Kubernetes
+  # ConfigMap. The symlink retains the plugin derivation in the image closure.
+  runtimePlugins = pkgs.runCommand "openclaw-runtime-plugins" { } ''
+    mkdir -p "$out/opt/openclaw/plugins"
+    ln -s ${matrixPlugin} "$out/opt/openclaw/plugins/matrix"
+  '';
 
   # Keep the shell/coreutils surface needed by public-coder-agent's init
   # container, plus a deliberately compact set of tools repeatedly needed for
@@ -82,6 +92,7 @@ pkgs.dockerTools.buildLayeredImage {
   contents = [
     gateway
     proxySetup
+    runtimePlugins
   ]
   ++ tools;
   maxLayers = 100;
