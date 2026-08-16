@@ -69,7 +69,7 @@ jobs:
       - name: Build image
         run: nix build .#openclaw-image --print-build-logs
 
-      - name: Smoke test public-coder hook runtime
+      - name: Smoke test public-coder runtime
         run: |
           loaded="$(docker load -i "$(readlink -f result)")"
           printf '%s\n' "$loaded"
@@ -81,6 +81,9 @@ jobs:
             for command in bazelisk buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
               command -v "$command"
             done
+            test -f /opt/openclaw/plugins/matrix/openclaw.plugin.json
+            test -f /opt/openclaw/plugins/matrix/dist/index.js
+            test -d /opt/openclaw/plugins/matrix/node_modules/matrix-js-sdk
           '
 
       - name: Compute tag

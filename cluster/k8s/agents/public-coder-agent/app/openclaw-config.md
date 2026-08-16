@@ -29,7 +29,15 @@ reads the documented `MATRIX_PASSWORD` fallback, which is a stable placeholder;
 iron-proxy swaps the placeholder for the real SOPS-backed password only on the
 Matrix login body. OpenClaw then caches the resulting access token in its state
 directory. The Matrix DM config uses `sessionScope: "per-room"` and threaded
-replies so concurrent DM rooms remain independent.
+replies so concurrent DM rooms remain independent. `autoJoin` is `"always"`
+because Matrix presents a new DM as a room invite and cannot classify it until
+after joining. This does not widen who can drive the agent: DMs remain
+allowlisted to `@agentydragon:allegedly.works` and group rooms remain disabled.
+
+Matrix is a separate nix-openclaw runtime-plugin derivation. The image exposes
+it at the stable `/opt/openclaw/plugins/matrix` symlink and this config names
+that directory in `plugins.load.paths`; merely enabling `plugins.entries.matrix`
+does not install or load an external plugin in Nix mode.
 
 `requestTimeoutMs` on the haku-console server is load-bearing, and its absence is not
 a slow-server problem. OpenClaw gives the startup catalog listing a hardcoded
