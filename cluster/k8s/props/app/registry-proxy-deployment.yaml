@@ -25,7 +25,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: registry-proxy
-          image: ghcr.io/agentydragon/props-registry-proxy:devel-20260811011037-c62eff9 # {"$imagepolicy": "flux-system:props-registry-proxy"}
+          image: ghcr.io/agentydragon/props-registry-proxy:devel-20260816062715-226cccb # {"$imagepolicy": "flux-system:props-registry-proxy"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
