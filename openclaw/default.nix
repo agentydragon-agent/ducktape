@@ -5,20 +5,43 @@ let
   gateway = nix-openclaw.packages.${system}.openclaw-gateway;
 
   # Keep the shell/coreutils surface needed by public-coder-agent's init
-  # container, plus the tools the agent uses for repository and API work. No
-  # SSH client is included: public-coder uses HTTPS Git through the proxy.
+  # container, plus a deliberately compact set of tools repeatedly needed for
+  # public-repository and GitOps work. The image is not the full devshell:
+  # heavyweight, infrequently-used tooling such as checkov stays available via
+  # `nix develop` on the dedicated devbox.
+  #
+  # `gh` normally reads GH_TOKEN/GITHUB_TOKEN, but OpenClaw deliberately strips
+  # those names from executed commands. GH_PAT is the proxy-substituted,
+  # non-secret credential contract for this agent, so expose a compatible `gh`
+  # wrapper rather than requiring every call site to re-export it.
+  ghWithProxyToken = pkgs.writeShellScriptBin "gh" ''
+    export GH_TOKEN="''${GH_PAT:?GH_PAT is required for GitHub CLI authentication}"
+    exec ${pkgs.gh}/bin/gh "$@"
+  '';
+
   tools = with pkgs; [
     bashInteractive
     busybox
     cacert
     coreutils
     curl
+    file
     git
+    ghWithProxyToken
     jq
+    kubeconform
     kubectl
+    kubernetes-helm
+    markdownlint-cli2
+    nixfmt
     nodejs_22
+    openssh # SSH access to the dedicated public-coder-devbox.
+    pre-commit
     python3
     ripgrep
+    sops
+    statix
+    tflint
     tini
   ];
 
