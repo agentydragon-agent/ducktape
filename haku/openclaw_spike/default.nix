@@ -23,8 +23,8 @@ let
 
   # Mirrors the old Dockerfile's runtime surface, but each tool is now pinned
   # by flake.lock / nixpkgs rather than an apt repository or an ad-hoc curl
-  # download. Claude Code is the Nix package (currently 2.1.220), so it also
-  # avoids an image-build-time npm install.
+  # download. Claude Code is the Nix package, so it also avoids an
+  # image-build-time npm install.
   tools = with pkgs; [
     bashInteractive
     bazelisk
@@ -48,6 +48,15 @@ let
     tea
   ];
 
+  # `fakeRootCommands` customizes the new layer before dockerTools unpacks a
+  # `fromImage`, so it cannot write into the upstream /app directory. Package
+  # the preload as ordinary image content instead; its /app path is overlaid on
+  # the base image when the final OCI archive is assembled.
+  proxySetup = pkgs.runCommand "haku-openclaw-spike-proxy-setup" { } ''
+    mkdir -p "$out/app"
+    cp ${../../openclaw/proxy-setup.mjs} "$out/app/proxy-setup.mjs"
+  '';
+
   toolPath = pkgs.lib.makeBinPath tools;
 in
 pkgs.dockerTools.buildLayeredImage {
@@ -55,16 +64,8 @@ pkgs.dockerTools.buildLayeredImage {
   # CI supplies the sortable devel-* tag selected by Flux.
   tag = null;
   fromImage = upstreamOpenClaw;
-  contents = tools;
+  contents = tools ++ [ proxySetup ];
   maxLayers = 100;
-
-  # The preload must live beside the upstream gateway's node_modules so Node's
-  # ESM resolver finds undici. Preserve the upstream /app working directory
-  # and only replace this one repository-owned file.
-  fakeRootCommands = ''
-    cp ${../../openclaw/proxy-setup.mjs} /app/proxy-setup.mjs
-    chown 1000:1000 /app/proxy-setup.mjs
-  '';
 
   config = {
     User = "1000:1000";
