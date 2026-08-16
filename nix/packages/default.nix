@@ -108,11 +108,16 @@ let
 
   ducktape-git-hooks = mkWheel {
     pname = "ducktape-git-hooks";
-    description = "Git hooks: ducktape-precommit, ducktape-commit-msg, cluster validation";
+    description = "Git hooks: ducktape-precommit, ducktape-prepare-commit-msg, cluster validation";
     mainProgram = "ducktape-precommit";
     importsCheck = [ "devinfra.precommit.git_hook" ];
     # SYNC: This list must match `requires` in //:ducktape_git_hooks_wheel (BUILD.bazel).
     # When adding a dependency, update BOTH places.
+    # CLEANUP(added 2026-08-16): drop httpx and protobuf once
+    #   nix/artifact-pins.json rotates `ducktape-git-hooks` onto a wheel built at
+    #   or after the commit that removed the BuildBuddy trailer verifier — until
+    #   sync-pins.yml lands that pin, the released wheel still declares them and
+    #   pythonRuntimeDepsCheck fails without them.
     propagatedBuildInputs =
       with python3Packages;
       [
