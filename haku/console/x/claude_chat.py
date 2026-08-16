@@ -347,7 +347,7 @@ class SessionStore:
             messages=view.messages,
             turns=[
                 ConversationTurnView(
-                    turn_id=UUID(turn.turn_id),
+                    turn_id=turn.turn_id,
                     started_at=turn.started_at,
                     ended_at=turn.ended_at,
                     outcome=turn.outcome,
@@ -683,7 +683,7 @@ class SessionStore:
             ).all()
         return [
             TurnRecord(
-                turn_id=str(row.turn_id),
+                turn_id=row.turn_id,
                 first_frame_seq=row.first_frame_seq,
                 last_frame_seq=row.last_frame_seq,
                 started_at=row.started_at,
@@ -748,7 +748,7 @@ class SessionStore:
             rows = (await db.scalars(select(Session).order_by(Session.created_at.desc()).limit(limit))).all()
         return [
             Conversation(
-                session_id=str(row.session_id),
+                session_id=row.session_id,
                 surface=row.surface,
                 room_id=row.room_id,
                 status=row.status,

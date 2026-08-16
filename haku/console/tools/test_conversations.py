@@ -19,6 +19,7 @@ from haku.console.tools.conversations import (
 )
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
+TURN = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
 
 
@@ -43,11 +44,7 @@ class _Reader:
     async def list_conversations(self, *, limit: int) -> list[Conversation]:
         return [
             Conversation(
-                session_id="11111111-1111-1111-1111-111111111111",
-                surface="matrix",
-                room_id="!room:example.org",
-                status="closed",
-                created_at=NOW,
+                session_id=SESSION, surface="matrix", room_id="!room:example.org", status="closed", created_at=NOW
             )
         ][:limit]
 
@@ -63,7 +60,7 @@ class _Reader:
     async def list_turns(self, session_id: UUID, *, limit: int) -> list[TurnRecord]:
         return [
             TurnRecord(
-                turn_id="22222222-2222-2222-2222-222222222222",
+                turn_id=TURN,
                 first_frame_seq=1,
                 last_frame_seq=4,
                 started_at=NOW,
@@ -80,7 +77,7 @@ async def test_tool_surface() -> None:
     async with Client(build_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_conversations", "read_rollout", "list_turns"}
+    assert tools == {"list_conversations", "read_rollout", "read_frame", "list_turns"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
@@ -137,6 +134,43 @@ async def test_an_oversized_frame_is_clipped_and_says_so() -> None:
     assert kept.payload == {"type": "assistant"}
 
 
+async def test_one_named_frame_comes_back_whole_however_large() -> None:
+    """The escape hatch from clipping: a page cannot bound a response full of whole files, but a
+    single named frame already is one."""
+    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_FRAME_BYTES * 2)})
+    reader = _Reader(big, _frame(2))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("read_frame", {"session_id": str(SESSION), "frame_seq": 1})
+
+    assert result.data.payload == big.payload
+    assert result.data.clipped_bytes is None
+
+
+async def test_a_named_frame_is_read_including_the_kinds_a_page_leaves_out() -> None:
+    """`read_rollout`'s default view drops deltas, and a caller that named a `frame_seq` has
+    already chosen its row — so the filter must not decide for it."""
+    reader = _Reader(_frame(7, kind="stream_event"))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool("read_frame", {"session_id": str(SESSION), "frame_seq": 7})
+
+    assert result.data.kind == "stream_event"
+
+
+async def test_a_frame_seq_that_does_not_exist_is_an_error_not_the_next_frame() -> None:
+    """The cursor is exclusive, so a naive read of "after 4" answers a request for frame 5 with
+    frame 6 — the wrong frame, indistinguishable from the right one."""
+    reader = _Reader(_frame(4), _frame(6))
+
+    async with Client(build_mcp(reader)) as client:
+        result = await client.call_tool(
+            "read_frame", {"session_id": str(SESSION), "frame_seq": 5}, raise_on_error=False
+        )
+
+    assert result.is_error
+
+
 async def test_a_turn_carries_the_range_to_read_and_what_it_cost() -> None:
     """The point of listing exchanges is to pick one and then read its frames, so the bracket has
     to come back with the accounting rather than instead of it."""
@@ -160,7 +194,8 @@ async def test_a_page_size_above_the_cap_is_refused() -> None:
 
 
 async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
-    """Parsed at the boundary, so the store is never handed something it has to validate."""
+    """The parameter is a `UUID`, so the schema refuses this before any code runs and the store
+    is never handed something it would have to validate."""
     reader = _Reader()
     async with Client(build_mcp(reader)) as client:
         result = await client.call_tool("read_rollout", {"session_id": "not-an-id"}, raise_on_error=False)
