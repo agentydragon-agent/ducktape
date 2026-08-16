@@ -43,10 +43,16 @@ straight from the egress-confined app pod and times out. Keep this URL equal to
 the Deployment's `HTTPS_PROXY` value. The dedicated proxy also preserves the
 login-body password substitution described above.
 
-Matrix is a separate nix-openclaw runtime-plugin derivation. The image exposes
-it at the stable `/opt/openclaw/plugins/matrix` symlink and this config names
-that directory in `plugins.load.paths`; merely enabling `plugins.entries.matrix`
-does not install or load an external plugin in Nix mode.
+Matrix is a separate nix-openclaw runtime-plugin derivation, but the image
+physically adds it to the gateway's `dist/extensions` and
+`dist-runtime/extensions` bundled-plugin trees. That layout is
+security-sensitive: Matrix persists sync and encryption state
+through `openKeyedStore`, which OpenClaw intentionally exposes only to bundled
+or otherwise trusted official installs. Loading the same derivation through an
+arbitrary `plugins.load.paths` entry marks it as `origin: "config"`, and the
+provider exits before sync with `openKeyedStore is only available for trusted
+plugins in this release.` Keep the config limited to enabling the bundled
+`plugins.entries.matrix`; do not restore a path-load workaround.
 
 `requestTimeoutMs` on the haku-console server is load-bearing, and its absence is not
 a slow-server problem. OpenClaw gives the startup catalog listing a hardcoded

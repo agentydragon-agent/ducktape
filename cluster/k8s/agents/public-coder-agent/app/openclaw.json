@@ -141,9 +141,6 @@
     }
   },
   "plugins": {
-    "load": {
-      "paths": ["/opt/openclaw/plugins/matrix"]
-    },
     "entries": {
       "matrix": {
         "enabled": true
