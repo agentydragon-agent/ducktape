@@ -25,15 +25,22 @@ second channel must be able to reuse everything at the runtime level unchanged, 
 cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
 worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
 surface wants too, and the driver is handed two coroutines and never learns which room it speaks
-to. **Being at the right level is not the same as being neutral**, which is the trap this module
-fell into: it reads `conversation_events.py`, and a version of it matching on Claude's own frame
-`type` would be at the runtime level while still giving a second harness no status line.
-`sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
-provisioning and would serve any harness. `session_frames.py` is the one that is genuinely both and
-is deliberately left whole: four of its constants are the CLI's own top-level `type` values, while
-`SETUP_OUTPUT_KIND` and `setup_output_frame` are the bridge's envelope and the console's own
-authored row — the TODO at the top of that file is the same observation, and splitting it is stage 2
-of <../../plans/chat_runtime_projection.md> rather than a placement question.
+to. **Being at the right level is not the same as being neutral, and this module is where that bit:**
+it sat here while still matching on Claude's own frame `type`, its `system` subtypes and its content
+blocks, so a second harness got no status line from the module the rule had already placed above
+harnesses. It reads `conversation_events.py` now. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim names, but it is Kubernetes
+provisioning and would serve any harness. The frame vocabulary was the case that was genuinely
+both, and it is now two modules: the CLI's own top-level `type` values and the readers that pick a
+value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge envelope's
+`kind` and the row the console authors under it.
+
+**One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
+`type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
+names four of the CLI's kinds in SQL predicates and imports them across that line — the same
+direction `claude_code/projection.py` is already imported in. Stage 2 of
+<../../plans/chat_runtime_projection.md> gives the CLI's type its own column, which is what retires
+those predicates; two of the five uses (`_write_partial_frame`, `_recorded_completion`) are already
+tombstoned on their own gates.
 
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
@@ -139,11 +146,11 @@ the turn loop kept their shape while the file lost the parts that never needed t
 (<../../plans/chat_runtime_cleanup.md> § Anytime). `session_store.py` is not one of them: the
 service calls it on every path, so that split is a seam and not a leaf.
 
-| Path                | Role                                                                                                                                                                             |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_frames.py` | The `kind` vocabulary of the frame log, the two frames the console authors itself (`partial` answers and sandbox narration), and the readers that pick a value out of a payload. |
-| `session_views.py`  | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout.                   |
-| `room_status.py`    | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.                            |
+| Path               | Role                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setup_output.py`  | The bridge envelope's `kind` and the sandbox-narration row the console authors under it.                                                                       |
+| `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
+| `room_status.py`   | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
 
 ### The records a read hands back — `conversation_records.py`
 
@@ -201,8 +208,9 @@ one interpreter that <../../plans/chat_runtime_projection.md> § stage 4 replace
 **The two halves sit on different levels, which is the placement rule doing its job.** The
 vocabulary names no backend and every surface renders it, so it stays at the runtime level; the
 adapter cannot be written without knowing what `assistant`, `stream_event` and `tool_use_result`
-are, so it lives under the harness directory. A second backend adds a sibling adapter and touches
-neither the vocabulary nor its readers.
+are, so it lives under the harness directory beside `claude_code/frames.py`, which is where those
+names are spelled. A second backend adds a sibling adapter and touches neither the vocabulary nor
+its readers.
 
 **The reducer's own contract is in `claude_code/projection.py`** — what `project`, `finish` and
 `project_log` each mean, why a batch boundary is not an ending, and the wire facts every rule in
@@ -212,13 +220,30 @@ it answers. It is not restated here; what follows is who reads it and what is no
 `SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
 onto the read models in `conversation_records.py`. And the live path reads them too.
 
-**`_run_turn` is the first of the four onto it**: it projects each frame as it lands and acts on the
-events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist. The
-status line is the second — `coarse_status` reads a run of events rather than a frame, which is what
-stops the driver being one of the interpreters it is supposed to sit above. `rollout_calls` still
-reads frames its own way; that is its own change. Nothing stores the events yet either —
-`session_messages` and the outbox keep the shapes they had, which is what makes the cursor below
-one column rather than a table.
+**All four interpreters are gone.** `_run_turn` projects each frame as it lands and acts on the
+events, so the live path no longer knows that `assistant`, `stream_event` and `result` exist;
+`coarse_status` reads a run of events rather than a frame, which is what stops the status driver
+being one of the interpreters it is supposed to sit above; adoption replays from the cursor rather
+than reconstructing; and the read path's own parser — `rollout_calls`, which re-derived every tool
+call and every result on every request — is deleted, because the events are rows.
+
+### The events, stored — `session_events`
+
+`session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
+transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
+projected. What the table holds that nothing else does is a **tool call's answer**:
+`session_messages.tool_calls` records what was asked, and the reply used to exist only as frames
+that `session_views.rollout_calls` re-parsed on every read.
+
+- **A message is found by frame range**, not by the agent's id for it — `session_messages` records
+  the span it was built from and an event's own span falls inside it, so the join needs nothing the
+  wire may have omitted.
+- **Provenance is a column, and `NOT NULL`.** `frame_range` carries both ends and `authored`
+  carries neither, which the table's own constraint makes the only two possibilities — the
+  requirement #4143 could not put on `session_messages`, where NULL means two things.
+- **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
+  completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
+  holds the exchange's outcome, its cost and its bracket.
 
 **One status source did not survive that, and it is worth knowing before it is missed.**
 `coarse_status` used to answer for `system/task_progress` as well as `task_started`; the adapter

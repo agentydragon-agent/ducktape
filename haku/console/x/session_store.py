@@ -52,8 +52,15 @@ from haku.console.database_schema import (
     SessionTurn,
     SessionTurnPrompt,
 )
-from haku.console.x import transcript_entries
+from haku.console.x import session_events, transcript_entries
 from haku.console.x.claude_code import projection
+from haku.console.x.claude_code.frames import (
+    ASSISTANT_FRAME_KIND,
+    DELTA_FRAME_KIND,
+    PROMPT_FRAME_KIND,
+    RESULT_FRAME_KIND,
+    assistant_frame,
+)
 from haku.console.x.conversation_events import (
     ConversationEvent,
     MessageCompleted,
@@ -73,14 +80,6 @@ from haku.console.x.conversation_records import (
     TurnRecord,
     TurnUsage,
 )
-from haku.console.x.session_frames import (
-    ASSISTANT_FRAME_KIND,
-    DELTA_FRAME_KIND,
-    PROMPT_FRAME_KIND,
-    RESULT_FRAME_KIND,
-    SETUP_OUTPUT_KIND,
-    assistant_frame,
-)
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
     ConversationSessionSummary,
@@ -90,11 +89,12 @@ from haku.console.x.session_views import (
     SessionMessageView,
     SessionView,
     frame_page,
-    rollout_calls,
     session_view,
     setup_narration,
+    tool_calls,
     user_message_view,
 )
+from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
 
 logger = logging.getLogger(__name__)
@@ -292,7 +292,7 @@ class SessionStore:
                 ).all()
             )
             responding = await _open_turn(db, session_id) is not None
-            return session_view(record, messages, responding=responding, calls=await rollout_calls(db, session_id))
+            return session_view(record, messages, responding=responding, calls=await tool_calls(db, session_id))
 
     async def list_operator_conversations(self, operator_id: UUID, *, limit: int) -> list[ConversationSessionSummary]:
         """List this Operator's conversations for the Console inventory.
@@ -920,8 +920,9 @@ class SessionStore:
         (<claude_code/projection.py>), and it is not a property of a suffix read cold. A stored
         cursor is what turns this into a window, and it is deliberately not part of this change.
 
-        That costs one read of the session's projectable frames per page, the same order of cost
-        as `session_views.rollout_calls`, which the SPA's detail view already pays per request.
+        That costs one read of the session's projectable frames per page — the last O(session)
+        read on any path, now that the SPA's detail view reads stored events instead of re-parsing
+        the log (`session_views.tool_calls`).
 
         Two kinds are excluded in SQL rather than by the fold. `setup_output` is the console's own
         envelope and carries no protocol `type` at all, so the fold would refuse it; deltas are
@@ -982,8 +983,9 @@ class SessionStore:
     ) -> TurnState:
         """Write what one frame's events imply, and move the cursor past that frame, together.
 
-        **One transaction, and the cursor is inside it.** The message row, the room's outbox row,
-        the turn's state and `sessions.projected_frame_seq` commit or do not commit as one, which
+        **One transaction, and the cursor is inside it.** The message row, the neutral event rows,
+        the room's outbox row, the turn's state and `sessions.projected_frame_seq` commit or do not
+        commit as one, which
         is the whole of what makes those effects exactly-once: a process that dies anywhere leaves
         the cursor naming the last frame whose effects are durable, so whoever adopts the session
         re-projects from there and redoes exactly the frames whose effects did not commit
@@ -1063,11 +1065,19 @@ class SessionStore:
                         await _clear_partial_frame(db, session_id)
                         message, tool_calls = None, []
                     case _:
-                        # Projected and deliberately not stored: what the agent thought, what its
-                        # calls answered and what the harness narrated are richer than any surface
-                        # renders today, and giving them rows is the half of stage 4 that moves
-                        # data.
+                        # Every event is stored below, whatever the transcript row does with it.
+                        # This arm is what the *message* row makes of one — nothing, for reasoning,
+                        # a tool's answer and the harness's narration.
                         pass
+            # In this transaction, so a row exists here exactly when the cursor says its frame was
+            # projected: a process that dies leaves no half-written stream to reconcile, and the
+            # frames whose effects did not commit are re-projected into rows that were never
+            # written.
+            db.add_all(
+                stored
+                for event in events
+                if (stored := session_events.row(event, session_id=session_id, turn_id=turn_id, now=now)) is not None
+            )
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
