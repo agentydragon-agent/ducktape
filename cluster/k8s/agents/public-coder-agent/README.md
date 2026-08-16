@@ -61,7 +61,10 @@ reflected into `public-coder-agent`, where only iron-proxy consumes it. The
 OpenClaw container sends `proxy-matrix-password-placeholder` in its password
 login body; iron-proxy replaces it only on Synapse's login endpoint. The
 provisioner sets the password only when creating the account, so reconciliation
-does not revoke the bot's cached access token.
+does not revoke the bot's cached access token. The Matrix channel names the
+same iron-proxy Service explicitly in `channels.matrix.proxy`; the plugin's
+guarded fetch path uses that per-channel dispatcher rather than Node's generic
+proxy environment handling.
 
 ## Deviations worth knowing
 

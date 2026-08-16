@@ -37,6 +37,7 @@
     "matrix": {
       "enabled": true,
       "homeserver": "https://matrix.allegedly.works",
+      "proxy": "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080",
       "userId": "@public-coder-agent:allegedly.works",
       "dm": {
         "policy": "allowlist",

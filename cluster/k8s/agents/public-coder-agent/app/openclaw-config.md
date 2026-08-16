@@ -34,6 +34,15 @@ because Matrix presents a new DM as a room invite and cannot classify it until
 after joining. This does not widen who can drive the agent: DMs remain
 allowlisted to `@agentydragon:allegedly.works` and group rooms remain disabled.
 
+`channels.matrix.proxy` is also load-bearing. The Matrix plugin does not make
+ordinary global `fetch` calls: its guarded fetch layer constructs a dispatcher
+from this channel field. `HTTP_PROXY`, `HTTPS_PROXY`, and
+`NODE_USE_ENV_PROXY=1` therefore do not route Matrix traffic by themselves;
+without the explicit field, the SDK attempts the homeserver's public IPs
+straight from the egress-confined app pod and times out. Keep this URL equal to
+the Deployment's `HTTPS_PROXY` value. The dedicated proxy also preserves the
+login-body password substitution described above.
+
 Matrix is a separate nix-openclaw runtime-plugin derivation. The image exposes
 it at the stable `/opt/openclaw/plugins/matrix` symlink and this config names
 that directory in `plugins.load.paths`; merely enabling `plugins.entries.matrix`
