@@ -14,8 +14,10 @@ own GitHub account and pushes to its own forks.
 | `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies |
 
 The agent also connects to Matrix as `@public-coder-agent:allegedly.works`.
-Matrix is an official plugin baked into the derivative OpenClaw image. The
-initial policy is deliberately DM-only and allowlisted to
+Matrix is an official plugin baked into the derivative OpenClaw gateway's
+trusted bundled-extension tree; loading it from an arbitrary config path would
+deny the state-store capability it needs before sync. The initial policy is
+deliberately DM-only and allowlisted to
 `@agentydragon:allegedly.works`; add explicit room policy/config before using
 it in group rooms.
 

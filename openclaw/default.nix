@@ -9,14 +9,40 @@ let
   gateway = nix-openclaw.packages.${system}.openclaw-gateway;
   matrixPlugin = nix-openclaw.packages.${system}.openclaw-runtime-plugin-matrix;
 
-  # Runtime plugins are separate Nix outputs, not part of openclaw-gateway.
-  # Give the declarative OpenClaw config a stable in-image path instead of
-  # embedding an evaluation-specific /nix/store path in the Kubernetes
-  # ConfigMap. The symlink retains the plugin derivation in the image closure.
-  runtimePlugins = pkgs.runCommand "openclaw-runtime-plugins" { } ''
-    mkdir -p "$out/opt/openclaw/plugins"
-    ln -s ${matrixPlugin} "$out/opt/openclaw/plugins/matrix"
-  '';
+  # Matrix uses the plugin-state store for sync and encryption state. OpenClaw
+  # grants that capability only to trusted plugins, and an arbitrary
+  # plugins.load.paths entry is intentionally untrusted even when it points at
+  # the official nix-openclaw derivation. Physically add the runtime package to
+  # the gateway's bundled extension tree instead: discovery then records it as
+  # origin=bundled and the normal state-store trust boundary remains intact.
+  #
+  # Keep both packaged roots complete: this release contains source-checkout
+  # markers and therefore prefers dist/extensions, while a future package that
+  # omits those markers will prefer dist-runtime/extensions. Hard-linking the
+  # second tree avoids storing a duplicate copy of the plugin payload.
+  gatewayWithMatrix = gateway.overrideAttrs (previous: {
+    # nix-openclaw supplies a complete custom installPhase rather than the
+    # stdenv default, so append here instead of relying on a postInstall hook
+    # that the package's install script does not run.
+    installPhase =
+      previous.installPhase
+      + "\n"
+      + ''
+        matrixTarget="$out/lib/openclaw/dist/extensions/matrix"
+        matrixRuntimeTarget="$out/lib/openclaw/dist-runtime/extensions/matrix"
+        rm -rf "$matrixTarget"
+        chmod u+w "$(dirname "$matrixTarget")"
+        mkdir -p "$(dirname "$matrixTarget")"
+        cp -r ${matrixPlugin} "$matrixTarget"
+        rm "$matrixTarget/node_modules/openclaw"
+        ln -s ../../../.. "$matrixTarget/node_modules/openclaw"
+
+        rm -rf "$matrixRuntimeTarget"
+        chmod u+w "$(dirname "$matrixRuntimeTarget")"
+        mkdir -p "$(dirname "$matrixRuntimeTarget")"
+        cp -rl "$matrixTarget" "$matrixRuntimeTarget"
+      '';
+  });
 
   # Keep the shell/coreutils surface needed by public-coder-agent's init
   # container, plus a deliberately compact set of tools repeatedly needed for
@@ -79,10 +105,10 @@ let
   proxySetup = pkgs.runCommand "openclaw-proxy-setup" { } ''
     mkdir -p "$out/lib/openclaw"
     cp ${./proxy-setup.mjs} "$out/lib/openclaw/proxy-setup.mjs"
-    ln -s ${gateway}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
+    ln -s ${gatewayWithMatrix}/lib/openclaw/node_modules "$out/lib/openclaw/node_modules"
   '';
 
-  path = pkgs.lib.makeBinPath ([ gateway ] ++ tools);
+  path = pkgs.lib.makeBinPath ([ gatewayWithMatrix ] ++ tools);
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "ghcr.io/agentydragon/openclaw";
@@ -90,9 +116,8 @@ pkgs.dockerTools.buildLayeredImage {
   tag = null;
 
   contents = [
-    gateway
+    gatewayWithMatrix
     proxySetup
-    runtimePlugins
   ]
   ++ tools;
   maxLayers = 100;
@@ -145,7 +170,7 @@ pkgs.dockerTools.buildLayeredImage {
       "--"
     ];
     Cmd = [
-      "${gateway}/bin/openclaw"
+      "${gatewayWithMatrix}/bin/openclaw"
       "gateway"
     ];
   };
