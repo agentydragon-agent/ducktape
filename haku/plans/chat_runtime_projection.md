@@ -845,7 +845,8 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
   to tolerate it. `ClaudeCli` now takes its `FrameSink` as a required argument, so
   `SentPrompt.frame_seq` and `ReceivedFrame.frame_seq` are `int` and the placeholder is deleted.
   A numbered frame at the console's boundary is what makes the requirement expressible at all, and
-  it is the prerequisite `_projected`'s docstring named for threading a `ProjectionState` through
+  it is the prerequisite `frame_projection.projected`'s docstring named for threading a
+  `ProjectionState` through
   the turn loop.
 
   **Who assigns the number is settled, and it is the runner** (operator, 2026-08-16). § 2b holds
@@ -894,6 +895,17 @@ pure function of a frame sequence, then:
 
 Stage 5's outbox already relies on the fold being single-writer per session (see the closing note);
 reprojection is the other half of that bargain and wants writing at the same time.
+
+**Built, as `x/reprojection.py` and the `reprojection_bin` tool over it** — with three things the
+paragraph above did not anticipate. It must fold **as the write path configures the fold**, per
+frame and under `STREAM_EVENTS`, because `project_log` over a whole session is a different event
+sequence and a checker driving it reports drift everywhere; that is why the fold is now
+`x/frame_projection.py` rather than the turn loop's private function. It must run **per turn and
+skip a turn with no rows at all**, because that is what a replica on the image before these rows
+existed leaves behind, and without the skip every live session reports drift for one
+`session_ttl_seconds` after the release. And it does **not** run in CI: what it needs is production
+rows, so it is an operator's tool and a standing check against the live database, exiting non-zero
+when a turn drifted.
 
 #### Pressure-tested against the two things that would break it
 

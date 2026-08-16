@@ -1,12 +1,22 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "frame_projection",
+    srcs = ["frame_projection.py"],
+    deps = [
+        ":conversation_events",
+        "//haku/console/x/claude_code:projection",
+    ],
+)
 
 py_library(
     name = "session_runtime",
     srcs = ["session_runtime.py"],
     deps = [
         ":conversation_events",
+        ":frame_projection",
         ":room_status",
         ":sandbox_claims",
         ":session_notifications",
@@ -17,7 +27,6 @@ py_library(
         "//haku/console:config",
         "//haku/console:operator_auth",
         "//haku/console/x/claude_code:frames",
-        "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
         "//haku/runtime/x/bridge:options",
         "//haku/runtime/x/bridge:protocol",
@@ -25,6 +34,65 @@ py_library(
         "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "reprojection",
+    srcs = ["reprojection.py"],
+    deps = [
+        ":frame_projection",
+        ":session_events",
+        ":setup_output",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "message_provenance",
+    srcs = ["message_provenance.py"],
+    deps = [
+        ":conversation_events",
+        ":frame_projection",
+        ":reprojection",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//haku/console/x/claude_code:frames",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "message_provenance_main",
+    srcs = ["message_provenance_main.py"],
+    deps = [
+        ":message_provenance",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "message_provenance_bin",
+    main_module = "haku.console.x.message_provenance_main",
+    deps = [":message_provenance_main"],
+)
+
+py_library(
+    name = "reprojection_main",
+    srcs = ["reprojection_main.py"],
+    deps = [
+        ":reprojection",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "reprojection_bin",
+    main_module = "haku.console.x.reprojection_main",
+    deps = [":reprojection_main"],
 )
 
 py_library(
@@ -208,6 +276,7 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_records",
+        ":frame_projection",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
@@ -221,6 +290,46 @@ py_test(
         "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_message_provenance",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_message_provenance.py"],
+    deps = [
+        ":conftest",
+        ":frame_projection",
+        ":message_provenance",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//more_itertools",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_reprojection",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_reprojection.py"],
+    deps = [
+        ":conftest",
+        ":frame_projection",
+        ":reprojection",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

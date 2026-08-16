@@ -270,12 +270,13 @@ used to be a separate question about.
 
 Four things to know before changing it:
 
-- **The turn loop still seeds a fresh state per frame** (`_projected` calls `project_log`), which
-  is also what the cursor currently rests on: the fold carries nothing across a frame boundary, so
-  the state at any cursor position is the empty one and a position is the whole of what resuming
-  needs. Threading one state across the turn — a two-line change that was tried and breaks two
-  things in the _loop_, both written up in `_projected`'s docstring — is what would make that
-  false, and `session_turns.first_frame_seq` is the answer waiting for it: re-project one turn.
+- **The turn loop still seeds a fresh state per frame** (`frame_projection.projected` calls
+  `project_log`), which is also what the cursor currently rests on: the fold carries nothing across
+  a frame boundary, so the state at any cursor position is the empty one and a position is the
+  whole of what resuming needs. Threading one state across the turn — a two-line change that was
+  tried and breaks two things in the _loop_, both written up in `projected`'s docstring — is what
+  would make that false, and `session_turns.first_frame_seq` is the answer waiting for it:
+  re-project one turn.
 - **`next_prompt` anchors the cursor** at the frame before the turn it opens, in that same
   transaction. That is what lets adoption tell a position inside this turn from one left behind by
   a writer that does not advance it — a replica on the previous image, for the length of a roll —
@@ -302,6 +303,55 @@ meaning anything:
 
 Before changing the adapter, read <../debug/frame_shape_census.md>: every rule in it is a measured
 fact rather than a reading of `protocol.md`, so what looks like belt and braces mostly is not.
+
+### The drift check — `reprojection.py`, and the tool over it
+
+Determinism only pays if somebody checks it, and `reprojection.py` is that check: it re-projects a
+recorded session's frames and aligns the result against `session_events`, reporting every place the
+two disagree. `bb run //haku/console/x:reprojection_bin -- --session <uuid>` (or `--limit N` for
+the newest sessions that ran a turn) is the operator's way in, and it exits non-zero when anything
+drifted.
+
+- **It folds through `frame_projection.projected`**, which is why that function is not the turn
+  loop's private one. A checker driving `project_log` over a whole session instead would merge the
+  frames sharing one `message.id` and cut its deltas from completed blocks — a different, equally
+  correct, event sequence, and it would report drift everywhere.
+- **It aligns by frame.** One frame's rows are written in one transaction and each event's range is
+  `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. A row on the `authored` arm has
+  no frame to align by and is reported rather than matched by position.
+- **Two eras bound what it may speak about**, both per turn and both said out loud in the output: a
+  turn whose frames the cursor never reached (#4178's era) and a turn with frames and no rows at
+  all — which is what a replica on the image before these rows existed leaves, and is
+  indistinguishable from a projection that has stopped producing.
+
+The tombstone on the second of those is on the skip itself: once no session that can still acquire
+a frame predates the release that writes `session_events`, a turn with frames and no rows is drift
+and must be reported as one.
+
+### The provenance backfill — `message_provenance.py`
+
+The same fold, writing instead of comparing. `session_messages.source_{first,last}_frame_seq` is how
+a message finds its tool calls, migration `0045` filled it only where the row's `agent_message_id`
+named an `assistant` frame, and the rows with no agent id have nothing left to join by. So the
+frames are re-projected into the message rows the write path _would have written_ — where each
+opened, where it closed, what it says — and a stored row is matched to one of those by the prose
+both carry. `bb run //haku/console/x:message_provenance_bin -- --limit N` reports; `--apply` writes.
+
+- **Ambiguity is arithmetic, not preference.** The unpointed rows carrying a text and the unclaimed
+  candidates carrying it are paired in order only when there are equally many; a candidate a pointed
+  row already claims is not available at all. Anything else records a `MessageUnpointable` on the
+  row rather than choosing. Identical prose is ordinary — a turn's `result` repeats its last
+  message — so a rule that picked one would be wrong routinely and silently.
+- **A row that cannot be pointed says so, in a column.** `unpointable_reason` is what separates "no
+  range because nobody looked" from "no range because looking failed", which is the distinction
+  `0046`'s docstring says the two frame columns cannot make on their own. It is also what makes
+  the backfill's own completeness a query rather than a re-derivation, and what keeps a second run
+  from re-examining rows already found unrecoverable.
+- **It is not in the migration.** `0053` adds the column and writes no rows: startup applies
+  migrations before serving under `maxUnavailable: 0`, so a fold over the frame log inside
+  `upgrade()` would hold every replacement replica out of Ready for its duration.
+- **A session with a turn still running is left alone**, since those rows are the runtime's to
+  point and it is still projecting frames into them.
 
 ## Matrix chat surface — `channels/matrix/`
 
