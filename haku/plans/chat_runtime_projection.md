@@ -278,6 +278,33 @@ so a `CHECK` can require the range (2026-08-16). Neither, yet — take the middl
 - **`ADD CONSTRAINT … CHECK (…) NOT VALID`** when provenance lands. New and updated rows must carry a
   range; existing rows are tolerated and unchecked. That stops the problem growing, which is the part
   that matters, and `VALIDATE CONSTRAINT` promotes it later without rewriting the table.
+
+  **Restated, having been attempted (#4143).** #4105 shipped only the ordering half — that
+  `first <= last` when both are present — so a row with no range at all stayed writable. Closing
+  that against `session_messages` turns out not to be possible, and the reason is the same union
+  three paragraphs above: **NULL in those two columns means three different things and a `CHECK`
+  sees one.** A row predating #4105; the operator's prompt, written before the frame it goes out as
+  exists and never pointed at all if no turn claims it; and a projection whose frame carried no
+  sequence, since `ReceivedFrame.frame_seq` is `int | None` — a `ClaudeCli` with no rollout sink
+  numbers nothing. The first two are the `authored` arm, the third is `frame_range`-but-unrecorded,
+  and requiring the range refuses all three alike. A discriminator column would separate them, but
+  it would be dead on arrival: `session_messages` has no `authored` writer today (the operator's
+  prompt does acquire a frame), so the column would carry `frames` ⟺ `first IS NOT NULL` and
+  nothing else — the range restated.
+
+  **So the requirement moves to the neutral events**, where the union is a real discriminator
+  rather than a NULL, and it should land with the table that stores them rather than being
+  retrofitted here. What `0046` does ship is the part that is unconditional: **a far end with no
+  near end** — neither a range nor the absence of one — which every writer already satisfies, so it
+  is roll-safe under `maxUnavailable: 0`.
+
+  **The `int | None` is the seam, and it is worth closing on its own.** The console's only client
+  is built with a `RolloutRecorder` unconditionally (one construction site, no branch), so an
+  unnumbered frame is not a state production reaches — but nothing says so in a type, #4134's
+  adapter fabricates a placeholder sequence to work around it, and a would-be constraint has to
+  tolerate it. A numbered-frame type at the console's boundary is what makes the requirement
+  expressible at all.
+
 - **Backfill falls out of the reprojection tool** rather than being its own archaeology: project a
   session's frames, align the derived sequence against the stored rows, and write the range where the
   alignment is unambiguous. Where it is not, that is a finding about the projection rather than a gap
