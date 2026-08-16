@@ -1,5 +1,5 @@
-# Independent reconciler for Console-approved temporary Kubernetes access. It uses the Console
-# image only as a reviewed code artifact; it does not serve Console HTTP and has a different SA.
+# Independent reconciler for Console-approved temporary Kubernetes access. It uses a dedicated
+# worker binary and image, never the Console API executable in a different runtime mode.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,11 +31,9 @@ spec:
         fsGroup: 1000
       containers:
         - name: worker
-          image: ghcr.io/agentydragon/haku-console:devel-20260816000037-e129df7 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-kube-jit:devel-20260816000037-e129df7 # {"$imagepolicy": "flux-system:haku-kube-jit"}
           imagePullPolicy: Always
           env:
-            - name: HAKU_CONSOLE_MODE
-              value: kube-jit-worker
             - name: HAKU_KUBE_JIT_NAMESPACES
               value: haku-sandbox,haku-claude-sandbox
             - name: HAKU_KUBE_JIT_MAX_DURATION_SECONDS

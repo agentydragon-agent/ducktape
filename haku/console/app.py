@@ -652,14 +652,6 @@ def create_app(
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    # Same signed image, separate deployment and ServiceAccount. This selector exists only for
-    # the narrowly scoped RBAC worker; it must not make the Console API process acquire worker
-    # privileges or tie worker availability to the API's crash/restart lifecycle.
-    if os.environ.get("HAKU_CONSOLE_MODE") == "kube-jit-worker":
-        from haku.console.kube_jit_worker import main as worker_main
-
-        worker_main()
-        return
     settings = Settings()
     loaded_static_agents = load_static_agents(settings)
     # Apply DB migrations once before serving — the console owns its schema at startup, decoupled from

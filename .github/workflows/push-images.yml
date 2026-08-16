@@ -122,6 +122,7 @@ jobs:
             }
           - { image: "//grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//grocy_mcp/..." }
           - { image: "//haku/console:server_image", image_name: haku-console, test_target: "//haku/console/..." }
+          - { image: "//haku/console:kube_jit_worker_image", image_name: haku-kube-jit, test_target: "//haku/console/..." }
           - { image: "//haku/console:static_image", image_name: haku-console-static, test_target: "//haku/console/..." }
           - {
               image: "//finance/plaid/link:server_image",

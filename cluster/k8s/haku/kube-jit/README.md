@@ -1,8 +1,9 @@
 # Haku temporary Kubernetes access worker
 
-`haku-kube-jit` is a separate deployment from `haku-console` on purpose. The Console is the
-approval/audit and durable-lease authority; this worker is the native-RBAC enforcement projection.
-A Console API crashloop must not prevent expiry/revocation reconciliation.
+`haku-kube-jit` is a separate binary, image, and deployment from `haku-console` on purpose. The
+Console is the approval/audit and durable-lease authority; this worker is the native-RBAC
+enforcement projection. A Console API crashloop must not prevent expiry/revocation reconciliation,
+and the API executable has no alternate worker mode.
 
 Each approved lease records the exact canonical `PolicyRule[]`, not a predefined role name. The
 worker creates a lease-named, labelled `Role` and a `RoleBinding` from that Role to the fixed Haku

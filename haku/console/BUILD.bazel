@@ -954,8 +954,6 @@ py_library(
         ":deployment",
         ":in_process_servers",
         ":kube_jit",
-        ":kube_jit_kubernetes",
-        ":kube_jit_worker",
         ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",
@@ -1024,6 +1022,15 @@ py_binary(
     name = "server",
     main_module = "haku.console.app",
     deps = [":app"],
+)
+
+# This must remain a distinct executable from :server. The temporary-RBAC worker has a separate
+# image, Deployment, and ServiceAccount so its `bind`/`escalate` authority cannot be reached by
+# selecting an alternate mode in the Console API binary.
+py_binary(
+    name = "kube_jit_worker_bin",
+    main_module = "haku.console.kube_jit_worker",
+    deps = [":kube_jit_worker"],
 )
 
 py_library(
@@ -1332,6 +1339,13 @@ py_image_layer(
     owner = "1000",
 )
 
+py_image_layer(
+    name = "kube_jit_worker_layers",
+    binary = ":kube_jit_worker_bin",
+    group = "1000",
+    owner = "1000",
+)
+
 pkg_files(
     name = "web_files",
     srcs = ["//haku/console/frontend:bundle"],
@@ -1388,6 +1402,29 @@ oci_load(
     name = "server_load",
     image = ":server_image",
     repo_tags = ["haku-console:latest"],
+)
+
+oci_image(
+    name = "kube_jit_worker_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("kube_jit_worker_bin"),
+    env = py_image_env(binary_name = "kube_jit_worker_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-kube-jit",
+    },
+    tars = [
+        ":kube_jit_worker_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "kube_jit_worker_load",
+    image = ":kube_jit_worker_image",
+    repo_tags = ["haku-kube-jit:latest"],
 )
 
 oci_image(
