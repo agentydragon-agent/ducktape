@@ -13,13 +13,13 @@ code did:
 - `works.allegedly.haku` really does survive a round trip through the homeserver, including
   the copy that rides inside `m.new_content`.
 
-The room's other side is driven through the client-server API directly (`Account`), never
-through `MatrixClient` — a test that checks the client against itself checks nothing.
+The room's other side is driven through the operator-side API (`testing/operator_room.py`), a
+second nio client that shares no code with `MatrixClient` — a test that checks the client against
+itself checks nothing.
 """
 
 from __future__ import annotations
 
-import time
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from secrets import token_hex
@@ -27,18 +27,17 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from nio import AsyncClient, DevicesResponse
 
 from haku.console.x.matrix_client import HAKU_CONTENT_KEY, TIMELINE_LIMIT, EventTag, Invite, MatrixClient, RoomEventKind
-from haku.console.x.testing.synapse_container import Account, Synapse, run_synapse
+from haku.console.x.testing.operator_room import Message, MessageKind, OperatorRoom, Redacted, sign_in
+from haku.console.x.testing.synapse_container import Synapse, run_synapse
 
 PASSWORD = "not-a-secret"
 
 # What the console pins in production, and the point of pinning it: every login lands on one
 # device, which is what Synapse keys its transaction cache on.
 DEVICE_ID = "haku-console"
-
-# How long an ephemeral event may take to reach the other side of the room.
-_TYPING_BUDGET = 10.0
 
 
 @dataclass(frozen=True)
@@ -57,13 +56,15 @@ def synapse() -> Iterator[Synapse]:
 
 
 @pytest.fixture
-def operator(synapse: Synapse) -> Iterator[Account]:
+def operator_user_id(synapse: Synapse) -> str:
     """A fresh operator per test — the homeserver is shared, so nothing else may be."""
-    account = synapse.sign_in(synapse.create_user(f"operator{token_hex(6)}", PASSWORD), PASSWORD)
-    try:
-        yield account
-    finally:
-        account.close()
+    return synapse.create_user(f"operator{token_hex(6)}", PASSWORD)
+
+
+@pytest.fixture
+async def operator(synapse: Synapse, operator_user_id: str) -> AsyncIterator[AsyncClient]:
+    async with sign_in(synapse.base_url, operator_user_id, PASSWORD) as client:
+        yield client
 
 
 @pytest.fixture
@@ -77,32 +78,11 @@ async def bot(synapse: Synapse) -> AsyncIterator[Bot]:
 
 
 @pytest.fixture
-async def joined_room(bot: Bot, operator: Account) -> str:
+async def joined_room(bot: Bot, operator: AsyncClient) -> OperatorRoom:
     """A room the operator invited Haku into and Haku is in (R3.6)."""
-    room_id = operator.create_room(invite=bot.user_id)
-    await bot.client.join(bot.token, room_id)
-    return room_id
-
-
-def _settled_typing(operator: Account, room_id: str, since: str, expected: list[str]) -> str:
-    """Sync until the room's typing list is *expected*, returning the position reached.
-
-    Typing is ephemeral: it arrives on a `/sync` and is in no timeline, so the only way to see it
-    is to be syncing when it happens.
-    """
-    deadline = time.monotonic() + _TYPING_BUDGET
-    seen: list[list[str]] = []
-    while time.monotonic() < deadline:
-        batch = operator.sync(since=since, timeout_ms=1000)
-        since = batch["next_batch"]
-        room = batch.get("rooms", {}).get("join", {}).get(room_id, {})
-        for event in room.get("ephemeral", {}).get("events", []):
-            if event["type"] != "m.typing":
-                continue
-            seen.append(event["content"]["user_ids"])
-            if seen[-1] == expected:
-                return since
-    raise AssertionError(f"typing never settled on {expected}; saw {seen}")
+    room = await OperatorRoom.invite(operator, bot_user_id=bot.user_id)
+    await bot.client.join(bot.token, room.room_id)
+    return room
 
 
 async def test_login_lands_on_the_pinned_device_and_whoami_rejects_a_stale_token(bot: Bot, synapse: Synapse) -> None:
@@ -121,23 +101,28 @@ async def test_login_lands_on_the_pinned_device_and_whoami_rejects_a_stale_token
 
     # Read with the token the second login issued, so the count is of what the two logins left
     # behind and not of the reader as well.
-    reader = Account(synapse.base_url, bot.user_id, again)
+    reader = AsyncClient(synapse.base_url, bot.user_id)
+    reader.access_token = again
     try:
-        assert [device["device_id"] for device in reader.devices()] == [DEVICE_ID]
+        devices = await reader.devices()
+        assert isinstance(devices, DevicesResponse)
+        assert [device.id for device in devices.devices] == [DEVICE_ID]
     finally:
-        reader.close()
+        await reader.close()
 
 
-async def test_an_invite_from_the_operator_becomes_a_serviced_room(bot: Bot, operator: Account) -> None:
+async def test_an_invite_from_the_operator_becomes_a_serviced_room(
+    bot: Bot, operator: AsyncClient, operator_user_id: str
+) -> None:
     """R3.6 — the operator puts Haku in the room, and only then is Haku in it."""
-    room_id = operator.create_room(invite=bot.user_id)
+    room = await OperatorRoom.invite(operator, bot_user_id=bot.user_id)
 
     invited = await bot.client.sync(bot.token, since=None)
-    assert invited.invites == (Invite(room_id=room_id, inviter=operator.user_id),)
+    assert invited.invites == (Invite(room_id=room.room_id, inviter=operator_user_id),)
     assert invited.messages == (), "an invite is not a message, and a first sync replays no backlog (R1.7a)"
 
-    await bot.client.join(bot.token, room_id)
-    operator.send_text(room_id, "hello")
+    await bot.client.join(bot.token, room.room_id)
+    await room.say("hello")
 
     assert [message.body for message in (await bot.client.sync(bot.token, since=invited.next_batch)).messages] == [
         "hello"
@@ -145,7 +130,7 @@ async def test_an_invite_from_the_operator_becomes_a_serviced_room(bot: Bot, ope
 
 
 async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
-    bot: Bot, operator: Account, joined_room: str, caplog: pytest.LogCaptureFixture
+    bot: Bot, joined_room: OperatorRoom, caplog: pytest.LogCaptureFixture
 ) -> None:
     """R1.7 — no message is lost across console downtime, however long the gap.
 
@@ -161,7 +146,7 @@ async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
     watermark = (await bot.client.sync(bot.token, since=None)).next_batch
     missed = [f"message {index:03d}" for index in range(TIMELINE_LIMIT + 50)]
     for body in missed:
-        operator.send_text(joined_room, body)
+        await joined_room.say(body)
 
     with caplog.at_level("WARNING"):
         recovered = await bot.client.sync(bot.token, since=watermark)
@@ -170,13 +155,13 @@ async def test_a_gap_larger_than_the_timeline_limit_delivers_every_message_once(
     assert [message.body for message in recovered.messages] == missed
 
     # Exactly once: what the watermark has covered is not offered again.
-    operator.send_text(joined_room, "after the gap")
+    await joined_room.say("after the gap")
     resumed = await bot.client.sync(bot.token, since=recovered.next_batch)
     assert [message.body for message in resumed.messages] == ["after the gap"]
 
 
 async def test_an_unreadable_event_is_reported_and_the_report_cannot_become_one(
-    bot: Bot, operator: Account, joined_room: str
+    bot: Bot, operator_user_id: str, joined_room: OperatorRoom
 ) -> None:
     """R1.6 against the real thing, and the loop it would create if the guard were wrong.
 
@@ -190,43 +175,47 @@ async def test_an_unreadable_event_is_reported_and_the_report_cannot_become_one(
     and is reported, and both arrive in the same batch as the sentence next to them.
     """
     watermark = (await bot.client.sync(bot.token, since=None)).next_batch
-    image = operator.send(joined_room, {"msgtype": "m.image", "body": "screenshot.png", "url": "mxc://test/none"})
-    operator.send(joined_room, {"msgtype": "m.emote", "body": "waves"})
-    operator.send_text(joined_room, "look at this")
+    image = await joined_room.send({"msgtype": "m.image", "body": "screenshot.png", "url": "mxc://test/none"})
+    await joined_room.send({"msgtype": "m.emote", "body": "waves"})
+    await joined_room.say("look at this")
 
     seen = await bot.client.sync(bot.token, since=watermark)
 
     assert [message.body for message in seen.messages] == ["waves", "look at this"]
     assert [(event.event_id, event.msgtype, event.sender) for event in seen.unmappable] == [
-        (image, "m.image", operator.user_id)
+        (image, "m.image", operator_user_id)
     ]
 
     tag = EventTag(kind=RoomEventKind.UNREADABLE)
     await bot.client.send_notice(
-        bot.token, joined_room, "received 1 message(s) Haku cannot read", txn_id=tag.transaction_id(), tag=tag
+        bot.token, joined_room.room_id, "received 1 message(s) Haku cannot read", txn_id=tag.transaction_id(), tag=tag
     )
     echoed = await bot.client.sync(bot.token, since=seen.next_batch)
 
     assert (echoed.messages, echoed.unmappable) == ((), ())
 
 
-async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, operator: Account, joined_room: str) -> None:
+async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_room: OperatorRoom) -> None:
     """The `works.allegedly.haku` key rides in `content`, so the homeserver is what it survives."""
     tag = EventTag(kind=RoomEventKind.REPLY, session_id=uuid4(), message_id=uuid4(), agent_message_id="msg_01abc")
 
     event_id = await bot.client.send_text(
-        bot.token, joined_room, "**bold** answer", txn_id=tag.transaction_id(), tag=tag
+        bot.token, joined_room.room_id, "**bold** answer", txn_id=tag.transaction_id(), tag=tag
     )
 
-    content = operator.event(joined_room, event_id)["content"]
-    assert content["formatted_body"] == "<p><strong>bold</strong> answer</p>"
-    assert content["body"] == "**bold** answer", "the Markdown source stays the fallback (R11.7)"
-    # Read off the raw event, because nothing in the console reads a tag back any more: the
-    # readers this is for are in the room (`EventTag`).
-    assert content[HAKU_CONTENT_KEY] == tag.content()
+    assert await joined_room.event(event_id) == Message(
+        event_id=event_id,
+        sender=bot.user_id,
+        kind=MessageKind.TEXT,
+        body="**bold** answer",  # the Markdown source stays the fallback (R11.7)
+        formatted_body="<p><strong>bold</strong> answer</p>",
+    )
+    # Off the raw content, because nothing in the console reads a tag back any more and a person
+    # in the room does not see one: the readers this is for are in the room (`EventTag`).
+    assert (await joined_room.content_of(event_id))[HAKU_CONTENT_KEY] == tag.content()
 
 
-async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, operator: Account, joined_room: str) -> None:
+async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
     """<../docs/chat_runtime_facts.md> — Synapse deduplicates a transaction per device.
 
     `EventTag.transaction_id` derives a reply's transaction from the transcript row it is, so a
@@ -235,35 +224,33 @@ async def test_the_same_transcript_row_cannot_post_twice(bot: Bot, operator: Acc
     """
     tag = EventTag(kind=RoomEventKind.REPLY, message_id=uuid4())
 
-    first = await bot.client.send_text(bot.token, joined_room, "the answer", txn_id=tag.transaction_id(), tag=tag)
-    again = await bot.client.send_text(bot.token, joined_room, "the answer", txn_id=tag.transaction_id(), tag=tag)
+    room = joined_room.room_id
+    first = await bot.client.send_text(bot.token, room, "the answer", txn_id=tag.transaction_id(), tag=tag)
+    again = await bot.client.send_text(bot.token, room, "the answer", txn_id=tag.transaction_id(), tag=tag)
 
     assert first == again
-    assert [event["event_id"] for event in operator.messages(joined_room) if event["type"] == "m.room.message"] == [
-        first
-    ]
+    assert [event.event_id for event in await joined_room.timeline() if isinstance(event, Message)] == [first]
 
 
-async def test_an_edit_replaces_the_status_line_rather_than_adding_one(
-    bot: Bot, operator: Account, joined_room: str
-) -> None:
+async def test_an_edit_replaces_the_status_line_rather_than_adding_one(bot: Bot, joined_room: OperatorRoom) -> None:
     """R6.5 — one status line per turn, which is an `m.replace` and not a second notice."""
+    room = joined_room.room_id
     tag = EventTag(kind=RoomEventKind.STATUS, session_id=uuid4())
-    event_id = await bot.client.send_notice(bot.token, joined_room, "thinking", txn_id=tag.transaction_id(), tag=tag)
+    event_id = await bot.client.send_notice(bot.token, room, "thinking", txn_id=tag.transaction_id(), tag=tag)
 
-    await bot.client.edit_notice(bot.token, joined_room, event_id, "running Bash", txn_id=tag.transaction_id(), tag=tag)
+    await bot.client.edit_notice(bot.token, room, event_id, "running Bash", txn_id=tag.transaction_id(), tag=tag)
 
     # The homeserver's own index of what replaces what, rather than our reading of the timeline.
-    [edit] = operator.relations(joined_room, event_id, "m.replace")
-    assert edit["content"]["m.new_content"]["body"] == "running Bash"
-    assert edit["content"]["body"] == "* running Bash", "the fallback body is what a client that ignores edits shows"
-    assert edit["content"]["m.new_content"][HAKU_CONTENT_KEY] == tag.content(), (
+    [edit] = await joined_room.edits_of(event_id)
+    assert (edit.replaces, edit.new_body) == (event_id, "running Bash")
+    assert edit.body == "* running Bash", "the fallback body is what a client that ignores edits shows"
+    assert edit.content["m.new_content"][HAKU_CONTENT_KEY] == tag.content(), (
         "the tag rides on the half a client re-renders"
     )
-    assert edit["content"][HAKU_CONTENT_KEY] == tag.content()
+    assert edit.content[HAKU_CONTENT_KEY] == tag.content()
 
 
-async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, operator: Account, joined_room: str) -> None:
+async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, joined_room: OperatorRoom) -> None:
     """R6.5 — a retired status line leaves nothing behind, and leaves it nowhere the room reads.
 
     It does still leave something in the console's transcript, which is where a re-awakened
@@ -271,25 +258,22 @@ async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, operator: Accoun
     knows and our record does not. Harmless for what redaction is used for here, since a status
     line was never recorded in the first place.
     """
+    room = joined_room.room_id
     tag = EventTag(kind=RoomEventKind.REPLY, message_id=uuid4())
-    event_id = await bot.client.send_text(bot.token, joined_room, "spent", txn_id=tag.transaction_id(), tag=tag)
+    event_id = await bot.client.send_text(bot.token, room, "spent", txn_id=tag.transaction_id(), tag=tag)
 
-    await bot.client.redact(bot.token, joined_room, event_id, reason="turn finished")
+    await bot.client.redact(bot.token, room, event_id, reason="turn finished")
 
-    redacted = operator.event(joined_room, event_id)
-    assert redacted["content"] == {}
-    assert redacted["unsigned"]["redacted_because"]["content"]["reason"] == "turn finished"
+    assert await joined_room.event(event_id) == Redacted(event_id=event_id, sender=bot.user_id, reason="turn finished")
 
 
-async def test_the_typing_notice_starts_and_stops(bot: Bot, operator: Account, joined_room: str) -> None:
+async def test_the_typing_notice_starts_and_stops(bot: Bot, joined_room: OperatorRoom) -> None:
     """R6.1 — the room shows Haku thinking, and stops showing it when Haku stops."""
-    since = operator.sync()["next_batch"]
+    await bot.client.set_typing(bot.token, joined_room.room_id, active=True)
+    await joined_room.wait_for_typing([bot.user_id])
 
-    await bot.client.set_typing(bot.token, joined_room, active=True)
-    since = _settled_typing(operator, joined_room, since, [bot.user_id])
-
-    await bot.client.set_typing(bot.token, joined_room, active=False)
-    _settled_typing(operator, joined_room, since, [])
+    await bot.client.set_typing(bot.token, joined_room.room_id, active=False)
+    await joined_room.wait_for_typing([])
 
 
 if __name__ == "__main__":
