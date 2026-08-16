@@ -15,6 +15,18 @@ package(default_visibility = ["//haku/console:__subpackages__"])
 # hooks, so its absence changes nothing else.
 
 py_library(
+    name = "kube_jit",
+    srcs = ["kube_jit.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:kube_jit",
+        "//haku/console:tool_execution_context",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "gmail_client",
     srcs = ["gmail_client.py"],
     deps = [

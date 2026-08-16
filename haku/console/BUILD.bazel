@@ -56,6 +56,7 @@ py_library(
     srcs = ["mcp_config.py"],
     deps = [
         ":config",
+        ":kube_jit",
         ":provider_connection_registry",
         "//haku/console/agents:naming",
         "//mcp_infra:prefix",
@@ -107,6 +108,7 @@ py_library(
         "//haku/console/tools:hostexec",
         "//haku/console/tools:hostexec_client",
         "//haku/console/tools:hostexec_token",
+        "//haku/console/tools:kube_jit",
         "//haku/console/tools:routine",
         "//haku/console/tools:state_index",
     ],
@@ -136,6 +138,7 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":chat_models",
+        ":kube_jit_models",
         ":node_daemon_models",
         ":operator_identity",
         ":provider_connection_registry",
@@ -545,6 +548,11 @@ py_library(
 )
 
 py_library(
+    name = "tool_execution_context",
+    srcs = ["tool_execution_context.py"],
+)
+
+py_library(
     name = "tool_call_service",
     srcs = ["tool_call_service.py"],
     deps = [
@@ -553,6 +561,7 @@ py_library(
         ":mcp_config",
         ":provider_connection_registry",
         ":tool_call_actor",
+        ":tool_execution_context",
         "//haku/console/tools:gmail",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
@@ -891,6 +900,43 @@ py_test(
 )
 
 py_library(
+    name = "kube_jit_models",
+    srcs = ["kube_jit_models.py"],
+)
+
+py_library(
+    name = "kube_jit",
+    srcs = ["kube_jit.py"],
+    deps = [
+        ":database_schema",
+        ":kube_jit_models",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "kube_jit_kubernetes",
+    srcs = ["kube_jit_kubernetes.py"],
+    deps = [
+        ":kube_jit",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_kube_jit",
+    srcs = ["test_kube_jit.py"],
+    deps = [
+        ":kube_jit",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
@@ -902,6 +948,8 @@ py_library(
         ":database_migrate",
         ":deployment",
         ":in_process_servers",
+        ":kube_jit",
+        ":kube_jit_kubernetes",
         ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_config",
@@ -926,6 +974,7 @@ py_library(
         "//haku/console/agents:enrollment_routes",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
+        "//haku/console/tools:kube_jit",
         "//haku/console/tools:routine",
         "//haku/console/x:claude_chat",
         "//haku/console/x:matrix_outbox",

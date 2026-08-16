@@ -32,6 +32,8 @@ from haku.console import (
     capabilities,
     connection_metrics,
     console_events,
+    kube_jit,
+    kube_jit_kubernetes,
     mcp_agent_auth,
     mcp_approval,
     mcp_mount,
@@ -71,7 +73,7 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.state_index_reader import PostgresIndexSearcher
 from haku.console.state_index_sync import StateIndexMaintenance
-from haku.console.tools import gmail as gmail_tools, routine as routine_tools
+from haku.console.tools import gmail as gmail_tools, kube_jit as kube_jit_tools, routine as routine_tools
 from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import claude_chat, matrix_outbox, matrix_session, matrix_sync, sandbox_claims
 from haku.console.x.session_notifications import SessionNotifications
@@ -167,6 +169,17 @@ def create_app(
     database_url = settings.database_url.get_secret_value()
     db_engine = create_async_engine(database_url, pool_pre_ping=True)
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
+    # The Console database is the JIT lease authority.  This worker is the separate,
+    # narrowly-RBAC'd enforcement projection; Haku itself never receives its Kubernetes token.
+    jit_reconciler = (
+        kube_jit.LeaseReconciler(
+            config=console_config.kube_jit,
+            grants=kube_jit.PostgresGrantStore(db_sessions),
+            role_bindings=kube_jit_kubernetes.KubernetesRoleBindings(),
+        )
+        if console_config.kube_jit is not None
+        else None
+    )
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
     oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
@@ -411,6 +424,13 @@ def create_app(
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
                 rollout=session_store if claude_runtime is not None else None,
+                kube_jit=(
+                    kube_jit_tools.KubeJitGrantService(
+                        config=console_config.kube_jit, grants=kube_jit.PostgresGrantStore(db_sessions)
+                    )
+                    if console_config.kube_jit is not None
+                    else None
+                ),
             )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
@@ -479,7 +499,15 @@ def create_app(
         # from wedging ingress, which must keep enqueueing with no sandbox up (R1.4).
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), matrix_running, supervising, indexing:
+        jit_running = jit_reconciler.run() if jit_reconciler is not None else contextlib.nullcontext()
+        async with (
+            agent_authority.expiry_maintenance(),
+            oauth_maintenance.run(),
+            matrix_running,
+            supervising,
+            indexing,
+            jit_running,
+        ):
             await console_event_hub.start()
             await session_notifications.start()
             try:

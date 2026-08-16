@@ -217,6 +217,7 @@ resources:
   - haku/claude-namespace/flux-kustomization.yaml # Console-owned Claude runners; isolated from Haku's general sandbox authority
   - haku/console-namespace/flux-kustomization.yaml # the console's own trusted namespace
   - haku/console/db/flux-kustomization.yaml # CNPG approval ledger for console-approved tool calls
+  - haku/kube-jit/flux-kustomization.yaml # narrowly scoped Console temporary-RoleBinding reconciler RBAC
   - haku/console/flux-kustomization.yaml
   - haku/console/servicemonitor/flux-kustomization.yaml
   - haku/mailbox-namespace/flux-kustomization.yaml # the mailbox's own trusted namespace

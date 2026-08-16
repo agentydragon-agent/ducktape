@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import ClaudeRuntimeConfig, HostexecConfig, NodeDaemonsConfig, Settings
+from haku.console.kube_jit import KubeJitConfig
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -286,6 +287,9 @@ class ConsoleConfigFile(BaseModel):
     # Authentik token is persisted (nothing would read it).
     hostexec: HostexecConfig | None = None
     node_daemons: NodeDaemonsConfig | None = None
+    # Console-authoritative, phase-one temporary namespace RBAC leases.  This is deploy-time
+    # policy (not an Agent-controlled payload); absent means no JIT Kubernetes surface exists.
+    kube_jit: KubeJitConfig | None = None
 
     @property
     def default_agent_auto_approval_policy(self) -> AutoApprovalPolicyId:

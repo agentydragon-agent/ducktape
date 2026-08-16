@@ -42,6 +42,7 @@ from haku.console.chat_models import (
     SessionStatus,
     TurnOutcome,
 )
+from haku.console.kube_jit_models import KubernetesAccessGrantState
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -1343,3 +1344,35 @@ class MatrixHeldBatch(Base):
     message_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("session_messages.message_id", ondelete="CASCADE"), nullable=False
     )
+class KubernetesAccessGrant(Base):
+    """Console-authoritative lease for one temporary namespace RoleBinding.
+
+    The grant has an audit link to the approval-gated MCP call that requested it.  The
+    reconciler alone projects this record to Kubernetes; no Kubernetes object is used as
+    the source of truth for a grant.
+    """
+
+    __tablename__ = "kubernetes_access_grants"
+    __table_args__ = (
+        Index("idx_kubernetes_access_grants_active", "state", "expires_at"),
+        Index("idx_kubernetes_access_grants_tool_call", "tool_call_id"),
+    )
+
+    lease_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    tool_call_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
+    )
+    operator_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="RESTRICT"), nullable=False
+    )
+    requester: Mapped[str] = mapped_column(Text, nullable=False)
+    profile_id: Mapped[str] = mapped_column(Text, nullable=False)
+    profile_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    namespace: Mapped[str] = mapped_column(Text, nullable=False)
+    cluster_role: Mapped[str] = mapped_column(Text, nullable=False)
+    issued_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[KubernetesAccessGrantState] = mapped_column(
+        StrEnumColumn(KubernetesAccessGrantState, name="kubernetes_access_grant_state"), nullable=False
+    )
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

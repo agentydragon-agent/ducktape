@@ -1,0 +1,20 @@
+# A deliberately narrow phase-one profile. Although it is a ClusterRole so the reviewed profile
+# can be bound in two explicit namespaces, a RoleBinding never grants cluster-scoped access.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: haku-jit-readonly
+  labels:
+    app.kubernetes.io/part-of: haku-kube-jit
+  annotations:
+    description: "Temporary Console-approved read access only; bind exclusively through namespaced haku-jit RoleBindings."
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps", "events", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]

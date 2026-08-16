@@ -366,6 +366,13 @@ mcp:
         kind: in_process
         credential:
           kind: none
+    # Console-owned temporary namespace RBAC. The MCP tools only write/revoke durable
+    # approval-backed leases; the independent reconciler is the sole Kubernetes writer.
+    - id: kube-jit
+      backend:
+        kind: in_process
+        credential:
+          kind: none
     # `haku_index` (haku/console/tools/state_index.py): semantic search over haku-state's files
     # and Haku's own past conversations. Listing it here is what builds the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
@@ -422,3 +429,15 @@ node_daemons:
       display_name: rugged
       token_env_var: HAKU_CONSOLE_NODE_DAEMON_RUGGED_TOKEN
       backends: [hostexec]
+
+# Phase one intentionally exposes one harmless, reviewed profile. Profiles are content-hashed
+# and copied into every lease; changing this policy makes old projections drift and fail closed.
+kube_jit:
+  confirmation_window_seconds: 300
+  reconcile_interval_seconds: 30
+  profiles:
+    - id: readonly
+      description: "Temporary read-only diagnostics in Haku sandbox namespaces."
+      cluster_role: haku-jit-readonly
+      namespaces: [haku-sandbox, haku-claude-sandbox]
+      max_duration_seconds: 3600

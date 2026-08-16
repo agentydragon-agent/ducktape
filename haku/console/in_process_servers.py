@@ -14,6 +14,7 @@ import haku.console.tools.conversations as conversations_tools
 import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.hostexec as hostexec_tools
+import haku.console.tools.kube_jit as kube_jit_tools
 import haku.console.tools.routine as routine_tools
 import haku.console.tools.state_index as state_index_tools
 from haku.console.config import HostexecConfig
@@ -55,6 +56,7 @@ class InProcessServerDependencies:
     # The semantic index over haku-state's files and past conversations — set only when
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: state_index_tools.IndexSearcher | None = None
+    kube_jit: kube_jit_tools.KubeJitGrantService | None = None
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
@@ -83,6 +85,10 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
     if dependencies.index is not None:
         servers[state_index_tools.HAKU_INDEX_SERVER_ID] = const_in_process_server(
             state_index_tools.build_mcp(dependencies.index)
+        )
+    if dependencies.kube_jit is not None:
+        servers[kube_jit_tools.KUBE_JIT_SERVER_ID] = const_in_process_server(
+            kube_jit_tools.build_mcp(dependencies.kube_jit)
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}
