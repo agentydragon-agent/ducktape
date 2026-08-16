@@ -7,6 +7,12 @@
 name: OpenClaw Image
 
 on:
+  pull_request:
+    paths:
+      - "openclaw/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/openclaw-image.yml"
   push:
     branches: [devel]
     paths:
@@ -63,6 +69,20 @@ jobs:
       - name: Build image
         run: nix build .#openclaw-image --print-build-logs
 
+      - name: Smoke test public-coder hook runtime
+        run: |
+          loaded="$(docker load -i "$(readlink -f result)")"
+          printf '%s\n' "$loaded"
+          image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
+          test -n "$image"
+          docker run --rm --entrypoint /bin/sh "$image" -ceu '
+            /usr/bin/env bash -c "true"
+            pre-commit --version
+            for command in bazelisk buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
+              command -v "$command"
+            done
+          '
+
       - name: Compute tag
         id: meta
         run: |
@@ -70,6 +90,7 @@ jobs:
           echo "pin_tag=${GITHUB_REF_NAME}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Push to GHCR
+        if: github.event_name == 'push'
         run: |
           ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
           echo "${{ github.token }}" | skopeo login ghcr.io \
