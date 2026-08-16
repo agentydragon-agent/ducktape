@@ -10,6 +10,7 @@ external-series bundle reference, and tax profiles per agent.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -21,6 +22,7 @@ from pydantic import (
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
+    field_validator,
     model_validator,
 )
 
@@ -29,7 +31,7 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
 from finance.augur.sim.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import usd_to_cents, validate_currency_quantum
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
@@ -41,6 +43,33 @@ class FilingStatus(StrEnum):
     callsite rather than a string typo silently falling through to a missing-key error."""
 
     SINGLE = "single"
+
+
+class Currency(BaseModel):
+    """One scenario's money unit.
+
+    ``quantum`` is deliberately an exact decimal rather than an ISO exponent:
+    it describes the smallest monetary amount this scenario represents.  The
+    current default preserves USD-cent scenarios while allowing a zero-decimal
+    currency, or another deliberately declared quantum, without hard-coding
+    USD into the simulation contract.
+    """
+
+    code: str = "USD"
+    quantum: Decimal = Decimal("0.01")
+
+    @field_validator("code")
+    @classmethod
+    def _validate_code(cls, code: str) -> str:
+        normalized = code.strip().upper()
+        if not normalized:
+            raise ValueError("currency code must not be empty")
+        return normalized
+
+    @field_validator("quantum", mode="before")
+    @classmethod
+    def _validate_quantum(cls, quantum: object) -> Decimal:
+        return validate_currency_quantum(quantum)
 
 
 class Agent(BaseModel):
@@ -1033,6 +1062,7 @@ class Scenario(BaseModel):
     scheduled and recurring transfers, plus tax lots and asset
     sales."""
 
+    currency: Currency = Field(default_factory=Currency)
     agents: list[Agent]
     initial_cash: list[InitialAccountBalance]
     initial_lots: list[InitialLot] = Field(default_factory=list)

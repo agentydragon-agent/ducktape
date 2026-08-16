@@ -110,6 +110,7 @@ py_test(
         ":fixed_point",
         "//finance/augur/product:asset_key",
         "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

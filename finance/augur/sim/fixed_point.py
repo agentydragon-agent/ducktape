@@ -1,14 +1,21 @@
-"""Fixed-point helpers for Augur's engine-internal accounting.
+"""Exact money and fixed-point helpers for Augur.
 
-Public scenario/config/product surfaces still speak in dollars and units as
-floats. The dense engine uses integer quanta so cash/accounting paths do not
-depend on binary floating-point exactness.
+The simulator's money contract is a currency-specific integer quantum count.
+``Decimal`` is used only at an explicitly declared boundary: parsing an exact
+human/API decimal or quantizing a model-owned sampled price path before that
+path enters the simulator.  The JAX engine must receive and produce integer
+money values only.
+
+The legacy USD helpers remain temporarily while the scenario and product
+contracts are migrated.  New code must use the currency-generic helpers
+below; keeping the conversion policy here gives the migration one auditable
+definition rather than several subtly different ``round(value * 100)`` calls.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 import numpy as np
@@ -20,6 +27,98 @@ USD_CENTS = 100
 BTC_SATOSHIS = 100_000_000
 ETH_GWEI = 1_000_000_000
 DEFAULT_UNIT_QUANTA = 1_000_000
+
+
+def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
+    """Parse an exact external decimal without silently accepting a float.
+
+    Floats are deliberately rejected for scenario/API money inputs: converting
+    a binary float through ``str`` merely hides the lossy boundary.  Model
+    sampling has a separate, named quantization entrypoint below because it is
+    the one intended float-to-money boundary.
+    """
+
+    if isinstance(value, float):
+        raise TypeError(f"{field} must be an integer quantum count, Decimal, or decimal string; floats are not exact")
+    try:
+        decimal = value if isinstance(value, Decimal) else Decimal(value)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an exact decimal value") from exc
+    if not decimal.is_finite():
+        raise ValueError(f"{field} must be finite")
+    return decimal
+
+
+def validate_currency_quantum(value: Any) -> Decimal:
+    """Return a positive finite currency quantum from an exact value."""
+
+    quantum = _exact_decimal(value, field="currency quantum")
+    if quantum <= 0:
+        raise ValueError(f"currency quantum must be positive; got {quantum}")
+    return quantum
+
+
+def decimal_to_currency_quanta(value: Any, *, quantum: Any) -> np.int64:
+    """Convert an exact currency decimal to an integer count of ``quantum``.
+
+    Unlike the old USD helper, this is validation rather than rounding: a
+    scenario value that cannot be represented by its declared currency is a
+    malformed contract input, not a request to silently change the amount.
+    """
+
+    amount = _exact_decimal(value)
+    currency_quantum = validate_currency_quantum(quantum)
+    count = amount / currency_quantum
+    if count != count.to_integral_value():
+        raise ValueError(f"{amount} is not an integer multiple of currency quantum {currency_quantum}")
+    try:
+        return np.int64(int(count))
+    except OverflowError as exc:
+        raise ValueError(f"currency quantum count {count} does not fit in int64") from exc
+
+
+def currency_quanta_to_decimal(value: int | np.integer[Any], *, quantum: Any) -> Decimal:
+    """Convert an authoritative integer quantum count to an exact display decimal."""
+
+    return Decimal(int(value)) * validate_currency_quantum(quantum)
+
+
+def currency_quanta_to_decimal_string(value: int | np.integer[Any], *, quantum: Any) -> str:
+    """JSON-safe exact display form for an authoritative money count."""
+
+    return format(currency_quanta_to_decimal(value, quantum=quantum), "f")
+
+
+def sampled_decimal_to_currency_quanta(value: Any, *, quantum: Any) -> np.int64:
+    """Quantize one model-produced sampled monetary value at the sim boundary.
+
+    This is intentionally the *only* helper in this module that accepts a
+    float.  It uses decimal half-up rounding, matching the previous cents
+    conversion semantics, and makes the boundary explicit in call sites.
+    """
+
+    currency_quantum = validate_currency_quantum(quantum)
+    try:
+        sampled = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("sampled monetary value must be numeric") from exc
+    if not sampled.is_finite():
+        raise ValueError("sampled monetary value must be finite")
+    count = (sampled / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    try:
+        return np.int64(int(count))
+    except OverflowError as exc:
+        raise ValueError(f"sampled currency quantum count {count} does not fit in int64") from exc
+
+
+def sampled_array_to_currency_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
+    """Vectorized model→sim monetary-path quantization with exact int64 output."""
+
+    arr = np.asarray(values)
+    out = np.empty(arr.shape, dtype=np.int64)
+    for idx in np.ndindex(arr.shape):
+        out[idx] = sampled_decimal_to_currency_quanta(arr[idx], quantum=quantum)
+    return out
 
 
 def _decimal(value: Any) -> Decimal:
