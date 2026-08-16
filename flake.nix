@@ -502,6 +502,7 @@
           # Load:  docker load < result
           openclaw-image = import ./openclaw {
             inherit
+              ducktapePkgs
               nix-openclaw
               pkgs
               ;

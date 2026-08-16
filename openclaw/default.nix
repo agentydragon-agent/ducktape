@@ -1,4 +1,8 @@
-{ pkgs, nix-openclaw }:
+{
+  pkgs,
+  nix-openclaw,
+  ducktapePkgs,
+}:
 
 let
   system = pkgs.stdenv.hostPlatform.system;
@@ -19,31 +23,45 @@ let
     exec ${pkgs.gh}/bin/gh "$@"
   '';
 
-  tools = with pkgs; [
-    bashInteractive
-    busybox
-    cacert
-    coreutils
-    curl
-    file
-    git
-    ghWithProxyToken
-    jq
-    kubeconform
-    kubectl
-    kubernetes-helm
-    markdownlint-cli2
-    nixfmt
-    nodejs_22
-    openssh # SSH access to the dedicated public-coder-devbox.
-    pre-commit
-    python3
-    ripgrep
-    sops
-    statix
-    tflint
-    tini
-  ];
+  tools =
+    with pkgs;
+    [
+      bashInteractive
+      busybox
+      bazelisk
+      buildifier
+      cacert
+      coreutils
+      curl
+      file
+      git
+      ghWithProxyToken
+      jq
+      kubeconform
+      kubectl
+      kubernetes-helm
+      markdownlint-cli2
+      nixfmt
+      nodejs_22
+      openssh # SSH access to the dedicated public-coder-devbox.
+      pre-commit
+      python3
+      ruff
+      ripgrep
+      shfmt
+      sops
+      statix
+      tflint
+      tini
+    ]
+    ++ [
+      # Local pre-commit hooks call these entry points. The package wraps its own compatible
+      # Python + pygit2 closure, rather than depending on a persisted pip venv from an older image.
+      ducktapePkgs.ducktape-git-hooks
+      # The Nix package carries prettier-plugin-svelte and wraps NODE_PATH so the repository's
+      # .prettierrc.cjs resolves reliably inside the minimal image.
+      ducktapePkgs.prettier
+    ];
 
   # The preload imports undici. Put it beside the Nix gateway's node_modules so
   # Node's ESM resolver finds the dependency exactly as it did in /app in the
@@ -69,7 +87,7 @@ pkgs.dockerTools.buildLayeredImage {
   maxLayers = 100;
 
   fakeRootCommands = ''
-    mkdir -p home/openclaw tmp etc/ssl/certs
+    mkdir -p home/openclaw tmp etc/ssl/certs usr/bin
     chmod 1777 tmp
     chown -R 1000:1000 home/openclaw
 
@@ -90,6 +108,10 @@ pkgs.dockerTools.buildLayeredImage {
     NSS
 
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
+    # pre-commit generates Bash hooks beginning `#!/usr/bin/env bash`. Nix packages use absolute
+    # store shebangs, but generated project hooks do not, so retain this tiny FHS compatibility
+    # link in the otherwise minimal image.
+    ln -sf ${pkgs.coreutils}/bin/env usr/bin/env
   '';
 
   config = {
