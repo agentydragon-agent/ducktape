@@ -1,18 +1,18 @@
-"""Database operations over the haku index.
+"""Database operations over Haku's content-addressed semantic index.
 
-Chunk reads and writes are corpus-scoped everywhere: `corpus` is part of the cache key, part of
-every search's filter, and part of every join. Content addresses from two corpora are never
-comparable, so a helper that forgot it would silently look up the wrong namespace.
+Source-specific rows describe where content occurred.  ``contents`` holds the exact normalized
+text globally, and ``content_embeddings`` holds that text's vector for one embedding model.  This
+keeps provenance local while making semantic materialization reusable across every corpus.
 """
 
 from __future__ import annotations
 
 import datetime
-from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import delete, func, insert, select, text, update
+from sqlalchemy import delete, func, insert, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -25,22 +25,25 @@ from haku.recall_index.schema import (
     ChatChunk,
     ChatChunkMessage,
     ChatSessionState,
-    Chunk,
+    Content,
+    ContentEmbedding,
     Corpus,
+    GitChunk,
     GitSyncState,
     GitTipEntry,
 )
 
-# The filters must be applied before the distance operator sees a row: `chunks` may hold
-# vectors of several dimensions (one per model regime) and pgvector errors when comparing
-# across dimensions. MATERIALIZED pins that evaluation order rather than trusting the planner.
+# Materializing candidate rows before applying the distance operator is load-bearing: embeddings
+# for different model keys may have different dimensions, and pgvector refuses to compare them.
 _GIT_SEARCH_SQL = text("""
     WITH candidates AS MATERIALIZED (
-        SELECT t.path, t.blob_sha, c.byte_start, c.byte_end, c.text, c.embedding
+        SELECT t.path, t.blob_sha, g.byte_start, g.byte_end, c.content AS text, e.embedding
         FROM state_index.git_tip t
-        JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = t.blob_sha
-        WHERE c.chunker_key = :chunker_key
-          AND c.model_key = :model_key
+        JOIN state_index.git_chunks g ON g.blob_sha = t.blob_sha
+        JOIN state_index.contents c ON c.content_sha = g.content_sha
+        JOIN state_index.content_embeddings e ON e.content_sha = c.content_sha
+        WHERE g.chunker_key = :chunker_key
+          AND e.model_key = :model_key
           AND (CAST(:path_prefix AS text) IS NULL OR starts_with(t.path, CAST(:path_prefix AS text)))
     )
     SELECT path, blob_sha, byte_start, byte_end, text,
@@ -50,15 +53,17 @@ _GIT_SEARCH_SQL = text("""
     LIMIT :limit
 """)
 
-# The message list is gathered after the ranking, not joined into it: it is what the caller
-# drills into, and aggregating it over every candidate window would be work thrown away.
 _CHAT_SEARCH_SQL = text("""
     WITH candidates AS MATERIALIZED (
-        SELECT w.session_id, w.window_no, w.first_message_at, w.last_message_at, c.text, c.embedding
+        SELECT w.session_id, w.window_no, w.first_message_at, w.last_message_at,
+               c.content AS text, e.embedding
         FROM state_index.chat_chunks w
-        JOIN state_index.chunks c ON c.corpus = :corpus AND c.content_sha = w.content_sha
-        WHERE c.chunker_key = :chunker_key
-          AND c.model_key = :model_key
+        JOIN state_index.chat_sessions s ON s.session_id = w.session_id
+        JOIN state_index.contents c ON c.content_sha = w.content_sha
+        JOIN state_index.content_embeddings e ON e.content_sha = c.content_sha
+        WHERE s.chunker_key = :chunker_key
+          AND s.model_key = :model_key
+          AND e.model_key = :model_key
           AND (CAST(:session_id AS uuid) IS NULL OR w.session_id = CAST(:session_id AS uuid))
     ), ranked AS (
         SELECT session_id, window_no, first_message_at, last_message_at, text,
@@ -81,8 +86,6 @@ _CHAT_SEARCH_SQL = text("""
 @dataclass(frozen=True, slots=True)
 class GitSearchHit:
     path: str
-    # The content itself, not just where it sat: a caller with a clone can read the exact bytes
-    # back with `git cat-file`, and a path alone would have moved by the time they did.
     blob_sha: str
     byte_start: int
     byte_end: int
@@ -109,13 +112,6 @@ class GitIndexSummary:
 
 @dataclass(frozen=True, slots=True)
 class ChunkCounts:
-    """How much of a corpus a search can currently reach, and how much it cannot.
-
-    `superseded` is chunks under a chunker or model that is no longer current: they are still
-    cached against a rollback, but nothing under the live regime joins them, so they answer
-    nothing until the sync re-embeds their content.
-    """
-
     current: int
     superseded: int
 
@@ -128,27 +124,28 @@ class ChatIndexSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class ChunkRow:
-    """A chunk ready to be written: the cache key, the span, and its vector."""
+class ContentEmbeddingRow:
+    """One exact content value and the vector a model produced for it."""
 
-    corpus: Corpus
     content_sha: str
-    chunker_key: str
+    content: str
     model_key: str
-    byte_start: int
-    byte_end: int
-    text: str
     embedding: list[float]
 
 
-def chunker_key_for(corpus: Corpus, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
-    """Which chunker's key a corpus's chunks carry.
+@dataclass(frozen=True, slots=True)
+class GitChunkRow:
+    """One source occurrence of globally-addressed content in a Git blob."""
 
-    Reads derive it from the corpus rather than accepting it, because the two keys are the same
-    string whenever the two chunkers happen to be at the same version under the same budget — so a
-    reader that passed the wrong one would work until either version moved and then silently match
-    nothing. Writers still pass theirs explicitly: they record it in the corpus's sync state too.
-    """
+    blob_sha: str
+    chunker_key: str
+    byte_start: int
+    byte_end: int
+    content_sha: str
+
+
+def chunker_key_for(corpus: Corpus, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
+    """Which chunker regime is current for a corpus."""
     match corpus:
         case Corpus.GIT:
             return git_chunker_key(budget)
@@ -157,75 +154,111 @@ def chunker_key_for(corpus: Corpus, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) 
 
 
 async def ensure_schema(engine: AsyncEngine) -> None:
-    """Create the extension, schema, and tables if they aren't there.
-
-    This is how the local evaluation CLI and the tests get a database. A deployed index gets
-    its schema from a migration instead — see this package's README on what deployment needs.
-    """
+    """Create the extension, schema, and tables for local evaluation and tests."""
     async with engine.begin() as connection:
         await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}"))
         await connection.run_sync(Base.metadata.create_all)
 
 
-async def cached_content(
-    session: AsyncSession, corpus: Corpus, content_shas: Sequence[str], *, chunker_key: str, model_key: str
-) -> set[str]:
-    """Which of `content_shas` already have chunks under this (corpus, chunker, model) regime."""
-    if not content_shas:
+async def embedded_content(session: AsyncSession, content_shas: Iterable[str], *, model_key: str) -> set[str]:
+    """Which globally-addressed content values already have a vector for ``model_key``."""
+    addresses = sorted(set(content_shas))
+    if not addresses:
         return set()
     result = await session.execute(
-        select(Chunk.content_sha)
-        .where(Chunk.corpus == corpus)
-        .where(Chunk.content_sha.in_(content_shas))
-        .where(Chunk.chunker_key == chunker_key)
-        .where(Chunk.model_key == model_key)
+        select(ContentEmbedding.content_sha)
+        .where(ContentEmbedding.content_sha.in_(addresses))
+        .where(ContentEmbedding.model_key == model_key)
+    )
+    return set(result.scalars())
+
+
+async def git_chunked_blobs(session: AsyncSession, blob_shas: Iterable[str], *, chunker_key: str) -> set[str]:
+    """Which Git blobs already have their source occurrences under this chunker regime."""
+    addresses = sorted(set(blob_shas))
+    if not addresses:
+        return set()
+    result = await session.execute(
+        select(GitChunk.blob_sha)
+        .where(GitChunk.blob_sha.in_(addresses))
+        .where(GitChunk.chunker_key == chunker_key)
         .distinct()
     )
     return set(result.scalars())
 
 
-async def insert_chunks(session: AsyncSession, rows: Sequence[ChunkRow], *, now: datetime.datetime) -> None:
-    """Insert freshly embedded chunks, refreshing `last_seen_at` on any that already existed.
+async def git_content_rows(
+    session: AsyncSession, blob_shas: Iterable[str], *, chunker_key: str
+) -> list[tuple[str, str, str]]:
+    """Existing Git source occurrences paired with their exact global content."""
+    addresses = sorted(set(blob_shas))
+    if not addresses:
+        return []
+    result = await session.execute(
+        select(GitChunk.blob_sha, Content.content_sha, Content.content)
+        .join(Content, Content.content_sha == GitChunk.content_sha)
+        .where(GitChunk.blob_sha.in_(addresses))
+        .where(GitChunk.chunker_key == chunker_key)
+    )
+    return list(result.tuples())
 
-    Executed once per row rather than as one statement holding every row's values, because
-    asyncpg caps a statement at 32767 bind parameters and a chunk costs nine: a single `VALUES`
-    list refuses somewhere above ~3600 chunks, which is smaller than a repository. The driver
-    prepares this once and pipelines the executions, so the caller may hand over as many rows as
-    it likes and no batch size anywhere else is load-bearing for correctness.
 
-    `excluded.last_seen_at` rather than a captured `now` for the same reason: the update has to
-    read the value from the row being inserted, since there is no longer one statement to bind it
-    to.
+def _content_map(rows: Iterable[tuple[str, str]]) -> dict[str, str]:
+    content_by_sha: dict[str, str] = {}
+    for address, content in rows:
+        previous = content_by_sha.setdefault(address, content)
+        if previous != content:
+            raise AssertionError(f"content address collision: {address}")
+    return content_by_sha
+
+
+async def insert_content_embeddings(session: AsyncSession, rows: Sequence[ContentEmbeddingRow]) -> None:
+    """Persist content and vectors, retaining an existing vector as the authoritative result.
+
+    The two inserts are conflict-safe, so independently-running sync workers cannot duplicate
+    durable rows.  Callers de-duplicate misses before asking an embedding provider; a rare race
+    may still compute the same vector twice, but cannot publish two conflicting representations.
     """
     if not rows:
         return
-    statement = pg_insert(Chunk).on_conflict_do_update(
-        index_elements=["corpus", "content_sha", "byte_start", "chunker_key", "model_key"],
-        set_={"last_seen_at": pg_insert(Chunk).excluded.last_seen_at},
+    content_by_sha = _content_map((row.content_sha, row.content) for row in rows)
+    existing = await session.execute(
+        select(Content.content_sha, Content.content).where(Content.content_sha.in_(content_by_sha))
     )
-    await session.execute(statement, [{**asdict(row), "last_seen_at": now} for row in rows])
-
-
-async def touch_content(
-    session: AsyncSession,
-    corpus: Corpus,
-    content_shas: Sequence[str],
-    *,
-    chunker_key: str,
-    model_key: str,
-    now: datetime.datetime,
-) -> None:
-    """Mark cached chunks as still reachable, so eviction can use `last_seen_at`."""
-    if not content_shas:
-        return
+    for address, content in existing:
+        if content_by_sha[address] != content:
+            raise AssertionError(f"content address collision: {address}")
+    content_statement = pg_insert(Content).on_conflict_do_nothing(index_elements=["content_sha"])
     await session.execute(
-        update(Chunk)
-        .where(Chunk.corpus == corpus)
-        .where(Chunk.content_sha.in_(content_shas))
-        .where(Chunk.chunker_key == chunker_key)
-        .where(Chunk.model_key == model_key)
-        .values(last_seen_at=now)
+        content_statement, [{"content_sha": address, "content": content} for address, content in content_by_sha.items()]
+    )
+    embedding_statement = pg_insert(ContentEmbedding).on_conflict_do_nothing(
+        index_elements=["content_sha", "model_key"]
+    )
+    await session.execute(
+        embedding_statement,
+        [{"content_sha": row.content_sha, "model_key": row.model_key, "embedding": row.embedding} for row in rows],
+    )
+
+
+async def insert_git_chunks(session: AsyncSession, rows: Sequence[GitChunkRow]) -> None:
+    """Persist Git source occurrences after their content rows exist."""
+    if not rows:
+        return
+    statement = pg_insert(GitChunk).on_conflict_do_nothing(index_elements=["blob_sha", "chunker_key", "byte_start"])
+    await session.execute(
+        statement,
+        [
+            {
+                "blob_sha": row.blob_sha,
+                "chunker_key": row.chunker_key,
+                "byte_start": row.byte_start,
+                "byte_end": row.byte_end,
+                "content_sha": row.content_sha,
+            }
+            for row in rows
+        ],
     )
 
 
@@ -239,18 +272,12 @@ async def replace_tip(
     model_key: str,
     now: datetime.datetime,
 ) -> None:
-    """Swap the searchable set to `entries` — the caller's transaction makes it atomic.
-
-    No rename, no DDL: the tip is data. A reader either sees the whole previous commit or the
-    whole new one, and a sync that dies halfway leaves the previous one intact.
-    """
+    """Atomically make one Git tree the searchable tip after its content is materialized."""
     await session.execute(delete(GitTipEntry))
     if entries:
         await session.execute(
             insert(GitTipEntry), [{"path": entry.path, "blob_sha": entry.blob_sha} for entry in entries]
         )
-    # Only the indexed half: a row already exists whenever a sweep has looked, and its
-    # `remote_*` columns are not this function's to move.
     indexed = {
         "commit_sha": commit_sha,
         "branch": branch,
@@ -264,16 +291,10 @@ async def replace_tip(
 
 
 async def current_git_state(session: AsyncSession) -> GitSyncState | None:
-    """What the searchable git set currently holds, or None before the first sync."""
     return await session.get(GitSyncState, 1)
 
 
 async def record_remote_tip(session: AsyncSession, commit_sha: str, *, branch: str, now: datetime.datetime) -> None:
-    """Record what the branch points at now, leaving whatever is indexed alone.
-
-    Written on every sweep, including the ones that decide there is nothing to do, so an ageing
-    `remote_seen_at` means the sweep has stopped rather than that the corpus is current.
-    """
     values = {"id": 1, "branch": branch, "remote_commit": commit_sha, "remote_seen_at": now}
     await session.execute(
         pg_insert(GitSyncState)
@@ -296,7 +317,6 @@ async def search_git(
     result = await session.execute(
         _GIT_SEARCH_SQL,
         {
-            "corpus": Corpus.GIT,
             "chunker_key": chunker_key_for(Corpus.GIT, budget),
             "model_key": model_key,
             "path_prefix": path_prefix,
@@ -310,27 +330,24 @@ async def search_git(
 async def read_indexed_text(
     session: AsyncSession, path: str, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
 ) -> str | None:
-    """The indexed spans of `path` at the tip, concatenated, or None if it isn't indexed.
-
-    Not byte-exact: whitespace-only spans are never chunked, so runs of blank lines between
-    chunks are absent. It is the text search actually matched against, which is what a caller
-    reading a hit wants; anyone needing the real file should read it from git.
-    """
+    """The current Git chunk contents at ``path``, concatenated in source-byte order."""
     result = await session.execute(
-        select(Chunk.text)
-        .join(GitTipEntry, GitTipEntry.blob_sha == Chunk.content_sha)
-        .where(Chunk.corpus == Corpus.GIT)
+        select(Content.content)
+        .join(GitChunk, GitChunk.content_sha == Content.content_sha)
+        .join(GitTipEntry, GitTipEntry.blob_sha == GitChunk.blob_sha)
+        .join(
+            ContentEmbedding,
+            (ContentEmbedding.content_sha == Content.content_sha) & (ContentEmbedding.model_key == model_key),
+        )
         .where(GitTipEntry.path == path)
-        .where(Chunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
-        .where(Chunk.model_key == model_key)
-        .order_by(Chunk.byte_start)
+        .where(GitChunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
+        .order_by(GitChunk.byte_start)
     )
     chunks = list(result.scalars())
     return "".join(chunks) if chunks else None
 
 
 async def chat_session_states(session: AsyncSession) -> dict[UUID, ChatSessionState]:
-    """Every session's indexed shape, keyed by session, for the sync to compare against."""
     result = await session.execute(select(ChatSessionState))
     return {state.session_id: state for state in result.scalars()}
 
@@ -346,12 +363,7 @@ async def replace_chat_session(
     model_key: str,
     now: datetime.datetime,
 ) -> None:
-    """Swap one session's windows to `chunks`, atomic within the caller's transaction.
-
-    Wholesale per session rather than incremental: a session's trailing window changes shape as
-    it grows, so "append the new ones" would leave a stale partial window searchable next to the
-    one that supersedes it. Re-windowing is cheap because the vectors are cached by content.
-    """
+    """Replace one session's source windows after their global content has been materialized."""
     await session.execute(delete(ChatChunk).where(ChatChunk.session_id == session_id))
     if chunks:
         await session.execute(
@@ -389,12 +401,6 @@ async def replace_chat_session(
 
 
 async def forget_chat_sessions(session: AsyncSession, session_ids: Sequence[UUID]) -> None:
-    """Drop sessions that are no longer in the source.
-
-    The git corpus gets this for free — its search joins the tip, so anything not at the tip is
-    already unreachable. Chat windows are reachable until deleted, so a session the console has
-    dropped stays searchable unless the sync sweeps it.
-    """
     if not session_ids:
         return
     await session.execute(delete(ChatChunk).where(ChatChunk.session_id.in_(session_ids)))
@@ -413,7 +419,6 @@ async def search_chat(
     result = await session.execute(
         _CHAT_SEARCH_SQL,
         {
-            "corpus": Corpus.CHAT,
             "chunker_key": chunker_key_for(Corpus.CHAT, budget),
             "model_key": model_key,
             "session_id": session_id,
@@ -427,20 +432,17 @@ async def search_chat(
 async def git_index_summary(
     session: AsyncSession, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
 ) -> GitIndexSummary:
-    """What the searchable git set holds: the tree's size, and the chunks a search can reach.
-
-    `chunks` joins the tip rather than counting the corpus, so it excludes both the cache's
-    departed content and files that are legitimately never chunked (binaries, oversized blobs).
-    """
     files = (await session.execute(select(func.count()).select_from(GitTipEntry))).scalar_one()
     chunks = (
         await session.execute(
             select(func.count())
             .select_from(GitTipEntry)
-            .join(Chunk, Chunk.content_sha == GitTipEntry.blob_sha)
-            .where(Chunk.corpus == Corpus.GIT)
-            .where(Chunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
-            .where(Chunk.model_key == model_key)
+            .join(GitChunk, GitChunk.blob_sha == GitTipEntry.blob_sha)
+            .join(
+                ContentEmbedding,
+                (ContentEmbedding.content_sha == GitChunk.content_sha) & (ContentEmbedding.model_key == model_key),
+            )
+            .where(GitChunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
         )
     ).scalar_one()
     return GitIndexSummary(files=files, chunks=chunks)
@@ -449,20 +451,42 @@ async def git_index_summary(
 async def chunk_counts(
     session: AsyncSession, corpus: Corpus, *, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
 ) -> ChunkCounts:
-    """How many of a corpus's chunks are under the live regime, and how many are left behind."""
-    current_regime = (Chunk.chunker_key == chunker_key_for(corpus, budget)) & (Chunk.model_key == model_key)
-    current, superseded = (
-        await session.execute(
-            select(func.count().filter(current_regime), func.count().filter(~current_regime))
-            .select_from(Chunk)
-            .where(Chunk.corpus == corpus)
-        )
-    ).one()
-    return ChunkCounts(current=current, superseded=superseded)
+    """Count source occurrences reachable under a complete current retrieval regime."""
+    match corpus:
+        case Corpus.GIT:
+            total = (await session.execute(select(func.count()).select_from(GitChunk))).scalar_one()
+            current = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(GitChunk)
+                    .join(
+                        ContentEmbedding,
+                        (ContentEmbedding.content_sha == GitChunk.content_sha)
+                        & (ContentEmbedding.model_key == model_key),
+                    )
+                    .where(GitChunk.chunker_key == chunker_key_for(Corpus.GIT, budget))
+                )
+            ).scalar_one()
+        case Corpus.CHAT:
+            total = (await session.execute(select(func.count()).select_from(ChatChunk))).scalar_one()
+            current = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(ChatChunk)
+                    .join(ChatSessionState, ChatSessionState.session_id == ChatChunk.session_id)
+                    .join(
+                        ContentEmbedding,
+                        (ContentEmbedding.content_sha == ChatChunk.content_sha)
+                        & (ContentEmbedding.model_key == model_key),
+                    )
+                    .where(ChatSessionState.chunker_key == chunker_key_for(Corpus.CHAT, budget))
+                    .where(ChatSessionState.model_key == model_key)
+                )
+            ).scalar_one()
+    return ChunkCounts(current=current, superseded=total - current)
 
 
 async def chat_index_summary(session: AsyncSession) -> ChatIndexSummary:
-    """What the searchable chat set currently holds."""
     sessions, last_indexed_at = (
         await session.execute(select(func.count(), func.max(ChatSessionState.indexed_at)))
     ).one()

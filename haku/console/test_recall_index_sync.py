@@ -15,7 +15,7 @@ from uuid import UUID
 import pygit2
 import pytest
 import pytest_bazel
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console import recall_index_sync
@@ -27,6 +27,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, RecallIndexMaintenance
 from haku.console.tools.recall_index import ConversationSource, HakuStateSource, SearchCorpus
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
+from haku.recall_index.schema import ContentEmbedding
 
 
 def test_recall_index_config_contains_the_shared_chunk_budget() -> None:
@@ -48,7 +49,9 @@ def haku_state(tmp_path: Path) -> HakuStateGitConfig:
     """A bare repository standing in for haku-state, with one commit on `main`."""
     origin = pygit2.init_repository(str(tmp_path / "origin.git"), bare=True, initial_head="main")
     index = pygit2.Index()
-    blob = origin.create_blob(b"the egress fence keys on haku-sandbox\n")
+    # This is exactly the document form of the matching chat message below. It proves that the
+    # global content layer crosses corpus boundaries rather than merely de-duplicating each one.
+    blob = origin.create_blob(b"user: the egress fence keys on haku-sandbox\n")
     index.add(pygit2.IndexEntry("notes/alpha.md", blob, pygit2.enums.FileMode.BLOB))
     origin.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "seed", index.write_tree(origin), [])
     return HakuStateGitConfig(repo_url=str(tmp_path / "origin.git"), mirror_path=tmp_path / "mirror.git")
@@ -126,6 +129,23 @@ async def test_a_git_sweep_makes_the_tip_searchable(
     )
     assert [hit.source.path for hit in results.hits if isinstance(hit.source, HakuStateSource)] == ["notes/alpha.md"]
     assert results.index is None
+
+
+async def test_identical_git_and_chat_content_share_one_embedding(
+    migrated_engine: AsyncEngine,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    haku_state: HakuStateGitConfig,
+    operator_id: UUID,
+    embedder: FakeEmbedder,
+) -> None:
+    await say(migrated_sessions, operator_id, "the egress fence keys on haku-sandbox")
+    maintenance = RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state)
+
+    await maintenance.sync_git_once()
+    await maintenance.sync_chat_once()
+
+    async with migrated_sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(ContentEmbedding)) == 1
 
 
 async def test_an_unmoved_remote_is_never_fetched(

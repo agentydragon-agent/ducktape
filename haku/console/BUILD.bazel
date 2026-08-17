@@ -1380,6 +1380,7 @@ py_test(
         "//:conftest",
         "//haku/console/tools:recall_index",
         "//haku/recall_index:fake_embedder",
+        "//haku/recall_index:schema",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

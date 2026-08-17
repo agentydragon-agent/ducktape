@@ -17,7 +17,7 @@ from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.query import query_chat
-from haku.recall_index.schema import ChatChunk, Chunk, Corpus
+from haku.recall_index.schema import ChatChunk, ContentEmbedding
 from haku.recall_index.store import ChatSearchHit
 
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
@@ -202,8 +202,8 @@ async def test_a_session_the_console_dropped_stops_matching(
 
     assert report.sessions_forgotten == 1
     assert await find(chat_source, embedder, "eta") == []
-    # The embedding stays cached against the day the same words are said again.
-    cached = await chat_source.execute(select(func.count()).select_from(Chunk).where(Chunk.corpus == Corpus.CHAT))
+    # The durable semantic representation stays available if the same words are said again.
+    cached = await chat_source.execute(select(func.count()).select_from(ContentEmbedding))
     assert cached.scalar_one() > 0
 
 
