@@ -92,7 +92,7 @@ spec:
             - name: HAKU_CONSOLE_IMAGE_TAG
               value: devel-20260817092449-3da90ff # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE_STATIC_IMAGE_TAG
-              value: devel-20260817031521-076f4fa # {"$imagepolicy": "flux-system:haku-console-static:tag"}
+              value: devel-20260817094355-9bc4606 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
@@ -435,7 +435,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260817031521-076f4fa # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: ghcr.io/agentydragon/haku-console-static:devel-20260817094355-9bc4606 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           env:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template
