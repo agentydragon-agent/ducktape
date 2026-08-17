@@ -303,6 +303,22 @@ spec:
                   name: haku-console-google-calendar-client-credentials
                   key: client_secret
                   optional: true
+            # GitHub's hosted MCP server does not support Dynamic Client Registration. Its
+            # organization-owned GitHub App therefore supplies this pre-registered confidential
+            # client. The optional references keep the console deployable while the App is being
+            # registered; the GitHub entry is enabled only after both values exist.
+            - name: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-github-mcp-client-credentials
+                  key: client_id
+                  optional: true
+            - name: HAKU_CONSOLE_GITHUB_MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-github-mcp-client-credentials
+                  key: client_secret
+                  optional: true
             # The Operator the `haku` static agent acts as when it reaches an operator_oauth server:
             # reflecting grocy-sf/kubectl schemas and executing its own auto-approved
             # operator_oauth calls (a machine agent has no operator token of its own). The value is the

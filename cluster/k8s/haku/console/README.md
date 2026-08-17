@@ -81,6 +81,48 @@ Scopes are explicit per deploy-named connection in `config.yaml`: Google Mail re
 `calendar.events`. Add a new logical connection when another Google surface is actually exposed
 rather than broadening either existing grant.
 
+## One-time bootstrap: GitHub's hosted MCP server
+
+GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discovers its OAuth
+authorization server normally, but GitHub does **not** support Dynamic Client Registration, so the
+Console needs an organization-owned, pre-registered **GitHub App**. Use the read-only endpoint
+initially: `https://api.githubcopilot.com/mcp/readonly`.
+
+1. Create a private GitHub App owned by the organization. Set its user-authorization callback URL
+   to `https://haku.allegedly.works/api/mcp/operator-auth/callback`. Grant only the repository and
+   read permissions the intended toolset needs; `/readonly` restricts MCP tools but does not widen
+   the App's GitHub permissions. Install/approve the App for the intended organization and
+   repositories. Do not substitute a PAT or the OAuth client embedded in GitHub's local MCP binary.
+2. Put the App's `client_id` and `client_secret` in a new SOPS-encrypted Secret named
+   `haku-console-github-mcp-client-credentials`, with those exact keys. Add that manifest to this
+   directory's `kustomization.yaml`. The Deployment already reflects the values as
+   `HAKU_CONSOLE_GITHUB_MCP_CLIENT_{ID,SECRET}` and tolerates the Secret being absent until this
+   step is complete.
+3. Add the following server to `mcp.servers` in `config.yaml`, then reconcile the Console:
+
+   ```yaml
+   - id: github
+     backend:
+       kind: remote_mcp
+       url: https://api.githubcopilot.com/mcp/readonly
+       auth:
+         kind: remote_server_oauth
+         scopes: [] # App permissions are the least-privilege boundary; do not request legacy broad scopes.
+         client_registration:
+           kind: preregistered
+           client_id_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
+           client_secret_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_SECRET
+           token_endpoint_auth_method: client_secret_post
+   ```
+
+4. In Console Settings → Access, connect the GitHub server and complete GitHub's authorization
+   prompt. The Console stores each operator's grant separately; disconnecting replaces only that
+   operator's link. Keep write-capable GitHub MCP endpoints out of this entry until there is an
+   explicit approval-policy decision for their tools.
+
+GitHub's host guide describes the prerequisite and explicitly notes that its remote MCP server has
+no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blob/main/docs/host-integration.md>.
+
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
 
 The `kubectl-passthrough-mcp` MCP server entry (config.yaml — `pods_*`, `resources_*`,

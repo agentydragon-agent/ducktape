@@ -85,7 +85,12 @@ class DynamicOAuthClientRegistration(BaseModel):
 
 
 class PreregisteredOAuthClient(BaseModel):
-    """Use a deploy-provisioned public OAuth client and skip Dynamic Client Registration."""
+    """Use a deploy-provisioned OAuth client and skip Dynamic Client Registration.
+
+    Public PKCE clients use ``client_id``. Confidential clients may instead take their id and
+    secret from deploy-injected environment variables, keeping the credential out of the catalog
+    ConfigMap and Git history.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,8 +101,22 @@ class PreregisteredOAuthClient(BaseModel):
     # fallback. A pre-registered public/PKCE client_id shared across every OAuth caller of that
     # authorization server, skipping registration entirely. Safe to share: PKCE plus per-request
     # redirect_uri validation secure each caller's auth code exchange independently even though the
-    # client_id is the same for all.
-    client_id: str = Field(min_length=1)
+    # client_id is the same for all. A public client normally declares this directly; a
+    # confidential client can source it from an injected Secret instead.
+    client_id: str | None = Field(default=None, min_length=1)
+    client_id_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    client_secret_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
+
+    @model_validator(mode="after")
+    def _validate_credential_source(self) -> PreregisteredOAuthClient:
+        if (self.client_id is None) == (self.client_id_env_var is None):
+            raise ValueError("preregistered OAuth client requires exactly one of client_id or client_id_env_var")
+        if (self.client_secret_env_var is None) != (self.token_endpoint_auth_method is None):
+            raise ValueError(
+                "client_secret_env_var and token_endpoint_auth_method must be configured together for a confidential client"
+            )
+        return self
 
 
 type OAuthClientRegistration = Annotated[
