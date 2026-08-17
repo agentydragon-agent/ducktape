@@ -23,7 +23,6 @@ from haku.console.config import Settings
 REFRESH_SKEW = datetime.timedelta(seconds=60)
 _ERROR_BODY_LIMIT = 512
 _OAUTH_ERROR_FIELDS = ("error", "error_description", "error_uri")
-_JSON_TOKEN_RESPONSE_ACCEPT = "application/json"
 
 
 class OAuthTokenResponseError(RuntimeError):
@@ -67,7 +66,7 @@ def token_request_headers(headers: Mapping[str, str] | None = None) -> dict[str,
     that retain a legacy default representation. Callers may add authentication or content-type
     headers, but cannot accidentally omit the response-format preference.
     """
-    return {**(headers or {}), "Accept": _JSON_TOKEN_RESPONSE_ACCEPT}
+    return {**(headers or {}), "Accept": "application/json"}
 
 
 async def parse_token_response(response: httpx.Response, *, label: str) -> OAuthToken:
