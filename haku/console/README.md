@@ -672,7 +672,9 @@ redirect-URI origin), and each `static_agents` entry's env-referenced bearer + s
 Secret). That Authentik `sub_mode=user_id` value is used only to create/find an identity anchor and
 is immediately resolved to an Operator UUID; it is never carried as live request authority.
 It also holds Haku's own Forgejo credential (`haku-forgejo-git`, reflected in from haku-sandbox;
-`HAKU_CONSOLE_HAKU_STATE_GIT__*`), which the index's git sweep fetches haku-state with. Nothing in
+`HAKU_CONSOLE_HAKU_STATE_GIT__*`), which the index's git sweep fetches haku-state with. The shared
+retrieval-unit budget, including `HAKU_CONSOLE_RECALL_INDEX__OVERLAP_CODEPOINTS`, configures both
+index sweeps and search readers so they select the same chunk regime. Nothing in
 the console writes to haku-state — feedback/trace writes moved into haku-ui — but this credential
 _can_, which is the cost of reusing Haku's account instead of provisioning a second, read-only one
 (operator, 2026-08-15). The console is more trusted code than Haku, which already holds it.

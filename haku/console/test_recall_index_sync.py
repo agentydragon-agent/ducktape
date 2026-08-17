@@ -20,13 +20,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console import recall_index_sync
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, ChatSurface, SessionStatus
-from haku.console.config import HakuStateGitConfig
+from haku.console.config import HakuStateGitConfig, RecallIndexConfig
 from haku.console.database_schema import Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, StateIndexMaintenance
 from haku.console.tools.recall_index import ConversationSource, HakuStateSource, SearchCorpus
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
+
+
+def test_recall_index_config_contains_the_shared_chunk_budget() -> None:
+    config = RecallIndexConfig(chunk_budget={"target_bytes": 400, "max_bytes": 800, "overlap_codepoints": 48})
+    assert config.chunk_budget.overlap_codepoints == 48
+
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)

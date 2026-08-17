@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import HakuStateGitConfig
 from haku.recall_index.chat_sync import sync_chat
+from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.embedder import Embedder
 from haku.recall_index.git_tree import fetch_branch, open_mirror, remote_tip
 from haku.recall_index.store import current_git_state, record_remote_tip
@@ -73,11 +74,13 @@ class StateIndexMaintenance:
         *,
         embedder: Embedder,
         git: HakuStateGitConfig | None,
+        budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
         self._embedder = embedder
         self._git = git
+        self._budget = budget
 
     @asynccontextmanager
     async def _leading(self, lock: int) -> AsyncIterator[bool]:
@@ -97,7 +100,9 @@ class StateIndexMaintenance:
             if not leading:
                 return
             async with self._sessions() as session:
-                report = await sync_chat(session, embedder=self._embedder, now=datetime.datetime.now(datetime.UTC))
+                report = await sync_chat(
+                    session, embedder=self._embedder, now=datetime.datetime.now(datetime.UTC), budget=self._budget
+                )
                 await session.commit()
         if report.sessions_indexed or report.sessions_forgotten:
             logger.info(
@@ -131,7 +136,11 @@ class StateIndexMaintenance:
                 # The gate is the whole regime, not just the commit: a new embedding model has to
                 # re-index a tip that never moved, and asking `ls-remote` alone would skip it.
                 if is_current(
-                    await current_git_state(session), tip, branch=git.branch, model_key=self._embedder.model_key
+                    await current_git_state(session),
+                    tip,
+                    branch=git.branch,
+                    model_key=self._embedder.model_key,
+                    budget=self._budget,
                 ):
                     return
                 commit_sha = await asyncio.to_thread(_fetch, repository, git)
@@ -142,6 +151,7 @@ class StateIndexMaintenance:
                     branch=git.branch,
                     embedder=self._embedder,
                     now=datetime.datetime.now(datetime.UTC),
+                    budget=self._budget,
                 )
                 await session.commit()
         if isinstance(outcome, AlreadyCurrent):

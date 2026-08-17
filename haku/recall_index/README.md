@@ -37,16 +37,8 @@ next — an ordinal beside it would be a second name for the same fact, and the 
 a caller can actually slice with. (`chat_chunks.window_no` is a different thing wearing a similar
 name: a window's position in its session, which is what `chat_chunk_messages` hangs off.)
 
-**Chunk size is configurable, and it lives inside `chunker_key`** — canonical JSON,
-`{"max_bytes":3000,"target_bytes":1500,"version":1}` — rather than beside it. The same blob chunked to a different size is different text, so a re-tune has to
-invalidate exactly like an algorithm change — putting the budget in the key makes that automatic
-instead of something to remember. It is in bytes rather than tokens because chunking must not
-depend on a tokenizer now that the model is behind an HTTP endpoint; English prose runs about four
-bytes to the token, so a budget approximates the model's window on purpose. The default was chosen
-for a 512-token model and is conservative for the one in use; raising it is a retrieval question —
-bigger chunks match more broadly and cite less precisely — which is why it is a knob and not a
-constant. Index and query must use the same budget: a query under a different one searches a
-regime nothing was written under.
+**Chunk size and overlap are configurable, and they live inside `chunker_key`** — canonical JSON,
+`{"max_bytes":3000,"overlap_codepoints":128,"target_bytes":1500,"version":2}` — rather than beside it. The same blob chunked to a different size or overlap is a different retrieval layout, so a re-tune has to select a distinct regime automatically rather than relying on someone to remember it. Size is in bytes rather than tokens because chunking must not depend on a tokenizer now that the model is behind an HTTP endpoint; English prose runs about four bytes to the token, so a budget approximates the model's window on purpose. Overlap is Unicode code points, so no boundary ever splits UTF-8. The default was chosen for a 512-token model and is conservative for the one in use; raising it is a retrieval question — bigger chunks match more broadly and cite less precisely — which is why it is a knob and not a constant. Index and query must use the same budget: a query under a different one searches a regime nothing was written under.
 
 **Reads take the budget, never the key.** `store.chunker_key_for` derives it from the corpus,
 because the two corpora's keys are the same string whenever their chunkers are at the same version
