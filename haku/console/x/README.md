@@ -230,7 +230,7 @@ call and every result on every request — is deleted, because the events are ro
 `session_events.py` maps a `ConversationEvent` onto a row and `apply_frame` writes it inside the
 transaction that moves the cursor, so a row exists exactly when the cursor says its frame was
 projected. The same module maps the console's own facts about a session onto rows, written in the
-transaction that makes each true. What the table holds that nothing else does is a **tool call's answer**:
+transaction that makes each true, and the operator's prompt onto one written in `enqueue_prompt`'s. What the table holds that nothing else does is a **tool call's answer**:
 `session_messages.tool_calls` records what was asked, and the reply used to exist only as frames
 that `session_views.rollout_calls` re-parsed on every read.
 
@@ -240,13 +240,21 @@ that `session_views.rollout_calls` re-parsed on every read.
 - **Provenance is a column, and `NOT NULL`.** `frame_range` carries both ends and `authored`
   carries neither, which the table's own constraint makes the only two possibilities — the
   requirement #4143 could not put on `session_messages`, where NULL means two things.
-- **The `authored` arm carries a second category**: what happened _to_ the session, which the
-  console is the only witness to. `session_events.authored` writes it, `AuthoredEventKind` names
-  it, and `authenticate_bridge` and `expire_stale_leases` are its writers today — a lease taken
-  over and a lease lapsing. It is here rather than in the frame log because the frame log is the
-  record of runner↔console traffic and nothing else (operator, 2026-08-16). Such a row names no
-  turn: the fact is the session's, and a session that died before it reached a turn is the case
-  the category exists to record.
+- **The two kind enums split the stream by where a row came from, not by what it is about.**
+  `ConversationEventKind` is what a fold of recorded frames produced, so every such row carries a
+  frame range; `AuthoredEventKind` is what no frame carries and the console alone witnessed. The
+  frame log is the record of runner↔console traffic and nothing else (operator, 2026-08-16), so a
+  fact that crossed no wire has to be named on the authored arm however conversational it reads.
+  Such a row names no turn either: a session that died before reaching one is exactly the case the
+  arm exists to record.
+- **So the operator's prompt is an `AuthoredEventKind`, not a lifecycle claim about it.** A prompt
+  is conversation — half of what a transcript renders — but it is accepted before it is asked: a
+  session holds no sandbox until a prompt buys one, so at acceptance there is no runner to send it
+  to, and a session that ends before the prompt is claimed never sends it (`PromptFate.LOST`). It
+  is turn-less because admission refuses a prompt while a turn is open. Recording it once here
+  costs no duplicate when it does go out, because the fold projects an outbound prompt to nothing —
+  the console already holds the text. Without the row, `event_seq` addresses only the agent's half
+  of a transcript.
 - **Two members of the vocabulary have no row.** A `TextDelta` is an increment of prose the
   completed message carries whole; a `TurnCompleted` is the `session_turns` row, which already
   holds the exchange's outcome, its cost and its bracket.
