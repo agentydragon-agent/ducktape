@@ -201,7 +201,9 @@ def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
                     "asset_id": PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id,
                     "event_kind": event_code.name.lower(),
                     "regime": regime_code.name.lower(),
-                    "mark_usd": float(currency_display_column(plan, channels.mark_currency_quanta[issuer_idx, rollout, month])),
+                    "mark_usd": float(
+                        currency_display_column(plan, channels.mark_currency_quanta[issuer_idx, rollout, month])
+                    ),
                     "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
                     "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
                     "forced_sale_fraction": float(channels.forced_sale_fractions[issuer_idx, rollout, month]),
@@ -243,7 +245,9 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
                 "event_kind": event_code.name.lower(),
                 "regime": regime_code.name.lower(),
                 "outcome": outcome.name.lower(),
-                "mark_usd": float(currency_display_column(plan, channels.mark_currency_quanta[issuer_idx, rollout, month])),
+                "mark_usd": float(
+                    currency_display_column(plan, channels.mark_currency_quanta[issuer_idx, rollout, month])
+                ),
                 "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
                 "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
                 "liquidity_blocked": bool(channels.liquidity_blocked[issuer_idx, rollout, month]),

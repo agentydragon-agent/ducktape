@@ -48,7 +48,11 @@ from finance.augur.sim.compiler.properties import (
     compile_properties_and_liabilities,
 )
 from finance.augur.sim.compiler.property_cashflows import PropertyCashflowCompileOutput, compile_property_cashflows
-from finance.augur.sim.compiler.series import collect_level_series_keys, external_money_values_cube, external_values_cube
+from finance.augur.sim.compiler.series import (
+    collect_level_series_keys,
+    external_money_values_cube,
+    external_values_cube,
+)
 from finance.augur.sim.compiler.target_allocation import (
     TargetAllocationCompileOutput,
     compile_target_allocation_policies,

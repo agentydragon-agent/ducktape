@@ -41,7 +41,7 @@ def test_usd_array_round_trips_for_public_float_surface() -> None:
 def test_currency_quantum_accepts_exact_inputs_and_rejects_implicit_float_money() -> None:
     assert validate_currency_quantum("0.01") == Decimal("0.01")
     assert decimal_to_currency_quanta("687.69", quantum="0.01") == np.int64(68_769)
-    assert decimal_to_currency_quanta(Decimal("123"), quantum=Decimal("1")) == np.int64(123)
+    assert decimal_to_currency_quanta(Decimal(123), quantum=Decimal(1)) == np.int64(123)
     assert decimal_to_currency_quanta("1.25", quantum="0.05") == np.int64(25)
 
     with pytest.raises(TypeError, match="floats are not exact"):

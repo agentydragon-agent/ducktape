@@ -1404,23 +1404,19 @@ def _program_impl(
         if product_summary.has_public_lots:
             safe_series = jnp.maximum(lot_asset_series_index, 0)
             public_price = external_money_values[safe_series, :, snapshot_month]
-            public_value = _value_cents_from_quanta(
-                s.lot_remaining, public_price, lot_quantity_scale[:, None]
-            )
-            holding_usd = (
-                jnp.where(product_inputs.public_lot_mask[:, None], public_value, 0).sum(axis=0).astype(jnp.float64)
-                / float(USD_CENTS)
-            )
+            public_value = _value_cents_from_quanta(s.lot_remaining, public_price, lot_quantity_scale[:, None])
+            holding_usd = jnp.where(product_inputs.public_lot_mask[:, None], public_value, 0).sum(axis=0).astype(
+                jnp.float64
+            ) / float(USD_CENTS)
 
         pe_usd = jnp.zeros((r,), dtype=jnp.float64)
         if product_summary.has_pe_lots:
             safe_issuer = jnp.maximum(product_inputs.pe_lot_issuer, 0)
             pe_price = pe_ch["mark_currency_quanta"][safe_issuer, :, snapshot_month]
             pe_value = _value_cents_from_quanta(s.lot_remaining, pe_price, lot_quantity_scale[:, None])
-            pe_usd = (
-                jnp.where(product_inputs.pe_lot_mask[:, None], pe_value, 0).sum(axis=0).astype(jnp.float64)
-                / float(USD_CENTS)
-            )
+            pe_usd = jnp.where(product_inputs.pe_lot_mask[:, None], pe_value, 0).sum(axis=0).astype(
+                jnp.float64
+            ) / float(USD_CENTS)
 
         property_usd = jnp.zeros((r,), dtype=jnp.float64)
         if product_summary.has_properties:
@@ -1984,9 +1980,7 @@ def _program_impl(
             # a sleeve worth a cent less than selling it yields.
             ta_valid_series = lot_asset_series_index >= 0
             if external_money_values.shape[0] > 0:
-                ta_lot_price = external_money_values[
-                    jnp.where(ta_valid_series, lot_asset_series_index, 0), :, month
-                ]
+                ta_lot_price = external_money_values[jnp.where(ta_valid_series, lot_asset_series_index, 0), :, month]
                 ta_lot_price = jnp.where(ta_valid_series[:, None], ta_lot_price, 0)
             else:
                 ta_lot_price = _zeros_i64((lot_remaining.shape[0], r))
