@@ -932,6 +932,56 @@ class ChatAttachment(Base):
     )
 
 
+class ChatDelivery(Base):
+    """What one channel put in its own copy of a conversation, and where it put it.
+
+    Correspondence, stored rather than re-read: a channel that holds a copy has to know whether it
+    has already shown a thing before it shows it again, and the alternative — reading the room back
+    and parsing the tag off every event — is a round trip per pass. The room read stays the repair
+    path for a copy that drifted; this is the cheap one (<plans/session_channels.md> § 1).
+
+    **Both columns are opaque outside the channel that wrote them**, and for the same reason
+    `chat_attachment.address` is: `sent_ref` is where the channel put it — a Matrix `event_id`
+    today — and `subject` is what the channel decided to show there. Only the channel that minted a
+    pair may look inside one; everything else compares, and never interprets.
+
+    **The subject is the channel's, not the record's**, because how much of the record one event
+    shows is a rendering decision: a room folds a run of tool calls into one notice where a browser
+    lists them. A conversation-layer key for it would put that decision in shared schema. What the
+    conversation layer does own is the pairing being per attachment, which is what makes two rooms
+    holding one conversation two independent copies.
+
+    **Live means the channel still shows it.** `retired_at` is set when the channel takes it back —
+    a redacted status line — and `uq_chat_delivery_live_subject` is what makes re-deriving a subject
+    find the event already showing it instead of sending a second one. A retired row stays: the
+    channel's copy cannot be asked what it used to show, so this is the only place that survives.
+    """
+
+    __tablename__ = "chat_delivery"
+
+    delivery_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    attachment_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+    )
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    sent_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    sent_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("btrim(subject) <> ''", name="ck_chat_delivery_subject_nonempty"),
+        CheckConstraint("btrim(sent_ref) <> ''", name="ck_chat_delivery_ref_nonempty"),
+        CheckConstraint("retired_at IS NULL OR retired_at >= sent_at", name="ck_chat_delivery_retire_after_sent"),
+        Index(
+            "uq_chat_delivery_live_subject",
+            "attachment_id",
+            "subject",
+            unique=True,
+            postgresql_where=text("retired_at IS NULL"),
+        ),
+    )
+
+
 class Session(Base):
     """One Operator-owned agent conversation and its Agent Sandbox rendezvous."""
 
@@ -1280,12 +1330,9 @@ class SessionEvent(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        # `activity_*` is wider than `ConversationEventKind` needs: nothing writes those rows any
-        # more, and narrowing waits on the migration the enum's own tombstone names.
         CheckConstraint(
             "kind IN ('message_completed','reasoning','tool_call_started',"
-            "'tool_call_completed','activity_started','activity_completed',"
-            "'prompt_enqueued','prompt_rejected','unreadable_input',"
+            "'tool_call_completed','prompt_enqueued','prompt_rejected','unreadable_input',"
             "'session_adopted','lease_expired','turn_aborted')",
             name="ck_session_events_kind",
         ),
@@ -1518,56 +1565,16 @@ metadata = Base.metadata
 # one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
 # the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
 # from its ORM-versus-database comparison, which is otherwise exact.
-#
-# CLEANUP(added 2026-08-17): `DROP TABLE matrix_held_batch` once every haku-console pod runs an
-#   image at or after this commit — `kubectl get pods -n haku-console -o
-#   jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after it. A
-#   prompt the session will not take is rejected rather than held, so there is no acknowledgement
-#   left to defer: this release stopped mapping the table and nothing writes it.
-UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"matrix_held_batch"})
+UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 
 # The same, one level down: `(table, column)` pairs the database has and no ORM class maps, in
 # tables that stay. A separate set rather than an entry in the one above, which hides a whole
 # table — naming `session_messages` there would stop the comparison noticing any drift in it.
-#
-# The two gates below are different commits and converge separately, which is why each names its
-# own. The convergence check is the same either way: `kubectl get pods -n haku-console -o
-# jsonpath='{.items[*].spec.containers[0].image}'` reporting a single tag at or after the commit.
-#
-# CLEANUP(added 2026-08-17): `DROP COLUMN session_messages.{tool_calls,unpointable_reason}` once
-#   every haku-console pod runs an image at or after #4266, which unmapped them. With
-#   `unpointable_reason` go `ck_session_messages_unpointable_{reason,exclusive}`, which that
-#   release also stopped declaring. <../plans/next_month.md> § 1 phase 3.
-#
-# CLEANUP(added 2026-08-17): `DROP COLUMN session_frames.partial` once every pod runs an image at
-#   or after this commit, and `DELETE FROM session_frames WHERE partial` with it. Those rows
-#   outlived their writer (#4230) and this release stopped marking them, so until the delete runs
-#   the fold reads them as ordinary `assistant` frames. Same § 1 phase 3.
-#
-# CLEANUP(added 2026-08-17): `DROP COLUMN session_turns.{input_tokens,output_tokens,
-#   cached_input_tokens,cost_usd,duration_ms}` once every pod runs an image at or after this
-#   commit, and `ck_session_turns_usage_counters` with them — this release stopped declaring that
-#   constraint, and it survives the unmapping because an `INSERT` naming none of the three
-#   counters leaves them all NULL, which is what it asks for. The numbers stay recoverable: they
-#   were read off the `result` frame's payload, which is whole in `session_frames`.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("session_messages", "tool_calls"),
-        ("session_messages", "unpointable_reason"),
-        ("session_frames", "partial"),
-        ("session_turns", "input_tokens"),
-        ("session_turns", "output_tokens"),
-        ("session_turns", "cached_input_tokens"),
-        ("session_turns", "cost_usd"),
-        ("session_turns", "duration_ms"),
-    }
-)
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset()
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
-#
-# CLEANUP(added 2026-08-17): goes with `session_frames.partial`, on the same gate.
-UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset({"uq_session_frames_partial"})
+UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset()
 
 
 class MatrixAccessToken(Base):

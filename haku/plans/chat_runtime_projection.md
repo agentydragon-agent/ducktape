@@ -118,10 +118,9 @@ sinks write to it:
 | `_progress_reporter.report`, by hand                    | one decoded line of a `SetupOutput`       | `"setup_output"` — the bridge's `kind` literal |
 
 Plus a `partial` row, the console's own reconstruction of a streaming answer, which wore
-`assistant` and was told apart by a boolean column. That one leaves regardless: stage 1 removed its
-reason to exist, #4230 deleted its writer, and the column is now unmapped — so those rows are no
-longer distinguishable, and `database_schema.UNMAPPED_COLUMNS_PENDING_DROP` holds the tombstone for
-the `DROP` and the `DELETE` that go with it (<next_month.md> § 1 phase 3).
+`assistant` and was told apart by a boolean column. That one has left: stage 1 removed its reason to
+exist, #4230 deleted its writer, and `0068` dropped the column and the rows together
+(<next_month.md> § 1 phase 3).
 
 **The intended shape, if and when this is picked up: the table is the log of the bridge.** Nothing
 here is scheduled, and the rest of this plan does not depend on it — stage 3 onward can proceed with
@@ -386,10 +385,8 @@ authorisation (2026-08-16):
 > conversations, nothing in the conversation tables I'd really miss in Haku console db
 
 `DELETE FROM sessions` is the whole operation. `ON DELETE CASCADE` takes
-`session_{frames,messages,turns,prompts,events,outbox}`; `session_turn_prompts` and
-`matrix_held_batch` cascade from the message and turn rows going with them, and a held batch's
-disappearance is the safe direction, since the watermark never moved and the homeserver re-offers it.
-`matrix_conversation.session_id` is set NULL, after which the Matrix supervisor provisions a
+`session_{frames,messages,turns,prompts,events,outbox}`; `session_turn_prompts` cascades from the
+message and turn rows going with them. `matrix_conversation.session_id` is set NULL, after which the Matrix supervisor provisions a
 replacement session against the same room — which is what makes the operation survivable on a live
 room rather than only on terminal sessions. Run against production on 2026-08-16 it removed 302
 sessions and 35,795 frames, and a replacement session was recording four minutes later.
