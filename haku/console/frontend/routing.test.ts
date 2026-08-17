@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_ENROLLMENT_PATH_PREFIX,
   agentEnrollmentIdForPathname,
-  CLAUDE_CHAT_PATH,
   CONVERSATIONS_PATH,
   CONSOLE_ROOT_PATH,
   HOME_PATH,
@@ -11,6 +10,8 @@ import {
   oauthResultIdForPathname,
   rememberedEmbedPath,
   rememberEmbedPath,
+  sessionFramesIdForPathname,
+  sessionFramesPath,
   SETTINGS_PATH,
   TOOL_CALLS_PATH,
   toolCallIdForPathname,
@@ -25,7 +26,6 @@ describe("viewForPathname", () => {
       "agentEnrollment"
     );
     expect(viewForPathname(TOOL_CALLS_PATH)).toBe("toolCalls");
-    expect(viewForPathname(CLAUDE_CHAT_PATH)).toBe("claudeChat");
     expect(viewForPathname(CONVERSATIONS_PATH)).toBe("conversations");
     expect(viewForPathname(`${CONVERSATIONS_PATH}/10000000-0000-4000-8000-000000000001`)).toBe("conversations");
     expect(viewForPathname(`${OAUTH_RESULT_PATH_PREFIX}/8de5eb42-a3ce-4c83-9b13-59678c399ba3`)).toBe("oauthResult");
@@ -38,6 +38,16 @@ describe("viewForPathname", () => {
     expect(conversationIdForPathname(`${CONVERSATIONS_PATH}/${id}`)).toBe(id);
     expect(conversationIdForPathname(`${CONVERSATIONS_PATH}/not-a-conversation`)).toBeNull();
     expect(viewForPathname(`${CONVERSATIONS_PATH}/not-a-conversation`)).toBe("notFound");
+  });
+
+  // The frame log hangs off the session, not the conversation: a conversation outlives its
+  // sessions and has several, and the frames belong to exactly one of them.
+  it("addresses a frame log by its session", () => {
+    const id = "10000000-0000-4000-8000-000000000001";
+    expect(sessionFramesPath(id)).toBe(`${CONSOLE_ROOT_PATH}/sessions/${id}/frames`);
+    expect(sessionFramesIdForPathname(sessionFramesPath(id))).toBe(id);
+    expect(viewForPathname(sessionFramesPath(id))).toBe("sessionFrames");
+    expect(viewForPathname(`${CONVERSATIONS_PATH}/${id}/frames`)).toBe("notFound");
   });
 
   it("resolves a deep-linked tool call to the shell, which opens the drawer on that call", () => {
