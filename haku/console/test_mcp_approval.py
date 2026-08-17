@@ -174,7 +174,10 @@ def _build_test_mcp_server() -> FastMCP:
 
 @asynccontextmanager
 async def _serve_remote_oauth(
-    *, preregistered_client_id: str | None = None, bearers: list[str | None] | None = None
+    *,
+    preregistered_client_id: str | None = None,
+    expected_client_secret: str | None = None,
+    bearers: list[str | None] | None = None,
 ) -> AsyncGenerator[str]:
     """A fake OAuth server. With `preregistered_client_id` set, the metadata omits
     `registration_endpoint` and no `/auth/register` route is mounted at all — mirroring
@@ -242,6 +245,8 @@ async def _serve_remote_oauth(
             assert form["code"] == "operator-code"
             assert form["client_id"] == expected_client_id
             assert form["code_verifier"]
+            if expected_client_secret is not None:
+                assert form["client_secret"] == expected_client_secret
             return JSONResponse(
                 {
                     "access_token": "operator-access-token",
@@ -287,6 +292,14 @@ async def remote_oauth_url(upstream_bearers: list[str | None]) -> AsyncGenerator
 @pytest.fixture
 async def preregistered_remote_oauth_url() -> AsyncGenerator[str]:
     async with _serve_remote_oauth(preregistered_client_id="preregistered-client") as url:
+        yield url
+
+
+@pytest.fixture
+async def preregistered_confidential_remote_oauth_url() -> AsyncGenerator[str]:
+    async with _serve_remote_oauth(
+        preregistered_client_id="github-client-id", expected_client_secret="github-client-secret"
+    ) as url:
         yield url
 
 
@@ -681,6 +694,49 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
         auth_query = parse_qs(urlparse(started.json()["authorization_url"]).query)
         assert auth_query["client_id"] == ["preregistered-client"]
 
+        callback = client.get(
+            "/api/mcp/operator-auth/callback",
+            params={"state": auth_query["state"][0], "code": "operator-code"},
+            follow_redirects=False,
+        )
+
+    assert callback.status_code == 303, callback.text
+
+
+def test_operator_oauth_preregistered_confidential_client_reads_deploy_secret(
+    make_operator_client,
+    tmp_path: Path,
+    preregistered_confidential_remote_oauth_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_MCP_CLIENT_ID", "github-client-id")
+    monkeypatch.setenv("GITHUB_MCP_CLIENT_SECRET", "github-client-secret")
+    config_file = write_config(
+        tmp_path / "haku_console_github_mcp.yaml",
+        _config(
+            [
+                _remote_server(
+                    "github",
+                    f"{preregistered_confidential_remote_oauth_url}/mcp",
+                    {
+                        "kind": "remote_server_oauth",
+                        "client_registration": {
+                            "kind": "preregistered",
+                            "client_id_env_var": "GITHUB_MCP_CLIENT_ID",
+                            "client_secret_env_var": "GITHUB_MCP_CLIENT_SECRET",
+                            "token_endpoint_auth_method": "client_secret_post",
+                        },
+                    },
+                )
+            ]
+        ),
+    )
+
+    with make_operator_client(config_file=config_file) as client:
+        started = client.post("/api/mcp/operator-auth/github/connect")
+        assert started.status_code == 200, started.text
+        auth_query = parse_qs(urlparse(started.json()["authorization_url"]).query)
+        assert auth_query["client_id"] == ["github-client-id"]
         callback = client.get(
             "/api/mcp/operator-auth/callback",
             params={"state": auth_query["state"][0], "code": "operator-code"},
@@ -1739,6 +1795,16 @@ async def test_remote_oauth_client_registration_variants_reject_each_others_fiel
                     "kind": "dynamic",
                     "client_name": "Haku Console",
                     "client_id": "not-valid-for-dcr",
+                }
+            }
+        )
+    with pytest.raises(ValidationError, match="client_secret_env_var"):
+        RemoteServerOAuthAuth.model_validate(
+            {
+                "client_registration": {
+                    "kind": "preregistered",
+                    "client_id": "existing-client",
+                    "client_secret_env_var": "GITHUB_MCP_CLIENT_SECRET",
                 }
             }
         )
