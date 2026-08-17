@@ -75,31 +75,10 @@ jobs:
           printf '%s\n' "$loaded"
           image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
           test -n "$image"
-          docker run --rm --entrypoint /bin/sh "$image" -ceu '
-            /usr/bin/env bash -c "true"
-            pre-commit --version
-            for command in bazelisk buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
-              command -v "$command"
-            done
-            printf "%s\n" \
-              "{\"plugins\":{\"entries\":{\"matrix\":{\"enabled\":true}}}}" \
-              > /tmp/openclaw-plugin-smoke.json
-            plugins=/tmp/openclaw-plugins.json
-            OPENCLAW_CONFIG_PATH=/tmp/openclaw-plugin-smoke.json openclaw plugins list --json > "$plugins"
-            jq "{matrix: [.plugins[] | select(.id == \"matrix\")], diagnostics}" "$plugins"
-            jq -e ".plugins[] | select(.id == \"matrix\" and .origin == \"bundled\" and .status == \"loaded\")" "$plugins"
-            source="$(jq -er ".plugins[] | select(.id == \"matrix\") | .source" "$plugins")"
-            matrix_root="$(dirname "$(dirname "$source")")"
-            test -f "$matrix_root/openclaw.plugin.json"
-            test -d "$matrix_root/node_modules/matrix-js-sdk"
-            gateway_root="$(dirname "$(dirname "$(dirname "$matrix_root")")")"
-            test "$(readlink -f "$matrix_root/node_modules/openclaw")" = "$gateway_root"
-            test -f "$gateway_root/dist/extensions/matrix/openclaw.plugin.json"
-            test -f "$gateway_root/dist-runtime/extensions/matrix/openclaw.plugin.json"
-            test "$(readlink -f "$gateway_root/dist-runtime/extensions/matrix/node_modules/openclaw")" = "$gateway_root"
-            jq -e "[.diagnostics[] | select(.message | contains(\"blocked plugin candidate\"))] | length == 0" "$plugins"
-            test ! -e /opt/openclaw/plugins/matrix
-          '
+          docker run --rm \
+            --entrypoint /bin/sh \
+            --mount "type=bind,src=$PWD/.github/scripts/smoke-openclaw-image.sh,dst=/tmp/smoke-openclaw-image.sh,readonly" \
+            "$image" /tmp/smoke-openclaw-image.sh
 
       - name: Compute tag
         id: meta
