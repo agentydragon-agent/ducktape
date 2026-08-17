@@ -53,15 +53,6 @@ let
     tea
   ];
 
-  # `fakeRootCommands` customizes the new layer before dockerTools unpacks a
-  # `fromImage`, so it cannot write into the upstream /app directory. Package
-  # the preload as ordinary image content instead; its /app path is overlaid on
-  # the base image when the final OCI archive is assembled.
-  proxySetup = pkgs.runCommand "haku-openclaw-spike-proxy-setup" { } ''
-    mkdir -p "$out/app"
-    cp ${../../openclaw/proxy-setup.mjs} "$out/app/proxy-setup.mjs"
-  '';
-
   toolPath = pkgs.lib.makeBinPath tools;
 in
 pkgs.dockerTools.buildLayeredImage {
@@ -69,15 +60,18 @@ pkgs.dockerTools.buildLayeredImage {
   # CI supplies the sortable devel-* tag selected by Flux.
   tag = null;
   fromImage = upstreamOpenClaw;
-  contents = tools ++ [ proxySetup ];
+  contents = tools;
   maxLayers = 100;
 
   # The upstream CLI launcher uses `#!/usr/bin/env node`, but its otherwise
   # minimal beta base does not contain coreutils' `env`. The old Dockerfile
   # happened to add it through apt; make that FHS compatibility path explicit
-  # now that coreutils comes from Nix.
+  # now that coreutils comes from Nix. Put the proxy preload in the layer too:
+  # it must be a real /app file, not a symlink into /nix/store, so Node resolves
+  # `undici` from the upstream gateway's adjacent node_modules directory.
   fakeRootCommands = ''
-    mkdir -p usr/bin
+    mkdir -p app usr/bin
+    cp ${../../openclaw/proxy-setup.mjs} app/proxy-setup.mjs
     ln -sf ${pkgs.coreutils}/bin/env usr/bin/env
   '';
 
