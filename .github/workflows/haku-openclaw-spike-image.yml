@@ -77,7 +77,7 @@ jobs:
             openclaw --version
             claude --version
             java -version
-            keytool -help >/dev/null
+            keytool -version
             for command in bazel kubectl tea ruff git jq python3 rg; do
               command -v "$command"
             done
