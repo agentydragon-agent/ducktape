@@ -1,4 +1,5 @@
 {
+  devtools,
   pkgs,
   nix-openclaw,
   ducktapePkgs,
@@ -80,6 +81,12 @@ let
       tini
     ]
     ++ [
+      # The agent does its work in this container, so give it the existing
+      # declaratively-built `.#devtools` toolchain. In
+      # particular bbr and its pygit2 extension stay in the Nix closure that
+      # matches this image's Python, rather than relying on a persisted pip
+      # installation from a previous image.
+      devtools
       # Local pre-commit hooks call these entry points. The package wraps its own compatible
       # Python + pygit2 closure, rather than depending on a persisted pip venv from an older image.
       ducktapePkgs.ducktape-git-hooks

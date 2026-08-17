@@ -506,6 +506,9 @@
               nix-openclaw
               pkgs
               ;
+            # Reuse the existing development profile rather than maintaining
+            # an image-specific duplicate of its tool list.
+            devtools = self.packages.${system}.devtools;
           };
           # Haku's Claude-backed OpenClaw spike. It keeps its upstream beta
           # gateway pin for Claude Opus 5 compatibility, while its additional

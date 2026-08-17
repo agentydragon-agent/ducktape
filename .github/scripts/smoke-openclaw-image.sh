@@ -3,9 +3,10 @@ set -eu
 
 /usr/bin/env bash -c "true"
 pre-commit --version
-for command in bazelisk buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
+for command in bazelisk bb bbapi bbr buildifier ducktape-precommit kubeconform prettier ruff shfmt; do
   command -v "$command"
 done
+bbr --help >/dev/null
 
 config="${TMPDIR:-/tmp}/openclaw-plugin-smoke.json"
 plugins="${TMPDIR:-/tmp}/openclaw-plugins.json"
