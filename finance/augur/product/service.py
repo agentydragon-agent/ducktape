@@ -7,6 +7,7 @@ agent, initial cash); does not know about properties, locations, or bootstrap.
 from __future__ import annotations
 
 import threading
+from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
 
@@ -107,6 +108,8 @@ class ProductService:
             )
             return MetricFanResponse(
                 model_id=model_id,
+                currency_code=summary.currency_code,
+                currency_quantum=summary.currency_quantum,
                 metric=request.metric,
                 monthly_metric_fan=_monthly_fan_frame(summary, percentiles),
                 terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
@@ -123,6 +126,8 @@ class ProductService:
             )
             return TerminalDistributionResponse(
                 model_id=model_id,
+                currency_code=summary.currency_code,
+                currency_quantum=summary.currency_quantum,
                 metric=request.metric,
                 terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
                 terminal_metric_samples=_terminal_samples_frame(request.rollout_seeds, summary),
@@ -151,9 +156,14 @@ class ProductService:
         )
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
-        monthly_metrics_frame = {name: arr.tolist() for name, arr in monthly_arrays.items()}
+        monthly_metrics_frame = {
+            name: arr.tolist() if name == "month_index" else [_currency_quanta(value) for value in arr]
+            for name, arr in monthly_arrays.items()
+        }
         return RolloutResponse(
             model_id=model_id,
+            currency_code=dense.plan.currency_code,
+            currency_quantum=format(dense.plan.currency_quantum, "f"),
             rollout=RolloutOutput(
                 seed=seed,
                 failed=terminal.failed_month_index is not None,
@@ -242,29 +252,66 @@ class ProductService:
 
 def _monthly_fan_frame(summary: ProductSummary, percentiles: tuple[float, ...]) -> Frame:
     month_indices = summary.month_index
-    bands = summary.monthly_bands  # (n_percentiles, H+1)
-    assert bands is not None, "monthly fan requires percentiles"
+    # Keep sampled integer currency quanta intact through the public-product
+    # reduction. NumPy's percentile promotes them to float64; `_currency_quantiles`
+    # is the explicit exact/half-up interpolation boundary instead.
+    bands = np.asarray(
+        [_currency_quantiles(summary.monthly_samples[month], percentiles) for month in range(month_indices.size)],
+        dtype=np.int64,
+    ).T
     percentile_array = np.asarray(percentiles, dtype=np.float64)
     return {
         "month_index": np.repeat(month_indices, percentile_array.size).tolist(),
         "percentile": np.tile(percentile_array, month_indices.size).tolist(),
-        "value": bands.T.reshape(-1).tolist(),
+        "value": [_currency_quanta(value) for value in bands.T.reshape(-1)],
     }
 
 
 def _percentile_frame(samples: np.ndarray, percentiles: tuple[float, ...]) -> Frame:
     percentile_array = np.asarray(percentiles, dtype=np.float64)
-    values = np.percentile(samples, percentile_array, method="linear")
-    return {"percentile": percentile_array.tolist(), "value": np.asarray(values, dtype=np.float64).tolist()}
+    return {
+        "percentile": percentile_array.tolist(),
+        "value": [_currency_quanta(value) for value in _currency_quantiles(samples, percentiles)],
+    }
 
 
 def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductSummary) -> Frame:
     return {
         "seed": list(seeds),
-        "value": summary.terminal_samples.tolist(),
+        "value": [_currency_quanta(value) for value in summary.terminal_samples],
         "failed": (summary.failed_month >= 0).tolist(),
     }
 
 
 def _failed_count(summary: ProductSummary) -> int:
     return int((summary.failed_month >= 0).sum())
+
+
+def _currency_quanta(value: object) -> str:
+    """Serialize an Int64 quantum count without a lossy JSON number."""
+
+    return str(int(value))
+
+
+def _currency_quantiles(samples: np.ndarray, percentiles: tuple[float, ...]) -> tuple[int, ...]:
+    """Linear quantiles, rounded half-up to the nearest currency quantum.
+
+    NumPy's percentile machinery promotes Int64 values to float64, which can
+    lose individual quanta above JavaScript's safe-integer range.  Product
+    percentiles are derived values, so this is their explicit rounding point;
+    Decimal keeps the interpolation and the final quantum count exact.
+    """
+
+    ordered = sorted(int(value) for value in np.asarray(samples, dtype=np.int64))
+    if not ordered:
+        raise ValueError("cannot calculate percentiles from no samples")
+    last = len(ordered) - 1
+    result: list[int] = []
+    for percentile in percentiles:
+        rank = Decimal(str(percentile)) * last / Decimal(100)
+        low = int(rank // 1)
+        high = min(low + 1, last)
+        fraction = rank - low
+        value = Decimal(ordered[low]) + Decimal(ordered[high] - ordered[low]) * fraction
+        result.append(int(value.to_integral_value(rounding=ROUND_HALF_UP)))
+    return tuple(result)

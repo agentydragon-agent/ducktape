@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { fmtNumber } from "./lib/format";
-import { fmtMetricValue } from "./lib/chart";
-import { useCurrencyDisplay } from "./hooks";
+import { fmtCurrencyQuanta, fmtNumber } from "./lib/format";
 import { ScenarioBadge } from "./scenario_tabs";
 import {
   ROLLOUT_EVENT_COLORS,
@@ -25,7 +23,6 @@ export function SelectedRolloutEventsPanel({
   onSelectEventMonth,
   onHoverEventMonth,
 }) {
-  const { display: currencyDisplay } = useCurrencyDisplay();
   const groups = useMemo(() => eventGroupsByMonth(events), [events]);
   const groupRefs = useRef(new Map());
 
@@ -139,11 +136,9 @@ export function SelectedRolloutEventsPanel({
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-1 text-right augur-tabular">
-                          {fmtMetricValue("amountUsd", eventAmount(event), currencyDisplay)}
+                          {fmtCurrencyQuanta(eventAmount(event), event._currency)}
                         </td>
-                        <td className="min-w-[12rem] px-4 py-1 text-xs augur-muted">
-                          {eventDetailText(event, currencyDisplay)}
-                        </td>
+                        <td className="min-w-[12rem] px-4 py-1 text-xs augur-muted">{eventDetailText(event)}</td>
                       </tr>
                     ))}
                   </React.Fragment>

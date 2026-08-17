@@ -98,7 +98,7 @@ async def _product_for_ipo_probability(
     return make_product_service(model)
 
 
-def _private_equity_spread(product: ProductService) -> tuple[float, int]:
+def _private_equity_spread(product: ProductService) -> tuple[int, int]:
     """Terminal PE value's p10-to-p90 spread, plus the failure count."""
 
     response = product.terminal_distribution(
@@ -106,11 +106,11 @@ def _private_equity_spread(product: ProductService) -> tuple[float, int]:
             scenario=_SCENARIO,
             first_seed=0,
             rollout_count=64,
-            metric="private_equity_value_usd",
+            metric="private_equity_value_currency_quanta",
             percentiles=(10.0, 90.0),
         )
     )
-    low, high = (float(value) for value in response.terminal_metric_percentiles["value"])  # type: ignore[arg-type]
+    low, high = (int(value) for value in response.terminal_metric_percentiles["value"])
     return high - low, response.failed_count
 
 

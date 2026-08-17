@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.sim.enums import LifecycleKind
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import CapitalImprovementEvent, PropertySaleEvent, Scenario, SetRentedFractionEvent
 
 
@@ -69,7 +69,7 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
         elif isinstance(event, CapitalImprovementEvent):
             kind[i] = LifecycleKind.CAPITAL_IMPROVEMENT
             amount[i] = float(event.amount_usd)
-            amount_cents[i] = usd_to_cents(event.amount_usd)
+            amount_cents[i] = currency_amount_to_quanta(event.amount_usd, quantum=scenario.currency.quantum)
         elif isinstance(event, PropertySaleEvent):
             kind[i] = LifecycleKind.SALE
             # Reuse `amount` as closing_cost_pct for sale events (different semantic per kind,

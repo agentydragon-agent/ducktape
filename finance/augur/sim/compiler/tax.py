@@ -20,7 +20,7 @@ from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
 from finance.augur.sim.compiler.helpers import AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, load_jurisdiction
 from finance.augur.sim.scenario import FilingStatus, InterestIncome, Scenario, TransferIncomeCategory
 
@@ -47,10 +47,10 @@ def section_121_exclusion_for(filing_status: FilingStatus) -> float:
     return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
 
 
-def bracket_upper_to_cents(upper_usd: float) -> np.int64:
+def bracket_upper_to_currency_quanta(upper_usd: float, *, currency_quantum: object) -> np.int64:
     if math.isinf(upper_usd):
         return np.int64(_OPEN_ENDED_BRACKET_UPPER_CENTS)
-    return usd_to_cents(upper_usd)
+    return currency_amount_to_quanta(upper_usd, quantum=currency_quantum)
 
 
 @dataclass(frozen=True)
@@ -161,17 +161,27 @@ def compile_tax(
         payment_account.append(strings.require(profile.payment_account_id))
         authority_agent.append(strings.require(profile.tax_authority_agent_id))
         authority_account.append(strings.require(profile.tax_authority_account_id))
-        prior_year_tax.append(usd_to_cents(profile.prior_year_tax_usd))
-        section_121_exclusion.append(usd_to_cents(section_121_exclusion_for(profile.filing_status)))
+        prior_year_tax.append(currency_amount_to_quanta(profile.prior_year_tax_usd, quantum=scenario.currency.quantum))
+        section_121_exclusion.append(
+            currency_amount_to_quanta(
+                section_121_exclusion_for(profile.filing_status), quantum=scenario.currency.quantum
+            )
+        )
         for jurisdiction_id in profile.jurisdiction_ids:
             jurisdiction = jurisdictions[jurisdiction_id]
             ordinary = [
-                (bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                (
+                    bracket_upper_to_currency_quanta(bracket.upper_usd, currency_quantum=scenario.currency.quantum),
+                    float(bracket.rate),
+                )
                 for bracket in jurisdiction.ordinary_income_brackets[profile.filing_status]
             ]
             ltcg = (
                 [
-                    (bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                    (
+                        bracket_upper_to_currency_quanta(bracket.upper_usd, currency_quantum=scenario.currency.quantum),
+                        float(bracket.rate),
+                    )
                     for bracket in jurisdiction.ltcg_brackets[profile.filing_status]
                 ]
                 if jurisdiction.ltcg_brackets is not None
@@ -181,7 +191,11 @@ def compile_tax(
             max_ltcg = max(max_ltcg, len(ltcg))
             link_profile.append(profile_index)
             link_jurisdiction.append(strings.require(jurisdiction_id))
-            standard_deduction.append(usd_to_cents(jurisdiction.standard_deduction[profile.filing_status]))
+            standard_deduction.append(
+                currency_amount_to_quanta(
+                    jurisdiction.standard_deduction[profile.filing_status], quantum=scenario.currency.quantum
+                )
+            )
             has_ltcg.append(1 if jurisdiction.ltcg_brackets is not None else 0)
             # Federal-us gets the §1250 25% flat rate cap; all other jurisdictions tax
             # unrecaptured-depreciation as ordinary income (CA, etc.).

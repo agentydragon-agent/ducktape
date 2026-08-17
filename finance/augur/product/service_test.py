@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
 import pytest
@@ -123,6 +124,25 @@ def product(counting_model: CountingModel, make_product_service: MakeProductServ
     return make_product_service(counting_model)
 
 
+def _usd_quanta(value: float | int) -> str:
+    """Expected USD values at the public integer-quantum boundary."""
+
+    return str(int((Decimal(str(value)) / Decimal("0.01")).to_integral_value(rounding=ROUND_HALF_UP)))
+
+
+def _usd_from_quanta(value: str) -> float:
+    """Test-only USD view for an approximate assertion over dynamic calculations."""
+
+    return float(Decimal(value) * Decimal("0.01"))
+
+
+def _quanta_int(value: object) -> int:
+    """Narrow dynamically indexed wire-frame values to an exact quantum count."""
+
+    assert isinstance(value, str)
+    return int(value)
+
+
 def _with_fixed_cash(config: Config, cash_usd: float) -> Config:
     fixed = config.portfolio_sources.fixed
     snapshot = fixed.snapshot or FinanceSnapshot(as_of_date="1970-01-01")
@@ -152,7 +172,7 @@ def test_metric_fan_simulates_requested_horizon(product: service.ProductService,
             ),
             first_seed=7,
             rollout_count=1,
-            metric="net_worth_usd",
+            metric="net_worth_currency_quanta",
             percentiles=(50.0,),
         )
 
@@ -180,7 +200,7 @@ def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductSer
         ),
         first_seed=7,
         rollout_count=1,
-        metric="net_worth_usd",
+        metric="net_worth_currency_quanta",
         percentiles=(50.0,),
     )
     with pytest.raises(ValueError, match=f"exceeds server max {augur_config.max_horizon_months}"):
@@ -270,7 +290,11 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
 ) -> None:
     fan = product.metric_fan(
         MetricFanRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(0, 50, 100)
+            scenario=scenario_key,
+            first_seed=7,
+            rollout_count=2,
+            metric="cash_currency_quanta",
+            percentiles=(0, 50, 100),
         )
     )
 
@@ -288,7 +312,9 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
     assert fan.model_id == "composite"
-    assert fan.metric == "cash_usd"
+    assert fan.currency_code == "USD"
+    assert fan.currency_quantum == "0.01"
+    assert fan.metric == "cash_currency_quanta"
     assert fan.failed_count == 0
     assert not hasattr(fan, "rollout_summaries")
     assert len(fan.monthly_metric_fan["month_index"]) == 12
@@ -297,39 +323,48 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     # Each month is -$1,000 of spend, offset once at month 0 by $1,875 of bond coupon: the TIPS
     # pays $1,000 (100k at 2%/yr, semiannual) and the muni $875 (50k at 3.5%/yr).
     assert fan.monthly_metric_fan["value"] == [
-        250_000.0,
-        250_000.0,
-        250_000.0,
-        250_875.0,
-        250_875.0,
-        250_875.0,
-        249_875.0,
-        249_875.0,
-        249_875.0,
-        248_875.0,
-        248_875.0,
-        248_875.0,
+        _usd_quanta(value)
+        for value in [
+            250_000.0,
+            250_000.0,
+            250_000.0,
+            250_875.0,
+            250_875.0,
+            250_875.0,
+            249_875.0,
+            249_875.0,
+            249_875.0,
+            248_875.0,
+            248_875.0,
+            248_875.0,
+        ]
     ]
-    assert fan.terminal_metric_percentiles == {"percentile": [0.0, 50.0, 100.0], "value": [248_875.0] * 3}
+    assert fan.terminal_metric_percentiles == {"percentile": [0.0, 50.0, 100.0], "value": [_usd_quanta(248_875.0)] * 3}
 
     terminal_distribution = product.terminal_distribution(
         TerminalDistributionRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(0, 1, 2, 50, 100)
+            scenario=scenario_key,
+            first_seed=7,
+            rollout_count=2,
+            metric="cash_currency_quanta",
+            percentiles=(0, 1, 2, 50, 100),
         )
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
     assert terminal_distribution.model_id == "composite"
-    assert terminal_distribution.metric == "cash_usd"
+    assert terminal_distribution.currency_code == "USD"
+    assert terminal_distribution.currency_quantum == "0.01"
+    assert terminal_distribution.metric == "cash_currency_quanta"
     assert terminal_distribution.failed_count == 0
     assert not hasattr(terminal_distribution, "monthly_metric_fan")
     assert terminal_distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
-        "value": [248_875.0] * 5,
+        "value": [_usd_quanta(248_875.0)] * 5,
     }
     assert terminal_distribution.terminal_metric_samples == {
         "seed": [7, 8],
-        "value": [248_875.0, 248_875.0],
+        "value": [_usd_quanta(248_875.0), _usd_quanta(248_875.0)],
         "failed": [False, False],
     }
 
@@ -338,31 +373,39 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
     assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 250_875.0, 249_875.0, 248_875.0]
-    assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 835_500.0
-    assert detail.rollout.monthly_metrics["liquid_net_worth_usd"][0] == 1_085_500.0
+    assert detail.currency_code == "USD"
+    assert detail.currency_quantum == "0.01"
+    assert detail.rollout.monthly_metrics["cash_currency_quanta"] == [
+        _usd_quanta(value) for value in [250_000.0, 250_875.0, 249_875.0, 248_875.0]
+    ]
+    assert detail.rollout.monthly_metrics["holding_value_currency_quanta"][0] == _usd_quanta(835_500.0)
+    assert detail.rollout.monthly_metrics["liquid_net_worth_currency_quanta"][0] == _usd_quanta(1_085_500.0)
     # +$25k for the PHA private-equity position (1000 units at $25 anchor), +$150k for the two
     # bond rungs at face. Bonds are in net worth and deliberately NOT in liquid net worth above:
     # held to maturity, they are neither marked nor saleable.
-    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_260_500.0
+    assert detail.rollout.monthly_metrics["net_worth_currency_quanta"][0] == _usd_quanta(1_260_500.0)
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"] * 3
-    assert [event.amount_paid_usd for event in detail.rollout.events if event.kind == "monthly_expense"] == [
-        1_000.0,
-        1_000.0,
-        1_000.0,
-    ]
+    assert [
+        event.amount_paid_currency_quanta for event in detail.rollout.events if event.kind == "monthly_expense"
+    ] == [_usd_quanta(1_000.0), _usd_quanta(1_000.0), _usd_quanta(1_000.0)]
 
     holding_fan = product.metric_fan(
         MetricFanRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="holding_value_usd", percentiles=(50,)
+            scenario=scenario_key,
+            first_seed=7,
+            rollout_count=2,
+            metric="holding_value_currency_quanta",
+            percentiles=(50,),
         )
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,), (7, 8)]
-    assert holding_fan.monthly_metric_fan["value"][0] == 835_500.0
+    assert holding_fan.monthly_metric_fan["value"][0] == _usd_quanta(835_500.0)
 
     fan_with_one_new_seed = product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash_currency_quanta", percentiles=(50,)
+        )
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [
@@ -384,8 +427,9 @@ def test_reduced_product_summary_matches_dense_metric_decode(
     expected_failed = decode.failed_month_index_batch(dense)
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
 
-    # The reduced product projection emits the same numbers as the full dense decode, but reduced
-    # on-device to the requested metric's monthly percentile bands + per-rollout terminal samples.
+    # The reduced product projection emits the same exact Int64 quanta as the full dense decode.
+    # Percentiles are intentionally interpolated host-side, where Decimal avoids float64's
+    # unsafe-integer collapse.
     for name, expected_series in expected_metrics.items():
         if name == "month_index":
             continue
@@ -394,10 +438,17 @@ def test_reduced_product_summary_matches_dense_metric_decode(
         )
         np.testing.assert_array_equal(summary.failed_month, expected_failed)
         # Terminal shortfall is cumulative over the horizon; every other metric is the end snapshot.
-        expected_terminal = expected_series.sum(axis=0) if name == "shortfall_usd" else expected_series[-1]
-        np.testing.assert_allclose(summary.terminal_samples, expected_terminal, rtol=0.0, atol=1e-9)
-        expected_bands = np.percentile(expected_series, np.asarray(percentiles), axis=1, method="linear")
-        np.testing.assert_allclose(summary.monthly_bands, expected_bands, rtol=1e-9, atol=1e-6)
+        expected_terminal = expected_series.sum(axis=0) if name == "shortfall_currency_quanta" else expected_series[-1]
+        np.testing.assert_array_equal(summary.terminal_samples, expected_terminal)
+        np.testing.assert_array_equal(summary.monthly_samples, expected_series)
+
+
+def test_currency_quantiles_preserve_int64_precision_and_round_half_up() -> None:
+    # Float64 maps both endpoints to the same number. Exact Decimal interpolation
+    # must retain the individual quantum between them.
+    samples = np.asarray([9_007_199_254_740_993, 9_007_199_254_740_995], dtype=np.int64)
+    assert service._currency_quantiles(samples, (50.0,)) == (9_007_199_254_740_994,)
+    assert service._currency_quantiles(np.asarray([0, 1], dtype=np.int64), (50.0,)) == (1,)
 
 
 def test_concurrent_fan_and_terminal_requests_run_serially(
@@ -431,10 +482,10 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
     monkeypatch.setattr(product, "_simulate_product_summary", slow_simulate_product_summary)
 
     fan_request = MetricFanRequest(
-        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(5, 50, 95)
+        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_currency_quanta", percentiles=(5, 50, 95)
     )
     terminal_request = TerminalDistributionRequest(
-        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(0, 50, 100)
+        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_currency_quanta", percentiles=(0, 50, 100)
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
         fan_future = executor.submit(product.metric_fan, fan_request)
@@ -478,7 +529,7 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
             scenario=scenario,
             first_seed=101,
             rollout_count=3,
-            metric="private_equity_value_usd",
+            metric="private_equity_value_currency_quanta",
             percentiles=(0, 50, 100),
         )
     )
@@ -487,11 +538,11 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     assert distribution.model_id == "pe_mark_by_rollout_fixture"
     assert distribution.terminal_metric_percentiles == {
         "percentile": [0.0, 50.0, 100.0],
-        "value": [10_000.0, 20_000.0, 30_000.0],
+        "value": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
     }
     assert distribution.terminal_metric_samples == {
         "seed": [101, 102, 103],
-        "value": [10_000.0, 20_000.0, 30_000.0],
+        "value": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
         "failed": [False, False, False],
     }
 
@@ -510,7 +561,9 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     monkeypatch.setattr(service, "run_jax_product_summary", counted)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash_currency_quanta", percentiles=(50,)
+        )
     )
 
     # All four seeds share one simulated batch, so the reduced product projection runs once.
@@ -526,7 +579,9 @@ def test_metric_fan_does_not_materialize_rollout_events(
     monkeypatch.setattr(service, "rollout_events_from", fail_rollout_events)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_currency_quanta", percentiles=(50,)
+        )
     )
 
 
@@ -540,7 +595,9 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     )
 
     fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario, first_seed=7, rollout_count=1, metric="net_worth_usd", percentiles=(50,))
+        MetricFanRequest(
+            scenario=scenario, first_seed=7, rollout_count=1, metric="net_worth_currency_quanta", percentiles=(50,)
+        )
     )
 
     assert fan.failed_count == 1
@@ -548,27 +605,33 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
     # Month 0 = cash 250k + holdings 835.5k + PHA 25k + bonds 150k at face; failure zeros
     # subsequent months.
-    assert fan.monthly_metric_fan["value"] == [1_260_500.0, 0.0, 0.0, 0.0]
-    assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value": [0.0]}
+    assert fan.monthly_metric_fan["value"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
+    assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value": [_usd_quanta(0.0)]}
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert detail.rollout.failed is True
     assert detail.rollout.terminal_metrics.failed_month_index == 0
-    assert detail.rollout.terminal_metrics.cash_usd == 0.0
-    assert detail.rollout.terminal_metrics.holding_value_usd == 0.0
-    assert detail.rollout.terminal_metrics.net_worth_usd == 0.0
-    assert detail.rollout.terminal_metrics.shortfall_usd == 300_000.0
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["holding_value_usd"] == [835_500.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_260_500.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.terminal_metrics.cash_currency_quanta == _usd_quanta(0.0)
+    assert detail.rollout.terminal_metrics.holding_value_currency_quanta == _usd_quanta(0.0)
+    assert detail.rollout.terminal_metrics.net_worth_currency_quanta == _usd_quanta(0.0)
+    assert detail.rollout.terminal_metrics.shortfall_currency_quanta == _usd_quanta(300_000.0)
+    assert detail.rollout.monthly_metrics["cash_currency_quanta"] == [
+        _usd_quanta(value) for value in [250_000.0, 0.0, 0.0, 0.0]
+    ]
+    assert detail.rollout.monthly_metrics["holding_value_currency_quanta"] == [
+        _usd_quanta(value) for value in [835_500.0, 0.0, 0.0, 0.0]
+    ]
+    assert detail.rollout.monthly_metrics["net_worth_currency_quanta"] == [
+        _usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]
+    ]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
     assert isinstance(failure, RolloutFailureEvent)
-    assert expense.amount_paid_usd == 0.0
-    assert expense.shortfall_usd == 300_000.0
-    assert failure.shortfall_usd == 300_000.0
+    assert expense.amount_paid_currency_quanta == _usd_quanta(0.0)
+    assert expense.shortfall_currency_quanta == _usd_quanta(300_000.0)
+    assert failure.shortfall_currency_quanta == _usd_quanta(300_000.0)
 
 
 def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(product: service.ProductService) -> None:
@@ -589,8 +652,8 @@ def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(pr
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, _failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
-    assert expense.amount_paid_usd == 0.0
-    assert expense.shortfall_usd == 300_000.0
+    assert expense.amount_paid_currency_quanta == _usd_quanta(0.0)
+    assert expense.shortfall_currency_quanta == _usd_quanta(300_000.0)
 
 
 def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.ProductService) -> None:
@@ -622,17 +685,16 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
 
     assert detail.rollout.failed is False
     columns = detail.rollout.monthly_metrics
-    assert columns["cash_usd"] == [250_000.0, 0.0]
-    holding_value_usd = columns["holding_value_usd"]
-    assert holding_value_usd[0] == 835_500.0
-    terminal_holding_value_usd = float(holding_value_usd[1])  # type: ignore[arg-type]
-    assert terminal_holding_value_usd > 0.0
-    assert detail.rollout.terminal_metrics.cash_usd == 0.0
-    assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
-    terminal_pe_value_usd = float(columns["private_equity_value_usd"][1])  # type: ignore[arg-type]
-    terminal_bond_value_usd = float(columns["bond_value_usd"][1])  # type: ignore[arg-type]
-    assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(
-        terminal_holding_value_usd + terminal_pe_value_usd + terminal_bond_value_usd
+    assert columns["cash_currency_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0]]
+    holding_value_quanta = columns["holding_value_currency_quanta"]
+    assert holding_value_quanta[0] == _usd_quanta(835_500.0)
+    assert _quanta_int(holding_value_quanta[1]) > 0
+    assert detail.rollout.terminal_metrics.cash_currency_quanta == _usd_quanta(0.0)
+    assert detail.rollout.terminal_metrics.shortfall_currency_quanta == _usd_quanta(0.0)
+    assert _quanta_int(detail.rollout.terminal_metrics.net_worth_currency_quanta) == (
+        _quanta_int(holding_value_quanta[1])
+        + _quanta_int(columns["private_equity_value_currency_quanta"][1])
+        + _quanta_int(columns["bond_value_currency_quanta"][1])
     )
     assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
@@ -642,11 +704,11 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
     # $48,125, not $50,000: the fixture's bond rungs pay $1,875 of coupon this month, and the
     # band sizes against the balance the month will END at. Counting income the month is
     # already going to receive is what stops it selling assets to cover cash it already has.
-    assert sale.proceeds_usd == pytest.approx(48_125.0)
+    assert sale.proceeds_currency_quanta == _usd_quanta(48_125.0)
     assert sale.units == pytest.approx(96.25)
-    assert expense.amount_due_usd == 300_000.0
-    assert expense.amount_paid_usd == 300_000.0
-    assert expense.shortfall_usd == 0.0
+    assert expense.amount_due_currency_quanta == _usd_quanta(300_000.0)
+    assert expense.amount_paid_currency_quanta == _usd_quanta(300_000.0)
+    assert expense.shortfall_currency_quanta == _usd_quanta(0.0)
 
 
 def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
@@ -674,7 +736,7 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     assert pe_event.asset_label == "Private Holding A (PHA)"
     assert pe_event.event_kind == "acquisition_cashout"
     assert pe_event.regime == "acquired"
-    assert pe_event.mark_usd == pytest.approx(25.0)
+    assert pe_event.mark_currency_quanta == _usd_quanta(25.0)
     assert pe_event.forced_sale_fraction == pytest.approx(0.25)
 
     [sale] = [
@@ -685,7 +747,7 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     ]
     assert isinstance(sale, HoldingSaleEvent)
     assert sale.units == pytest.approx(250.0)
-    assert sale.proceeds_usd == pytest.approx(6_250.0)
+    assert sale.proceeds_currency_quanta == _usd_quanta(6_250.0)
 
 
 def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_service: MakeProductService) -> None:
@@ -727,8 +789,8 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
     )
 
     metrics = detail.rollout.monthly_metrics
-    assert metrics["private_equity_value_usd"] == [25_000.0, 500.0, 500.0]
-    assert detail.rollout.terminal_metrics.private_equity_value_usd == 500.0
+    assert metrics["private_equity_value_currency_quanta"] == [_usd_quanta(value) for value in [25_000.0, 500.0, 500.0]]
+    assert detail.rollout.terminal_metrics.private_equity_value_currency_quanta == _usd_quanta(500.0)
     assert [
         event
         for event in detail.rollout.events
@@ -739,7 +801,7 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
     assert isinstance(pe_event, PrivateEquityMarkerEvent)
     assert pe_event.event_kind == "collapse"
     assert pe_event.regime == "collapsed"
-    assert pe_event.mark_usd == pytest.approx(0.5)
+    assert pe_event.mark_currency_quanta == _usd_quanta(0.5)
     assert pe_event.liquidity_blocked is True
 
 
@@ -782,9 +844,9 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     assert opportunity.asset_label == "Private Holding A (PHA)"
     assert opportunity.event_kind == "tender"
     assert opportunity.outcome == "floor_satisfied"
-    assert opportunity.shortfall_usd == pytest.approx(0.0)
+    assert opportunity.shortfall_currency_quanta == _usd_quanta(0.0)
     assert opportunity.target_units == pytest.approx(0.0)
-    assert opportunity.proceeds_usd == pytest.approx(0.0)
+    assert opportunity.proceeds_currency_quanta == _usd_quanta(0.0)
 
 
 def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(product: service.ProductService) -> None:
@@ -817,16 +879,18 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert detail.rollout.failed is False
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 280_000.0]
-    assert detail.rollout.terminal_metrics.cash_usd == 280_000.0
-    assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
+    assert detail.rollout.monthly_metrics["cash_currency_quanta"] == [
+        _usd_quanta(value) for value in [250_000.0, 280_000.0]
+    ]
+    assert detail.rollout.terminal_metrics.cash_currency_quanta == _usd_quanta(280_000.0)
+    assert detail.rollout.terminal_metrics.shortfall_currency_quanta == _usd_quanta(0.0)
     assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
     assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
-    assert sale.proceeds_usd == pytest.approx(29_125.0)
+    assert sale.proceeds_currency_quanta == _usd_quanta(29_125.0)
     assert sale.asset == SecurityKey(symbol=SecuritySymbol("VOO"))
-    assert expense.amount_paid_usd == 1_000.0
+    assert expense.amount_paid_currency_quanta == _usd_quanta(1_000.0)
 
 
 def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: service.ProductService) -> None:
@@ -850,7 +914,9 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"]
-    assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 250_875.0]
+    assert detail.rollout.monthly_metrics["cash_currency_quanta"] == [
+        _usd_quanta(value) for value in [250_000.0, 250_875.0]
+    ]
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
@@ -869,7 +935,7 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
     tax_accruals = [event for event in detail.rollout.events if event.kind == "tax_accrual"]
     assert {event.jurisdiction_id for event in tax_accruals} == {"federal_us", "california"}
     assert {event.month_index for event in tax_accruals} == {11}
-    assert all(event.amount_usd == 0.0 for event in tax_accruals)
+    assert all(event.amount_currency_quanta == _usd_quanta(0.0) for event in tax_accruals)
     assert [event for event in detail.rollout.events if event.kind == "tax_payment"] == []
 
 
@@ -897,23 +963,25 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
     tax_accruals = [event for event in events if event.kind == "tax_accrual"]
     assert {event.jurisdiction_id for event in tax_accruals} == {"federal_us", "california"}
     assert {event.month_index for event in tax_accruals} == {11}
-    assert all(event.amount_usd > 0 for event in tax_accruals)
-    assert sum(event.amount_usd for event in tax_accruals) == pytest.approx(
-        sum(event.total_tax_usd for event in tax_accruals)
+    assert all(int(event.amount_currency_quanta) > 0 for event in tax_accruals)
+    assert sum(int(event.amount_currency_quanta) for event in tax_accruals) == sum(
+        int(event.total_tax_currency_quanta) for event in tax_accruals
     )
     federal = one(event for event in tax_accruals if event.jurisdiction_id == "federal_us")
     california = one(event for event in tax_accruals if event.jurisdiction_id == "california")
-    assert federal.capital_gain_tax_usd > 0
-    assert california.capital_gain_tax_usd == 0.0
-    assert california.ordinary_tax_usd > 0
+    assert int(federal.capital_gain_tax_currency_quanta) > 0
+    assert california.capital_gain_tax_currency_quanta == _usd_quanta(0.0)
+    assert int(california.ordinary_tax_currency_quanta) > 0
 
     tax_payments = [event for event in events if event.kind == "tax_payment"]
     [tax_payment] = tax_payments
     assert tax_payment.month_index == 12
     assert tax_payment.obligation_type == "tax_true_up"
-    assert tax_payment.amount_due_usd == pytest.approx(sum(event.amount_usd for event in tax_accruals))
-    assert tax_payment.amount_paid_usd == pytest.approx(tax_payment.amount_due_usd)
-    assert tax_payment.shortfall_usd == 0.0
+    assert int(tax_payment.amount_due_currency_quanta) == sum(
+        int(event.amount_currency_quanta) for event in tax_accruals
+    )
+    assert tax_payment.amount_paid_currency_quanta == tax_payment.amount_due_currency_quanta
+    assert tax_payment.shortfall_currency_quanta == _usd_quanta(0.0)
 
 
 def test_outside_rent_emits_yearly_re_pegged_obligation(
@@ -937,13 +1005,13 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
     assert all(isinstance(event, OutsideRentPaymentEvent) for event in rent_events)
     # Year 0 (months 0..11) all peg at the base amount: rent_series[0]/rent_series[0] = 1.
     year_zero = [event for event in rent_events if event.month_index < 12]
-    assert {event.amount_paid_usd for event in year_zero} == {3_000.0}
+    assert {event.amount_paid_currency_quanta for event in year_zero} == {_usd_quanta(3_000.0)}
     # Year 1 (months 12..) rescales by rent_series[12]/rent_series[0] — stochastic, so non-3000.
     year_one = [event for event in rent_events if event.month_index >= 12]
     assert year_one
-    assert all(event.amount_paid_usd != 3_000.0 for event in year_one)
+    assert all(event.amount_paid_currency_quanta != _usd_quanta(3_000.0) for event in year_one)
     # Within year 1 the amount stays flat.
-    assert len({event.amount_paid_usd for event in year_one}) == 1
+    assert len({event.amount_paid_currency_quanta for event in year_one}) == 1
     # Required-level-series for the request should include the location-keyed rent series.
     assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
@@ -951,15 +1019,15 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
     # per-month DELTA rather than a 12-month total: the fixture's bond rungs pay coupons in
     # months 0 and 6, and the TIPS coupon rides a stochastic CPI, so a cumulative figure would
     # depend on the sampled inflation path and this test is about rent.
-    cash = detail.rollout.monthly_metrics["cash_usd"]
-    assert cash[0] == 250_000.0
+    cash = detail.rollout.monthly_metrics["cash_currency_quanta"]
+    assert cash[0] == _usd_quanta(250_000.0)
     for month in (2, 3, 4, 5):
-        drop = float(cash[month]) - float(cash[month - 1])  # type: ignore[arg-type]
-        assert drop == pytest.approx(-4_000.0), month
+        drop = _quanta_int(cash[month]) - _quanta_int(cash[month - 1])
+        assert drop == int(_usd_quanta(-4_000.0)), month
     # Monthly_expense events are still emitted alongside, distinctly from outside_rent.
     expense_events = [event for event in detail.rollout.events if event.kind == "monthly_expense"]
     assert len(expense_events) == 14
-    assert all(event.amount_paid_usd == 1_000.0 for event in expense_events)
+    assert all(event.amount_paid_currency_quanta == _usd_quanta(1_000.0) for event in expense_events)
 
 
 def test_outside_rent_zero_omits_rent_series_requirement(
@@ -967,7 +1035,9 @@ def test_outside_rent_zero_omits_rent_series_requirement(
 ) -> None:
     # scenario_key carries no rent.
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=1, metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=1, metric="cash_currency_quanta", percentiles=(50,)
+        )
     )
 
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
@@ -1034,32 +1104,34 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
     assert isinstance(purchase, PropertyPurchaseEvent)
     assert purchase.property_id == "location_a_property"
     assert purchase.month_index == 0
-    assert purchase.purchase_price_usd == pytest.approx(900_000.0)
-    assert purchase.down_payment_usd == pytest.approx(180_000.0)
-    assert purchase.mortgage_principal_usd == pytest.approx(720_000.0)
+    assert purchase.purchase_price_currency_quanta == _usd_quanta(900_000.0)
+    assert purchase.down_payment_currency_quanta == _usd_quanta(180_000.0)
+    assert purchase.mortgage_principal_currency_quanta == _usd_quanta(720_000.0)
 
     [closing] = [event for event in detail.rollout.events if event.kind == "closing_cost_payment"]
     assert isinstance(closing, ClosingCostPaymentEvent)
     assert closing.property_id == "location_a_property"
     assert closing.month_index == 0
-    assert closing.amount_usd == pytest.approx(900_000.0 * 0.015)
+    assert closing.amount_currency_quanta == _usd_quanta(900_000.0 * 0.015)
 
     mortgage_payments = [event for event in detail.rollout.events if event.kind == "mortgage_payment"]
     monthly_payment = 720_000.0 * (0.07 / 12) / (1.0 - (1.0 + 0.07 / 12) ** -360)
     assert mortgage_payments
     for event in mortgage_payments:
         assert isinstance(event, MortgagePaymentEvent)
-        assert event.amount_usd == pytest.approx(monthly_payment)
-        assert event.interest_usd + event.principal_usd == pytest.approx(monthly_payment)
+        assert _usd_from_quanta(event.amount_currency_quanta) == pytest.approx(monthly_payment)
+        assert int(event.interest_currency_quanta) + int(event.principal_currency_quanta) == int(
+            event.amount_currency_quanta
+        )
 
     property_taxes = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
     monthly_property_tax = 900_000.0 * 0.01 / 12.0
     assert property_taxes
     for tax_event in property_taxes:
         assert isinstance(tax_event, PropertyTaxPaymentEvent)
-        assert tax_event.amount_due_usd == pytest.approx(monthly_property_tax)
-        assert tax_event.amount_paid_usd == pytest.approx(monthly_property_tax)
-        assert tax_event.shortfall_usd == 0.0
+        assert _usd_from_quanta(tax_event.amount_due_currency_quanta) == pytest.approx(monthly_property_tax)
+        assert tax_event.amount_paid_currency_quanta == tax_event.amount_due_currency_quanta
+        assert tax_event.shortfall_currency_quanta == _usd_quanta(0.0)
 
 
 def test_product_lowers_primary_residence_assignments_to_sim_scenario(
@@ -1340,21 +1412,22 @@ def test_property_purchase_metrics_track_value_balance_and_equity(
     # value may deviate from the $900k purchase price, but it must be positive and obey the
     # accounting identities below.
     metrics = detail.rollout.monthly_metrics
-    assert float(metrics["property_value_usd"][0]) == 0.0  # type: ignore[arg-type]
-    assert float(metrics["mortgage_balance_usd"][0]) == 0.0  # type: ignore[arg-type]
-    property_value_usd = float(metrics["property_value_usd"][1])  # type: ignore[arg-type]
-    mortgage_balance_usd = float(metrics["mortgage_balance_usd"][1])  # type: ignore[arg-type]
-    home_equity_usd = float(metrics["home_equity_usd"][1])  # type: ignore[arg-type]
-    liquid_net_worth_usd = float(metrics["liquid_net_worth_usd"][1])  # type: ignore[arg-type]
-    private_equity_value_usd = float(metrics["private_equity_value_usd"][1])  # type: ignore[arg-type]
-    bond_value_usd = float(metrics["bond_value_usd"][1])  # type: ignore[arg-type]
-    net_worth_usd = float(metrics["net_worth_usd"][1])  # type: ignore[arg-type]
+    assert metrics["property_value_currency_quanta"][0] == _usd_quanta(0.0)
+    assert metrics["mortgage_balance_currency_quanta"][0] == _usd_quanta(0.0)
+    property_value_quanta = _quanta_int(metrics["property_value_currency_quanta"][1])
+    mortgage_balance_quanta = _quanta_int(metrics["mortgage_balance_currency_quanta"][1])
+    home_equity_quanta = _quanta_int(metrics["home_equity_currency_quanta"][1])
+    liquid_net_worth_quanta = _quanta_int(metrics["liquid_net_worth_currency_quanta"][1])
+    private_equity_value_quanta = _quanta_int(metrics["private_equity_value_currency_quanta"][1])
+    bond_value_quanta = _quanta_int(metrics["bond_value_currency_quanta"][1])
+    net_worth_quanta = _quanta_int(metrics["net_worth_currency_quanta"][1])
 
-    assert property_value_usd > 0.0
-    assert mortgage_balance_usd == pytest.approx(720_000.0)
-    assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
-    assert net_worth_usd == pytest.approx(
-        liquid_net_worth_usd + home_equity_usd + private_equity_value_usd + bond_value_usd
+    assert property_value_quanta > 0
+    assert mortgage_balance_quanta == int(_usd_quanta(720_000.0))
+    assert home_equity_quanta == property_value_quanta - mortgage_balance_quanta
+    assert (
+        net_worth_quanta
+        == liquid_net_worth_quanta + home_equity_quanta + private_equity_value_quanta + bond_value_quanta
     )
     # Required-level-series should include the location's home-value series.
     assert HomeValueKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
@@ -1380,13 +1453,13 @@ def test_cash_property_purchase_omits_mortgage_payments(
 
     [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
     assert isinstance(purchase, PropertyPurchaseEvent)
-    assert purchase.down_payment_usd == pytest.approx(900_000.0)
-    assert purchase.mortgage_principal_usd == 0.0
+    assert purchase.down_payment_currency_quanta == _usd_quanta(900_000.0)
+    assert purchase.mortgage_principal_currency_quanta == _usd_quanta(0.0)
     [closing] = [event for event in detail.rollout.events if event.kind == "closing_cost_payment"]
     assert isinstance(closing, ClosingCostPaymentEvent)
-    assert closing.amount_usd == pytest.approx(900_000.0 * 0.015)
+    assert closing.amount_currency_quanta == _usd_quanta(900_000.0 * 0.015)
     assert [event for event in detail.rollout.events if event.kind == "mortgage_payment"] == []
-    assert detail.rollout.monthly_metrics["mortgage_balance_usd"][0] == 0.0
+    assert detail.rollout.monthly_metrics["mortgage_balance_currency_quanta"][0] == _usd_quanta(0.0)
 
 
 def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
@@ -1414,9 +1487,9 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
         assert isinstance(event, HoaDuesPaymentEvent)
         # Base is 150.0 USD/month; inflation-indexed so the realized amount drifts each month, but it
         # must stay near base on a short horizon.
-        assert event.amount_due_usd == pytest.approx(150.0, rel=0.1)
-        assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
-        assert event.shortfall_usd == 0.0
+        assert _usd_from_quanta(event.amount_due_currency_quanta) == pytest.approx(150.0, rel=0.1)
+        assert event.amount_paid_currency_quanta == event.amount_due_currency_quanta
+        assert event.shortfall_currency_quanta == _usd_quanta(0.0)
     assert InflationKey() in counting_model.sample_requests[0].required_level_series
 
 
@@ -1462,9 +1535,9 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: se
     monthly_premium = 0.4 / 100.0 * 900_000.0 / 12.0
     for event in insurance_events:
         assert isinstance(event, HomeownersInsurancePaymentEvent)
-        assert event.amount_due_usd == pytest.approx(monthly_premium, rel=0.1)
-        assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
-        assert event.shortfall_usd == 0.0
+        assert _usd_from_quanta(event.amount_due_currency_quanta) == pytest.approx(monthly_premium, rel=0.1)
+        assert event.amount_paid_currency_quanta == event.amount_due_currency_quanta
+        assert event.shortfall_currency_quanta == _usd_quanta(0.0)
 
 
 def test_property_purchase_with_zero_insurance_pct_omits_insurance(product: service.ProductService) -> None:
@@ -1507,9 +1580,9 @@ def test_property_purchase_emits_maintenance_at_default_pct(product: service.Pro
     monthly_amount = 1.0 / 100.0 * 900_000.0 / 12.0
     for event in maintenance_events:
         assert isinstance(event, PropertyMaintenancePaymentEvent)
-        assert event.amount_due_usd == pytest.approx(monthly_amount, rel=0.1)
-        assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
-        assert event.shortfall_usd == 0.0
+        assert _usd_from_quanta(event.amount_due_currency_quanta) == pytest.approx(monthly_amount, rel=0.1)
+        assert event.amount_paid_currency_quanta == event.amount_due_currency_quanta
+        assert event.shortfall_currency_quanta == _usd_quanta(0.0)
 
 
 def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(product: service.ProductService) -> None:
@@ -1569,10 +1642,12 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
 
     accruals = [event for event in detail.rollout.events if event.kind == "tax_accrual"]
     federal_accrual = one(event for event in accruals if event.jurisdiction_id == "federal_us")
-    assert federal_accrual.mortgage_interest_deduction_usd > 0.0
-    assert federal_accrual.standard_deduction_usd == pytest.approx(14_600.0)
+    assert int(federal_accrual.mortgage_interest_deduction_currency_quanta) > 0
+    assert federal_accrual.standard_deduction_currency_quanta == _usd_quanta(14_600.0)
     # MID on a $900k * 80% = $720k mortgage is comfortably above the standard deduction.
-    assert federal_accrual.itemized_deduction_usd > federal_accrual.standard_deduction_usd
+    assert int(federal_accrual.itemized_deduction_currency_quanta) > int(
+        federal_accrual.standard_deduction_currency_quanta
+    )
 
 
 def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
@@ -1601,9 +1676,9 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
         for event in detail.rollout.events
         if event.kind == "tax_accrual" and event.jurisdiction_id == "federal_us"
     )
-    assert federal_accrual.mortgage_interest_deduction_usd == 0.0
-    assert federal_accrual.itemized_deduction_usd == 0.0
-    assert federal_accrual.standard_deduction_usd == pytest.approx(14_600.0)
+    assert federal_accrual.mortgage_interest_deduction_currency_quanta == _usd_quanta(0.0)
+    assert federal_accrual.itemized_deduction_currency_quanta == _usd_quanta(0.0)
+    assert federal_accrual.standard_deduction_currency_quanta == _usd_quanta(14_600.0)
 
 
 def test_cash_property_purchase_omits_mortgage_interest_deduction(
@@ -1630,8 +1705,8 @@ def test_cash_property_purchase_omits_mortgage_interest_deduction(
         for event in detail.rollout.events
         if event.kind == "tax_accrual" and event.jurisdiction_id == "federal_us"
     )
-    assert federal_accrual.mortgage_interest_deduction_usd == 0.0
-    assert federal_accrual.itemized_deduction_usd == 0.0
+    assert federal_accrual.mortgage_interest_deduction_currency_quanta == _usd_quanta(0.0)
+    assert federal_accrual.itemized_deduction_currency_quanta == _usd_quanta(0.0)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable, StringTable
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.scenario import Scenario
 
 
@@ -68,6 +68,10 @@ def compile_purchases(
     first_lot_slot: int,
 ) -> PurchaseCompileOutput:
     count = len(scenario.scheduled_asset_purchases)
+
+    def currency_amount(value: object) -> np.int64:
+        return currency_amount_to_quanta(value, quantum=scenario.currency.quantum)
+
     slots = max(1, count)
     cause = np.full((int(scenario.horizon_months), slots), NO_CODE, dtype=np.int64)
     month = np.full(slots, NO_CODE, dtype=np.int64)
@@ -87,10 +91,10 @@ def compile_purchases(
             purchase.agent_id, purchase.from_account_id, owner=f"scheduled asset purchase {purchase.cause_id!r}"
         )
         asset[idx] = assets.require(purchase.asset)
-        amount_cents[idx] = usd_to_cents(purchase.amount_usd)
+        amount_cents[idx] = currency_amount(purchase.amount_usd)
         quantity_scale[idx] = quantity_scale_for_asset(purchase.asset)
         if purchase.price_per_unit_usd is not None:
-            price_fixed[idx] = usd_to_cents(purchase.price_per_unit_usd)
+            price_fixed[idx] = currency_amount(purchase.price_per_unit_usd)
         else:
             price_series[idx] = series_index_by_id[asset_price_key(purchase.asset)]
         lot_slot[idx] = first_lot_slot + idx
@@ -116,6 +120,10 @@ def compile_sales(
     series_index_by_id: dict[LevelSeriesKey, int],
 ) -> SaleCompileOutput:
     count = len(scenario.scheduled_asset_sales)
+
+    def currency_amount(value: object) -> np.int64:
+        return currency_amount_to_quanta(value, quantum=scenario.currency.quantum)
+
     cause = np.full((int(scenario.horizon_months), max(1, count)), NO_CODE, dtype=np.int64)
     month = np.full(max(1, count), NO_CODE, dtype=np.int64)
     agent = np.zeros(max(1, count), dtype=np.int64)
@@ -138,7 +146,7 @@ def compile_sales(
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
         proceeds_slot[idx] = account_slot_by_key.resolve(sale.agent_id, sale.proceeds_account_id)
         if sale.price_per_unit_usd is not None:
-            price_fixed[idx] = usd_to_cents(sale.price_per_unit_usd)
+            price_fixed[idx] = currency_amount(sale.price_per_unit_usd)
         else:
             price_series[idx] = series_index_by_id[asset_price_key(sale.asset)]
     return SaleCompileOutput(

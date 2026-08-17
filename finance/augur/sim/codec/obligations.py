@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 
 from finance.augur.sim.buffers import SimulationBuffers
-from finance.augur.sim.codec.helpers import code_column, codes_to_strings, frame_from_columns, usd_column
+from finance.augur.sim.codec.helpers import code_column, codes_to_strings, currency_quanta_column, frame_from_columns
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
 
@@ -38,9 +38,9 @@ def decode_obligations(
     amount_due_cents = buffers.obligations.due[months, slots, rollouts]
     amount_paid_cents = buffers.obligations.paid[months, slots, rollouts]
     shortfall_cents = buffers.obligations.shortfall[months, slots, rollouts]
-    amount_due = usd_column(amount_due_cents)
-    amount_paid = usd_column(amount_paid_cents)
-    shortfall = usd_column(shortfall_cents)
+    amount_due = currency_quanta_column(amount_due_cents)
+    amount_paid = currency_quanta_column(amount_paid_cents)
+    shortfall = currency_quanta_column(shortfall_cents)
     attempt_policy = buffers.obligations.attempt_policy[months, slots, rollouts]
     attempted_sources_per_event = attempted_sources_for_policy_indices(plan, attempt_policy)
 
@@ -55,7 +55,7 @@ def decode_obligations(
         from_account_id=code_column(plan, from_account_codes),
         to_agent_id=code_column(plan, to_agent_codes),
         to_account_id=code_column(plan, to_account_codes),
-        amount_due_usd=amount_due,
+        amount_due_currency_quanta=amount_due,
     )
     settlements = frame_from_columns(
         EVENT_FRAMES.obligation_settlements,
@@ -66,9 +66,9 @@ def decode_obligations(
         obligation_type=code_column(plan, type_codes),
         agent_id=code_column(plan, agent_codes),
         from_account_id=code_column(plan, from_account_codes),
-        amount_due_usd=amount_due,
-        amount_paid_usd=amount_paid,
-        shortfall_usd=shortfall,
+        amount_due_currency_quanta=amount_due,
+        amount_paid_currency_quanta=amount_paid,
+        shortfall_currency_quanta=shortfall,
         attempted_funding_sources=attempted_sources_per_event,
     )
     # Subset 1: obligations with paid > 0 emit a derived transfer row.
@@ -83,7 +83,7 @@ def decode_obligations(
             from_account_id=code_column(plan, from_account_codes[paid_mask]),
             to_agent_id=code_column(plan, to_agent_codes[paid_mask]),
             to_account_id=code_column(plan, to_account_codes[paid_mask]),
-            amount_usd=amount_paid[paid_mask],
+            amount_currency_quanta=amount_paid[paid_mask],
             income_category=np.full(int(paid_mask.sum()), None, dtype=object),
         )
     else:
@@ -99,12 +99,12 @@ def decode_obligations(
             month_index=months[failure_mask],
             cause_id=failure_cause_ids,
             agent_id=code_column(plan, agent_codes[failure_mask]),
-            deficit_usd=shortfall[failure_mask],
+            deficit_currency_quanta=shortfall[failure_mask],
             obligation_id=code_column(plan, obligation_id_codes[failure_mask]),
             obligation_type=code_column(plan, type_codes[failure_mask]),
-            amount_due_usd=amount_due[failure_mask],
-            amount_paid_usd=amount_paid[failure_mask],
-            shortfall_usd=shortfall[failure_mask],
+            amount_due_currency_quanta=amount_due[failure_mask],
+            amount_paid_currency_quanta=amount_paid[failure_mask],
+            shortfall_currency_quanta=shortfall[failure_mask],
             attempted_funding_sources=attempted_sources_per_event[failure_mask],
         )
     else:

@@ -11,19 +11,30 @@ job, not a shim around a missing type.
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 
 from finance.augur.frames import FrameSpec, concat_frames
 from finance.augur.model.exogenous import LevelFrames
+from finance.augur.sim.compiler import CompiledSimulation
 
 SERIES_VALUES_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
 SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
+MONEY_SERIES_VALUES_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "series_id": pl.Utf8(),
+        "value_currency_quanta": pl.Int64(),
+    }
+)
+MONEY_SERIES_VALUES_FRAME = FrameSpec("money_series_values", MONEY_SERIES_VALUES_SCHEMA)
 
 
 def decode_series_values(levels: LevelFrames) -> pl.DataFrame:
-    """Flatten the typed per-kind frames into `(rollout, month, series_id, value)` rows."""
+    """Flatten heterogeneous model levels into `(rollout, month, series_id, value)` rows."""
 
     return concat_frames(
         [
@@ -33,4 +44,38 @@ def decode_series_values(levels: LevelFrames) -> pl.DataFrame:
             for key, frame in levels.value_rows()
         ],
         SERIES_VALUES_SCHEMA,
+    )
+
+
+def decode_money_series_values(plan: CompiledSimulation) -> pl.DataFrame:
+    """Flatten the compiler's exact sampled-money cube for decoded valuations.
+
+    `series_values` intentionally retains heterogeneous float model levels: it
+    contains rates and index ratios as well as price paths. Consumers that
+    value a holding must use this companion frame instead, so decoded values
+    cannot reintroduce a float money boundary after the engine quantized it.
+    """
+
+    series_count, rollout_count, month_count = plan.external_money_values.shape
+    if series_count == 0 or rollout_count == 0:
+        return MONEY_SERIES_VALUES_FRAME.empty()
+    series_indices = np.broadcast_to(
+        np.arange(series_count, dtype=np.int64)[:, None, None], (series_count, rollout_count, month_count)
+    ).reshape(-1)
+    rollout_indices = np.broadcast_to(
+        np.arange(rollout_count, dtype=np.int64)[None, :, None], (series_count, rollout_count, month_count)
+    ).reshape(-1)
+    month_indices = np.broadcast_to(
+        np.arange(month_count, dtype=np.int64)[None, None, :], (series_count, rollout_count, month_count)
+    ).reshape(-1)
+    series_ids = np.asarray([key.wire_id for key in plan.series_keys], dtype=object)[series_indices]
+    return MONEY_SERIES_VALUES_FRAME.normalize(
+        pl.DataFrame(
+            {
+                "rollout_index": rollout_indices,
+                "month_index": month_indices,
+                "series_id": series_ids,
+                "value_currency_quanta": plan.external_money_values.reshape(-1).astype(np.int64, copy=False),
+            }
+        )
     )

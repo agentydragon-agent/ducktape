@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput
 from finance.augur.sim.compiler.tax import TaxCompileOutput
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import MortgageInterestDeductionPolicy, Scenario
 
 
@@ -112,7 +112,9 @@ def compile_mortgage_interest_deductions(
             # via parallel `liability_rental_interest_ytd` accumulation that mirrors
             # `current.property_rented_fraction` — mid-horizon lifecycle events take effect
             # immediately in MID/Schedule E.
-            ratio[link, lia_slot] = min(1.0, float(usd_to_cents(cap)) / principal)
+            ratio[link, lia_slot] = min(
+                1.0, float(currency_amount_to_quanta(cap, quantum=scenario.currency.quantum)) / principal
+            )
         active[link] = bool(np.any(ratio[link] > 0.0))
 
     return MIDCompileOutput(principal_ratio=ratio, link_active=active)
@@ -194,6 +196,8 @@ def compile_federal_salt_deductions(
             if not applicable:
                 salt_cap_by_year[federal_link, year] = 0.0
             else:
-                salt_cap_by_year[federal_link, year] = usd_to_cents(applicable[-1].cap_usd)
+                salt_cap_by_year[federal_link, year] = currency_amount_to_quanta(
+                    applicable[-1].cap_usd, quantum=scenario.currency.quantum
+                )
 
     return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)

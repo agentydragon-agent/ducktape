@@ -42,7 +42,11 @@ def test_metric_fan_scale(make_product_service: MakeProductService, augur_config
         model_id="current_model", horizon_months=horizon, monthly_spend_usd=5_000.0, spend_index="none"
     )
     request = MetricFanRequest(
-        scenario=scenario, first_seed=0, rollout_count=rollouts, metric="cash_usd", percentiles=(5.0, 50.0, 95.0)
+        scenario=scenario,
+        first_seed=0,
+        rollout_count=rollouts,
+        metric="cash_currency_quanta",
+        percentiles=(5.0, 50.0, 95.0),
     )
 
     profiler = cProfile.Profile() if profile else None

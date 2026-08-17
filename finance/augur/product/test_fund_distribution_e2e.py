@@ -142,14 +142,14 @@ def _service(
     return make_product_service(config.models[config.default_model_id].realize_model(), config=config)
 
 
-def _cash_path(product: ProductService, *, horizon_months: int = 3) -> list[float]:
+def _cash_path(product: ProductService, *, horizon_months: int = 3) -> list[int]:
     scenario = ScenarioKey(
         model_id="current_model", horizon_months=horizon_months, monthly_spend_usd=1_000.0, spend_index="none"
     )
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
-    # `Frame` is the untyped wire shape; cash is always a float, and asserting so here beats
-    # threading `float | int | bool | str | None` through the arithmetic below.
-    return [value for value in detail.rollout.monthly_metrics["cash_usd"] if isinstance(value, float)]
+    # The public Frame uses decimal integer strings so currency values never cross JSON as
+    # lossy JavaScript numbers. Convert only within this test's arithmetic.
+    return [int(value) for value in detail.rollout.monthly_metrics["cash_currency_quanta"]]
 
 
 def test_a_declared_fund_pays_its_per_unit_distribution_into_cash(
@@ -165,7 +165,7 @@ def test_a_declared_fund_pays_its_per_unit_distribution_into_cash(
     undeclared = _cash_path(_service(augur_config, make_product_service, None))
 
     gain = [after - before for before, after in zip(undeclared, declared, strict=True)]
-    assert gain == [pytest.approx(month * _MONTHLY_PAYOUT_USD) for month in range(len(declared))]
+    assert gain == [pytest.approx(month * _MONTHLY_PAYOUT_USD * 100) for month in range(len(declared))]
 
 
 def test_the_tax_character_fractions_reach_the_scenario(augur_config: Config) -> None:

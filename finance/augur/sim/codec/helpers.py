@@ -16,7 +16,6 @@ import numpy as np
 import polars as pl
 
 from finance.augur.sim.compiler import CompiledSimulation
-from finance.augur.sim.fixed_point import cents_array_to_usd
 
 
 @dataclass(frozen=True)
@@ -106,19 +105,14 @@ def r_first_view(state: np.ndarray) -> np.ndarray:
     return np.moveaxis(state, -1, 1)
 
 
-def usd_column(cents: Any) -> np.ndarray:
-    return cents_array_to_usd(cents)
+def currency_quanta_column(quanta: Any) -> np.ndarray:
+    """Return an authoritative integer scenario-currency quantum column.
 
-
-def currency_display_column(plan: CompiledSimulation, quanta: Any) -> np.ndarray:
-    """Derived display values for an integer scenario-currency quantum array.
-
-    This helper is deliberately codec-only. Frames migrating to the public
-    quantum contract expose the integer array as authoritative; a float is
-    useful solely for legacy chart/display adapters during that migration.
+    Frame consumers receive a signed Int64 count. Public JSON adapters must
+    stringify it before it crosses the JavaScript boundary.
     """
 
-    return np.asarray(quanta, dtype=np.float64) * float(plan.currency_quantum)
+    return np.asarray(quanta, dtype=np.int64)
 
 
 def quantity_column(quanta: Any, scales: Any) -> np.ndarray:

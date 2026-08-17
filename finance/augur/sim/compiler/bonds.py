@@ -24,7 +24,7 @@ from finance.augur.model.series import InflationKey, LevelSeriesKey
 from finance.augur.sim.bonds import MONTHS_PER_YEAR, coupon_amount_cents, coupon_months, is_on_books
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import BondHolding, InterestIncome, Scenario
 
 
@@ -79,9 +79,11 @@ def compile_bonds(
     pays = np.zeros((horizon, len(bonds)), dtype=np.int64)
     matures = np.zeros((horizon, len(bonds)), dtype=np.int64)
 
-    # The one dollars→cents conversion for each bond. Everything downstream — coupon,
-    # redemption, the balance-sheet face — is integer cents derived from this.
-    face_cents = [int(usd_to_cents(bond.face_value_usd)) for bond in bonds]
+    # The one configured-money→quantum conversion for each bond. Everything downstream — coupon,
+    # redemption, the balance-sheet face — is integer currency quanta derived from this.
+    face_cents = [
+        int(currency_amount_to_quanta(bond.face_value_usd, quantum=scenario.currency.quantum)) for bond in bonds
+    ]
 
     for index, bond in enumerate(bonds):
         amount = coupon_amount_cents(

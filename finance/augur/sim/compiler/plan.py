@@ -67,7 +67,7 @@ from finance.augur.sim.compiler.tax import (
 from finance.augur.sim.compiler.tlh_harvest import HarvestPolicyCompileOutput, compile_harvest_policies
 from finance.augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer_slots
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import PropertySaleEvent, Scenario
@@ -253,6 +253,9 @@ def compile_simulation(
     assets = AssetTable()
     horizon = int(scenario.horizon_months)
 
+    def currency_amount(value: object) -> np.int64:
+        return currency_amount_to_quanta(value, quantum=scenario.currency.quantum)
+
     account_slot_by_key: dict[tuple[str, str], int] = {}
     cash_agent_codes: list[int] = []
     cash_account_codes: list[int] = []
@@ -264,7 +267,7 @@ def compile_simulation(
         account_slot_by_key[key] = len(cash_initial_balance)
         cash_agent_codes.append(strings.require(entry.agent_id))
         cash_account_codes.append(strings.require(entry.account_id))
-        cash_initial_balance.append(usd_to_cents(entry.balance_usd))
+        cash_initial_balance.append(currency_amount(entry.balance_usd))
 
     # One more cash row than the scenario declares: the rest of the world. Every counterparty
     # the scenario does not model settles here, so no flow is discarded and total cash across
@@ -325,7 +328,7 @@ def compile_simulation(
     # Building basis = (purchase price × (1 - land_fraction)) + capitalized closing costs.
     property_building_basis = np.array(
         [
-            usd_to_cents(
+            currency_amount(
                 float(p.purchase_price_usd) * (1.0 - float(p.land_value_fraction)) + float(p.buyer_closing_cost_usd)
             )
             for p in scenario.scheduled_property_purchases
@@ -403,7 +406,7 @@ def compile_simulation(
         lot_assets.append(lot.asset)
         lot_purchase_month.append(int(lot.purchase_month_index))
         lot_fifo_rank.append(int(lot.purchase_month_index))
-        lot_cost_basis_per_unit.append(usd_to_cents(lot.cost_basis_per_unit_usd))
+        lot_cost_basis_per_unit.append(currency_amount(lot.cost_basis_per_unit_usd))
         lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
         lot_quantity_scale.append(scale)
 

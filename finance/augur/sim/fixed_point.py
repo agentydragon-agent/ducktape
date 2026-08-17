@@ -89,6 +89,19 @@ def currency_quanta_to_decimal_string(value: int | np.integer[Any], *, quantum: 
     return format(currency_quanta_to_decimal(value, quantum=quantum), "f")
 
 
+def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
+    """Quantize a configured currency amount to its scenario's quantum.
+
+    Scenario and product configuration models still accept JSON numbers for
+    user-entered amounts. This is their single, explicit conversion into the
+    integer simulator representation. Exact decimal strings and ``Decimal``
+    values retain their spelling; numeric values use the same declared
+    half-up policy as sampled model paths.
+    """
+
+    return sampled_decimal_to_currency_quanta(value, quantum=quantum)
+
+
 def sampled_decimal_to_currency_quanta(value: Any, *, quantum: Any) -> np.int64:
     """Quantize one model-produced sampled monetary value at the sim boundary.
 

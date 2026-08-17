@@ -20,7 +20,7 @@ from finance.augur.sim.compiler.helpers import (
     ORDINARY_DEDUCTION_CATEGORY,
     AccountSlots,
     StringTable,
-    amount_arrays_cents,
+    amount_arrays_currency_quanta,
     empty_month_matrix,
 )
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
@@ -113,7 +113,9 @@ def compile_property_cashflows(
                 deduction_profile[month, idx] = buckets.ordinary_bucket(
                     profile_index_by_agent.get(cashflow.from_agent_id, NO_CODE)
                 )
-            kind, fixed, base, series, base_month, period = amount_arrays_cents(cashflow.amount_usd, series_index_by_id)
+            kind, fixed, base, series, base_month, period = amount_arrays_currency_quanta(
+                cashflow.amount_usd, series_index_by_id, currency_quantum=scenario.currency.quantum
+            )
             amount_kind[month, idx] = kind
             amount_fixed[month, idx] = fixed
             amount_base[month, idx] = base

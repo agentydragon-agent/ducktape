@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart";
-import { useCurrencyDisplay } from "./hooks";
+import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart";
+import { fmtCurrencyQuanta } from "./lib/format";
 import {
   SELECTED_ROLLOUT_COLOR,
   FAILED_ROLLOUT_COLOR,
@@ -11,7 +11,7 @@ import {
   eventTitle,
 } from "./data_helpers";
 
-function FanAxes({ left, top, plotWidth, plotHeight, height, y, yAxis, maxYear, metric }) {
+function FanAxes({ left, top, plotWidth, plotHeight, height, y, yAxis, maxYear, metric, currency }) {
   return (
     <>
       {yAxis.ticks.map((value) => {
@@ -20,7 +20,7 @@ function FanAxes({ left, top, plotWidth, plotHeight, height, y, yAxis, maxYear, 
           <g key={value}>
             <line x1={left} x2={left + plotWidth} y1={yPos} y2={yPos} stroke="var(--augur-chart-grid)" />
             <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px] augur-tabular">
-              {fmtAxisMetricValue(metric.chartValue, value)}
+              {fmtAxisMetricValue(metric.chartValue, value, currency)}
             </text>
           </g>
         );
@@ -57,8 +57,7 @@ function FanEventMarker({
   onSelectEventMonth,
   onHoverEventMonth,
 }) {
-  const { display: currencyDisplay } = useCurrencyDisplay();
-  const title = eventTitle(event, currencyDisplay);
+  const title = eventTitle(event);
   const isSelected = selectedEventMonthIndex === monthIndex;
   const isHovered = hoveredEventMonthIndex === monthIndex;
   const isActive = isSelected || isHovered;
@@ -256,7 +255,6 @@ export function MetricFanChart({
   onChangeHorizonMonths = null,
   maxHorizonMonths = null,
 }) {
-  const { display: currencyDisplay } = useCurrencyDisplay();
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const svgRef = useRef(null);
   const [svgWidth, setSvgWidth] = useState(760);
@@ -333,6 +331,7 @@ export function MetricFanChart({
     .flatMap((row) => sortedPercentiles.map((pct) => row.values.get(pct)))
     .concat(selectedRows.map((row) => row.value))
     .filter(Number.isFinite);
+  const chartCurrency = activeSeries.rows[0]?.currency ?? selectedRows[0]?.currency;
   const yAxis = fanChartAxis(metric.chartValue, values, metricScale);
   const svgHeight = 300;
   const margin = { left: 82, right: 24, top: 18, bottom: 42 };
@@ -464,6 +463,7 @@ export function MetricFanChart({
           yAxis={yAxis}
           maxYear={maxYear}
           metric={metric}
+          currency={chartCurrency}
         />
         {candleMode && (
           <CandleLayer
@@ -584,12 +584,19 @@ export function MetricFanChart({
                   label: `P${pct}`,
                   color: null,
                   value: hoveredRow.values.get(pct),
+                  currencyQuanta: hoveredRow.displayValues?.get(pct),
+                  currency: hoveredRow.currency,
                 }))
               : series.map((entry) => ({
                   key: entry.id,
                   label: entry.label,
                   color: entry.color,
                   value: rowByMonthBySeries.get(entry.id)?.get(hoveredRow.monthIndex)?.values.get(median),
+                  currencyQuanta: rowByMonthBySeries
+                    .get(entry.id)
+                    ?.get(hoveredRow.monthIndex)
+                    ?.displayValues?.get(median),
+                  currency: rowByMonthBySeries.get(entry.id)?.get(hoveredRow.monthIndex)?.currency,
                 }));
             const tipW = single ? 140 : 168;
             const tipH = 26 + tipLines.length * 14;
@@ -639,8 +646,8 @@ export function MetricFanChart({
                         </tspan>
                       )}
                       {tipLine.label}:{" "}
-                      {Number.isFinite(tipLine.value)
-                        ? fmtMetricValue(metric.chartValue, tipLine.value, currencyDisplay)
+                      {tipLine.currencyQuanta != null
+                        ? fmtCurrencyQuanta(tipLine.currencyQuanta, tipLine.currency)
                         : "n/a"}
                     </text>
                   ))}

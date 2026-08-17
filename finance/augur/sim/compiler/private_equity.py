@@ -12,7 +12,13 @@ from numpy.typing import NDArray
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_cents
+from finance.augur.sim.compiler.helpers import (
+    AMOUNT_FIXED,
+    NO_CODE,
+    AssetTable,
+    StringTable,
+    amount_arrays_currency_quanta,
+)
 from finance.augur.sim.fixed_point import sampled_array_to_currency_quanta
 from finance.augur.sim.scenario import Scenario
 
@@ -142,8 +148,8 @@ def compile_private_equity_tenders(
         owner_cash_slots = np.flatnonzero(cash_agent_codes == owner_code)
         if owner_cash_slots.size > 0:
             pe_policy_proceeds_cash_slot[policy_idx] = int(owner_cash_slots[0])
-        kind, fixed, base, series, base_month, period = amount_arrays_cents(
-            policy.liquid_net_worth_floor, series_index_by_id
+        kind, fixed, base, series, base_month, period = amount_arrays_currency_quanta(
+            policy.liquid_net_worth_floor, series_index_by_id, currency_quantum=scenario.currency.quantum
         )
         pe_policy_floor_kind[policy_idx] = kind
         pe_policy_floor_fixed[policy_idx] = fixed
