@@ -120,7 +120,7 @@ def _ytd_gain(result, *, month_index: int, classification: str, rollout_index: i
     )
     if rows.is_empty():
         return 0.0
-    return float(rows.get_column("gain_usd").sum())
+    return float(rows.get_column("gain_currency_quanta").sum())
 
 
 def _harvested_short_term_in_month(result, *, calendar_month: int, rollout_index: int = 0) -> float:
@@ -215,7 +215,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         )
         result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
         accruals = result.events_log.tax_accruals.filter(pl.col("jurisdiction_id") == "federal_us")
-        return float(accruals.get_column("amount_usd").sum())
+        return float(accruals.get_column("amount_currency_quanta").sum())
 
     tax_with = year_tax(with_harvest=True)
     tax_without = year_tax(with_harvest=False)

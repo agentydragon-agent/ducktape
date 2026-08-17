@@ -120,8 +120,8 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
     # equity_ledger = purchase_price - mortgage_principal (no mortgage here);
     # contribution_used_usd = down_payment + closing_cost.
     expected = {
-        "p1": {"contribution_used_usd": 200_000.0, "equity_ledger_usd": 1_000_000.0},
-        "p2": {"contribution_used_usd": 500_000.0, "equity_ledger_usd": 500_000.0},
+        "p1": {"contribution_used_currency_quanta": 20_000_000, "equity_ledger_currency_quanta": 100_000_000},
+        "p2": {"contribution_used_currency_quanta": 50_000_000, "equity_ledger_currency_quanta": 50_000_000},
     }
     for property_id, fields in expected.items():
         rows = stakes.filter(pl.col("property_id") == property_id)
@@ -130,7 +130,7 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
             distinct = set(rows[column].to_list())
             # Deterministic inputs ⇒ exactly one value per property across all rollouts/months.
             assert len(distinct) == 1, f"{property_id}.{column} varies across rollouts: {distinct}"
-            assert distinct.pop() == pytest.approx(value), f"{property_id}.{column} != {value}"
+            assert distinct.pop() == value, f"{property_id}.{column} != {value}"
 
 
 def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> None:
@@ -254,12 +254,12 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     transfers = run.events_log.transfers
     home_tax = transfers.filter(pl.col("cause_id").str.starts_with("home_property_tax_m")).sort("month_index")
     assert home_tax.get_column("month_index").to_list() == list(range(1, horizon))
-    assert home_tax.get_column("amount_usd").to_list() == pytest.approx([500.0] * (horizon - 1))
+    assert home_tax.get_column("amount_currency_quanta").to_list() == [50_000] * (horizon - 1)
 
     rental_tax = transfers.filter(pl.col("cause_id").str.starts_with("rental_property_tax_m")).sort("month_index")
     assert rental_tax.get_column("month_index").to_list() == list(range(1, rental_sale_month))
-    assert rental_tax.get_column("amount_usd").to_list() == pytest.approx(
-        [rental_monthly_tax] * (rental_sale_month - 1)
+    assert rental_tax.get_column("amount_currency_quanta").to_list() == pytest.approx(
+        [rental_monthly_tax * 100] * (rental_sale_month - 1)
     )
 
     assert run.events_log.set_rented_fraction_events.to_dicts() == [
@@ -270,7 +270,7 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     assert capex_rows[0]["rollout_index"] == 0
     assert capex_rows[0]["month_index"] == 12
     assert capex_rows[0]["property_id"] == "rental"
-    assert capex_rows[0]["amount_usd"] == pytest.approx(rental_capex)
+    assert capex_rows[0]["amount_currency_quanta"] == 3_000_000
 
     cumulative_depreciation = 12 * monthly_dep_before + 12 * monthly_dep_after_half_rented
     expected_gross_proceeds = rental_purchase_price * 1.5 * 0.94
@@ -279,24 +279,24 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     sale = run.events_log.property_sale_events.to_dicts()[0]
     assert sale["month_index"] == rental_sale_month
     assert sale["property_id"] == "rental"
-    assert sale["gross_proceeds_usd"] == pytest.approx(expected_gross_proceeds, abs=1.0)
-    assert sale["mortgage_payoff_usd"] == pytest.approx(0.0, abs=1e-6)
-    assert sale["realized_gain_usd"] == pytest.approx(expected_realized_gain, abs=1.0)
-    assert sale["depreciation_recapture_usd"] == pytest.approx(cumulative_depreciation, abs=1.0)
+    assert sale["gross_proceeds_currency_quanta"] == pytest.approx(expected_gross_proceeds * 100, abs=100)
+    assert sale["mortgage_payoff_currency_quanta"] == 0
+    assert sale["realized_gain_currency_quanta"] == pytest.approx(expected_realized_gain * 100, abs=100)
+    assert sale["depreciation_recapture_currency_quanta"] == pytest.approx(cumulative_depreciation * 100, abs=100)
     # Alice has a qualifying primary residence, but it is `home`; that must not leak onto `rental`.
-    assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
-    assert sale["long_term_capital_gain_usd"] == pytest.approx(expected_ltcg, abs=1.0)
+    assert sale["section_121_exclusion_currency_quanta"] == 0
+    assert sale["long_term_capital_gain_currency_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
 
     terminal_properties = run.property_state.filter(pl.col("month_index") == horizon)
     assert terminal_properties.get_column("property_id").to_list() == ["home"]
     terminal_home = terminal_properties.row(0, named=True)
-    assert terminal_home["adjusted_basis_usd"] == pytest.approx(500_000.0)
+    assert terminal_home["adjusted_basis_currency_quanta"] == 50_000_000
 
     terminal_mortgage = run.liabilities.filter(
         (pl.col("month_index") == horizon) & (pl.col("liability_id") == "home_mortgage")
     )
     assert terminal_mortgage.height == 1
-    assert terminal_mortgage.get_column("principal_usd").item() > 0.0
+    assert terminal_mortgage.get_column("principal_currency_quanta").item() > 0
 
     federal_by_month = {
         row["month_index"]: row
@@ -304,9 +304,13 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     }
     expected_year_0_ordinary = 24_000.0 - 12 * monthly_dep_before - 11 * rental_monthly_tax
     expected_year_1_ordinary = 24_000.0 - 12 * monthly_dep_after_half_rented - 12 * rental_monthly_tax * 0.5
-    assert federal_by_month[11]["ordinary_income_usd"] == pytest.approx(expected_year_0_ordinary, abs=0.05)
-    assert federal_by_month[23]["ordinary_income_usd"] == pytest.approx(expected_year_1_ordinary, abs=0.05)
-    assert federal_by_month[35]["ltcg_usd"] == pytest.approx(expected_ltcg, abs=1.0)
+    assert federal_by_month[11]["ordinary_income_currency_quanta"] == pytest.approx(
+        expected_year_0_ordinary * 100, abs=5
+    )
+    assert federal_by_month[23]["ordinary_income_currency_quanta"] == pytest.approx(
+        expected_year_1_ordinary * 100, abs=5
+    )
+    assert federal_by_month[35]["ltcg_currency_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
 
 
 if __name__ == "__main__":

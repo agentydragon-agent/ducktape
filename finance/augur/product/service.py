@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 import numpy as np
 
@@ -287,10 +288,10 @@ def _failed_count(summary: ProductSummary) -> int:
     return int((summary.failed_month >= 0).sum())
 
 
-def _currency_quanta(value: object) -> str:
-    """Serialize an Int64 quantum count without a lossy JSON number."""
+def _currency_quanta(value: int | np.integer[Any]) -> str:
+    """Serialize an integer quantum count without a lossy JSON number."""
 
-    return str(int(value))
+    return str(value)
 
 
 def _currency_quantiles(samples: np.ndarray, percentiles: tuple[float, ...]) -> tuple[int, ...]:

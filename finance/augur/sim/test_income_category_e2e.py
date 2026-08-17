@@ -102,24 +102,24 @@ def _scenario(*income_categories: TransferIncomeCategory) -> Scenario:
     return _scenario_for([_Payment("alice", category, _PAYMENT_USD) for category in income_categories])
 
 
-def _tax_for(payments: Sequence[_Payment]) -> dict[str, float]:
+def _tax_for(payments: Sequence[_Payment]) -> dict[str, int]:
     run = simulate(_scenario_for(payments), rollout_count=1, locations={})
     accruals = run.events_log.tax_accruals
     return {
-        str(row["jurisdiction_id"]): float(row["amount_usd"])
-        for row in accruals.group_by("jurisdiction_id").agg(pl.col("amount_usd").sum()).to_dicts()
+        str(row["jurisdiction_id"]): int(row["amount_currency_quanta"])
+        for row in accruals.group_by("jurisdiction_id").agg(pl.col("amount_currency_quanta").sum()).to_dicts()
     }
 
 
-def _tax_by_jurisdiction(income_category: TransferIncomeCategory) -> dict[str, float]:
+def _tax_by_jurisdiction(income_category: TransferIncomeCategory) -> dict[str, int]:
     return _tax_for([_Payment("alice", income_category, _PAYMENT_USD)])
 
 
 def test_wages_are_taxed_by_both_jurisdictions() -> None:
     tax = _tax_by_jurisdiction(ORDINARY_INCOME)
 
-    assert tax["federal_us"] > 0.0
-    assert tax["california"] > 0.0
+    assert tax["federal_us"] > 0
+    assert tax["california"] > 0
 
 
 def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
@@ -127,8 +127,8 @@ def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
     # bracket configuration could express while every link shared one income scalar.
     tax = _tax_by_jurisdiction(InterestIncome(issuer_jurisdiction_id="federal_us"))
 
-    assert tax["federal_us"] > 0.0
-    assert tax["california"] == 0.0
+    assert tax["federal_us"] > 0
+    assert tax["california"] == 0
 
 
 def test_in_state_muni_interest_is_exempt_everywhere() -> None:
@@ -136,8 +136,8 @@ def test_in_state_muni_interest_is_exempt_everywhere() -> None:
     # anywhere — it is `issuer == california`, decided by the jurisdiction, not the instrument.
     tax = _tax_by_jurisdiction(InterestIncome(issuer_jurisdiction_id="california"))
 
-    assert tax["federal_us"] == 0.0
-    assert tax["california"] == 0.0
+    assert tax["federal_us"] == 0
+    assert tax["california"] == 0
 
 
 def test_interest_and_wages_accrue_to_separate_buckets() -> None:
@@ -150,20 +150,22 @@ def test_interest_and_wages_accrue_to_separate_buckets() -> None:
 
     run = simulate(_scenario(ORDINARY_INCOME, _TREASURY), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_usd") > 0.0)
+        (pl.col("month_index") == 11)
+        & (pl.col("agent_id") == "alice")
+        & (pl.col("ordinary_income_currency_quanta") > 0)
     ).sort("income_source")
 
     assert december.get_column("income_source").to_list() == ["interest:federal_us", "ordinary"]
-    assert december.get_column("ordinary_income_usd").to_list() == [_PAYMENT_USD, _PAYMENT_USD]
+    assert december.get_column("ordinary_income_currency_quanta").to_list() == [10_000_000, 10_000_000]
 
 
-def _december_income(payments: Sequence[_Payment]) -> list[tuple[str, str, float]]:
+def _december_income(payments: Sequence[_Payment]) -> list[tuple[str, str, int]]:
     run = simulate(_scenario_for(payments), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("ordinary_income_usd") > 0.0)
+        (pl.col("month_index") == 11) & (pl.col("ordinary_income_currency_quanta") > 0)
     ).sort("agent_id", "income_source")
     return [
-        (str(row["agent_id"]), str(row["income_source"]), float(row["ordinary_income_usd"]))
+        (str(row["agent_id"]), str(row["income_source"]), int(row["ordinary_income_currency_quanta"]))
         for row in december.to_dicts()
     ]
 
@@ -185,10 +187,10 @@ def test_each_taxed_agent_gets_its_own_source_rows() -> None:
             _Payment("bob", _TREASURY, _BOB_INTEREST),
         ]
     ) == [
-        ("alice", "interest:federal_us", _ALICE_INTEREST),
-        ("alice", "ordinary", _ALICE_WAGES),
-        ("bob", "interest:federal_us", _BOB_INTEREST),
-        ("bob", "ordinary", _BOB_WAGES),
+        ("alice", "interest:federal_us", 4_500_000),
+        ("alice", "ordinary", 12_000_000),
+        ("bob", "interest:federal_us", 7_000_000),
+        ("bob", "ordinary", 26_000_000),
     ]
 
 

@@ -7,7 +7,7 @@ Per-month metric reductions take a `rollout_index` and read that column directly
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -44,10 +44,10 @@ from finance.augur.sim.scenario import ObligationType
 _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
 
 
-def _currency_quanta(value: object) -> str:
+def _currency_quanta(value: int | np.integer[Any]) -> str:
     """Serialize one authoritative integer count without a JS-number boundary."""
 
-    return str(int(value))
+    return str(value)
 
 
 def _value_currency_quanta_from_quantity(
@@ -58,8 +58,11 @@ def _value_currency_quanta_from_quantity(
     numerator = np.asarray(quantity_quanta, dtype=np.int64) * np.asarray(price_currency_quanta, dtype=np.int64)
     absolute = np.abs(numerator)
     quotient, remainder = divmod(absolute, quantity_scale)
-    return np.where(
-        numerator < 0, -(quotient + (2 * remainder >= quantity_scale)), quotient + (2 * remainder >= quantity_scale)
+    return cast(
+        np.ndarray,
+        np.where(
+            numerator < 0, -(quotient + (2 * remainder >= quantity_scale)), quotient + (2 * remainder >= quantity_scale)
+        ),
     )
 
 
@@ -80,7 +83,7 @@ def _scale_currency_quanta_by_ratio(
     absolute = np.abs(product)
     quotient, remainder = divmod(absolute, safe_denominator)
     rounded = quotient + (2 * remainder >= safe_denominator)
-    return np.where(product < 0, -rounded, rounded).astype(np.int64)
+    return cast(np.ndarray, np.where(product < 0, -rounded, rounded).astype(np.int64))
 
 
 def monthly_metric_arrays_batch(dense: SimulationRun, *, primary_agent_id: str) -> dict[str, np.ndarray]:

@@ -20,7 +20,7 @@ import jax
 import jax.numpy as jnp
 import pytest_bazel
 
-from finance.augur.sim.compiler.tax import bracket_upper_to_cents
+from finance.augur.sim.compiler.tax import bracket_upper_to_currency_quanta
 from finance.augur.sim.engine.jax_engine import _apply_brackets, _apply_ltcg_brackets, _net_capital_gains_jnp
 from finance.augur.sim.fixed_point import usd_to_cents
 from finance.augur.sim.jurisdictions import TaxBracket, load_jurisdiction
@@ -34,7 +34,10 @@ class _BracketTable(TypedDict):
 
 def _brackets(schedule: list[TaxBracket]) -> _BracketTable:
     return _BracketTable(
-        upper=jnp.asarray([bracket_upper_to_cents(bracket.upper_usd) for bracket in schedule], dtype=jnp.int64),
+        upper=jnp.asarray(
+            [bracket_upper_to_currency_quanta(bracket.upper_usd, currency_quantum="0.01") for bracket in schedule],
+            dtype=jnp.int64,
+        ),
         rate=jnp.asarray([bracket.rate for bracket in schedule], dtype=jnp.float64),
         count=len(schedule),
     )

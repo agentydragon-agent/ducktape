@@ -147,13 +147,13 @@ def _run(scenario: Scenario):
     return simulate(scenario, rollout_count=1, locations={})
 
 
-def _cash(scenario: Scenario) -> list[float]:
+def _cash(scenario: Scenario) -> list[int]:
     run = _run(scenario)
     return [
-        float(v)
+        int(v)
         for v in run.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_usd")
+        .get_column("balance_currency_quanta")
         .to_list()
     ]
 
@@ -172,7 +172,7 @@ def test_a_month_inside_the_band_sells_nothing() -> None:
     scenario = _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0)
 
     assert _lots(scenario, month=_HORIZON) == {"stock": 900.0, "bond": 100.0}
-    assert _cash(scenario)[-1] == 50_000.0
+    assert _cash(scenario)[-1] == 5_000_000
 
 
 def test_crossing_the_floor_refills_to_the_ceiling() -> None:
@@ -186,7 +186,7 @@ def test_crossing_the_floor_refills_to_the_ceiling() -> None:
 
     scenario = _scenario(opening_cash=5_000.0, floor=10_000.0, ceiling=40_000.0)
 
-    assert _cash(scenario)[1] == 40_000.0
+    assert _cash(scenario)[1] == 4_000_000
     assert _lots(scenario, month=1) == {"stock": 550.0, "bond": 100.0}
 
 
@@ -220,7 +220,7 @@ def test_the_band_is_measured_after_the_months_obligations() -> None:
     # Index N is the state ENTERING month N, so month 1's sale shows at index 2.
     assert _lots(scenario, month=1) == {"stock": 900.0, "bond": 100.0}
     assert _lots(scenario, month=2) == {"stock": 670.0, "bond": 100.0}
-    assert _cash(scenario)[2] == 30_000.0
+    assert _cash(scenario)[2] == 3_000_000
     assert _run(scenario).rollout_status.get_column("status").to_list() == ["active"]
 
 
@@ -256,8 +256,8 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
     assert [str(row["lot_id"]) for row in rows] == ["stock"]
     assert str(rows[0]["asset_id"]) == "security:vti"
     assert float(rows[0]["units_sold"]) == 350.0
-    assert float(rows[0]["proceeds_usd"]) == 35_000.0
-    assert float(rows[0]["cost_basis_consumed_usd"]) == 35_000.0
+    assert int(rows[0]["proceeds_currency_quanta"]) == 3_500_000
+    assert int(rows[0]["cost_basis_consumed_currency_quanta"]) == 3_500_000
     # The bond sleeve was never touched, so it must not appear at all — an over-broad decode
     # would emit a zero-unit row for it and the equality above is what refuses that.
 
@@ -316,7 +316,7 @@ def test_surplus_above_the_ceiling_is_invested_into_the_underweight_sleeve() -> 
     assert lots["bond"] == 100.0
     # Exactly the floor. A quantum of overshoot would show here as $10,000 minus the overshoot,
     # which is the band spending money it promised to keep.
-    assert _cash(scenario)[1] == 10_000.0
+    assert _cash(scenario)[1] == 1_000_000
 
 
 def test_a_purchase_records_the_price_its_rollout_paid() -> None:
@@ -329,7 +329,7 @@ def test_a_purchase_records_the_price_its_rollout_paid() -> None:
         (pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1)
     ).to_dicts()[0]
 
-    assert float(bought["cost_basis_per_unit_usd"]) == _PRICE
+    assert int(bought["cost_basis_per_unit_currency_quanta"]) == 10_000
 
 
 def test_a_purchase_does_not_mint_or_burn_money() -> None:
@@ -406,7 +406,7 @@ def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month() -> None:
     assert lots["bond"] == 100.0
     assert lots["allocation_sale_buy_p0_s0_0"] == 0.0
     # Cash-neutral to the cent. A rebalance is a portfolio operation, not a funding one.
-    assert _cash(scenario)[1] == 50_000.0
+    assert _cash(scenario)[1] == 5_000_000
 
 
 def test_a_rebalanced_portfolio_then_sits_still() -> None:

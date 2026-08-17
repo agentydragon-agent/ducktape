@@ -22,7 +22,6 @@ conserves cash trivially and proves nothing.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import pytest_bazel
 from numpy.typing import NDArray
 
@@ -42,7 +41,6 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import cents_to_usd
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -427,7 +425,7 @@ def test_a_scheduled_sale_does_not_mint_cash() -> None:
     run = simulate(_scheduled_sale_scenario(), rollout_count=1, locations={})
     totals = _total_cash_by_month(run)
 
-    assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() == 750_000.0
+    assert run.events_log.lot_dispositions.get_column("proceeds_currency_quanta").sum() == 75_000_000
     assert np.all(totals == totals[0])
 
 
@@ -435,7 +433,7 @@ def test_a_target_allocation_sale_does_not_mint_cash() -> None:
     run = simulate(_target_allocation_scenario(), rollout_count=1, locations={})
     totals = _total_cash_by_month(run)
 
-    assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() > 0.0
+    assert run.events_log.lot_dispositions.get_column("proceeds_currency_quanta").sum() > 0
     assert np.all(totals == totals[0])
 
 
@@ -450,7 +448,7 @@ def test_a_private_equity_tender_does_not_mint_cash() -> None:
     totals = _total_cash_by_month(run)
 
     # The whole 100-unit stake tenders at $50: a $5,000 credit that nothing used to debit.
-    assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() == 5_000.0
+    assert run.events_log.lot_dispositions.get_column("proceeds_currency_quanta").sum() == 500_000
     assert np.all(totals == totals[0])
 
 
@@ -465,7 +463,7 @@ def test_a_property_sale_does_not_mint_cash() -> None:
     totals = _total_cash_by_month(run)
 
     assert run.events_log.rollout_failures.is_empty()
-    assert run.events_log.property_sale_events.row(0, named=True)["net_cash_to_owner_usd"] > 0.0
+    assert run.events_log.property_sale_events.row(0, named=True)["net_cash_to_owner_currency_quanta"] > 0
     assert run.events_log.capital_improvement_events.height == 1
     assert np.all(totals == totals[0])
 
@@ -485,10 +483,10 @@ def test_a_property_sale_debits_the_boundary_by_its_net_not_its_gross() -> None:
     # Snapshot `m` holds the state before month `m`, so month `sale_month`'s move is the diff
     # between snapshots `sale_month + 1` and `sale_month`.
     external = np.asarray(run.buffers.state.cash_state)[:, run.plan.external_cash_slot, 0]
-    moved_usd = cents_to_usd(int(external[sale_month + 1] - external[sale_month]))
+    moved_currency_quanta = int(external[sale_month + 1] - external[sale_month])
     sale = run.events_log.property_sale_events.row(0, named=True)
 
-    assert moved_usd == pytest.approx(-sale["net_cash_to_owner_usd"], abs=0.01)
+    assert moved_currency_quanta == -int(sale["net_cash_to_owner_currency_quanta"])
 
 
 if __name__ == "__main__":

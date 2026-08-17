@@ -63,15 +63,17 @@ def _scenario(*, issuer: str | None, maturity_month_index: int = 120, taxed: boo
     )
 
 
-def _tax_by_jurisdiction(*, issuer: str | None) -> dict[str, float]:
+def _tax_by_jurisdiction(*, issuer: str | None) -> dict[str, int]:
     run = simulate(_scenario(issuer=issuer), rollout_count=1, locations={})
     return {
-        str(row["jurisdiction_id"]): float(row["amount_usd"])
-        for row in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_usd").sum()).to_dicts()
+        str(row["jurisdiction_id"]): int(row["amount_currency_quanta"])
+        for row in run.events_log.tax_accruals.group_by("jurisdiction_id")
+        .agg(pl.col("amount_currency_quanta").sum())
+        .to_dicts()
     }
 
 
-def _alice_cash_by_month(*, issuer: str | None, maturity_month_index: int = 120) -> dict[int, float]:
+def _alice_cash_by_month(*, issuer: str | None, maturity_month_index: int = 120) -> dict[int, int]:
     """Cash change attributable to each simulated month.
 
     Row 0 of the balance frame is the opening balance and row `m + 1` is the balance once
@@ -83,13 +85,13 @@ def _alice_cash_by_month(*, issuer: str | None, maturity_month_index: int = 120)
         _scenario(issuer=issuer, maturity_month_index=maturity_month_index, taxed=False), rollout_count=1, locations={}
     )
     balances = [
-        float(value)
+        int(value)
         for value in run.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_usd")
+        .get_column("balance_currency_quanta")
         .to_list()
     ]
-    return {month: round(after - before, 2) for month, (before, after) in enumerate(pairwise(balances))}
+    return {month: after - before for month, (before, after) in enumerate(pairwise(balances))}
 
 
 def test_coupons_arrive_as_cash_on_their_schedule() -> None:
@@ -98,21 +100,21 @@ def test_coupons_arrive_as_cash_on_their_schedule() -> None:
 
     deltas = _alice_cash_by_month(issuer="federal_us")
 
-    assert {month: delta for month, delta in deltas.items() if delta} == {6: _COUPON_USD, 12: _COUPON_USD}
+    assert {month: delta for month, delta in deltas.items() if delta} == {6: 2_500_000, 12: 2_500_000}
 
 
 def test_treasury_coupon_is_federally_taxed_and_california_exempt() -> None:
     tax = _tax_by_jurisdiction(issuer="federal_us")
 
-    assert tax["federal_us"] > 0.0
-    assert tax["california"] == 0.0
+    assert tax["federal_us"] > 0
+    assert tax["california"] == 0
 
 
 def test_in_state_muni_coupon_is_exempt_everywhere() -> None:
     tax = _tax_by_jurisdiction(issuer="california")
 
-    assert tax["federal_us"] == 0.0
-    assert tax["california"] == 0.0
+    assert tax["federal_us"] == 0
+    assert tax["california"] == 0
 
 
 def test_corporate_coupon_is_taxed_by_both() -> None:
@@ -120,18 +122,20 @@ def test_corporate_coupon_is_taxed_by_both() -> None:
 
     tax = _tax_by_jurisdiction(issuer=None)
 
-    assert tax["federal_us"] > 0.0
-    assert tax["california"] > 0.0
+    assert tax["federal_us"] > 0
+    assert tax["california"] > 0
 
 
 def test_coupon_accrues_as_interest_not_ordinary_income() -> None:
     run = simulate(_scenario(issuer="federal_us"), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_usd") > 0.0)
+        (pl.col("month_index") == 11)
+        & (pl.col("agent_id") == "alice")
+        & (pl.col("ordinary_income_currency_quanta") > 0)
     )
 
     assert december.get_column("income_source").to_list() == ["interest:federal_us"]
-    assert december.get_column("ordinary_income_usd").to_list() == [_COUPON_USD]
+    assert december.get_column("ordinary_income_currency_quanta").to_list() == [2_500_000]
 
 
 def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
@@ -161,15 +165,19 @@ def test_redemption_returns_the_face_as_cash_without_being_income() -> None:
     deltas = _alice_cash_by_month(issuer="federal_us", maturity_month_index=maturity)
 
     # The maturity month pays its final coupon AND returns the face.
-    assert deltas[maturity] == _FACE_USD + _COUPON_USD
+    assert deltas[maturity] == 102_500_000
 
     # Asserted across the whole run rather than at one month, so it does not depend on which
     # row a tax year turns over on: a $1M face reaching income would tower over the $25k
     # coupons in SOME row, whichever row that is.
     run = simulate(_scenario(issuer="federal_us", maturity_month_index=maturity), rollout_count=1, locations={})
-    income = run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").get_column("ordinary_income_usd").to_list()
+    income = (
+        run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice")
+        .get_column("ordinary_income_currency_quanta")
+        .to_list()
+    )
 
-    assert max(income) == _COUPON_USD
+    assert max(income) == 2_500_000
 
 
 if __name__ == "__main__":
