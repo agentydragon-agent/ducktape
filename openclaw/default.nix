@@ -28,19 +28,8 @@ let
       previous.installPhase
       + "\n"
       + ''
-        matrixTarget="$out/lib/openclaw/dist/extensions/matrix"
-        matrixRuntimeTarget="$out/lib/openclaw/dist-runtime/extensions/matrix"
-        rm -rf "$matrixTarget"
-        chmod u+w "$(dirname "$matrixTarget")"
-        mkdir -p "$(dirname "$matrixTarget")"
-        cp -r ${matrixPlugin} "$matrixTarget"
-        rm "$matrixTarget/node_modules/openclaw"
-        ln -s ../../../.. "$matrixTarget/node_modules/openclaw"
-
-        rm -rf "$matrixRuntimeTarget"
-        chmod u+w "$(dirname "$matrixRuntimeTarget")"
-        mkdir -p "$(dirname "$matrixRuntimeTarget")"
-        cp -rl "$matrixTarget" "$matrixRuntimeTarget"
+        ${pkgs.bash}/bin/bash ${./bundle-runtime-plugin.sh} \
+          "$out/lib/openclaw" matrix ${matrixPlugin}
       '';
   });
 
