@@ -18,15 +18,15 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console import state_index_sync
+from haku.console import recall_index_sync
 from haku.console.chat_models import ChatMessageRole, ChatMessageStatus, SessionStatus
 from haku.console.config import HakuStateGitConfig
 from haku.console.database_schema import Operator, Session, SessionMessage
 from haku.console.operator_identity import OperatorStatus
-from haku.console.state_index_reader import PostgresIndexSearcher
-from haku.console.state_index_sync import CHAT_ADVISORY_LOCK, StateIndexMaintenance
-from haku.console.tools.state_index import ConversationSource, HakuStateSource, SearchCorpus
-from haku.state_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
+from haku.console.recall_index_reader import PostgresIndexSearcher
+from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, StateIndexMaintenance
+from haku.console.tools.recall_index import ConversationSource, HakuStateSource, SearchCorpus
+from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
@@ -135,7 +135,7 @@ async def test_an_unmoved_remote_is_never_fetched(
     def never(*args: object, **kwargs: object) -> str:
         raise AssertionError("fetched a remote whose tip had not moved")
 
-    monkeypatch.setattr(state_index_sync, "_fetch", never)
+    monkeypatch.setattr(recall_index_sync, "_fetch", never)
     await maintenance.sync_git_once()
 
 

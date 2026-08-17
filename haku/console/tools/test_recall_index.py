@@ -13,7 +13,7 @@ from uuid import UUID
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.tools.state_index import (
+from haku.console.tools.recall_index import (
     HAKU_INDEX_SERVER_ID,
     ConversationSource,
     ConversationsStatus,

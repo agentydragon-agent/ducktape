@@ -186,7 +186,7 @@ What it touches, none of it large:
   hint that hidden matches exist.
 - **The sweeps run per instance**, with an advisory lock each; one lock per type iterating its
   instances is the simpler first step, exactly as with the Matrix supervisor.
-- **`state_index_reader.py` is where the grant lands**, and mostly **shrinks**: it exists to map
+- **`recall_index_reader.py` is where the grant lands**, and mostly **shrinks**: it exists to map
   the tool surface's `haku_state`/`conversations` vocabulary onto the index's `git`/`chat`, and
   with named indexes the names are the config, so the mapping stops being a hardcoded translation
   and becomes a permission check.

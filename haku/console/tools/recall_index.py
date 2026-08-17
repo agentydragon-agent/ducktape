@@ -1,6 +1,6 @@
 """haku-console's in-process `haku_index` MCP server — semantic recall, and nothing else.
 
-One `search` over two corpora (`haku/state_index/README.md`), selected by argument rather than
+One `search` over two corpora (`haku/recall_index/README.md`), selected by argument rather than
 split into two tools: the caller's question is "where was this said or written", and which body of
 text answers it is the search's job to work out, not a routing decision to make before asking.
 
@@ -13,7 +13,7 @@ server would be a second answer to "what does this file say", and the two would 
 **Reads are unscoped**: any session, whichever room or operator it served — the same open decision
 as `conversations.py` (R5.3a). Ranked retrieval is a sharper edge on it than a drilldown, because
 it surfaces another room's conversation without anyone naming it. See
-`haku/state_index/README.md` § Read scoping before widening who holds this tool.
+`haku/recall_index/README.md` § Read scoping before widening who holds this tool.
 
 **Empty is not the same as absent.** An index that has fallen behind returns nothing for a topic
 discussed at length, so `index_status` exists and `search` says to check it before reporting that

@@ -27,11 +27,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import HakuStateGitConfig
-from haku.state_index.chat_sync import sync_chat
-from haku.state_index.embedder import Embedder
-from haku.state_index.git_tree import fetch_branch, open_mirror, remote_tip
-from haku.state_index.store import current_git_state, record_remote_tip
-from haku.state_index.sync import AlreadyCurrent, is_current, sync
+from haku.recall_index.chat_sync import sync_chat
+from haku.recall_index.embedder import Embedder
+from haku.recall_index.git_tree import fetch_branch, open_mirror, remote_tip
+from haku.recall_index.store import current_git_state, record_remote_tip
+from haku.recall_index.sync import AlreadyCurrent, is_current, sync
 
 logger = logging.getLogger(__name__)
 

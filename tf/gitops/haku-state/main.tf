@@ -105,7 +105,7 @@ resource "forgejo_collaborator" "claude" {
 #     constrained SA (cluster/k8s/haku/workloads). Read-only pull — Flux never
 #     pushes; the haku user is just the only principal on the repo.
 #   - haku-console: the console fetches a read-only bare mirror of haku-state for the
-#     `haku_index` git corpus (haku/console/state_index_sync.py). Haku's own credential rather
+#     `haku_index` git corpus (haku/console/recall_index_sync.py). Haku's own credential rather
 #     than a second, read-only one (operator, 2026-08-15): the console is more trusted code than
 #     Haku, and Haku already holds this. It never pushes — but it *could*, which is why
 #     haku/console/README.md says "no write credential" no longer.

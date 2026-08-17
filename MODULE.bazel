@@ -212,7 +212,7 @@ oci.pull(
     tag = "18",
 )
 
-# Test infrastructure: PostgreSQL with pgvector, for //haku/state_index tests. The stock
+# Test infrastructure: PostgreSQL with pgvector, for //haku/recall_index tests. The stock
 # postgres image ships no `vector` extension, and the index's core invariant (the tip join is
 # the only thing that makes content searchable) is only testable against the real operator.
 oci.pull(

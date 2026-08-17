@@ -84,8 +84,8 @@ py_library(
 )
 
 py_library(
-    name = "state_index",
-    srcs = ["state_index.py"],
+    name = "recall_index",
+    srcs = ["recall_index.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "@pypi//fastmcp_slim",
@@ -94,10 +94,10 @@ py_library(
 )
 
 py_test(
-    name = "test_state_index",
-    srcs = ["test_state_index.py"],
+    name = "test_recall_index",
+    srcs = ["test_recall_index.py"],
     deps = [
-        ":state_index",
+        ":recall_index",
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",

@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
 from haku.console.database_schema import metadata
-from haku.state_index.schema import Base as StateIndexBase
+from haku.recall_index.schema import Base as RecallIndexBase
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -41,7 +41,7 @@ def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
         # of the two. `.tables` rather than `.sorted_tables`: creation order is meaningless for a
         # zero-row read, and sorting warns about the mutually dependent foreign keys in the Agent
         # graph, which are deliberate.
-        for owned in (metadata, StateIndexBase.metadata):
+        for owned in (metadata, RecallIndexBase.metadata):
             for table in owned.tables.values():
                 conn.execute(select(table).limit(0))
 

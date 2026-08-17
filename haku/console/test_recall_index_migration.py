@@ -1,6 +1,6 @@
 """The index's two schema definitions must not drift.
 
-`haku/state_index/schema.py` is what the code queries and what `store.ensure_schema` builds for
+`haku/recall_index/schema.py` is what the code queries and what `store.ensure_schema` builds for
 the CLI and the tests; migration 0037 is what the deployed database gets. Nothing else compares
 them, and a column added to one and not the other would pass every other test in the repo and
 fail in production at the first query.
@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, make_url, text
 from sqlalchemy.exc import ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
-from haku.state_index.schema import SCHEMA, Base
+from haku.recall_index.schema import SCHEMA, Base
 
 
 def _only_the_index_schema(name: str | None, type_: str, parent_names: dict[str, str | None]) -> bool:

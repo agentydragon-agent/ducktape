@@ -69,10 +69,10 @@ from haku.console.mcp_config import (
 from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.state_index_reader import PostgresIndexSearcher
-from haku.console.state_index_sync import StateIndexMaintenance
+from haku.console.recall_index_reader import PostgresIndexSearcher
+from haku.console.recall_index_sync import StateIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
-from haku.console.tools.state_index import HAKU_INDEX_SERVER_ID
+from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import sandbox_claims, session_runtime
 
 # Aliased: bare `session`, `sync` and `outbox` would each collide with something this module
@@ -82,7 +82,7 @@ from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
-from haku.state_index.openai_embedder import OpenAIEmbedder
+from haku.recall_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 APP_SHELL_CACHE_CONTROL = "no-store"
