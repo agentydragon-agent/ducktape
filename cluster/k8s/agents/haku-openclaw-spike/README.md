@@ -6,6 +6,17 @@ Claude Code as a persistent, subscription-backed runtime while retaining
 OpenClaw sessions, workspace memory, and Haku Console's approval-gated MCP
 tools.
 
+## Image build
+
+`haku/openclaw_spike/default.nix` replaces the former apt/npm/curl Dockerfile.
+It pins the exact upstream `2026.7.2-beta.7` OpenClaw image as a fixed Nix
+input, then layers Claude Code and the spike's authoring/runtime tools from the
+repository's locked Nix package set. The separate upstream base is deliberate:
+the shared `nix-openclaw` input currently packages `2026.7.1-2`, while this
+spike needs the beta's Claude Opus 5 context-window support. The Nix build
+therefore preserves that behavior without keeping a second imperative image
+provisioning path.
+
 ## Trust boundary
 
 - The OpenClaw pod contains no real Claude OAuth token, GitHub PAT, Haku
