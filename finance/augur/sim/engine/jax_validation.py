@@ -32,6 +32,6 @@ def validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:
         if int(harvest.gain_profile_index[policy_idx]) < 0 or not harvest.lot_mask[policy_idx].any():
             continue
         series_index = int(harvest.series_index[policy_idx])
-        price = plan.external_money_values[series_index, :, : plan.horizon_months]
-        if (price < 0).any():
+        price = plan.external_values[series_index, :, : plan.horizon_months]
+        if not np.isfinite(price).all() or (price < 0.0).any():
             raise ValueError(f"harvest policy {policy_idx} index series produced a negative or non-finite price")

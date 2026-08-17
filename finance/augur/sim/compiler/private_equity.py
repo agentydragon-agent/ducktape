@@ -213,12 +213,18 @@ def compile_pe_channels(
         issuer_id = issuers.issuer_ids[issuer_idx]
         if issuer_id not in private_equity.issuer_ids():
             raise ValueError(f"private-equity bundle missing required issuer {issuer_id!r}")
-        mark_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(
-            private_equity.issuer_float_matrix(
-                issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
-            ),
-            quantum=currency_quantum,
+        mark_values = private_equity.issuer_float_matrix(
+            issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
         )
+        # A terminal snapshot is informative only; the scan executes months
+        # 0..H-1. Preserve that established validation boundary before
+        # quantization removes the float NaN sentinel.
+        executable_marks = mark_values[:, :horizon_months]
+        if executable_marks.size and (not np.isfinite(executable_marks).all() or (executable_marks < 0.0).any()):
+            raise ValueError(
+                f"private-equity mark series for issuer {issuer_id!r} produced a negative or non-finite value"
+            )
+        mark_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(mark_values, quantum=currency_quantum)
         regime_codes[issuer_idx] = private_equity.issuer_int_matrix(
             issuer_id, "regime_code", rollout_count=rollout_count, horizon_months=horizon_months
         )
@@ -240,11 +246,14 @@ def compile_pe_channels(
         liquidity_blocked[issuer_idx] = private_equity.issuer_bool_matrix(
             issuer_id, "liquidity_blocked", rollout_count=rollout_count, horizon_months=horizon_months
         )
+        forced_recovery_values = private_equity.issuer_float_matrix(
+            issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        executable_recovery = forced_recovery_values[:, :horizon_months]
+        if executable_recovery.size and (executable_recovery < 0.0).any():
+            raise ValueError("private-equity forced-recovery cashout series produced a negative value")
         forced_recovery_cashout_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(
-            private_equity.issuer_float_matrix(
-                issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
-            ),
-            quantum=currency_quantum,
+            forced_recovery_values, quantum=currency_quantum
         )
     return PEChannels(
         mark_currency_quanta=mark_currency_quanta,
