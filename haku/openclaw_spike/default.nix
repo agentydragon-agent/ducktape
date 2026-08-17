@@ -40,6 +40,11 @@ let
     jq
     kubectl
     less
+    # The upstream CLI wrapper is `#!/usr/bin/env node`. dockerTools does not
+    # expose the base image's Node executable after it writes this image's PATH,
+    # so retain a compatible Node runtime explicitly rather than inheriting an
+    # implicit base-layer executable.
+    nodejs_22
     openssl
     procps
     python3
