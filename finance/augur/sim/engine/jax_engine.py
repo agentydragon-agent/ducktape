@@ -91,6 +91,7 @@ from finance.augur.sim.enums import (
     PrivateEquityOpportunityOutcome,
 )
 from finance.augur.sim.fixed_point import USD_CENTS
+from finance.augur.sim.payment_policy import PaymentView, decide as decide_payments
 from finance.augur.sim.target_allocation import SleeveUniverse, decide
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
@@ -1939,6 +1940,12 @@ def _program_impl(
             month,
         )
 
+        # Obligations are environment facts. The current clock policy turns every due invoice
+        # into a concrete, full `Pay` action; its compile-time slot already fixes the actor and
+        # source/destination accounts. Feeding settlement this emitted batch rather than the
+        # accrual directly is the first behavior-preserving step toward one actor-action path.
+        pay_actions = decide_payments(PaymentView(invoice_active=slot_active, invoice_due_cents=accrual_due))
+
         attempt_policy = jnp.full((slot_active.shape[0], r), NO_CODE, dtype=jnp.int64)
 
         # Target-allocation policies: observe, decide, execute. Runs before the funding check,
@@ -2057,7 +2064,9 @@ def _program_impl(
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
-        funded = _obligation_group_funded_jit(group_matrix, from_row, cash, slot_active, accrual_due)
+        funded = _obligation_group_funded_jit(
+            group_matrix, from_row, cash, pay_actions.active, pay_actions.amount_cents
+        )
 
         property_slot = og["property_slot"][month]
         paid, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
@@ -2071,8 +2080,8 @@ def _program_impl(
                 property_slot >= 0,
                 og["property_tax_profile"][month] >= 0,
                 og["deduction_profile"][month] >= 0,
-                slot_active,
-                accrual_due,
+                pay_actions.active,
+                pay_actions.amount_cents,
                 funded,
                 cash,
                 ordinary,
@@ -3262,17 +3271,20 @@ def _obligation_group_funded_jit(
     group_matrix: jnp.ndarray,
     from_slot: jnp.ndarray,
     cash: jnp.ndarray,
-    accrual_active: jnp.ndarray,
-    accrual_due: jnp.ndarray,
+    payment_active: jnp.ndarray,
+    payment_amount: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Branch-free funding check: each obligation group (same agent + from-account) is funded for a
-    rollout iff that account's cash covers the group's total due. The per-slot group is encoded as
-    a static `(slots, slots)` membership matrix, so the group sums are one matmul."""
-    due_masked = jnp.where(accrual_active, accrual_due, 0)  # (slots, rollouts)
-    group_due = group_matrix.astype(due_masked.dtype) @ due_masked  # (slots, rollouts)
+    """Branch-free funding check for one emitted Pay batch.
+
+    Every same-agent/source-account group must have enough cash for its complete active batch;
+    no per-slot ordering can turn an unaffordable set into a partial success. The per-slot group
+    is a static `(slots, slots)` membership matrix, so the group sums are one matmul.
+    """
+    amount_masked = jnp.where(payment_active, payment_amount, 0)  # (slots, rollouts)
+    group_due = group_matrix.astype(amount_masked.dtype) @ amount_masked  # (slots, rollouts)
     cash_padded = jnp.concatenate([cash, jnp.zeros((1, cash.shape[1]), cash.dtype)], axis=0)
     available = cash_padded[jnp.where(from_slot < 0, cash.shape[0], from_slot)]  # (slots, rollouts), -1 -> 0
-    return accrual_active & (available >= group_due - 1e-9)
+    return payment_active & (available >= group_due - 1e-9)
 
 
 _ESTIMATED_TAX_KINDS = (ObligationSource.ESTIMATED_TAX, ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP)
@@ -3289,8 +3301,8 @@ def _settlement_core_jit(
     has_property_slot: jnp.ndarray,
     has_property_tax_profile: jnp.ndarray,
     has_deduction: jnp.ndarray,
-    accrual_active: jnp.ndarray,
-    accrual_due: jnp.ndarray,
+    payment_active: jnp.ndarray,
+    payment_amount: jnp.ndarray,
     funded: jnp.ndarray,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
@@ -3303,17 +3315,17 @@ def _settlement_core_jit(
 ) -> tuple[
     jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
 ]:
-    """Branch-free core of obligation settlement: per-slot pay/fail, the funded cash move, the
-    property-tax owner-share YTD accumulation, and the Schedule-E/itemized deduction — all
+    """Branch-free settlement of an emitted Pay batch: per-slot pay/fail, the funded cash move,
+    property-tax owner-share YTD accumulation, and Schedule-E/itemized deduction — all
     vectorized over slots (duplicate from/to/profile indices accumulate via `_scatter_rows`).
 
     Failure ordering is month-stable: every slot that fails this month would stamp the same
     `month`, so the per-rollout first-failure month is `month` iff any slot fails and it had not
     failed before. Mortgage liability updates and tax settlement are handled by the caller.
     """
-    paid = accrual_active & funded
-    slot_failed = accrual_active & ~funded
-    paid_amount = jnp.where(paid, accrual_due, 0)
+    paid = payment_active & funded
+    slot_failed = payment_active & ~funded
+    paid_amount = jnp.where(paid, payment_amount, 0)
     cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=paid_amount, row_of_world=row_of_world)
     rented = _gather_rows(property_rented_fraction, property_slot_idx)  # (slots, rollouts)
     property_tax_ytd = _scatter_rows(
@@ -3325,7 +3337,7 @@ def _settlement_core_jit(
     ordinary_ytd = _scatter_rows(
         ordinary_ytd, deduction_profile, jnp.where(has_deduction[:, None], -_scale_money(paid_amount, deductible), 0)
     )
-    shortfall = jnp.where(slot_failed, accrual_due, 0)
+    shortfall = jnp.where(slot_failed, payment_amount, 0)
     failed_this = slot_failed.any(axis=0)
     failed_month = jnp.where(failed_this & (failed_month < 0), month, failed_month)
     failed = failed | failed_this

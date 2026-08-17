@@ -148,6 +148,24 @@ py_test(
 )
 
 py_library(
+    name = "payment_policy",
+    srcs = ["payment_policy.py"],
+    deps = ["@pypi//jax"],
+)
+
+py_test(
+    name = "payment_policy_test",
+    size = "small",
+    srcs = ["payment_policy_test.py"],
+    deps = [
+        ":payment_policy",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "allocation",
     srcs = ["allocation.py"],
     deps = [
@@ -558,6 +576,7 @@ py_library(
         ":enums",
         ":external_series",
         ":fixed_point",
+        ":payment_policy",
         ":runtime",
         ":scenario",
         ":target_allocation",
