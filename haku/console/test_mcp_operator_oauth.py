@@ -27,6 +27,7 @@ from haku.console.mcp_operator_oauth import (
     _BuiltOperatorOAuthFlow,
     _OperatorOAuthTokenClient,
     _refresh_operator_oauth_token,
+    _token_request_auth,
 )
 from haku.console.oauth_token_state import (
     OAuthRefreshBlockedError,
@@ -112,6 +113,21 @@ async def test_refresh_read_timeout_is_classified_as_ambiguous_and_uses_configur
     # for every transient timeout.
     assert raised.value.action == OAuthRefreshFailureAction.RETRYING
     assert str(raised.value) == "MCP OAuth token refresh timed out after 37 seconds"
+
+
+def test_token_request_auth_explicitly_requests_json_token_responses() -> None:
+    data, headers = _token_request_auth(
+        {"grant_type": "authorization_code"},
+        _OperatorOAuthTokenClient(
+            client_id="client",
+            token_endpoint="https://authorization.example/token",
+            client_secret="secret",
+            token_endpoint_auth_method="client_secret_post",
+        ),
+    )
+
+    assert data == {"grant_type": "authorization_code", "client_secret": "secret"}
+    assert headers == {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
 
 
 async def test_operator_oauth_callback_rechecks_operator_after_token_exchange(

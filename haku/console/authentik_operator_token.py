@@ -23,7 +23,7 @@ from haku.console.oauth_token_state import (
     new_oauth_token_state,
     replace_oauth_token_state,
 )
-from haku.console.oauth_token_support import parse_token_response
+from haku.console.oauth_token_support import parse_token_response, token_request_headers
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -109,7 +109,9 @@ class PostgresAuthentikOperatorTokenStore:
             "client_secret": self._client_secret,
         }
         async with httpx.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
-            response = await http.post(authentik_token_endpoint_for_issuer(self._issuer), data=data)
+            response = await http.post(
+                authentik_token_endpoint_for_issuer(self._issuer), data=data, headers=token_request_headers()
+            )
         return await parse_token_response(response, label="Authentik operator token refresh")
 
     async def access_token_for(self, *, operator_id: UUID) -> str | None:

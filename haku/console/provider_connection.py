@@ -61,6 +61,7 @@ from haku.console.oauth_token_support import (
     parse_token_response,
     public_base_url,
     token_expires_at,
+    token_request_headers,
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -198,7 +199,7 @@ def _token_request_data(
 
 async def _post_token(descriptor: ProviderConnectionDescriptor, data: dict[str, str]) -> httpx.Response:
     async with httpx.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
-        return await http.post(descriptor.token_url, data=data)
+        return await http.post(descriptor.token_url, data=data, headers=token_request_headers())
 
 
 async def _exchange_code(

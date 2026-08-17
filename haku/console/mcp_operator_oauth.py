@@ -90,6 +90,7 @@ from haku.console.oauth_token_support import (
     public_base_url,
     token_expires_at,
     token_request_error_message,
+    token_request_headers,
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -673,7 +674,7 @@ async def _build_operator_oauth_flow(server: McpServerEntry, public_base_url: st
 def _token_request_auth(
     data: dict[str, str], client: _OperatorOAuthTokenClient
 ) -> tuple[dict[str, str], dict[str, str]]:
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    headers = token_request_headers({"Content-Type": "application/x-www-form-urlencoded"})
     if client.token_endpoint_auth_method == "client_secret_basic" and client.client_secret:
         encoded_id = quote(client.client_id, safe="")
         encoded_secret = quote(client.client_secret, safe="")
