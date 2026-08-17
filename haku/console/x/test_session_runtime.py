@@ -403,7 +403,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
     await chat_store.update_assistant(session_id, assistant_id, "we were half way through")
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -430,7 +430,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?")
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
     assert not await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
 
@@ -553,15 +553,20 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
 
     `next_prompt` anchors the cursor at the frame before the turn, so no session that can still
     acquire a frame is in this state; one that somehow is has its turn ended rather than resumed.
+
+    The turn has to open past frame 1 for the state to be expressible at all: the anchor is
+    `first_frame_seq - 1`, so a turn opening at 1 anchors at 0 — which is also "nothing has ever
+    projected" — and there is no position below it to put the cursor.
     """
     session = await chat_service.create(operator_id, SpaSession())
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
     assert await chat_store.next_prompt(session_id) is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
     async with migrated_sessions() as db:
-        await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=None))
+        await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=0))
         await db.commit()
 
     assert await chat_store.adopt_open_turn(session_id) is None
@@ -939,7 +944,7 @@ async def test_a_resumed_turn_does_not_say_again_what_it_had_already_queued(
     started = await chat_store.next_prompt(session_id)
     assert started is not None
     await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id)
+    assistant_id = await chat_store.begin_assistant(session_id, started.turn_id, source_first_frame_seq=1)
     assert await chat_store.update_assistant(session_id, assistant_id, "a bad config", complete=True)
 
     resumed = await chat_store.adopt_open_turn(session_id)
