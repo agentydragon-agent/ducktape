@@ -4,7 +4,12 @@ import httpx
 import pytest
 import pytest_bazel
 
-from haku.console.oauth_token_support import OAuthTokenResponseError, parse_token_response, token_request_error_message
+from haku.console.oauth_token_support import (
+    OAuthTokenResponseError,
+    parse_token_response,
+    token_request_error_message,
+    token_request_headers,
+)
 
 
 def test_token_request_timeout_has_a_message_when_httpx_error_does_not() -> None:
@@ -27,6 +32,14 @@ def test_token_request_failure_preserves_error_class() -> None:
     )
 
     assert message == "MCP OAuth token refresh request failed: ReadError: connection reset"
+
+
+def test_token_request_headers_explicitly_prefer_json_and_preserve_authentication_headers() -> None:
+    assert token_request_headers() == {"Accept": "application/json"}
+    assert token_request_headers({"Authorization": "Basic credentials", "Accept": "text/plain"}) == {
+        "Accept": "application/json",
+        "Authorization": "Basic credentials",
+    }
 
 
 async def test_token_error_preserves_standard_oauth_details_without_tokens() -> None:

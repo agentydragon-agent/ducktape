@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import json
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -22,6 +23,7 @@ from haku.console.config import Settings
 REFRESH_SKEW = datetime.timedelta(seconds=60)
 _ERROR_BODY_LIMIT = 512
 _OAUTH_ERROR_FIELDS = ("error", "error_description", "error_uri")
+_JSON_TOKEN_RESPONSE_ACCEPT = "application/json"
 
 
 class OAuthTokenResponseError(RuntimeError):
@@ -55,6 +57,17 @@ def token_request_error_message(*, label: str, request_error: httpx.RequestError
     detail = str(request_error).strip()
     suffix = f": {detail}" if detail else ""
     return f"{label} request failed: {type(request_error).__name__}{suffix}"
+
+
+def token_request_headers(headers: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Build token-request headers that ask for the OAuth-standard JSON response.
+
+    RFC 6749 section 5.1 specifies a JSON success response from the token endpoint. Sending an
+    explicit ``Accept`` preference makes that expectation unambiguous for interoperable endpoints
+    that retain a legacy default representation. Callers may add authentication or content-type
+    headers, but cannot accidentally omit the response-format preference.
+    """
+    return {**(headers or {}), "Accept": _JSON_TOKEN_RESPONSE_ACCEPT}
 
 
 async def parse_token_response(response: httpx.Response, *, label: str) -> OAuthToken:
