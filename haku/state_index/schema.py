@@ -1,9 +1,10 @@
 """SQLAlchemy schema for the haku index.
 
-`chunks` is the one table both corpora share: it is content-addressed, so it has no notion of
-where the content currently lives and keeps embeddings for content that has left the indexed
-set. That is the cache — a revert, a rebase, a re-windowed chat session all re-use vectors
-instead of paying to recompute them.
+`lexical_chunks` holds canonical, content-addressed chunk text independently of a model. It is
+the durable first result of ingesting source material: a later full-text reader can use it even
+when the embedding service is unavailable. `chunks` is the model-specific vector cache layered
+over it. Keeping those facts separate means a source synchronizer can enqueue embedding work and
+finish without waiting for the remote embedding service.
 
 Everything else is per-corpus, and each table says which corpus it belongs to:
 
@@ -66,6 +67,29 @@ class Base(DeclarativeBase):
     metadata = MetaData(schema=SCHEMA)
 
 
+class LexicalChunk(Base):
+    """One canonical span of source text, before any model has embedded it.
+
+    The primary key is the old vector-cache key without ``model_key``. A byte-identical git blob
+    or chat window therefore has exactly one lexical representation under a chunker regime,
+    while it may later have many embeddings as models change. ``text`` belongs here rather than
+    in the vector cache: lexical search and source ingestion must not depend on an embedding
+    having succeeded.
+    """
+
+    __tablename__ = "lexical_chunks"
+
+    corpus: Mapped[Corpus] = mapped_column(TextBackedStrEnumColumn(Corpus), primary_key=True)
+    content_sha: Mapped[str] = mapped_column(Text, primary_key=True)
+    chunker_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    byte_start: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    byte_end: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class Chunk(Base):
     """One embedded span of one piece of content, under one (corpus, chunker, model) regime.
 
@@ -93,6 +117,9 @@ class Chunk(Base):
     # this one's to define.
     byte_start: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     byte_end: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Kept during the expand migration because deployed vector readers still select it. New
+    # writers source the canonical value from ``lexical_chunks``; a later contract migration can
+    # remove this duplicate once every reader has crossed over.
     text: Mapped[str] = mapped_column(Text, nullable=False)
     # Unconstrained `halfvec`: dimension is a property of `model_key`, and pinning a typmod here
     # would force a migration to change models. Nothing indexes this column (exact KNN at this
@@ -103,6 +130,42 @@ class Chunk(Base):
     embedding: Mapped[list[float]] = mapped_column(HalfVector, nullable=False)
     last_seen_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class EmbeddingJob(Base):
+    """One leased request to add a model vector to a lexical chunk.
+
+    Jobs are durable instead of an in-process asyncio queue: a Console restart releases an
+    expired lease, and several replicas can safely claim independent batches. A completed job is
+    deleted after its vector reaches ``chunks``; the vector cache itself is the durable proof
+    that work completed. Failures stay queued with a retry time and a bounded diagnostic.
+    """
+
+    __tablename__ = "embedding_jobs"
+
+    corpus: Mapped[Corpus] = mapped_column(TextBackedStrEnumColumn(Corpus), primary_key=True)
+    content_sha: Mapped[str] = mapped_column(Text, primary_key=True)
+    chunker_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    byte_start: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    model_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    available_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["corpus", "content_sha", "chunker_key", "byte_start"],
+            [
+                f"{SCHEMA}.lexical_chunks.corpus",
+                f"{SCHEMA}.lexical_chunks.content_sha",
+                f"{SCHEMA}.lexical_chunks.chunker_key",
+                f"{SCHEMA}.lexical_chunks.byte_start",
+            ],
+            ondelete="CASCADE",
+        ),
+        Index("idx_embedding_jobs_ready", "available_at"),
     )
 
 
