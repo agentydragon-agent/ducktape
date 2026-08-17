@@ -405,7 +405,7 @@ def create_app(
             # Two clients over one configuration, differing only in patience. A search embeds one
             # query on the request path and should fail rather than hang; a sweep embeds batches
             # off it, where waiting out a cold model load is exactly what you want.
-            index_budget = settings.recall_index.chunk_budget()
+            index_budget = settings.recall_index.chunk_budget
             index_searcher = PostgresIndexSearcher(
                 db_sessions,
                 _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),

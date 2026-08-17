@@ -29,9 +29,9 @@ from haku.console.tools.recall_index import ConversationSource, HakuStateSource,
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 
 
-def test_recall_index_config_builds_the_shared_chunk_budget() -> None:
-    config = RecallIndexConfig(target_bytes=400, max_bytes=800, overlap_codepoints=48)
-    assert config.chunk_budget().overlap_codepoints == 48
+def test_recall_index_config_contains_the_shared_chunk_budget() -> None:
+    config = RecallIndexConfig(chunk_budget={"target_bytes": 400, "max_bytes": 800, "overlap_codepoints": 48})
+    assert config.chunk_budget.overlap_codepoints == 48
 
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
