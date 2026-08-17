@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -193,13 +194,7 @@ async def bound_room(conversations) -> str:
 
 
 async def watermark(store: MatrixSyncStore) -> str | None:
-    state = await store.load(MATRIX_USER)
-    return state.next_batch if state is not None else None
-
-
-async def cached_token(store: MatrixSyncStore) -> str | None:
-    state = await store.load(MATRIX_USER)
-    return state.access_token if state is not None else None
+    return (await store.position(MATRIX_USER)).watermark
 
 
 SESSION = UUID("11111111-2222-3333-4444-555555555555")
@@ -550,6 +545,15 @@ async def test_resumes_from_the_stored_watermark(service, matrix, sync_store, bo
     assert matrix.since == "s4"
 
 
+async def test_the_token_and_the_watermark_can_be_first_written_at_once(sync_store):
+    """A queued send logging in and the sync pass advancing the watermark are two writers with
+    nothing to say to each other, and each starts with no row to update. They own a table each, so
+    the first write of one is not the other's primary-key collision."""
+    await asyncio.gather(sync_store.save_token(MATRIX_USER, "cached"), sync_store.save_batch(MATRIX_USER, "s2"))
+
+    assert (await sync_store.cached_token(MATRIX_USER), await watermark(sync_store)) == ("cached", "s2")
+
+
 async def test_reuses_a_valid_cached_token(service, matrix, sync_store, bound_room):
     """Synapse rate-limits /login, so a working token must not be re-minted (R10.3a)."""
     matrix.result = SyncResult("s2", (), ())
@@ -565,7 +569,7 @@ async def test_logs_in_again_when_the_cached_token_is_rejected(service, matrix, 
     matrix.token_valid = False
 
     assert await service._token() == "fresh-token"
-    assert (matrix.logins, await cached_token(sync_store)) == (1, "fresh-token")
+    assert (matrix.logins, await sync_store.cached_token(MATRIX_USER)) == (1, "fresh-token")
 
 
 async def test_auth_error_surfaces_so_the_loop_can_re_login(service, matrix, bound_room):
