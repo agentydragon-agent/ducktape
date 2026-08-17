@@ -144,14 +144,13 @@ search", which is coarse, structural, and the kind of check doctrine prefers. A 
 on one read path leaks — a corpus an agent cannot name does not. The tier does not disappear; it
 becomes the sweep's **routing input** rather than a filter every reader must remember.
 
-One subtlety worth recording before someone optimizes it away: **content addressing makes
 **A shared embedding across instances is fine, and the schema already says why.** An earlier draft
 of this section claimed content addressing made cross-instance sharing a leak — that a `chat` row
 serving a high and a low corpus at once was the very thing being prevented. It is not, and
 `ChatChunk`'s own docstring makes the argument: it is keyed by position in the session rather than
-by content "because two sessions can hold the same exchange verbatim: they are then **two windows
-sharing one cached vector\*\*, and a search that matches it must be able to say which session each
-hit came from."
+by content, "because two sessions can hold the same exchange verbatim: they are then two windows
+sharing one cached vector, and a search that matches it must be able to say which session each hit
+came from."
 
 That is the separation this design needs, already built:
 
@@ -314,11 +313,12 @@ Six consequences, in the order they will bite:
   the coordination room"). Hanging them off `session_id` loses every subscription at each
   rotation — the same data-losing shape R11.3a already flags for room bindings. The attachment
   behaves as `matrix_conversation` does now: owned by the agent, with a session pointer that moves.
-- **Cleanup stage 7's `chat_attachment` is the right table, with a role.** It is already
+- **Cleanup stage 7's `chat_attachment` is the right table, with a role.** It is **specified and
+  unbuilt** — <chat_runtime_cleanup.md> § stage 7 designs it as
   `(session_id, surface, address, attached_at, detached_at)` with a partial unique index on the
-  address; add `role`, and a second partial unique index enforcing **at most one attached room per
-  agent**. One table, and the invalid state — two transcript homes — is unrepresentable rather
-  than checked.
+  address, and no migration creates it. What this section asks of that design: add `role`, and a
+  second partial unique index enforcing **at most one attached room per agent**. One table, and
+  the invalid state — two transcript homes — is unrepresentable rather than checked.
 - **Wake on everything, and cap rather than gate** (operator, 2026-08-15). An earlier draft made
   mention gating a requirement here, on the grounds that waking for every message in a busy room
   is how several agents burn budget answering each other. **That conflated two jobs.** Mention
@@ -485,16 +485,17 @@ Four properties it needs, and one of them is not obvious:
   stopping that agent stops the source; other agents in the room continuing is a feature, not a
   gap. Widen only if a failure is ever found that is not attributable to one sender.
 - **The queue is the room outbox, and it is not new.**
-  <chat_runtime_projection.md> § stage 5 already turns the Matrix pacer's deque into rows for
-  delivery reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for
-  channel reconciliation. This makes a third consumer, and the one that changes the priority: an
-  outbox is a prerequisite for the classifier rather than a tidy-up, because a classifier needs
-  somewhere durable to **hold** a message while it decides.
+  <chat_runtime_projection.md> § stage 5 turned the Matrix pacer's deque into rows for delivery
+  reliability, and <../console/plans/session_channels.md> § 1 wants the same rows for channel
+  reconciliation. This makes a third consumer, and the one that changes the priority: an outbox is
+  a prerequisite for the classifier rather than a tidy-up, because a classifier needs somewhere
+  durable to **hold** a message while it decides.
 
-**So v0 builds the queue and no classifier.** With nothing consuming it but delivery, the outbox
-is exactly the reliability improvement stage 5 already wanted; the classifier lands later as a
-stage in front of the drain. That is a clean seam, and it means the v0/v1 boundary costs no
-rework.
+**So v0 builds the queue and no classifier — and the queue is already built.** `session_outbox`
+and `channels/matrix/outbox.py`'s `RoomOutboxDrain` landed as stage 5 (#4104), with nothing
+consuming them but delivery, which is exactly the reliability improvement that stage wanted. The
+classifier lands later as a stage in front of the drain. That is a clean seam, it means the v0/v1
+boundary costs no rework, and this half of v0 costs nothing at all now.
 
 ### Where it runs: local is a preference, not a requirement
 
