@@ -8,7 +8,7 @@ export function normalizeMetricScale(metricScale) {
 }
 
 export function metricIsCurrency(metricName) {
-  return metricName?.endsWith("CurrencyQuanta") || metricName?.includes("Value") || metricName?.includes("CashFlow");
+  return metricName?.endsWith("CurrencyAmount") || metricName?.includes("Value") || metricName?.includes("CashFlow");
 }
 
 export function fmtMetricValue(metricName, value, _currencyDisplay = "exact", currency) {

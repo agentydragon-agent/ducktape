@@ -33,19 +33,23 @@ PrivateEquityOpportunityOutcome = Literal[
     "sold", "floor_satisfied", "capacity_zero", "liquidity_blocked", "no_policy", "no_units", "nonpositive_mark"
 ]
 MetricName = Literal[
-    "cash_currency_quanta",
-    "holding_value_currency_quanta",
-    "private_equity_value_currency_quanta",
-    "property_value_currency_quanta",
-    "mortgage_balance_currency_quanta",
-    "home_equity_currency_quanta",
-    "liquid_net_worth_currency_quanta",
-    "net_worth_currency_quanta",
-    "shortfall_currency_quanta",
-    "bond_value_currency_quanta",
+    "cash",
+    "holding_value",
+    "private_equity_value",
+    "property_value",
+    "mortgage_balance",
+    "home_equity",
+    "liquid_net_worth",
+    "net_worth",
+    "shortfall",
+    "bond_value",
 ]
-# Decimal integer strings keep Int64 money exact across the JSON/JavaScript boundary.
-type CurrencyQuanta = Annotated[str, StringConstraints(pattern=r"^-?(0|[1-9][0-9]*)$")]
+# Every monetary field in this product response uses this canonical integer
+# string. Its semantic name stays `cash`, `amount`, or `proceeds`; the
+# response-level `currency_code` + `currency_quantum` say how to interpret it.
+# That preserves Int64 values across JSON/JavaScript without leaking the
+# storage-unit word into every field name.
+type CurrencyAmount = Annotated[str, StringConstraints(pattern=r"^-?(0|[1-9][0-9]*)$")]
 MAX_HORIZON_MONTHS = 100 * 12
 
 
@@ -313,24 +317,24 @@ class RolloutRequest(ApiModel):
 
 
 class TerminalMetrics(ApiModel):
-    cash_currency_quanta: CurrencyQuanta
-    holding_value_currency_quanta: CurrencyQuanta
-    private_equity_value_currency_quanta: CurrencyQuanta
-    property_value_currency_quanta: CurrencyQuanta
-    mortgage_balance_currency_quanta: CurrencyQuanta
-    home_equity_currency_quanta: CurrencyQuanta
-    liquid_net_worth_currency_quanta: CurrencyQuanta
-    net_worth_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
-    # Par face still on the books. In `net_worth_currency_quanta` but deliberately not in
-    # `liquid_net_worth_currency_quanta`: held to maturity, a bond is neither marked nor saleable.
-    bond_value_currency_quanta: CurrencyQuanta
+    cash: CurrencyAmount
+    holding_value: CurrencyAmount
+    private_equity_value: CurrencyAmount
+    property_value: CurrencyAmount
+    mortgage_balance: CurrencyAmount
+    home_equity: CurrencyAmount
+    liquid_net_worth: CurrencyAmount
+    net_worth: CurrencyAmount
+    shortfall: CurrencyAmount
+    # Par face still on the books. In `net_worth` but deliberately not in
+    # `liquid_net_worth`: held to maturity, a bond is neither marked nor saleable.
+    bond_value: CurrencyAmount
     failed_month_index: NonNegativeInt | None = None
 
 
 class _RolloutEventBase(ApiModel):
     month_index: NonNegativeInt
-    amount_currency_quanta: CurrencyQuanta
+    amount: CurrencyAmount
 
 
 class HoldingSaleEvent(_RolloutEventBase):
@@ -338,8 +342,8 @@ class HoldingSaleEvent(_RolloutEventBase):
     asset: AssetKey
     asset_label: str | None = None
     units: NonNegativeFloat
-    proceeds_currency_quanta: CurrencyQuanta
-    cost_basis_currency_quanta: CurrencyQuanta
+    proceeds: CurrencyAmount
+    cost_basis: CurrencyAmount
 
 
 class PrivateEquityMarkerEvent(_RolloutEventBase):
@@ -349,12 +353,12 @@ class PrivateEquityMarkerEvent(_RolloutEventBase):
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
     regime: PrivateEquityRegime
-    mark_currency_quanta: CurrencyQuanta
+    mark: CurrencyAmount
     sale_capacity_fraction: NonNegativeFloat = Field(le=1.0)
     eligible_fraction: NonNegativeFloat = Field(le=1.0)
     forced_sale_fraction: NonNegativeFloat = Field(le=1.0)
     liquidity_blocked: bool
-    forced_recovery_cashout_currency_quanta: CurrencyQuanta
+    forced_recovery_cashout: CurrencyAmount
 
 
 class PrivateEquityOpportunityEvent(_RolloutEventBase):
@@ -365,41 +369,41 @@ class PrivateEquityOpportunityEvent(_RolloutEventBase):
     event_kind: PrivateEquityEventKind
     regime: PrivateEquityRegime
     outcome: PrivateEquityOpportunityOutcome
-    mark_currency_quanta: CurrencyQuanta
+    mark: CurrencyAmount
     sale_capacity_fraction: NonNegativeFloat = Field(le=1.0)
     eligible_fraction: NonNegativeFloat = Field(le=1.0)
     liquidity_blocked: bool
-    floor_currency_quanta: CurrencyQuanta
+    floor: CurrencyAmount
     # Liquid net worth at the tender opportunity; can go negative when spending/obligations
     # outrun liquid assets (the PE floor policy still evaluates against it).
-    liquid_net_worth_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    liquid_net_worth: CurrencyAmount
+    shortfall: CurrencyAmount
     units_held: NonNegativeFloat
     sellable_units: NonNegativeFloat
     target_units: NonNegativeFloat
-    proceeds_currency_quanta: CurrencyQuanta
+    proceeds: CurrencyAmount
 
 
 class MonthlyExpenseEvent(_RolloutEventBase):
     kind: Literal["monthly_expense"] = "monthly_expense"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class OutsideRentPaymentEvent(_RolloutEventBase):
     kind: Literal["outside_rent"] = "outside_rent"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class PropertyPurchaseEvent(_RolloutEventBase):
     kind: Literal["property_purchase"] = "property_purchase"
     property_id: str
-    purchase_price_currency_quanta: CurrencyQuanta
-    down_payment_currency_quanta: CurrencyQuanta
-    mortgage_principal_currency_quanta: CurrencyQuanta
+    purchase_price: CurrencyAmount
+    down_payment: CurrencyAmount
+    mortgage_principal: CurrencyAmount
 
 
 class ClosingCostPaymentEvent(_RolloutEventBase):
@@ -409,69 +413,69 @@ class ClosingCostPaymentEvent(_RolloutEventBase):
 
 class MortgagePaymentEvent(_RolloutEventBase):
     kind: Literal["mortgage_payment"] = "mortgage_payment"
-    interest_currency_quanta: CurrencyQuanta
-    principal_currency_quanta: CurrencyQuanta
+    interest: CurrencyAmount
+    principal: CurrencyAmount
 
 
 class PropertyTaxPaymentEvent(_RolloutEventBase):
     kind: Literal["property_tax_payment"] = "property_tax_payment"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class HoaDuesPaymentEvent(_RolloutEventBase):
     kind: Literal["hoa_dues_payment"] = "hoa_dues_payment"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class HomeownersInsurancePaymentEvent(_RolloutEventBase):
     kind: Literal["homeowners_insurance_payment"] = "homeowners_insurance_payment"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class PropertyMaintenancePaymentEvent(_RolloutEventBase):
     kind: Literal["property_maintenance_payment"] = "property_maintenance_payment"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
     jurisdiction_id: str
     tax_year_end_month: NonNegativeInt
-    ordinary_income_currency_quanta: CurrencyQuanta
-    ltcg_currency_quanta: CurrencyQuanta
-    stcg_currency_quanta: CurrencyQuanta
-    ordinary_tax_currency_quanta: CurrencyQuanta
-    capital_gain_tax_currency_quanta: CurrencyQuanta
-    total_tax_currency_quanta: CurrencyQuanta
+    ordinary_income: CurrencyAmount
+    ltcg: CurrencyAmount
+    stcg: CurrencyAmount
+    ordinary_tax: CurrencyAmount
+    capital_gain_tax: CurrencyAmount
+    total_tax: CurrencyAmount
     # MID under this jurisdiction's principal cap, 0.0 when not active.
-    mortgage_interest_deduction_currency_quanta: CurrencyQuanta
+    mortgage_interest_deduction: CurrencyAmount
     # Sum of itemized lines (today MID is the only one). Consumer renders the larger of itemized
     # vs. standard as the "deduction used".
-    itemized_deduction_currency_quanta: CurrencyQuanta
-    standard_deduction_currency_quanta: CurrencyQuanta
+    itemized_deduction: CurrencyAmount
+    standard_deduction: CurrencyAmount
 
 
 class TaxPaymentEvent(_RolloutEventBase):
     kind: Literal["tax_payment"] = "tax_payment"
     obligation_type: str
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class RolloutFailureEvent(_RolloutEventBase):
     kind: Literal["failure"] = "failure"
-    amount_due_currency_quanta: CurrencyQuanta
-    amount_paid_currency_quanta: CurrencyQuanta
-    shortfall_currency_quanta: CurrencyQuanta
+    amount_due: CurrencyAmount
+    amount_paid: CurrencyAmount
+    shortfall: CurrencyAmount
 
 
 class SetRentedFractionMarkerEvent(_RolloutEventBase):
@@ -506,13 +510,13 @@ class PropertySaleMarkerEvent(_RolloutEventBase):
 
     kind: Literal["property_sale"] = "property_sale"
     property_id: str
-    gross_proceeds_currency_quanta: CurrencyQuanta
-    mortgage_payoff_currency_quanta: CurrencyQuanta
-    net_cash_to_owner_currency_quanta: CurrencyQuanta
-    realized_gain_currency_quanta: CurrencyQuanta
-    depreciation_recapture_currency_quanta: CurrencyQuanta
-    section_121_exclusion_currency_quanta: CurrencyQuanta
-    long_term_capital_gain_currency_quanta: CurrencyQuanta
+    gross_proceeds: CurrencyAmount
+    mortgage_payoff: CurrencyAmount
+    net_cash_to_owner: CurrencyAmount
+    realized_gain: CurrencyAmount
+    depreciation_recapture: CurrencyAmount
+    section_121_exclusion: CurrencyAmount
+    long_term_capital_gain: CurrencyAmount
 
 
 type RolloutEvent = Annotated[

@@ -101,7 +101,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rollout-count", type=int, default=DEFAULT_ROLLOUT_COUNT)
     parser.add_argument("--monthly-spend-usd", type=float, default=DEFAULT_MONTHLY_SPEND_USD)
     parser.add_argument("--spend-index", choices=["none", "inflation"], default="inflation")
-    parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth_currency_quanta")
+    parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth")
     parser.add_argument("--percentiles", type=float, nargs="+", default=list(DEFAULT_PERCENTILES))
     parser.add_argument("--profile-output", type=Path, default=DEFAULT_PROFILE_OUTPUT)
     parser.add_argument("--max-seconds", type=float, default=60.0)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart";
-import { fmtCurrencyQuanta } from "./lib/format";
+import { fmtCurrency } from "./lib/format";
 import {
   SELECTED_ROLLOUT_COLOR,
   FAILED_ROLLOUT_COLOR,
@@ -584,7 +584,7 @@ export function MetricFanChart({
                   label: `P${pct}`,
                   color: null,
                   value: hoveredRow.values.get(pct),
-                  currencyQuanta: hoveredRow.displayValues?.get(pct),
+                  amount: hoveredRow.displayValues?.get(pct),
                   currency: hoveredRow.currency,
                 }))
               : series.map((entry) => ({
@@ -592,10 +592,7 @@ export function MetricFanChart({
                   label: entry.label,
                   color: entry.color,
                   value: rowByMonthBySeries.get(entry.id)?.get(hoveredRow.monthIndex)?.values.get(median),
-                  currencyQuanta: rowByMonthBySeries
-                    .get(entry.id)
-                    ?.get(hoveredRow.monthIndex)
-                    ?.displayValues?.get(median),
+                  amount: rowByMonthBySeries.get(entry.id)?.get(hoveredRow.monthIndex)?.displayValues?.get(median),
                   currency: rowByMonthBySeries.get(entry.id)?.get(hoveredRow.monthIndex)?.currency,
                 }));
             const tipW = single ? 140 : 168;
@@ -645,10 +642,7 @@ export function MetricFanChart({
                           ●{" "}
                         </tspan>
                       )}
-                      {tipLine.label}:{" "}
-                      {tipLine.currencyQuanta != null
-                        ? fmtCurrencyQuanta(tipLine.currencyQuanta, tipLine.currency)
-                        : "n/a"}
+                      {tipLine.label}: {tipLine.amount != null ? fmtCurrency(tipLine.amount, tipLine.currency) : "n/a"}
                     </text>
                   ))}
                 </g>

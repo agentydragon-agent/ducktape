@@ -149,7 +149,12 @@ def _cash_path(product: ProductService, *, horizon_months: int = 3) -> list[int]
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
     # The public Frame uses decimal integer strings so currency values never cross JSON as
     # lossy JavaScript numbers. Convert only within this test's arithmetic.
-    return [int(value) for value in detail.rollout.monthly_metrics["cash_currency_quanta"]]
+    cash = detail.rollout.monthly_metrics["cash"]
+    cash_quanta: list[int] = []
+    for value in cash:
+        assert isinstance(value, str)
+        cash_quanta.append(int(value))
+    return cash_quanta
 
 
 def test_a_declared_fund_pays_its_per_unit_distribution_into_cash(

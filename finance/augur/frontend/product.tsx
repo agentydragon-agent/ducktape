@@ -7,7 +7,7 @@ import {
   fetchProductRollout,
   fetchProductTerminalDistribution,
 } from "./client";
-import { fmtCurrencyQuanta, fmtNumber } from "./lib/format";
+import { fmtCurrency, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
 
 import { MetricFanChart } from "./fan_chart";
@@ -244,7 +244,7 @@ export function ProductProjectionWorkspace({
   onChangeSettingsOpen,
 }) {
   const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
-  const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_currency_quanta");
+  const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth");
   // One metric-fan response per scenario id. Every scenario shares the seed set, and identical
   // seeds reproduce identical sampled exogenous paths, so the overlaid fans are apples-to-apples
   // (no backend comparison endpoint needed). Updated in place as each fan arrives so the comparison
@@ -678,7 +678,7 @@ export function ProductProjectionWorkspace({
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtCurrencyQuanta(terminalP50, {
+                {fmtCurrency(terminalP50, {
                   currencyCode: activeTerminalDisplayResult?.currencyCode,
                   currencyQuantum: activeTerminalDisplayResult?.currencyQuantum,
                 })}

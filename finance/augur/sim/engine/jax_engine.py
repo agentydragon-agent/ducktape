@@ -473,7 +473,7 @@ def run_jax_product_summary(
     initial_ys, monthly_ys = product_ys
     series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
     # Terminal sample: cumulative over the horizon for shortfall, end-of-horizon snapshot otherwise.
-    terminal = series.sum(axis=0) if metric == "shortfall_currency_quanta" else series[-1]
+    terminal = series.sum(axis=0) if metric == "shortfall" else series[-1]
     del percentiles  # Percentiles are interpolated exactly by ProductService on the host.
 
     return ProductSummary(

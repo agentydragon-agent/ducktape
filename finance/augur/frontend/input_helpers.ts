@@ -59,21 +59,21 @@ export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_v
 // (value, mortgage, home equity) plus liquid net worth feed Net worth. Cash shortfall is a
 // diagnostic, kept last. This order drives the metric picker and both terminal tables.
 export const METRIC_OPTIONS = [
-  { value: "holding_value_currency_quanta", chartValue: "holdingValueCurrencyQuanta", label: "Holdings value" },
+  { value: "holding_value", chartValue: "holdingValue", label: "Holdings value" },
   {
-    value: "private_equity_value_currency_quanta",
-    chartValue: "privateEquityValueCurrencyQuanta",
+    value: "private_equity_value",
+    chartValue: "privateEquityValue",
     label: "Private equity value",
   },
   // Face still on the books. Above Liquid net worth because it is NOT in it — a bond held to
   // maturity is neither marked nor saleable — but it is in Net worth below.
-  { value: "bond_value_currency_quanta", chartValue: "bondValueCurrencyQuanta", label: "Bond value" },
-  { value: "cash_currency_quanta", chartValue: "cashCurrencyQuanta", label: "Cash balance" },
-  { value: "liquid_net_worth_currency_quanta", chartValue: "liquidNetWorthCurrencyQuanta", label: "Liquid net worth" },
-  { value: "property_value_currency_quanta", chartValue: "propertyValueCurrencyQuanta", label: "Property value" },
-  { value: "mortgage_balance_currency_quanta", chartValue: "mortgageBalanceCurrencyQuanta", label: "Mortgage balance" },
-  { value: "home_equity_currency_quanta", chartValue: "homeEquityCurrencyQuanta", label: "Home equity" },
-  { value: "net_worth_currency_quanta", chartValue: "netWorthCurrencyQuanta", label: "Net worth" },
+  { value: "bond_value", chartValue: "bondValue", label: "Bond value" },
+  { value: "cash", chartValue: "cash", label: "Cash balance" },
+  { value: "liquid_net_worth", chartValue: "liquidNetWorth", label: "Liquid net worth" },
+  { value: "property_value", chartValue: "propertyValue", label: "Property value" },
+  { value: "mortgage_balance", chartValue: "mortgageBalance", label: "Mortgage balance" },
+  { value: "home_equity", chartValue: "homeEquity", label: "Home equity" },
+  { value: "net_worth", chartValue: "netWorth", label: "Net worth" },
 ];
 
 export const METRIC_BY_VALUE = new Map(METRIC_OPTIONS.map((metric) => [metric.value, metric]));

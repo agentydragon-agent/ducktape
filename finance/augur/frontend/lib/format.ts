@@ -37,7 +37,7 @@ function groupedInteger(value) {
  * contain the full signed Int64 range. `currencyQuantum` is an exact decimal
  * such as "0.01", "1", or "0.05" supplied by the product response.
  */
-export function currencyQuantaDecimal(value, currencyQuantum) {
+export function currencyAmountDecimal(value, currencyQuantum) {
   if (typeof value !== "string" && typeof value !== "bigint" && typeof value !== "number") return null;
   let quanta;
   try {
@@ -56,8 +56,8 @@ export function currencyQuantaDecimal(value, currencyQuantum) {
   return `${negative ? "-" : ""}${decimal}`;
 }
 
-export function fmtCurrencyQuanta(value, { currencyCode = "USD", currencyQuantum = "0.01" } = {}) {
-  const decimal = currencyQuantaDecimal(value, currencyQuantum);
+export function fmtCurrency(value, { currencyCode = "USD", currencyQuantum = "0.01" } = {}) {
+  const decimal = currencyAmountDecimal(value, currencyQuantum);
   if (decimal == null) return "n/a";
   // Currency symbols and their placement are locale-specific. Keep the ISO code
   // explicit so a non-USD product response is never displayed as dollars.
@@ -71,14 +71,14 @@ export function fmtChartCurrency(value, { currencyCode = "USD" } = {}) {
 }
 
 // Charts are the one allowed Number conversion: SVG coordinates cannot consume
-// BigInt. Labels, tooltips, tables, and event text use fmtCurrencyQuanta above.
-export function currencyQuantaChartNumber(value, currencyQuantum) {
-  const decimal = currencyQuantaDecimal(value, currencyQuantum);
+// BigInt. Labels, tooltips, tables, and event text use fmtCurrency above.
+export function currencyAmountChartNumber(value, currencyQuantum) {
+  const decimal = currencyAmountDecimal(value, currencyQuantum);
   if (decimal == null) return NaN;
   return Number(decimal.replaceAll(",", ""));
 }
 
-export function currencyQuantaIsPositive(value) {
+export function currencyAmountIsPositive(value) {
   try {
     return BigInt(value) > 0n;
   } catch {
@@ -86,7 +86,7 @@ export function currencyQuantaIsPositive(value) {
   }
 }
 
-export function currencyQuantaCompare(left, right) {
+export function currencyAmountCompare(left, right) {
   try {
     const difference = BigInt(left) - BigInt(right);
     return difference < 0n ? -1 : difference > 0n ? 1 : 0;
@@ -95,7 +95,7 @@ export function currencyQuantaCompare(left, right) {
   }
 }
 
-export function currencyQuantaAdd(...values) {
+export function currencyAmountAdd(...values) {
   try {
     return values.reduce((sum, value) => sum + BigInt(value), 0n).toString();
   } catch {

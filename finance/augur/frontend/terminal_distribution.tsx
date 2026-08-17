@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue } from "./lib/chart";
-import { currencyQuantaChartNumber, currencyQuantaCompare, fmtCurrencyQuanta } from "./lib/format";
+import { currencyAmountChartNumber, currencyAmountCompare, fmtCurrency } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
 import { scenarioColor } from "./input_helpers";
 import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } from "./data_helpers";
@@ -11,8 +11,8 @@ function terminalPercentilePoints(result, metric) {
     .map((row) => ({
       percentile: Number(row.percentile) / 100,
       rawPercentile: Number(row.percentile),
-      value: currencyQuantaChartNumber(row.value, result.currencyQuantum),
-      currencyQuanta: row.value,
+      value: currencyAmountChartNumber(row.value, result.currencyQuantum),
+      amount: row.value,
       currency: { currencyCode: result.currencyCode, currencyQuantum: result.currencyQuantum },
     }))
     .filter(
@@ -43,14 +43,14 @@ function valueAtPercentile(entry, percentile) {
 function terminalFailedSamplePoints(result, metric) {
   const samples = terminalMetricSamples(result, metric)
     .slice()
-    .sort((left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed);
+    .sort((left, right) => currencyAmountCompare(left.amount, right.amount) || left.seed - right.seed);
   if (samples.length === 0) return [];
   return samples
     .map((sample, index) => ({
       seed: sample.seed,
       percentile: samples.length === 1 ? 0.5 : index / (samples.length - 1),
       value: sample.value,
-      currencyQuanta: sample.currencyQuanta,
+      amount: sample.amount,
       currency: sample.currency,
       failed: sample.failed,
     }))
@@ -117,7 +117,7 @@ export function TerminalDistributionChart({
         .map((scenario, index) => {
           const result = resultsById.get(scenario.id);
           const samples = terminalMetricSamples(result, metric).sort(
-            (left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed
+            (left, right) => currencyAmountCompare(left.amount, right.amount) || left.seed - right.seed
           );
           return {
             id: scenario.id,
@@ -322,7 +322,7 @@ export function TerminalDistributionChart({
             label: entry.label,
             color: entry.color,
             value: valueAtPercentile(entry, hoverPercentile),
-            currencyQuanta: point?.currencyQuanta,
+            amount: point?.amount,
             currency: point?.currency,
           };
         });
@@ -501,7 +501,7 @@ export function TerminalDistributionChart({
                       <tspan fill={row.color} fontWeight="700">
                         ●{" "}
                       </tspan>
-                      {row.label}: {fmtCurrencyQuanta(row.currencyQuanta, row.currency)}
+                      {row.label}: {fmtCurrency(row.amount, row.currency)}
                     </text>
                   ))}
                 </g>

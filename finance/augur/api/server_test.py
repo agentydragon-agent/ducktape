@@ -107,20 +107,14 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {
-            "scenario": scenario,
-            "first_seed": 7,
-            "rollout_count": 2,
-            "metric": "cash_currency_quanta",
-            "percentiles": [0, 50, 100],
-        },
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash", "percentiles": [0, 50, 100]},
     )
 
     assert fan["model_id"] == "composite"
     assert "horizon_months" not in fan
     assert fan["currency_code"] == "USD"
     assert fan["currency_quantum"] == "0.01"
-    assert fan["metric"] == "cash_currency_quanta"
+    assert fan["metric"] == "cash"
     assert fan["failed_count"] == 0
     assert "rollouts" not in fan
     assert "rollout_summaries" not in fan
@@ -156,7 +150,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
             "scenario": scenario,
             "first_seed": 7,
             "rollout_count": 2,
-            "metric": "cash_currency_quanta",
+            "metric": "cash",
             "percentiles": [0, 1, 2, 50, 100],
         },
     )
@@ -164,7 +158,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert terminal_distribution["model_id"] == "composite"
     assert terminal_distribution["currency_code"] == "USD"
     assert terminal_distribution["currency_quantum"] == "0.01"
-    assert terminal_distribution["metric"] == "cash_currency_quanta"
+    assert terminal_distribution["metric"] == "cash"
     assert terminal_distribution["failed_count"] == 0
     assert "monthly_metric_fan" not in terminal_distribution
     assert "rollouts" not in terminal_distribution
@@ -182,16 +176,10 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     holding_fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {
-            "scenario": scenario,
-            "first_seed": 7,
-            "rollout_count": 2,
-            "metric": "holding_value_currency_quanta",
-            "percentiles": [50],
-        },
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "holding_value", "percentiles": [50]},
     )
 
-    assert holding_fan["metric"] == "holding_value_currency_quanta"
+    assert holding_fan["metric"] == "holding_value"
     assert holding_fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
     assert holding_fan["monthly_metric_fan"]["percentile"] == [50.0] * 4
     assert holding_fan["monthly_metric_fan"]["value"][0] == "83550000"
@@ -207,59 +195,51 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert columns["month_index"] == [0, 1, 2, 3]
     assert detail["currency_code"] == "USD"
     assert detail["currency_quantum"] == "0.01"
-    assert columns["cash_currency_quanta"] == ["25000000", "25087500", "24987500", "24887500"]
-    assert columns["holding_value_currency_quanta"][0] == "83550000"
-    assert columns["liquid_net_worth_currency_quanta"][0] == "108550000"
+    assert columns["cash"] == ["25000000", "25087500", "24987500", "24887500"]
+    assert columns["holding_value"][0] == "83550000"
+    assert columns["liquid_net_worth"][0] == "108550000"
     # +$25k for the PHA private-equity position (1000 units at $25 anchor), +$150k for the two
     # bond rungs at face — in net worth, and deliberately not in liquid net worth above.
-    assert columns["net_worth_currency_quanta"][0] == "126050000"
+    assert columns["net_worth"][0] == "126050000"
     assert set(columns) == {
         "month_index",
-        "cash_currency_quanta",
-        "holding_value_currency_quanta",
-        "private_equity_value_currency_quanta",
-        "bond_value_currency_quanta",
-        "property_value_currency_quanta",
-        "mortgage_balance_currency_quanta",
-        "home_equity_currency_quanta",
-        "liquid_net_worth_currency_quanta",
-        "net_worth_currency_quanta",
-        "shortfall_currency_quanta",
+        "cash",
+        "holding_value",
+        "private_equity_value",
+        "bond_value",
+        "property_value",
+        "mortgage_balance",
+        "home_equity",
+        "liquid_net_worth",
+        "net_worth",
+        "shortfall",
     }
     terminal = detail["rollout"]["terminal_metrics"]
-    assert terminal["cash_currency_quanta"] == "24887500"
-    assert int(terminal["holding_value_currency_quanta"]) > 0
-    assert int(terminal["private_equity_value_currency_quanta"]) > 0
-    assert int(terminal["liquid_net_worth_currency_quanta"]) == int(terminal["cash_currency_quanta"]) + int(
-        terminal["holding_value_currency_quanta"]
-    )
+    assert terminal["cash"] == "24887500"
+    assert int(terminal["holding_value"]) > 0
+    assert int(terminal["private_equity_value"]) > 0
+    assert int(terminal["liquid_net_worth"]) == int(terminal["cash"]) + int(terminal["holding_value"])
     # Bonds are the third term: liquid net worth deliberately excludes them (held to maturity,
     # neither marked nor saleable) while net worth includes them at face.
-    assert int(terminal["net_worth_currency_quanta"]) == (
-        int(terminal["liquid_net_worth_currency_quanta"])
-        + int(terminal["private_equity_value_currency_quanta"])
-        + int(terminal["bond_value_currency_quanta"])
+    assert int(terminal["net_worth"]) == (
+        int(terminal["liquid_net_worth"]) + int(terminal["private_equity_value"]) + int(terminal["bond_value"])
     )
     assert set(terminal) == {
-        "cash_currency_quanta",
-        "holding_value_currency_quanta",
-        "private_equity_value_currency_quanta",
-        "bond_value_currency_quanta",
-        "property_value_currency_quanta",
-        "mortgage_balance_currency_quanta",
-        "home_equity_currency_quanta",
-        "liquid_net_worth_currency_quanta",
-        "net_worth_currency_quanta",
-        "shortfall_currency_quanta",
+        "cash",
+        "holding_value",
+        "private_equity_value",
+        "bond_value",
+        "property_value",
+        "mortgage_balance",
+        "home_equity",
+        "liquid_net_worth",
+        "net_worth",
+        "shortfall",
     }
-    assert terminal["shortfall_currency_quanta"] == "0"
+    assert terminal["shortfall"] == "0"
 
     assert [event["kind"] for event in detail["rollout"]["events"]] == ["monthly_expense"] * 3
-    assert [event["amount_paid_currency_quanta"] for event in detail["rollout"]["events"]] == [
-        "100000",
-        "100000",
-        "100000",
-    ]
+    assert [event["amount_paid"] for event in detail["rollout"]["events"]] == ["100000", "100000", "100000"]
 
 
 def test_backend_server_product_portfolio_returns_configured_holdings(server_url: str) -> None:
@@ -338,13 +318,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {
-            "scenario": scenario,
-            "first_seed": 7,
-            "rollout_count": 1,
-            "metric": "net_worth_currency_quanta",
-            "percentiles": [50],
-        },
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 1, "metric": "net_worth", "percentiles": [50]},
     )
 
     assert fan["failed_count"] == 1
@@ -360,31 +334,31 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert detail["rollout"]["failed"] is True
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["failed_month_index"] == 0
-    assert terminal["cash_currency_quanta"] == _usd_quanta(0.0)
-    assert terminal["holding_value_currency_quanta"] == _usd_quanta(0.0)
-    assert terminal["net_worth_currency_quanta"] == _usd_quanta(0.0)
-    assert terminal["shortfall_currency_quanta"] == _usd_quanta(300_000.0)
+    assert terminal["cash"] == _usd_quanta(0.0)
+    assert terminal["holding_value"] == _usd_quanta(0.0)
+    assert terminal["net_worth"] == _usd_quanta(0.0)
+    assert terminal["shortfall"] == _usd_quanta(300_000.0)
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["month_index"] == [0, 1, 2, 3]
-    assert columns["cash_currency_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0, 0.0, 0.0]]
-    assert columns["holding_value_currency_quanta"] == [_usd_quanta(value) for value in [835_500.0, 0.0, 0.0, 0.0]]
-    assert columns["net_worth_currency_quanta"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
+    assert columns["cash"] == [_usd_quanta(value) for value in [250_000.0, 0.0, 0.0, 0.0]]
+    assert columns["holding_value"] == [_usd_quanta(value) for value in [835_500.0, 0.0, 0.0, 0.0]]
+    assert columns["net_worth"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
     expense, failure = detail["rollout"]["events"]
     assert expense == {
         "month_index": 0,
-        "amount_currency_quanta": _usd_quanta(0.0),
+        "amount": _usd_quanta(0.0),
         "kind": "monthly_expense",
-        "amount_due_currency_quanta": _usd_quanta(300_000.0),
-        "amount_paid_currency_quanta": _usd_quanta(0.0),
-        "shortfall_currency_quanta": _usd_quanta(300_000.0),
+        "amount_due": _usd_quanta(300_000.0),
+        "amount_paid": _usd_quanta(0.0),
+        "shortfall": _usd_quanta(300_000.0),
     }
     assert failure == {
         "month_index": 0,
-        "amount_currency_quanta": _usd_quanta(300_000.0),
+        "amount": _usd_quanta(300_000.0),
         "kind": "failure",
-        "amount_due_currency_quanta": _usd_quanta(300_000.0),
-        "amount_paid_currency_quanta": _usd_quanta(0.0),
-        "shortfall_currency_quanta": _usd_quanta(300_000.0),
+        "amount_due": _usd_quanta(300_000.0),
+        "amount_paid": _usd_quanta(0.0),
+        "shortfall": _usd_quanta(300_000.0),
     }
 
 
@@ -413,38 +387,36 @@ def test_backend_server_product_zero_width_band_sells_exactly_the_required_spend
 
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]
-    assert columns["cash_currency_quanta"] == [_usd_quanta(value) for value in [250_000.0, 0.0]]
-    assert columns["holding_value_currency_quanta"][0] == _usd_quanta(835_500.0)
-    assert int(columns["holding_value_currency_quanta"][1]) > 0
+    assert columns["cash"] == [_usd_quanta(value) for value in [250_000.0, 0.0]]
+    assert columns["holding_value"][0] == _usd_quanta(835_500.0)
+    assert int(columns["holding_value"][1]) > 0
     terminal = detail["rollout"]["terminal_metrics"]
-    assert terminal["cash_currency_quanta"] == _usd_quanta(0.0)
-    assert terminal["shortfall_currency_quanta"] == _usd_quanta(0.0)
+    assert terminal["cash"] == _usd_quanta(0.0)
+    assert terminal["shortfall"] == _usd_quanta(0.0)
     # Bonds are the third term now: net worth is liquid + home equity + PE + bonds, and with
     # cash at zero and no property the identity is holdings + PE + bonds.
-    assert int(terminal["net_worth_currency_quanta"]) == (
-        int(columns["holding_value_currency_quanta"][1])
-        + int(columns["private_equity_value_currency_quanta"][1])
-        + int(columns["bond_value_currency_quanta"][1])
+    assert int(terminal["net_worth"]) == (
+        int(columns["holding_value"][1]) + int(columns["private_equity_value"][1]) + int(columns["bond_value"][1])
     )
     sale, expense = detail["rollout"]["events"]
     assert sale == {
         "month_index": 0,
-        "amount_currency_quanta": _usd_quanta(48_125.0),
+        "amount": _usd_quanta(48_125.0),
         "kind": "holding_sale",
         "asset": {"kind": "security", "symbol": "VOO"},
         "asset_label": "SP500 Proxy (VOO)",
         "units": pytest.approx(96.25),
-        "proceeds_currency_quanta": _usd_quanta(48_125.0),
+        "proceeds": _usd_quanta(48_125.0),
         # 96.25 units out of the $400/unit lot.
-        "cost_basis_currency_quanta": _usd_quanta(38_500.0),
+        "cost_basis": _usd_quanta(38_500.0),
     }
     assert expense == {
         "month_index": 0,
-        "amount_currency_quanta": _usd_quanta(300_000.0),
+        "amount": _usd_quanta(300_000.0),
         "kind": "monthly_expense",
-        "amount_due_currency_quanta": _usd_quanta(300_000.0),
-        "amount_paid_currency_quanta": _usd_quanta(300_000.0),
-        "shortfall_currency_quanta": _usd_quanta(0.0),
+        "amount_due": _usd_quanta(300_000.0),
+        "amount_paid": _usd_quanta(300_000.0),
+        "shortfall": _usd_quanta(0.0),
     }
 
 
@@ -475,7 +447,7 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
     assert pe_event["asset_label"] == "Private Holding A (PHA)"
     assert pe_event["event_kind"] == "acquisition_cashout"
     assert pe_event["regime"] == "acquired"
-    assert pe_event["mark_currency_quanta"] == _usd_quanta(25.0)
+    assert pe_event["mark"] == _usd_quanta(25.0)
     assert pe_event["forced_sale_fraction"] == pytest.approx(0.25)
 
     [sale] = [
@@ -485,7 +457,7 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
         and event["asset"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
     ]
     assert sale["units"] == pytest.approx(250.0)
-    assert sale["proceeds_currency_quanta"] == _usd_quanta(6_250.0)
+    assert sale["proceeds"] == _usd_quanta(6_250.0)
 
 
 def test_api_product_metric_fan_respects_private_equity_tender_capacity(
@@ -502,13 +474,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     fan_response = capacity_limited_private_equity_client.post(
         "/api/product/projections/metric_fan",
-        json={
-            "scenario": scenario,
-            "first_seed": 7,
-            "rollout_count": 1,
-            "metric": "cash_currency_quanta",
-            "percentiles": [50],
-        },
+        json={"scenario": scenario, "first_seed": 7, "rollout_count": 1, "metric": "cash", "percentiles": [50]},
     )
 
     assert fan_response.status_code == 200
@@ -523,14 +489,14 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     assert rollout_response.status_code == 200
     detail = rollout_response.json()
-    assert detail["rollout"]["terminal_metrics"]["cash_currency_quanta"] == _usd_quanta(256_125.0)
-    assert detail["rollout"]["terminal_metrics"]["private_equity_value_currency_quanta"] == _usd_quanta(18_750.0)
+    assert detail["rollout"]["terminal_metrics"]["cash"] == _usd_quanta(256_125.0)
+    assert detail["rollout"]["terminal_metrics"]["private_equity_value"] == _usd_quanta(18_750.0)
     [opportunity] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_opportunity"]
     assert opportunity["event_kind"] == "tender"
     assert opportunity["outcome"] == "sold"
     assert opportunity["sellable_units"] == pytest.approx(250.0)
     assert opportunity["target_units"] == pytest.approx(250.0)
-    assert opportunity["proceeds_currency_quanta"] == _usd_quanta(6_250.0)
+    assert opportunity["proceeds"] == _usd_quanta(6_250.0)
 
 
 def test_backend_server_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(server_url: str) -> None:
@@ -558,24 +524,24 @@ def test_backend_server_product_cash_band_refills_to_the_ceiling_from_the_overwe
     columns = detail["rollout"]["monthly_metrics"]
     # Landing on the ceiling, not back on the floor: refilling to the floor would put the owner
     # right back at the trigger next month.
-    assert columns["cash_currency_quanta"] == [_usd_quanta(value) for value in [250_000.0, 280_000.0]]
-    assert detail["rollout"]["terminal_metrics"]["cash_currency_quanta"] == _usd_quanta(280_000.0)
-    assert detail["rollout"]["terminal_metrics"]["shortfall_currency_quanta"] == _usd_quanta(0.0)
+    assert columns["cash"] == [_usd_quanta(value) for value in [250_000.0, 280_000.0]]
+    assert detail["rollout"]["terminal_metrics"]["cash"] == _usd_quanta(280_000.0)
+    assert detail["rollout"]["terminal_metrics"]["shortfall"] == _usd_quanta(0.0)
     # Exactly two events: btc is inside the target but underweight, so it is not touched.
     sale, expense = detail["rollout"]["events"]
     assert sale == {
         "month_index": 0,
-        "amount_currency_quanta": _usd_quanta(29_125.0),
+        "amount": _usd_quanta(29_125.0),
         "kind": "holding_sale",
         "asset": {"kind": "security", "symbol": "VOO"},
         "asset_label": "SP500 Proxy (VOO)",
         # 62 units at the $500 anchor, FIFO out of the $400/unit 2020 lot.
         "units": pytest.approx(58.25),
-        "proceeds_currency_quanta": _usd_quanta(29_125.0),
-        "cost_basis_currency_quanta": _usd_quanta(23_300.0),
+        "proceeds": _usd_quanta(29_125.0),
+        "cost_basis": _usd_quanta(23_300.0),
     }
     assert expense["kind"] == "monthly_expense"
-    assert expense["amount_paid_currency_quanta"] == _usd_quanta(1_000.0)
+    assert expense["amount_paid"] == _usd_quanta(1_000.0)
 
 
 def test_backend_server_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
@@ -594,7 +560,7 @@ def test_backend_server_product_rollout_includes_zero_tax_accrual_events_without
     tax_accruals = [event for event in detail["rollout"]["events"] if event["kind"] == "tax_accrual"]
     assert {event["jurisdiction_id"] for event in tax_accruals} == {"federal_us", "california"}
     assert {event["month_index"] for event in tax_accruals} == {11}
-    assert all(event["amount_currency_quanta"] == _usd_quanta(0.0) for event in tax_accruals)
+    assert all(event["amount"] == _usd_quanta(0.0) for event in tax_accruals)
     assert [event for event in detail["rollout"]["events"] if event["kind"] == "tax_payment"] == []
 
 
@@ -622,25 +588,21 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
     tax_accruals = [event for event in events if event["kind"] == "tax_accrual"]
     assert {event["jurisdiction_id"] for event in tax_accruals} == {"federal_us", "california"}
     assert {event["month_index"] for event in tax_accruals} == {11}
-    assert all(int(event["amount_currency_quanta"]) > 0 for event in tax_accruals)
-    assert sum(int(event["amount_currency_quanta"]) for event in tax_accruals) == sum(
-        int(event["total_tax_currency_quanta"]) for event in tax_accruals
-    )
+    assert all(int(event["amount"]) > 0 for event in tax_accruals)
+    assert sum(int(event["amount"]) for event in tax_accruals) == sum(int(event["total_tax"]) for event in tax_accruals)
     federal = next(event for event in tax_accruals if event["jurisdiction_id"] == "federal_us")
     california = next(event for event in tax_accruals if event["jurisdiction_id"] == "california")
-    assert int(federal["capital_gain_tax_currency_quanta"]) > 0
-    assert california["capital_gain_tax_currency_quanta"] == _usd_quanta(0.0)
-    assert int(california["ordinary_tax_currency_quanta"]) > 0
+    assert int(federal["capital_gain_tax"]) > 0
+    assert california["capital_gain_tax"] == _usd_quanta(0.0)
+    assert int(california["ordinary_tax"]) > 0
 
     tax_payments = [event for event in events if event["kind"] == "tax_payment"]
     [tax_payment] = tax_payments
     assert tax_payment["month_index"] == 12
     assert tax_payment["obligation_type"] == "tax_true_up"
-    assert int(tax_payment["amount_due_currency_quanta"]) == sum(
-        int(event["amount_currency_quanta"]) for event in tax_accruals
-    )
-    assert tax_payment["amount_paid_currency_quanta"] == tax_payment["amount_due_currency_quanta"]
-    assert tax_payment["shortfall_currency_quanta"] == _usd_quanta(0.0)
+    assert int(tax_payment["amount_due"]) == sum(int(event["amount"]) for event in tax_accruals)
+    assert tax_payment["amount_paid"] == tax_payment["amount_due"]
+    assert tax_payment["shortfall"] == _usd_quanta(0.0)
 
 
 def test_backend_server_product_outside_rent_re_pegs_yearly(server_url: str) -> None:
@@ -659,9 +621,9 @@ def test_backend_server_product_outside_rent_re_pegs_yearly(server_url: str) -> 
     rent_events = [event for event in detail["rollout"]["events"] if event["kind"] == "outside_rent"]
     assert len(rent_events) == 13
     year_zero = [event for event in rent_events if event["month_index"] < 12]
-    assert {event["amount_paid_currency_quanta"] for event in year_zero} == {_usd_quanta(3000.0)}
+    assert {event["amount_paid"] for event in year_zero} == {_usd_quanta(3000.0)}
     [year_one_event] = [event for event in rent_events if event["month_index"] == 12]
-    assert year_one_event["amount_paid_currency_quanta"] != _usd_quanta(3000.0)
+    assert year_one_event["amount_paid"] != _usd_quanta(3000.0)
 
 
 def test_backend_server_product_rent_rejects_unknown_location(server_url: str) -> None:
@@ -707,7 +669,7 @@ def test_backend_server_pe_tender_sale_appears_as_holding_sale_event(server_url:
         f"all events: {[e['kind'] for e in detail['rollout']['events']]}"
     )
     sale = pe_sales[0]
-    assert int(sale["proceeds_currency_quanta"]) > 0
+    assert int(sale["proceeds"]) > 0
     assert sale["units"] > 0
 
 

@@ -1,10 +1,10 @@
 import { rowsFrom } from "./lib/frame";
 import {
-  currencyQuantaAdd,
-  currencyQuantaChartNumber,
-  currencyQuantaCompare,
-  currencyQuantaIsPositive,
-  fmtCurrencyQuanta,
+  currencyAmountAdd,
+  currencyAmountChartNumber,
+  currencyAmountCompare,
+  currencyAmountIsPositive,
+  fmtCurrency,
   fmtNumber,
 } from "./lib/format";
 import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers";
@@ -14,7 +14,7 @@ function currency(result) {
 }
 
 function cu(value, currencyMeta) {
-  return fmtCurrencyQuanta(value, currencyMeta);
+  return fmtCurrency(value, currencyMeta);
 }
 
 export const SELECTED_ROLLOUT_COLOR = "#0f766e";
@@ -118,7 +118,7 @@ export function metricFanRows(result) {
     const monthIndex = Number(row.monthIndex);
     const percentile = Number(row.percentile);
     const rawValue = row.value;
-    const metricValue = currencyQuantaChartNumber(rawValue, result.currencyQuantum);
+    const metricValue = currencyAmountChartNumber(rawValue, result.currencyQuantum);
     if (!Number.isFinite(monthIndex) || !Number.isFinite(percentile) || !Number.isFinite(metricValue)) continue;
     if (!byMonth.has(monthIndex)) byMonth.set(monthIndex, new Map());
     if (!displayValuesByMonth.has(monthIndex)) displayValuesByMonth.set(monthIndex, new Map());
@@ -172,8 +172,8 @@ export function terminalMetricSamples(result, metric) {
   return rowsFrom(result.terminalMetricSamples)
     .map((row) => ({
       seed: Number(row.seed),
-      value: currencyQuantaChartNumber(row.value, result.currencyQuantum),
-      currencyQuanta: row.value,
+      value: currencyAmountChartNumber(row.value, result.currencyQuantum),
+      amount: row.value,
       currency: currency(result),
       failed: Boolean(row.failed),
     }))
@@ -183,7 +183,7 @@ export function terminalMetricSamples(result, metric) {
 export function terminalSampleAtPercentile(result, metric, percentile) {
   const samples = terminalMetricSamples(result, metric)
     .slice()
-    .sort((left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed);
+    .sort((left, right) => currencyAmountCompare(left.amount, right.amount) || left.seed - right.seed);
   if (samples.length === 0) return null;
   if (samples.length === 1) return samples[0];
   const rank = Math.floor((Math.max(0, Math.min(100, Number(percentile))) / 100) * (samples.length - 1) + 0.5);
@@ -209,8 +209,8 @@ export function quantile(values, percentile) {
   return sorted[lowerIndex] * (1 - weight) + sorted[upperIndex] * weight;
 }
 
-const PROPERTY_METRIC_VALUES = new Set(["property_value_currency_quanta"]);
-const MORTGAGE_METRIC_VALUES = new Set(["mortgage_balance_currency_quanta", "home_equity_currency_quanta"]);
+const PROPERTY_METRIC_VALUES = new Set(["property_value"]);
+const MORTGAGE_METRIC_VALUES = new Set(["mortgage_balance", "home_equity"]);
 
 export function visibleMetricOptions(input) {
   const hasProperty = input?.propertyId != null;
@@ -249,8 +249,8 @@ export function selectedRolloutMetricRows(detail, metric) {
     .map((row) => ({
       monthIndex: Number(row.monthIndex),
       year: Number(row.monthIndex) / 12,
-      value: currencyQuantaChartNumber(row[metric.chartValue], detail.currencyQuantum),
-      currencyQuanta: row[metric.chartValue],
+      value: currencyAmountChartNumber(row[metric.chartValue], detail.currencyQuantum),
+      amount: row[metric.chartValue],
       currency: currency(detail),
     }))
     .filter((row) => Number.isFinite(row.monthIndex) && Number.isFinite(row.value));
@@ -290,7 +290,7 @@ export function eventColor(event) {
 }
 
 export function eventAmount(event) {
-  return event?.amountCurrencyQuanta ?? null;
+  return event?.amount ?? null;
 }
 
 export function jurisdictionLabel(jurisdictionId) {
@@ -299,53 +299,50 @@ export function jurisdictionLabel(jurisdictionId) {
   return (jurisdictionId ?? "").replace(/_/g, " ");
 }
 
-export function formatDueWithShortfall(amountDueCurrencyQuanta, shortfallCurrencyQuanta, currencyMeta) {
-  const base = `due ${cu(amountDueCurrencyQuanta, currencyMeta)}`;
-  return currencyQuantaIsPositive(shortfallCurrencyQuanta)
-    ? `${base}; shortfall ${cu(shortfallCurrencyQuanta, currencyMeta)}`
-    : base;
+export function formatDueWithShortfall(amountDue, shortfall, currencyMeta) {
+  const base = `due ${cu(amountDue, currencyMeta)}`;
+  return currencyAmountIsPositive(shortfall) ? `${base}; shortfall ${cu(shortfall, currencyMeta)}` : base;
 }
 
 export function shortfallLabel(event, { ok, shortfall }) {
-  return currencyQuantaIsPositive(event.shortfallCurrencyQuanta) ? shortfall : ok;
+  return currencyAmountIsPositive(event.shortfall) ? shortfall : ok;
 }
 
 export function taxPaymentLabel(event) {
-  const isShortfall = currencyQuantaIsPositive(event.shortfallCurrencyQuanta);
+  const isShortfall = currencyAmountIsPositive(event.shortfall);
   if (event.obligationType === "estimated_tax") return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
   if (event.obligationType === "tax_true_up") return isShortfall ? "Tax true-up shortfall" : "Paid tax true-up";
   return isShortfall ? "Tax payment shortfall" : "Paid taxes";
 }
 
 export function taxAccrualDetail(event) {
-  const gain = currencyQuantaAdd(event.ltcgCurrencyQuanta, event.stcgCurrencyQuanta);
+  const gain = currencyAmountAdd(event.ltcg, event.stcg);
   const parts = [
-    `ordinary tax ${cu(event.ordinaryTaxCurrencyQuanta, event._currency)}`,
-    `gain tax ${cu(event.capitalGainTaxCurrencyQuanta, event._currency)}`,
+    `ordinary tax ${cu(event.ordinaryTax, event._currency)}`,
+    `gain tax ${cu(event.capitalGainTax, event._currency)}`,
     `gains ${cu(gain, event._currency)}`,
   ];
-  if (currencyQuantaIsPositive(event.mortgageInterestDeductionCurrencyQuanta)) {
+  if (currencyAmountIsPositive(event.mortgageInterestDeduction)) {
     const usedItemized =
-      currencyQuantaIsPositive(event.itemizedDeductionCurrencyQuanta) &&
-      BigInt(event.itemizedDeductionCurrencyQuanta) > BigInt(event.standardDeductionCurrencyQuanta);
-    parts.push(`MID ${cu(event.mortgageInterestDeductionCurrencyQuanta, event._currency)}`);
+      currencyAmountIsPositive(event.itemizedDeduction) &&
+      BigInt(event.itemizedDeduction) > BigInt(event.standardDeduction);
+    parts.push(`MID ${cu(event.mortgageInterestDeduction, event._currency)}`);
     parts.push(
-      `deduction ${cu(usedItemized ? event.itemizedDeductionCurrencyQuanta : event.standardDeductionCurrencyQuanta, event._currency)} (${usedItemized ? "itemized" : "standard"})`
+      `deduction ${cu(usedItemized ? event.itemizedDeduction : event.standardDeduction, event._currency)} (${usedItemized ? "itemized" : "standard"})`
     );
   }
   return parts.join("; ");
 }
 
 export function propertyPurchaseDetail(event) {
-  const parts = [`down ${cu(event.downPaymentCurrencyQuanta, event._currency)}`];
-  if (currencyQuantaIsPositive(event.mortgagePrincipalCurrencyQuanta)) {
-    parts.push(`mortgage ${cu(event.mortgagePrincipalCurrencyQuanta, event._currency)}`);
+  const parts = [`down ${cu(event.downPayment, event._currency)}`];
+  if (currencyAmountIsPositive(event.mortgagePrincipal)) {
+    parts.push(`mortgage ${cu(event.mortgagePrincipal, event._currency)}`);
   }
   return parts.join("; ");
 }
 
-const dueWithShortfallDetail = (event) =>
-  formatDueWithShortfall(event.amountDueCurrencyQuanta, event.shortfallCurrencyQuanta, event._currency);
+const dueWithShortfallDetail = (event) => formatDueWithShortfall(event.amountDue, event.shortfall, event._currency);
 
 // A human-friendly name for the typed `AssetKey` an event carries — the display fallback when
 // no curated `assetLabel` is set. Derived from the kind's own identifying field (the security's
@@ -368,7 +365,7 @@ function assetDisplayName(asset) {
 export const EVENT_FORMATTERS = {
   holding_sale: {
     label: (event) => `Sold ${event.assetLabel ?? assetDisplayName(event.asset) ?? "asset"}`,
-    detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.costBasisCurrencyQuanta, event._currency)}`,
+    detail: (event) => `${fmtNumber(event.units)} units; basis ${cu(event.costBasis, event._currency)}`,
   },
   monthly_expense: {
     label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),
@@ -388,7 +385,7 @@ export const EVENT_FORMATTERS = {
   mortgage_payment: {
     label: () => "Paid mortgage",
     detail: (event) =>
-      `interest ${cu(event.interestCurrencyQuanta, event._currency)}; principal ${cu(event.principalCurrencyQuanta, event._currency)}`,
+      `interest ${cu(event.interest, event._currency)}; principal ${cu(event.principal, event._currency)}`,
   },
   property_tax_payment: {
     label: (event) => shortfallLabel(event, { ok: "Paid property tax", shortfall: "Property tax shortfall" }),
@@ -409,7 +406,7 @@ export const EVENT_FORMATTERS = {
   },
   failure: {
     label: () => "Rollout failed",
-    detail: (event) => `shortfall ${cu(event.shortfallCurrencyQuanta, event._currency)}`,
+    detail: (event) => `shortfall ${cu(event.shortfall, event._currency)}`,
   },
   set_rented_fraction: {
     label: (event) => {
@@ -426,25 +423,25 @@ export const EVENT_FORMATTERS = {
   },
   capital_improvement: {
     label: () => "Capital improvement",
-    detail: (event) => `${event.propertyId}; basis bump ${cu(event.amountCurrencyQuanta, event._currency)}`,
+    detail: (event) => `${event.propertyId}; basis bump ${cu(event.amount, event._currency)}`,
   },
   property_sale: {
     label: () => "Sold property",
     detail: (event) => {
       const parts = [
         `${event.propertyId}`,
-        `proceeds ${cu(event.grossProceedsCurrencyQuanta, event._currency)}`,
-        `payoff ${cu(event.mortgagePayoffCurrencyQuanta, event._currency)}`,
-        `net cash ${cu(event.netCashToOwnerCurrencyQuanta, event._currency)}`,
+        `proceeds ${cu(event.grossProceeds, event._currency)}`,
+        `payoff ${cu(event.mortgagePayoff, event._currency)}`,
+        `net cash ${cu(event.netCashToOwner, event._currency)}`,
       ];
-      if (currencyQuantaIsPositive(event.depreciationRecaptureCurrencyQuanta)) {
-        parts.push(`§1250 ${cu(event.depreciationRecaptureCurrencyQuanta, event._currency)}`);
+      if (currencyAmountIsPositive(event.depreciationRecapture)) {
+        parts.push(`§1250 ${cu(event.depreciationRecapture, event._currency)}`);
       }
-      if (currencyQuantaIsPositive(event.section121ExclusionCurrencyQuanta)) {
-        parts.push(`§121 ${cu(event.section121ExclusionCurrencyQuanta, event._currency)}`);
+      if (currencyAmountIsPositive(event.section121Exclusion)) {
+        parts.push(`§121 ${cu(event.section121Exclusion, event._currency)}`);
       }
-      if (currencyQuantaIsPositive(event.longTermCapitalGainCurrencyQuanta)) {
-        parts.push(`LTCG ${cu(event.longTermCapitalGainCurrencyQuanta, event._currency)}`);
+      if (currencyAmountIsPositive(event.longTermCapitalGain)) {
+        parts.push(`LTCG ${cu(event.longTermCapitalGain, event._currency)}`);
       }
       return parts.join("; ");
     },
@@ -461,10 +458,7 @@ export const EVENT_FORMATTERS = {
       return `PE event: ${label}`;
     },
     detail: (event) => {
-      const parts = [
-        `mark ${cu(event.markCurrencyQuanta, event._currency)}`,
-        String(event.regime ?? "").replace(/_/g, " "),
-      ];
+      const parts = [`mark ${cu(event.mark, event._currency)}`, String(event.regime ?? "").replace(/_/g, " ")];
       const capacity = Number(event.saleCapacityFraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
       const eligible = Number(event.eligibleFraction);
@@ -472,8 +466,8 @@ export const EVENT_FORMATTERS = {
       const forcedSale = Number(event.forcedSaleFraction);
       if (forcedSale > 0) parts.push(`forced sale ${(forcedSale * 100).toFixed(0)}%`);
       if (event.liquidityBlocked) parts.push("liquidity blocked");
-      if (currencyQuantaIsPositive(event.forcedRecoveryCashoutCurrencyQuanta)) {
-        parts.push(`recovery ${cu(event.forcedRecoveryCashoutCurrencyQuanta, event._currency)}`);
+      if (currencyAmountIsPositive(event.forcedRecoveryCashout)) {
+        parts.push(`recovery ${cu(event.forcedRecoveryCashout, event._currency)}`);
       }
       return parts.filter(Boolean).join("; ");
     },
@@ -486,12 +480,12 @@ export const EVENT_FORMATTERS = {
     },
     detail: (event) => {
       const parts = [
-        `mark ${cu(event.markCurrencyQuanta, event._currency)}`,
-        `shortfall ${cu(event.shortfallCurrencyQuanta, event._currency)}`,
+        `mark ${cu(event.mark, event._currency)}`,
+        `shortfall ${cu(event.shortfall, event._currency)}`,
         `target ${fmtNumber(event.targetUnits)} units`,
       ];
-      if (currencyQuantaIsPositive(event.proceedsCurrencyQuanta)) {
-        parts.push(`proceeds ${cu(event.proceedsCurrencyQuanta, event._currency)}`);
+      if (currencyAmountIsPositive(event.proceeds)) {
+        parts.push(`proceeds ${cu(event.proceeds, event._currency)}`);
       }
       const capacity = Number(event.saleCapacityFraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);

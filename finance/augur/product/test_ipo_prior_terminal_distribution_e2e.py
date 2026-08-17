@@ -103,15 +103,13 @@ def _private_equity_spread(product: ProductService) -> tuple[int, int]:
 
     response = product.terminal_distribution(
         TerminalDistributionRequest(
-            scenario=_SCENARIO,
-            first_seed=0,
-            rollout_count=64,
-            metric="private_equity_value_currency_quanta",
-            percentiles=(10.0, 90.0),
+            scenario=_SCENARIO, first_seed=0, rollout_count=64, metric="private_equity_value", percentiles=(10.0, 90.0)
         )
     )
-    low, high = (int(value) for value in response.terminal_metric_percentiles["value"])
-    return high - low, response.failed_count
+    low, high = response.terminal_metric_percentiles["value"]
+    assert isinstance(low, str)
+    assert isinstance(high, str)
+    return int(high) - int(low), response.failed_count
 
 
 async def test_market_implied_ipo_odds_reach_the_terminal_distribution(
