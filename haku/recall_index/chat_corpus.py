@@ -5,11 +5,11 @@ Matrix and SPA alike. This module is the shape of a chunk; `chat_source.py` is w
 come from, and keeping the two apart is what lets the store depend on the former without
 dragging the console's whole schema behind it.
 
-**A chunk holds whole messages.** Packing stops at message boundaries rather than at lines, so
-every chunk can name exactly which messages it covers (`schema.ChatChunkMessage`) and a hit
-hands back pointers a caller can drill into with the console's conversation tools. The one
-exception is a message longer than a whole chunk, which is split — and then each part still
-holds exactly that one message, so the mapping never becomes approximate.
+**Message boundaries are preferred, not required.** Packing selects a message boundary whenever
+one fits the configured budget, then carries Unicode-code-point overlap into the following
+window. The overlap and an oversized message can therefore cut a message, but each window names
+every message it intersects (`schema.ChatChunkMessage`) and a hit still hands back exact pointers
+a caller can drill into with the console's conversation tools.
 
 Frames (`session_frames`) are deliberately not indexed here; see this package's README.
 """
@@ -18,16 +18,16 @@ from __future__ import annotations
 
 import datetime
 import hashlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
 from haku.console.chat_models import ChatMessageRole
-from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, regime_key, split_utf8
+from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_windows, regime_key
 
 # Bump on a change to the rendering or packing below. Scoped to this corpus: the git chunker's
 # version moves independently, and the size budget travels in the key rather than here.
-CHAT_CHUNKER_VERSION = 1
+CHAT_CHUNKER_VERSION = 2
 
 
 def chat_chunker_key(budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> str:
@@ -67,7 +67,8 @@ class MessageChunk:
 class _Rendered:
     message: IndexedMessage
     text: str
-    size: int
+    byte_start: int
+    byte_end: int
 
 
 def render_message(message: IndexedMessage) -> str:
@@ -79,23 +80,6 @@ def render_message(message: IndexedMessage) -> str:
     return f"{message.role}: {message.content.strip()}\n"
 
 
-def _pack(rendered: Sequence[_Rendered], budget: ChunkBudget) -> Iterator[list[_Rendered]]:
-    """Group whole messages up to the target size; an oversized message is its own group."""
-    group: list[_Rendered] = []
-    used = 0
-    for item in rendered:
-        if group and (used + item.size > budget.target_bytes or item.size > budget.max_bytes):
-            yield group
-            group, used = [], 0
-        group.append(item)
-        used += item.size
-        if item.size > budget.max_bytes:
-            yield group
-            group, used = [], 0
-    if group:
-        yield group
-
-
 def chunk_messages(
     messages: Sequence[IndexedMessage], budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
 ) -> list[MessageChunk]:
@@ -104,24 +88,38 @@ def chunk_messages(
     Empty messages are dropped: they carry nothing to match on, and an assistant row can be
     empty when the turn's text arrived only on the result frame.
     """
-    rendered = [
-        _Rendered(message=message, text=rendering, size=len(rendering.encode()))
-        for message, rendering in ((message, render_message(message)) for message in messages)
-        if message.content.strip()
-    ]
+    rendered: list[_Rendered] = []
+    text_parts: list[str] = []
+    offset = 0
+    character_offset = 0
+    preferred_ends: list[int] = []
+    for message in messages:
+        if not message.content.strip():
+            continue
+        text = render_message(message)
+        encoded = len(text.encode())
+        rendered.append(_Rendered(message=message, text=text, byte_start=offset, byte_end=offset + encoded))
+        text_parts.append(text)
+        offset += encoded
+        character_offset += len(text)
+        preferred_ends.append(character_offset)
+
+    transcript = "".join(text_parts)
     chunks: list[MessageChunk] = []
-    for group in _pack(rendered, budget):
-        message_ids = tuple(item.message.message_id for item in group)
-        # Only a lone oversized message yields more than one span, so every part of a split
-        # still holds exactly the message it was split from.
-        for span in split_utf8("".join(item.text for item in group), budget.max_bytes):
-            chunks.append(
-                MessageChunk(
-                    window_no=len(chunks),
-                    message_ids=message_ids,
-                    text=span.text,
-                    first_message_at=group[0].message.created_at,
-                    last_message_at=group[-1].message.created_at,
-                )
+    for span in chunk_windows(transcript, budget=budget, preferred_ends=preferred_ends):
+        covered = [item for item in rendered if item.byte_start < span.byte_end and span.byte_start < item.byte_end]
+        # ``span`` comes from the rendered transcript, so it must overlap at least one rendered
+        # message. Keeping this explicit makes a future renderer change fail loudly rather than
+        # returning a window with invented timestamps or no drilldown pointer.
+        if not covered:
+            raise AssertionError("chat chunk did not overlap a source message")
+        chunks.append(
+            MessageChunk(
+                window_no=len(chunks),
+                message_ids=tuple(item.message.message_id for item in covered),
+                text=span.text,
+                first_message_at=covered[0].message.created_at,
+                last_message_at=covered[-1].message.created_at,
             )
+        )
     return chunks

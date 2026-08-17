@@ -1,14 +1,16 @@
-"""What a chat chunk holds, and how honest that claim stays at the edges."""
+"""What a chat chunk holds, including overlap and message provenance at its edges."""
 
 from __future__ import annotations
 
 import datetime
+import itertools
 import uuid
 
 import pytest_bazel
 
 from haku.console.chat_models import ChatMessageRole
-from haku.recall_index.chat_corpus import IndexedMessage, chunk_messages
+from haku.recall_index.chat_corpus import IndexedMessage, chunk_messages, render_message
+from haku.recall_index.chunking import ChunkBudget
 
 _START = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
@@ -35,21 +37,30 @@ def test_the_speaker_is_part_of_what_gets_embedded() -> None:
     assert chunk.text == "assistant: intake\n"
 
 
-def test_a_long_conversation_splits_at_message_boundaries() -> None:
-    messages = [message("filing " * 200, minute=index) for index in range(6)]
-    chunks = chunk_messages(messages)
+def test_windows_overlap_and_name_every_intersected_message() -> None:
+    budget = ChunkBudget(target_bytes=260, max_bytes=400, overlap_codepoints=24)
+    messages = [message(f"message-{index} " * 16, minute=index) for index in range(6)]
+    chunks = chunk_messages(messages, budget)
     assert len(chunks) > 1
-    # Every message lands in exactly one chunk, and no chunk claims one it does not hold.
-    held = [message_id for chunk in chunks for message_id in chunk.message_ids]
-    assert held == [item.message_id for item in messages]
+    assert all(left.text[-24:] == right.text[:24] for left, right in itertools.pairwise(chunks))
+    # The overlap can be part of a message, but each chunk's pointer names all messages whose
+    # rendered bytes it actually contains.
+    assert any(
+        message_id in left.message_ids and message_id in right.message_ids
+        for left, right in itertools.pairwise(chunks)
+        for message_id in left.message_ids
+    )
 
 
-def test_a_message_larger_than_a_chunk_splits_but_still_names_only_itself() -> None:
-    huge = message("intake " * 2000)
-    chunks = chunk_messages([huge])
+def test_an_oversized_message_splits_with_overlap_and_keeps_its_pointer() -> None:
+    budget = ChunkBudget(target_bytes=100, max_bytes=200, overlap_codepoints=10)
+    huge = message("😀" * 300)
+    chunks = chunk_messages([huge], budget)
     assert len(chunks) > 1
     assert {chunk.message_ids for chunk in chunks} == {(huge.message_id,)}
-    assert "".join(chunk.text for chunk in chunks) == f"user: {'intake ' * 2000}".strip() + "\n"
+    assert all(left.text[-10:] == right.text[:10] for left, right in itertools.pairwise(chunks))
+    assert chunks[0].text.startswith("user: ")
+    assert chunks[-1].text.endswith("\n")
 
 
 def test_empty_messages_are_dropped() -> None:
@@ -62,6 +73,17 @@ def test_identical_exchanges_share_a_content_address() -> None:
     first = chunk_messages([message("intake", minute=0)])
     second = chunk_messages([message("intake", minute=9)])
     assert first[0].content_sha == second[0].content_sha
+
+
+def test_chunk_text_is_an_exact_slice_of_the_rendered_transcript() -> None:
+    messages = [message("první 😀 message" * 20, minute=index) for index in range(4)]
+    transcript = "".join(render_message(item) for item in messages)
+    encoded = transcript.encode()
+    budget = ChunkBudget(target_bytes=180, max_bytes=300, overlap_codepoints=18)
+    for chunk in chunk_messages(messages, budget):
+        start = encoded.find(chunk.text.encode())
+        assert start >= 0
+        assert encoded[start : start + len(chunk.text.encode())].decode() == chunk.text
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from haku.console.tools.recall_index import (
 from haku.recall_index.chat_corpus import chat_chunker_key
 from haku.recall_index.chat_source import session_shapes
 from haku.recall_index.chat_sync import is_indexed
+from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.embedder import Embedder
 from haku.recall_index.schema import Corpus
 from haku.recall_index.store import (
@@ -68,9 +69,16 @@ def _behind(status: IndexStatus, corpus: SearchCorpus) -> bool:
 class PostgresIndexSearcher:
     """`tools.recall_index.IndexSearcher` over the console's database."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], embedder: Embedder) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        embedder: Embedder,
+        *,
+        budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
+    ) -> None:
         self._sessions = sessions
         self._embedder = embedder
+        self._budget = budget
 
     async def search(
         self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
@@ -100,7 +108,12 @@ class PostgresIndexSearcher:
         if state is None:
             return []
         found = await search_git(
-            session, embedding, model_key=self._embedder.model_key, limit=limit, path_prefix=path_prefix
+            session,
+            embedding,
+            model_key=self._embedder.model_key,
+            limit=limit,
+            path_prefix=path_prefix,
+            budget=self._budget,
         )
         # `commit_sha` on every hit rather than once alongside them: a hit is a pointer, and a
         # pointer that needs a second field from its envelope to be resolvable is half a pointer.
@@ -123,7 +136,12 @@ class PostgresIndexSearcher:
         self, session: AsyncSession, embedding: list[float], *, limit: int, session_id: UUID | None
     ) -> list[SearchHit]:
         found = await search_chat(
-            session, embedding, model_key=self._embedder.model_key, limit=limit, session_id=session_id
+            session,
+            embedding,
+            model_key=self._embedder.model_key,
+            limit=limit,
+            session_id=session_id,
+            budget=self._budget,
         )
         # The room a hit came from is the console's own binding, not the index's: the index knows
         # sessions, and which room a session served is `sessions.room_id`.
@@ -156,8 +174,8 @@ class PostgresIndexSearcher:
         model_key = self._embedder.model_key
         async with self._sessions() as session:
             git_state = await current_git_state(session)
-            summary = await git_index_summary(session, model_key=model_key)
-            counts = await chunk_counts(session, Corpus.GIT, model_key=model_key)
+            summary = await git_index_summary(session, model_key=model_key, budget=self._budget)
+            counts = await chunk_counts(session, Corpus.GIT, model_key=model_key, budget=self._budget)
             haku_state = HakuStateStatus(
                 indexed_commit=None if git_state is None else git_state.commit_sha,
                 remote_commit=None if git_state is None else git_state.remote_commit,
@@ -171,18 +189,22 @@ class PostgresIndexSearcher:
             )
 
             chat_summary = await chat_index_summary(session)
-            chat_counts = await chunk_counts(session, Corpus.CHAT, model_key=model_key)
+            chat_counts = await chunk_counts(session, Corpus.CHAT, model_key=model_key, budget=self._budget)
             # The same two reads `sync_chat` opens with, diffed by its own predicate — so what
             # this reports as waiting is what a sync run would pick up, by construction rather
             # than by two spellings agreeing.
             shapes = await session_shapes(session)
             states = await chat_session_states(session)
-        stale = [shape for shape in shapes if not is_indexed(states.get(shape.session_id), shape, model_key=model_key)]
+        stale = [
+            shape
+            for shape in shapes
+            if not is_indexed(states.get(shape.session_id), shape, model_key=model_key, budget=self._budget)
+        ]
         unindexed = sum(
             shape.message_count - state.message_count
             # A regime change strands every message in the session, not just the new ones.
             if (state := states.get(shape.session_id)) is not None
-            and (state.chunker_key, state.model_key) == (chat_chunker_key(), model_key)
+            and (state.chunker_key, state.model_key) == (chat_chunker_key(self._budget), model_key)
             else shape.message_count
             for shape in stale
         )

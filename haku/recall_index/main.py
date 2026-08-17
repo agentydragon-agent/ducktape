@@ -47,6 +47,9 @@ def _budget() -> ChunkBudget:
     return ChunkBudget(
         target_bytes=int(os.environ.get("HAKU_STATE_INDEX_CHUNK_TARGET_BYTES", DEFAULT_CHUNK_BUDGET.target_bytes)),
         max_bytes=int(os.environ.get("HAKU_STATE_INDEX_CHUNK_MAX_BYTES", DEFAULT_CHUNK_BUDGET.max_bytes)),
+        overlap_codepoints=int(
+            os.environ.get("HAKU_STATE_INDEX_CHUNK_OVERLAP_CODEPOINTS", DEFAULT_CHUNK_BUDGET.overlap_codepoints)
+        ),
     )
 
 

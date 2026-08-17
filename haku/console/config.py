@@ -12,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 
@@ -89,6 +90,30 @@ class EmbedderConfig(BaseModel):
     # The sync sweeps embed batches of documents off the request path, where waiting out a cold
     # model load is what you want and giving up means the corpus simply never fills.
     sync_timeout_seconds: float = Field(default=300.0, gt=0.0)
+
+
+class RecallIndexConfig(BaseModel):
+    """Retrieval-unit sizing shared by the console's index writers and readers.
+
+    The same complete budget must reach both paths: it is serialized into ``chunker_key``, so a
+    reader under another budget would search a regime the writers never produced.
+    """
+
+    target_bytes: int = Field(default=DEFAULT_CHUNK_BUDGET.target_bytes, gt=0)
+    max_bytes: int = Field(default=DEFAULT_CHUNK_BUDGET.max_bytes, gt=0)
+    overlap_codepoints: int = Field(default=DEFAULT_CHUNK_BUDGET.overlap_codepoints, ge=0)
+
+    @model_validator(mode="after")
+    def _valid_chunk_budget(self) -> Self:
+        ChunkBudget(
+            target_bytes=self.target_bytes, max_bytes=self.max_bytes, overlap_codepoints=self.overlap_codepoints
+        )
+        return self
+
+    def chunk_budget(self) -> ChunkBudget:
+        return ChunkBudget(
+            target_bytes=self.target_bytes, max_bytes=self.max_bytes, overlap_codepoints=self.overlap_codepoints
+        )
 
 
 class HakuStateGitConfig(BaseModel):
@@ -430,6 +455,8 @@ class Settings(BaseSettings):
     # Required when the config file lists the `haku_index` server, and unused otherwise: the
     # console refuses to start with search configured and nowhere to embed a query.
     embedder: EmbedderConfig | None = None
+    # One configuration feeds every index reader and writer; HAKU_CONSOLE_RECALL_INDEX__*.
+    recall_index: RecallIndexConfig = Field(default_factory=RecallIndexConfig)
     # Where the index's `git` corpus comes from. Unset leaves that corpus empty and only the
     # `chat` corpus — which the console builds from its own tables — searchable.
     haku_state_git: HakuStateGitConfig | None = None

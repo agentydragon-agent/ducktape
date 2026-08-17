@@ -18,6 +18,7 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
+        "//haku/recall_index:chunking",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
         "//mcp_infra/exec:models",
@@ -71,6 +72,7 @@ py_library(
     deps = [
         ":config",
         "//haku/recall_index:chat_sync",
+        "//haku/recall_index:chunking",
         "//haku/recall_index:embedder",
         "//haku/recall_index:git_tree",
         "//haku/recall_index:sync",
@@ -88,6 +90,7 @@ py_library(
         "//haku/recall_index:chat_corpus",
         "//haku/recall_index:chat_source",
         "//haku/recall_index:chat_sync",
+        "//haku/recall_index:chunking",
         "//haku/recall_index:embedder",
         "//haku/recall_index:schema",
         "//haku/recall_index:store",
