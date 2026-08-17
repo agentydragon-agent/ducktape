@@ -20,7 +20,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
@@ -33,7 +33,8 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.config import ClaudeRuntimeConfig
-from haku.console.database_schema import SessionFrame, SessionMessage
+from haku.console.database_schema import Session, SessionFrame, SessionMessage
+from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import (
     Accounting,
     assistant,
@@ -51,7 +52,7 @@ from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import ABORTED_NOTICE, GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, MatrixSession, SessionStore, SpaSession
 from haku.console.x.testing.recording_claims import RecordingClaims
-from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, SentPrompt
+from haku.runtime.x.bridge.cli_client import ClaudeCli, FrameSink, ReceivedFrame, SentPrompt
 from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeMessage
 
 
@@ -112,8 +113,8 @@ class _FakeCli:
     async def connect(self) -> dict[str, Any]:
         return {"subtype": "success"}
 
-    async def query(self, prompt: str) -> SentPrompt:
-        self.prompts.append(prompt)
+    async def query(self, text: str) -> SentPrompt:
+        self.prompts.append(text)
         self.replay()
         return SentPrompt(command_uuid="fake-command", frame_seq=self.prompt_frame_seq)
 
@@ -254,16 +255,30 @@ class _LifecycleWebSocket:
 
 
 class _LifecycleClaudeClient(_FakeCli):
+    """A `cli_over_websocket` stand-in that records through the sink it is handed.
+
+    The sink is not optional in the real client (<../../runtime/x/bridge/cli_client.py>): every
+    frame either way is written as it crosses the wire, and each is numbered from the row it
+    landed in. So a double that dropped it would stand in for a client that cannot exist, and
+    would hand the turn loop numbers naming no row.
+    """
+
     last_launch: object | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__()
         type(self).last_launch = launch
+        self._frames_to = frames_to
         self.connected = False
 
     async def connect(self) -> dict[str, Any]:
         self.connected = True
         return {"subtype": "success"}
+
+    async def query(self, text: str) -> SentPrompt:
+        self.prompt_frame_seq = await self._frames_to.sent(prompt(text))
+        self.frame_seqs = [(await self._frames_to.received(frame, runner_seq=None)).frame_seq for frame in self.script]
+        return await super().query(text)
 
 
 class _ClosingClaudeClient(_LifecycleClaudeClient):
@@ -528,6 +543,31 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
     assert turn.outcome == TurnOutcome.FAILED
     assert turn.usage is None, "the frame accounted for nothing, which is not the same as zero"
+
+
+async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
+    chat_store, chat_service, recording_claims, migrated_sessions, operator_id
+) -> None:
+    """A cursor from before the turn names a position this turn's writes never took, so resuming
+    from it would redo effects that did commit — a duplicated message and a duplicated room reply.
+
+    `next_prompt` anchors the cursor at the frame before the turn, so no session that can still
+    acquire a frame is in this state; one that somehow is has its turn ended rather than resumed.
+    """
+    session = await chat_service.create(operator_id, SpaSession())
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing")
+    assert await chat_store.next_prompt(session_id) is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    async with migrated_sessions() as db:
+        await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=None))
+        await db.commit()
+
+    assert await chat_store.adopt_open_turn(session_id) is None
+
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    assert turn.outcome == TurnOutcome.FAILED
 
 
 async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
@@ -1261,7 +1301,7 @@ async def test_the_calls_come_from_the_events_and_need_no_id_from_the_agent(
 class _RealDbClaudeClient(_LifecycleClaudeClient):
     """Answers every prompt with "pong", then goes quiet like an idle CLI."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__(adapter, launch, on_progress, frames_to)
         self.script = [assistant(text_block("pong")), result(text="pong")]
 
@@ -1351,6 +1391,11 @@ async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) 
         )
 
 
+def _streamed(frames: Sequence[SessionFrame]) -> str:
+    """The answer as the recorded deltas spell it, in log order."""
+    return "".join(frame.payload["event"]["delta"]["text"] for frame in frames if frame.kind == DELTA_FRAME_KIND)
+
+
 async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas(
     chat_store, migrated_sessions, operator_id
 ) -> None:
@@ -1437,7 +1482,7 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
 class _DyingMidStreamClaudeClient(_LifecycleClaudeClient):
     """Streams two deltas, then ends the turn without ever completing the message."""
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__(adapter, launch, on_progress, frames_to)
         self.script = [text_delta("half an "), text_delta("answer"), result()]
 
@@ -1447,7 +1492,7 @@ class _DisconnectingClaudeClient(_LifecycleClaudeClient):
 
     instance: _DisconnectingClaudeClient | None = None
 
-    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: object):
+    def __init__(self, adapter: object, launch: object, on_progress: object, frames_to: FrameSink):
         super().__init__(adapter, launch, on_progress, frames_to)
         type(self).instance = self
 
@@ -1490,11 +1535,11 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
 async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
     chat_store, chat_service, migrated_sessions, operator_id
 ) -> None:
-    """Written as it streams, not reconstructed at the end, because the end may never come.
+    """The deltas are the record, and each is written as it crosses the wire.
 
-    The deltas are not kept as frames, so an interrupted turn would otherwise stop mid-answer
-    in the log — and reconstructing it in a finalizer would miss the case worth having, since
-    a replica losing its pod raises `CancelledError` straight past one.
+    So a turn no `assistant` frame ever completed still has its half-answer in the log, in the
+    order it was written — which reconstructing it in a finalizer would not, since a replica
+    losing its pod raises `CancelledError` straight past one.
     """
     view, token = await chat_store.create(operator_id, SpaSession())
 
@@ -1508,14 +1553,12 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
                     break
                 await asyncio.sleep(0.2)
             await chat_store.enqueue_prompt(operator_id, view.session_id, "go")
-            # Waits for the streamed text, not merely for a partial row to exist. The first
-            # delta creates the row, so waiting on its existence raced the second delta and
-            # cancelled between them — which asserted a timing rather than the property. What
-            # makes this "cut off mid-stream" is that no `assistant` frame ever completes the
-            # message, and that is true however many deltas have landed.
+            # Waits for the whole streamed text, not for the first delta to land: waiting on one
+            # frame existing races the second and cancels between them, which asserts a timing
+            # rather than the property. What makes this "cut off mid-stream" is that no
+            # `assistant` frame ever completes the message, however many deltas have landed.
             for _ in range(75):
-                partial = [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]
-                if partial and partial[0].payload["message"]["content"][0]["text"] == "half an answer":
+                if _streamed(await _frames(migrated_sessions, view.session_id)) == "half an answer":
                     break
                 await asyncio.sleep(0.2)
         finally:
@@ -1523,9 +1566,9 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
             with contextlib.suppress(asyncio.CancelledError):
                 await runner
 
-    [reconstructed] = [f for f in await _frames(migrated_sessions, view.session_id) if f.partial]
-    assert reconstructed.kind == "assistant"
-    assert reconstructed.payload["message"]["content"][0]["text"] == "half an answer"
+    recorded = await _frames(migrated_sessions, view.session_id)
+    assert _streamed(recorded) == "half an answer"
+    assert not [frame for frame in recorded if frame.kind == "assistant"], "no frame completed the message"
 
 
 async def test_a_returning_runner_beats_the_sweep(
