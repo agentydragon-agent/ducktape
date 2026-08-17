@@ -18,19 +18,18 @@ from dataclasses import dataclass
 from more_itertools import batched
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.recall_index.chat_corpus import MessageChunk, chat_chunker_key, chunk_messages
+from haku.recall_index.chat_corpus import chat_chunker_key, chunk_messages
 from haku.recall_index.chat_source import SessionShape, load_messages, session_shapes
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.embedder import EMBED_BATCH, Embedder
-from haku.recall_index.schema import ChatSessionState, Corpus
+from haku.recall_index.schema import ChatSessionState
 from haku.recall_index.store import (
-    ChunkRow,
-    cached_content,
+    ContentEmbeddingRow,
     chat_session_states,
+    embedded_content,
     forget_chat_sessions,
-    insert_chunks,
+    insert_content_embeddings,
     replace_chat_session,
-    touch_content,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,22 +112,23 @@ async def sync_chat(
         # Distinct content, not distinct windows: a session that says the same thing twice
         # embeds it once, and so does a session that repeats another session's exchange.
         by_content = {chunk.content_sha: chunk for chunk in chunks}
-        cached = await cached_content(
-            session, Corpus.CHAT, sorted(by_content), chunker_key=regime, model_key=embedder.model_key
-        )
-        pending = [chunk for content_sha, chunk in sorted(by_content.items()) if content_sha not in cached]
+        already_embedded = await embedded_content(session, by_content, model_key=embedder.model_key)
+        pending = [chunk for content_sha, chunk in sorted(by_content.items()) if content_sha not in already_embedded]
 
-        rows: list[ChunkRow] = []
         for batch in batched(pending, EMBED_BATCH):
             vectors = await embedder.embed_documents([chunk.text for chunk in batch])
-            rows.extend(
-                _chunk_row(chunk, vector, chunker_key=regime, model_key=embedder.model_key)
-                for chunk, vector in zip(batch, vectors, strict=True)
+            await insert_content_embeddings(
+                session,
+                [
+                    ContentEmbeddingRow(
+                        content_sha=chunk.content_sha,
+                        content=chunk.text,
+                        model_key=embedder.model_key,
+                        embedding=vector,
+                    )
+                    for chunk, vector in zip(batch, vectors, strict=True)
+                ],
             )
-        await insert_chunks(session, rows, now=now)
-        await touch_content(
-            session, Corpus.CHAT, sorted(cached), chunker_key=regime, model_key=embedder.model_key, now=now
-        )
         await replace_chat_session(
             session,
             shape.session_id,
@@ -142,7 +142,7 @@ async def sync_chat(
         indexed += 1
         windows_written += len(chunks)
         windows_embedded += len(pending)
-        windows_reused += len(cached)
+        windows_reused += len(already_embedded)
 
     report = ChatSyncReport(
         sessions_indexed=indexed,
@@ -155,17 +155,3 @@ async def sync_chat(
     )
     logger.info("synced chat index: %s", report)
     return report
-
-
-def _chunk_row(chunk: MessageChunk, embedding: list[float], *, chunker_key: str, model_key: str) -> ChunkRow:
-    """One embedded window, addressed by its own text — so the span covers all of it."""
-    return ChunkRow(
-        corpus=Corpus.CHAT,
-        content_sha=chunk.content_sha,
-        chunker_key=chunker_key,
-        model_key=model_key,
-        byte_start=0,
-        byte_end=len(chunk.text.encode()),
-        text=chunk.text,
-        embedding=embedding,
-    )

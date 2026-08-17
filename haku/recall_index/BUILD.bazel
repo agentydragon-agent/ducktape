@@ -7,6 +7,12 @@ py_library(
 )
 
 py_library(
+    name = "content",
+    srcs = ["content.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "git_tree",
     srcs = ["git_tree.py"],
     visibility = ["//visibility:public"],
@@ -25,6 +31,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":chunking",
+        ":content",
         "//haku/console:chat_models",
     ],
 )
@@ -110,6 +117,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":chunking",
+        ":content",
         ":embedder",
         ":git_tree",
         ":store",
@@ -248,6 +256,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":content",
         ":schema",
         ":store",
         "//:conftest",
@@ -269,6 +278,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":content",
         ":embedder",
         ":fake_embedder",
         ":git_tree",

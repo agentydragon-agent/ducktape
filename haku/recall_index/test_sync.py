@@ -12,11 +12,11 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from haku.recall_index.content import content_sha
 from haku.recall_index.embedder import EMBED_BATCH
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
-from haku.recall_index.git_tree import list_tip
 from haku.recall_index.query import query_git
-from haku.recall_index.schema import Chunk
+from haku.recall_index.schema import ContentEmbedding
 from haku.recall_index.store import current_git_state, read_indexed_text
 from haku.recall_index.sync import AlreadyCurrent, SyncOutcome, SyncReport, sync
 
@@ -93,11 +93,14 @@ async def test_deleted_content_keeps_its_cached_embedding(
 ) -> None:
     """The cache is content-addressed, so leaving the tip must not cost the vector."""
     first = commit(repo, {"keep.md": "alpha", "gone.md": "zeta zeta"})
-    gone_sha = next(entry.blob_sha for entry in list_tip(repo, first) if entry.path == "gone.md")
     await run_sync(session, repo, first, embedder)
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
 
-    cached = await session.execute(select(func.count()).select_from(Chunk).where(Chunk.content_sha == gone_sha))
+    cached = await session.execute(
+        select(func.count())
+        .select_from(ContentEmbedding)
+        .where(ContentEmbedding.content_sha == content_sha("zeta zeta"))
+    )
 
     assert cached.scalar_one() > 0
 
@@ -208,7 +211,7 @@ async def test_a_failed_sync_keeps_the_embeddings_it_already_paid_for(
         await sync(session, repo, head, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW)
     await session.rollback()
 
-    kept = await session.execute(select(func.count()).select_from(Chunk))
+    kept = await session.execute(select(func.count()).select_from(ContentEmbedding))
     assert kept.scalar_one() == EMBED_BATCH
 
     report = as_report(await run_sync(session, repo, head, embedder))

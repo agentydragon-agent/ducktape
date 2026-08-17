@@ -23,7 +23,7 @@ from sqlalchemy.types import UserDefinedType
 
 
 class HalfVector(UserDefinedType[Sequence[float]]):
-    """pgvector's `halfvec`, with no dimension typmod — see `schema.Chunk.embedding`."""
+    """pgvector's `halfvec`, with no dimension typmod — see `schema.ContentEmbedding.embedding`."""
 
     cache_ok = True
 

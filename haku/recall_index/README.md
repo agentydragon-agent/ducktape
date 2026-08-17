@@ -16,26 +16,30 @@ The index is derived state: it can be thrown away and rebuilt from git and Postg
 
 ## Design
 
-One shared table and a per-corpus set around it:
+The index has globally-addressed semantic content plus source-specific occurrences:
 
-| table                 | keyed by                  | holds                                                                    |
-| --------------------- | ------------------------- | ------------------------------------------------------------------------ |
-| `chunks`              | corpus + content + regime | every embedding ever computed, including for content no longer reachable |
-| `git_tip`             | `path`                    | the tree at the indexed commit, replaced wholesale per sync              |
-| `git_sync_state`      | singleton                 | what the branch points at, and which commit `git_tip` holds              |
-| `chat_chunks`         | `(session_id, window_no)` | the searchable windows of each chat session                              |
-| `chat_chunk_messages` | window + ordinal          | **which messages each window intersects**                                |
-| `chat_sessions`       | `session_id`              | each session's shape as last indexed, which is what decides re-indexing  |
+| table                 | keyed by                              | holds                                                       |
+| --------------------- | ------------------------------------- | ----------------------------------------------------------- |
+| `contents`            | `content_sha`                         | the exact normalized string sent to an embedder             |
+| `content_embeddings`  | `(content_sha, model_key)`            | that content's vector in one model's vector space           |
+| `git_chunks`          | `(blob_sha, chunker_key, byte_start)` | a Git blob span and its referenced global content           |
+| `git_tip`             | `path`                                | the tree at the indexed commit, replaced wholesale per sync |
+| `git_sync_state`      | singleton                             | what the branch points at, and which commit `git_tip` holds |
+| `chat_chunks`         | `(session_id, window_no)`             | a searchable chat window and its referenced global content  |
+| `chat_chunk_messages` | window + ordinal                      | **which messages each window intersects**                   |
+| `chat_sessions`       | `session_id`                          | each session's shape and regime as last indexed             |
 
-`chunks` is content-addressed, so it has no notion of where content currently lives and keeps
-embeddings for content that has left the indexed set. That is the cache: a revert, a rebase, a
-force-push, a file moved between paths, a chat session re-windowed as it grows — all re-use
-their vectors. The cache key is `(corpus, content_sha, byte_start, chunker_key, model_key)`: changing the chunker
-or the embedding model misses the cache rather than silently serving vectors computed over
-different text or by a different model. `byte_start` is what tells one chunk of a blob from the
-next — an ordinal beside it would be a second name for the same fact, and the offsets are the ones
-a caller can actually slice with. (`chat_chunks.window_no` is a different thing wearing a similar
-name: a window's position in its session, which is what `chat_chunk_messages` hangs off.)
+`contents.content_sha` is the SHA-256 of the exact UTF-8 encoding of `contents.content`.
+It has one namespace across Git and chat: the same rendered content appearing in either corpus,
+or again in another revision or session, is the same content row. `content_embeddings` then adds
+the model identity, because the same content can legitimately have vectors in more than one
+vector space. These are durable semantic-index tables, not an evictable cache.
+
+The occurrence rows remain intentionally source-specific. A Git occurrence says which bytes of a
+blob yielded one content value; a chat occurrence says which session window and messages yielded
+one. That keeps citations and source lifecycle local while semantic materialization is shared.
+`byte_start` distinguishes adjacent Git chunks; `chat_chunks.window_no` instead names a window's
+position in a session.
 
 **Chunk size and overlap are configurable, and they live inside `chunker_key`** — canonical JSON,
 `{"max_bytes":3000,"overlap_codepoints":128,"target_bytes":1500,"version":2}` — rather than beside it. The same blob chunked to a different size or overlap is a different retrieval layout, so a re-tune has to select a distinct regime automatically rather than relying on someone to remember it. Size is in bytes rather than tokens because chunking must not depend on a tokenizer now that the model is behind an HTTP endpoint; English prose runs about four bytes to the token, so a budget approximates the model's window on purpose. Overlap is Unicode code points, so no boundary ever splits UTF-8. The default was chosen for a 512-token model and is conservative for the one in use; raising it is a retrieval question — bigger chunks match more broadly and cite less precisely — which is why it is a knob and not a constant. Index and query must use the same budget: a query under a different one searches a regime nothing was written under.
@@ -56,27 +60,28 @@ The cost is a ~50-byte string in a primary key; if that ever shows up on a disk 
 is a `chunk_regimes` table with an integer id, which keeps the single-column filter in the hot
 table and makes the parameters queryable.
 
-**`corpus` is in that key rather than implied.** Each corpus supplies its own kind of content
-address — a git blob sha, the sha256 of a rendered message window — and its own chunker with its
-own version line. Tagging the corpus is what keeps those namespaces apart; leaving it to a
-convention about hash lengths would work right up until it didn't.
+**Source identity and content identity are deliberately different.** A Git `blob_sha` names
+source bytes; `content_sha` names the exact string embedded from one chunk. Chat has no blob, but
+its windows likewise refer to global `content_sha` values. Neither source namespace leaks into the
+content address, which is why an identical embedding input can be shared across corpora.
 
 ### git: the join is the tip filter
 
-Search joins `git_tip` to `chunks`, so content that is no longer at the branch tip is
-unreachable **by construction**, not by a delete pass someone has to remember to run. History is
-never indexed — only `git ls-tree -r <tip>` is. A sync is one transaction: a run that dies
-halfway — embedder gone, connection lost — leaves the previous tip searchable rather than a
-half-swapped one; `test_sync.py` asserts this.
+Search joins `git_tip` to `git_chunks`, then to `contents` and `content_embeddings`, so
+content that is no longer at the branch tip is unreachable **by construction**, not by a delete
+pass someone has to remember to run. History is never indexed — only `git ls-tree -r <tip>` is. A
+sync publishes that tip in one transaction: a run that dies halfway — embedder gone, connection
+lost — leaves the previous tip searchable rather than a half-swapped one; `test_sync.py` asserts
+this.
 
 **Embeddings commit as they are computed; the tip swap is the atomic step.** A first sync of a
 repository this size is minutes of embedding, and as one transaction it could only finish or lose
 everything — against an endpoint that occasionally fails a call, that is a run which starts over
 forever and never commits (observed in production, 2026-08-15: mirror cloned, `git_tip` empty for
-half an hour, no error logged). Chunks are cache that nothing reaches until `git_tip` names their
-blob, so committing them early is invisible to searches and makes a retry resume: the next attempt
-finds them in `cached_content` and pays only for what is left. `test_sync.py` asserts both halves —
-the work survives, and the half-indexed tip is not published.
+half an hour, no error logged). Content embeddings are unreachable until `git_tip` names their
+source occurrences, so committing them early is invisible to searches and makes a retry resume:
+the next attempt finds the durable `(content_sha, model_key)` rows and pays only for what is left.
+`test_sync.py` asserts both halves — the work survives, and the half-indexed tip is not published.
 
 A sync whose commit and regime already match what `git_sync_state` records returns
 `AlreadyCurrent` without touching git or the tables, so it costs one `SELECT`. That is what lets
@@ -88,16 +93,17 @@ dropped, so you want the belt as well as the braces.
 Message ends are the preferred cut rather than line ends, so a window usually stops where a
 message does, and every window names each message it **intersects** — the pointers a caller
 drills into with the console's own conversation tools (`haku/console/tools/conversations.py`)
-rather than trusting the copy in `chunks.text`. Two things cut across a message anyway: the
-configured overlap, which carries the previous window's tail into the next, and a message longer
-than a whole chunk, which is split. So a window's message list is what it overlaps, not what it
-wholly contains.
+rather than trusting the embedded copy in `contents.content`. Two things cut across a message
+anyway: the configured overlap, which carries the previous window's tail into the next, and a
+message longer than a whole chunk, which is split. So a window's message list is what it overlaps,
+not what it wholly contains.
 
 The unit of skipping is a session: one grouped scan gets every session's message count and newest
 message, and a session that matches what `chat_sessions` recorded under the same regime is never
 read. A session that has changed is re-windowed **wholesale**, because its trailing window changes
 shape as it grows and appending would leave a stale partial window searchable beside the one that
-supersedes it. Re-windowing is nearly free — the vectors are cached by content.
+supersedes it. Re-windowing is nearly free when it produces content already embedded by the active
+model.
 
 **Two differences from the git corpus are worth knowing, because they are weaker properties:**
 
@@ -129,13 +135,13 @@ that changing models is not a migration, and an index cannot be built on a colum
 is undeclared — and then an HNSW index, which `halfvec(2560)` is eligible for. Neither requires
 re-embedding anything. Dropping to fewer dimensions is the other lever, since Qwen3-Embedding is
 Matryoshka-trained; **that one does require re-embedding, and the dimension would have to enter
-`model_key`**, because the model name alone would no longer identify the vector space and the
-content-addressed cache would silently mix two of them.
+`model_key`**, because the model name alone would no longer identify the vector space and
+`content_embeddings` would otherwise silently mix two of them.
 
 **Embeddings come from Ollama**, over its OpenAI-compatible `/v1/embeddings`, so the backend is a
 base URL and a model name rather than an implementation — LiteLLM or anything else speaking that
-format is a config change. `model_key` is the model, so it invalidates the cache on its own when
-the model changes and re-uses every vector when only the address does.
+format is a config change. `model_key` identifies the model's vector space, so a model change
+creates a distinct set of content embeddings while an endpoint-address change reuses them.
 
 Two consequences to hold onto, because search embeds its _query_ and therefore inherits whatever
 the embedder is:
@@ -267,7 +273,7 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
   `ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie`, the image the console's CNPG cluster
   runs, so nothing had to be rebuilt.
 
-  Migration `0037` creates the schema and tables and assumes the extension is there. If it is not,
+  Migration `0061` rebuilds the derived schema and assumes the extension is there. If it is not,
   the migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the
   running version serving — so a change to either side wants the `Database` CR reconciled first.
 
@@ -299,22 +305,11 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
   thirty-second git tick and a new message for the next minute-long chat tick plus its quiet
   window.
 
-- **Eviction.** `last_seen_at` is maintained but nothing sweeps it, and the cache keeps every
-  vector ever computed — including for content that has left the tip. At ~5 KiB a chunk on a 2Gi
-  volume (see above) that is a bounded amount of patience, not an indefinite one. A sweep must
-  exclude anything still referenced:
-
-  ```sql
-  DELETE FROM state_index.chunks c
-   WHERE NOT EXISTS (SELECT 1 FROM state_index.git_tip t WHERE t.blob_sha = c.content_sha)
-     AND NOT EXISTS (SELECT 1 FROM state_index.chat_chunks w WHERE w.content_sha = c.content_sha)
-     AND c.last_seen_at < now() - interval '90 days';
-  ```
-
-  Membership in `git_tip`/`chat_chunks` is the liveness signal, not `last_seen_at`: a sync that
-  takes an early-out touches nothing, so an unchanged tip's or an unchanged session's
-  `last_seen_at` goes stale while its content is still very much searchable. `last_seen_at` only
-  governs how long _unreferenced_ vectors are kept against a future revert.
+- **Retention is not a cache policy.** `contents` and `content_embeddings` are durable semantic
+  index data, including content that has left the current tip or a deleted chat session. No
+  retention/garbage-collection policy exists yet. If one is added, it must remove a content row
+  and all of its model embeddings only when neither `git_chunks` nor `chat_chunks` references it;
+  the source-occurrence tables, not a last-seen timestamp, are the liveness signal.
 
 ## Read scoping
 
@@ -348,15 +343,13 @@ the "a room Haku should not see" case above. The direction chosen there: `Corpus
 configured per repo and per tier, so the gate is which indexes a caller may search rather than a
 predicate every read path has to remember.
 
-Consequences for this package, and note where they do **not** land: `chunks` is unchanged. It is a
-content-addressed embedding cache, and two instances sharing a row share an embedding of
-byte-identical text — the same property `ChatChunk` already relies on when two sessions hold the
-same exchange verbatim. Identity lives on the occurrences, which is what a hit hands back, so the
-instance goes there: `git_tip` is keyed `(index, path)`, `git_sync_state` gets a row per index —
-which retires its `id = 1` singleton CHECK, since the index name is the natural key it never had —
-chat occurrences derive theirs from the session, and the permitted-instance join belongs in the
-same materialized CTE that already filters `corpus` and `model_key` before the distance operator.
-Embeddings are a recomputable cache, so this is much cheaper to do while the index is small.
+Consequences for this package, and note where they do **not** land: globally-addressed
+`contents` and `content_embeddings` are unchanged by source-instance scoping. Two instances can
+share the same exact content and its semantic representation, while identity and access policy
+live on source occurrences — the rows a hit hands back. `git_tip` becomes keyed `(index, path)`,
+`git_sync_state` gains a row per index (retiring its `id = 1` singleton CHECK), chat occurrences
+derive their instance from the session, and the permitted-instance join belongs in the same
+materialized CTE that already filters the current chunker and model before the distance operator.
 
 What settling it touches:
 

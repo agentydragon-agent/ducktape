@@ -17,13 +17,13 @@ Frames (`session_frames`) are deliberately not indexed here; see this package's 
 from __future__ import annotations
 
 import datetime
-import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
 from haku.console.chat_models import ChatMessageRole
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_windows, regime_key
+from haku.recall_index.content import content_sha
 
 # Bump on a change to the rendering or packing below. Scoped to this corpus: the git chunker's
 # version moves independently, and the size budget travels in the key rather than here.
@@ -60,7 +60,7 @@ class MessageChunk:
         Two sessions that held the same exchange verbatim therefore share one cached vector,
         the way two paths holding the same blob do on the git side.
         """
-        return hashlib.sha256(self.text.encode()).hexdigest()
+        return content_sha(self.text)
 
 
 @dataclass(frozen=True, slots=True)
