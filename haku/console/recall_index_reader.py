@@ -2,7 +2,7 @@
 
 The index lives in the console's own Postgres — the conversations corpus is built from
 `session_messages`, so it could not live anywhere else — and this is where that plumbing sits
-rather than in `haku/state_index`, which stays a library with no opinion about who runs it.
+rather than in `haku/recall_index`, which stays a library with no opinion about who runs it.
 
 This is also where the tool surface's vocabulary meets the storage's: `haku_state` and
 `conversations` are what a caller asks for, `git` and `chat` are how they are stored, and the
@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import Session
-from haku.console.tools.state_index import (
+from haku.console.tools.recall_index import (
     ConversationSource,
     ConversationsStatus,
     HakuStateSource,
@@ -32,12 +32,12 @@ from haku.console.tools.state_index import (
     SearchHit,
     SearchResults,
 )
-from haku.state_index.chat_corpus import chat_chunker_key
-from haku.state_index.chat_source import session_shapes
-from haku.state_index.chat_sync import is_indexed
-from haku.state_index.embedder import Embedder
-from haku.state_index.schema import Corpus
-from haku.state_index.store import (
+from haku.recall_index.chat_corpus import chat_chunker_key
+from haku.recall_index.chat_source import session_shapes
+from haku.recall_index.chat_sync import is_indexed
+from haku.recall_index.embedder import Embedder
+from haku.recall_index.schema import Corpus
+from haku.recall_index.store import (
     chat_index_summary,
     chat_session_states,
     chunk_counts,

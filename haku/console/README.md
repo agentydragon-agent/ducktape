@@ -384,7 +384,7 @@ MCP servers from `@mcp.tool`-decorated functions:
   `list_event_instances` return focused recurrence-aware event models and auto-approve for
   authenticated Agents as transparent read tools. Deferred Calendar API affordances are inventoried
   in `TODO.md`.
-- **`haku_index`** (`haku.console.tools.state_index`): `search` is semantic recall over two
+- **`haku_index`** (`haku.console.tools.recall_index`): `search` is semantic recall over two
   corpora — the files at haku-state's indexed tip and the console's own record of past chat
   sessions — selected by a `corpus` argument and ranked together. It returns **pointers, not
   content**: a path, commit and blob sha to read from a haku-state clone, or a session, room and
@@ -401,7 +401,7 @@ MCP servers from `@mcp.tool`-decorated functions:
   to start if it is listed without an embedder configured — search embeds its query, so a search
   tool with nowhere to embed is a tool that can only fail. Credential-free: the corpus is the
   console's own database, and embeddings come from Ollama. **Both corpora are kept current by this
-  process** (`state_index_sync.py`): a chat sweep every minute over the console's own tables, and a
+  process** (`recall_index_sync.py`): a chat sweep every minute over the console's own tables, and a
   haku-state poll every thirty seconds against a bare mirror on the pod's `/tmp` — an `ls-remote`
   that pulls objects only when the tip actually moved. Each corpus has its
   own Postgres advisory lock, so one replica syncs it and a long git fetch never delays a chat
@@ -562,8 +562,8 @@ Two operational notes:
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |
 | `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                              |
 | `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, routine, conversations, and index FastMCP servers, shared by the production app and schema exporter.                                                                                                               |
-| `state_index_reader.py`            | Binds the `haku_index` tools to the console's database and embedder; the one place the tool surface's `haku_state`/`conversations` vocabulary maps to the index's own `git`/`chat`.                                                                                          |
-| `state_index_sync.py`              | The sweeps that keep both index corpora current: chat from the console's own tables, haku-state from a bare mirror it fetches. One Postgres advisory lock per corpus, so one replica syncs each.                                                                             |
+| `recall_index_reader.py`           | Binds the `haku_index` tools to the console's database and embedder; the one place the tool surface's `haku_state`/`conversations` vocabulary maps to the index's own `git`/`chat`.                                                                                          |
+| `recall_index_sync.py`             | The sweeps that keep both index corpora current: chat from the console's own tables, haku-state from a bare mirror it fetches. One Postgres advisory lock per corpus, so one replica syncs each.                                                                             |
 | `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                                    |
 | `provider_connection.py`           | Deploy-named per-Operator connections to well-known external OAuth providers: fixed-client authorization-code + PKCE flow, connection-specific metadata, and the `/api/operator-connections/*` endpoints. Provider catalog: `provider_connection_registry.py`.               |
 | `oauth_token_state.py`             | Shared current-token persistence and refresh state machine for remote-server, provider, and Operator-login OAuth associations. A short database claim deduplicates foreground and background refreshes across replicas.                                                      |

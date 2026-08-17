@@ -330,7 +330,7 @@ accident, at the top of the results.
 stays the **type** — `git`/`chat`, deciding how content is chunked and addressed — and gains named
 **instances** configured per repo and per tier ("index `foobar` is of type `git`, indexes this
 remote"), in the discriminated shape `mcp.servers` already uses. The gate becomes "which indexes
-may this agent search", checked once in <state_index_reader.py>, which shrinks in the process:
+may this agent search", checked once in <recall_index_reader.py>, which shrinks in the process:
 its hardcoded `haku_state`/`conversations` → `git`/`chat` mapping is replaced by config names, so
 what is left is the permission check. `haku_recall_reads` becomes per-index grants. That beats a
 per-row tier filter — a missed predicate on one read path leaks, an index an agent cannot name
