@@ -8,6 +8,13 @@
 { pkgs }:
 
 let
+  # The old Dockerfile installed Bazelisk as `/usr/local/bin/bazel`; retain the
+  # command name haku-state tooling uses while keeping the upstream Bazelisk
+  # package and its version-selection behavior.
+  bazel = pkgs.writeShellScriptBin "bazel" ''
+    exec ${pkgs.bazelisk}/bin/bazelisk "$@"
+  '';
+
   upstreamOpenClaw = pkgs.dockerTools.pullImage {
     imageName = "ghcr.io/openclaw/openclaw";
     # The tag resolves to a multi-platform OCI index. dockerTools selects the
@@ -27,7 +34,7 @@ let
   # image-build-time npm install.
   tools = with pkgs; [
     bashInteractive
-    bazelisk
+    bazel
     binutils
     cacert
     claude-code
