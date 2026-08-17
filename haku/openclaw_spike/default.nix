@@ -72,8 +72,8 @@ pkgs.dockerTools.buildLayeredImage {
   # happened to add it through apt; make that FHS compatibility path explicit
   # now that coreutils comes from Nix.
   fakeRootCommands = ''
-    mkdir -p /usr/bin
-    ln -sf ${pkgs.coreutils}/bin/env /usr/bin/env
+    mkdir -p usr/bin
+    ln -sf ${pkgs.coreutils}/bin/env usr/bin/env
   '';
 
   config = {
