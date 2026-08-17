@@ -110,6 +110,17 @@ def usd_column(cents: Any) -> np.ndarray:
     return cents_array_to_usd(cents)
 
 
+def currency_display_column(plan: CompiledSimulation, quanta: Any) -> np.ndarray:
+    """Derived display values for an integer scenario-currency quantum array.
+
+    This helper is deliberately codec-only. Frames migrating to the public
+    quantum contract expose the integer array as authoritative; a float is
+    useful solely for legacy chart/display adapters during that migration.
+    """
+
+    return np.asarray(quanta, dtype=np.float64) * float(plan.currency_quantum)
+
+
 def quantity_column(quanta: Any, scales: Any) -> np.ndarray:
     return np.asarray(quanta, dtype=np.float64) / np.asarray(scales, dtype=np.float64)
 

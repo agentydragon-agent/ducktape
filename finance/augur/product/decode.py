@@ -198,21 +198,23 @@ def _lot_value_by_month(
         if not include(asset):
             continue
         quantity = dense.buffers.state.lot_state[:, lot, :] / float(plan.lot_quantity_scale[lot])  # (H+1, R)
-        # PE lots take their mark from `pe_channels.marks` (typed bundle); non-PE lots
-        # read from the series-indexed external_values cube. Both are stored R-major
+        # Price inputs are integer scenario-currency quantum counts. Decode is the
+        # display boundary, so it alone derives a decimal-valued chart series. Both
+        # source arrays are stored R-major
         # `(…, R, months)`, so transpose to the `(months, R)` = `(H+1, R)` metric layout.
         if isinstance(asset, PrivateEquityAssetKey):
             issuer_idx = pe_issuer_index.get(str(asset.issuer_id))
             if issuer_idx is None:
                 raise ValueError(f"holding asset {asset.wire_id!r} has no compiled PE channels")
-            price = plan.pe_channels.marks[issuer_idx, :, :].T
+            price = plan.pe_channels.mark_currency_quanta[issuer_idx, :, :].T
         else:
             series_index = series_index_by_id.get(asset_price_key(asset))
             if series_index is None:
                 raise ValueError(
                     f"holding asset {asset.wire_id!r} has no modeled price series in the compiled simulation"
                 )
-            price = plan.external_values[series_index, :, :].T
+            price = plan.external_money_values[series_index, :, :].T
+        price = price.astype(np.float64) * float(plan.currency_quantum)
         missing_price = (np.abs(quantity) > 1e-9) & ~np.isfinite(price)
         if missing_price.any():
             month, rollout = (int(idx) for idx in np.argwhere(missing_price)[0])

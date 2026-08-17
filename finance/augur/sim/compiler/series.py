@@ -12,9 +12,17 @@ from typing import Any
 
 import numpy as np
 
-from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, LocationId, SecurityDistributionKey
+from finance.augur.model.series import (
+    HomeValueKey,
+    InflationKey,
+    LevelSeriesKey,
+    LocationId,
+    SecurityDistributionKey,
+    SecurityKey,
+)
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import sampled_array_to_currency_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 
 
@@ -179,4 +187,46 @@ def external_values_cube(
             & (month_index <= horizon_months)
         )
         values[index, rollout_index[keep], month_index[keep]] = frame.get_column("value").to_numpy()[keep]
+    return values
+
+
+def external_money_values_cube(
+    external_series: ExternalSeriesContext,
+    *,
+    series_index_by_id: dict[LevelSeriesKey, int],
+    rollout_count: int,
+    horizon_months: int,
+    currency_quantum: object,
+) -> np.ndarray:
+    """Compile price-like sampled levels to integer currency quantum counts.
+
+    ``external_values_cube`` remains the heterogeneous level cube for rates and
+    index ratios (CPI, rent and other non-money values).  This companion cube
+    is the only price input the dense engine may use for traded security
+    prices and per-unit distributions.  Missing/non-finite observations stay
+    zero so the engine's existing non-positive-price handling is preserved.
+    """
+
+    values = np.zeros((len(series_index_by_id), rollout_count, horizon_months + 1), dtype=np.int64)
+    money_keys = (SecurityKey, SecurityDistributionKey, HomeValueKey)
+    for key, frame in external_series.levels.value_rows():
+        if not isinstance(key, money_keys):
+            continue
+        index = series_index_by_id.get(key)
+        if index is None:
+            continue
+        rollout_index = frame.get_column("rollout_index").to_numpy()
+        month_index = frame.get_column("month_index").to_numpy()
+        raw_values = frame.get_column("value").to_numpy()
+        keep = (
+            (rollout_index >= 0)
+            & (rollout_index < rollout_count)
+            & (month_index >= 0)
+            & (month_index <= horizon_months)
+            & np.isfinite(raw_values)
+        )
+        if keep.any():
+            values[index, rollout_index[keep], month_index[keep]] = sampled_array_to_currency_quanta(
+                raw_values[keep], quantum=currency_quantum
+            )
     return values

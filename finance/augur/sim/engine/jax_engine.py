@@ -131,20 +131,30 @@ def _price_usd_to_cents(price_usd: jnp.ndarray) -> jnp.ndarray:
 def _value_cents_from_quanta(
     quantity_quanta: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray
 ) -> jnp.ndarray:
-    return _round_int64(
-        quantity_quanta.astype(jnp.float64) * unit_price_cents.astype(jnp.float64) / quantity_scale.astype(jnp.float64)
-    )
+    """Nearest-half-up money value with no float price/money intermediate.
+
+    The product is still bounded by the int64 plan contract; compile-time
+    inputs that would overflow must be rejected before reaching this JAX path.
+    Keeping the quotient and remainder integral eliminates the former float64
+    FIFO-value snap that could disagree with settlement by a currency quantum.
+    """
+
+    numerator = quantity_quanta * unit_price_cents
+    denominator = jnp.where(quantity_scale > 0, quantity_scale, 1)
+    sign = jnp.where(numerator < 0, -1, 1)
+    absolute = jnp.abs(numerator)
+    quotient = absolute // denominator
+    remainder = absolute % denominator
+    rounded = quotient + (2 * remainder >= denominator).astype(jnp.int64)
+    return sign * rounded
 
 
 def _ceil_quanta_for_value_cents(
     value_cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray
 ) -> jnp.ndarray:
-    raw = (
-        value_cents.astype(jnp.float64)
-        * quantity_scale.astype(jnp.float64)
-        / jnp.where(unit_price_cents > 0, unit_price_cents, 1).astype(jnp.float64)
-    )
-    return jnp.ceil(raw).astype(jnp.int64)
+    denominator = jnp.where(unit_price_cents > 0, unit_price_cents, 1)
+    numerator = jnp.maximum(value_cents, 0) * quantity_scale
+    return (numerator + denominator - 1) // denominator
 
 
 class _ScanState(NamedTuple):
@@ -381,8 +391,8 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     validate_seed_dependent_inputs(plan)
 
     baked, structure, p, meta = _build_program(plan)
-    external, pe, cfg = _program_inputs(plan)
-    ys, final_state = _program_impl(external, pe, cfg, baked, p, structure)
+    external, money, pe, cfg = _program_inputs(plan)
+    ys, final_state = _program_impl(external, money, pe, cfg, baked, p, structure)
     scatter_ys_to_buffers(plan, buffers, meta, ys, final_state)
 
 
@@ -440,9 +450,9 @@ def run_jax_product_summary(
 
     baked, structure, p, _meta = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
-    external, pe, cfg = _program_inputs(plan)
+    external, money, pe, cfg = _program_inputs(plan)
     product_ys, product_tail = _program_impl(
-        external, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
+        external, money, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
     )
     oversell, final_failed_month, ta_buy_count = product_tail
     if bool(np.asarray(jax.device_get(oversell))):
@@ -467,21 +477,20 @@ def run_jax_product_summary(
     )
 
 
-def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
-    """The three traced arguments the compiled program takes: the external-series cube, the
-    seed-varying PE channel dict, and the swept-numeric `_TracedConfig`."""
+def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
+    """The traced program inputs: levels, integer money levels, PE channels and config."""
     pe_channels = plan.pe_channels
     pe_ch_dyn = {
-        "marks": jnp.asarray(pe_channels.marks),
+        "mark_currency_quanta": jnp.asarray(pe_channels.mark_currency_quanta),
         "regime": jnp.asarray(pe_channels.regime_codes),
         "sale_opp": jnp.asarray(pe_channels.sale_opportunity_active),
         "capacity": jnp.asarray(pe_channels.sale_capacity_fractions),
         "eligible": jnp.asarray(pe_channels.eligible_fractions),
         "forced_sale": jnp.asarray(pe_channels.forced_sale_fractions),
         "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
-        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_cents),
+        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_currency_quanta),
     }
-    return jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan)
+    return jnp.asarray(plan.external_values), jnp.asarray(plan.external_money_values), pe_ch_dyn, _traced_config(plan)
 
 
 def _product_summary_inputs(
@@ -544,8 +553,8 @@ def _product_summary_inputs(
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
     baked, structure, p, _ = _build_program(plan)
-    external, pe, cfg = _program_inputs(plan)
-    text = _program_impl.lower(external, pe, cfg, baked, p, structure).compile().as_text()
+    external, money, pe, cfg = _program_inputs(plan)
+    text = _program_impl.lower(external, money, pe, cfg, baked, p, structure).compile().as_text()
     if text is None:
         raise RuntimeError("compiled program exposes no HLO text")
     return text
@@ -1273,6 +1282,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
 @partial(jax.jit, static_argnames=("p", "structure", "product_summary"))
 def _program_impl(
     external_values: jnp.ndarray,
+    external_money_values: jnp.ndarray,
     pe_ch: dict[str, jnp.ndarray],
     cfg: _TracedConfig,
     baked: _Operands,
@@ -1393,18 +1403,24 @@ def _program_impl(
         holding_usd = jnp.zeros((r,), dtype=jnp.float64)
         if product_summary.has_public_lots:
             safe_series = jnp.maximum(lot_asset_series_index, 0)
-            public_price = external_values[safe_series, :, snapshot_month]
-            public_quantity = s.lot_remaining.astype(jnp.float64) / lot_quantity_scale[:, None].astype(jnp.float64)
-            public_value = public_quantity * public_price
-            holding_usd = jnp.where(product_inputs.public_lot_mask[:, None], public_value, 0.0).sum(axis=0)
+            public_price = external_money_values[safe_series, :, snapshot_month]
+            public_value = _value_cents_from_quanta(
+                s.lot_remaining, public_price, lot_quantity_scale[:, None]
+            )
+            holding_usd = (
+                jnp.where(product_inputs.public_lot_mask[:, None], public_value, 0).sum(axis=0).astype(jnp.float64)
+                / float(USD_CENTS)
+            )
 
         pe_usd = jnp.zeros((r,), dtype=jnp.float64)
         if product_summary.has_pe_lots:
             safe_issuer = jnp.maximum(product_inputs.pe_lot_issuer, 0)
-            pe_price = pe_ch["marks"][safe_issuer, :, snapshot_month]
-            pe_quantity = s.lot_remaining.astype(jnp.float64) / lot_quantity_scale[:, None].astype(jnp.float64)
-            pe_value = pe_quantity * pe_price
-            pe_usd = jnp.where(product_inputs.pe_lot_mask[:, None], pe_value, 0.0).sum(axis=0)
+            pe_price = pe_ch["mark_currency_quanta"][safe_issuer, :, snapshot_month]
+            pe_value = _value_cents_from_quanta(s.lot_remaining, pe_price, lot_quantity_scale[:, None])
+            pe_usd = (
+                jnp.where(product_inputs.pe_lot_mask[:, None], pe_value, 0).sum(axis=0).astype(jnp.float64)
+                / float(USD_CENTS)
+            )
 
         property_usd = jnp.zeros((r,), dtype=jnp.float64)
         if product_summary.has_properties:
@@ -1740,7 +1756,7 @@ def _program_impl(
                 cash,
                 ordinary,
                 active,
-                external_values,
+                external_money_values,
                 month,
                 structure.external_cash_slot,
             )
@@ -1851,11 +1867,11 @@ def _program_impl(
 
             # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
             # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
-            if external_values.shape[0] > 0:
+            if external_money_values.shape[0] > 0:
                 safe_series = jnp.where(sale_price_series >= 0, sale_price_series, 0)
                 unit_price = jnp.where(
                     (sale_price_series >= 0)[:, None],
-                    _price_usd_to_cents(external_values[safe_series, :, month]),
+                    external_money_values[safe_series, :, month],
                     sale_price_fixed_t[:, None],
                 )  # (N, R)
             else:
@@ -1967,11 +1983,11 @@ def _program_impl(
             # same helper the sale itself values with — a second implementation here would report
             # a sleeve worth a cent less than selling it yields.
             ta_valid_series = lot_asset_series_index >= 0
-            if external_values.shape[0] > 0:
-                ta_raw_price = external_values[jnp.where(ta_valid_series, lot_asset_series_index, 0), :, month]
-                ta_lot_price = _price_usd_to_cents(
-                    jnp.nan_to_num(jnp.where(ta_valid_series[:, None], ta_raw_price, 0.0), nan=0.0)
-                )
+            if external_money_values.shape[0] > 0:
+                ta_lot_price = external_money_values[
+                    jnp.where(ta_valid_series, lot_asset_series_index, 0), :, month
+                ]
+                ta_lot_price = jnp.where(ta_valid_series[:, None], ta_lot_price, 0)
             else:
                 ta_lot_price = _zeros_i64((lot_remaining.shape[0], r))
             lot_value_all = _value_cents_from_quanta(lot_remaining, ta_lot_price, lot_quantity_scale[:, None])
@@ -1982,7 +1998,7 @@ def _program_impl(
             # against the balance the month will END at, which is what lets funding happen once.
             hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0).sum(axis=0)  # (R,)
             attempt_policy = jnp.where(matching[:, None] & slot_active, tp.policy_index, attempt_policy)
-            sleeve_prices = _sleeve_prices_cents(ta_sleeve_series[ti], external_values, month)
+            sleeve_prices = _sleeve_prices_cents(ta_sleeve_series[ti], external_money_values, month)
             view = build_actor_view(
                 month=month,
                 slots=ActorSlots(
@@ -2098,11 +2114,11 @@ def _program_impl(
         # never be able to starve an obligation into a false ruin. Fully vectorized `(n_buys, R)` —
         # every rollout buys at its own price with its own cash.
         if asset_buys:
-            if external_values.shape[0] > 0:
+            if external_money_values.shape[0] > 0:
                 buy_safe_series = jnp.where(buy_price_series >= 0, buy_price_series, 0)
                 buy_price = jnp.where(
                     (buy_price_series >= 0)[:, None],
-                    _price_usd_to_cents(external_values[buy_safe_series, :, month]),
+                    external_money_values[buy_safe_series, :, month],
                     buy_price_fixed_t[:, None],
                 )  # (n_buys, R)
             else:
@@ -2266,9 +2282,8 @@ def _program_impl(
         for pei, fpe in enumerate(folded_pe):
             issuer_idx, policy_idx = fpe.issuer_idx, fpe.policy_idx
             ordered = np.asarray(fpe.ordered, dtype=np.int64)
-            mark = pe_ch["marks"][issuer_idx, :, month]
-            mark_cents = _price_usd_to_cents(mark)
-            positive_mark = mark > 0.0
+            mark_cents = pe_ch["mark_currency_quanta"][issuer_idx, :, month]
+            positive_mark = mark_cents > 0
             tender_active = pe_ch["sale_opp"][issuer_idx, :, month] & active
             public_active = pe_ch["regime"][issuer_idx, :, month] == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
             liq_blocked = pe_ch["liq_blocked"][issuer_idx, :, month]
@@ -2389,7 +2404,7 @@ def _program_impl(
                 cash,
                 lot_remaining,
                 lot_quantity_scale,
-                external_values,
+                external_money_values,
                 month,
             )
             pe_shortfall = jnp.maximum(0, floor - lnw)  # distinct from the obligation `shortfall` in base_ys
@@ -3024,7 +3039,7 @@ def _distribution_payouts_jit(
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
     active: jnp.ndarray,
-    external_values: jnp.ndarray,
+    external_money_values: jnp.ndarray,
     month: jnp.ndarray,
     row_of_world: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -3042,21 +3057,23 @@ def _distribution_payouts_jit(
 
     # `(slice, R)` units held, from the pool masks against the current lot quantities. A pool's
     # lots share one quantum size, so one divide per slice recovers whole units.
-    quanta_held = lot_mask @ lot_remaining.astype(jnp.float64)
-    units_held = quanta_held / quantity_scale[:, None].astype(jnp.float64)
-    per_unit_usd = external_values[series, :, month]
-    # A non-finite or non-positive per-unit value is a hole in the sampled path, not a zero
-    # payout; it pays nothing rather than propagating a NaN into the cash tensor, and the
-    # scenario-level demand check is what makes a missing series loud instead.
-    per_unit_usd = jnp.where(jnp.isfinite(per_unit_usd) & (per_unit_usd > 0.0), per_unit_usd, 0.0)
-    paid = _round_int64(units_held * per_unit_usd * fraction[:, None] * float(USD_CENTS))
+    quanta_held = lot_mask @ lot_remaining
+    per_unit_money = external_money_values[series, :, month]
+    # The fraction is a non-monetary model parameter; the resulting cash is
+    # rounded once to the scenario currency quantum.
+    paid = _round_int64(
+        quanta_held.astype(jnp.float64)
+        * per_unit_money.astype(jnp.float64)
+        * fraction[:, None]
+        / quantity_scale[:, None].astype(jnp.float64)
+    )
     paid = jnp.where(active[None, :], paid, 0)
     cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
     return cash, _scatter_rows(ordinary_ytd, income_row, paid)
 
 
 def _sleeve_prices_cents(
-    sleeve_series: jnp.ndarray, external_values: jnp.ndarray, month: int | jnp.ndarray
+    sleeve_series: jnp.ndarray, external_money_values: jnp.ndarray, month: int | jnp.ndarray
 ) -> jnp.ndarray:
     """This month's market price per sleeve, `(sleeve, R)`, in cents per unit.
 
@@ -3065,13 +3082,11 @@ def _sleeve_prices_cents(
     A sleeve whose asset has no modeled price series comes back zero: unpriceable, not free.
     """
 
-    if external_values.shape[0] == 0:
+    if external_money_values.shape[0] == 0:
         return jnp.zeros((sleeve_series.shape[0], 1), dtype=jnp.int64)
     valid = sleeve_series >= 0
-    raw = external_values[jnp.where(valid, sleeve_series, 0), :, month]
-    return jnp.where(
-        valid[:, None] & jnp.isfinite(raw) & (raw > 0.0), _price_usd_to_cents(jnp.nan_to_num(raw, nan=0.0)), 0
-    )
+    price = external_money_values[jnp.where(valid, sleeve_series, 0), :, month]
+    return jnp.where(valid[:, None] & (price > 0), price, 0)
 
 
 def _fifo_sell(
@@ -3351,7 +3366,7 @@ def _compute_liquid_net_worth(
     cash: jnp.ndarray,
     lot_remaining: jnp.ndarray,
     lot_quantity_scale: jnp.ndarray,
-    external_values: jnp.ndarray,
+    external_money_values: jnp.ndarray,
     month: int | jnp.ndarray,
 ) -> jnp.ndarray:
     """Owner cash + non-PE lot value at current marks.
@@ -3363,8 +3378,8 @@ def _compute_liquid_net_worth(
     lot_indices = np.asarray(owner_non_pe_lot_indices, dtype=np.int64)
     series_indices = lot_asset_series_index[lot_indices]
     valid = series_indices >= 0
-    prices = external_values[jnp.where(valid, series_indices, 0), :, month]
-    prices = _price_usd_to_cents(jnp.nan_to_num(jnp.where(valid[:, None], prices, 0.0), nan=0.0))
+    prices = external_money_values[jnp.where(valid, series_indices, 0), :, month]
+    prices = jnp.where(valid[:, None], prices, 0)
     lot_value = _value_cents_from_quanta(
         lot_remaining[lot_indices, :], prices, lot_quantity_scale[lot_indices, None]
     ).sum(axis=0)

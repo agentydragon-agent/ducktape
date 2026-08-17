@@ -13,7 +13,7 @@ from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_cents
-from finance.augur.sim.fixed_point import usd_array_to_cents
+from finance.augur.sim.fixed_point import sampled_array_to_currency_quanta
 from finance.augur.sim.scenario import Scenario
 
 
@@ -39,7 +39,7 @@ class PEChannels:
     by field access instead of going through `external_values[series_index]`.
     """
 
-    marks: NDArray[np.float64]
+    mark_currency_quanta: NDArray[np.int64]
     regime_codes: NDArray[np.int64]
     event_kind_codes: NDArray[np.int64]
     sale_opportunity_active: NDArray[np.bool_]
@@ -47,7 +47,7 @@ class PEChannels:
     eligible_fractions: NDArray[np.float64]
     forced_sale_fractions: NDArray[np.float64]
     liquidity_blocked: NDArray[np.bool_]
-    forced_recovery_cashout_cents: NDArray[np.int64]
+    forced_recovery_cashout_currency_quanta: NDArray[np.int64]
 
 
 @dataclass(frozen=True)
@@ -179,7 +179,12 @@ def compile_private_equity_tenders(
 
 
 def compile_pe_channels(
-    issuers: PEIssuerCompileOutput, *, private_equity: PrivateEquityBundle, rollout_count: int, horizon_months: int
+    issuers: PEIssuerCompileOutput,
+    *,
+    private_equity: PrivateEquityBundle,
+    rollout_count: int,
+    horizon_months: int,
+    currency_quantum: object,
 ) -> PEChannels:
     """Materialize per-issuer PE channel arrays from the typed `PrivateEquityBundle`.
 
@@ -191,7 +196,7 @@ def compile_pe_channels(
 
     issuer_count = issuers.codes.shape[0]
     snapshot_months = horizon_months + 1
-    marks = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    mark_currency_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
     regime_codes = np.full((issuer_count, rollout_count, snapshot_months), NO_CODE, dtype=np.int64)
     event_kind_codes = np.full(
         (issuer_count, rollout_count, snapshot_months), int(PrivateEquityEventKindCode.NONE), dtype=np.int64
@@ -201,15 +206,18 @@ def compile_pe_channels(
     eligible_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     forced_sale_fractions = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     liquidity_blocked = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
-    forced_recovery_cashout_cents = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
+    forced_recovery_cashout_currency_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
     for issuer_idx, issuer_code in enumerate(issuers.codes):
         if int(issuer_code) < 0:
             continue
         issuer_id = issuers.issuer_ids[issuer_idx]
         if issuer_id not in private_equity.issuer_ids():
             raise ValueError(f"private-equity bundle missing required issuer {issuer_id!r}")
-        marks[issuer_idx] = private_equity.issuer_float_matrix(
-            issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
+        mark_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(
+            private_equity.issuer_float_matrix(
+                issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
+            ),
+            quantum=currency_quantum,
         )
         regime_codes[issuer_idx] = private_equity.issuer_int_matrix(
             issuer_id, "regime_code", rollout_count=rollout_count, horizon_months=horizon_months
@@ -232,13 +240,14 @@ def compile_pe_channels(
         liquidity_blocked[issuer_idx] = private_equity.issuer_bool_matrix(
             issuer_id, "liquidity_blocked", rollout_count=rollout_count, horizon_months=horizon_months
         )
-        forced_recovery_cashout_cents[issuer_idx] = usd_array_to_cents(
+        forced_recovery_cashout_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(
             private_equity.issuer_float_matrix(
                 issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
-            )
+            ),
+            quantum=currency_quantum,
         )
     return PEChannels(
-        marks=marks,
+        mark_currency_quanta=mark_currency_quanta,
         regime_codes=regime_codes,
         event_kind_codes=event_kind_codes,
         sale_opportunity_active=sale_opportunity_active,
@@ -246,5 +255,5 @@ def compile_pe_channels(
         eligible_fractions=eligible_fractions,
         forced_sale_fractions=forced_sale_fractions,
         liquidity_blocked=liquidity_blocked,
-        forced_recovery_cashout_cents=forced_recovery_cashout_cents,
+        forced_recovery_cashout_currency_quanta=forced_recovery_cashout_currency_quanta,
     )
