@@ -7,6 +7,11 @@
       "sandbox": {
         "mode": "off"
       },
+      "maxConcurrent": 16,
+      "subagents": {
+        "maxConcurrent": 16,
+        "maxChildrenPerAgent": 16
+      },
       "skills": [],
       "verboseDefault": "full",
       "memorySearch": {
