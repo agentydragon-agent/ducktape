@@ -7,7 +7,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.recall_index.content import content_sha
-from haku.recall_index.schema import Content, ContentEmbedding
+from haku.recall_index.schema import SCHEMA, Content, ContentEmbedding
 from haku.recall_index.store import ContentEmbeddingRow, insert_content_embeddings
 
 
@@ -21,7 +21,7 @@ async def test_a_component_too_small_for_half_precision_rounds_to_zero(session: 
     await insert_content_embeddings(session, [_row([1e-9, 0.5, -1e-12])])
     await session.commit()
 
-    stored = await session.scalar(text("SELECT embedding::text FROM state_index.content_embeddings"))
+    stored = await session.scalar(text(f"SELECT embedding::text FROM {SCHEMA}.content_embeddings"))
     assert stored == "[0,0.5,-0]"
 
 

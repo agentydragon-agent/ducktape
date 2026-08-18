@@ -35,13 +35,13 @@ from haku.recall_index.schema import (
 
 # Materializing candidate rows before applying the distance operator is load-bearing: embeddings
 # for different model keys may have different dimensions, and pgvector refuses to compare them.
-_GIT_SEARCH_SQL = text("""
+_GIT_SEARCH_SQL = text(f"""
     WITH candidates AS MATERIALIZED (
         SELECT t.path, t.blob_sha, g.byte_start, g.byte_end, c.content AS text, e.embedding
-        FROM state_index.git_tip t
-        JOIN state_index.git_chunks g ON g.blob_sha = t.blob_sha
-        JOIN state_index.contents c ON c.content_sha = g.content_sha
-        JOIN state_index.content_embeddings e ON e.content_sha = c.content_sha
+        FROM {SCHEMA}.git_tip t
+        JOIN {SCHEMA}.git_chunks g ON g.blob_sha = t.blob_sha
+        JOIN {SCHEMA}.contents c ON c.content_sha = g.content_sha
+        JOIN {SCHEMA}.content_embeddings e ON e.content_sha = c.content_sha
         WHERE g.chunker_key = :chunker_key
           AND e.model_key = :model_key
           AND (CAST(:path_prefix AS text) IS NULL OR starts_with(t.path, CAST(:path_prefix AS text)))
@@ -53,14 +53,14 @@ _GIT_SEARCH_SQL = text("""
     LIMIT :limit
 """)
 
-_CHAT_SEARCH_SQL = text("""
+_CHAT_SEARCH_SQL = text(f"""
     WITH candidates AS MATERIALIZED (
         SELECT w.session_id, w.window_no, w.first_message_at, w.last_message_at,
                c.content AS text, e.embedding
-        FROM state_index.chat_chunks w
-        JOIN state_index.chat_sessions s ON s.session_id = w.session_id
-        JOIN state_index.contents c ON c.content_sha = w.content_sha
-        JOIN state_index.content_embeddings e ON e.content_sha = c.content_sha
+        FROM {SCHEMA}.chat_chunks w
+        JOIN {SCHEMA}.chat_sessions s ON s.session_id = w.session_id
+        JOIN {SCHEMA}.contents c ON c.content_sha = w.content_sha
+        JOIN {SCHEMA}.content_embeddings e ON e.content_sha = c.content_sha
         WHERE s.chunker_key = :chunker_key
           AND s.model_key = :model_key
           AND e.model_key = :model_key
@@ -74,7 +74,7 @@ _CHAT_SEARCH_SQL = text("""
     )
     SELECT ranked.*,
            ARRAY(
-               SELECT m.message_id FROM state_index.chat_chunk_messages m
+               SELECT m.message_id FROM {SCHEMA}.chat_chunk_messages m
                WHERE m.session_id = ranked.session_id AND m.window_no = ranked.window_no
                ORDER BY m.ordinal
            ) AS message_ids
