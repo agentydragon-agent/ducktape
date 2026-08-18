@@ -23,10 +23,10 @@ from numpy.typing import NDArray
 
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 
-USD_QUANTA = 100
 BTC_SATOSHIS = 100_000_000
 ETH_GWEI = 1_000_000_000
 DEFAULT_UNIT_QUANTA = 1_000_000
+MONEY_FACTOR_SCALE = 1_000_000_000
 
 
 def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
@@ -89,18 +89,6 @@ def decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
         raise ValueError(f"currency quantum count {count} does not fit in int64") from exc
 
 
-def currency_quanta_to_decimal(value: int | np.integer[Any], *, quantum: Any) -> Decimal:
-    """Convert an authoritative integer quantum count to an exact display decimal."""
-
-    return Decimal(int(value)) * validate_currency_quantum(quantum)
-
-
-def currency_quanta_to_decimal_string(value: int | np.integer[Any], *, quantum: Any) -> str:
-    """JSON-safe exact display form for an authoritative money count."""
-
-    return format(currency_quanta_to_decimal(value, quantum=quantum), "f")
-
-
 def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
     """Validate and convert a configured amount to integer currency quanta.
 
@@ -123,6 +111,22 @@ def round_currency_amount(value: Any, *, quantum: Any) -> Decimal:
     currency_quantum = validate_currency_quantum(quantum)
     count = (amount / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return count * currency_quantum
+
+
+def ratio_to_money_factor(numerator: int | np.integer[Any], denominator: int | np.integer[Any]) -> np.int64:
+    """Compile one exact integer ratio to the simulator's dimensionless factor scale."""
+
+    numerator_int = int(numerator)
+    denominator_int = int(denominator)
+    if denominator_int <= 0:
+        raise ValueError("money factor denominator must be positive")
+    factor = (Decimal(numerator_int) * MONEY_FACTOR_SCALE / Decimal(denominator_int)).quantize(
+        Decimal(1), rounding=ROUND_HALF_UP
+    )
+    try:
+        return np.int64(int(factor))
+    except OverflowError as exc:
+        raise ValueError(f"money factor {factor} does not fit in int64") from exc
 
 
 def sampled_decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
@@ -159,27 +163,6 @@ def sampled_array_to_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
 
 def _decimal(value: Any) -> Decimal:
     return Decimal(str(value))
-
-
-def usd_to_quanta(value: Any) -> np.int64:
-    cents = (_decimal(value) * USD_QUANTA).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-    return np.int64(cents)
-
-
-def quanta_to_usd(value: Any) -> float:
-    return float(np.asarray(value, dtype=np.float64) / float(USD_QUANTA))
-
-
-def usd_array_to_quanta(values: Any) -> NDArray[np.int64]:
-    arr = np.asarray(values)
-    out = np.empty(arr.shape, dtype=np.int64)
-    for idx in np.ndindex(arr.shape):
-        out[idx] = usd_to_quanta(arr[idx])
-    return out
-
-
-def quanta_array_to_usd(values: Any) -> NDArray[np.float64]:
-    return np.asarray(values, dtype=np.float64) / float(USD_QUANTA)
 
 
 # Quantity quanta by symbol: the smallest fraction of a unit the ledger tracks. BTC and ETH

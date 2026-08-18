@@ -13,6 +13,7 @@ point still lands on an exact cent figure.
 
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TypedDict
 
 import jax
@@ -20,8 +21,14 @@ import jax.numpy as jnp
 import pytest_bazel
 
 from finance.augur.sim.compiler.tax import bracket_upper_to_quanta
-from finance.augur.sim.engine.jax_engine import _apply_brackets, _apply_ltcg_brackets, _net_capital_gains_jnp
-from finance.augur.sim.fixed_point import usd_to_quanta
+from finance.augur.sim.engine.jax_engine import (
+    _apply_brackets,
+    _apply_ltcg_brackets,
+    _net_capital_gains_jnp,
+    _scale_money,
+    _scale_quanta_by_ratio,
+    _sum_money_with_factors,
+)
 from finance.augur.sim.jurisdictions import TaxBracket, load_jurisdiction
 
 
@@ -42,7 +49,31 @@ def _brackets(schedule: list[TaxBracket]) -> _BracketTable:
 
 
 def _quanta(*usd: float) -> jnp.ndarray:
-    return jnp.asarray([usd_to_quanta(value) for value in usd], dtype=jnp.int64)
+    return jnp.asarray(
+        [int((Decimal(str(value)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)) for value in usd],
+        dtype=jnp.int64,
+    )
+
+
+def test_integer_money_scaling_never_needs_a_float_money_value() -> None:
+    assert _scale_money(jnp.asarray([9_007_199_254_740_993], dtype=jnp.int64), 0.5).tolist() == [4_503_599_627_370_497]
+    # The direct product overflows int64, while the quotient/remainder result fits.
+    assert _scale_quanta_by_ratio(
+        jnp.asarray([4_800_000_000_000_000_000], dtype=jnp.int64),
+        jnp.asarray(2, dtype=jnp.int64),
+        jnp.asarray(3, dtype=jnp.int64),
+    ).tolist() == [3_200_000_000_000_000_000]
+    # Signed exact halves round away from zero (Decimal ROUND_HALF_UP semantics).
+    assert _scale_quanta_by_ratio(
+        jnp.asarray([-1, 1], dtype=jnp.int64), jnp.asarray(1, dtype=jnp.int64), jnp.asarray(2, dtype=jnp.int64)
+    ).tolist() == [-1, 1]
+
+
+def test_scaled_money_sum_rounds_the_non_negative_aggregate_once() -> None:
+    # Each term is 0.4 quantum. Per-term rounding would lose both; aggregate rounding is 1.
+    assert _sum_money_with_factors(
+        jnp.asarray([[1], [1]], dtype=jnp.int64), jnp.asarray([[400_000_000], [400_000_000]], dtype=jnp.int64), axis=0
+    ).tolist() == [1]
 
 
 def test_apply_brackets_hand_computed_federal_single_50k() -> None:

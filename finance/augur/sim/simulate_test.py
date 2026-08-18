@@ -6,7 +6,7 @@ event log, and produces Polars boundary frames for projections and APIs.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import cast
 
 import numpy as np
@@ -32,7 +32,7 @@ from finance.augur.model.series import (
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import quanta_to_usd, round_currency_amount, usd_to_quanta
+from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -67,6 +67,14 @@ from finance.augur.sim.simulate import simulate, simulate_with_external_series
 
 CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
+
+
+def usd_to_quanta(value: object) -> np.int64:
+    return np.int64((Decimal(str(value)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def quanta_to_usd(value: object) -> float:
+    return float(Decimal(int(cast(int, value))) / 100)
 
 
 def _engine_usd(value: float) -> float:

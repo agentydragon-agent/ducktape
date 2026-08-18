@@ -68,7 +68,6 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
             rented_fraction[i] = float(event.rented_fraction)
         elif isinstance(event, CapitalImprovementEvent):
             kind[i] = LifecycleKind.CAPITAL_IMPROVEMENT
-            amount[i] = float(event.amount)
             amount_quanta[i] = currency_amount_to_quanta(event.amount, quantum=scenario.currency.quantum)
         elif isinstance(event, PropertySaleEvent):
             kind[i] = LifecycleKind.SALE

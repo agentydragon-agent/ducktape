@@ -82,6 +82,7 @@ from finance.augur.sim.engine.jax_types import (
     _ScanMeta,
     _Static,
 )
+from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.engine.jax_validation import validate_seed_dependent_inputs
 from finance.augur.sim.enums import (
     CapitalGainClassification,
@@ -120,7 +121,44 @@ def _zeros_i64(shape: tuple[int, ...]) -> jnp.ndarray:
 
 
 def _scale_money(amount_quanta: jnp.ndarray, factor: jnp.ndarray | float) -> jnp.ndarray:
-    return _round_int64(amount_quanta.astype(jnp.float64) * factor)
+    """Apply a dimensionless factor without converting money to floating point."""
+
+    factor_numerator = _round_int64(jnp.asarray(factor, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
+    return _scale_quanta_by_ratio(amount_quanta, factor_numerator, jnp.int64(MONEY_FACTOR_SCALE))
+
+
+def _sum_money_with_factors(amount_quanta: jnp.ndarray, factor_numerator: jnp.ndarray, *, axis: int) -> jnp.ndarray:
+    """Sum non-negative scaled-money terms, then round the aggregate once."""
+
+    amount_quotient = amount_quanta // MONEY_FACTOR_SCALE
+    amount_remainder = amount_quanta % MONEY_FACTOR_SCALE
+    whole = amount_quotient * factor_numerator
+    fractional_product = amount_remainder * factor_numerator
+    term_quotient = whole + fractional_product // MONEY_FACTOR_SCALE
+    term_remainder = fractional_product % MONEY_FACTOR_SCALE
+    quotient_sum = term_quotient.sum(axis=axis)
+    remainder_sum = term_remainder.sum(axis=axis)
+    return (
+        quotient_sum
+        + remainder_sum // MONEY_FACTOR_SCALE
+        + (remainder_sum % MONEY_FACTOR_SCALE >= (MONEY_FACTOR_SCALE + 1) // 2).astype(jnp.int64)
+    )
+
+
+def _sum_scaled_money(amount_quanta: jnp.ndarray, factor: jnp.ndarray, *, axis: int) -> jnp.ndarray:
+    factor_numerator = _round_int64(jnp.asarray(factor, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
+    return _sum_money_with_factors(amount_quanta, factor_numerator, axis=axis)
+
+
+def _scale_money_by_float_ratio(
+    amount_quanta: jnp.ndarray | int, numerator: jnp.ndarray, denominator: jnp.ndarray
+) -> jnp.ndarray:
+    """Apply a sampled non-money level ratio while money remains integer quanta."""
+
+    amount = jnp.asarray(amount_quanta, dtype=jnp.int64)
+    numerator_fixed = _round_int64(jnp.asarray(numerator, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
+    denominator_fixed = _round_int64(jnp.asarray(denominator, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
+    return _scale_quanta_by_ratio(amount, numerator_fixed, denominator_fixed)
 
 
 def _value_quanta_from_quantity(
@@ -153,15 +191,27 @@ def _ceil_quantity_for_quanta(
 
 
 def _scale_quanta_by_ratio(amount_quanta: jnp.ndarray, numerator: jnp.ndarray, denominator: jnp.ndarray) -> jnp.ndarray:
-    """Apply an integer price ratio with nearest-half-up quantum rounding."""
+    """Apply an integer ratio with nearest-half-up rounding and no large money product.
+
+    Quotient/remainder decomposition avoids evaluating ``amount * numerator`` directly.
+    The compiler still owns the normal int64 result-range validation.
+    """
 
     safe_denominator = jnp.where(denominator > 0, denominator, 1)
-    product = amount_quanta * numerator
-    sign = jnp.where(product < 0, -1, 1)
-    absolute = jnp.abs(product)
-    quotient = absolute // safe_denominator
-    remainder = absolute % safe_denominator
-    return sign * (quotient + (2 * remainder >= safe_denominator).astype(jnp.int64))
+    sign = jnp.where((amount_quanta < 0) ^ (numerator < 0), -1, 1)
+    absolute_amount = jnp.abs(amount_quanta)
+    absolute_numerator = jnp.abs(numerator)
+    common_factor = jnp.gcd(absolute_numerator, safe_denominator)
+    reduced_numerator = absolute_numerator // jnp.where(common_factor > 0, common_factor, 1)
+    reduced_denominator = safe_denominator // jnp.where(common_factor > 0, common_factor, 1)
+    amount_quotient = absolute_amount // reduced_denominator
+    amount_remainder = absolute_amount % reduced_denominator
+    whole = amount_quotient * reduced_numerator
+    fractional_product = amount_remainder * reduced_numerator
+    fractional_quotient = fractional_product // reduced_denominator
+    fractional_remainder = fractional_product % reduced_denominator
+    rounded_fraction = fractional_quotient + (fractional_remainder >= (reduced_denominator + 1) // 2).astype(jnp.int64)
+    return sign * (whole + rounded_fraction)
 
 
 class _ScanState(NamedTuple):
@@ -247,7 +297,7 @@ class _TracedConfig(NamedTuple):
     link_ordinary_rate: jnp.ndarray
     link_ltcg_upper: jnp.ndarray
     link_ltcg_rate: jnp.ndarray
-    mid_principal_ratio: jnp.ndarray
+    mid_principal_factor: jnp.ndarray
     transfer_amount_fixed: jnp.ndarray
     transfer_amount_base: jnp.ndarray
     property_cashflow_amount_fixed: jnp.ndarray
@@ -305,7 +355,7 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
         link_ordinary_rate=jnp.asarray(plan.tax.link_ordinary_rate),
         link_ltcg_upper=jnp.asarray(plan.tax.link_ltcg_upper),
         link_ltcg_rate=jnp.asarray(plan.tax.link_ltcg_rate),
-        mid_principal_ratio=jnp.asarray(plan.mid.principal_ratio),
+        mid_principal_factor=jnp.asarray(plan.mid.principal_factor),
         transfer_amount_fixed=jnp.asarray(plan.transfers.amount_fixed),
         transfer_amount_base=jnp.asarray(plan.transfers.amount_base),
         property_cashflow_amount_fixed=jnp.asarray(plan.property_cashflows.amount_fixed),
@@ -1439,11 +1489,11 @@ def _program_impl(
             if structure.has_indexed_bonds:
                 safe = jnp.maximum(product_inputs.bond_cpi_series, 0)
                 base_cpi = external_values[safe, :, product_inputs.bond_index_base_month]
-                indexed_principal = jnp.round(
-                    product_inputs.bond_face[:, None]
-                    * external_values[safe, :, snapshot_month]
-                    / jnp.where(base_cpi > 0, base_cpi, 1.0)
-                ).astype(jnp.int64)
+                indexed_principal = _scale_money_by_float_ratio(
+                    product_inputs.bond_face[:, None],
+                    external_values[safe, :, snapshot_month],
+                    jnp.where(base_cpi > 0, base_cpi, 1.0),
+                )
                 carried = jnp.where((product_inputs.bond_indexed > 0)[:, None], indexed_principal, carried)
             held_face = (product_inputs.bond_on_books[snapshot_month][:, None] * carried).sum(axis=0)
             # Identical across rollouts, but zeroed for failed ones so a failed rollout's net
@@ -1845,13 +1895,13 @@ def _program_impl(
                 0, jnp.minimum(d_hi[:, None, :], s_before + pool_qty) - jnp.maximum(d_lo[:, None, :], s_before)
             )
 
-            # TLH give-back (telescoped): each policy drains tlh proportional to units sold of its lots,
-            # at rate tlh0 / pre_sale_units; the per-sale realization is `sold * rate` on the sold lots.
+            # TLH give-back: allocate each policy's money-quanta ledger directly by the integer
+            # fraction of its pre-sale quantity sold. Money never becomes a per-unit float rate.
             t_policy = sale_policy_mask_t @ lot_remaining  # (policy, R) pre-sale units
-            gb_rate = jnp.where(t_policy > 0, tlh / jnp.where(t_policy > 0, t_policy, 1), 0.0)  # (policy, R)
-            lot_gb_rate_pad = jnp.concatenate(
-                [sale_policy_mask_t.T @ gb_rate, jnp.zeros((1, r), dtype=jnp.float64)], axis=0
-            )  # (L+1, R)
+            lot_gb_total_pad = jnp.concatenate([sale_policy_mask_t.T @ tlh, jnp.zeros((1, r), dtype=jnp.int64)], axis=0)
+            lot_policy_units_pad = jnp.concatenate(
+                [sale_policy_mask_t.T @ t_policy, jnp.ones((1, r), dtype=jnp.int64)], axis=0
+            )
 
             # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
             # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
@@ -1868,11 +1918,13 @@ def _program_impl(
                 sold, unit_price[:, None, :], scale_pad[sale_olots][:, :, None]
             )  # (N, P, R)
             basis = _value_quanta_from_quantity(sold, cost_pad[sale_olots], scale_pad[sale_olots][:, :, None])
-            gains = proceeds - basis + _round_int64(sold * lot_gb_rate_pad[sale_olots])  # incl. give-back
+            give_back = _scale_quanta_by_ratio(lot_gb_total_pad[sale_olots], sold, lot_policy_units_pad[sale_olots])
+            gains = proceeds - basis + give_back
 
             total_sold = _zeros_i64((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
             lot_remaining = lot_remaining - total_sold[:ld]
-            tlh = tlh - _round_int64((sale_policy_mask_t @ total_sold[:ld]) * gb_rate)
+            give_back_by_lot = _zeros_i64((ld + 1, r)).at[sale_olots].add(give_back)
+            tlh = tlh - sale_policy_mask_t @ give_back_by_lot[:ld]
             # The cash comes from whoever bought the lot, which is `rest_of_world`.
             cash = _move_cash(
                 cash,
@@ -2357,10 +2409,8 @@ def _program_impl(
             )
             # Forced recovery: cash out the whole position at the recovery-implied price.
             recovery_active = (forced_recovery > 0) & active & (units_held > 0)
-            recovery_price = _round_int64(
-                forced_recovery.astype(jnp.float64)
-                * issuer_scale.astype(jnp.float64)
-                / jnp.where(units_held > 0, units_held, 1).astype(jnp.float64)
+            recovery_price = _scale_quanta_by_ratio(
+                forced_recovery, issuer_scale, jnp.where(units_held > 0, units_held, 1)
             )
             state = book(
                 jnp.where(recovery_active, units_held, 0),
@@ -2738,7 +2788,7 @@ def _amount_values(
     series_row = external_values[amount_series]  # (rollouts, H+1) — dynamic gather on the traced index
     base_level = series_row[:, amount_base_month]
     reset_level = series_row[:, reset_month]
-    return _round_int64(amount_base * reset_level / base_level)
+    return _scale_money_by_float_ratio(amount_base, reset_level, base_level)
 
 
 def _amount_values_tuple(
@@ -2853,7 +2903,7 @@ def _amount_values_vec(
     rows = jnp.arange(rollout_count)
     base_level = external_values[safe_series[:, None], rows[None, :], amount_base_month[:, None]]
     reset_level = external_values[safe_series[:, None], rows[None, :], reset_month[:, None]]
-    series_amount = _round_int64(amount_base[:, None] * reset_level / base_level)
+    series_amount = _scale_money_by_float_ratio(amount_base[:, None], reset_level, base_level)
     return jnp.where((amount_kind == AMOUNT_FIXED)[:, None], amount_fixed[:, None], series_amount)
 
 
@@ -2994,12 +3044,12 @@ def _bond_cashflows_jit(
     safe_series = jnp.maximum(cpi_series, 0)
     cpi_base = external_values[safe_series, :, index_base_month]
     safe_base = jnp.where(cpi_base > 0, cpi_base, 1.0)
-    principal = jnp.round(face[:, None] * external_values[safe_series, :, month] / safe_base).astype(jnp.int64)
-    principal_prev = jnp.round(
-        face[:, None] * external_values[safe_series, :, jnp.maximum(month - 1, 0)] / safe_base
-    ).astype(jnp.int64)
+    principal = _scale_money_by_float_ratio(face[:, None], external_values[safe_series, :, month], safe_base)
+    principal_prev = _scale_money_by_float_ratio(
+        face[:, None], external_values[safe_series, :, jnp.maximum(month - 1, 0)], safe_base
+    )
 
-    indexed_coupon = jnp.round(period_rate[:, None] * principal).astype(jnp.int64) * pays[:, None]
+    indexed_coupon = _scale_money(principal, period_rate[:, None]) * pays[:, None]
     # Deflation floor: a TIPS redeems at the greater of its indexed principal and par, which
     # is what makes it a floor in exactly the scenarios the floor exists for.
     indexed_redemption = jnp.maximum(principal, face[:, None]) * matures[:, None]
@@ -3055,12 +3105,8 @@ def _distribution_payouts_jit(
     per_unit_money = external_money_values[series, :, month]
     # The fraction is a non-monetary model parameter; the resulting cash is
     # rounded once to the scenario currency quantum.
-    paid = _round_int64(
-        quanta_held.astype(jnp.float64)
-        * per_unit_money.astype(jnp.float64)
-        * fraction[:, None]
-        / quantity_scale[:, None].astype(jnp.float64)
-    )
+    value_quanta = _value_quanta_from_quantity(quanta_held, per_unit_money, quantity_scale[:, None])
+    paid = _scale_money(value_quanta, fraction[:, None])
     paid = jnp.where(active[None, :], paid, 0)
     cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
     return cash, _scatter_rows(ordinary_ytd, income_row, paid)
@@ -3139,15 +3185,13 @@ def _apply_tlh_give_back(
         units_sold = sold_policy.sum(axis=1)  # (R,)
         pre_sale_units = lot_remaining[lot_indices, :].T.sum(axis=1) + units_sold  # (R,)
         cumulative = tlh_cumulative_harvest[policy_idx]  # (R,)
-        fraction_sold = jnp.where(
-            pre_sale_units > 0.0, units_sold / jnp.where(pre_sale_units > 0.0, pre_sale_units, 1.0), 0.0
+        give_back = _scale_quanta_by_ratio(cumulative, units_sold, jnp.where(pre_sale_units > 0, pre_sale_units, 1))
+        per_lot_give_back = _scale_quanta_by_ratio(
+            give_back[:, None], sold_policy, jnp.where(units_sold[:, None] > 0, units_sold[:, None], 1)
         )
-        give_back = _scale_money(cumulative, fraction_sold)  # (R,)
-        per_lot_weight = jnp.where(
-            units_sold[:, None] > 0.0, sold_policy / jnp.where(units_sold[:, None] > 0.0, units_sold[:, None], 1.0), 0.0
-        )
-        gains = gains.at[:, lot_indices].add(_round_int64(per_lot_weight * give_back[:, None]))
-        tlh_cumulative_harvest = tlh_cumulative_harvest.at[policy_idx].set(cumulative - give_back)
+        allocated = per_lot_give_back.sum(axis=1)
+        gains = gains.at[:, lot_indices].add(per_lot_give_back)
+        tlh_cumulative_harvest = tlh_cumulative_harvest.at[policy_idx].set(cumulative - allocated)
     return gains, tlh_cumulative_harvest
 
 
@@ -3461,7 +3505,7 @@ def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarra
     previous_upper = jnp.concatenate([jnp.zeros(1, dtype=upper_edges.dtype), upper_edges[:-1]])
     slice_top = jnp.minimum(amount[:, None], upper_edges[None, :])
     in_bracket = jnp.maximum(slice_top - previous_upper[None, :], 0)
-    return _round_int64((in_bracket * bracket_rates[None, :]).sum(axis=1))
+    return _sum_scaled_money(in_bracket, bracket_rates[None, :], axis=1)
 
 
 def _apply_ltcg_brackets(
@@ -3478,7 +3522,7 @@ def _apply_ltcg_brackets(
     slice_top = jnp.minimum(total_taxable[:, None], upper_edges[None, :])
     slice_bottom = jnp.maximum(ordinary_taxable[:, None], previous_upper[None, :])
     in_bracket = jnp.maximum(slice_top - slice_bottom, 0)
-    return _round_int64((in_bracket * bracket_rates[None, :]).sum(axis=1))
+    return _sum_scaled_money(in_bracket, bracket_rates[None, :], axis=1)
 
 
 def _net_capital_gains_jnp(
@@ -3535,7 +3579,9 @@ def _compute_tax_for_link(
     standard_deduction = tcfg.link_standard_deduction[link]
     if static.mid_active:
         owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
-        mortgage_interest_deduction = _round_int64(tcfg.mid_principal_ratio[link] @ owner_interest_ytd)
+        mortgage_interest_deduction = _sum_money_with_factors(
+            owner_interest_ytd, tcfg.mid_principal_factor[link][:, None], axis=0
+        )
     else:
         mortgage_interest_deduction = _zeros_i64((rollout_count,))
     itemized_deduction = mortgage_interest_deduction + salt_deduction
@@ -3616,8 +3662,8 @@ def _scan_property_sale(
     closing_cost_pct = ev.amount
     # `home_value_series` is a TRACED scalar row index (dynamic gather), not a baked static index.
     series_row = external_values[home_value_series]  # (rollouts, H+1)
-    market_value = _scale_money(
-        jnp.full(rollout_count, ev.purchase_price, dtype=jnp.int64), series_row[:, month] / series_row[:, 0]
+    market_value = _scale_money_by_float_ratio(
+        jnp.full(rollout_count, ev.purchase_price, dtype=jnp.int64), series_row[:, month], series_row[:, 0]
     )
     gross_proceeds = _scale_money(market_value, 1.0 - closing_cost_pct / 100.0)
     capex = property_building_basis[prop] - ev.building_basis_initial

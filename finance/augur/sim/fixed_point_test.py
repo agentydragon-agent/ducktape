@@ -11,31 +11,15 @@ from finance.augur.sim.fixed_point import (
     BTC_SATOSHIS,
     DEFAULT_UNIT_QUANTA,
     ETH_GWEI,
-    currency_quanta_to_decimal,
-    currency_quanta_to_decimal_string,
     decimal_to_quanta,
     quanta_array_to_quantity,
-    quanta_array_to_usd,
     quantity_array_to_quanta,
     quantity_scale_for_asset,
     quantity_to_quanta,
+    ratio_to_money_factor,
     sampled_array_to_quanta,
-    usd_array_to_quanta,
-    usd_to_quanta,
     validate_currency_quantum,
 )
-
-
-def test_usd_to_quanta_uses_half_up_decimal_rounding() -> None:
-    assert usd_to_quanta("687.69") == np.int64(68_769)
-    assert usd_to_quanta("0.005") == np.int64(1)
-    assert usd_to_quanta("-0.005") == np.int64(-1)
-
-
-def test_usd_array_round_trips_for_public_float_surface() -> None:
-    cents = usd_array_to_quanta(np.array([0.01, 1.23, 50_000.0]))
-    np.testing.assert_array_equal(cents, np.array([1, 123, 5_000_000], dtype=np.int64))
-    np.testing.assert_allclose(quanta_array_to_usd(cents), np.array([0.01, 1.23, 50_000.0]))
 
 
 def test_currency_quantum_accepts_exact_inputs_and_rejects_implicit_float_money() -> None:
@@ -52,12 +36,22 @@ def test_currency_quantum_accepts_exact_inputs_and_rejects_implicit_float_money(
         validate_currency_quantum("0")
 
 
-def test_currency_quantum_display_and_model_boundary_quantization_are_exact() -> None:
-    assert currency_quanta_to_decimal(25, quantum="0.05") == Decimal("1.25")
-    assert currency_quanta_to_decimal_string(123, quantum="0.01") == "1.23"
+def test_model_boundary_quantization_is_exact() -> None:
     np.testing.assert_array_equal(
         sampled_array_to_quanta(np.array([0.0049, 0.005, -0.005]), quantum="0.01"), np.array([0, 1, -1], dtype=np.int64)
     )
+
+
+def test_exact_ratio_compiles_to_integer_money_factor() -> None:
+    assert ratio_to_money_factor(1, 3) == np.int64(333_333_333)
+    assert ratio_to_money_factor(2, 3) == np.int64(666_666_667)
+    assert ratio_to_money_factor(1, 2) == np.int64(500_000_000)
+    assert ratio_to_money_factor(-1, 2) == np.int64(-500_000_000)
+
+    with pytest.raises(ValueError, match="denominator must be positive"):
+        ratio_to_money_factor(1, 0)
+    with pytest.raises(ValueError, match="does not fit in int64"):
+        ratio_to_money_factor(np.iinfo(np.int64).max, 1)
 
 
 def test_asset_quantity_scales_include_crypto_quanta() -> None:
