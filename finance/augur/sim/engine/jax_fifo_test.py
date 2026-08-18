@@ -3,7 +3,7 @@
 The e2e tests prove today's SCENARIOS sell the right lots. What they cannot prove is the
 property that lets one function serve every caller: it moves exactly the quanta it was
 handed, and refuses outright when it cannot. Converting a dollar amount into a quantity is
-the policy's job — see `target_allocation._quanta_for_cents` and its tests — because doing
+the policy's job — see `target_allocation._quanta_for_quanta` and its tests — because doing
 it here would be the engine choosing how much to trade.
 """
 
@@ -20,14 +20,14 @@ from finance.augur.sim.engine.jax_engine import _fifo_sell
 _ORDERED = np.asarray([0, 1, 2], dtype=np.int64)
 
 
-def _sell(*, quanta: list[int], target: int, price_cents: int = 100, scale: int = 1, basis_cents: int = 0):
+def _sell(*, quanta: list[int], target: int, price_quanta: int = 100, scale: int = 1, basis_quanta: int = 0):
     lots = len(quanta)
     return _fifo_sell(
         jnp.asarray([quanta], dtype=jnp.int64),
         _ORDERED[:lots],
         jnp.asarray([target], dtype=jnp.int64),
-        jnp.asarray([price_cents], dtype=jnp.int64),
-        jnp.asarray([[basis_cents]] * lots, dtype=jnp.int64),
+        jnp.asarray([price_quanta], dtype=jnp.int64),
+        jnp.asarray([[basis_quanta]] * lots, dtype=jnp.int64),
         jnp.asarray([scale] * lots, dtype=jnp.int64),
     )
 
@@ -54,7 +54,7 @@ def test_proceeds_and_basis_are_valued_on_what_actually_sold() -> None:
     """The cash leg is derived, never decided: quanta actually moved, times this month's price.
     Basis comes off the same quanta, so an immediate resale of a whole lot nets zero gain."""
 
-    sold, proceeds, basis = _sell(quanta=[10, 10], target=15, price_cents=250, basis_cents=100)
+    sold, proceeds, basis = _sell(quanta=[10, 10], target=15, price_quanta=250, basis_quanta=100)
 
     assert sold.tolist() == [[10, 5]]
     assert proceeds.tolist() == [[2_500, 1_250]]
@@ -65,7 +65,7 @@ def test_a_fractional_scale_sells_fractions_of_a_unit() -> None:
     """Quanta, not units — crypto is held in satoshis. At scale 100 a target of 250 quanta is
     2.5 units, and valuing it has to divide by the scale rather than treat quanta as units."""
 
-    sold, proceeds, _basis = _sell(quanta=[400], target=250, price_cents=1_000, scale=100)
+    sold, proceeds, _basis = _sell(quanta=[400], target=250, price_quanta=1_000, scale=100)
 
     assert sold.tolist() == [[250]]
     assert proceeds.tolist() == [[2_500]]

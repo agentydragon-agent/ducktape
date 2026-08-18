@@ -26,7 +26,7 @@ Trajectory selection per (rollout, issuer) is deterministic:
 `trajectory_index = rollout_seed % len(trajectories_for_issuer)`.
 
 The initial mark (sim t=0 valuation) comes from `initial_marks` (typically sourced
-from the portfolio config's `unit_value_usd`), not from the artifact, so the user's
+from the portfolio config's exact `unit_value`, not from the artifact, so the user's
 known-current-mark anchors the rollout. The artifact must still supply modeled
 future trajectories for every issuer; missing issuers fail loudly instead of
 falling back to flat marks.

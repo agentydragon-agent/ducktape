@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.augur.sim.bonds import coupon_amount_cents, coupon_months, is_on_books
+from finance.augur.sim.bonds import coupon_amount_quanta, coupon_months, is_on_books
 from finance.augur.sim.scenario import BondHolding
 
 
@@ -17,8 +19,8 @@ def _bond(**overrides: object) -> BondHolding:
             "agent_id": "alice",
             "account_id": "checking",
             "issuer_jurisdiction_id": "federal_us",
-            "face_value_usd": 100_000.0,
-            "purchase_price_usd": 100_000.0,
+            "face_value": 100000,
+            "purchase_price": 100000,
             "annual_coupon_rate": 0.04,
             "coupon_period_months": 6,
             "purchase_month_index": 0,
@@ -28,7 +30,7 @@ def _bond(**overrides: object) -> BondHolding:
     )
 
 
-_FACE_CENTS = 10_000_000  # $100,000.00
+_FACE_QUANTA = 10_000_000  # $100,000.00
 
 
 def test_coupons_run_from_first_period_to_maturity_inclusive() -> None:
@@ -45,8 +47,8 @@ def test_coupon_schedule_survives_a_purchase_before_the_horizon() -> None:
 
 
 def test_coupon_is_the_periodic_fraction_of_the_annual_rate() -> None:
-    semiannual = coupon_amount_cents(face_cents=_FACE_CENTS, annual_coupon_rate=0.04, coupon_period_months=6)
-    quarterly = coupon_amount_cents(face_cents=_FACE_CENTS, annual_coupon_rate=0.04, coupon_period_months=3)
+    semiannual = coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate=0.04, coupon_period_months=6)
+    quarterly = coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate=0.04, coupon_period_months=3)
 
     assert semiannual == 200_000  # $2,000.00
     assert quarterly == 100_000  # $1,000.00
@@ -57,9 +59,9 @@ def test_coupon_arithmetic_is_exact_at_a_scale_that_breaks_float64() -> None:
     one would land on a neighbouring value. Fractions are integer pairs, so this is exact.
     """
 
-    face_cents = 1_000_000_000_000_000_001  # ~$10 quadrillion, and odd
+    face_quanta = 1_000_000_000_000_000_001  # ~$10 quadrillion, and odd
 
-    assert coupon_amount_cents(face_cents=face_cents, annual_coupon_rate=1.0, coupon_period_months=12) == face_cents
+    assert coupon_amount_quanta(face_quanta=face_quanta, annual_coupon_rate=1.0, coupon_period_months=12) == face_quanta
 
 
 @pytest.mark.parametrize(("coupon_period_months", "periods_per_year"), [(1, 12), (3, 4), (6, 2), (12, 1)])
@@ -75,15 +77,15 @@ def test_a_years_coupons_land_within_rounding_of_the_annual_rate(
     property of money being discrete, not an error to spread away.
     """
 
-    coupon = coupon_amount_cents(
-        face_cents=25_000_000, annual_coupon_rate=0.037, coupon_period_months=coupon_period_months
+    coupon = coupon_amount_quanta(
+        face_quanta=25_000_000, annual_coupon_rate=0.037, coupon_period_months=coupon_period_months
     )
 
     assert abs(coupon * periods_per_year - 925_000) * 2 <= periods_per_year
 
 
 def test_zero_coupon_pays_nothing_until_maturity() -> None:
-    assert coupon_amount_cents(face_cents=_FACE_CENTS, annual_coupon_rate=0.0, coupon_period_months=6) == 0
+    assert coupon_amount_quanta(face_quanta=_FACE_QUANTA, annual_coupon_rate=0.0, coupon_period_months=6) == 0
 
 
 def test_the_bond_is_off_the_books_by_the_end_of_its_maturity_month() -> None:
@@ -104,24 +106,22 @@ def test_non_par_purchase_is_rejected_naming_phase_2() -> None:
     rather than be silently treated as par."""
 
     with pytest.raises(ValidationError, match="phase 2"):
-        _bond(purchase_price_usd=98_500.0)
+        _bond(purchase_price=98500)
 
 
 def test_par_purchase_is_accepted() -> None:
-    assert _bond().purchase_price_usd == 100_000.0
+    assert _bond().purchase_price == Decimal(100_000)
 
 
-def test_par_is_decided_at_cent_precision_not_by_float_equality() -> None:
-    """A price that differs from the face by less than a cent is the same money. The scenario
-    surface speaks in dollars, so a value arriving from JSON as 99999.999999999985 must not be
-    rejected as a discount purchase — a cent is the precision the engine accounts in.
+def test_par_is_decided_by_exact_configured_money() -> None:
+    """Phase 1 accepts only exact par. Currency representability is validated when the
+    holding is compiled into its enclosing scenario; neither boundary silently rounds.
     """
 
-    assert _bond(purchase_price_usd=99_999.999999999985).purchase_price_usd != 100_000.0
-
-    # Still a real boundary, though: one cent off IS off par.
     with pytest.raises(ValidationError, match="phase 2"):
-        _bond(purchase_price_usd=99_999.99)
+        _bond(purchase_price=Decimal("99999.999999999985"))
+    with pytest.raises(ValidationError, match="phase 2"):
+        _bond(purchase_price=Decimal("99999.99"))
 
 
 def test_stub_period_is_rejected() -> None:

@@ -21,7 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from finance.augur.model.series import InflationKey, LevelSeriesKey
-from finance.augur.sim.bonds import MONTHS_PER_YEAR, coupon_amount_cents, coupon_months, is_on_books
+from finance.augur.sim.bonds import MONTHS_PER_YEAR, coupon_amount_quanta, coupon_months, is_on_books
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
@@ -81,13 +81,11 @@ def compile_bonds(
 
     # The one configured-money→quantum conversion for each bond. Everything downstream — coupon,
     # redemption, the balance-sheet face — is integer currency quanta derived from this.
-    face_cents = [
-        int(currency_amount_to_quanta(bond.face_value_usd, quantum=scenario.currency.quantum)) for bond in bonds
-    ]
+    face_quanta = [int(currency_amount_to_quanta(bond.face_value, quantum=scenario.currency.quantum)) for bond in bonds]
 
     for index, bond in enumerate(bonds):
-        amount = coupon_amount_cents(
-            face_cents=face_cents[index],
+        amount = coupon_amount_quanta(
+            face_quanta=face_quanta[index],
             annual_coupon_rate=bond.annual_coupon_rate,
             coupon_period_months=bond.coupon_period_months,
         )
@@ -105,7 +103,7 @@ def compile_bonds(
                 coupon[month, index] = 0 if bond.inflation_indexed else amount
         if 0 <= bond.maturity_month_index < horizon:
             matures[bond.maturity_month_index, index] = 1
-            redemption[bond.maturity_month_index, index] = 0 if bond.inflation_indexed else face_cents[index]
+            redemption[bond.maturity_month_index, index] = 0 if bond.inflation_indexed else face_quanta[index]
         for month in range(horizon + 1):
             on_books[month, index] = is_on_books(
                 month_index=month,
@@ -123,7 +121,7 @@ def compile_bonds(
             ],
             dtype=np.int64,
         ),
-        face=np.asarray(face_cents, dtype=np.int64),
+        face=np.asarray(face_quanta, dtype=np.int64),
         income_row=np.asarray([_income_row(bond, profile_index_by_agent, buckets) for bond in bonds], dtype=np.int64),
         coupon=coupon,
         redemption=redemption,

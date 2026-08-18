@@ -9,6 +9,7 @@ bracket setting.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from itertools import pairwise
 
 import polars as pl
@@ -19,18 +20,18 @@ from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, Initial
 from finance.augur.sim.simulate import simulate
 
 _HORIZON_MONTHS = 13
-_FACE_USD = 1_000_000.0
+_FACE_VALUE = Decimal(1_000_000)
 _ANNUAL_RATE = 0.05
 # Two semiannual coupons land inside the first year: 5% on 1M, half a year each.
-_COUPON_USD = 25_000.0
+_COUPON = Decimal(25_000)
 
 
 def _scenario(*, issuer: str | None, maturity_month_index: int = 120, taxed: bool = True) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=50_000.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=50000),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_bonds=[
             BondHolding(
@@ -38,8 +39,8 @@ def _scenario(*, issuer: str | None, maturity_month_index: int = 120, taxed: boo
                 agent_id="alice",
                 account_id="checking",
                 issuer_jurisdiction_id=issuer,
-                face_value_usd=_FACE_USD,
-                purchase_price_usd=_FACE_USD,
+                face_value=_FACE_VALUE,
+                purchase_price=_FACE_VALUE,
                 annual_coupon_rate=_ANNUAL_RATE,
                 coupon_period_months=6,
                 purchase_month_index=0,
@@ -66,10 +67,8 @@ def _scenario(*, issuer: str | None, maturity_month_index: int = 120, taxed: boo
 def _tax_by_jurisdiction(*, issuer: str | None) -> dict[str, int]:
     run = simulate(_scenario(issuer=issuer), rollout_count=1, locations={})
     return {
-        str(row["jurisdiction_id"]): int(row["amount_currency_quanta"])
-        for row in run.events_log.tax_accruals.group_by("jurisdiction_id")
-        .agg(pl.col("amount_currency_quanta").sum())
-        .to_dicts()
+        str(row["jurisdiction_id"]): int(row["amount_quanta"])
+        for row in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
     }
 
 
@@ -88,7 +87,7 @@ def _alice_cash_by_month(*, issuer: str | None, maturity_month_index: int = 120)
         int(value)
         for value in run.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_currency_quanta")
+        .get_column("balance_quanta")
         .to_list()
     ]
     return {month: after - before for month, (before, after) in enumerate(pairwise(balances))}
@@ -129,13 +128,11 @@ def test_corporate_coupon_is_taxed_by_both() -> None:
 def test_coupon_accrues_as_interest_not_ordinary_income() -> None:
     run = simulate(_scenario(issuer="federal_us"), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11)
-        & (pl.col("agent_id") == "alice")
-        & (pl.col("ordinary_income_currency_quanta") > 0)
+        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
     )
 
     assert december.get_column("income_source").to_list() == ["interest:federal_us"]
-    assert december.get_column("ordinary_income_currency_quanta").to_list() == [2_500_000]
+    assert december.get_column("ordinary_income_quanta").to_list() == [2_500_000]
 
 
 def test_a_bond_paying_into_a_nonexistent_account_is_rejected() -> None:
@@ -172,9 +169,7 @@ def test_redemption_returns_the_face_as_cash_without_being_income() -> None:
     # coupons in SOME row, whichever row that is.
     run = simulate(_scenario(issuer="federal_us", maturity_month_index=maturity), rollout_count=1, locations={})
     income = (
-        run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice")
-        .get_column("ordinary_income_currency_quanta")
-        .to_list()
+        run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").get_column("ordinary_income_quanta").to_list()
     )
 
     assert max(income) == 2_500_000

@@ -39,11 +39,11 @@ _ISSUER = IssuerId("private_holding_a")
 _SCENARIO = ScenarioKey(
     model_id="current_model",
     horizon_months=24,
-    monthly_spend_usd=5_000.0,
+    monthly_spend=5000,
     spend_index="none",
     funding_policy=FundingPolicy(
-        cash_floor_usd=10_000.0,
-        cash_ceiling_usd=50_000.0,
+        cash_floor=10000,
+        cash_ceiling=50000,
         cash_band_index_to_inflation=False,
         sleeve_weights=(
             SleeveWeight(symbol="VOO", weight=1),
@@ -106,10 +106,8 @@ def _private_equity_spread(product: ProductService) -> tuple[int, int]:
             scenario=_SCENARIO, first_seed=0, rollout_count=64, metric="private_equity_value", percentiles=(10.0, 90.0)
         )
     )
-    low, high = response.terminal_metric_percentiles["value"]
-    assert isinstance(low, str)
-    assert isinstance(high, str)
-    return int(high) - int(low), response.failed_count
+    low, high = (int(str(value)) for value in response.terminal_metric_percentiles["value_quanta"])
+    return high - low, response.failed_count
 
 
 async def test_market_implied_ipo_odds_reach_the_terminal_distribution(

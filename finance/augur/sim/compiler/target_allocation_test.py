@@ -35,8 +35,8 @@ def _policy(**overrides: object) -> TargetAllocationPolicy:
             "agent_id": "alice",
             "account_id": "checking",
             "sleeves": [SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
-            "cash_floor_usd": 10_000.0,
-            "cash_ceiling_usd": 50_000.0,
+            "cash_floor": 10_000,
+            "cash_ceiling": 50_000,
             **overrides,
         }
     )
@@ -46,8 +46,8 @@ def _scenario(policies: list[TargetAllocationPolicy]) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=100000),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=0),
         ],
         horizon_months=3,
         tax_profiles=[],
@@ -92,8 +92,8 @@ def test_an_indexed_band_keeps_both_bounds_on_the_same_series() -> None:
     out = _compile(
         [
             _policy(
-                cash_floor_usd=SeriesIndexedAmount(base_amount_usd=10_000.0, series=InflationKey()),
-                cash_ceiling_usd=SeriesIndexedAmount(base_amount_usd=50_000.0, series=InflationKey()),
+                cash_floor=SeriesIndexedAmount(base_amount=10000, series=InflationKey()),
+                cash_ceiling=SeriesIndexedAmount(base_amount=50000, series=InflationKey()),
             )
         ],
         series={InflationKey(): 0},

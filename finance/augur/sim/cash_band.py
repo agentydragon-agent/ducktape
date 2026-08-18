@@ -1,6 +1,6 @@
 """The cash band: how much the actor raises or invests in a month.
 
-Pure math, integer cents, every array carrying the rollout axis — the companion to
+Pure math, integer currency quanta, every array carrying the rollout axis — the companion to
 `allocation.py`, which decides which sleeves the amount comes from or goes to.
 
 ## The rule
@@ -36,13 +36,14 @@ sell, rather than that the sale had not been attempted yet.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import NamedTuple
 
 import jax.numpy as jnp
 
 
 class CashOrder(NamedTuple):
-    """What the band asks for this month, in cents, per rollout.
+    """What the band asks for this month, in currency quanta, per rollout.
 
     At most one side is non-zero: a band with `floor <= ceiling` cannot be crossed in both
     directions at once.
@@ -51,11 +52,11 @@ class CashOrder(NamedTuple):
     this from traced code, and a plain dataclass is not a valid jit output.
     """
 
-    raise_cents: jnp.ndarray
-    invest_cents: jnp.ndarray
+    raise_quanta: jnp.ndarray
+    invest_quanta: jnp.ndarray
 
 
-def validate_band_bounds(*, floor_usd: float, ceiling_usd: float) -> None:
+def validate_band_bounds(*, floor: Decimal | int, ceiling: Decimal | int) -> None:
     """Check the band's shape at COMPILE time, on the configured amounts.
 
     It cannot be checked per-month: the bounds may be CPI-indexed, so their monthly values
@@ -64,11 +65,11 @@ def validate_band_bounds(*, floor_usd: float, ceiling_usd: float) -> None:
     same series, so an ordering that holds at configuration holds on every path.
     """
 
-    if floor_usd < 0:
-        raise ValueError(f"cash band floor must not be negative; got {floor_usd=}")
-    if floor_usd > ceiling_usd:
+    if floor < 0:
+        raise ValueError(f"cash band floor must not be negative; got {floor=}")
+    if floor > ceiling:
         raise ValueError(
-            f"cash band floor must not exceed its ceiling; got {floor_usd=}, {ceiling_usd=}. "
+            f"cash band floor must not exceed its ceiling; got {floor=}, {ceiling=}. "
             "An inverted band has no interior, so every balance crosses both bounds and the "
             "policy would sell and buy in the same month, forever."
         )
@@ -76,14 +77,14 @@ def validate_band_bounds(*, floor_usd: float, ceiling_usd: float) -> None:
 
 def cash_order(
     *,
-    cash_cents: jnp.ndarray,
-    scheduled_outflow_cents: jnp.ndarray,
-    floor_cents: jnp.ndarray,
-    ceiling_cents: jnp.ndarray,
+    cash_quanta: jnp.ndarray,
+    scheduled_outflow_quanta: jnp.ndarray,
+    floor_quanta: jnp.ndarray,
+    ceiling_quanta: jnp.ndarray,
 ) -> CashOrder:
     """Size this month's raise or investment from the projected end-of-month balance.
 
-    All arguments are `(rollout,)`. `scheduled_outflow_cents` is what the month is already
+    All arguments are `(rollout,)`. `scheduled_outflow_quanta` is what the month is already
     committed to paying, so the decision is made against where cash will actually land
     rather than where it happens to sit before the bills.
 
@@ -91,14 +92,14 @@ def cash_order(
     never values — `validate_band_bounds` owns that, at config time.
     """
 
-    if not (cash_cents.shape == scheduled_outflow_cents.shape == floor_cents.shape == ceiling_cents.shape):
+    if not (cash_quanta.shape == scheduled_outflow_quanta.shape == floor_quanta.shape == ceiling_quanta.shape):
         raise ValueError(
             "cash_order arguments must share one (rollout,) shape; got "
-            f"{cash_cents.shape=}, {scheduled_outflow_cents.shape=}, {floor_cents.shape=}, {ceiling_cents.shape=}"
+            f"{cash_quanta.shape=}, {scheduled_outflow_quanta.shape=}, {floor_quanta.shape=}, {ceiling_quanta.shape=}"
         )
 
-    projected = cash_cents - scheduled_outflow_cents
+    projected = cash_quanta - scheduled_outflow_quanta
     return CashOrder(
-        raise_cents=jnp.where(projected < floor_cents, ceiling_cents - projected, 0).astype(jnp.int64),
-        invest_cents=jnp.where(projected > ceiling_cents, projected - floor_cents, 0).astype(jnp.int64),
+        raise_quanta=jnp.where(projected < floor_quanta, ceiling_quanta - projected, 0).astype(jnp.int64),
+        invest_quanta=jnp.where(projected > ceiling_quanta, projected - floor_quanta, 0).astype(jnp.int64),
     )

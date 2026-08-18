@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
@@ -123,15 +124,15 @@ class AccountSlots:
         return resolved
 
 
-def amount_arrays_currency_quanta(
+def amount_arrays_quanta(
     amount: Any, series_index_by_id: dict[LevelSeriesKey, int], *, currency_quantum: object
 ) -> tuple[int, np.int64, np.int64, int, int, int]:
-    if isinstance(amount, int | float):
+    if isinstance(amount, Decimal):
         return AMOUNT_FIXED, currency_amount_to_quanta(amount, quantum=currency_quantum), np.int64(0), NO_CODE, 0, 1
     if isinstance(amount, FixedAmount):
         return (
             AMOUNT_FIXED,
-            currency_amount_to_quanta(amount.amount_usd, quantum=currency_quantum),
+            currency_amount_to_quanta(amount.amount, quantum=currency_quantum),
             np.int64(0),
             NO_CODE,
             0,
@@ -141,7 +142,7 @@ def amount_arrays_currency_quanta(
         return (
             AMOUNT_SERIES_INDEXED,
             np.int64(0),
-            currency_amount_to_quanta(amount.base_amount_usd, quantum=currency_quantum),
+            currency_amount_to_quanta(amount.base_amount, quantum=currency_quantum),
             series_index_by_id[amount.series],
             int(amount.base_month_index),
             int(amount.adjustment_period_months),

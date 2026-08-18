@@ -14,7 +14,7 @@ def test_compiler_uses_the_scenario_currency_quantum_for_static_money() -> None:
     scenario = Scenario(
         currency=Currency(code="CHF", quantum=Decimal("0.05")),
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1.25)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance="1.25")],
         tax_profiles=[],
         horizon_months=1,
     )

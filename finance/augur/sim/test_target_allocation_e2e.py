@@ -9,6 +9,8 @@ Prices are pinned rather than sampled, so every number below is exact.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import polars as pl
 import pytest
@@ -35,20 +37,20 @@ from finance.augur.sim.simulate import simulate
 _HORIZON = 4
 _STOCK = SecurityKey(symbol=SecuritySymbol("vti"))
 _BOND = SecurityKey(symbol=SecuritySymbol("bnd"))
-_PRICE = 100.0
+_PRICE = Decimal(100)
 # Flat, so a sale's proceeds are exactly units x price and nothing drifts month to month.
-_PATH = [_PRICE] * (_HORIZON + 1)
+_PATH = [float(_PRICE)] * (_HORIZON + 1)
 
 
 def _scenario(
     *,
-    opening_cash: float,
-    floor: float,
-    ceiling: float,
+    opening_cash: Decimal | int,
+    floor: Decimal | int,
+    ceiling: Decimal | int,
     stock_units: float = 900.0,
     bond_units: float = 100.0,
-    rent: float = 0.0,
-    income: float = 0.0,
+    rent: Decimal | int = 0,
+    income: Decimal | int = 0,
     purchase_slots: int = 0,
     rebalance_tolerance: float | None = None,
     weights: tuple[int, int] = (1, 1),
@@ -56,9 +58,9 @@ def _scenario(
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=opening_cash),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=opening_cash),
             # Funded only when it owes something, so an unfunded payer can never fail a rollout.
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=income * (_HORIZON + 1)),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=income * (_HORIZON + 1)),
         ],
         initial_lots=[
             InitialLot(
@@ -67,7 +69,7 @@ def _scenario(
                 account_id="checking",
                 asset=_STOCK,
                 quantity=stock_units,
-                cost_basis_per_unit_usd=_PRICE,
+                cost_basis_per_unit=_PRICE,
                 purchase_month_index=0,
             ),
             InitialLot(
@@ -76,7 +78,7 @@ def _scenario(
                 account_id="checking",
                 asset=_BOND,
                 quantity=bond_units,
-                cost_basis_per_unit_usd=_PRICE,
+                cost_basis_per_unit=_PRICE,
                 purchase_month_index=0,
             ),
         ],
@@ -91,7 +93,7 @@ def _scenario(
                         from_account_id="checking",
                         to_agent_id="landlord",
                         to_account_id="checking",
-                        amount_due_usd=FixedAmount(amount_usd=rent),
+                        amount_due=FixedAmount(amount=rent),
                     )
                 ]
                 if rent
@@ -110,7 +112,7 @@ def _scenario(
                         from_account_id="checking",
                         to_agent_id="alice",
                         to_account_id="checking",
-                        amount_due_usd=FixedAmount(amount_usd=income),
+                        amount_due=FixedAmount(amount=income),
                     )
                 ]
                 if income
@@ -124,8 +126,8 @@ def _scenario(
                 # Equal weights against a 9:1 holding, so the stock sleeve is the overweight one
                 # and every sale must come out of it first.
                 sleeves=[SleeveTarget(asset=_STOCK, weight=weights[0]), SleeveTarget(asset=_BOND, weight=weights[1])],
-                cash_floor_usd=floor,
-                cash_ceiling_usd=ceiling,
+                cash_floor=floor,
+                cash_ceiling=ceiling,
                 purchase_slots_per_sleeve=purchase_slots,
                 rebalance_tolerance=rebalance_tolerance,
             )
@@ -153,7 +155,7 @@ def _cash(scenario: Scenario) -> list[int]:
         int(v)
         for v in run.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_currency_quanta")
+        .get_column("balance_quanta")
         .to_list()
     ]
 
@@ -169,7 +171,7 @@ def test_a_month_inside_the_band_sells_nothing() -> None:
     from target as this scenario gets — and the policy still does nothing while cash sits
     inside the band. Rebalancing rides cashflow only."""
 
-    scenario = _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0)
+    scenario = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000)
 
     assert _lots(scenario, month=_HORIZON) == {"stock": 900.0, "bond": 100.0}
     assert _cash(scenario)[-1] == 5_000_000
@@ -184,7 +186,7 @@ def test_crossing_the_floor_refills_to_the_ceiling() -> None:
     350 units out of the overweight stock sleeve.
     """
 
-    scenario = _scenario(opening_cash=5_000.0, floor=10_000.0, ceiling=40_000.0)
+    scenario = _scenario(opening_cash=5_000, floor=10_000, ceiling=40_000)
 
     assert _cash(scenario)[1] == 4_000_000
     assert _lots(scenario, month=1) == {"stock": 550.0, "bond": 100.0}
@@ -196,7 +198,7 @@ def test_the_raise_comes_out_of_the_overweight_sleeve() -> None:
     where the two sleeves meet. The bond sleeve is untouched here, which is what
     "don't sell the underweight sleeve" means when it is not a slogan."""
 
-    scenario = _scenario(opening_cash=0.0, floor=1_000.0, ceiling=30_000.0)
+    scenario = _scenario(opening_cash=0, floor=1_000, ceiling=30_000)
 
     assert _lots(scenario, month=1) == {"stock": 600.0, "bond": 100.0}
 
@@ -215,7 +217,7 @@ def test_the_band_is_measured_after_the_months_obligations() -> None:
     months, so an inequality would pass against the defect this test exists to catch.
     """
 
-    scenario = _scenario(opening_cash=12_000.0, floor=10_000.0, ceiling=30_000.0, rent=5_000.0)
+    scenario = _scenario(opening_cash=12_000, floor=10_000, ceiling=30_000, rent=5_000)
 
     # Index N is the state ENTERING month N, so month 1's sale shows at index 2.
     assert _lots(scenario, month=1) == {"stock": 900.0, "bond": 100.0}
@@ -230,7 +232,7 @@ def test_a_sale_the_sleeves_cannot_cover_does_not_mint_money() -> None:
     matching debit — and it is the ONLY thing that sees it, since net worth stays correct
     when a lot leaves as its cash arrives."""
 
-    scenario = _scenario(opening_cash=0.0, floor=1_000.0, ceiling=10_000_000.0)
+    scenario = _scenario(opening_cash=0, floor=1_000, ceiling=10_000_000)
     run = _run(scenario)
     state = np.asarray(run.buffers.state.cash_state, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
@@ -249,15 +251,15 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
     and the sleeve's asset, and reconciles against the lots the run actually gave up.
     """
 
-    scenario = _scenario(opening_cash=5_000.0, floor=10_000.0, ceiling=40_000.0)
+    scenario = _scenario(opening_cash=5_000, floor=10_000, ceiling=40_000)
     run = _run(scenario)
     rows = run.events_log.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
 
     assert [str(row["lot_id"]) for row in rows] == ["stock"]
     assert str(rows[0]["asset_id"]) == "security:vti"
     assert float(rows[0]["units_sold"]) == 350.0
-    assert int(rows[0]["proceeds_currency_quanta"]) == 3_500_000
-    assert int(rows[0]["cost_basis_consumed_currency_quanta"]) == 3_500_000
+    assert int(rows[0]["proceeds_quanta"]) == 3_500_000
+    assert int(rows[0]["cost_basis_consumed_quanta"]) == 3_500_000
     # The bond sleeve was never touched, so it must not appear at all — an over-broad decode
     # would emit a zero-unit row for it and the equality above is what refuses that.
 
@@ -273,7 +275,7 @@ def test_configuring_purchase_slots_changes_nothing_until_they_are_filled() -> N
     filling them in months that differ per rollout.
     """
 
-    without = _scenario(opening_cash=5_000.0, floor=10_000.0, ceiling=40_000.0)
+    without = _scenario(opening_cash=5_000, floor=10_000, ceiling=40_000)
     with_slots = without.model_copy(
         update={
             "target_allocation_policies": [
@@ -306,7 +308,7 @@ def test_surplus_above_the_ceiling_is_invested_into_the_underweight_sleeve() -> 
     out of stock, and the deposit goes overwhelmingly the other way.
     """
 
-    scenario = _scenario(opening_cash=100_000.0, floor=10_000.0, ceiling=20_000.0, purchase_slots=1)
+    scenario = _scenario(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1)
     lots = _lots(scenario, month=1)
 
     assert lots["allocation_sale_buy_p0_s0_0"] == 50.0
@@ -324,12 +326,12 @@ def test_a_purchase_records_the_price_its_rollout_paid() -> None:
     whatever its own rollout paid the month it crossed the band. Reading the plan's static column
     would report 0, making the whole proceeds a gain on the eventual sale."""
 
-    run = _run(_scenario(opening_cash=100_000.0, floor=10_000.0, ceiling=20_000.0, purchase_slots=1))
+    run = _run(_scenario(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1))
     bought = run.asset_lots.filter(
         (pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1)
     ).to_dicts()[0]
 
-    assert int(bought["cost_basis_per_unit_currency_quanta"]) == 10_000
+    assert int(bought["cost_basis_per_unit_quanta"]) == 10_000
 
 
 def test_a_purchase_does_not_mint_or_burn_money() -> None:
@@ -337,7 +339,7 @@ def test_a_purchase_does_not_mint_or_burn_money() -> None:
     Net worth would look right either way — a lot arrives as its cash leaves — so a purchase that
     debited nobody would be invisible to every other assertion in this file."""
 
-    scenario = _scenario(opening_cash=100_000.0, floor=10_000.0, ceiling=20_000.0, purchase_slots=1)
+    scenario = _scenario(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1)
     state = np.asarray(_run(scenario).buffers.state.cash_state, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
@@ -354,7 +356,7 @@ def test_successive_purchases_fill_successive_slots() -> None:
     sleeve is still underweight after both deposits.
     """
 
-    scenario = _scenario(opening_cash=0.0, floor=0.0, ceiling=1_000.0, income=30_000.0, purchase_slots=2)
+    scenario = _scenario(opening_cash=0, floor=0, ceiling=1_000, income=30_000, purchase_slots=2)
     lots = (
         _run(scenario)
         .asset_lots.filter(
@@ -378,7 +380,7 @@ def test_running_out_of_purchase_slots_aborts_the_run() -> None:
     nowhere to go.
     """
 
-    scenario = _scenario(opening_cash=0.0, floor=0.0, ceiling=1_000.0, income=30_000.0, purchase_slots=1)
+    scenario = _scenario(opening_cash=0, floor=0, ceiling=1_000, income=30_000, purchase_slots=1)
 
     with pytest.raises(ValueError, match="ran out of purchase slots: 1 configured, 2 needed"):
         _run(scenario)
@@ -395,9 +397,7 @@ def test_a_drifted_portfolio_is_rebalanced_in_a_quiet_month() -> None:
     before settlement and the buy after — so this also pins that they meet in the same month.
     """
 
-    scenario = _scenario(
-        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=0.25
-    )
+    scenario = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25)
     lots = _lots(scenario, month=1)
 
     assert lots["stock"] == 500.0
@@ -415,9 +415,7 @@ def test_a_rebalanced_portfolio_then_sits_still() -> None:
     purchase slot per sleeve is enough here, and why a policy that re-triggered every month
     would exhaust its slots and abort instead of quietly churning."""
 
-    scenario = _scenario(
-        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=0.25
-    )
+    scenario = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25)
     run = _run(scenario)
     trades = run.events_log.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
 
@@ -430,9 +428,9 @@ def test_a_tolerance_wider_than_the_drift_changes_nothing() -> None:
     tolerance leaves it exactly where an unconfigured policy would."""
 
     with_tolerance = _scenario(
-        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=1.0
+        opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=1.0
     )
-    without = _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1)
+    without = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1)
 
     assert _lots(with_tolerance, month=_HORIZON) == _lots(without, month=_HORIZON)
     assert _cash(with_tolerance) == _cash(without)
@@ -443,9 +441,7 @@ def test_a_rebalance_does_not_mint_or_burn_money() -> None:
     which the agent both sells and buys, so it is the first chance for the sell leg's credit and
     the buy leg's debit to disagree."""
 
-    scenario = _scenario(
-        opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, purchase_slots=1, rebalance_tolerance=0.25
-    )
+    scenario = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25)
     state = np.asarray(_run(scenario).buffers.state.cash_state, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
@@ -458,7 +454,7 @@ def test_rebalancing_without_somewhere_to_buy_is_rejected() -> None:
     portfolio a little more each time it fires."""
 
     with pytest.raises(ValueError, match="no purchase slots"):
-        _scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, rebalance_tolerance=0.25)
+        _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, rebalance_tolerance=0.25)
 
 
 def test_sweeping_sleeve_weights_does_not_recompile() -> None:
@@ -473,11 +469,11 @@ def test_sweeping_sleeve_weights_does_not_recompile() -> None:
     Asserted on JAX's own compile cache rather than wall time, which would be flaky.
     """
 
-    _run(_scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, weights=(1, 1)))
+    _run(_scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, weights=(1, 1)))
     warmed = _program_impl._cache_size()
 
     for weights in ((3, 7), (19, 81), (50, 50)):
-        _run(_scenario(opening_cash=50_000.0, floor=10_000.0, ceiling=90_000.0, weights=weights))
+        _run(_scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, weights=weights))
 
     assert _program_impl._cache_size() == warmed, (
         "changing sleeve weights added a compiled variant, so weights are back in the static key"

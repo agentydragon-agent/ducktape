@@ -7,6 +7,8 @@ sales, purchases, property tax, mortgages, year-end tax) with exact expected val
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import polars as pl
 import pytest_bazel
 
@@ -37,7 +39,7 @@ def _cash(run, agent_id: str, month_index: int) -> int:
         run.cash_balances.filter(
             (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_index") == 0)
         )
-        .get_column("balance_currency_quanta")
+        .get_column("balance_quanta")
         .item()
     )
 
@@ -47,9 +49,9 @@ def test_transfers_only_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="bob")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=500.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=100),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=500),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -60,7 +62,7 @@ def test_transfers_only_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=1_000.0,
+                amount=1000,
             )
         ],
         scheduled_transfers=[
@@ -71,7 +73,7 @@ def test_transfers_only_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=250.0,
+                amount=250,
             )
         ],
         tax_profiles=[],
@@ -93,9 +95,9 @@ def test_configured_obligation_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -106,7 +108,7 @@ def test_configured_obligation_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=5_000.0,
+                amount=5000,
             )
         ],
         recurring_obligations=[
@@ -119,7 +121,7 @@ def test_configured_obligation_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=2_000.0,
+                amount_due=2000,
             )
         ],
         tax_profiles=[],
@@ -141,8 +143,8 @@ def test_obligation_failure_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         recurring_obligations=[
             RecurringObligation(
@@ -154,7 +156,7 @@ def test_obligation_failure_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=600.0,
+                amount_due=600,
             )
         ],
         tax_profiles=[],
@@ -174,7 +176,7 @@ def _gain(run, agent_id: str, classification: str, month_index: int) -> int:
         & (pl.col("classification") == classification)
         & (pl.col("month_index") == month_index)
         & (pl.col("rollout_index") == 0)
-    ).get_column("gain_currency_quanta")
+    ).get_column("gain_quanta")
     return int(rows.item()) if len(rows) else 0
 
 
@@ -185,7 +187,7 @@ def test_scheduled_sale_scan() -> None:
     # the scan. Deterministic fixed price keeps the assertion exact across rollouts.
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="alice_sp500",
@@ -194,7 +196,7 @@ def test_scheduled_sale_scan() -> None:
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,  # long-term when sold at month 3
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_asset_sales=[
@@ -205,7 +207,7 @@ def test_scheduled_sale_scan() -> None:
                 source_account_id="brokerage",
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
-                price_per_unit_usd=120.0,
+                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
@@ -229,8 +231,8 @@ def test_cash_property_purchase_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -241,9 +243,9 @@ def test_cash_property_purchase_scan() -> None:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,  # all-cash
-                buyer_closing_cost_usd=10_000.0,
+                purchase_price=500000,
+                down_payment=500000,  # all-cash
+                buyer_closing_cost=10000,
                 rented_fraction=0.0,
             )
         ],
@@ -274,9 +276,9 @@ def test_property_tax_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="county")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="county", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="county", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -287,9 +289,9 @@ def test_property_tax_scan() -> None:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=500000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
             )
         ],
@@ -321,13 +323,13 @@ def test_financed_purchase_scan() -> None:
     # A mortgage-financed home purchase: month 0 originates the loan (down payment moves buyer ->
     # seller, liability principal set), then monthly mortgage-payment obligations (interest/principal
     # split) settle buyer -> lender from month 1. No tax profile, so it routes through the scan.
-    principal = 400_000.0
+    principal = 400_000
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=300000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -338,14 +340,14 @@ def test_financed_purchase_scan() -> None:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=100000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
                 mortgage=MortgageFinancing(
                     liability_id="alice_mortgage",
                     lender_agent_id="lender",
-                    principal_usd=principal,
+                    principal=principal,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),
@@ -371,7 +373,7 @@ def test_financed_purchase_scan() -> None:
 def _federal_tax(run) -> int:
     rows = run.tax_liabilities.filter(
         (pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_index") == 0)
-    ).get_column("amount_owed_currency_quanta")
+    ).get_column("amount_owed_quanta")
     return int(rows.sum())
 
 
@@ -382,9 +384,9 @@ def test_year_end_tax_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -395,7 +397,7 @@ def test_year_end_tax_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=120_000.0 / 12.0,
+                amount=Decimal(120000) / Decimal(12),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -405,7 +407,7 @@ def test_year_end_tax_scan() -> None:
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=15_000.0,  # > 0 -> quarterly estimated-tax obligations next year
+                prior_year_tax=15000,  # > 0 -> quarterly estimated-tax obligations next year
             )
         ],
         horizon_months=36,

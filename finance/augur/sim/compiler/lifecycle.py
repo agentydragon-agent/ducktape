@@ -34,7 +34,7 @@ class LifecycleEventCompileOutput:
     kind: NDArray[np.int64]
     rented_fraction: NDArray[np.float64]
     amount: NDArray[np.float64]
-    amount_cents: NDArray[np.int64]
+    amount_quanta: NDArray[np.int64]
     month_starts: NDArray[np.int64]
 
 
@@ -46,7 +46,7 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
     kind = np.empty(count, dtype=np.int64)
     rented_fraction = np.zeros(count, dtype=np.float64)
     amount = np.zeros(count, dtype=np.float64)
-    amount_cents = np.zeros(count, dtype=np.int64)
+    amount_quanta = np.zeros(count, dtype=np.int64)
     for i, event in enumerate(events_sorted):
         if event.property_id not in property_slot_by_id:
             raise ValueError(
@@ -68,8 +68,8 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
             rented_fraction[i] = float(event.rented_fraction)
         elif isinstance(event, CapitalImprovementEvent):
             kind[i] = LifecycleKind.CAPITAL_IMPROVEMENT
-            amount[i] = float(event.amount_usd)
-            amount_cents[i] = currency_amount_to_quanta(event.amount_usd, quantum=scenario.currency.quantum)
+            amount[i] = float(event.amount)
+            amount_quanta[i] = currency_amount_to_quanta(event.amount, quantum=scenario.currency.quantum)
         elif isinstance(event, PropertySaleEvent):
             kind[i] = LifecycleKind.SALE
             # Reuse `amount` as closing_cost_pct for sale events (different semantic per kind,
@@ -85,6 +85,6 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
         kind=kind,
         rented_fraction=rented_fraction,
         amount=amount,
-        amount_cents=amount_cents,
+        amount_quanta=amount_quanta,
         month_starts=month_starts,
     )

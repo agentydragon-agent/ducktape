@@ -61,7 +61,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         asset=SecurityKey(symbol=SecuritySymbol("efv")),
         purchase_month_index=-12,
         quantity=50.0,
-        cost_basis_per_unit_usd=70.0,
+        cost_basis_per_unit=70,
     )
     # Extend the (all-crypto) base model in place within its asset-price role —
     # add one new crypto symbol, leaving the other roles untouched.

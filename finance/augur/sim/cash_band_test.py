@@ -13,12 +13,12 @@ from finance.augur.sim.cash_band import cash_order, validate_band_bounds
 
 def _order(cash: list[int], outflow: list[int], floor: int, ceiling: int) -> tuple[list[int], list[int]]:
     result = cash_order(
-        cash_cents=jnp.asarray(cash, dtype=jnp.int64),
-        scheduled_outflow_cents=jnp.asarray(outflow, dtype=jnp.int64),
-        floor_cents=jnp.full(len(cash), floor, dtype=jnp.int64),
-        ceiling_cents=jnp.full(len(cash), ceiling, dtype=jnp.int64),
+        cash_quanta=jnp.asarray(cash, dtype=jnp.int64),
+        scheduled_outflow_quanta=jnp.asarray(outflow, dtype=jnp.int64),
+        floor_quanta=jnp.full(len(cash), floor, dtype=jnp.int64),
+        ceiling_quanta=jnp.full(len(cash), ceiling, dtype=jnp.int64),
     )
-    return [int(x) for x in result.raise_cents], [int(x) for x in result.invest_cents]
+    return [int(x) for x in result.raise_quanta], [int(x) for x in result.invest_quanta]
 
 
 def test_inside_the_band_nothing_happens() -> None:
@@ -93,15 +93,15 @@ def test_the_two_sides_are_mutually_exclusive() -> None:
     outflow = rng.integers(0, 200_000, size=256, dtype=np.int64)
 
     order = cash_order(
-        cash_cents=jnp.asarray(cash),
-        scheduled_outflow_cents=jnp.asarray(outflow),
-        floor_cents=jnp.full(256, 25_000, dtype=jnp.int64),
-        ceiling_cents=jnp.full(256, 90_000, dtype=jnp.int64),
+        cash_quanta=jnp.asarray(cash),
+        scheduled_outflow_quanta=jnp.asarray(outflow),
+        floor_quanta=jnp.full(256, 25_000, dtype=jnp.int64),
+        ceiling_quanta=jnp.full(256, 90_000, dtype=jnp.int64),
     )
 
-    assert np.all((order.raise_cents == 0) | (order.invest_cents == 0))
-    assert np.all(order.raise_cents >= 0)
-    assert np.all(order.invest_cents >= 0)
+    assert np.all((order.raise_quanta == 0) | (order.invest_quanta == 0))
+    assert np.all(order.raise_quanta >= 0)
+    assert np.all(order.invest_quanta >= 0)
 
 
 def test_acting_on_the_order_lands_inside_the_band() -> None:
@@ -115,12 +115,12 @@ def test_acting_on_the_order_lands_inside_the_band() -> None:
     ceiling = jnp.full(256, 90_000, dtype=jnp.int64)
 
     order = cash_order(
-        cash_cents=jnp.asarray(cash),
-        scheduled_outflow_cents=jnp.asarray(outflow),
-        floor_cents=floor,
-        ceiling_cents=ceiling,
+        cash_quanta=jnp.asarray(cash),
+        scheduled_outflow_quanta=jnp.asarray(outflow),
+        floor_quanta=floor,
+        ceiling_quanta=ceiling,
     )
-    settled = cash - outflow + order.raise_cents - order.invest_cents
+    settled = cash - outflow + order.raise_quanta - order.invest_quanta
 
     assert np.all(settled >= floor)
     assert np.all(settled <= ceiling)
@@ -132,13 +132,13 @@ def test_per_rollout_bands_are_independent() -> None:
     purchasing power to every other."""
 
     order = cash_order(
-        cash_cents=jnp.asarray([500, 500], dtype=jnp.int64),
-        scheduled_outflow_cents=jnp.asarray([0, 0], dtype=jnp.int64),
-        floor_cents=jnp.asarray([100, 600], dtype=jnp.int64),
-        ceiling_cents=jnp.asarray([1_000, 2_000], dtype=jnp.int64),
+        cash_quanta=jnp.asarray([500, 500], dtype=jnp.int64),
+        scheduled_outflow_quanta=jnp.asarray([0, 0], dtype=jnp.int64),
+        floor_quanta=jnp.asarray([100, 600], dtype=jnp.int64),
+        ceiling_quanta=jnp.asarray([1_000, 2_000], dtype=jnp.int64),
     )
 
-    assert [int(x) for x in order.raise_cents] == [0, 1_500]
+    assert [int(x) for x in order.raise_quanta] == [0, 1_500]
 
 
 def test_the_band_traces_under_jit() -> None:
@@ -148,7 +148,7 @@ def test_the_band_traces_under_jit() -> None:
 
     sized = jax.jit(
         lambda cash, outflow, floor, ceiling: cash_order(
-            cash_cents=cash, scheduled_outflow_cents=outflow, floor_cents=floor, ceiling_cents=ceiling
+            cash_quanta=cash, scheduled_outflow_quanta=outflow, floor_quanta=floor, ceiling_quanta=ceiling
         )
     )(
         jnp.asarray([50], dtype=jnp.int64),
@@ -157,7 +157,7 @@ def test_the_band_traces_under_jit() -> None:
         jnp.asarray([1_000], dtype=jnp.int64),
     )
 
-    assert [int(x) for x in sized.raise_cents] == [950]
+    assert [int(x) for x in sized.raise_quanta] == [950]
 
 
 def test_an_inverted_band_is_rejected_at_config_time() -> None:
@@ -171,10 +171,10 @@ def test_an_inverted_band_is_rejected_at_config_time() -> None:
     """
 
     with pytest.raises(ValueError, match="floor must not exceed"):
-        validate_band_bounds(floor_usd=1_000.0, ceiling_usd=100.0)
+        validate_band_bounds(floor=1_000, ceiling=100)
     with pytest.raises(ValueError, match="must not be negative"):
-        validate_band_bounds(floor_usd=-1.0, ceiling_usd=100.0)
-    validate_band_bounds(floor_usd=100.0, ceiling_usd=1_000.0)
+        validate_band_bounds(floor=-1, ceiling=100)
+    validate_band_bounds(floor=100, ceiling=1_000)
 
 
 if __name__ == "__main__":

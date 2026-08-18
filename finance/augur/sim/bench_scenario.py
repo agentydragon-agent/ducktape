@@ -24,10 +24,13 @@ defaults above; tune via keyword args.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
+from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
@@ -45,21 +48,21 @@ from finance.augur.sim.scenario import (
 def build_bench_scenario(
     *,
     horizon_months: int = 60,
-    annual_wages_usd: float = 200_000.0,
-    monthly_spend_usd: float = 5_000.0,
-    floor_usd: float = 5_000.0,
-    initial_cash_usd: float = 20_000.0,
-    prior_year_tax_usd: float = 40_000.0,
+    annual_wages: Decimal | int = 200_000,
+    monthly_spend: Decimal | int = 5_000,
+    cash_floor: Decimal | int = 5_000,
+    initial_cash: Decimal | int = 20_000,
+    prior_year_tax: Decimal | int = 40_000,
 ) -> Scenario:
     """The benchable scenario, parameterized for sensitivity
     studies. Defaults reflect the spike-1 spec deliverable."""
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="landlord"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=initial_cash_usd),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=initial_cash),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -68,7 +71,7 @@ def build_bench_scenario(
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-36,
                 quantity=300.0,
-                cost_basis_per_unit_usd=180.0,
+                cost_basis_per_unit=180,
             ),
             InitialLot(
                 lot_id="alice_qqq",
@@ -76,7 +79,7 @@ def build_bench_scenario(
                 asset=SecurityKey(symbol=SecuritySymbol("qqq")),
                 purchase_month_index=-24,
                 quantity=120.0,
-                cost_basis_per_unit_usd=300.0,
+                cost_basis_per_unit=300,
             ),
             InitialLot(
                 lot_id="alice_btc",
@@ -84,7 +87,7 @@ def build_bench_scenario(
                 asset=SecurityKey(symbol=SecuritySymbol("btc")),
                 purchase_month_index=-18,
                 quantity=2.0,
-                cost_basis_per_unit_usd=25_000.0,
+                cost_basis_per_unit=25_000,
             ),
         ],
         recurring_transfers=[
@@ -95,7 +98,7 @@ def build_bench_scenario(
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=annual_wages_usd / 12.0,
+                amount=round_currency_amount(Decimal(annual_wages) / 12, quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             ),
             RecurringTransfer(
@@ -105,7 +108,7 @@ def build_bench_scenario(
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_usd=monthly_spend_usd,
+                amount=monthly_spend,
             ),
         ],
         external_series=SeriesModelBundle.independent(
@@ -129,7 +132,7 @@ def build_bench_scenario(
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=prior_year_tax_usd,
+                prior_year_tax=prior_year_tax,
             )
         ],
         target_allocation_policies=[
@@ -141,8 +144,8 @@ def build_bench_scenario(
                     SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("qqq")), weight=1),
                     SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("btc")), weight=1),
                 ],
-                cash_floor_usd=floor_usd,
-                cash_ceiling_usd=floor_usd,
+                cash_floor=cash_floor,
+                cash_ceiling=cash_floor,
                 cause_id_prefix="alice_floor_sale",
             )
         ],

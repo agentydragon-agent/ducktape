@@ -1,5 +1,5 @@
 import React from "react";
-import { currencyAmountChartNumber, currencyAmountCompare, fmtCurrency } from "./lib/format";
+import { currencyQuantaChartNumber, currencyQuantaCompare, fmtQuanta } from "./lib/format";
 import { FAN_PERCENTILES, scenarioColor } from "./input_helpers";
 import {
   TABLE_NUMERIC_CELL,
@@ -17,17 +17,17 @@ export function TerminalMetricTable({ result, selectedSummary, selectedMetric })
   const percentileRows = FAN_PERCENTILES.map((percentile) => ({
     percentile,
     value: terminalPercentileValue(result, percentile),
-  })).filter((row) => Number.isFinite(currencyAmountChartNumber(row.value, currency.currencyQuantum)));
+  })).filter((row) => Number.isFinite(currencyQuantaChartNumber(row.value, currency.currencyQuantum)));
   if (percentileRows.length === 0) return null;
   // Determine where the SELECTED column slots into the percentile order based on the
   // currently-selected metric's selected value vs. its percentile distribution.
   const selectedValue = selectedSummary ? terminalMetricValue(selectedSummary.terminalMetrics, selectedMetric) : null;
   const anchorValue = selectedValue;
   const showSelectedColumn =
-    selectedSummary != null && Number.isFinite(currencyAmountChartNumber(anchorValue, currency.currencyQuantum));
+    selectedSummary != null && Number.isFinite(currencyQuantaChartNumber(anchorValue, currency.currencyQuantum));
   let selectedColumnIndex = percentileRows.length;
   if (showSelectedColumn) {
-    const insertAt = percentileRows.findIndex(({ value }) => currencyAmountCompare(anchorValue, value) < 0);
+    const insertAt = percentileRows.findIndex(({ value }) => currencyQuantaCompare(anchorValue, value) < 0);
     selectedColumnIndex = insertAt === -1 ? percentileRows.length : insertAt;
   }
   return (
@@ -71,13 +71,13 @@ export function TerminalMetricTable({ result, selectedSummary, selectedMetric })
               {percentileRows.map(({ percentile, value }, index) => (
                 <React.Fragment key={percentile}>
                   {showSelectedColumn && selectedColumnIndex === index && (
-                    <td className={SELECTED_COL_CELL}>{fmtCurrency(selectedValue, currency)}</td>
+                    <td className={SELECTED_COL_CELL}>{fmtQuanta(selectedValue, currency)}</td>
                   )}
-                  <td className={TABLE_NUMERIC_CELL}>{fmtCurrency(value, currency)}</td>
+                  <td className={TABLE_NUMERIC_CELL}>{fmtQuanta(value, currency)}</td>
                 </React.Fragment>
               ))}
               {showSelectedColumn && selectedColumnIndex === percentileRows.length && (
-                <td className={SELECTED_COL_CELL}>{fmtCurrency(selectedValue, currency)}</td>
+                <td className={SELECTED_COL_CELL}>{fmtQuanta(selectedValue, currency)}</td>
               )}
             </tr>
           </tbody>
@@ -144,18 +144,18 @@ export function TerminalScenarioComparison({ scenarios, resultsById, metric, act
                   data-active={column.isActive ? "" : undefined}
                 >
                   <div className="font-semibold">
-                    {fmtCurrency(terminalPercentileValue(column.result, 50), {
+                    {fmtQuanta(terminalPercentileValue(column.result, 50), {
                       currencyCode: column.result?.currencyCode,
                       currencyQuantum: column.result?.currencyQuantum,
                     })}
                   </div>
                   <div className="text-[11px] augur-muted">
-                    {fmtCurrency(terminalPercentileValue(column.result, 5), {
+                    {fmtQuanta(terminalPercentileValue(column.result, 5), {
                       currencyCode: column.result?.currencyCode,
                       currencyQuantum: column.result?.currencyQuantum,
                     })}{" "}
                     -{" "}
-                    {fmtCurrency(terminalPercentileValue(column.result, 95), {
+                    {fmtQuanta(terminalPercentileValue(column.result, 95), {
                       currencyCode: column.result?.currencyCode,
                       currencyQuantum: column.result?.currencyQuantum,
                     })}

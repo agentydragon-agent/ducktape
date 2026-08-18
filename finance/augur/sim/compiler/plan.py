@@ -267,7 +267,7 @@ def compile_simulation(
         account_slot_by_key[key] = len(cash_initial_balance)
         cash_agent_codes.append(strings.require(entry.agent_id))
         cash_account_codes.append(strings.require(entry.account_id))
-        cash_initial_balance.append(currency_amount(entry.balance_usd))
+        cash_initial_balance.append(currency_amount(entry.balance))
 
     # One more cash row than the scenario declares: the rest of the world. Every counterparty
     # the scenario does not model settles here, so no flow is discarded and total cash across
@@ -329,7 +329,7 @@ def compile_simulation(
     property_building_basis = np.array(
         [
             currency_amount(
-                float(p.purchase_price_usd) * (1.0 - float(p.land_value_fraction)) + float(p.buyer_closing_cost_usd)
+                p.purchase_price * (Decimal(1) - Decimal(str(p.land_value_fraction))) + p.buyer_closing_cost
             )
             for p in scenario.scheduled_property_purchases
         ],
@@ -406,7 +406,7 @@ def compile_simulation(
         lot_assets.append(lot.asset)
         lot_purchase_month.append(int(lot.purchase_month_index))
         lot_fifo_rank.append(int(lot.purchase_month_index))
-        lot_cost_basis_per_unit.append(currency_amount(lot.cost_basis_per_unit_usd))
+        lot_cost_basis_per_unit.append(currency_amount(lot.cost_basis_per_unit))
         lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
         lot_quantity_scale.append(scale)
 

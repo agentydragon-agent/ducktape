@@ -1,7 +1,15 @@
 import React, { useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls";
-import { clampInteger, fmtNumber, fmtQuantity, fmtUsd } from "./lib/format";
+import {
+  clampInteger,
+  currencyQuantaAdd,
+  currencyQuantaIsPositive,
+  fmtNumber,
+  fmtQuanta,
+  fmtUsd,
+  fmtQuantity,
+} from "./lib/format";
 import { LIFECYCLE_KINDS, defaultLifecycleEvent, resolveSleeveWeights } from "./input_helpers";
 import { sellableSecurities, isPrivateSecurityPosition } from "./data_helpers";
 
@@ -39,7 +47,7 @@ export function DisclosureArrow({ collapsed, className = "" }) {
 export function propertyLabel(property) {
   const sqft = Number(property.sqft);
   const head = property.address || property.id;
-  const meta = `${fmtUsd(property.priceUsd)}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
+  const meta = `${fmtUsd(property.price)}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
   return `${head} — ${meta}`;
 }
 
@@ -51,7 +59,7 @@ export function PropertyDetails({ property }) {
   const summary = [
     property.neighborhood,
     `${fmtNumber(property.beds)} bd / ${fmtNumber(property.baths)} ba`,
-    Number(property.hoaMonthlyUsd) > 0 ? `HOA ${fmtUsd(property.hoaMonthlyUsd)}/mo` : null,
+    Number(property.hoaMonthly) > 0 ? `HOA ${fmtUsd(property.hoaMonthly)}/mo` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -206,11 +214,11 @@ function LifecycleEventValueField({ event, onChange }) {
     return (
       <NumberField
         label="Amount"
-        value={event.amountUsd}
+        value={event.amount}
         min={0}
         step={1000}
         prefix="$"
-        onChange={(amountUsd) => onChange({ amountUsd })}
+        onChange={(amount) => onChange({ amount })}
       />
     );
   }
@@ -311,7 +319,7 @@ function PortfolioGroupHeaderRow({ label }) {
   );
 }
 
-function PortfolioPositionRow({ position }) {
+function PortfolioPositionRow({ position, currency }) {
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
       <td className="py-1 pl-3">
@@ -321,14 +329,16 @@ function PortfolioPositionRow({ position }) {
         </div>
       </td>
       <td className="py-1 text-right augur-tabular">{fmtQuantity(position.quantity)}</td>
-      <td className="py-1 text-right augur-tabular">{fmtUsd(position.unitValueUsd)}</td>
-      <td className="py-1 text-right augur-tabular">{fmtUsd(position.totalCostBasisUsd)}</td>
-      <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(position.currentValueUsd)}</td>
+      <td className="py-1 text-right augur-tabular">{fmtQuanta(position.unitValueQuanta, currency)}</td>
+      <td className="py-1 text-right augur-tabular">{fmtQuanta(position.totalCostBasisQuanta, currency)}</td>
+      <td className="py-1 text-right font-semibold augur-tabular">
+        {fmtQuanta(position.currentValueQuanta, currency)}
+      </td>
     </tr>
   );
 }
 
-function PortfolioBondRow({ bond }) {
+function PortfolioBondRow({ bond, currency }) {
   const periodsPerYear = 12 / bond.couponPeriodMonths;
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
@@ -344,12 +354,12 @@ function PortfolioBondRow({ bond }) {
       <td className="py-1 text-right augur-tabular augur-muted">{bond.monthsToMaturityAtStart} mo</td>
       {/* Face, not a mark: a held-to-maturity bond is never priced, so this column is what it
           redeems for rather than what it would fetch today. */}
-      <td className="py-1 text-right augur-tabular">{fmtUsd(bond.faceValueUsd)}</td>
+      <td className="py-1 text-right augur-tabular">{fmtQuanta(bond.faceValueQuanta, currency)}</td>
     </tr>
   );
 }
 
-function PortfolioSubtotalRow({ label, valueUsd, dataKey }) {
+function PortfolioSubtotalRow({ label, valueQuanta, dataKey, currency }) {
   return (
     <tr className="border-t border-slate-100 dark:border-slate-800">
       <td colSpan={4} className="py-1 pl-3 text-xs augur-muted">
@@ -359,7 +369,7 @@ function PortfolioSubtotalRow({ label, valueUsd, dataKey }) {
         className="py-1 text-right text-xs font-semibold augur-tabular augur-muted"
         data-product-portfolio-subtotal={dataKey}
       >
-        {fmtUsd(valueUsd)}
+        {fmtQuanta(valueQuanta, currency)}
       </td>
     </tr>
   );
@@ -368,15 +378,16 @@ function PortfolioSubtotalRow({ label, valueUsd, dataKey }) {
 export function ProductPortfolioPanel({ portfolio, error }) {
   const [collapsed, setCollapsed] = useState(true);
   const holdings = portfolio?.holdings ?? [];
+  const currency = { currencyCode: portfolio?.currencyCode, currencyQuantum: portfolio?.currencyQuantum };
   const publicHoldings = holdings.filter((position) => !isPrivateSecurityPosition(position));
   const privateSecurityHoldings = holdings.filter(isPrivateSecurityPosition);
-  const publicHoldingsValueUsd = sumCurrentValueUsd(publicHoldings);
-  const privateSecurityValueUsd = sumCurrentValueUsd(privateSecurityHoldings);
-  const cashUsd = portfolio?.cashUsd ?? 0;
+  const publicHoldingsValueQuanta = sumCurrentValueQuanta(publicHoldings);
+  const privateSecurityValueQuanta = sumCurrentValueQuanta(privateSecurityHoldings);
+  const cashQuanta = portfolio?.cashQuanta ?? "0";
   const bonds = portfolio?.bonds ?? [];
-  const bondFaceUsd = portfolio?.totalBondFaceValueUsd ?? 0;
-  const totalUsd = cashUsd + (portfolio?.totalHoldingsValueUsd ?? 0) + bondFaceUsd;
-  const hasAnything = cashUsd > 0 || holdings.length > 0 || bonds.length > 0;
+  const bondFaceQuanta = portfolio?.totalBondFaceValueQuanta ?? "0";
+  const totalQuanta = currencyQuantaAdd(cashQuanta, portfolio?.totalHoldingsValueQuanta ?? "0", bondFaceQuanta);
+  const hasAnything = currencyQuantaIsPositive(cashQuanta) || holdings.length > 0 || bonds.length > 0;
   return (
     <div className="px-4 py-3">
       <button
@@ -394,7 +405,7 @@ export function ProductPortfolioPanel({ portfolio, error }) {
             className="text-xs font-normal normal-case tracking-normal augur-tabular augur-muted"
             data-product-portfolio-subtotal="total"
           >
-            {fmtUsd(totalUsd)}
+            {fmtQuanta(totalQuanta, currency)}
           </span>
         )}
       </button>
@@ -416,18 +427,19 @@ export function ProductPortfolioPanel({ portfolio, error }) {
             <tr className="border-t border-slate-100 dark:border-slate-800">
               <td className="py-1 font-semibold augur-strong">Cash</td>
               <td colSpan={3} />
-              <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(cashUsd)}</td>
+              <td className="py-1 text-right font-semibold augur-tabular">{fmtQuanta(cashQuanta, currency)}</td>
             </tr>
             {publicHoldings.length > 0 && (
               <>
                 <PortfolioGroupHeaderRow label="Public securities" />
                 {publicHoldings.map((position) => (
-                  <PortfolioPositionRow key={position.positionId} position={position} />
+                  <PortfolioPositionRow key={position.positionId} position={position} currency={currency} />
                 ))}
                 <PortfolioSubtotalRow
                   label="Public subtotal"
-                  valueUsd={publicHoldingsValueUsd}
+                  valueQuanta={publicHoldingsValueQuanta}
                   dataKey="public-securities"
+                  currency={currency}
                 />
               </>
             )}
@@ -435,12 +447,13 @@ export function ProductPortfolioPanel({ portfolio, error }) {
               <>
                 <PortfolioGroupHeaderRow label="Private securities" />
                 {privateSecurityHoldings.map((position) => (
-                  <PortfolioPositionRow key={position.positionId} position={position} />
+                  <PortfolioPositionRow key={position.positionId} position={position} currency={currency} />
                 ))}
                 <PortfolioSubtotalRow
                   label="Private subtotal"
-                  valueUsd={privateSecurityValueUsd}
+                  valueQuanta={privateSecurityValueQuanta}
                   dataKey="private-securities"
+                  currency={currency}
                 />
               </>
             )}
@@ -448,9 +461,14 @@ export function ProductPortfolioPanel({ portfolio, error }) {
               <>
                 <PortfolioGroupHeaderRow label="Bonds (held to maturity)" />
                 {bonds.map((bond) => (
-                  <PortfolioBondRow key={bond.bondId} bond={bond} />
+                  <PortfolioBondRow key={bond.bondId} bond={bond} currency={currency} />
                 ))}
-                <PortfolioSubtotalRow label="Bond face subtotal" valueUsd={bondFaceUsd} dataKey="bonds" />
+                <PortfolioSubtotalRow
+                  label="Bond face subtotal"
+                  valueQuanta={bondFaceQuanta}
+                  dataKey="bonds"
+                  currency={currency}
+                />
               </>
             )}
             {holdings.length === 0 && bonds.length === 0 && (
@@ -467,7 +485,7 @@ export function ProductPortfolioPanel({ portfolio, error }) {
                 <td colSpan={4} className="py-1 font-semibold augur-strong">
                   Total
                 </td>
-                <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(totalUsd)}</td>
+                <td className="py-1 text-right font-semibold augur-tabular">{fmtQuanta(totalQuanta, currency)}</td>
               </tr>
             </tfoot>
           )}
@@ -477,6 +495,6 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   );
 }
 
-function sumCurrentValueUsd(positions) {
-  return positions.reduce((total, position) => total + (position.currentValueUsd ?? 0), 0);
+function sumCurrentValueQuanta(positions) {
+  return currencyQuantaAdd(...positions.map((position) => position.currentValueQuanta ?? "0"));
 }

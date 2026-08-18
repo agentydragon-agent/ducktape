@@ -16,6 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     NonNegativeFloat,
@@ -31,8 +32,12 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
 from finance.augur.sim.cash_band import validate_band_bounds
 from finance.augur.sim.enums import IncomeCategory
-from finance.augur.sim.fixed_point import usd_to_cents, validate_currency_quantum
+from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
+
+type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
+type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
+type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
 
 
 class FilingStatus(StrEnum):
@@ -84,24 +89,24 @@ class InitialAccountBalance(BaseModel):
 
     agent_id: str
     account_id: str
-    balance_usd: float
+    balance: CurrencyAmount
 
 
 class FixedAmount(BaseModel):
     """A scalar dollar amount that does not vary by rollout or month."""
 
     kind: Literal["fixed"] = "fixed"
-    amount_usd: float
+    amount: CurrencyAmount
 
 
 class SeriesIndexedAmount(BaseModel):
     """A dollar amount pegged to a sampled external level series.
 
-    The amount is `base_amount_usd` at `base_month_index`. For a
+    The amount is `base_amount` at `base_month_index`. For a
     payment due in month `m`, the simulator first snaps to the current
     adjustment period and then scales linearly by the model level ratio:
 
-    `base_amount_usd * series[reset_month] / series[base_month_index]`.
+    `base_amount * series[reset_month] / series[base_month_index]`.
 
     With `adjustment_period_months=12`, a rent obligation stays flat for
     the first lease year, resets at month 12, stays flat through month 23,
@@ -114,7 +119,7 @@ class SeriesIndexedAmount(BaseModel):
     """
 
     kind: Literal["series_indexed"] = "series_indexed"
-    base_amount_usd: float
+    base_amount: CurrencyAmount
     series: IndexSeriesKey
     base_month_index: NonNegativeInt = 0
     adjustment_period_months: PositiveInt = 1
@@ -125,7 +130,7 @@ class SeriesIndexedAmount(BaseModel):
 
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
-type AmountSpec = float | AmountSchedule
+type AmountSpec = CurrencyAmount | AmountSchedule
 
 
 class OrdinaryIncome(BaseModel):
@@ -193,7 +198,7 @@ class ScheduledTransfer(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_usd: AmountSpec
+    amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
 
@@ -218,7 +223,7 @@ class RecurringTransfer(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_usd: AmountSpec
+    amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
 
@@ -241,7 +246,7 @@ class ScheduledPropertyCashflow(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_usd: AmountSpec
+    amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
 
@@ -257,7 +262,7 @@ class RecurringPropertyCashflow(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_usd: AmountSpec
+    amount: AmountSpec
     income_category: TransferIncomeCategory | None = None
     deduction_category: TransferDeductionCategory | None = None
 
@@ -306,7 +311,7 @@ class ScheduledObligation(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_due_usd: AmountSpec
+    amount_due: AmountSpec
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
     # When set, ties the obligation to a property; the engine then uses
@@ -331,7 +336,7 @@ class RecurringObligation(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_due_usd: AmountSpec
+    amount_due: AmountSpec
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
     # When set, ties the obligation to a property; the engine uses
@@ -356,7 +361,7 @@ class BondHolding(BaseModel):
     has to remember.
 
     Phase 1 is par-only. The engine has no discount curve, so a bond bought at a discount
-    or premium cannot be valued or amortized — `purchase_price_usd` is required, and
+    or premium cannot be valued or amortized — `purchase_price` is required, and
     required to equal the face, so that a real holding bought at 98.5 raises instead of
     being silently treated as par.
     """
@@ -374,8 +379,8 @@ class BondHolding(BaseModel):
     # coupon is a relation between this issuer and that holder's jurisdictions, never a
     # property of the bond: "in-state" is holder-relative.
     issuer_jurisdiction_id: str | None = None
-    face_value_usd: PositiveFloat
-    purchase_price_usd: PositiveFloat
+    face_value: PositiveCurrencyAmount
+    purchase_price: PositiveCurrencyAmount
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: PositiveInt = 6
     # TIPS. A flag rather than a separate model because the terms are identical — face,
@@ -395,14 +400,12 @@ class BondHolding(BaseModel):
 
     @model_validator(mode="after")
     def _reject_non_par_purchase(self) -> BondHolding:
-        # Compared in cents, not as floats: the scenario surface speaks in dollars, and two
-        # amounts that are the same money can differ in binary floating point (a price that
-        # round-trips through JSON as 99999.99999999999 is par). A cent is the precision the
-        # rest of the engine accounts in, so it is the precision "at par" should mean.
-        if usd_to_cents(self.purchase_price_usd) != usd_to_cents(self.face_value_usd):
+        # Configured money is parsed as exact Decimal values, so par is an exact equality.
+        # Currency representability is validated later against the enclosing scenario's quantum.
+        if self.purchase_price != self.face_value:
             raise ValueError(
                 f"bond {self.bond_id!r} was bought away from par "
-                f"({self.purchase_price_usd=} vs {self.face_value_usd=}). Phase 1 supports par "
+                f"({self.purchase_price=} vs {self.face_value=}). Phase 1 supports par "
                 "purchases held to maturity only: valuing a discount or premium requires the "
                 "purchase yield, which is a discount factor, and phase 1 has no discount curve. "
                 "Pricing bonds away from par is phase 2."
@@ -516,7 +519,7 @@ class InitialLot(BaseModel):
     asset: AssetKey
     purchase_month_index: int
     quantity: float
-    cost_basis_per_unit_usd: float
+    cost_basis_per_unit: CurrencyAmount
 
 
 class ScheduledAssetSale(BaseModel):
@@ -526,7 +529,7 @@ class ScheduledAssetSale(BaseModel):
     Proceeds = `quantity * unit_price` are credited to
     `proceeds_account_id`.
 
-    `price_per_unit_usd` is optional: when supplied the sale uses
+    `price_per_unit` is optional: when supplied the sale uses
     that price uniformly across rollouts (useful for deterministic
     tests). When `None`, the per-rollout per-month price comes from
     the scenario's `SeriesModelBundle` — the canonical case once external
@@ -539,7 +542,7 @@ class ScheduledAssetSale(BaseModel):
     asset: AssetKey
     quantity: float
     proceeds_account_id: str
-    price_per_unit_usd: float | None = None
+    price_per_unit: CurrencyAmount | None = None
 
 
 class ScheduledAssetPurchase(BaseModel):
@@ -567,8 +570,8 @@ class ScheduledAssetPurchase(BaseModel):
     account. Rounding units up instead would debit cash that bought nothing.
 
     Underfunding CLAMPS rather than fails: a month where the account holds less than
-    `amount_usd` buys what the cash covers. That is not a silent loss — the executed
-    amount is on the purchase event, so a caller comparing it against `amount_usd` sees
+    `amount` buys what the cash covers. That is not a silent loss — the executed
+    amount is on the purchase event, so a caller comparing it against `amount` sees
     the shortfall — and it is the same semantics a buying policy needs in step 2, where
     "invest the surplus" is inherently sized by what is there.
     """
@@ -582,9 +585,9 @@ class ScheduledAssetPurchase(BaseModel):
         default="checking", description="Holding account the lot lands in; lots in different accounts are not fungible."
     )
     asset: AssetKey
-    amount_usd: PositiveFloat
+    amount: PositiveCurrencyAmount
     # As on `ScheduledAssetSale`: fixed price for deterministic tests, sampled series when None.
-    price_per_unit_usd: float | None = None
+    price_per_unit: CurrencyAmount | None = None
 
 
 class SleeveTarget(BaseModel):
@@ -603,8 +606,8 @@ class TargetAllocationPolicy(BaseModel):
     """Funding policy for one agent cash account: hold cash in a band, sell toward a target.
 
     Sales move TOWARD a target rather than down an ordered sell list. When
-    the account's projected end-of-month balance falls below `cash_floor_usd`, the policy
-    raises enough to reach `cash_ceiling_usd`, taking from the most overweight sleeve first
+    the account's projected end-of-month balance falls below `cash_floor`, the policy
+    raises enough to reach `cash_ceiling`, taking from the most overweight sleeve first
     so what remains is as close to the target ratios as the raise allows.
 
     The band is (s,S): crossing the floor refills to the ceiling, not back to the floor.
@@ -628,10 +631,10 @@ class TargetAllocationPolicy(BaseModel):
     # Holding accounts the policy may sell from. Empty means the funding account only.
     source_account_ids: tuple[str, ...] = ()
     sleeves: list[SleeveTarget]
-    # `AmountSpec = float | AmountSchedule` — a raw float for a constant band, or a
+    # `AmountSpec = Decimal | AmountSchedule` — an exact decimal for a constant band, or a
     # `SeriesIndexedAmount` (e.g. `series=InflationKey()`) to hold the band in real terms.
-    cash_floor_usd: AmountSpec = 0.0
-    cash_ceiling_usd: AmountSpec
+    cash_floor: AmountSpec = Decimal(0)
+    cash_ceiling: AmountSpec
     cause_id_prefix: str = "allocation_sale"
     rebalance_tolerance: NonNegativeFloat | None = Field(
         default=None,
@@ -676,9 +679,7 @@ class TargetAllocationPolicy(BaseModel):
         # Band ordering is checked on the CONFIGURED amounts because per-month values may be
         # CPI-indexed, hence traced, and a traced value cannot drive a raise. Indexing scales
         # both bounds by the same series, so an ordering that holds here holds on every path.
-        validate_band_bounds(
-            floor_usd=_base_amount_usd(self.cash_floor_usd), ceiling_usd=_base_amount_usd(self.cash_ceiling_usd)
-        )
+        validate_band_bounds(floor=_base_amount(self.cash_floor), ceiling=_base_amount(self.cash_ceiling))
         if self.rebalance_tolerance is not None and self.purchase_slots_per_sleeve == 0:
             raise ValueError(
                 f"target-allocation policy for {self.agent_id}/{self.account_id} sets "
@@ -689,16 +690,16 @@ class TargetAllocationPolicy(BaseModel):
         return self
 
 
-def _base_amount_usd(spec: AmountSpec) -> float:
+def _base_amount(spec: AmountSpec) -> Decimal:
     """The configured base of an amount spec, for compile-time checks that compare two specs."""
 
     match spec:
-        case float() | int():
-            return float(spec)
+        case Decimal():
+            return spec
         case FixedAmount():
-            return spec.amount_usd
+            return spec.amount
         case SeriesIndexedAmount():
-            return spec.base_amount_usd
+            return spec.base_amount
 
 
 class TaxProfile(BaseModel):
@@ -719,8 +720,8 @@ class TaxProfile(BaseModel):
     tax_authority_account_id: str = Field(
         default="checking", description="The matching credit account on the tax authority's side."
     )
-    prior_year_tax_usd: float = Field(
-        default=0.0,
+    prior_year_tax: NonNegativeCurrencyAmount = Field(
+        default=Decimal(0),
         description=(
             "Aggregate safe-harbor target used to size quarterly estimated payments. If "
             "0, no quarterly estimates are emitted and the January true-up pays the full "
@@ -735,7 +736,7 @@ class MortgageFinancing(BaseModel):
     liability_id: str
     lender_agent_id: str
     lender_account_id: str = "checking"
-    principal_usd: float
+    principal: CurrencyAmount
     annual_interest_rate: float
     term_months: PositiveInt
 
@@ -805,7 +806,7 @@ class PropertySaleEvent(BaseModel):
 class CapitalImprovementEvent(BaseModel):
     """Mid-horizon capital improvement (roof, kitchen remodel, HVAC, etc).
 
-    Debits the property owner's cash by `amount_usd` and increases the property's depreciable
+    Debits the property owner's cash by `amount` and increases the property's depreciable
     building basis by the same amount. Future depreciation accrues on the new (higher) basis.
     The new improvement is treated as adding to the existing depreciation track rather than
     starting a separate 27.5-year clock (a simplification — cost-segregation studies in
@@ -815,7 +816,7 @@ class CapitalImprovementEvent(BaseModel):
     kind: Literal["capital_improvement"] = "capital_improvement"
     month: int
     property_id: str
-    amount_usd: float = Field(gt=0.0)
+    amount: PositiveCurrencyAmount
     description: str = ""
 
 
@@ -847,16 +848,16 @@ class ScheduledPropertyPurchase(BaseModel):
     buyer_account_id: str
     seller_agent_id: str
     seller_account_id: str = "checking"
-    purchase_price_usd: float
-    down_payment_usd: float
-    buyer_closing_cost_usd: float = 0.0
+    purchase_price: CurrencyAmount
+    down_payment: CurrencyAmount
+    buyer_closing_cost: NonNegativeCurrencyAmount = Decimal(0)
     mortgage: MortgageFinancing | None = None
     rented_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
     # Tax-assessor split between land (non-depreciable) and building (depreciable, 27.5-year
     # straight-line under §168). Default 0.20 (20% land / 80% building) is a common
     # cost-segregation rule of thumb absent assessor data. The engine accrues monthly
     # depreciation = `building_basis × rented_fraction / (27.5 × 12)` where building_basis =
-    # `purchase_price_usd × (1 - land_value_fraction) + buyer_closing_cost_usd`.
+    # `purchase_price × (1 - land_value_fraction) + buyer_closing_cost`.
     land_value_fraction: float = Field(default=0.20, ge=0.0, le=1.0)
 
 
@@ -883,7 +884,7 @@ class PropertyTaxPolicy(BaseModel):
 class FederalSaltCapEntry(BaseModel):
     """One step of the federal SALT-cap schedule.
 
-    The cap that applies in calendar-year-index `Y` is the `cap_usd` of the
+    The cap that applies in calendar-year-index `Y` is the `cap` of the
     latest entry with `effective_year_index <= Y`. Year-index is 0-based from
     the start of the simulation horizon, so [(0, 40_000.0), (4, 10_000.0)]
     encodes "$40k for years 0..3, then $10k from year 4 onward" — the OBBBA
@@ -891,7 +892,7 @@ class FederalSaltCapEntry(BaseModel):
     """
 
     effective_year_index: int
-    cap_usd: float
+    cap: CurrencyAmount
 
 
 # Default schedule reflects the TCJA + OBBBA federal SALT-cap timeline as
@@ -916,8 +917,8 @@ class FederalSaltCapEntry(BaseModel):
 #     unlimited); express that by passing an empty schedule (no entries =
 #     no cap = uncapped SALT deduction).
 DEFAULT_FEDERAL_SALT_CAP_SCHEDULE: tuple[FederalSaltCapEntry, ...] = (
-    FederalSaltCapEntry(effective_year_index=0, cap_usd=40_000.0),
-    FederalSaltCapEntry(effective_year_index=4, cap_usd=10_000.0),
+    FederalSaltCapEntry(effective_year_index=0, cap=40_000),
+    FederalSaltCapEntry(effective_year_index=4, cap=10_000),
 )
 
 
@@ -1046,8 +1047,8 @@ class MortgageInterestDeductionPolicy(BaseModel):
             "tag improvement-tied HELOCs as `acquisition` if you want them deducted."
         ),
     )
-    per_jurisdiction_principal_cap_usd: dict[str, float] = Field(
-        default_factory=lambda: {"federal_us": 750_000.0, "california": 1_000_000.0},
+    per_jurisdiction_principal_cap: dict[str, CurrencyAmount] = Field(
+        default_factory=lambda: {"federal_us": Decimal(750_000), "california": Decimal(1_000_000)},
         description=(
             "Per-jurisdiction principal cap in USD. Federal post-TCJA caps acquisition "
             "debt at $750k; California's pre-TCJA $1M cap was preserved, so the two "

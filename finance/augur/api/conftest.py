@@ -152,7 +152,7 @@ def minimal_config(tmp_path: Path) -> MinimalConfig:
 def plaid_config() -> PortfolioSourcesConfig:
     """A `PortfolioSourcesConfig` with an enabled Plaid source (one cash account + one SP500 proxy)."""
     return PortfolioSourcesConfig(
-        fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-01", cash_usd=100.0)),
+        fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-01", cash=100)),
         plaid=PlaidPortfolioSourceConfig(
             enabled=True,
             cash=PlaidCashSourceConfig(plaid_account_ids=("checking",)),
@@ -186,7 +186,7 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
             agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
             property_source=PropertySourceConfig(properties_path=properties_path, property_assets=property_assets),
             portfolio_sources=PortfolioSourcesConfig(
-                fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash_usd=12_345))
+                fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=12_345))
             ),
             default_rollout_samples=8,
             max_rollout_samples=128,
@@ -217,8 +217,8 @@ def properties_path(tmp_path: Path) -> Path:
                     "address": "Location A Property",
                     "neighborhood": "Location A",
                     "type": "Fixture",
-                    "price_usd": 900000,
-                    "rent_estimate_usd": 4200,
+                    "price": 900000,
+                    "rent_estimate": 4200,
                     "beds": 3,
                     "baths": 2,
                     "sqft": 1400,
@@ -232,8 +232,8 @@ def properties_path(tmp_path: Path) -> Path:
                     "address": "Location B Property",
                     "neighborhood": "Location B",
                     "type": "Fixture",
-                    "price_usd": 520000,
-                    "rent_estimate_usd": 3100,
+                    "price": 520000,
+                    "rent_estimate": 3100,
                     "beds": 3,
                     "baths": 2,
                     "sqft": 1250,
@@ -261,8 +261,8 @@ def builtin_properties_path(tmp_path: Path) -> Path:
                     "address": "SF Property",
                     "neighborhood": "San Francisco",
                     "type": "Fixture",
-                    "price_usd": 900000,
-                    "rent_estimate_usd": 4200,
+                    "price": 900000,
+                    "rent_estimate": 4200,
                     "beds": 3,
                     "baths": 2,
                     "sqft": 1400,

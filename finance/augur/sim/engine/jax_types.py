@@ -125,7 +125,7 @@ class _FoldedLifecycleEvent:
     property_slot: int
     rented_fraction: float
     amount: float
-    amount_cents: int
+    amount_quanta: int
     owner_cash_slot: int
     purchase_price: int
     building_basis_initial: int

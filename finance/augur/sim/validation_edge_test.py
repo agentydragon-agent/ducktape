@@ -49,7 +49,7 @@ def _external_series_context_for_levels(
 def _pe_validation_scenario(*, horizon_months: int) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="acme_lot",
@@ -58,7 +58,7 @@ def _pe_validation_scenario(*, horizon_months: int) -> Scenario:
                 asset=PrivateEquityAssetKey(issuer_id=IssuerId("acme")),
                 purchase_month_index=-36,
                 quantity=100.0,
-                cost_basis_per_unit_usd=10.0,
+                cost_basis_per_unit=10,
             )
         ],
         tax_profiles=[],
@@ -143,8 +143,8 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -154,7 +154,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=0,
                 quantity=100.0,
-                cost_basis_per_unit_usd=1.0,
+                cost_basis_per_unit=1,
             )
         ],
         harvest_policies=[
@@ -190,7 +190,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
 def test_scheduled_sale_oversell_validation() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="taxable_vti",
@@ -199,7 +199,7 @@ def test_scheduled_sale_oversell_validation() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_asset_sales=[
@@ -210,7 +210,7 @@ def test_scheduled_sale_oversell_validation() -> None:
                 source_account_id="taxable",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=6.0,
-                price_per_unit_usd=100.0,
+                price_per_unit=100,
                 proceeds_account_id="checking",
             )
         ],
@@ -227,8 +227,8 @@ def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -238,7 +238,7 @@ def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -250,7 +250,7 @@ def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             )
         ],
         target_allocation_policies=[
@@ -258,7 +258,7 @@ def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],

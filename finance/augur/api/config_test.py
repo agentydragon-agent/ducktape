@@ -109,13 +109,13 @@ def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: Minima
                             account_id="taxable_brokerage",
                             symbol=SecuritySymbol("VOO"),
                             security_kind="etf",
-                            unit_value_usd=500.0,
+                            unit_value=500,
                             lots=(
                                 HoldingTaxLotConfig(
                                     lot_id="voo_2024_05_12",
                                     holding_period_months_at_start=24,
                                     quantity=100,
-                                    cost_basis_usd=30_000,
+                                    cost_basis=30_000,
                                 ),
                             ),
                         ),
@@ -211,7 +211,7 @@ def test_actor_id_must_be_snake_case() -> None:
 
 def test_snapshot_optional_fields_default_to_zero() -> None:
     snapshot = FinanceSnapshot(as_of_date="2026-05-12")
-    assert snapshot.cash_usd == 0.0
+    assert snapshot.cash == 0.0
 
 
 def test_unknown_field_is_rejected(minimal_config: MinimalConfig) -> None:

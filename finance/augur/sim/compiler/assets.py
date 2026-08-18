@@ -43,7 +43,7 @@ class PurchaseCompileOutput:
     which is why the slot can carry its real `purchase_month` and holding-period
     classification needs no runtime month.
 
-    `amount_cents` is what the purchase asks for; what it actually spends is per-rollout,
+    `amount_quanta` is what the purchase asks for; what it actually spends is per-rollout,
     because whole-quantum rounding and available cash are both path-dependent."""
 
     cause: NDArray[np.int64]
@@ -51,7 +51,7 @@ class PurchaseCompileOutput:
     agent: NDArray[np.int64]
     from_slot: NDArray[np.int64]
     asset: NDArray[np.int64]
-    amount_cents: NDArray[np.int64]
+    amount_quanta: NDArray[np.int64]
     quantity_scale: NDArray[np.int64]
     price_fixed: NDArray[np.int64]
     price_series: NDArray[np.int64]
@@ -78,7 +78,7 @@ def compile_purchases(
     agent = np.zeros(slots, dtype=np.int64)
     from_slot = np.full(slots, NO_CODE, dtype=np.int64)
     asset = np.zeros(slots, dtype=np.int64)
-    amount_cents = np.zeros(slots, dtype=np.int64)
+    amount_quanta = np.zeros(slots, dtype=np.int64)
     quantity_scale = np.ones(slots, dtype=np.int64)
     price_fixed = np.zeros(slots, dtype=np.int64)
     price_series = np.full(slots, NO_CODE, dtype=np.int64)
@@ -91,10 +91,10 @@ def compile_purchases(
             purchase.agent_id, purchase.from_account_id, owner=f"scheduled asset purchase {purchase.cause_id!r}"
         )
         asset[idx] = assets.require(purchase.asset)
-        amount_cents[idx] = currency_amount(purchase.amount_usd)
+        amount_quanta[idx] = currency_amount(purchase.amount)
         quantity_scale[idx] = quantity_scale_for_asset(purchase.asset)
-        if purchase.price_per_unit_usd is not None:
-            price_fixed[idx] = currency_amount(purchase.price_per_unit_usd)
+        if purchase.price_per_unit is not None:
+            price_fixed[idx] = currency_amount(purchase.price_per_unit)
         else:
             price_series[idx] = series_index_by_id[asset_price_key(purchase.asset)]
         lot_slot[idx] = first_lot_slot + idx
@@ -104,7 +104,7 @@ def compile_purchases(
         agent=agent,
         from_slot=from_slot,
         asset=asset,
-        amount_cents=amount_cents,
+        amount_quanta=amount_quanta,
         quantity_scale=quantity_scale,
         price_fixed=price_fixed,
         price_series=price_series,
@@ -145,8 +145,8 @@ def compile_sales(
         quantity[idx] = quantity_to_quanta(sale.quantity, scale=int(quantity_scale[idx]))
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
         proceeds_slot[idx] = account_slot_by_key.resolve(sale.agent_id, sale.proceeds_account_id)
-        if sale.price_per_unit_usd is not None:
-            price_fixed[idx] = currency_amount(sale.price_per_unit_usd)
+        if sale.price_per_unit is not None:
+            price_fixed[idx] = currency_amount(sale.price_per_unit)
         else:
             price_series[idx] = series_index_by_id[asset_price_key(sale.asset)]
     return SaleCompileOutput(

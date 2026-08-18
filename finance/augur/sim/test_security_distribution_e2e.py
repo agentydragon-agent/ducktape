@@ -11,6 +11,7 @@ Treasury against municipal.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from itertools import pairwise
 
 import polars as pl
@@ -37,7 +38,8 @@ _HORIZON = 13
 _SYMBOL = SecuritySymbol("bnd")
 _FUND = {"kind": "security", "symbol": _SYMBOL}
 _UNITS = 10_000.0
-_PRICE_USD = 73.0
+_PRICE = Decimal(73)
+_MODEL_PRICE = float(_PRICE)
 # A round monthly payout per unit, so `units x per_unit` is exact at every split.
 _PER_UNIT_USD = 0.20
 _MONTHLY_PAYOUT_USD = _UNITS * _PER_UNIT_USD
@@ -51,7 +53,7 @@ def _bundle() -> SeriesModelBundle:
     """
 
     return SeriesModelBundle.independent(
-        asset_prices=AssetPriceGroups(security={_SYMBOL: Constant(value=_PRICE_USD)}),
+        asset_prices=AssetPriceGroups(security={_SYMBOL: Constant(value=_MODEL_PRICE)}),
         security_distributions=SecurityDistributionGroups(
             security_distribution={_SYMBOL: Constant(value=_PER_UNIT_USD)}
         ),
@@ -64,8 +66,8 @@ def _scenario(
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=50_000.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=50000),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -75,7 +77,7 @@ def _scenario(
                 asset=_FUND,
                 purchase_month_index=-24,
                 quantity=_UNITS,
-                cost_basis_per_unit_usd=_PRICE_USD,
+                cost_basis_per_unit=_PRICE,
             )
         ],
         security_distributions=[
@@ -124,7 +126,7 @@ def _cash_by_month(*, tax_character: tuple[DistributionTaxSlice, ...], distribut
         int(value)
         for value in run.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("account_id") == "checking"))
         .sort("month_index")
-        .get_column("balance_currency_quanta")
+        .get_column("balance_quanta")
         .to_list()
     ]
     return {month: after - before for month, (before, after) in enumerate(pairwise(balances))}
@@ -133,10 +135,8 @@ def _cash_by_month(*, tax_character: tuple[DistributionTaxSlice, ...], distribut
 def _tax_by_jurisdiction(*, tax_character: tuple[DistributionTaxSlice, ...]) -> dict[str, int]:
     run = simulate(_scenario(tax_character=tax_character), rollout_count=1, locations={})
     return {
-        str(row["jurisdiction_id"]): int(row["amount_currency_quanta"])
-        for row in run.events_log.tax_accruals.group_by("jurisdiction_id")
-        .agg(pl.col("amount_currency_quanta").sum())
-        .to_dicts()
+        str(row["jurisdiction_id"]): int(row["amount_quanta"])
+        for row in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
     }
 
 
@@ -194,16 +194,14 @@ def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
 def test_the_payout_accrues_as_interest_per_issuer_not_as_one_lump() -> None:
     run = simulate(_scenario(tax_character=_AGGREGATE), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11)
-        & (pl.col("agent_id") == "alice")
-        & (pl.col("ordinary_income_currency_quanta") > 0)
+        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
     ).sort("income_source")
 
     assert december.get_column("income_source").to_list() == ["interest:corporate", "interest:federal_us"]
     # Row `m` of the YTD frame is the OPENING snapshot of month `m`, so month 11 has months
     # 0..10 in it — eleven payouts, split 60/40. The slices land in their own rows rather than
     # summing into one, which is what makes the per-jurisdiction exemption computable.
-    assert december.get_column("ordinary_income_currency_quanta").to_list() == [1_320_000, 880_000]
+    assert december.get_column("ordinary_income_quanta").to_list() == [1_320_000, 880_000]
 
 
 def test_a_tax_character_that_does_not_sum_to_one_is_rejected() -> None:
@@ -237,7 +235,7 @@ def test_a_declared_distribution_with_no_sampled_payout_series_is_rejected() -> 
     scenario = _scenario(tax_character=_TREASURY).model_copy(
         update={
             "external_series": SeriesModelBundle.independent(
-                asset_prices=AssetPriceGroups(security={_SYMBOL: Constant(value=_PRICE_USD)})
+                asset_prices=AssetPriceGroups(security={_SYMBOL: Constant(value=_MODEL_PRICE)})
             )
         }
     )

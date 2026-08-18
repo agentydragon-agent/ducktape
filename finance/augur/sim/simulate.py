@@ -118,15 +118,13 @@ def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, t
         transfer_months: tuple[int, ...] = (
             (scheduled_transfer.month,) if 0 <= scheduled_transfer.month < horizon else ()
         )
-        uses.append(
-            (f"scheduled transfer {scheduled_transfer.cause_id!r}", scheduled_transfer.amount_usd, transfer_months)
-        )
+        uses.append((f"scheduled transfer {scheduled_transfer.cause_id!r}", scheduled_transfer.amount, transfer_months))
     for recurring_transfer in scenario.recurring_transfers:
         recurring_transfer_months = tuple(month for month in range(horizon) if recurring_transfer.is_active_at(month))
         uses.append(
             (
                 f"recurring transfer {recurring_transfer.cause_id!r}",
-                recurring_transfer.amount_usd,
+                recurring_transfer.amount,
                 recurring_transfer_months,
             )
         )
@@ -135,20 +133,12 @@ def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, t
             (scheduled_cashflow.month,) if 0 <= scheduled_cashflow.month < horizon else ()
         )
         uses.append(
-            (
-                f"scheduled property cashflow {scheduled_cashflow.cause_id!r}",
-                scheduled_cashflow.amount_usd,
-                cashflow_months,
-            )
+            (f"scheduled property cashflow {scheduled_cashflow.cause_id!r}", scheduled_cashflow.amount, cashflow_months)
         )
     for recurring_cashflow in scenario.recurring_property_cashflows:
         cashflow_months = tuple(month for month in range(horizon) if recurring_cashflow.is_active_at(month))
         uses.append(
-            (
-                f"recurring property cashflow {recurring_cashflow.cause_id!r}",
-                recurring_cashflow.amount_usd,
-                cashflow_months,
-            )
+            (f"recurring property cashflow {recurring_cashflow.cause_id!r}", recurring_cashflow.amount, cashflow_months)
         )
     for scheduled_obligation in scenario.scheduled_obligations:
         obligation_months: tuple[int, ...] = (
@@ -157,7 +147,7 @@ def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, t
         uses.append(
             (
                 f"scheduled obligation {scheduled_obligation.obligation_id!r}",
-                scheduled_obligation.amount_due_usd,
+                scheduled_obligation.amount_due,
                 obligation_months,
             )
         )
@@ -168,7 +158,7 @@ def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, t
         uses.append(
             (
                 f"recurring obligation {recurring_obligation.obligation_id!r}",
-                recurring_obligation.amount_due_usd,
+                recurring_obligation.amount_due,
                 recurring_obligation_months,
             )
         )

@@ -38,7 +38,7 @@ def decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers)
             "month_index": months,
             "agent_id": codes_to_strings(plan, plan.tax.profile_agent)[profiles],
             "income_source": np.asarray(plan.tax.buckets.source_wire_ids())[sources],
-            "ordinary_income_currency_quanta": currency_quanta_column(state.reshape(-1)),
+            "ordinary_income_quanta": currency_quanta_column(state.reshape(-1)),
         },
         ORDINARY_INCOME_YTD_FRAME,
     )
@@ -69,7 +69,7 @@ def decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) -
             "month_index": months.reshape(-1)[mask],
             "agent_id": agent_ids[profiles.reshape(-1)[mask]],
             "classification": cls_labels.reshape(-1)[mask],
-            "gain_currency_quanta": currency_quanta_column(state_o.reshape(-1)[mask]),
+            "gain_quanta": currency_quanta_column(state_o.reshape(-1)[mask]),
         },
         CAPITAL_GAINS_YTD_FRAME,
     )
@@ -113,7 +113,7 @@ def decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers)
             "agent_id": agent_per_profile[profile_per_slot[slots]],
             "jurisdiction_id": juris_per_link[link_per_slot[slots]],
             "tax_year_end_month": year_end_per_slot[slots],
-            "amount_owed_currency_quanta": currency_quanta_column(amounts),
+            "amount_owed_quanta": currency_quanta_column(amounts),
         },
         TAX_LIABILITIES_FRAME,
     )
@@ -144,7 +144,7 @@ def decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) ->
         agent_id=agent_ids,
         jurisdiction_id=jurisdiction_ids,
         tax_year_end_month=months,
-        amount_currency_quanta=currency_quanta_column(totals),
+        amount_quanta=currency_quanta_column(totals),
     )
     breakdowns = frame_from_columns(
         EVENT_FRAMES.tax_breakdowns,
@@ -154,34 +154,26 @@ def decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) ->
         agent_id=agent_ids,
         jurisdiction_id=jurisdiction_ids,
         tax_year_end_month=months,
-        ordinary_income_currency_quanta=currency_quanta_column(
-            buffers.taxes.breakdown_ordinary[months, links, rollouts]
-        ),
-        ltcg_currency_quanta=currency_quanta_column(buffers.taxes.breakdown_ltcg[months, links, rollouts]),
-        stcg_currency_quanta=currency_quanta_column(buffers.taxes.breakdown_stcg[months, links, rollouts]),
-        standard_deduction_currency_quanta=currency_quanta_column(plan.tax.link_standard_deduction[links]),
-        mortgage_interest_deduction_currency_quanta=currency_quanta_column(
+        ordinary_income_quanta=currency_quanta_column(buffers.taxes.breakdown_ordinary[months, links, rollouts]),
+        ltcg_quanta=currency_quanta_column(buffers.taxes.breakdown_ltcg[months, links, rollouts]),
+        stcg_quanta=currency_quanta_column(buffers.taxes.breakdown_stcg[months, links, rollouts]),
+        standard_deduction_quanta=currency_quanta_column(plan.tax.link_standard_deduction[links]),
+        mortgage_interest_deduction_quanta=currency_quanta_column(
             buffers.taxes.breakdown_mortgage_interest_deduction[months, links, rollouts]
         ),
-        salt_deduction_currency_quanta=currency_quanta_column(
-            buffers.taxes.breakdown_salt_deduction[months, links, rollouts]
-        ),
-        itemized_deduction_currency_quanta=currency_quanta_column(
+        salt_deduction_quanta=currency_quanta_column(buffers.taxes.breakdown_salt_deduction[months, links, rollouts]),
+        itemized_deduction_quanta=currency_quanta_column(
             buffers.taxes.breakdown_itemized_deduction[months, links, rollouts]
         ),
-        ordinary_taxable_currency_quanta=currency_quanta_column(
+        ordinary_taxable_quanta=currency_quanta_column(
             buffers.taxes.breakdown_ordinary_taxable[months, links, rollouts]
         ),
-        capital_gain_taxable_currency_quanta=currency_quanta_column(
+        capital_gain_taxable_quanta=currency_quanta_column(
             buffers.taxes.breakdown_capital_taxable[months, links, rollouts]
         ),
-        ordinary_tax_currency_quanta=currency_quanta_column(
-            buffers.taxes.breakdown_ordinary_tax[months, links, rollouts]
-        ),
-        capital_gain_tax_currency_quanta=currency_quanta_column(
-            buffers.taxes.breakdown_capital_tax[months, links, rollouts]
-        ),
-        total_tax_currency_quanta=currency_quanta_column(totals),
+        ordinary_tax_quanta=currency_quanta_column(buffers.taxes.breakdown_ordinary_tax[months, links, rollouts]),
+        capital_gain_tax_quanta=currency_quanta_column(buffers.taxes.breakdown_capital_tax[months, links, rollouts]),
+        total_tax_quanta=currency_quanta_column(totals),
     )
     return accruals, breakdowns
 
@@ -203,5 +195,5 @@ def decode_tax_settlements(plan: CompiledSimulation, buffers: SimulationBuffers)
         cause_id=cause_ids,
         agent_id=agent_ids,
         tax_year_end_month=year_end,
-        amount_currency_quanta=currency_quanta_column(buffers.taxes.settlement_amount[months, profiles, rollouts]),
+        amount_quanta=currency_quanta_column(buffers.taxes.settlement_amount[months, profiles, rollouts]),
     )

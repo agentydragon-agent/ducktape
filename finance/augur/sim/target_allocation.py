@@ -34,7 +34,7 @@ the band has an interior), but a rebalance is inherently both at once.
 ## What it deliberately does not emit
 
 No spending. This is a FUNDING policy: it decides how to pay for a life, not what that life
-costs. A withdrawn draft carried a `spend_cents` field that this policy always set to zero,
+costs. A withdrawn draft carried a `spend_quanta` field that this policy always set to zero,
 reserved for a tier-aware policy to fill later — a field with no reader, which is dead
 payload however well-intentioned the reservation.
 
@@ -110,8 +110,8 @@ class SleeveOrders(NamedTuple):
     buy_quanta: jnp.ndarray
 
 
-def _quanta_for_cents(
-    *, cents: jnp.ndarray, unit_price_cents: jnp.ndarray, quantity_scale: jnp.ndarray, round_up: bool
+def _quanta_for_quanta(
+    *, cents: jnp.ndarray, unit_price_quanta: jnp.ndarray, quantity_scale: jnp.ndarray, round_up: bool
 ) -> jnp.ndarray:
     """Whole quanta for a cent target, at this month's observed market price.
 
@@ -126,9 +126,9 @@ def _quanta_for_cents(
     free, so it orders nothing.
     """
 
-    priced = unit_price_cents > 0
+    priced = unit_price_quanta > 0
     scaled = cents * quantity_scale
-    divisor = jnp.where(priced, unit_price_cents, 1)
+    divisor = jnp.where(priced, unit_price_quanta, 1)
     quanta = -(-scaled // divisor) if round_up else scaled // divisor
     return jnp.where(priced & (cents > 0), quanta, 0)
 
@@ -137,13 +137,13 @@ def decide(
     *,
     view: ActorView,
     universe: SleeveUniverse,
-    floor_cents: jnp.ndarray,
-    ceiling_cents: jnp.ndarray,
+    floor_quanta: jnp.ndarray,
+    ceiling_quanta: jnp.ndarray,
     rebalance_tolerance: float | None = None,
 ) -> SleeveOrders:
     """Choose this month's orders from this month's observation.
 
-    `floor_cents` and `ceiling_cents` are `(rollout,)` because the band may be CPI-indexed
+    `floor_quanta` and `ceiling_quanta` are `(rollout,)` because the band may be CPI-indexed
     and inflation differs by path. Their ordering is validated at config time by
     `cash_band.validate_band_bounds`; it cannot be checked here, where they are traced.
 
@@ -157,18 +157,18 @@ def decide(
     """
 
     order = cash_order(
-        cash_cents=view.cash_cents[universe.funding_cash_row],
-        scheduled_outflow_cents=view.scheduled_outflow_cents,
-        floor_cents=floor_cents,
-        ceiling_cents=ceiling_cents,
+        cash_quanta=view.cash_quanta[universe.funding_cash_row],
+        scheduled_outflow_quanta=view.scheduled_outflow_quanta,
+        floor_quanta=floor_quanta,
+        ceiling_quanta=ceiling_quanta,
     )
     # Water-filling stays in cents: "overweight" is a claim about VALUE, and a level where
     # two sleeves meet has no meaning in units of two different assets. Only the last step —
     # turning a sleeve's share into an order — is denominated in what actually moves.
-    sleeve_value = view.sleeve_value_cents(universe.lot_rows)
+    sleeve_value = view.sleeve_value_quanta(universe.lot_rows)
     to_quanta = partial(
-        _quanta_for_cents,
-        unit_price_cents=view.instrument_price_cents,
+        _quanta_for_quanta,
+        unit_price_quanta=view.instrument_price_quanta,
         quantity_scale=view.instrument_quantity_scale[:, None],
     )
     # A raise must COVER what the month needs, so it rounds up. A trim has no such target: it
@@ -177,17 +177,19 @@ def decide(
     # when the band is quiet — so summing the quantized sides is a selection, and it keeps
     # each rounding rule attached to the thing that justifies it.
     sell_quanta = to_quanta(
-        cents=withdrawal_by_sleeve(value_cents=sleeve_value, weights=universe.weights, raise_cents=order.raise_cents),
+        cents=withdrawal_by_sleeve(
+            value_quanta=sleeve_value, weights=universe.weights, raise_quanta=order.raise_quanta
+        ),
         round_up=True,
     )
     buy_quanta = to_quanta(
-        cents=deposit_by_sleeve(value_cents=sleeve_value, weights=universe.weights, invest_cents=order.invest_cents),
+        cents=deposit_by_sleeve(value_quanta=sleeve_value, weights=universe.weights, invest_quanta=order.invest_quanta),
         round_up=False,
     )
     if rebalance_tolerance is not None:
-        quiet = (order.raise_cents == 0) & (order.invest_cents == 0)
+        quiet = (order.raise_quanta == 0) & (order.invest_quanta == 0)
         trim_sell, trim_buy = rebalance_by_sleeve(
-            value_cents=sleeve_value, weights=universe.weights, tolerance=rebalance_tolerance
+            value_quanta=sleeve_value, weights=universe.weights, tolerance=rebalance_tolerance
         )
         sell_quanta = sell_quanta + jnp.where(quiet, to_quanta(cents=trim_sell, round_up=False), 0)
         buy_quanta = buy_quanta + jnp.where(quiet, to_quanta(cents=trim_buy, round_up=False), 0)

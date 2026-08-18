@@ -9,7 +9,10 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "schemas",
     srcs = ["schemas.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//finance/augur/sim:fixed_point",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -164,6 +167,7 @@ py_library(
     name = "portfolio",
     srcs = ["portfolio.py"],
     deps = [
+        ":schemas",
         "//finance/augur/model:series",
         "//finance/augur/product:asset_key",
         "//finance/augur/sim:scenario",

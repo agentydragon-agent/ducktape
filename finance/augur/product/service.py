@@ -64,7 +64,7 @@ class ProductService:
         self,
         *,
         portfolio: PortfolioConfig,
-        initial_cash_usd: float,
+        initial_cash: Decimal | int | str,
         primary_agent_id: str,
         security_distributions: tuple[SecurityDistributionConfig, ...] = (),
         harvest_policies: tuple[HarvestPolicy, ...] = (),
@@ -80,7 +80,7 @@ class ProductService:
         if not models:
             raise ValueError("models must contain at least one preset")
         self._portfolio = portfolio
-        self._initial_cash_usd = float(initial_cash_usd)
+        self._initial_cash = initial_cash if isinstance(initial_cash, Decimal) else Decimal(str(initial_cash))
         self._primary_agent_id = primary_agent_id
         self._known_location_ids = known_location_ids
         self._locations = locations
@@ -158,7 +158,7 @@ class ProductService:
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
         monthly_metrics_frame = {
-            name: arr.tolist() if name == "month_index" else [_currency_quanta(value) for value in arr]
+            name: arr.tolist() if name == "month_index" else [_quanta(value) for value in arr]
             for name, arr in monthly_arrays.items()
         }
         return RolloutResponse(
@@ -204,7 +204,10 @@ class ProductService:
             locations=self._locations,
         )
         summary = run_jax_product_summary(
-            plan, primary_agent_id=self._primary_agent_id, metric=metric, percentiles=percentiles
+            plan,
+            primary_agent_id=self._primary_agent_id,
+            metric=metric if metric.endswith("_quanta") else f"{metric}_quanta",
+            percentiles=percentiles,
         )
         return summary, model_id
 
@@ -224,7 +227,7 @@ class ProductService:
         scenario = build_scenario(
             scenario_key,
             primary_agent_id=self._primary_agent_id,
-            initial_cash_usd=self._initial_cash_usd,
+            initial_cash=self._initial_cash,
             initial_lots=self._initial_lots,
             properties_by_id=self._properties_by_id,
             initial_bonds=self._initial_bonds,
@@ -264,7 +267,7 @@ def _monthly_fan_frame(summary: ProductSummary, percentiles: tuple[float, ...]) 
     return {
         "month_index": np.repeat(month_indices, percentile_array.size).tolist(),
         "percentile": np.tile(percentile_array, month_indices.size).tolist(),
-        "value": [_currency_quanta(value) for value in bands.T.reshape(-1)],
+        "value_quanta": [_quanta(value) for value in bands.T.reshape(-1)],
     }
 
 
@@ -272,14 +275,14 @@ def _percentile_frame(samples: np.ndarray, percentiles: tuple[float, ...]) -> Fr
     percentile_array = np.asarray(percentiles, dtype=np.float64)
     return {
         "percentile": percentile_array.tolist(),
-        "value": [_currency_quanta(value) for value in _currency_quantiles(samples, percentiles)],
+        "value_quanta": [_quanta(value) for value in _currency_quantiles(samples, percentiles)],
     }
 
 
 def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductSummary) -> Frame:
     return {
         "seed": list(seeds),
-        "value": [_currency_quanta(value) for value in summary.terminal_samples],
+        "value_quanta": [_quanta(value) for value in summary.terminal_samples],
         "failed": (summary.failed_month >= 0).tolist(),
     }
 
@@ -288,7 +291,7 @@ def _failed_count(summary: ProductSummary) -> int:
     return int((summary.failed_month >= 0).sum())
 
 
-def _currency_quanta(value: int | np.integer[Any]) -> str:
+def _quanta(value: int | np.integer[Any]) -> str:
     """Serialize an integer quantum count without a lossy JSON number."""
 
     return str(value)

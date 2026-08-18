@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field, NonNegativeInt, PositiveFloat, model_validator
+from pydantic import Field, NonNegativeInt, model_validator
 
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig
+from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig, PositiveCurrencyAmount
 from finance.augur.api.schemas import ApiModel
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
@@ -102,7 +103,7 @@ class PlaidSp500ProxyGroupConfig(ApiModel):
     label: str | None = None
     symbol: str = "SP500"
     security_kind: HoldingKind = HoldingKind.OTHER
-    unit_value_usd: PositiveFloat = 1000.0
+    unit_value: PositiveCurrencyAmount = Decimal(1000)
     default_holding_period_months_at_start: NonNegativeInt = 0
     holding_period_buckets: tuple[PlaidProxyHoldingPeriodBucket, ...] = Field(
         default=(),

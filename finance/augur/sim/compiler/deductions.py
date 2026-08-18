@@ -59,7 +59,7 @@ def compile_mortgage_interest_deductions(
     when the engine sums MID at year-end. Zero where: (a) the liability isn't
     owned by the link's profile agent, (b) the liability has no
     MortgageInterestDeductionPolicy entry, (c) the policy's
-    per_jurisdiction_principal_cap_usd map omits the link's jurisdiction, or
+    per_jurisdiction_principal_cap map omits the link's jurisdiction, or
     (d) the policy's `debt_class == "home_equity"` (TCJA disallow §163(h)(3)).
     """
 
@@ -102,7 +102,7 @@ def compile_mortgage_interest_deductions(
                 # liability. Callers who layer a HELOC-for-improvement should tag it
                 # "acquisition" — we do not model the substantial-improvement carve-out.
                 continue
-            cap = policy.per_jurisdiction_principal_cap_usd.get(jurisdiction_id)
+            cap = policy.per_jurisdiction_principal_cap.get(jurisdiction_id)
             if cap is None:
                 continue
             principal = float(liabilities.principal[lia_slot])
@@ -183,7 +183,7 @@ def compile_federal_salt_deductions(
             contributing_mask[federal_link, sibling] = True
 
         # Forward-fill the cap schedule across the horizon's calendar years. Entries are
-        # tuples (effective_year_index, cap_usd); for each year, pick the latest entry whose
+        # tuples (effective_year_index, cap); for each year, pick the latest entry whose
         # effective_year_index <= year. If no entry applies (e.g. schedule starts at year 2),
         # the cap is 0 (no allowed deduction). An empty schedule means SALT is effectively
         # uncapped — represent that by a large sentinel cap.
@@ -197,7 +197,7 @@ def compile_federal_salt_deductions(
                 salt_cap_by_year[federal_link, year] = 0.0
             else:
                 salt_cap_by_year[federal_link, year] = currency_amount_to_quanta(
-                    applicable[-1].cap_usd, quantum=scenario.currency.quantum
+                    applicable[-1].cap, quantum=scenario.currency.quantum
                 )
 
     return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)

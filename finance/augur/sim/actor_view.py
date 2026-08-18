@@ -35,7 +35,7 @@ owns none of, which is exactly the one a target allocation is trying to buy. The
 axis is built by the engine from the actor's tradable set; today one policy's sleeves are
 that set in order, and a shared instrument table is what a second policy kind would need.
 
-`scheduled_outflow_cents` is what the month is already committed to paying. It belongs in
+`scheduled_outflow_quanta` is what the month is already committed to paying. It belongs in
 the observation because the agent genuinely knows its own bills before it decides how to
 fund them — and because deciding against the projected end-of-month balance rather than
 the current one is what lets funding happen once a month instead of twice.
@@ -89,33 +89,33 @@ class ActorSlots:
 class ActorView(NamedTuple):
     """One month's observation, batched over rollouts.
 
-    Shapes: `month` is a scalar; `cash_cents` is `(account, R)`; every `lot_*` field is
+    Shapes: `month` is a scalar; `cash_quanta` is `(account, R)`; every `lot_*` field is
     `(lot, R)`; the rest are `(R,)`. Account and lot axes are in `ActorSlots` order.
     """
 
     month: jnp.ndarray
-    cash_cents: jnp.ndarray
+    cash_quanta: jnp.ndarray
     lot_quantity: jnp.ndarray
     # Marked at this month's price, NOT held at cost — a policy reasoning about allocation
     # needs what a sleeve is worth now, not what it was bought for.
-    lot_value_cents: jnp.ndarray
-    lot_cost_basis_per_unit_cents: jnp.ndarray
+    lot_value_quanta: jnp.ndarray
+    lot_cost_basis_per_unit_quanta: jnp.ndarray
     # Months since acquisition, so a policy can weigh the long/short capital-gain boundary
     # without reaching into the engine's classification.
     lot_holding_months: jnp.ndarray
-    scheduled_outflow_cents: jnp.ndarray
+    scheduled_outflow_quanta: jnp.ndarray
     # What the market charges this month, per tradable instrument, `(instrument, R)`. Zero
     # means unpriceable — no modeled price series — rather than free.
-    instrument_price_cents: jnp.ndarray
+    instrument_price_quanta: jnp.ndarray
     # Quanta per unit, `(instrument,)`. A market convention about divisibility, not a fact
     # about the position, which is why it sits on the instrument axis and not the lot one.
     instrument_quantity_scale: jnp.ndarray
 
     @property
-    def total_cash_cents(self) -> jnp.ndarray:
-        return self.cash_cents.sum(axis=0)
+    def total_cash_quanta(self) -> jnp.ndarray:
+        return self.cash_quanta.sum(axis=0)
 
-    def sleeve_value_cents(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
+    def sleeve_value_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
         """Aggregate lot values into `(sleeve, R)` using compile-time row groups.
 
         Rows index the VIEW's lot axis, not the plan's — the view has already narrowed to
@@ -123,7 +123,7 @@ class ActorView(NamedTuple):
         """
 
         return jnp.stack(
-            [self.lot_value_cents[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows]
+            [self.lot_value_quanta[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows]
         )
 
     def sleeve_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
@@ -140,29 +140,29 @@ def build_actor_view(
     *,
     month: jnp.ndarray,
     slots: ActorSlots,
-    cash_cents: jnp.ndarray,
+    cash_quanta: jnp.ndarray,
     lot_quantity: jnp.ndarray,
-    lot_cost_basis_per_unit_cents: jnp.ndarray,
-    lot_value_cents: jnp.ndarray,
+    lot_cost_basis_per_unit_quanta: jnp.ndarray,
+    lot_value_quanta: jnp.ndarray,
     lot_purchase_month: jnp.ndarray | NDArray[np.int64],
-    scheduled_outflow_cents: jnp.ndarray,
-    instrument_price_cents: jnp.ndarray,
+    scheduled_outflow_quanta: jnp.ndarray,
+    instrument_price_quanta: jnp.ndarray,
     instrument_quantity_scale: jnp.ndarray | NDArray[np.int64],
 ) -> ActorView:
     """Narrow full engine state to one agent's observation.
 
-    `cash_cents` and the `lot_*` tensors are the engine's full `(row, R)` state; the
+    `cash_quanta` and the `lot_*` tensors are the engine's full `(row, R)` state; the
     slicing to this agent happens here so the visibility rule has exactly one
     implementation.
 
-    `lot_value_cents` is marked-to-this-month VALUE, and it is passed in rather than derived
+    `lot_value_quanta` is marked-to-this-month VALUE, and it is passed in rather than derived
     from a price here on purpose: valuing quanta is engine accounting
-    (`_value_cents_from_quanta`, which rounds half away from zero), and a second
+    (`_value_quanta_from_quanta`, which rounds half away from zero), and a second
     implementation would round differently. Flooring here would report a sleeve worth a cent
     less than selling it actually yields, so a policy asking for the whole sleeve would come
     up short. One valuation, owned by the side that does the selling.
 
-    `instrument_price_cents` arrives resolved for `month` for the same reason marks do, and
+    `instrument_price_quanta` arrives resolved for `month` for the same reason marks do, and
     for one more: the builder must not hold a price cube it could index past the current
     month. A policy that could read next month's price would make every backtest brilliant.
     """
@@ -172,14 +172,14 @@ def build_actor_view(
     quantity = lot_quantity[lot_rows]
     return ActorView(
         month=month,
-        cash_cents=cash_cents[cash_rows],
+        cash_quanta=cash_quanta[cash_rows],
         lot_quantity=quantity,
-        lot_value_cents=lot_value_cents[lot_rows],
-        lot_cost_basis_per_unit_cents=lot_cost_basis_per_unit_cents[lot_rows],
+        lot_value_quanta=lot_value_quanta[lot_rows],
+        lot_cost_basis_per_unit_quanta=lot_cost_basis_per_unit_quanta[lot_rows],
         # Already `(lot, R)`: the purchase month is per-rollout carried state, because a slot
         # a policy chose to fill is bought in a different month in each rollout.
         lot_holding_months=(month - lot_purchase_month[lot_rows]).astype(jnp.int64),
-        scheduled_outflow_cents=scheduled_outflow_cents,
-        instrument_price_cents=instrument_price_cents,
+        scheduled_outflow_quanta=scheduled_outflow_quanta,
+        instrument_price_quanta=instrument_price_quanta,
         instrument_quantity_scale=jnp.asarray(instrument_quantity_scale, dtype=jnp.int64),
     )

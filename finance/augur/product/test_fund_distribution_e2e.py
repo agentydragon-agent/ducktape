@@ -15,6 +15,8 @@ stronger check anyway.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
 from more_itertools import one
@@ -33,7 +35,8 @@ from finance.augur.product.wire import RolloutRequest, ScenarioKey
 
 _SYMBOL = SecuritySymbol("bnd")
 _UNITS = 2_000.0
-_PRICE_USD = 73.0
+_UNIT_VALUE = Decimal(73)
+_MODEL_PRICE = float(_UNIT_VALUE)
 _PER_UNIT_USD = 0.22
 _MONTHLY_PAYOUT_USD = _UNITS * _PER_UNIT_USD
 
@@ -70,7 +73,7 @@ def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> Provi
                         update={
                             "asset_prices": inner.asset_prices.model_copy(
                                 update={
-                                    "security": {**inner.asset_prices.security, _SYMBOL: Constant(value=_PRICE_USD)}
+                                    "security": {**inner.asset_prices.security, _SYMBOL: Constant(value=_MODEL_PRICE)}
                                 }
                             ),
                             "security_distributions": SecurityDistributionGroups(
@@ -103,13 +106,10 @@ def _with_bond_fund(config: Config, tax_character: tuple[DistributionTaxShareCon
                     label="Aggregate Bond Fund",
                     symbol=_SYMBOL,
                     security_kind=HoldingKind.ETF,
-                    unit_value_usd=_PRICE_USD,
+                    unit_value=_UNIT_VALUE,
                     lots=(
                         HoldingTaxLotConfig(
-                            lot_id="bnd_2023_01",
-                            holding_period_months_at_start=40,
-                            quantity=_UNITS,
-                            cost_basis_usd=150_000.0,
+                            lot_id="bnd_2023_01", holding_period_months_at_start=40, quantity=_UNITS, cost_basis=150_000
                         ),
                     ),
                 ),
@@ -144,17 +144,12 @@ def _service(
 
 def _cash_path(product: ProductService, *, horizon_months: int = 3) -> list[int]:
     scenario = ScenarioKey(
-        model_id="current_model", horizon_months=horizon_months, monthly_spend_usd=1_000.0, spend_index="none"
+        model_id="current_model", horizon_months=horizon_months, monthly_spend=1000, spend_index="none"
     )
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
     # The public Frame uses decimal integer strings so currency values never cross JSON as
     # lossy JavaScript numbers. Convert only within this test's arithmetic.
-    cash = detail.rollout.monthly_metrics["cash"]
-    cash_quanta: list[int] = []
-    for value in cash:
-        assert isinstance(value, str)
-        cash_quanta.append(int(value))
-    return cash_quanta
+    return [int(str(value)) for value in detail.rollout.monthly_metrics["cash_quanta"]]
 
 
 def test_a_declared_fund_pays_its_per_unit_distribution_into_cash(

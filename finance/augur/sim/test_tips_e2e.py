@@ -8,6 +8,7 @@ notice the accretion being off by a year or a factor.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from itertools import pairwise
 
 import numpy as np
@@ -24,10 +25,10 @@ from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, Initial
 from finance.augur.sim.simulate import simulate
 
 _HORIZON = 14
-_FACE = 1_000_000.0
+_FACE = 1_000_000
 _RATE = 0.04
 # Semiannual on a $1M face at 4% → $20,000 per period BEFORE indexation.
-_NOMINAL_COUPON = 20_000.0
+_NOMINAL_COUPON = 20_000
 
 # CPI doubles over month 12, in one step at month 6, and is flat elsewhere. A step rather
 # than a drift so the accretion lands in exactly one identifiable month.
@@ -35,6 +36,10 @@ _CPI_DOUBLING = [100.0] * 6 + [200.0] * (_HORIZON + 1 - 6)
 _CPI_FLAT = [100.0] * (_HORIZON + 1)
 # Ends below par, to exercise the deflation floor.
 _CPI_DEFLATING = [100.0] * 6 + [80.0] * (_HORIZON + 1 - 6)
+
+
+def _quanta(amount: float | int) -> int:
+    return int(Decimal(str(amount)) / Decimal("0.01"))
 
 
 def _bundle(levels: list[float]) -> SeriesModelBundle:
@@ -45,8 +50,8 @@ def _scenario(*, indexed: bool, cpi: list[float], taxed: bool = False, maturity:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=100000),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_bonds=[
             BondHolding(
@@ -54,8 +59,8 @@ def _scenario(*, indexed: bool, cpi: list[float], taxed: bool = False, maturity:
                 agent_id="alice",
                 account_id="checking",
                 issuer_jurisdiction_id="federal_us",
-                face_value_usd=_FACE,
-                purchase_price_usd=_FACE,
+                face_value=_FACE,
+                purchase_price=_FACE,
                 annual_coupon_rate=_RATE,
                 coupon_period_months=6,
                 purchase_month_index=0,
@@ -78,28 +83,28 @@ def _scenario(*, indexed: bool, cpi: list[float], taxed: bool = False, maturity:
     )
 
 
-def _cash_by_month(scenario: Scenario) -> dict[int, float]:
+def _cash_by_month(scenario: Scenario) -> dict[int, int]:
     """Cash change attributable to each month. Row `m + 1` is the balance once month `m`
     has run, so a cashflow in month `m` is the delta into row `m + 1`."""
 
     run = simulate(scenario, rollout_count=1, locations={})
     balances = [
-        float(v)
+        int(v)
         for v in run.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
         .to_list()
     ]
-    return {month: round(after - before, 2) for month, (before, after) in enumerate(pairwise(balances))}
+    return {month: after - before for month, (before, after) in enumerate(pairwise(balances))}
 
 
-def _income_by_month(scenario: Scenario) -> list[float]:
+def _income_by_month(scenario: Scenario) -> list[int]:
     run = simulate(scenario, rollout_count=1, locations={})
     return [
-        float(v)
+        int(v)
         for v in run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("ordinary_income_usd")
+        .get_column("ordinary_income_quanta")
         .to_list()
     ]
 
@@ -111,7 +116,7 @@ def test_coupon_rides_the_indexed_principal() -> None:
     deltas = _cash_by_month(_scenario(indexed=True, cpi=_CPI_DOUBLING, maturity=120))
     paid = {m: d for m, d in deltas.items() if d}
 
-    assert paid == {6: 2 * _NOMINAL_COUPON, 12: 2 * _NOMINAL_COUPON}
+    assert paid == {6: _quanta(2 * _NOMINAL_COUPON), 12: _quanta(2 * _NOMINAL_COUPON)}
 
 
 def test_a_nominal_bond_ignores_the_same_cpi_path() -> None:
@@ -121,7 +126,7 @@ def test_a_nominal_bond_ignores_the_same_cpi_path() -> None:
     deltas = _cash_by_month(_scenario(indexed=False, cpi=_CPI_DOUBLING, maturity=120))
     paid = {m: d for m, d in deltas.items() if d}
 
-    assert paid == {6: _NOMINAL_COUPON, 12: _NOMINAL_COUPON}
+    assert paid == {6: _quanta(_NOMINAL_COUPON), 12: _quanta(_NOMINAL_COUPON)}
 
 
 def test_accretion_is_income_with_no_cash_behind_it() -> None:
@@ -139,9 +144,9 @@ def test_accretion_is_income_with_no_cash_behind_it() -> None:
     # Year 1 holds ONE coupon (month 6; the month-12 one is next tax year), doubled by the
     # CPI step, plus the full $1M of accretion. Accretion dwarfing the coupon is the point:
     # that is the tax bill a TIPS hands you with no cash attached.
-    assert max(income) == 2 * _NOMINAL_COUPON + _FACE
+    assert max(income) == _quanta(2 * _NOMINAL_COUPON + _FACE)
     # And month 6 moved only the coupon in cash — the accretion is not there.
-    assert deltas[6] == 2 * _NOMINAL_COUPON
+    assert deltas[6] == _quanta(2 * _NOMINAL_COUPON)
 
 
 def test_accretion_is_federally_taxed_and_state_exempt() -> None:
@@ -150,12 +155,12 @@ def test_accretion_is_federally_taxed_and_state_exempt() -> None:
 
     run = simulate(_scenario(indexed=True, cpi=_CPI_DOUBLING, taxed=True, maturity=120), rollout_count=1, locations={})
     tax = {
-        str(r["jurisdiction_id"]): float(r["amount_usd"])
-        for r in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_usd").sum()).to_dicts()
+        str(r["jurisdiction_id"]): int(r["amount_quanta"])
+        for r in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
     }
 
-    assert tax["federal_us"] > 0.0
-    assert tax["california"] == 0.0
+    assert tax["federal_us"] > 0
+    assert tax["california"] == 0
 
 
 def test_redemption_is_floored_at_par_when_prices_fall() -> None:
@@ -165,7 +170,7 @@ def test_redemption_is_floored_at_par_when_prices_fall() -> None:
 
     deltas = _cash_by_month(_scenario(indexed=True, cpi=_CPI_DEFLATING, maturity=12))
     # Final coupon rides the deflated principal; the principal itself comes back whole.
-    assert deltas[12] == _FACE + 0.8 * _NOMINAL_COUPON
+    assert deltas[12] == _quanta(_FACE + 0.8 * _NOMINAL_COUPON)
 
 
 def test_a_flat_cpi_makes_a_tips_behave_exactly_like_a_nominal_bond() -> None:
@@ -197,12 +202,12 @@ def test_net_worth_carries_a_tips_at_indexed_principal() -> None:
     Asserted against the nominal control on the same CPI path, which stays at $1M.
     """
 
-    def bond_value(indexed: bool) -> list[float]:
+    def bond_value(indexed: bool) -> list[int]:
         run = simulate(_scenario(indexed=indexed, cpi=_CPI_DOUBLING, maturity=120), rollout_count=1, locations={})
-        return [float(v) for v in monthly_metric_arrays(run, primary_agent_id="alice")["bond_value_usd"]]
+        return [int(v) for v in monthly_metric_arrays(run, primary_agent_id="alice")["bond_value_quanta"]]
 
-    assert bond_value(indexed=True)[-1] == 2 * _FACE
-    assert bond_value(indexed=False)[-1] == _FACE
+    assert bond_value(indexed=True)[-1] == _quanta(2 * _FACE)
+    assert bond_value(indexed=False)[-1] == _quanta(_FACE)
 
 
 def test_a_tips_demands_an_inflation_path_from_the_exogenous_model() -> None:
@@ -218,8 +223,8 @@ def test_a_tips_demands_an_inflation_path_from_the_exogenous_model() -> None:
     bundle and would pass either way. That is exactly how the gap stayed invisible from `sim/`.
     """
 
-    indexed = _scenario(cpi=[1.0] * (_HORIZON + 1), indexed=True)
-    nominal = _scenario(cpi=[1.0] * (_HORIZON + 1), indexed=False)
+    indexed = _scenario(cpi=[1] * (_HORIZON + 1), indexed=True)
+    nominal = _scenario(cpi=[1] * (_HORIZON + 1), indexed=False)
 
     assert InflationKey() in scenario_level_series_keys(indexed)
     # And not otherwise: a nominal bond's cashflows are fixed by its terms, so demanding a

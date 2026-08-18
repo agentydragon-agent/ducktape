@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { fmtCurrency, fmtNumber } from "./lib/format";
+import { fmtQuanta, fmtNumber } from "./lib/format";
 import { ScenarioBadge } from "./scenario_tabs";
 import {
   ROLLOUT_EVENT_COLORS,
@@ -136,7 +136,7 @@ export function SelectedRolloutEventsPanel({
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-1 text-right augur-tabular">
-                          {fmtCurrency(eventAmount(event), event._currency)}
+                          {fmtQuanta(eventAmount(event), event._currency)}
                         </td>
                         <td className="min-w-[12rem] px-4 py-1 text-xs augur-muted">{eventDetailText(event)}</td>
                       </tr>

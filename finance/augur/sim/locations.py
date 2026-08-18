@@ -7,7 +7,14 @@ rates used by the compiler to build per-property cash-flow arrays.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from decimal import Decimal
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator
+
+from finance.augur.sim.fixed_point import validate_currency_amount
+
+type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
 
 
 class Location(BaseModel):
@@ -16,8 +23,8 @@ class Location(BaseModel):
     `jurisdiction_ids` are the taxing authorities that apply (used by tax
     profiles). `annual_property_tax_rate` is the ad-valorem base + voter-bond
     rate as a fraction of assessed value (e.g. 0.01180 for SF: 1% Prop 13 base
-    + ~0.18% city voter-approved bonds). `annual_special_assessment_usd` is a
-    flat annual special-tax / CFD (Mello-Roos) assessment in dollars per
+    + ~0.18% city voter-approved bonds). `annual_special_assessment` is a
+    flat annual special-tax / CFD (Mello-Roos) assessment in the scenario currency per
     residential parcel.
     """
 
@@ -25,4 +32,4 @@ class Location(BaseModel):
     display_name: str
     jurisdiction_ids: list[str]
     annual_property_tax_rate: float
-    annual_special_assessment_usd: float = 0.0
+    annual_special_assessment: CurrencyAmount = Decimal(0)

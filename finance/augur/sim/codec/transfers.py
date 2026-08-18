@@ -33,7 +33,7 @@ def decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl
         from_account_id=code_column(plan, plan.transfers.from_account[months, slots]),
         to_agent_id=code_column(plan, plan.transfers.to_agent[months, slots]),
         to_account_id=code_column(plan, plan.transfers.to_account[months, slots]),
-        amount_currency_quanta=amounts,
+        amount_quanta=amounts,
         income_category=income_categories,
     )
 
@@ -53,6 +53,6 @@ def decode_property_cashflows(plan: CompiledSimulation, buffers: SimulationBuffe
         from_account_id=code_column(plan, cashflows.from_account[months, slots]),
         to_agent_id=code_column(plan, cashflows.to_agent[months, slots]),
         to_account_id=code_column(plan, cashflows.to_account[months, slots]),
-        amount_currency_quanta=amounts,
+        amount_quanta=amounts,
         income_category=income_categories,
     )

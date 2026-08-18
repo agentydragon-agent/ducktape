@@ -41,7 +41,7 @@ def main() -> int:
     catalog = build_catalog(config)
     service = ProductService(
         portfolio=resolved_portfolio.portfolio,
-        initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
+        initial_cash=resolved_portfolio.snapshot.cash,
         primary_agent_id=resolve_primary_agent_id(config),
         security_distributions=config.security_distributions,
         known_location_ids=catalog.location_ids,
@@ -55,7 +55,7 @@ def main() -> int:
         scenario=ScenarioKey(
             model_id=config.default_model_id,
             horizon_months=args.horizon_months,
-            monthly_spend_usd=args.monthly_spend_usd,
+            monthly_spend=args.monthly_spend,
             spend_index=args.spend_index,
         ),
         first_seed=0,

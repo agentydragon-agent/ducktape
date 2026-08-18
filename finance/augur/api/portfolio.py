@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 from functools import cached_property
 from typing import Annotated, Literal
@@ -26,6 +27,7 @@ from pydantic import (
     model_validator,
 )
 
+from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.sim.scenario import BondHolding, DistributionTaxSlice, InitialLot, SecurityDistribution
@@ -68,11 +70,11 @@ class HoldingTaxLotConfig(PortfolioConfigModel):
     lot_id: str = Field(pattern=_ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
-    cost_basis_usd: NonNegativeFloat
+    cost_basis: NonNegativeCurrencyAmount
 
     @property
-    def cost_basis_per_unit_usd(self) -> float:
-        return float(self.cost_basis_usd / self.quantity)
+    def cost_basis_per_unit(self) -> Decimal:
+        return self.cost_basis / Decimal(str(self.quantity))
 
 
 class HoldingAssetKind(StrEnum):
@@ -90,7 +92,7 @@ class _HoldingPositionBase(PortfolioConfigModel):
     position_id: str = Field(pattern=_ID_PATTERN)
     account_id: str = Field(pattern=_ID_PATTERN)
     label: str | None = None
-    unit_value_usd: PositiveFloat
+    unit_value: PositiveCurrencyAmount
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
 
     @property
@@ -106,12 +108,12 @@ class _HoldingPositionBase(PortfolioConfigModel):
         return sum(float(lot.quantity) for lot in self.lots)
 
     @property
-    def current_value_usd(self) -> float:
-        return self.total_quantity * float(self.unit_value_usd)
+    def current_value(self) -> Decimal:
+        return Decimal(str(self.total_quantity)) * self.unit_value
 
     @property
-    def total_cost_basis_usd(self) -> float:
-        return sum(float(lot.cost_basis_usd) for lot in self.lots)
+    def total_cost_basis(self) -> Decimal:
+        return sum((lot.cost_basis for lot in self.lots), start=Decimal(0))
 
 
 class SecurityHoldingConfig(_HoldingPositionBase):
@@ -166,7 +168,7 @@ class BondHoldingConfig(PortfolioConfigModel):
     Deliberately NOT a third `HoldingPositionConfig` variant. A bond is not a tax lot — the
     sim says so structurally, giving it its own table and excluding it from liquid net worth
     rather than relying on a rule someone remembers — and the position base would force it to
-    invent a `unit_value_usd` it cannot have (a held bond is never marked) and at least one
+    invent a `unit_value` it cannot have (a held bond is never marked) and at least one
     `HoldingTaxLotConfig` it does not have. Sitting under `holdings` would also put it in the
     target-allocation sleeve seed, where the policy would try to sell it every month forever.
 
@@ -186,12 +188,12 @@ class BondHoldingConfig(PortfolioConfigModel):
             "jurisdictions, never a property of the bond: in-state is holder-relative."
         ),
     )
-    face_value_usd: PositiveFloat
+    face_value: PositiveCurrencyAmount
     # Carried even though the sim requires it to equal face today. The sim rejects a non-par
     # purchase explicitly so a real holding bought at 98.5 raises rather than being silently
     # treated as par — and this is where a user writes 98.5, so dropping the field would
     # defeat exactly the loud failure that validator exists to produce.
-    purchase_price_usd: PositiveFloat
+    purchase_price: PositiveCurrencyAmount
     annual_coupon_rate: NonNegativeFloat
     coupon_period_months: PositiveInt = 6
     inflation_indexed: bool = False
@@ -246,36 +248,36 @@ class PortfolioConfig(PortfolioConfigModel):
         if duplicate_lots:
             raise ValueError(f"public security tax lots must have unique lot_id values: {duplicate_lots}")
 
-        series_unit_values: dict[AssetKey, float] = {}
+        series_unit_values: dict[AssetKey, Decimal] = {}
         for position in self.holdings:
-            unit_value = float(position.unit_value_usd)
+            unit_value = position.unit_value
             asset = position.asset
             if asset in series_unit_values and series_unit_values[asset] != unit_value:
-                raise ValueError(f"portfolio positions in {asset.wire_id!r} must share unit_value_usd")
+                raise ValueError(f"portfolio positions in {asset.wire_id!r} must share unit_value")
             series_unit_values[asset] = unit_value
 
         return self
 
     @property
-    def total_holdings_value_usd(self) -> float:
-        return sum(position.current_value_usd for position in self.holdings)
+    def total_holdings_value(self) -> Decimal:
+        return sum((position.current_value for position in self.holdings), start=Decimal(0))
 
     @property
-    def total_bond_face_value_usd(self) -> float:
+    def total_bond_face_value(self) -> Decimal:
         """Face still on the books, kept apart from holdings VALUE on purpose.
 
         A held-to-maturity bond is never marked, so folding face into a total that means
         "what these are worth" would assert a mark the model deliberately does not produce.
         """
 
-        return sum(float(bond.face_value_usd) for bond in self.bonds)
+        return sum((bond.face_value for bond in self.bonds), start=Decimal(0))
 
     @property
     def level_anchors(self) -> PortfolioLevelAnchors:
         level_series_anchors: dict[LevelSeriesKey, float] = {}
         private_equity_anchors: dict[IssuerId, float] = {}
         for position in self.holdings:
-            unit_value = float(position.unit_value_usd)
+            unit_value = float(position.unit_value)
             asset_key = position.asset
             if isinstance(asset_key, PrivateEquityAssetKey):
                 private_equity_anchors[asset_key.issuer_id] = unit_value
@@ -295,7 +297,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 asset=position.asset,
                 purchase_month_index=-int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
-                cost_basis_per_unit_usd=lot.cost_basis_per_unit_usd,
+                cost_basis_per_unit=lot.cost_basis_per_unit,
             )
             for position in self.holdings
             for lot in position.lots
@@ -366,8 +368,8 @@ class PortfolioConfig(PortfolioConfigModel):
                 agent_id=account_by_id[bond.account_id].owner_agent_id,
                 account_id=coupon_account_id,
                 issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
-                face_value_usd=bond.face_value_usd,
-                purchase_price_usd=bond.purchase_price_usd,
+                face_value=bond.face_value,
+                purchase_price=bond.purchase_price,
                 annual_coupon_rate=bond.annual_coupon_rate,
                 coupon_period_months=bond.coupon_period_months,
                 inflation_indexed=bond.inflation_indexed,

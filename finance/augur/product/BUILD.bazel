@@ -23,6 +23,7 @@ py_library(
         "//finance/augur/api:wire",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
+        "//finance/augur/sim:fixed_point",
         "//finance/augur/sim:locations",
         "//finance/augur/sim:pricing",
         "//finance/augur/sim:scenario",
@@ -77,9 +78,11 @@ py_library(
     name = "portfolio",
     srcs = ["portfolio.py"],
     deps = [
+        ":wire",
         "//finance/augur/api:finance",
         "//finance/augur/api:portfolio",
         "//finance/augur/api:schemas",
+        "//finance/augur/sim:fixed_point",
         "@pypi//pydantic",
     ],
 )

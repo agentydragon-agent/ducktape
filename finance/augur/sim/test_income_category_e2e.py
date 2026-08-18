@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 
 import polars as pl
 import pytest_bazel
@@ -37,23 +38,23 @@ from finance.augur.sim.simulate import simulate
 
 # December of the first year, so the year-end accrual has fired.
 _HORIZON_MONTHS = 13
-_PAYMENT_USD = 100_000.0
+_PAYMENT = 100_000
 
 _TREASURY = InterestIncome(issuer_jurisdiction_id="federal_us")
 
 # Four distinct amounts, one per (agent, source), so that any row collision in the bucket
 # arithmetic produces a visibly wrong sum rather than a plausible one.
-_ALICE_WAGES = 120_000.0
-_ALICE_INTEREST = 45_000.0
-_BOB_WAGES = 260_000.0
-_BOB_INTEREST = 70_000.0
+_ALICE_WAGES = 120_000
+_ALICE_INTEREST = 45_000
+_BOB_WAGES = 260_000
+_BOB_INTEREST = 70_000
 
 
 @dataclass(frozen=True)
 class _Payment:
     to_agent_id: str
     income_category: TransferIncomeCategory
-    amount_usd: float
+    amount: Decimal | int
 
 
 def _scenario_for(payments: Sequence[_Payment]) -> Scenario:
@@ -64,13 +65,13 @@ def _scenario_for(payments: Sequence[_Payment]) -> Scenario:
         agents=[Agent(agent_id=agent_id) for agent_id in (*recipients, "payer", "irs")],
         initial_cash=[
             *(
-                InitialAccountBalance(agent_id=agent_id, account_id="checking", balance_usd=500_000.0)
+                InitialAccountBalance(agent_id=agent_id, account_id="checking", balance=500000)
                 for agent_id in recipients
             ),
             InitialAccountBalance(
-                agent_id="payer", account_id="checking", balance_usd=sum(payment.amount_usd for payment in payments)
+                agent_id="payer", account_id="checking", balance=sum(payment.amount for payment in payments)
             ),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         scheduled_transfers=[
             ScheduledTransfer(
@@ -80,7 +81,7 @@ def _scenario_for(payments: Sequence[_Payment]) -> Scenario:
                 from_account_id="checking",
                 to_agent_id=payment.to_agent_id,
                 to_account_id="checking",
-                amount_usd=payment.amount_usd,
+                amount=payment.amount,
                 income_category=payment.income_category,
             )
             for index, payment in enumerate(payments)
@@ -99,20 +100,20 @@ def _scenario_for(payments: Sequence[_Payment]) -> Scenario:
 
 
 def _scenario(*income_categories: TransferIncomeCategory) -> Scenario:
-    return _scenario_for([_Payment("alice", category, _PAYMENT_USD) for category in income_categories])
+    return _scenario_for([_Payment("alice", category, _PAYMENT) for category in income_categories])
 
 
 def _tax_for(payments: Sequence[_Payment]) -> dict[str, int]:
     run = simulate(_scenario_for(payments), rollout_count=1, locations={})
     accruals = run.events_log.tax_accruals
     return {
-        str(row["jurisdiction_id"]): int(row["amount_currency_quanta"])
-        for row in accruals.group_by("jurisdiction_id").agg(pl.col("amount_currency_quanta").sum()).to_dicts()
+        str(row["jurisdiction_id"]): int(row["amount_quanta"])
+        for row in accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
     }
 
 
 def _tax_by_jurisdiction(income_category: TransferIncomeCategory) -> dict[str, int]:
-    return _tax_for([_Payment("alice", income_category, _PAYMENT_USD)])
+    return _tax_for([_Payment("alice", income_category, _PAYMENT)])
 
 
 def test_wages_are_taxed_by_both_jurisdictions() -> None:
@@ -150,22 +151,20 @@ def test_interest_and_wages_accrue_to_separate_buckets() -> None:
 
     run = simulate(_scenario(ORDINARY_INCOME, _TREASURY), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11)
-        & (pl.col("agent_id") == "alice")
-        & (pl.col("ordinary_income_currency_quanta") > 0)
+        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
     ).sort("income_source")
 
     assert december.get_column("income_source").to_list() == ["interest:federal_us", "ordinary"]
-    assert december.get_column("ordinary_income_currency_quanta").to_list() == [10_000_000, 10_000_000]
+    assert december.get_column("ordinary_income_quanta").to_list() == [10_000_000, 10_000_000]
 
 
 def _december_income(payments: Sequence[_Payment]) -> list[tuple[str, str, int]]:
     run = simulate(_scenario_for(payments), rollout_count=1, locations={})
     december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("ordinary_income_currency_quanta") > 0)
+        (pl.col("month_index") == 11) & (pl.col("ordinary_income_quanta") > 0)
     ).sort("agent_id", "income_source")
     return [
-        (str(row["agent_id"]), str(row["income_source"]), int(row["ordinary_income_currency_quanta"]))
+        (str(row["agent_id"]), str(row["income_source"]), int(row["ordinary_income_quanta"]))
         for row in december.to_dicts()
     ]
 

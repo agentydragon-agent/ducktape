@@ -79,8 +79,8 @@ def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=2_000_000.0),
-            InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=2000000),
+            InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -91,8 +91,8 @@ def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="property_seller",
-                purchase_price_usd=1_000_000.0,
-                down_payment_usd=200_000.0,
+                purchase_price=1000000,
+                down_payment=200000,
             ),
             ScheduledPropertyPurchase(
                 month=0,
@@ -102,8 +102,8 @@ def _two_property_scenario(*, horizon_months: int = 3) -> Scenario:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="property_seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
+                purchase_price=500000,
+                down_payment=500000,
             ),
         ],
         tax_profiles=[],
@@ -120,8 +120,8 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
     # equity_ledger = purchase_price - mortgage_principal (no mortgage here);
     # contribution_used_usd = down_payment + closing_cost.
     expected = {
-        "p1": {"contribution_used_currency_quanta": 20_000_000, "equity_ledger_currency_quanta": 100_000_000},
-        "p2": {"contribution_used_currency_quanta": 50_000_000, "equity_ledger_currency_quanta": 50_000_000},
+        "p1": {"contribution_used_quanta": 20_000_000, "equity_ledger_quanta": 100_000_000},
+        "p2": {"contribution_used_quanta": 50_000_000, "equity_ledger_quanta": 50_000_000},
     }
     for property_id, fields in expected.items():
         rows = stakes.filter(pl.col("property_id") == property_id)
@@ -143,8 +143,8 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
 
     horizon = 36
     rental_sale_month = 24
-    rental_purchase_price = 300_000.0
-    rental_capex = 30_000.0
+    rental_purchase_price = 300_000
+    rental_capex = 30_000
     rental_monthly_tax = rental_purchase_price * 0.024 / 12.0
     rental_building_basis_before = rental_purchase_price * 0.80
     rental_building_basis_after = rental_building_basis_before + rental_capex
@@ -161,12 +161,12 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
             Agent(agent_id="irs"),
         ],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_500_000.0),
-            InitialAccountBalance(agent_id="tenant", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="bank", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="county", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1500000),
+            InitialAccountBalance(agent_id="tenant", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="bank", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="county", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -177,7 +177,7 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=2_000.0,
+                amount=2000,
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -190,15 +190,15 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=100000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
                 land_value_fraction=0.20,
                 mortgage=MortgageFinancing(
                     liability_id="home_mortgage",
                     lender_agent_id="bank",
-                    principal_usd=400_000.0,
+                    principal=400000,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),
@@ -211,9 +211,9 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=rental_purchase_price,
-                down_payment_usd=rental_purchase_price,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=rental_purchase_price,
+                down_payment=rental_purchase_price,
+                buyer_closing_cost=0,
                 rented_fraction=1.0,
                 land_value_fraction=0.20,
             ),
@@ -221,7 +221,7 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
         initial_primary_residences=[PrimaryResidenceAssignment(agent_id="alice", property_id="home")],
         property_lifecycle_events=[
             SetRentedFractionEvent(month=12, property_id="rental", rented_fraction=0.5),
-            CapitalImprovementEvent(month=12, property_id="rental", amount_usd=rental_capex, description="new roof"),
+            CapitalImprovementEvent(month=12, property_id="rental", amount=rental_capex, description="new roof"),
             PropertySaleEvent(month=rental_sale_month, property_id="rental", closing_cost_pct=6.0),
         ],
         property_tax_policies=[
@@ -254,11 +254,11 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     transfers = run.events_log.transfers
     home_tax = transfers.filter(pl.col("cause_id").str.starts_with("home_property_tax_m")).sort("month_index")
     assert home_tax.get_column("month_index").to_list() == list(range(1, horizon))
-    assert home_tax.get_column("amount_currency_quanta").to_list() == [50_000] * (horizon - 1)
+    assert home_tax.get_column("amount_quanta").to_list() == [50_000] * (horizon - 1)
 
     rental_tax = transfers.filter(pl.col("cause_id").str.starts_with("rental_property_tax_m")).sort("month_index")
     assert rental_tax.get_column("month_index").to_list() == list(range(1, rental_sale_month))
-    assert rental_tax.get_column("amount_currency_quanta").to_list() == pytest.approx(
+    assert rental_tax.get_column("amount_quanta").to_list() == pytest.approx(
         [rental_monthly_tax * 100] * (rental_sale_month - 1)
     )
 
@@ -270,7 +270,7 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     assert capex_rows[0]["rollout_index"] == 0
     assert capex_rows[0]["month_index"] == 12
     assert capex_rows[0]["property_id"] == "rental"
-    assert capex_rows[0]["amount_currency_quanta"] == 3_000_000
+    assert capex_rows[0]["amount_quanta"] == 3_000_000
 
     cumulative_depreciation = 12 * monthly_dep_before + 12 * monthly_dep_after_half_rented
     expected_gross_proceeds = rental_purchase_price * 1.5 * 0.94
@@ -279,24 +279,24 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     sale = run.events_log.property_sale_events.to_dicts()[0]
     assert sale["month_index"] == rental_sale_month
     assert sale["property_id"] == "rental"
-    assert sale["gross_proceeds_currency_quanta"] == pytest.approx(expected_gross_proceeds * 100, abs=100)
-    assert sale["mortgage_payoff_currency_quanta"] == 0
-    assert sale["realized_gain_currency_quanta"] == pytest.approx(expected_realized_gain * 100, abs=100)
-    assert sale["depreciation_recapture_currency_quanta"] == pytest.approx(cumulative_depreciation * 100, abs=100)
+    assert sale["gross_proceeds_quanta"] == pytest.approx(expected_gross_proceeds * 100, abs=100)
+    assert sale["mortgage_payoff_quanta"] == 0
+    assert sale["realized_gain_quanta"] == pytest.approx(expected_realized_gain * 100, abs=100)
+    assert sale["depreciation_recapture_quanta"] == pytest.approx(cumulative_depreciation * 100, abs=100)
     # Alice has a qualifying primary residence, but it is `home`; that must not leak onto `rental`.
-    assert sale["section_121_exclusion_currency_quanta"] == 0
-    assert sale["long_term_capital_gain_currency_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
+    assert sale["section_121_exclusion_quanta"] == 0
+    assert sale["long_term_capital_gain_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
 
     terminal_properties = run.property_state.filter(pl.col("month_index") == horizon)
     assert terminal_properties.get_column("property_id").to_list() == ["home"]
     terminal_home = terminal_properties.row(0, named=True)
-    assert terminal_home["adjusted_basis_currency_quanta"] == 50_000_000
+    assert terminal_home["adjusted_basis_quanta"] == 50_000_000
 
     terminal_mortgage = run.liabilities.filter(
         (pl.col("month_index") == horizon) & (pl.col("liability_id") == "home_mortgage")
     )
     assert terminal_mortgage.height == 1
-    assert terminal_mortgage.get_column("principal_currency_quanta").item() > 0
+    assert terminal_mortgage.get_column("principal_quanta").item() > 0
 
     federal_by_month = {
         row["month_index"]: row
@@ -304,13 +304,9 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     }
     expected_year_0_ordinary = 24_000.0 - 12 * monthly_dep_before - 11 * rental_monthly_tax
     expected_year_1_ordinary = 24_000.0 - 12 * monthly_dep_after_half_rented - 12 * rental_monthly_tax * 0.5
-    assert federal_by_month[11]["ordinary_income_currency_quanta"] == pytest.approx(
-        expected_year_0_ordinary * 100, abs=5
-    )
-    assert federal_by_month[23]["ordinary_income_currency_quanta"] == pytest.approx(
-        expected_year_1_ordinary * 100, abs=5
-    )
-    assert federal_by_month[35]["ltcg_currency_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
+    assert federal_by_month[11]["ordinary_income_quanta"] == pytest.approx(expected_year_0_ordinary * 100, abs=5)
+    assert federal_by_month[23]["ordinary_income_quanta"] == pytest.approx(expected_year_1_ordinary * 100, abs=5)
+    assert federal_by_month[35]["ltcg_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ def decode_lifecycle_events(
         rollout_index=rollouts[capital_mask],
         month_index=months[capital_mask],
         property_id=property_ids[capital_mask],
-        amount_currency_quanta=currency_quanta_column(plan.lifecycle_events.amount_cents[events_idx[capital_mask]]),
+        amount_quanta=currency_quanta_column(plan.lifecycle_events.amount_quanta[events_idx[capital_mask]]),
         description=np.full(int(capital_mask.sum()), "", dtype=object),
     )
     property_sale_frame = frame_from_columns(
@@ -67,25 +67,25 @@ def decode_lifecycle_events(
         rollout_index=rollouts[sale_mask],
         month_index=months[sale_mask],
         property_id=property_ids[sale_mask],
-        gross_proceeds_currency_quanta=currency_quanta_column(
+        gross_proceeds_quanta=currency_quanta_column(
             buffers.lifecycle.sale_gross_proceeds[events_idx[sale_mask], rollouts[sale_mask]]
         ),
-        mortgage_payoff_currency_quanta=currency_quanta_column(
+        mortgage_payoff_quanta=currency_quanta_column(
             buffers.lifecycle.sale_mortgage_payoff[events_idx[sale_mask], rollouts[sale_mask]]
         ),
-        net_cash_to_owner_currency_quanta=currency_quanta_column(
+        net_cash_to_owner_quanta=currency_quanta_column(
             buffers.lifecycle.sale_net_cash[events_idx[sale_mask], rollouts[sale_mask]]
         ),
-        realized_gain_currency_quanta=currency_quanta_column(
+        realized_gain_quanta=currency_quanta_column(
             buffers.lifecycle.sale_realized_gain[events_idx[sale_mask], rollouts[sale_mask]]
         ),
-        depreciation_recapture_currency_quanta=currency_quanta_column(
+        depreciation_recapture_quanta=currency_quanta_column(
             buffers.lifecycle.sale_recapture[events_idx[sale_mask], rollouts[sale_mask]]
         ),
-        section_121_exclusion_currency_quanta=currency_quanta_column(
+        section_121_exclusion_quanta=currency_quanta_column(
             buffers.lifecycle.sale_section_121_exclusion[events_idx[sale_mask], rollouts[sale_mask]]
         ),
-        long_term_capital_gain_currency_quanta=currency_quanta_column(
+        long_term_capital_gain_quanta=currency_quanta_column(
             buffers.lifecycle.sale_long_term_gain[events_idx[sale_mask], rollouts[sale_mask]]
         ),
     )

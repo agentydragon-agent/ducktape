@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from decimal import Decimal
 
 import numpy as np
 import pytest_bazel
@@ -52,9 +53,9 @@ def _tax_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -65,7 +66,7 @@ def _tax_scenario() -> Scenario:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=120_000.0 / 12.0,
+                amount=Decimal(120000) / Decimal(12),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -75,7 +76,7 @@ def _tax_scenario() -> Scenario:
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=15_000.0,
+                prior_year_tax=15000,
             )
         ],
         horizon_months=36,
@@ -86,7 +87,7 @@ def _sale_scenario() -> Scenario:
     """A long-held SP500 lot sold mid-horizon: the realized capital gain depends on the lot cost basis."""
     return Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="alice_sp500",
@@ -95,7 +96,7 @@ def _sale_scenario() -> Scenario:
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_asset_sales=[
@@ -106,7 +107,7 @@ def _sale_scenario() -> Scenario:
                 source_account_id="brokerage",
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
-                price_per_unit_usd=120.0,
+                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
@@ -190,9 +191,9 @@ def _financed_purchase_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=300000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -203,14 +204,14 @@ def _financed_purchase_scenario() -> Scenario:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=100000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
                 mortgage=MortgageFinancing(
                     liability_id="alice_mortgage",
                     lender_agent_id="lender",
-                    principal_usd=400_000.0,
+                    principal=400000,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),
@@ -280,9 +281,9 @@ def _multi_series_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=300000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -292,7 +293,7 @@ def _multi_series_scenario() -> Scenario:
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_property_purchases=[
@@ -304,14 +305,14 @@ def _multi_series_scenario() -> Scenario:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=100000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
                 mortgage=MortgageFinancing(
                     liability_id="alice_mortgage",
                     lender_agent_id="lender",
-                    principal_usd=400_000.0,
+                    principal=400000,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),

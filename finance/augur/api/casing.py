@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 def _plain(value: Any, *, exclude_none: bool) -> Any:
     if isinstance(value, BaseModel):
-        return value.model_dump(exclude_none=exclude_none)
+        return value.model_dump(mode="json", exclude_none=exclude_none)
     if isinstance(value, Mapping):
         return {str(key): _plain(item, exclude_none=exclude_none) for key, item in value.items()}
     if isinstance(value, list | tuple):

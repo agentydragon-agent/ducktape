@@ -8,6 +8,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 
 from finance.augur.api.config import Config
 from finance.augur.api.finance import FinanceSnapshot
@@ -45,7 +46,7 @@ _SHORT_TERM_HOLDING_PERIOD_MONTHS = 12
 
 @dataclass(frozen=True)
 class _PortfolioContribution:
-    cash_usd: float
+    cash: Decimal
     as_of_date: str | None
     accounts: tuple[PortfolioAccountConfig, ...]
     holdings: tuple[HoldingPositionConfig, ...]
@@ -83,7 +84,8 @@ def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
     present = tuple(contribution for contribution in contributions if contribution is not None)
     portfolio = _merge_contributions(present)
     snapshot = FinanceSnapshot(
-        as_of_date=_merged_as_of_date(present), cash_usd=sum(contribution.cash_usd for contribution in present)
+        as_of_date=_merged_as_of_date(present),
+        cash=sum((contribution.cash for contribution in present), start=Decimal(0)),
     )
     harvest_policies = tuple(policy for contribution in present for policy in contribution.harvest_policies)
     return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio, harvest_policies=harvest_policies)
@@ -109,7 +111,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
     finally:
         await engine.dispose()
 
-    cash_usd = _cash_total(plaid, cash_balances)
+    cash = _cash_total(plaid, cash_balances)
     holdings_by_account: dict[str, list[CurrentHolding]] = {}
     for holding in current_holdings:
         holdings_by_account.setdefault(holding.account_id, []).append(holding)
@@ -139,7 +141,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
         holding.captured_at for holding in current_holdings
     ]
     return _PortfolioContribution(
-        cash_usd=cash_usd,
+        cash=cash,
         as_of_date=None,
         accounts=tuple(accounts),
         holdings=tuple(holdings),
@@ -194,39 +196,39 @@ def _bucket_short_term_fraction(group: PlaidSp500ProxyGroupConfig) -> float:
     return short_term / total if total > 0.0 else 1.0
 
 
-def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBalance, ...]) -> float:
+def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBalance, ...]) -> Decimal:
     expected = set(plaid.cash.plaid_account_ids)
     actual = {balance.account_id for balance in balances}
     missing = sorted(expected - actual)
     if missing:
         raise ValueError(f"Plaid cash accounts have no current USD balance snapshot: {missing}")
-    total = 0.0
+    total = Decimal(0)
     for balance in balances:
         value = balance.current if plaid.cash.balance_field == PlaidBalanceField.CURRENT else balance.available
         if value is None:
             raise ValueError(
                 f"Plaid cash account {balance.account_id!r} has no {plaid.cash.balance_field.value} balance"
             )
-        total += float(value)
+        total += Decimal(str(value))
     return total
 
 
 def _sp500_proxy_holding(
     group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]
 ) -> HoldingPositionConfig:
-    total_value_usd = 0.0
-    total_cost_basis_usd = 0.0
+    total_value = Decimal(0)
+    total_cost_basis = Decimal(0)
     missing_basis: list[str] = []
     for holding in holdings:
-        value = _holding_value_usd(holding)
-        if value <= 0.0:
+        value = _holding_value(holding)
+        if value <= 0:
             continue
-        total_value_usd += value
+        total_value += value
         if holding.cost_basis is None:
             missing_basis.append(holding.security_id)
         else:
-            total_cost_basis_usd += float(holding.cost_basis)
-    if total_value_usd <= 0.0:
+            total_cost_basis += Decimal(str(holding.cost_basis))
+    if total_value <= 0:
         raise ValueError(f"Plaid SP500 proxy group {group.position_id!r} has no positive-value holdings")
     if missing_basis:
         logger.warning(
@@ -243,36 +245,39 @@ def _sp500_proxy_holding(
         label=group.label or group.symbol,
         symbol=SP500_SYMBOL,
         security_kind=group.security_kind,
-        unit_value_usd=float(group.unit_value_usd),
-        lots=_proxy_lots(group, total_value_usd=total_value_usd, total_cost_basis_usd=total_cost_basis_usd),
+        unit_value=group.unit_value,
+        lots=_proxy_lots(group, total_value=total_value, total_cost_basis=total_cost_basis),
     )
 
 
 def _proxy_lots(
-    group: PlaidSp500ProxyGroupConfig, *, total_value_usd: float, total_cost_basis_usd: float
+    group: PlaidSp500ProxyGroupConfig, *, total_value: Decimal, total_cost_basis: Decimal
 ) -> tuple[HoldingTaxLotConfig, ...]:
-    unit_value_usd = float(group.unit_value_usd)
+    unit_value = group.unit_value
     if not group.holding_period_buckets:
         return (
             HoldingTaxLotConfig(
                 lot_id=f"{group.position_id}_plaid_aggregate",
                 holding_period_months_at_start=int(group.default_holding_period_months_at_start),
-                quantity=total_value_usd / unit_value_usd,
-                cost_basis_usd=total_cost_basis_usd,
+                quantity=float(total_value / unit_value),
+                cost_basis=total_cost_basis,
             ),
         )
     # Distribute the live Plaid aggregate across the calibrated holding-period buckets. Normalize by
     # the configured fraction sums (validated to ~1.0) so the lot totals still equal the Plaid
     # snapshot exactly despite rounding in the authored fractions.
     buckets = group.holding_period_buckets
-    market_value_fraction_sum = sum(bucket.market_value_fraction for bucket in buckets)
-    basis_fractions = [bucket.cost_basis_fraction for bucket in buckets if bucket.cost_basis_fraction is not None]
+    market_value_fractions = [Decimal(str(bucket.market_value_fraction)) for bucket in buckets]
+    market_value_fraction_sum = sum(market_value_fractions, start=Decimal(0))
+    basis_fractions = [
+        Decimal(str(bucket.cost_basis_fraction)) for bucket in buckets if bucket.cost_basis_fraction is not None
+    ]
     basis_fraction_sum = sum(basis_fractions) if basis_fractions else market_value_fraction_sum
     lots: list[HoldingTaxLotConfig] = []
-    for bucket in buckets:
-        market_value_weight = bucket.market_value_fraction / market_value_fraction_sum
+    for bucket, market_value_fraction in zip(buckets, market_value_fractions, strict=True):
+        market_value_weight = market_value_fraction / market_value_fraction_sum
         basis_weight = (
-            bucket.cost_basis_fraction / basis_fraction_sum
+            Decimal(str(bucket.cost_basis_fraction)) / basis_fraction_sum
             if bucket.cost_basis_fraction is not None
             else market_value_weight
         )
@@ -280,26 +285,26 @@ def _proxy_lots(
             HoldingTaxLotConfig(
                 lot_id=f"{group.position_id}_plaid_{bucket.key}",
                 holding_period_months_at_start=int(bucket.holding_period_months_at_start),
-                quantity=(total_value_usd * market_value_weight) / unit_value_usd,
-                cost_basis_usd=total_cost_basis_usd * basis_weight,
+                quantity=float((total_value * market_value_weight) / unit_value),
+                cost_basis=total_cost_basis * basis_weight,
             )
         )
     return tuple(lots)
 
 
-def _holding_value_usd(holding: CurrentHolding) -> float:
+def _holding_value(holding: CurrentHolding) -> Decimal:
     if holding.institution_value is not None:
-        return float(holding.institution_value)
+        return Decimal(str(holding.institution_value))
     if holding.quantity is not None and holding.institution_price is not None:
-        return float(holding.quantity) * float(holding.institution_price)
-    return 0.0
+        return Decimal(str(holding.quantity)) * Decimal(str(holding.institution_price))
+    return Decimal(0)
 
 
 def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribution | None:
     if not fixed.enabled:
         return None
     return _PortfolioContribution(
-        cash_usd=float(fixed.snapshot.cash_usd) if fixed.snapshot is not None else 0.0,
+        cash=fixed.snapshot.cash if fixed.snapshot is not None else Decimal(0),
         as_of_date=fixed.snapshot.as_of_date if fixed.snapshot is not None else None,
         accounts=fixed.portfolio.accounts,
         holdings=fixed.portfolio.holdings,

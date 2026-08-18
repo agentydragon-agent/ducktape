@@ -44,18 +44,18 @@ from finance.augur.sim.scenario import ObligationType
 _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
 
 
-def _currency_quanta(value: int | np.integer[Any]) -> str:
+def _quanta(value: int | np.integer[Any]) -> str:
     """Serialize one authoritative integer count without a JS-number boundary."""
 
     return str(value)
 
 
-def _value_currency_quanta_from_quantity(
-    quantity_quanta: np.ndarray, price_currency_quanta: np.ndarray, quantity_scale: int
+def _value_quanta_from_quantity(
+    quantity_quanta: np.ndarray, price_quanta: np.ndarray, quantity_scale: int
 ) -> np.ndarray:
     """Value integer asset quanta using the engine's nearest-half-up policy."""
 
-    numerator = np.asarray(quantity_quanta, dtype=np.int64) * np.asarray(price_currency_quanta, dtype=np.int64)
+    numerator = np.asarray(quantity_quanta, dtype=np.int64) * np.asarray(price_quanta, dtype=np.int64)
     absolute = np.abs(numerator)
     quotient, remainder = divmod(absolute, quantity_scale)
     return cast(
@@ -66,9 +66,7 @@ def _value_currency_quanta_from_quantity(
     )
 
 
-def _scale_currency_quanta_by_ratio(
-    amount_currency_quanta: int, numerator: np.ndarray, denominator: np.ndarray
-) -> np.ndarray:
+def _scale_quanta_by_ratio(amount_quanta: int, numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
     """Apply a sampled price ratio using integer half-up rounding.
 
     Property values are anchored to the purchase price and then scaled by the
@@ -79,7 +77,7 @@ def _scale_currency_quanta_by_ratio(
     """
 
     safe_denominator = np.where(denominator > 0, denominator, 1)
-    product = np.int64(amount_currency_quanta) * np.asarray(numerator, dtype=np.int64)
+    product = np.int64(amount_quanta) * np.asarray(numerator, dtype=np.int64)
     absolute = np.abs(product)
     quotient, remainder = divmod(absolute, safe_denominator)
     rounded = quotient + (2 * remainder >= safe_denominator)
@@ -95,22 +93,20 @@ def monthly_metric_arrays_batch(dense: SimulationRun, *, primary_agent_id: str) 
 
     plan = dense.plan
     primary_agent_code = _required_string_code(plan.strings, primary_agent_id)
-    cash_currency_quanta = _cash_by_month(dense, primary_agent_code=primary_agent_code)
-    holding_value_currency_quanta = _holding_value_by_month(dense, primary_agent_code=primary_agent_code)
-    private_equity_value_currency_quanta = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
-    property_value_currency_quanta = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
-    mortgage_balance_currency_quanta = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
-    bond_value_currency_quanta = _bond_value_by_month(dense, primary_agent_code=primary_agent_code)
-    # Product-facing metric names describe the amount, not its integer storage
-    # unit. The enclosing response declares the exact currency quantum.
+    cash_quanta = _cash_by_month(dense, primary_agent_code=primary_agent_code)
+    holding_value_quanta = _holding_value_by_month(dense, primary_agent_code=primary_agent_code)
+    private_equity_value_quanta = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
+    property_value_quanta = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
+    mortgage_balance_quanta = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
+    bond_value_quanta = _bond_value_by_month(dense, primary_agent_code=primary_agent_code)
     base = {
-        "cash": cash_currency_quanta,
-        "holding_value": holding_value_currency_quanta,
-        "private_equity_value": private_equity_value_currency_quanta,
-        "property_value": property_value_currency_quanta,
-        "mortgage_balance": mortgage_balance_currency_quanta,
-        "bond_value": bond_value_currency_quanta,
-        "shortfall": _shortfall_by_month(dense, primary_agent_code=primary_agent_code),
+        "cash_quanta": cash_quanta,
+        "holding_value_quanta": holding_value_quanta,
+        "private_equity_value_quanta": private_equity_value_quanta,
+        "property_value_quanta": property_value_quanta,
+        "mortgage_balance_quanta": mortgage_balance_quanta,
+        "bond_value_quanta": bond_value_quanta,
+        "shortfall_quanta": _shortfall_by_month(dense, primary_agent_code=primary_agent_code),
     }
     # The derived sums come from `metric_composition` — the same definitions the engine's
     # on-device path composes — so the two cannot disagree about what net worth is.
@@ -135,16 +131,16 @@ def terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_
     if arrays["month_index"].size == 0:
         raise ValueError("rollout produced no monthly metrics")
     return TerminalMetrics(
-        cash=_currency_quanta(arrays["cash"][-1]),
-        holding_value=_currency_quanta(arrays["holding_value"][-1]),
-        private_equity_value=_currency_quanta(arrays["private_equity_value"][-1]),
-        property_value=_currency_quanta(arrays["property_value"][-1]),
-        mortgage_balance=_currency_quanta(arrays["mortgage_balance"][-1]),
-        bond_value=_currency_quanta(arrays["bond_value"][-1]),
-        home_equity=_currency_quanta(arrays["home_equity"][-1]),
-        liquid_net_worth=_currency_quanta(arrays["liquid_net_worth"][-1]),
-        net_worth=_currency_quanta(arrays["net_worth"][-1]),
-        shortfall=_currency_quanta(arrays["shortfall"].sum()),
+        cash_quanta=_quanta(arrays["cash_quanta"][-1]),
+        holding_value_quanta=_quanta(arrays["holding_value_quanta"][-1]),
+        private_equity_value_quanta=_quanta(arrays["private_equity_value_quanta"][-1]),
+        property_value_quanta=_quanta(arrays["property_value_quanta"][-1]),
+        mortgage_balance_quanta=_quanta(arrays["mortgage_balance_quanta"][-1]),
+        bond_value_quanta=_quanta(arrays["bond_value_quanta"][-1]),
+        home_equity_quanta=_quanta(arrays["home_equity_quanta"][-1]),
+        liquid_net_worth_quanta=_quanta(arrays["liquid_net_worth_quanta"][-1]),
+        net_worth_quanta=_quanta(arrays["net_worth_quanta"][-1]),
+        shortfall_quanta=_quanta(arrays["shortfall_quanta"].sum()),
         failed_month_index=failed_month_index,
     )
 
@@ -248,7 +244,7 @@ def _lot_value_by_month(
             issuer_idx = pe_issuer_index.get(str(asset.issuer_id))
             if issuer_idx is None:
                 raise ValueError(f"holding asset {asset.wire_id!r} has no compiled PE channels")
-            price = plan.pe_channels.mark_currency_quanta[issuer_idx, :, :].T
+            price = plan.pe_channels.mark_quanta[issuer_idx, :, :].T
         else:
             series_index = series_index_by_id.get(asset_price_key(asset))
             if series_index is None:
@@ -256,7 +252,7 @@ def _lot_value_by_month(
                     f"holding asset {asset.wire_id!r} has no modeled price series in the compiled simulation"
                 )
             price = plan.external_money_values[series_index, :, :].T
-        values += _value_currency_quanta_from_quantity(quantity, price, int(plan.lot_quantity_scale[lot]))
+        values += _value_quanta_from_quantity(quantity, price, int(plan.lot_quantity_scale[lot]))
     return np.maximum(values, 0)
 
 
@@ -283,20 +279,20 @@ def _holding_sale_events(
         .group_by(["month_index", "asset_id"])
         .agg(
             pl.col("units_sold").sum(),
-            pl.col("proceeds_currency_quanta").sum(),
-            pl.col("cost_basis_consumed_currency_quanta").sum().alias("cost_basis_currency_quanta"),
+            pl.col("proceeds_quanta").sum(),
+            pl.col("cost_basis_consumed_quanta").sum().alias("cost_basis_quanta"),
         )
         .sort("month_index", "asset_id")
     )
     return tuple(
         HoldingSaleEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["proceeds_currency_quanta"]),
+            amount_quanta=_quanta(row["proceeds_quanta"]),
             asset=parse_asset_key(str(row["asset_id"])),
             asset_label=asset_label_by_id.get(str(row["asset_id"])),
             units=float(row["units_sold"]),
-            proceeds=_currency_quanta(row["proceeds_currency_quanta"]),
-            cost_basis=_currency_quanta(row["cost_basis_currency_quanta"]),
+            proceeds_quanta=_quanta(row["proceeds_quanta"]),
+            cost_basis_quanta=_quanta(row["cost_basis_quanta"]),
         )
         for row in sale_rows.iter_rows(named=True)
     )
@@ -326,18 +322,18 @@ def _private_equity_events(
     return tuple(
         PrivateEquityMarkerEvent(
             month_index=int(row["month_index"]),
-            amount="0",
+            amount_quanta="0",
             issuer_id=str(row["issuer_id"]),
             asset=parse_asset_key(str(row["asset_id"])),
             asset_label=asset_label_by_id.get(str(row["asset_id"])),
             event_kind=str(row["event_kind"]),
             regime=str(row["regime"]),
-            mark=_currency_quanta(row["mark_currency_quanta"]),
+            mark_quanta=_quanta(row["mark_quanta"]),
             sale_capacity_fraction=float(row["sale_capacity_fraction"]),
             eligible_fraction=float(row["eligible_fraction"]),
             forced_sale_fraction=float(row["forced_sale_fraction"]),
             liquidity_blocked=bool(row["liquidity_blocked"]),
-            forced_recovery_cashout=_currency_quanta(row["forced_recovery_cashout_currency_quanta"]),
+            forced_recovery_cashout_quanta=_quanta(row["forced_recovery_cashout_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )
@@ -364,24 +360,24 @@ def _private_equity_opportunities(
     return tuple(
         PrivateEquityOpportunityEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["proceeds_currency_quanta"]),
+            amount_quanta=_quanta(row["proceeds_quanta"]),
             issuer_id=str(row["issuer_id"]),
             asset=parse_asset_key(str(row["asset_id"])),
             asset_label=asset_label_by_id.get(str(row["asset_id"])),
             event_kind=str(row["event_kind"]),
             regime=str(row["regime"]),
             outcome=str(row["outcome"]),
-            mark=_currency_quanta(row["mark_currency_quanta"]),
+            mark_quanta=_quanta(row["mark_quanta"]),
             sale_capacity_fraction=float(row["sale_capacity_fraction"]),
             eligible_fraction=float(row["eligible_fraction"]),
             liquidity_blocked=bool(row["liquidity_blocked"]),
-            floor=_currency_quanta(row["floor_currency_quanta"]),
-            liquid_net_worth=_currency_quanta(row["liquid_net_worth_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            floor_quanta=_quanta(row["floor_quanta"]),
+            liquid_net_worth_quanta=_quanta(row["liquid_net_worth_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
             units_held=float(row["units_held"]),
             sellable_units=float(row["sellable_units"]),
             target_units=float(row["target_units"]),
-            proceeds=_currency_quanta(row["proceeds_currency_quanta"]),
+            proceeds_quanta=_quanta(row["proceeds_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )
@@ -394,10 +390,10 @@ def _monthly_expense_events(run: SimulationRun, *, primary_agent_id: str) -> tup
     return tuple(
         MonthlyExpenseEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in expense_rows.iter_rows(named=True)
     )
@@ -410,10 +406,10 @@ def _outside_rent_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[
     return tuple(
         OutsideRentPaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in rent_rows.iter_rows(named=True)
     )
@@ -423,51 +419,47 @@ def _tax_accrual_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[R
     keys = ["rollout_index", "month_index", "cause_id", "agent_id", "jurisdiction_id", "tax_year_end_month"]
     breakdown_columns = [
         *keys,
-        "ordinary_income_currency_quanta",
-        "ltcg_currency_quanta",
-        "stcg_currency_quanta",
-        "standard_deduction_currency_quanta",
-        "mortgage_interest_deduction_currency_quanta",
-        "itemized_deduction_currency_quanta",
-        "ordinary_tax_currency_quanta",
-        "capital_gain_tax_currency_quanta",
-        "total_tax_currency_quanta",
+        "ordinary_income_quanta",
+        "ltcg_quanta",
+        "stcg_quanta",
+        "standard_deduction_quanta",
+        "mortgage_interest_deduction_quanta",
+        "itemized_deduction_quanta",
+        "ordinary_tax_quanta",
+        "capital_gain_tax_quanta",
+        "total_tax_quanta",
     ]
     accrual_rows = (
         run.events_log.tax_accruals.filter(pl.col("agent_id") == primary_agent_id)
         .join(run.events_log.tax_breakdowns.select(breakdown_columns), on=keys, how="left")
         .with_columns(
-            ordinary_income_currency_quanta=pl.col("ordinary_income_currency_quanta").fill_null(0),
-            ltcg_currency_quanta=pl.col("ltcg_currency_quanta").fill_null(0),
-            stcg_currency_quanta=pl.col("stcg_currency_quanta").fill_null(0),
-            standard_deduction_currency_quanta=pl.col("standard_deduction_currency_quanta").fill_null(0),
-            mortgage_interest_deduction_currency_quanta=pl.col("mortgage_interest_deduction_currency_quanta").fill_null(
-                0
-            ),
-            itemized_deduction_currency_quanta=pl.col("itemized_deduction_currency_quanta").fill_null(0),
-            ordinary_tax_currency_quanta=pl.col("ordinary_tax_currency_quanta").fill_null(
-                pl.col("amount_currency_quanta")
-            ),
-            capital_gain_tax_currency_quanta=pl.col("capital_gain_tax_currency_quanta").fill_null(0),
-            total_tax_currency_quanta=pl.col("total_tax_currency_quanta").fill_null(pl.col("amount_currency_quanta")),
+            ordinary_income_quanta=pl.col("ordinary_income_quanta").fill_null(0),
+            ltcg_quanta=pl.col("ltcg_quanta").fill_null(0),
+            stcg_quanta=pl.col("stcg_quanta").fill_null(0),
+            standard_deduction_quanta=pl.col("standard_deduction_quanta").fill_null(0),
+            mortgage_interest_deduction_quanta=pl.col("mortgage_interest_deduction_quanta").fill_null(0),
+            itemized_deduction_quanta=pl.col("itemized_deduction_quanta").fill_null(0),
+            ordinary_tax_quanta=pl.col("ordinary_tax_quanta").fill_null(pl.col("amount_quanta")),
+            capital_gain_tax_quanta=pl.col("capital_gain_tax_quanta").fill_null(0),
+            total_tax_quanta=pl.col("total_tax_quanta").fill_null(pl.col("amount_quanta")),
         )
         .sort("month_index", "jurisdiction_id")
     )
     return tuple(
         TaxAccrualEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_quanta"]),
             jurisdiction_id=str(row["jurisdiction_id"]),
             tax_year_end_month=int(row["tax_year_end_month"]),
-            ordinary_income=_currency_quanta(row["ordinary_income_currency_quanta"]),
-            ltcg=_currency_quanta(row["ltcg_currency_quanta"]),
-            stcg=_currency_quanta(row["stcg_currency_quanta"]),
-            ordinary_tax=_currency_quanta(row["ordinary_tax_currency_quanta"]),
-            capital_gain_tax=_currency_quanta(row["capital_gain_tax_currency_quanta"]),
-            total_tax=_currency_quanta(row["total_tax_currency_quanta"]),
-            mortgage_interest_deduction=_currency_quanta(row["mortgage_interest_deduction_currency_quanta"]),
-            itemized_deduction=_currency_quanta(row["itemized_deduction_currency_quanta"]),
-            standard_deduction=_currency_quanta(row["standard_deduction_currency_quanta"]),
+            ordinary_income_quanta=_quanta(row["ordinary_income_quanta"]),
+            ltcg_quanta=_quanta(row["ltcg_quanta"]),
+            stcg_quanta=_quanta(row["stcg_quanta"]),
+            ordinary_tax_quanta=_quanta(row["ordinary_tax_quanta"]),
+            capital_gain_tax_quanta=_quanta(row["capital_gain_tax_quanta"]),
+            total_tax_quanta=_quanta(row["total_tax_quanta"]),
+            mortgage_interest_deduction_quanta=_quanta(row["mortgage_interest_deduction_quanta"]),
+            itemized_deduction_quanta=_quanta(row["itemized_deduction_quanta"]),
+            standard_deduction_quanta=_quanta(row["standard_deduction_quanta"]),
         )
         for row in accrual_rows.iter_rows(named=True)
     )
@@ -480,11 +472,11 @@ def _tax_payment_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[R
     return tuple(
         TaxPaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
             obligation_type=str(row["obligation_type"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in tax_payment_rows.iter_rows(named=True)
     )
@@ -495,10 +487,10 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
     return tuple(
         RolloutFailureEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["shortfall_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["shortfall_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in failure_rows.iter_rows(named=True)
     )
@@ -526,7 +518,7 @@ def _property_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -
         purchase_price = int(plan.properties.purchase_price[prop])
         # Per rollout: market = purchase_price × level / base_level. Rollouts whose base level never
         # resolved (0) contribute nothing for this property (the R=1 path skipped it via `continue`).
-        market = _scale_currency_quanta_by_ratio(purchase_price, levels, base_level[None, :])
+        market = _scale_quanta_by_ratio(purchase_price, levels, base_level[None, :])
         values += np.where(active & (base_level[None, :] > 0), market, 0)
     return values
 
@@ -579,31 +571,31 @@ def _property_purchase_events(run: SimulationRun, *, primary_agent_id: str) -> t
         pl.col("rollout_index"),
         pl.col("month_index"),
         pl.col("property_id"),
-        pl.col("principal_currency_quanta").alias("mortgage_principal_currency_quanta"),
+        pl.col("principal_quanta").alias("mortgage_principal_quanta"),
     )
     joined = primary_purchases.join(
         originations, on=["rollout_index", "month_index", "property_id"], how="left"
-    ).with_columns(mortgage_principal_currency_quanta=pl.col("mortgage_principal_currency_quanta").fill_null(0))
+    ).with_columns(mortgage_principal_quanta=pl.col("mortgage_principal_quanta").fill_null(0))
     events: list[RolloutEvent] = []
     for row in joined.iter_rows(named=True):
         events.append(
             PropertyPurchaseEvent(
                 month_index=int(row["month_index"]),
-                amount=_currency_quanta(row["purchase_price_currency_quanta"]),
+                amount_quanta=_quanta(row["purchase_price_quanta"]),
                 property_id=str(row["property_id"]),
-                purchase_price=_currency_quanta(row["purchase_price_currency_quanta"]),
-                # equity_ledger_currency_quanta = purchase_price - mortgage_principal (compiler line 866);
+                purchase_price_quanta=_quanta(row["purchase_price_quanta"]),
+                # equity_ledger_quanta = purchase_price - mortgage_principal (compiler line 866);
                 # equals the cash down payment.
-                down_payment=_currency_quanta(row["equity_ledger_currency_quanta"]),
-                mortgage_principal=_currency_quanta(row["mortgage_principal_currency_quanta"]),
+                down_payment_quanta=_quanta(row["equity_ledger_quanta"]),
+                mortgage_principal_quanta=_quanta(row["mortgage_principal_quanta"]),
             )
         )
-        closing_cost = int(row["closing_cost_currency_quanta"])
+        closing_cost = int(row["closing_cost_quanta"])
         if closing_cost > 0:
             events.append(
                 ClosingCostPaymentEvent(
                     month_index=int(row["month_index"]),
-                    amount=_currency_quanta(closing_cost),
+                    amount_quanta=_quanta(closing_cost),
                     property_id=str(row["property_id"]),
                 )
             )
@@ -615,9 +607,9 @@ def _mortgage_payment_events(run: SimulationRun, *, primary_agent_id: str) -> tu
     return tuple(
         MortgagePaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["total_payment_currency_quanta"]),
-            interest=_currency_quanta(row["interest_currency_quanta"]),
-            principal=_currency_quanta(row["principal_currency_quanta"]),
+            amount_quanta=_quanta(row["total_payment_quanta"]),
+            interest_quanta=_quanta(row["interest_quanta"]),
+            principal_quanta=_quanta(row["principal_quanta"]),
         )
         for row in payment_rows.iter_rows(named=True)
     )
@@ -630,10 +622,10 @@ def _property_tax_payment_events(run: SimulationRun, *, primary_agent_id: str) -
     return tuple(
         PropertyTaxPaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )
@@ -646,10 +638,10 @@ def _hoa_dues_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Roll
     return tuple(
         HoaDuesPaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )
@@ -662,10 +654,10 @@ def _homeowners_insurance_events(run: SimulationRun, *, primary_agent_id: str) -
     return tuple(
         HomeownersInsurancePaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )
@@ -678,10 +670,10 @@ def _property_maintenance_events(run: SimulationRun, *, primary_agent_id: str) -
     return tuple(
         PropertyMaintenancePaymentEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_paid_currency_quanta"]),
-            amount_due=_currency_quanta(row["amount_due_currency_quanta"]),
-            amount_paid=_currency_quanta(row["amount_paid_currency_quanta"]),
-            shortfall=_currency_quanta(row["shortfall_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_paid_quanta"]),
+            amount_due_quanta=_quanta(row["amount_due_quanta"]),
+            amount_paid_quanta=_quanta(row["amount_paid_quanta"]),
+            shortfall_quanta=_quanta(row["shortfall_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )
@@ -695,7 +687,7 @@ def _set_rented_fraction_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
     return tuple(
         SetRentedFractionMarkerEvent(
             month_index=int(row["month_index"]),
-            amount="0",
+            amount_quanta="0",
             property_id=str(row["property_id"]),
             rented_fraction=float(row["rented_fraction"]),
         )
@@ -710,7 +702,7 @@ def _set_primary_residence_events(run: SimulationRun, *, primary_agent_id: str) 
     return tuple(
         SetPrimaryResidenceMarkerEvent(
             month_index=int(row["month_index"]),
-            amount="0",
+            amount_quanta="0",
             agent_id=str(row["agent_id"]),
             property_id=None if row["property_id"] is None else str(row["property_id"]),
             is_primary_residence=bool(row["is_primary_residence"]),
@@ -724,7 +716,7 @@ def _capital_improvement_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
     return tuple(
         CapitalImprovementMarkerEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["amount_currency_quanta"]),
+            amount_quanta=_quanta(row["amount_quanta"]),
             property_id=str(row["property_id"]),
         )
         for row in rows.iter_rows(named=True)
@@ -736,15 +728,15 @@ def _property_sale_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
     return tuple(
         PropertySaleMarkerEvent(
             month_index=int(row["month_index"]),
-            amount=_currency_quanta(row["gross_proceeds_currency_quanta"]),
+            amount_quanta=_quanta(row["gross_proceeds_quanta"]),
             property_id=str(row["property_id"]),
-            gross_proceeds=_currency_quanta(row["gross_proceeds_currency_quanta"]),
-            mortgage_payoff=_currency_quanta(row["mortgage_payoff_currency_quanta"]),
-            net_cash_to_owner=_currency_quanta(row["net_cash_to_owner_currency_quanta"]),
-            realized_gain=_currency_quanta(row["realized_gain_currency_quanta"]),
-            depreciation_recapture=_currency_quanta(row["depreciation_recapture_currency_quanta"]),
-            section_121_exclusion=_currency_quanta(row["section_121_exclusion_currency_quanta"]),
-            long_term_capital_gain=_currency_quanta(row["long_term_capital_gain_currency_quanta"]),
+            gross_proceeds_quanta=_quanta(row["gross_proceeds_quanta"]),
+            mortgage_payoff_quanta=_quanta(row["mortgage_payoff_quanta"]),
+            net_cash_to_owner_quanta=_quanta(row["net_cash_to_owner_quanta"]),
+            realized_gain_quanta=_quanta(row["realized_gain_quanta"]),
+            depreciation_recapture_quanta=_quanta(row["depreciation_recapture_quanta"]),
+            section_121_exclusion_quanta=_quanta(row["section_121_exclusion_quanta"]),
+            long_term_capital_gain_quanta=_quanta(row["long_term_capital_gain_quanta"]),
         )
         for row in rows.iter_rows(named=True)
     )

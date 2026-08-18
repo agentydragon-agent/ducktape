@@ -18,6 +18,7 @@ that fed a percentage in and asserted the same product back could not fail for a
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 
 import numpy as np
 import polars as pl
@@ -26,8 +27,9 @@ import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
-from finance.augur.sim.runtime import mortgage_monthly_payment_usd
+from finance.augur.sim.runtime import mortgage_monthly_payment
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
@@ -91,16 +93,20 @@ def _multi_series(*, levels_by_series: dict[LevelSeriesKey, dict[int, list[float
 
 
 def _mortgage_balance_and_interest_after_payments(
-    *, principal_usd: float, annual_interest_rate: float, term_months: int, payment_count: int
+    *, principal: float, annual_interest_rate: float, term_months: int, payment_count: int
 ) -> tuple[float, float]:
-    balance = principal_usd
+    balance = float(principal)
     interest_paid = 0.0
-    payment = mortgage_monthly_payment_usd(principal_usd, annual_interest_rate, term_months)
+    payment = float(
+        mortgage_monthly_payment(
+            Decimal(str(principal)), annual_interest_rate, term_months, currency_quantum=Decimal("0.01")
+        )
+    )
     for _ in range(payment_count):
-        interest = balance * annual_interest_rate / 12.0
+        interest = balance * annual_interest_rate / 12
         amount = min(payment, balance + interest)
         principal_paid = amount - interest
-        balance = max(0.0, balance - principal_paid)
+        balance = max(0, balance - principal_paid)
         interest_paid += interest
     return balance, interest_paid
 
@@ -108,10 +114,10 @@ def _mortgage_balance_and_interest_after_payments(
 def _rental_scenario(
     *,
     horizon_months: int = 12,
-    monthly_rent_usd: float = 5_000.0,
-    initial_cash_usd: float = 100_000.0,
-    monthly_management_fee_usd: float | None = None,
-    leasing_fees_by_month: Mapping[int, float] | None = None,
+    monthly_rent: Decimal | int = 5_000,
+    initial_cash: Decimal | int = 100_000,
+    monthly_management_fee: Decimal | int | None = None,
+    leasing_fees_by_month: Mapping[int, Decimal | int] | None = None,
 ) -> Scenario:
     """Build a minimal static-rental scenario. No taxes (empty tax_profiles).
 
@@ -122,9 +128,9 @@ def _rental_scenario(
 
     end_month = horizon_months - 1
     agents = [Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id=TENANT_AGENT_ID)]
-    initial_cash = [
-        InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=initial_cash_usd),
-        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+    initial_balances = [
+        InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=initial_cash),
+        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
     ]
     recurring_transfers: list[RecurringTransfer] = [
         RecurringTransfer(
@@ -135,16 +141,14 @@ def _rental_scenario(
             from_account_id="checking",
             to_agent_id=OWNER_AGENT_ID,
             to_account_id="checking",
-            amount_usd=SeriesIndexedAmount(
-                base_amount_usd=monthly_rent_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
-            ),
+            amount=SeriesIndexedAmount(base_amount=monthly_rent, series=RENT_SERIES_KEY, adjustment_period_months=12),
         )
     ]
     scheduled_transfers: list[ScheduledTransfer] = []
-    if monthly_management_fee_usd is not None or leasing_fees_by_month is not None:
+    if monthly_management_fee is not None or leasing_fees_by_month is not None:
         agents.append(Agent(agent_id=MGMT_AGENT_ID))
-        initial_cash.append(InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0))
-    if monthly_management_fee_usd is not None:
+        initial_balances.append(InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance=0))
+    if monthly_management_fee is not None:
         recurring_transfers.append(
             RecurringTransfer(
                 start_month=0,
@@ -154,8 +158,8 @@ def _rental_scenario(
                 from_account_id="checking",
                 to_agent_id=MGMT_AGENT_ID,
                 to_account_id="checking",
-                amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=monthly_management_fee_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
+                amount=SeriesIndexedAmount(
+                    base_amount=monthly_management_fee, series=RENT_SERIES_KEY, adjustment_period_months=12
                 ),
             )
         )
@@ -168,15 +172,13 @@ def _rental_scenario(
                 from_account_id="checking",
                 to_agent_id=MGMT_AGENT_ID,
                 to_account_id="checking",
-                amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=amount_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
-                ),
+                amount=SeriesIndexedAmount(base_amount=amount, series=RENT_SERIES_KEY, adjustment_period_months=12),
             )
-            for fire_month, amount_usd in leasing_fees_by_month.items()
+            for fire_month, amount in leasing_fees_by_month.items()
         )
     return Scenario(
         agents=agents,
-        initial_cash=initial_cash,
+        initial_cash=initial_balances,
         recurring_transfers=recurring_transfers,
         scheduled_transfers=scheduled_transfers,
         tax_profiles=[],
@@ -184,7 +186,7 @@ def _rental_scenario(
     )
 
 
-def _run(scenario: Scenario, rollouts: int = 1, rent_level: float = 1.0):
+def _run(scenario: Scenario, rollouts: int = 1, rent_level: float = 1):
     """Run the scenario against a flat rent series at `rent_level` for all rollouts/months."""
 
     ctx = _flat_series(key=RENT_SERIES_KEY, value=rent_level, months=scenario.horizon_months + 1, rollouts=rollouts)
@@ -196,33 +198,33 @@ class TestRentalIncome:
         """A recurring transfer fires once per month across its whole window and moves its
         configured amount into the recipient's account."""
 
-        scenario = _rental_scenario(horizon_months=12, monthly_rent_usd=5_000.0)
+        scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000)
         run = _run(scenario)
         transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
         assert transfers["month_index"].sort().to_list() == list(range(12))
-        assert transfers["amount_usd"].to_list() == pytest.approx([5_000.0] * 12)
+        assert (transfers["amount_quanta"] / 100).to_list() == pytest.approx([5_000] * 12)
         terminal_owner_cash = run.cash_balances.filter(
             (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == 12)
         )
-        assert terminal_owner_cash["balance_usd"][0] == pytest.approx(100_000.0 + 60_000.0)
+        assert (terminal_owner_cash["balance_quanta"] / 100)[0] == pytest.approx(100_000 + 60_000)
 
     def test_zero_amount_recurring_transfer_still_fires_but_moves_no_cash(self):
         """A transfer scheduled with a zero amount is a scheduled event, not an absent one:
         it logs a row every month of its window and leaves both balances untouched."""
 
-        scenario = _rental_scenario(horizon_months=12, monthly_rent_usd=0.0)
+        scenario = _rental_scenario(horizon_months=12, monthly_rent=0)
         run = _run(scenario)
         transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
         assert transfers["month_index"].sort().to_list() == list(range(12))
-        assert transfers["amount_usd"].to_list() == pytest.approx([0.0] * 12)
+        assert (transfers["amount_quanta"] / 100).to_list() == pytest.approx([0] * 12)
         terminal = run.cash_balances.filter(pl.col("month_index") == 12)
-        balances = dict(zip(terminal["agent_id"].to_list(), terminal["balance_usd"].to_list(), strict=True))
-        assert balances[OWNER_AGENT_ID] == pytest.approx(100_000.0)
-        assert balances[TENANT_AGENT_ID] == pytest.approx(0.0)
+        balances = dict(zip(terminal["agent_id"].to_list(), (terminal["balance_quanta"] / 100).to_list(), strict=True))
+        assert balances[OWNER_AGENT_ID] == pytest.approx(100_000)
+        assert balances[TENANT_AGENT_ID] == pytest.approx(0)
 
     def test_rental_income_indexed_by_rent_series(self):
         # Rent series doubles at month 12 (annual adjustment period).
-        scenario = _rental_scenario(horizon_months=24, monthly_rent_usd=5_000.0)
+        scenario = _rental_scenario(horizon_months=24, monthly_rent=5_000)
         # Build a per-month rent series: 1.0 for months 0..11, 2.0 for months 12..24.
         levels = [1.0] * 12 + [2.0] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: levels}})
@@ -230,12 +232,12 @@ class TestRentalIncome:
         transfers = (
             run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
             .sort("month_index")
-            .select("month_index", "amount_usd")
+            .select("month_index", "amount_quanta")
         )
         # Months 0..11 use level 1.0 → $5000; months 12..23 reset to level 2.0 → $10000.
-        amounts = transfers["amount_usd"].to_list()
-        assert amounts[:12] == pytest.approx([5_000.0] * 12)
-        assert amounts[12:] == pytest.approx([10_000.0] * 12)
+        amounts = (transfers["amount_quanta"] / 100).to_list()
+        assert amounts[:12] == pytest.approx([5_000] * 12)
+        assert amounts[12:] == pytest.approx([10_000] * 12)
 
 
 class TestManagementFee:
@@ -244,18 +246,18 @@ class TestManagementFee:
         settles against the right two ledgers: the agency's balance is built entirely from the
         fee, and the owner keeps rent minus fee."""
 
-        scenario = _rental_scenario(horizon_months=12, monthly_rent_usd=5_000.0, monthly_management_fee_usd=380.0)
+        scenario = _rental_scenario(horizon_months=12, monthly_rent=5_000, monthly_management_fee=380)
         run = _run(scenario)
         mgmt = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1")
         assert mgmt["month_index"].sort().to_list() == list(range(12))
-        assert mgmt["amount_usd"].to_list() == pytest.approx([380.0] * 12)
+        assert (mgmt["amount_quanta"] / 100).to_list() == pytest.approx([380] * 12)
         assert mgmt["from_agent_id"].unique().to_list() == [OWNER_AGENT_ID]
         assert mgmt["to_agent_id"].unique().to_list() == [MGMT_AGENT_ID]
 
         terminal = run.cash_balances.filter(pl.col("month_index") == 12)
-        balances = dict(zip(terminal["agent_id"].to_list(), terminal["balance_usd"].to_list(), strict=True))
-        assert balances[MGMT_AGENT_ID] == pytest.approx(4_560.0)
-        assert balances[OWNER_AGENT_ID] == pytest.approx(100_000.0 + 60_000.0 - 4_560.0)
+        balances = dict(zip(terminal["agent_id"].to_list(), (terminal["balance_quanta"] / 100).to_list(), strict=True))
+        assert balances[MGMT_AGENT_ID] == pytest.approx(4_560)
+        assert balances[OWNER_AGENT_ID] == pytest.approx(100_000 + 60_000 - 4_560)
 
 
 class TestRentalLifecycleCashflows:
@@ -270,9 +272,9 @@ class TestRentalLifecycleCashflows:
         scenario = Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id=TENANT_AGENT_ID), Agent(agent_id=MGMT_AGENT_ID)],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 *(
@@ -284,12 +286,12 @@ class TestRentalLifecycleCashflows:
                         from_account_id="checking",
                         to_agent_id=OWNER_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=SeriesIndexedAmount(
-                            base_amount_usd=amount_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
+                        amount=SeriesIndexedAmount(
+                            base_amount=amount, series=RENT_SERIES_KEY, adjustment_period_months=12
                         ),
                         income_category=ORDINARY_INCOME,
                     )
-                    for start_month, end_month, amount_usd in [(0, 2, 1_500.0), (3, 5, 4_500.0), (8, 11, 3_000.0)]
+                    for start_month, end_month, amount in [(0, 2, 1_500), (3, 5, 4_500), (8, 11, 3_000)]
                 ),
                 *(
                     RecurringTransfer(
@@ -300,12 +302,12 @@ class TestRentalLifecycleCashflows:
                         from_account_id="checking",
                         to_agent_id=MGMT_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=SeriesIndexedAmount(
-                            base_amount_usd=amount_usd, series=RENT_SERIES_KEY, adjustment_period_months=12
+                        amount=SeriesIndexedAmount(
+                            base_amount=amount, series=RENT_SERIES_KEY, adjustment_period_months=12
                         ),
                         deduction_category="ordinary",
                     )
-                    for start_month, end_month, amount_usd in [(0, 2, 120.0), (3, 5, 360.0), (8, 11, 240.0)]
+                    for start_month, end_month, amount in [(0, 2, 120), (3, 5, 360), (8, 11, 240)]
                 ),
             ],
             tax_profiles=[],
@@ -313,18 +315,18 @@ class TestRentalLifecycleCashflows:
         )
         run = simulate_with_external_series(
             scenario,
-            external_series=_flat_series(key=RENT_SERIES_KEY, value=1.0, months=13, rollouts=1),
+            external_series=_flat_series(key=RENT_SERIES_KEY, value=1, months=13, rollouts=1),
             rollout_count=1,
             locations={},
         )
 
         rent = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1").sort("month_index")
         assert rent["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
-        assert rent["amount_usd"].to_list() == pytest.approx([1_500.0] * 3 + [4_500.0] * 3 + [3_000.0] * 4)
+        assert (rent["amount_quanta"] / 100).to_list() == pytest.approx([1_500] * 3 + [4_500] * 3 + [3_000] * 4)
 
         management_fee = run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1").sort("month_index")
         assert management_fee["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
-        assert management_fee["amount_usd"].to_list() == pytest.approx([120.0] * 3 + [360.0] * 3 + [240.0] * 4)
+        assert (management_fee["amount_quanta"] / 100).to_list() == pytest.approx([120] * 3 + [360] * 3 + [240] * 4)
 
 
 class TestLeasingFee:
@@ -333,16 +335,16 @@ class TestLeasingFee:
         transfer fires in the single month it names, and no other month sees one."""
 
         scenario = _rental_scenario(
-            horizon_months=60, monthly_rent_usd=5_000.0, leasing_fees_by_month={0: 5_000.0, 24: 6_000.0, 48: 7_000.0}
+            horizon_months=60, monthly_rent=5_000, leasing_fees_by_month={0: 5_000, 24: 6_000, 48: 7_000}
         )
         run = _run(scenario)
         leasing = (
             run.events_log.transfers.filter(pl.col("cause_id").str.starts_with("leasing_fee:p1"))
             .sort("month_index")
-            .select("month_index", "amount_usd")
+            .select("month_index", "amount_quanta")
         )
         assert leasing["month_index"].to_list() == [0, 24, 48]
-        assert leasing["amount_usd"].to_list() == pytest.approx([5_000.0, 6_000.0, 7_000.0])
+        assert (leasing["amount_quanta"] / 100).to_list() == pytest.approx([5_000, 6_000, 7_000])
 
 
 class TestRentalIncomeTaxation:
@@ -352,14 +354,14 @@ class TestRentalIncomeTaxation:
     over-taxed by the amount of those deductions.
     """
 
-    def _taxed_rental_scenario(self, *, monthly_rent: float, horizon_months: int = 12) -> Scenario:
+    def _taxed_rental_scenario(self, *, monthly_rent: Decimal | int, horizon_months: int = 12) -> Scenario:
         end_month = horizon_months - 1
         return Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id=TENANT_AGENT_ID), Agent(agent_id="irs")],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -370,8 +372,8 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent, series=RENT_SERIES_KEY, adjustment_period_months=12
+                    amount=SeriesIndexedAmount(
+                        base_amount=monthly_rent, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category=ORDINARY_INCOME,
                 )
@@ -389,20 +391,20 @@ class TestRentalIncomeTaxation:
 
     def test_rental_income_accrues_into_ordinary_ytd(self):
         # $4,000/mo × 12 = $48,000 gross rental income → ordinary income line on tax_breakdowns.
-        scenario = self._taxed_rental_scenario(monthly_rent=4_000.0)
+        scenario = self._taxed_rental_scenario(monthly_rent=4_000)
         run = _run(scenario)
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(48_000.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(48_000, abs=1e-6)
 
     def test_rental_income_generates_tax_accruals_at_year_end(self):
-        scenario = self._taxed_rental_scenario(monthly_rent=4_000.0)
+        scenario = self._taxed_rental_scenario(monthly_rent=4_000)
         run = _run(scenario)
         accruals = run.events_log.tax_accruals.sort("jurisdiction_id")
         assert accruals.height == 2  # federal + CA
         # Accruals fire at month 11 (year-end).
         assert all(month == 11 for month in accruals["month_index"].to_list())
         # Both jurisdictions should levy positive tax on $48k of ordinary income.
-        assert all(amount > 0 for amount in accruals["amount_usd"].to_list())
+        assert all(amount > 0 for amount in (accruals["amount_quanta"] / 100).to_list())
 
     def test_management_fee_deducts_from_taxable_ordinary_income(self):
         """Schedule E: a management fee transfer with deduction_category='ordinary'
@@ -418,10 +420,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -432,9 +434,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=5000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 ),
                 RecurringTransfer(
@@ -445,9 +445,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=MGMT_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=500.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=500, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     deduction_category="ordinary",
                 ),
             ],
@@ -465,7 +463,7 @@ class TestRentalIncomeTaxation:
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         # Gross rental: 12 × $5,000 = $60,000. Management fee: 12 × $500 = $6,000.
         # Net ordinary income exposed to brackets = $54,000.
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(54_000.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(54_000, abs=1e-6)
 
     def test_obligation_deduction_decrements_payer_ordinary_ytd(self):
         """Schedule E on obligations: a paid RecurringObligation with
@@ -483,10 +481,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="hoa", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="hoa", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -497,9 +495,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=6_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=6000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -513,11 +509,11 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id="hoa",
                     to_account_id="checking",
-                    amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=400.0, series=RENT_SERIES_KEY, adjustment_period_months=12
+                    amount_due=SeriesIndexedAmount(
+                        base_amount=400, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     deduction_category="ordinary",
-                    deductible_fraction=1.0,
+                    deductible_fraction=1,
                 )
             ],
             tax_profiles=[
@@ -532,7 +528,7 @@ class TestRentalIncomeTaxation:
         )
         run = _run(scenario)
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(67_200.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(67_200, abs=1e-6)
 
     def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self, san_francisco_location: Location):
         """§168 monthly depreciation accrues for rented property and reduces taxable ordinary
@@ -540,7 +536,7 @@ class TestRentalIncomeTaxation:
         annual depreciation = $400k / 27.5 ≈ $14,545.45."""
 
         end_month = 11
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         scenario = Scenario(
             agents=[
                 Agent(agent_id=OWNER_AGENT_ID),
@@ -549,10 +545,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -563,9 +559,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=5000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -578,11 +572,11 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=1.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=1,
                     land_value_fraction=0.20,
-                    buyer_closing_cost_usd=0.0,
+                    buyer_closing_cost=0,
                 )
             ],
             tax_profiles=[
@@ -595,7 +589,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 13}, SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 13}, SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -605,7 +599,7 @@ class TestRentalIncomeTaxation:
         assert terminal_dep.height == 1
         # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.02)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(45_454.55, abs=0.02)
 
     def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self, san_francisco_location: Location):
         """StartRentingEvent at month 12 → depreciation accrues only from month 12 onward.
@@ -613,7 +607,7 @@ class TestRentalIncomeTaxation:
         in year 1 = 0; in year 2 (after start) = $400k / 27.5 = $14,545.45."""
 
         end_month = 23  # 24-month horizon
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         scenario = Scenario(
             agents=[
                 Agent(agent_id=OWNER_AGENT_ID),
@@ -622,10 +616,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -637,9 +631,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=5000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -652,14 +644,14 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,  # owner-occupied at start
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,  # owner-occupied at start
                     land_value_fraction=0.20,
-                    buyer_closing_cost_usd=0.0,
+                    buyer_closing_cost=0,
                 )
             ],
-            property_lifecycle_events=[SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=1.0)],
+            property_lifecycle_events=[SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=1)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -670,7 +662,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=24,
         )
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: [1.0] * 25}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: [1] * 25}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -678,11 +670,11 @@ class TestRentalIncomeTaxation:
         # Year 0 (month 11) federal_us: rented_fraction=0 the whole year, no rental income, no
         # depreciation → ordinary_income = $0.
         year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
-        assert year_0_federal["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert year_0_federal["ordinary_income_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # Year 1 (month 23) federal_us: 12 months rent ($60k) minus 12 months depreciation ($14.5k)
         # ≈ $45,454.55.
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
-        assert year_1_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
+        assert year_1_federal["ordinary_income_quanta"] / 100 == pytest.approx(45_454.55, abs=0.05)
 
     def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(
         self, san_francisco_location: Location
@@ -700,19 +692,19 @@ class TestRentalIncomeTaxation:
             start_renting_at=1, locations={"san_francisco": san_francisco_location}
         )
         # Owner-occupied: positive MID
-        assert breakdowns_owner["federal_us"]["mortgage_interest_deduction_usd"] > 0
+        assert breakdowns_owner["federal_us"]["mortgage_interest_deduction_quanta"] / 100 > 0
         # Rented from month 1: MID for year 0 is the month-0 interest only (a tiny first-month
         # owner-share interest), much smaller than full-year owner-occupied MID.
         assert (
-            breakdowns_rent["federal_us"]["mortgage_interest_deduction_usd"]
-            < breakdowns_owner["federal_us"]["mortgage_interest_deduction_usd"] * 0.15
+            breakdowns_rent["federal_us"]["mortgage_interest_deduction_quanta"] / 100
+            < breakdowns_owner["federal_us"]["mortgage_interest_deduction_quanta"] / 100 * 0.15
         )
 
     def _mortgage_lifecycle_breakdown(self, *, start_renting_at: int | None, locations: dict[str, Location]) -> dict:
         end_month = 11
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         lifecycle_events = (
-            [SetRentedFractionEvent(month=start_renting_at, property_id="p1", rented_fraction=1.0)]
+            [SetRentedFractionEvent(month=start_renting_at, property_id="p1", rented_fraction=1)]
             if start_renting_at is not None
             else []
         )
@@ -725,11 +717,11 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -740,7 +732,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=5_000.0,
+                    amount=5000,
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -753,18 +745,18 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price * 0.20,
-                    land_value_fraction=1.0,  # isolate from depreciation
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price * Decimal("0.20"),
+                    land_value_fraction=1,  # isolate from depreciation
                     mortgage=MortgageFinancing(
                         liability_id="p1_mortgage",
                         lender_agent_id="lender",
                         lender_account_id="checking",
-                        principal_usd=purchase_price * 0.80,
+                        principal=purchase_price * Decimal("0.80"),
                         annual_interest_rate=0.06,
                         term_months=360,
                     ),
-                    rented_fraction=0.0,
+                    rented_fraction=0,
                 )
             ],
             property_lifecycle_events=lifecycle_events,
@@ -781,7 +773,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
         return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
 
@@ -791,7 +783,7 @@ class TestRentalIncomeTaxation:
         Year 1 ordinary: $0 rent (no more rental income), no dep → $0.
         """
 
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         scenario = Scenario(
             agents=[
                 Agent(agent_id=OWNER_AGENT_ID),
@@ -800,10 +792,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -814,9 +806,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=5000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -829,14 +819,14 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=1.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=1,
                     land_value_fraction=0.20,
-                    buyer_closing_cost_usd=0.0,
+                    buyer_closing_cost=0,
                 )
             ],
-            property_lifecycle_events=[SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0.0)],
+            property_lifecycle_events=[SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -847,15 +837,15 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=24,
         )
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: [1.0] * 25}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: [1] * 25}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
         breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
         year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
-        assert year_0_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
+        assert year_0_federal["ordinary_income_quanta"] / 100 == pytest.approx(45_454.55, abs=0.05)
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
-        assert year_1_federal["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert year_1_federal["ordinary_income_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
     def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self, san_francisco_location: Location):
         """CapitalImprovementEvent at month 6 bumps building basis by $100k.
@@ -864,7 +854,7 @@ class TestRentalIncomeTaxation:
         (vs. ~$1,212.12/mo before). Cash decreases by $100k at month 6."""
 
         end_month = 11
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         scenario = Scenario(
             agents=[
                 Agent(agent_id=OWNER_AGENT_ID),
@@ -873,10 +863,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -887,7 +877,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=5_000.0,
+                    amount=5000,
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -900,14 +890,14 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=1.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=1,
                     land_value_fraction=0.20,
                 )
             ],
             property_lifecycle_events=[
-                CapitalImprovementEvent(month=6, property_id="p1", amount_usd=100_000.0, description="new roof")
+                CapitalImprovementEvent(month=6, property_id="p1", amount=100000, description="new roof")
             ],
             tax_profiles=[
                 TaxProfile(
@@ -919,16 +909,16 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         # 6 months at $400k/27.5/12 + 6 months at $500k/27.5/12
         # = 6 × 1212.12 + 6 × 1515.15 = 7272.73 + 9090.91 = 16363.64
-        expected_depreciation = 6 * (400_000.0 / 27.5 / 12.0) + 6 * (500_000.0 / 27.5 / 12.0)
-        expected_ordinary = 60_000.0 - expected_depreciation
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(expected_ordinary, abs=0.05)
+        expected_depreciation = 6 * (400_000 / 27.5 / 12) + 6 * (500_000 / 27.5 / 12)
+        expected_ordinary = 60_000 - expected_depreciation
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(expected_ordinary, abs=0.05)
 
     def test_same_month_rent_fraction_and_capex_apply_before_depreciation(self, san_francisco_location: Location):
         """Non-sale lifecycle events in the same month all apply before that month's
@@ -947,10 +937,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id="employer", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -961,7 +951,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=5_000.0,
+                    amount=5000,
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -974,15 +964,15 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=500_000.0,
-                    down_payment_usd=500_000.0,
-                    rented_fraction=0.0,
+                    purchase_price=500000,
+                    down_payment=500000,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
             property_lifecycle_events=[
-                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=1.0),
-                CapitalImprovementEvent(month=6, property_id="p1", amount_usd=100_000.0, description="new roof"),
+                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=1),
+                CapitalImprovementEvent(month=6, property_id="p1", amount=100000, description="new roof"),
             ],
             tax_profiles=[
                 TaxProfile(
@@ -994,20 +984,20 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
 
         rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
         capex_rows = run.events_log.capital_improvement_events.to_dicts()
-        assert [(row["month_index"], row["rented_fraction"]) for row in rented_rows] == [(6, 1.0)]
-        assert [(row["month_index"], row["amount_usd"]) for row in capex_rows] == [(6, 100_000.0)]
+        assert [(row["month_index"], row["rented_fraction"]) for row in rented_rows] == [(6, 1)]
+        assert [(row["month_index"], row["amount_quanta"] / 100) for row in capex_rows] == [(6, 100_000)]
 
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
-        expected_depreciation = 6 * (500_000.0 / 27.5 / 12.0)
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(
-            60_000.0 - expected_depreciation, abs=0.05
+        expected_depreciation = 6 * (500_000 / 27.5 / 12)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(
+            60_000 - expected_depreciation, abs=0.05
         )
 
     def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(
@@ -1023,7 +1013,7 @@ class TestRentalIncomeTaxation:
         Loss → no recapture, no LTCG."""
 
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 14}, SF_HOME_VALUE_KEY: {0: [1.0] * 14}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 14}, SF_HOME_VALUE_KEY: {0: [1] * 14}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1031,7 +1021,7 @@ class TestRentalIncomeTaxation:
         # because the property sold for less than adjusted basis (loss). No gain to recapture.
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         # Federal LTCG: 0
-        assert breakdowns["federal_us"]["ltcg_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ltcg_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # Property is frozen after sale - the next year's depreciation should not accrue.
         # Verify by counting depreciation accruals: only 12 months should have happened.
 
@@ -1059,8 +1049,8 @@ class TestRentalIncomeTaxation:
 
         scenario = self._sale_scenario(horizon=24, sale_month=12)
         # Home value series steps up at month 12.
-        levels = [1.0] * 12 + [1.5] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
+        levels = [1] * 12 + [1.5] * 13
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1072,7 +1062,7 @@ class TestRentalIncomeTaxation:
         ]
         assert len(breakdowns_y1) == 1
         b = breakdowns_y1[0]
-        assert b["ltcg_usd"] == pytest.approx(205_000.0, abs=1.0)
+        assert b["ltcg_quanta"] / 100 == pytest.approx(205_000, abs=1)
 
     def test_multi_rollout_property_sale_keeps_sale_tax_and_mortgage_amounts_rollout_scoped(
         self, san_francisco_location: Location
@@ -1086,8 +1076,8 @@ class TestRentalIncomeTaxation:
         period, and residual LTCG. The two rollouts use different home values at sale month.
         """
 
-        purchase_price = 500_000.0
-        mortgage_principal = 400_000.0
+        purchase_price = 500_000
+        mortgage_principal = 400_000
         annual_interest_rate = 0.06
         mortgage_term_months = 360
         sale_month = 36
@@ -1101,11 +1091,11 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_property_cashflows=[
                 RecurringPropertyCashflow(
@@ -1117,7 +1107,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=5_000.0,
+                    amount=5000,
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -1130,15 +1120,15 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price - mortgage_principal,
-                    rented_fraction=1.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price - mortgage_principal,
+                    rented_fraction=1,
                     land_value_fraction=0.20,
                     mortgage=MortgageFinancing(
                         liability_id="p1_mortgage",
                         lender_agent_id="lender",
                         lender_account_id="checking",
-                        principal_usd=mortgage_principal,
+                        principal=mortgage_principal,
                         annual_interest_rate=annual_interest_rate,
                         term_months=mortgage_term_months,
                     ),
@@ -1146,8 +1136,8 @@ class TestRentalIncomeTaxation:
             ],
             primary_residence_events=[SetPrimaryResidenceEvent(month=12, agent_id=OWNER_AGENT_ID, property_id="p1")],
             property_lifecycle_events=[
-                SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0.0),
-                PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0),
+                SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0),
+                PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6),
             ],
             tax_profiles=[
                 TaxProfile(
@@ -1160,12 +1150,12 @@ class TestRentalIncomeTaxation:
             horizon_months=horizon,
         )
         home_values_by_rollout = {
-            0: [1.0] * sale_month + [1.2] * (horizon + 1 - sale_month),
-            1: [1.0] * sale_month + [1.6] * (horizon + 1 - sale_month),
+            0: [1] * sale_month + [1.2] * (horizon + 1 - sale_month),
+            1: [1] * sale_month + [1.6] * (horizon + 1 - sale_month),
         }
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_KEY: {0: [1.0] * (horizon + 1), 1: [1.0] * (horizon + 1)},
+                RENT_SERIES_KEY: {0: [1] * (horizon + 1), 1: [1] * (horizon + 1)},
                 SF_HOME_VALUE_KEY: home_values_by_rollout,
             }
         )
@@ -1174,27 +1164,27 @@ class TestRentalIncomeTaxation:
         )
 
         payoff, _ = _mortgage_balance_and_interest_after_payments(
-            principal_usd=mortgage_principal,
+            principal=mortgage_principal,
             annual_interest_rate=annual_interest_rate,
             term_months=mortgage_term_months,
             payment_count=sale_month - 1,
         )
-        recapture = 12 * (purchase_price * 0.80 / 27.5 / 12.0)
+        recapture = 12 * (purchase_price * 0.80 / 27.5 / 12)
         expected_by_rollout = {}
         for rollout_index, sale_level in [(0, 1.2), (1, 1.6)]:
             gross = purchase_price * sale_level * 0.94
             realized_gain = gross - (purchase_price - recapture)
             post_recapture_gain = realized_gain - recapture
-            section_121 = min(post_recapture_gain, 250_000.0)
+            section_121 = min(post_recapture_gain, 250_000)
             ltcg = post_recapture_gain - section_121
             expected_by_rollout[rollout_index] = {
-                "gross_proceeds_usd": gross,
-                "mortgage_payoff_usd": payoff,
-                "net_cash_to_owner_usd": gross - payoff,
-                "realized_gain_usd": realized_gain,
-                "depreciation_recapture_usd": recapture,
-                "section_121_exclusion_usd": section_121,
-                "long_term_capital_gain_usd": ltcg,
+                "gross_proceeds_quanta": gross,
+                "mortgage_payoff_quanta": payoff,
+                "net_cash_to_owner_quanta": gross - payoff,
+                "realized_gain_quanta": realized_gain,
+                "depreciation_recapture_quanta": recapture,
+                "section_121_exclusion_quanta": section_121,
+                "long_term_capital_gain_quanta": ltcg,
             }
 
         sale_rows = {
@@ -1206,7 +1196,7 @@ class TestRentalIncomeTaxation:
             row = sale_rows[rollout_index]
             assert row["month_index"] == sale_month
             for field, expected_value in expected.items():
-                assert row[field] == pytest.approx(expected_value, abs=1.0)
+                assert row[field] / 100 == pytest.approx(expected_value, abs=0.02)
 
         federal_sale_year = {
             row["rollout_index"]: row
@@ -1214,8 +1204,8 @@ class TestRentalIncomeTaxation:
                 (pl.col("month_index") == 47) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
         }
-        assert federal_sale_year[0]["ltcg_usd"] == pytest.approx(0.0, abs=1.0)
-        assert federal_sale_year[1]["ltcg_usd"] == pytest.approx(2_000.0, abs=1.0)
+        assert federal_sale_year[0]["ltcg_quanta"] / 100 == pytest.approx(0, abs=1)
+        assert federal_sale_year[1]["ltcg_quanta"] / 100 == pytest.approx(2_000, abs=1)
 
     def test_multi_taxpayer_property_tax_schedule_e_mid_and_sale_routing_are_owner_scoped(
         self, san_francisco_location: Location
@@ -1229,12 +1219,12 @@ class TestRentalIncomeTaxation:
         MID, and §121 excludes the sale gain.
         """
 
-        purchase_price = 500_000.0
-        mortgage_principal = 400_000.0
+        purchase_price = 500_000
+        mortgage_principal = 400_000
         annual_interest_rate = 0.06
         mortgage_term_months = 360
         annual_property_tax_rate = 0.012
-        monthly_rent = 5_000.0
+        monthly_rent = 5_000
         sale_month = 30
         horizon = 36
         scenario = Scenario(
@@ -1248,13 +1238,13 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=800_000.0),
-                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=800_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=800000),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance=800000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_property_cashflows=[
                 RecurringPropertyCashflow(
@@ -1266,7 +1256,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id="alice",
                     to_account_id="checking",
-                    amount_usd=monthly_rent,
+                    amount=monthly_rent,
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -1279,15 +1269,15 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id="alice",
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price - mortgage_principal,
-                    rented_fraction=1.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price - mortgage_principal,
+                    rented_fraction=1,
                     land_value_fraction=0.20,
                     mortgage=MortgageFinancing(
                         liability_id="alice_rental_mortgage",
                         lender_agent_id="lender",
                         lender_account_id="checking",
-                        principal_usd=mortgage_principal,
+                        principal=mortgage_principal,
                         annual_interest_rate=annual_interest_rate,
                         term_months=mortgage_term_months,
                     ),
@@ -1300,15 +1290,15 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id="bob",
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price - mortgage_principal,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price - mortgage_principal,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                     mortgage=MortgageFinancing(
                         liability_id="bob_home_mortgage",
                         lender_agent_id="lender",
                         lender_account_id="checking",
-                        principal_usd=mortgage_principal,
+                        principal=mortgage_principal,
                         annual_interest_rate=annual_interest_rate,
                         term_months=mortgage_term_months,
                     ),
@@ -1316,8 +1306,8 @@ class TestRentalIncomeTaxation:
             ],
             initial_primary_residences=[PrimaryResidenceAssignment(agent_id="bob", property_id="bob_home")],
             property_lifecycle_events=[
-                PropertySaleEvent(month=sale_month, property_id="alice_rental", closing_cost_pct=6.0),
-                PropertySaleEvent(month=sale_month, property_id="bob_home", closing_cost_pct=6.0),
+                PropertySaleEvent(month=sale_month, property_id="alice_rental", closing_cost_pct=6),
+                PropertySaleEvent(month=sale_month, property_id="bob_home", closing_cost_pct=6),
             ],
             property_tax_policies=[
                 PropertyTaxPolicy(
@@ -1339,10 +1329,10 @@ class TestRentalIncomeTaxation:
             ],
             federal_salt_deduction_policies=[
                 FederalSaltDeductionPolicy(
-                    profile_id="alice", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=100_000.0)]
+                    profile_id="alice", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap=100000)]
                 ),
                 FederalSaltDeductionPolicy(
-                    profile_id="bob", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=100_000.0)]
+                    profile_id="bob", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap=100000)]
                 ),
             ],
             tax_profiles=[
@@ -1363,8 +1353,8 @@ class TestRentalIncomeTaxation:
         )
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)},
-                SF_HOME_VALUE_KEY: {0: [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)},
+                RENT_SERIES_KEY: {0: [1] * (horizon + 1)},
+                SF_HOME_VALUE_KEY: {0: [1] * sale_month + [1.4] * (horizon + 1 - sale_month)},
             }
         )
         run = simulate_with_external_series(
@@ -1376,23 +1366,23 @@ class TestRentalIncomeTaxation:
         ).sort("agent_id", "month_index")
         alice_property_tax = property_tax_rows.filter(pl.col("agent_id") == "alice")
         bob_property_tax = property_tax_rows.filter(pl.col("agent_id") == "bob")
-        monthly_property_tax = purchase_price * annual_property_tax_rate / 12.0
+        monthly_property_tax = purchase_price * annual_property_tax_rate / 12
         assert alice_property_tax.height == sale_month - 1
         assert bob_property_tax.height == sale_month - 1
-        assert alice_property_tax.get_column("amount_paid_usd").to_list() == pytest.approx(
-            [monthly_property_tax] * (sale_month - 1)
-        )
-        assert bob_property_tax.get_column("amount_paid_usd").to_list() == pytest.approx(
-            [monthly_property_tax] * (sale_month - 1)
-        )
+        assert alice_property_tax.get_column("amount_paid_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([monthly_property_tax] * (sale_month - 1))
+        assert bob_property_tax.get_column("amount_paid_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([monthly_property_tax] * (sale_month - 1))
 
         _, year_0_interest = _mortgage_balance_and_interest_after_payments(
-            principal_usd=mortgage_principal,
+            principal=mortgage_principal,
             annual_interest_rate=annual_interest_rate,
             term_months=mortgage_term_months,
             payment_count=11,
         )
-        depreciation_year_0 = 12 * (purchase_price * 0.80 / 27.5 / 12.0)
+        depreciation_year_0 = 12 * (purchase_price * 0.80 / 27.5 / 12)
         property_tax_year_0 = 11 * monthly_property_tax
         federal_year_0 = {
             row["agent_id"]: row
@@ -1400,28 +1390,30 @@ class TestRentalIncomeTaxation:
                 (pl.col("month_index") == 11) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
         }
-        assert federal_year_0["alice"]["ordinary_income_usd"] == pytest.approx(
-            12 * monthly_rent - depreciation_year_0 - property_tax_year_0 - year_0_interest, abs=1.0
+        assert federal_year_0["alice"]["ordinary_income_quanta"] / 100 == pytest.approx(
+            12 * monthly_rent - depreciation_year_0 - property_tax_year_0 - year_0_interest, abs=1
         )
-        assert federal_year_0["alice"]["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert federal_year_0["alice"]["salt_deduction_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert federal_year_0["bob"]["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert federal_year_0["bob"]["mortgage_interest_deduction_usd"] == pytest.approx(year_0_interest, abs=1.0)
-        assert federal_year_0["bob"]["salt_deduction_usd"] == pytest.approx(property_tax_year_0, abs=1.0)
+        assert federal_year_0["alice"]["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert federal_year_0["alice"]["salt_deduction_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert federal_year_0["bob"]["ordinary_income_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert federal_year_0["bob"]["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(
+            year_0_interest, abs=1
+        )
+        assert federal_year_0["bob"]["salt_deduction_quanta"] / 100 == pytest.approx(property_tax_year_0, abs=1)
 
         sale_rows = {
             row["property_id"]: row
             for row in run.events_log.property_sale_events.sort("property_id").iter_rows(named=True)
         }
-        alice_recapture = sale_month * (purchase_price * 0.80 / 27.5 / 12.0)
-        assert sale_rows["alice_rental"]["realized_gain_usd"] == pytest.approx(194_363.64, abs=1.0)
-        assert sale_rows["alice_rental"]["depreciation_recapture_usd"] == pytest.approx(alice_recapture, abs=1.0)
-        assert sale_rows["alice_rental"]["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert sale_rows["alice_rental"]["long_term_capital_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale_rows["bob_home"]["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale_rows["bob_home"]["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert sale_rows["bob_home"]["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale_rows["bob_home"]["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
+        alice_recapture = sale_month * (purchase_price * 0.80 / 27.5 / 12)
+        assert sale_rows["alice_rental"]["realized_gain_quanta"] / 100 == pytest.approx(194_363.64, abs=1)
+        assert sale_rows["alice_rental"]["depreciation_recapture_quanta"] / 100 == pytest.approx(alice_recapture, abs=1)
+        assert sale_rows["alice_rental"]["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert sale_rows["alice_rental"]["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale_rows["bob_home"]["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale_rows["bob_home"]["depreciation_recapture_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert sale_rows["bob_home"]["section_121_exclusion_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale_rows["bob_home"]["long_term_capital_gain_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
         federal_sale_year = {
             row["agent_id"]: row
@@ -1429,21 +1421,21 @@ class TestRentalIncomeTaxation:
                 (pl.col("month_index") == 35) & (pl.col("jurisdiction_id") == "federal_us")
             ).iter_rows(named=True)
         }
-        assert federal_sale_year["alice"]["ltcg_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert federal_sale_year["bob"]["ltcg_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert federal_sale_year["alice"]["ltcg_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert federal_sale_year["bob"]["ltcg_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
     def test_property_tied_recurring_obligation_stops_after_property_sale(self, san_francisco_location: Location):
         """Property-keyed HOA/insurance/maintenance-style obligations stop when the property sells."""
 
         sale_month = 12
-        monthly_hoa = 400.0
+        monthly_hoa = 400
         scenario = self._sale_scenario(horizon=24, sale_month=sale_month)
         scenario = scenario.model_copy(
             update={
                 "agents": [*scenario.agents, Agent(agent_id="hoa")],
                 "initial_cash": [
                     *scenario.initial_cash,
-                    InitialAccountBalance(agent_id="hoa", account_id="checking", balance_usd=0.0),
+                    InitialAccountBalance(agent_id="hoa", account_id="checking", balance=0),
                 ],
                 "recurring_obligations": [
                     RecurringObligation(
@@ -1454,19 +1446,16 @@ class TestRentalIncomeTaxation:
                         from_account_id="checking",
                         to_agent_id="hoa",
                         to_account_id="checking",
-                        amount_due_usd=monthly_hoa,
+                        amount_due=monthly_hoa,
                         deduction_category="ordinary",
                         property_id="p1",
                     )
                 ],
             }
         )
-        levels = [1.0] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
+        levels = [1] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={
-                RENT_SERIES_KEY: {0: [1.0] * (scenario.horizon_months + 1)},
-                SF_HOME_VALUE_KEY: {0: levels},
-            }
+            levels_by_series={RENT_SERIES_KEY: {0: [1] * (scenario.horizon_months + 1)}, SF_HOME_VALUE_KEY: {0: levels}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -1481,21 +1470,25 @@ class TestRentalIncomeTaxation:
         expected_months = list(range(sale_month))
         assert accruals.get_column("month_index").to_list() == expected_months
         assert settlements.get_column("month_index").to_list() == expected_months
-        assert settlements.get_column("amount_paid_usd").to_list() == pytest.approx([monthly_hoa] * sale_month)
+        assert settlements.get_column("amount_paid_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([monthly_hoa] * sale_month)
 
         terminal_hoa_cash = run.cash_balances.filter(
             (pl.col("agent_id") == "hoa") & (pl.col("month_index") == scenario.horizon_months)
         )
-        assert terminal_hoa_cash.get_column("balance_usd").item() == pytest.approx(monthly_hoa * sale_month)
+        assert terminal_hoa_cash.get_column("balance_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).item() == pytest.approx(monthly_hoa * sale_month)
 
         federal_y0 = next(
             row
             for row in run.events_log.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 11 and row["jurisdiction_id"] == "federal_us"
         )
-        expected_depreciation = 400_000.0 / 27.5
-        assert federal_y0["ordinary_income_usd"] == pytest.approx(
-            12 * 5_000.0 - expected_depreciation - monthly_hoa * sale_month, abs=0.05
+        expected_depreciation = 400_000 / 27.5
+        assert federal_y0["ordinary_income_quanta"] / 100 == pytest.approx(
+            12 * 5_000 - expected_depreciation - monthly_hoa * sale_month, abs=0.05
         )
 
     def test_property_cashflows_stop_after_property_sale_but_generic_transfers_continue(
@@ -1504,18 +1497,18 @@ class TestRentalIncomeTaxation:
         """Rental and management cashflows are property-domain flows, not generic transfers."""
 
         sale_month = 12
-        monthly_rent = 5_000.0
-        monthly_management_fee = 500.0
-        leasing_fee = 1_000.0
-        generic_transfer = 123.0
+        monthly_rent = 5_000
+        monthly_management_fee = 500
+        leasing_fee = 1_000
+        generic_transfer = 123
         scenario = self._sale_scenario(horizon=24, sale_month=sale_month)
         scenario = scenario.model_copy(
             update={
                 "agents": [*scenario.agents, Agent(agent_id=MGMT_AGENT_ID), Agent(agent_id="generic_payer")],
                 "initial_cash": [
                     *scenario.initial_cash,
-                    InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                    InitialAccountBalance(agent_id="generic_payer", account_id="checking", balance_usd=0.0),
+                    InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance=0),
+                    InitialAccountBalance(agent_id="generic_payer", account_id="checking", balance=0),
                 ],
                 "recurring_transfers": [
                     RecurringTransfer(
@@ -1526,7 +1519,7 @@ class TestRentalIncomeTaxation:
                         from_account_id="checking",
                         to_agent_id=OWNER_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=generic_transfer,
+                        amount=generic_transfer,
                     )
                 ],
                 "recurring_property_cashflows": [
@@ -1539,7 +1532,7 @@ class TestRentalIncomeTaxation:
                         from_account_id="checking",
                         to_agent_id=OWNER_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=monthly_rent,
+                        amount=monthly_rent,
                         income_category=ORDINARY_INCOME,
                     ),
                     RecurringPropertyCashflow(
@@ -1551,7 +1544,7 @@ class TestRentalIncomeTaxation:
                         from_account_id="checking",
                         to_agent_id=MGMT_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=monthly_management_fee,
+                        amount=monthly_management_fee,
                         deduction_category="ordinary",
                     ),
                 ],
@@ -1564,7 +1557,7 @@ class TestRentalIncomeTaxation:
                         from_account_id="checking",
                         to_agent_id=MGMT_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=leasing_fee,
+                        amount=leasing_fee,
                         deduction_category="ordinary",
                     ),
                     ScheduledPropertyCashflow(
@@ -1575,18 +1568,15 @@ class TestRentalIncomeTaxation:
                         from_account_id="checking",
                         to_agent_id=MGMT_AGENT_ID,
                         to_account_id="checking",
-                        amount_usd=leasing_fee,
+                        amount=leasing_fee,
                         deduction_category="ordinary",
                     ),
                 ],
             }
         )
-        levels = [1.0] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
+        levels = [1] * sale_month + [1.5] * (scenario.horizon_months + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={
-                RENT_SERIES_KEY: {0: [1.0] * (scenario.horizon_months + 1)},
-                SF_HOME_VALUE_KEY: {0: levels},
-            }
+            levels_by_series={RENT_SERIES_KEY: {0: [1] * (scenario.horizon_months + 1)}, SF_HOME_VALUE_KEY: {0: levels}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -1600,22 +1590,30 @@ class TestRentalIncomeTaxation:
         generic = transfers.filter(pl.col("cause_id") == "generic_transfer").sort("month_index")
 
         assert rent.get_column("month_index").to_list() == list(range(sale_month))
-        assert rent.get_column("amount_usd").to_list() == pytest.approx([monthly_rent] * sale_month)
+        assert rent.get_column("amount_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([monthly_rent] * sale_month)
         assert management.get_column("month_index").to_list() == list(range(sale_month))
-        assert management.get_column("amount_usd").to_list() == pytest.approx([monthly_management_fee] * sale_month)
+        assert management.get_column("amount_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([monthly_management_fee] * sale_month)
         assert lease_at_purchase.get_column("month_index").to_list() == [0]
-        assert lease_at_purchase.get_column("amount_usd").to_list() == pytest.approx([leasing_fee])
+        assert lease_at_purchase.get_column("amount_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([leasing_fee])
         assert lease_at_sale.is_empty()
         assert generic.get_column("month_index").to_list() == list(range(24))
-        assert generic.get_column("amount_usd").to_list() == pytest.approx([generic_transfer] * 24)
+        assert generic.get_column("amount_quanta").map_elements(
+            lambda q: q / 100, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([generic_transfer] * 24)
 
         federal_y0 = next(
             row
             for row in run.events_log.tax_breakdowns.iter_rows(named=True)
             if row["month_index"] == 11 and row["jurisdiction_id"] == "federal_us"
         )
-        expected_depreciation = 400_000.0 / 27.5
-        assert federal_y0["ordinary_income_usd"] == pytest.approx(
+        expected_depreciation = 400_000 / 27.5
+        assert federal_y0["ordinary_income_quanta"] / 100 == pytest.approx(
             12 * monthly_rent - 12 * monthly_management_fee - leasing_fee - expected_depreciation, abs=0.05
         )
 
@@ -1634,8 +1632,8 @@ class TestRentalIncomeTaxation:
         """
 
         scenario = self._sale_scenario(horizon=24, sale_month=12)
-        levels = [1.0] * 12 + [1.5] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
+        levels = [1] * 12 + [1.5] * 13
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1650,22 +1648,24 @@ class TestRentalIncomeTaxation:
             if row["month_index"] == 23 and row["jurisdiction_id"] == "california"
         )
         recapture = 14_545.45
-        assert federal_y2["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert federal_y2["ordinary_taxable_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert federal_y2["ordinary_income_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert federal_y2["ordinary_taxable_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # Federal LTCG: ordinary_taxable=0, LTCG=$205k → 0% slice 0..47025, 15% slice
         # 47025..205000 = 0.15 × 157975 = 23,696.25.
-        ltcg_tax_federal = 0.15 * (205_000.0 - 47_025.0)
+        ltcg_tax_federal = 0.15 * (205_000 - 47_025)
         # §1250 implied marginal walk: 10% × 11600 + 12% × (14545.45 - 11600) = 1160 + 353.45 = 1513.45.
         # That's well below the 25% × 14545.45 = 3636.36 cap → marginal wins.
-        section_1250_marginal = 0.10 * 11_600.0 + 0.12 * (recapture - 11_600.0)
+        section_1250_marginal = 0.10 * 11_600 + 0.12 * (recapture - 11_600)
         section_1250_cap = recapture * 0.25
         assert section_1250_marginal < section_1250_cap  # sanity: marginal binds, not cap
-        assert federal_y2["capital_gain_tax_usd"] == pytest.approx(ltcg_tax_federal + section_1250_marginal, abs=2.0)
+        assert federal_y2["capital_gain_tax_quanta"] / 100 == pytest.approx(
+            ltcg_tax_federal + section_1250_marginal, abs=2
+        )
         # California: no §1250 cap → recapture is added to ordinary brackets (and CA has no
         # separate LTCG schedule, so LTCG is in ordinary too).
-        assert california_y2["capital_gain_tax_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert california_y2["ordinary_taxable_usd"] == pytest.approx(
-            205_000.0 + recapture - california_y2["standard_deduction_usd"], abs=1.0
+        assert california_y2["capital_gain_tax_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert california_y2["ordinary_taxable_quanta"] / 100 == pytest.approx(
+            205_000 + recapture - california_y2["standard_deduction_quanta"] / 100, abs=1
         )
 
     def test_section_1250_recapture_caps_at_25pct_when_marginal_exceeds(self, san_francisco_location: Location):
@@ -1677,9 +1677,9 @@ class TestRentalIncomeTaxation:
         cap holds it to 25%. Capital-gain tax = LTCG tax + 25% × recapture.
         """
 
-        scenario = self._sale_scenario(horizon=24, sale_month=12, year2_wage_usd=250_000.0)
-        levels = [1.0] * 12 + [1.5] * 13
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
+        scenario = self._sale_scenario(horizon=24, sale_month=12, year2_wage=250_000)
+        levels = [1] * 12 + [1.5] * 13
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: levels}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -1691,13 +1691,13 @@ class TestRentalIncomeTaxation:
         recapture = 14_545.45
         # Wages pushed federal ordinary_taxable above the 32% threshold (191,950), so
         # implied marginal on the recapture is 32%+ — well above the 25% cap. The cap binds.
-        assert federal_y2["ordinary_taxable_usd"] > 191_950.0
+        assert federal_y2["ordinary_taxable_quanta"] / 100 > 191_950
         section_1250_tax = recapture * 0.25
         # LTCG bracket walk shifts because ordinary_taxable is now large: the 0% slice is
         # fully consumed and most of the LTCG lands in the 20% bracket (LTCG breakpoints
         # 47025 / 518900 single for 2024). Just assert that the §1250 tax piece is exactly
         # the 25% cap — the LTCG arithmetic is exercised elsewhere.
-        assert federal_y2["capital_gain_tax_usd"] >= section_1250_tax + 0.20 * 100_000.0  # rough lower bound
+        assert federal_y2["capital_gain_tax_quanta"] / 100 >= section_1250_tax + 0.20 * 100_000  # rough lower bound
 
     def test_section_121_exclusion_after_24_owner_occupied_months(self, san_francisco_location: Location):
         """Owner-occupied for ≥ 24 of the last 60 months → up to $250k of post-recapture
@@ -1706,18 +1706,18 @@ class TestRentalIncomeTaxation:
         Buy as primary residence (rented_fraction=0). Hold for 30 months. Then sell with
         $200k appreciation: realized gain = $188k (after closing costs), all of it post-
         recapture (no depreciation accrued because never rented). §121 excludes the full
-        $188k → LTCG = 0; section_121_exclusion_usd in the sale event records $188k.
+        $188k → LTCG = 0; section_121_exclusion in the sale event records $188k.
         """
 
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         sale_month = 30
         horizon = 36
         scenario = Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -1728,14 +1728,14 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
             initial_primary_residences=[PrimaryResidenceAssignment(agent_id=OWNER_AGENT_ID, property_id="p1")],
-            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -1747,9 +1747,9 @@ class TestRentalIncomeTaxation:
             horizon_months=horizon,
         )
         # Home value 1.4× at sale time.
-        home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
+        home_values = [1] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -1759,20 +1759,20 @@ class TestRentalIncomeTaxation:
         assert len(sale_rows) == 1
         sale = sale_rows[0]
         # Gross = $500k × 1.4 × 0.94 = $658k. Realized gain = $658k - $500k = $158k.
-        assert sale["gross_proceeds_usd"] == pytest.approx(658_000.0, abs=1.0)
-        assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["gross_proceeds_quanta"] / 100 == pytest.approx(658_000, abs=1)
+        assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # §121 fully excludes the $158k gain (well under $250k single-filer cap).
-        assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
     @pytest.mark.parametrize(
         ("primary_start_month", "primary_end_month", "expected_exclusion_usd", "expected_ltcg_usd"),
         [
-            pytest.param(61, 84, 0.0, 158_000.0, id="23-recent-months-does-not-qualify"),
-            pytest.param(60, 84, 158_000.0, 0.0, id="24-recent-months-qualifies"),
-            pytest.param(0, 24, 0.0, 158_000.0, id="24-old-months-outside-lookback-do-not-qualify"),
-            pytest.param(24, 48, 158_000.0, 0.0, id="24-months-at-lookback-boundary-qualify"),
+            pytest.param(61, 84, 0, 158_000, id="23-recent-months-does-not-qualify"),
+            pytest.param(60, 84, 158_000, 0, id="24-recent-months-qualifies"),
+            pytest.param(0, 24, 0, 158_000, id="24-old-months-outside-lookback-do-not-qualify"),
+            pytest.param(24, 48, 158_000, 0, id="24-months-at-lookback-boundary-qualify"),
         ],
     )
     def test_section_121_uses_24_of_trailing_60_months(
@@ -1789,15 +1789,15 @@ class TestRentalIncomeTaxation:
         that ring must preserve.
         """
 
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         sale_month = 84
         horizon = sale_month + 1
         scenario = Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -1808,9 +1808,9 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
@@ -1818,7 +1818,7 @@ class TestRentalIncomeTaxation:
                 SetPrimaryResidenceEvent(month=primary_start_month, agent_id=OWNER_AGENT_ID, property_id="p1"),
                 SetPrimaryResidenceEvent(month=primary_end_month, agent_id=OWNER_AGENT_ID, property_id=None),
             ],
-            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -1829,19 +1829,19 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=horizon,
         )
-        home_values = [1.0] * sale_month + [1.4]
+        home_values = [1] * sale_month + [1.4]
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
 
         sale = run.events_log.property_sale_events.to_dicts()[0]
-        assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert sale["section_121_exclusion_usd"] == pytest.approx(expected_exclusion_usd, abs=1.0)
-        assert sale["long_term_capital_gain_usd"] == pytest.approx(expected_ltcg_usd, abs=1.0)
+        assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(expected_exclusion_usd, abs=1)
+        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(expected_ltcg_usd, abs=1)
 
         post_sale_ltcg = run.capital_gains_ytd.filter(
             (pl.col("agent_id") == OWNER_AGENT_ID)
@@ -1849,19 +1849,19 @@ class TestRentalIncomeTaxation:
             & (pl.col("month_index") == sale_month + 1)
             & (pl.col("rollout_index") == 0)
         )
-        actual_ltcg = 0.0 if post_sale_ltcg.is_empty() else float(post_sale_ltcg.get_column("gain_usd").sum())
-        assert actual_ltcg == pytest.approx(expected_ltcg_usd, abs=1.0)
+        actual_ltcg = 0 if post_sale_ltcg.is_empty() else float(post_sale_ltcg.get_column("gain_quanta").sum()) / 100
+        assert actual_ltcg == pytest.approx(expected_ltcg_usd, abs=1)
 
     def test_section_121_does_not_apply_to_unassigned_non_rented_property(self, san_francisco_location: Location):
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         sale_month = 30
         horizon = 36
         scenario = Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -1872,13 +1872,13 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
-            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -1889,29 +1889,29 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=horizon,
         )
-        home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
+        home_values = [1] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
 
         sale = run.events_log.property_sale_events.to_dicts()[0]
-        assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert sale["long_term_capital_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["realized_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
 
     def test_primary_residence_event_starts_section_121_qualifying_months(self, san_francisco_location: Location):
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         sale_month = 30
         horizon = 36
         scenario = Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -1922,14 +1922,14 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
             primary_residence_events=[SetPrimaryResidenceEvent(month=6, agent_id=OWNER_AGENT_ID, property_id="p1")],
-            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -1940,9 +1940,9 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=horizon,
         )
-        home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
+        home_values = [1] * sale_month + [1.4] * (horizon + 1 - sale_month)
         ctx = _multi_series(
-            levels_by_series={RENT_SERIES_KEY: {0: [1.0] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
+            levels_by_series={RENT_SERIES_KEY: {0: [1] * (horizon + 1)}, SF_HOME_VALUE_KEY: {0: home_values}}
         )
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
@@ -1959,8 +1959,8 @@ class TestRentalIncomeTaxation:
             }
         ]
         sale = run.events_log.property_sale_events.to_dicts()[0]
-        assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
-        assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(158_000, abs=1)
+        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
     def test_same_month_primary_residence_assignment_fires_before_sale_but_does_not_accrue_use(
         self, san_francisco_location: Location
@@ -1976,10 +1976,10 @@ class TestRentalIncomeTaxation:
                 ],
             }
         )
-        home_values = [1.0] * sale_month + [1.4] * (scenario.horizon_months + 1 - sale_month)
+        home_values = [1] * sale_month + [1.4] * (scenario.horizon_months + 1 - sale_month)
         ctx = _multi_series(
             levels_by_series={
-                RENT_SERIES_KEY: {0: [1.0] * (scenario.horizon_months + 1)},
+                RENT_SERIES_KEY: {0: [1] * (scenario.horizon_months + 1)},
                 SF_HOME_VALUE_KEY: {0: home_values},
             }
         )
@@ -1997,8 +1997,8 @@ class TestRentalIncomeTaxation:
             }
         ]
         sale = run.events_log.property_sale_events.to_dicts()[0]
-        assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
-        assert sale["long_term_capital_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
+        assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(158_000, abs=1)
 
     def test_section_121_does_not_apply_without_owner_occupied_months(self, san_francisco_location: Location):
         """Same sale at month 30, but the property has been 100% rented the entire time.
@@ -2006,28 +2006,28 @@ class TestRentalIncomeTaxation:
         LTCG flow remains intact."""
 
         scenario = self._sale_scenario(horizon=36, sale_month=30)
-        home_values = [1.0] * 30 + [1.4] * 7
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 37}, SF_HOME_VALUE_KEY: {0: home_values}})
+        home_values = [1] * 30 + [1.4] * 7
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 37}, SF_HOME_VALUE_KEY: {0: home_values}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
         sale = run.events_log.property_sale_events.to_dicts()[0]
         # §121 should be exactly zero — never owner-occupied.
-        assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(0, abs=1e-6)
         # Recapture should be positive (30 months of depreciation × $400k / 27.5 / 12 ≈ $36,363).
-        assert sale["depreciation_recapture_usd"] == pytest.approx(36_363.64, abs=1.0)
+        assert sale["depreciation_recapture_quanta"] / 100 == pytest.approx(36_363.64, abs=1)
 
     def test_lifecycle_event_frames_logged_for_each_kind(self, san_francisco_location: Location):
         """All three lifecycle event kinds appear in their respective frames, one row per
         (rollout, event)."""
 
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         scenario = Scenario(
             agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=800_000.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=800000),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -2038,16 +2038,16 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
             property_lifecycle_events=[
-                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=1.0),
-                CapitalImprovementEvent(month=8, property_id="p1", amount_usd=50_000.0, description="new roof"),
-                PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6.0),
+                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=1),
+                CapitalImprovementEvent(month=8, property_id="p1", amount=50000, description="new roof"),
+                PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6),
             ],
             tax_profiles=[
                 TaxProfile(
@@ -2059,7 +2059,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=24,
         )
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 25}, SF_HOME_VALUE_KEY: {0: [1.0] * 25}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 25}, SF_HOME_VALUE_KEY: {0: [1] * 25}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -2067,13 +2067,13 @@ class TestRentalIncomeTaxation:
         rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
         assert len(rented_rows) == 1
         assert rented_rows[0]["month_index"] == 6
-        assert rented_rows[0]["rented_fraction"] == 1.0
+        assert rented_rows[0]["rented_fraction"] == 1
         assert rented_rows[0]["property_id"] == "p1"
 
         capex_rows = run.events_log.capital_improvement_events.to_dicts()
         assert len(capex_rows) == 1
         assert capex_rows[0]["month_index"] == 8
-        assert capex_rows[0]["amount_usd"] == pytest.approx(50_000.0)
+        assert capex_rows[0]["amount_quanta"] / 100 == pytest.approx(50_000)
         assert capex_rows[0]["property_id"] == "p1"
 
         sale_rows = run.events_log.property_sale_events.to_dicts()
@@ -2088,8 +2088,8 @@ class TestRentalIncomeTaxation:
                 {
                     **scenario.model_dump(),
                     "property_lifecycle_events": [
-                        SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0.0),
-                        PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6.0),
+                        SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0),
+                        PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6),
                     ],
                 }
             )
@@ -2101,10 +2101,8 @@ class TestRentalIncomeTaxation:
                 {
                     **scenario.model_dump(),
                     "property_lifecycle_events": [
-                        CapitalImprovementEvent(
-                            month=12, property_id="p1", amount_usd=100_000.0, description="new roof"
-                        ),
-                        PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6.0),
+                        CapitalImprovementEvent(month=12, property_id="p1", amount=100000, description="new roof"),
+                        PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6),
                     ],
                 }
             )
@@ -2115,9 +2113,9 @@ class TestRentalIncomeTaxation:
         horizon: int,
         sale_month: int,
         cumulative_depreciation_eligible: bool = True,
-        year2_wage_usd: float = 0.0,
+        year2_wage: Decimal | int = 0,
     ) -> Scenario:
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         agents = [
             Agent(agent_id=OWNER_AGENT_ID),
             Agent(agent_id=TENANT_AGENT_ID),
@@ -2125,10 +2123,10 @@ class TestRentalIncomeTaxation:
             Agent(agent_id="irs"),
         ]
         initial_cash = [
-            InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ]
         recurring_transfers = [
             RecurringTransfer(
@@ -2139,13 +2137,13 @@ class TestRentalIncomeTaxation:
                 from_account_id="checking",
                 to_agent_id=OWNER_AGENT_ID,
                 to_account_id="checking",
-                amount_usd=5_000.0,
+                amount=5000,
                 income_category=ORDINARY_INCOME,
             )
         ]
-        if year2_wage_usd > 0:
+        if year2_wage > 0:
             agents.append(Agent(agent_id="employer"))
-            initial_cash.append(InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0))
+            initial_cash.append(InitialAccountBalance(agent_id="employer", account_id="checking", balance=0))
             recurring_transfers.append(
                 RecurringTransfer(
                     start_month=12,
@@ -2155,7 +2153,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=year2_wage_usd / 12.0,
+                    amount=round_currency_amount(year2_wage / Decimal(12), quantum=Decimal("0.01")),
                     income_category=ORDINARY_INCOME,
                 )
             )
@@ -2172,13 +2170,13 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=1.0 if cumulative_depreciation_eligible else 0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=1 if cumulative_depreciation_eligible else 0,
                     land_value_fraction=0.20,
                 )
             ],
-            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -2194,7 +2192,7 @@ class TestRentalIncomeTaxation:
         """No rental → no depreciation accrual → no Schedule E deduction."""
 
         end_month = 11
-        purchase_price = 500_000.0
+        purchase_price = 500_000
         scenario = Scenario(
             agents=[
                 Agent(agent_id=OWNER_AGENT_ID),
@@ -2203,10 +2201,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=600000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -2217,7 +2215,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=5_000.0,
+                    amount=5000,
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -2230,9 +2228,9 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
-                    rented_fraction=0.0,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
+                    rented_fraction=0,
                     land_value_fraction=0.20,
                 )
             ],
@@ -2246,13 +2244,13 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         # No depreciation → ordinary income equals gross paycheck income: $60,000.
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(60_000.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(60_000, abs=1e-6)
 
     def test_mortgage_interest_deducts_full_for_owner_occupied_and_scales_for_partial_rental(
         self, san_francisco_location: Location
@@ -2263,21 +2261,21 @@ class TestRentalIncomeTaxation:
         deductible under either MID or Schedule E depending on which yields the better total."""
 
         owner_breakdown = self._mortgage_scenario_breakdown(
-            rented_fraction=0.0, locations={"san_francisco": san_francisco_location}
+            rented_fraction=0, locations={"san_francisco": san_francisco_location}
         )
         rented_breakdown = self._mortgage_scenario_breakdown(
-            rented_fraction=1.0, locations={"san_francisco": san_francisco_location}
+            rented_fraction=1, locations={"san_francisco": san_francisco_location}
         )
         # Whether the property is fully owner-occupied or fully rented, the same dollar amount
         # of mortgage interest reduces ordinary income — just via different mechanisms (MID +
         # itemized vs. Schedule E direct subtraction). The federal final tax should match.
         # The interest is the same; deduction mechanics differ.
-        assert owner_breakdown["federal_us"]["mortgage_interest_deduction_usd"] > 0
-        assert rented_breakdown["federal_us"]["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert owner_breakdown["federal_us"]["mortgage_interest_deduction_quanta"] / 100 > 0
+        assert rented_breakdown["federal_us"]["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0, abs=1e-6)
 
     def _mortgage_scenario_breakdown(self, *, rented_fraction: float, locations: dict[str, Location]) -> dict:
         end_month = 11
-        purchase_price = 600_000.0
+        purchase_price = 600_000
         scenario = Scenario(
             agents=[
                 Agent(agent_id=OWNER_AGENT_ID),
@@ -2287,11 +2285,11 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -2302,9 +2300,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=4_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=4000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -2317,15 +2313,15 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price * 0.20,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price * Decimal("0.20"),
                     # Isolate the MID-vs-Schedule-E comparison from depreciation.
-                    land_value_fraction=1.0,
+                    land_value_fraction=1,
                     mortgage=MortgageFinancing(
                         liability_id="p1_mortgage",
                         lender_agent_id="lender",
                         lender_account_id="checking",
-                        principal_usd=purchase_price * 0.80,
+                        principal=purchase_price * Decimal("0.80"),
                         annual_interest_rate=0.06,
                         term_months=360,
                     ),
@@ -2345,7 +2341,7 @@ class TestRentalIncomeTaxation:
             ],
             horizon_months=12,
         )
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 13}, SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 13}, SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
         return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
 
@@ -2360,7 +2356,7 @@ class TestRentalIncomeTaxation:
         # Build via ScheduledPropertyPurchase + PropertyTaxPolicy so the kind=2 compiler branch
         # populates the owner_fraction + deduction_profile arrays.
         end_month = 11
-        purchase_price = 600_000.0
+        purchase_price = 600_000
         rented_fraction = 0.75
         annual_tax_rate = 0.012  # 1.2% of price = $7,200/yr → $600/mo
         scenario = Scenario(
@@ -2372,11 +2368,11 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=700000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -2387,9 +2383,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=4_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=4000, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -2402,13 +2396,13 @@ class TestRentalIncomeTaxation:
                     buyer_agent_id=OWNER_AGENT_ID,
                     buyer_account_id="checking",
                     seller_agent_id="property_seller",
-                    purchase_price_usd=purchase_price,
-                    down_payment_usd=purchase_price,
+                    purchase_price=purchase_price,
+                    down_payment=purchase_price,
                     rented_fraction=rented_fraction,
                     # Isolate the property-tax assertion from depreciation: setting
                     # land_value_fraction=1.0 makes the building basis zero, so no §168
                     # depreciation accrues for this test.
-                    land_value_fraction=1.0,
+                    land_value_fraction=1,
                 )
             ],
             property_tax_policies=[
@@ -2425,8 +2419,7 @@ class TestRentalIncomeTaxation:
             ],
             federal_salt_deduction_policies=[
                 FederalSaltDeductionPolicy(
-                    profile_id=OWNER_AGENT_ID,
-                    cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=10_000.0)],
+                    profile_id=OWNER_AGENT_ID, cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap=10000)]
                 )
             ],
             tax_profiles=[
@@ -2440,7 +2433,7 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         # Series needs home_value:san_francisco too for property purchase.
-        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1.0] * 13}, SF_HOME_VALUE_KEY: {0: [1.0] * 13}})
+        ctx = _multi_series(levels_by_series={RENT_SERIES_KEY: {0: [1] * 13}, SF_HOME_VALUE_KEY: {0: [1] * 13}})
         run = simulate_with_external_series(
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
@@ -2454,11 +2447,11 @@ class TestRentalIncomeTaxation:
         # Gross rent: 12 × $4,000 = $48,000. Property tax fires at months 1..11 (11 payments;
         # month 0 is the purchase month, no tax that month) → $7,200 × 11/12 = $6,600.
         # rented_fraction=0.75 → $4,950 routes to Schedule E + $1,650 routes to SALT.
-        # Federal ordinary_income_usd after Schedule E = $48,000 - $4,950 = $43,050.
+        # Federal ordinary_income after Schedule E = $48,000 - $4,950 = $43,050.
         # (The SALT total combines property tax + state income tax and gets capped, so we
         # don't assert on the absolute SALT number here. The owner-fraction effect is
         # observable through ordinary_income decreasing relative to the rental income.)
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(43_050.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(43_050, abs=1e-6)
 
     def test_obligation_deductible_fraction_scales_deduction(self):
         """Partial rental: HOA dues are only deductible up to the rented fraction (0.5
@@ -2475,10 +2468,10 @@ class TestRentalIncomeTaxation:
                 Agent(agent_id="irs"),
             ],
             initial_cash=[
-                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
-                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="hoa", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="hoa", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -2489,9 +2482,7 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=2_500.0, series=RENT_SERIES_KEY, adjustment_period_months=12
-                    ),
+                    amount=SeriesIndexedAmount(base_amount=2500, series=RENT_SERIES_KEY, adjustment_period_months=12),
                     income_category=ORDINARY_INCOME,
                 )
             ],
@@ -2505,8 +2496,8 @@ class TestRentalIncomeTaxation:
                     from_account_id="checking",
                     to_agent_id="hoa",
                     to_account_id="checking",
-                    amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=400.0, series=RENT_SERIES_KEY, adjustment_period_months=12
+                    amount_due=SeriesIndexedAmount(
+                        base_amount=400, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     deduction_category="ordinary",
                     deductible_fraction=0.5,
@@ -2524,7 +2515,7 @@ class TestRentalIncomeTaxation:
         )
         run = _run(scenario)
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
-        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(27_600.0, abs=1e-6)
+        assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(27_600, abs=1e-6)
 
 
 class TestRentalCashflowReconciliation:
@@ -2538,26 +2529,26 @@ class TestRentalCashflowReconciliation:
         leasing fee out → $47,440 net.
         """
 
-        initial_cash = 100_000.0
+        initial_cash = 100_000
         scenario = _rental_scenario(
             horizon_months=12,
-            initial_cash_usd=initial_cash,
-            monthly_rent_usd=4_750.0,
-            monthly_management_fee_usd=380.0,
-            leasing_fees_by_month={0: 5_000.0},
+            initial_cash=initial_cash,
+            monthly_rent=4_750,
+            monthly_management_fee=380,
+            leasing_fees_by_month={0: 5_000},
         )
         run = _run(scenario)
         transfers = run.events_log.transfers
-        logged_net = float(transfers.filter(pl.col("to_agent_id") == OWNER_AGENT_ID)["amount_usd"].sum()) - float(
-            transfers.filter(pl.col("from_agent_id") == OWNER_AGENT_ID)["amount_usd"].sum()
-        )
+        logged_net = float(
+            transfers.filter(pl.col("to_agent_id") == OWNER_AGENT_ID)["amount_quanta"].sum() / 100
+        ) - float(transfers.filter(pl.col("from_agent_id") == OWNER_AGENT_ID)["amount_quanta"].sum() / 100)
         # cash_balances has snapshot_months = horizon + 1, so terminal state is at month_index == horizon.
         cash = run.cash_balances.filter(
             (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == scenario.horizon_months)
         )
         assert cash.height == 1
-        assert cash["balance_usd"][0] - initial_cash == pytest.approx(logged_net, abs=0.01)
-        assert cash["balance_usd"][0] == pytest.approx(initial_cash + 47_440.0, rel=1e-6)
+        assert cash["balance_quanta"][0] / 100 - initial_cash == pytest.approx(logged_net, abs=0.01)
+        assert cash["balance_quanta"][0] / 100 == pytest.approx(initial_cash + 47_440, rel=1e-6)
 
 
 if __name__ == "__main__":

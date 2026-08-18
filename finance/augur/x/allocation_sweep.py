@@ -21,6 +21,8 @@ Runs remotely — `bazelisk run` locally cannot fetch `rules_mypy` through the e
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import polars as pl
 
@@ -62,19 +64,19 @@ DIAGNOSTIC_ROLLOUTS = 60
 # 60 rollouts at that depth is an OOM, which is the practical cost of tight rebalancing.
 REBALANCE_ROLLOUTS = 8
 
-INITIAL_WEALTH_USD = 2_000_000.0
+INITIAL_WEALTH = 2_000_000
 # Three withdrawal rates, because one is not a study: at 4.8% almost every allocation ruins
 # and the table saturates at zero, at 3.0% almost none do, and the shape reverses between
 # them. A single rate would have shown one of those three answers and looked conclusive.
-MONTHLY_SPENDS_USD = (5_000.0, 6_667.0, 8_000.0)
-CASH_FLOOR_USD = 25_000.0
-CASH_CEILING_USD = 75_000.0
+MONTHLY_SPENDS = (5_000, 6_667, 8_000)
+CASH_FLOOR = 25_000
+CASH_CEILING = 75_000
 
 EQUITY = SecuritySymbol("VOO")
 MUNI = SecuritySymbol("CMF")
 
-EQUITY_PRICE_USD = 520.0
-MUNI_PRICE_USD = 56.0
+EQUITY_PRICE = Decimal(520)
+MUNI_PRICE = Decimal(56)
 MUNI_DURATION_YEARS = 5.5
 # Municipals yield LESS than Treasuries pre-tax; that gap is what the exemption buys back.
 MUNI_SPREAD = -0.012
@@ -100,17 +102,17 @@ PURCHASE_SLOTS_PER_SLEEVE = 150
 
 def _provider() -> StructuralMacroProviderConfig:
     return StructuralMacroProviderConfig(
-        equity=EquitySpec(symbol=EQUITY, initial_price_usd=EQUITY_PRICE_USD),
+        equity=EquitySpec(symbol=EQUITY, initial_price_usd=float(EQUITY_PRICE)),
         instruments=(
             InstrumentSpec(
-                symbol=MUNI, duration_years=MUNI_DURATION_YEARS, initial_price_usd=MUNI_PRICE_USD, spread=MUNI_SPREAD
+                symbol=MUNI, duration_years=MUNI_DURATION_YEARS, initial_price_usd=float(MUNI_PRICE), spread=MUNI_SPREAD
             ),
         ),
     )
 
 
 def _scenario(
-    equity_share: float, monthly_spend_usd: float, *, distributes: bool = True, rebalance: float | None = None
+    equity_share: float, monthly_spend: int, *, distributes: bool = True, rebalance: float | None = None
 ) -> Scenario:
     """The same portfolio at a different split. Only the two lot sizes and the two sleeve
     weights change across the sweep; spending, the cash band and the tax profile do not."""
@@ -122,13 +124,10 @@ def _scenario(
             account_id="brokerage",
             asset=SecurityKey(symbol=symbol),
             purchase_month_index=-24,
-            quantity=INITIAL_WEALTH_USD * share / price,
-            cost_basis_per_unit_usd=price,
+            quantity=float(Decimal(INITIAL_WEALTH) * Decimal(str(share)) / price),
+            cost_basis_per_unit=price,
         )
-        for symbol, share, price in (
-            (EQUITY, equity_share, EQUITY_PRICE_USD),
-            (MUNI, 1.0 - equity_share, MUNI_PRICE_USD),
-        )
+        for symbol, share, price in ((EQUITY, equity_share, EQUITY_PRICE), (MUNI, 1.0 - equity_share, MUNI_PRICE))
         if share > 0.0
     ]
     # Weights are integers and only their ratios matter, so the sweep's share becomes
@@ -145,9 +144,9 @@ def _scenario(
     return Scenario(
         agents=[Agent(agent_id="rai"), Agent(agent_id="world"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="rai", account_id="checking", balance_usd=CASH_CEILING_USD),
-            InitialAccountBalance(agent_id="world", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="rai", account_id="checking", balance=CASH_CEILING),
+            InitialAccountBalance(agent_id="world", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=lots,
         recurring_obligations=[
@@ -161,8 +160,8 @@ def _scenario(
                 to_account_id="checking",
                 # Constant in REAL terms, which is the whole premise of the question. A
                 # nominal-constant spend would make every allocation look survivable.
-                amount_due_usd=SeriesIndexedAmount(
-                    base_amount_usd=monthly_spend_usd, series=InflationKey(), adjustment_period_months=12
+                amount_due=SeriesIndexedAmount(
+                    base_amount=monthly_spend, series=InflationKey(), adjustment_period_months=12
                 ),
             )
         ],
@@ -187,8 +186,8 @@ def _scenario(
                 account_id="checking",
                 source_account_ids=("brokerage",),
                 sleeves=sleeves,
-                cash_floor_usd=CASH_FLOOR_USD,
-                cash_ceiling_usd=CASH_CEILING_USD,
+                cash_floor=CASH_FLOOR,
+                cash_ceiling=CASH_CEILING,
                 # Without these, "60% equity" means 60% AT MONTH ZERO and whatever drift makes
                 # of it over thirty years — the equity sleeve compounds away from its target and
                 # is only ever trimmed when cash is needed. That is a real strategy, but it is
@@ -252,29 +251,31 @@ def _equity_share_by_month(run: SimulationRun) -> dict[int, float]:
         left_on=["rollout_index", "month_index", "asset_id"],
         right_on=["rollout_index", "month_index", "series_id"],
         how="left",
-    ).with_columns(value_usd=pl.col("remaining_quantity") * pl.col("value").fill_null(0.0))
+    ).with_columns(value=pl.col("remaining_quantity") * pl.col("value").fill_null(0.0))
     by_rollout_month = priced.group_by(["rollout_index", "month_index"]).agg(
-        equity_usd=pl.col("value_usd").filter(pl.col("asset_id") == f"security:{EQUITY}").sum(),
-        total_usd=pl.col("value_usd").sum(),
+        equity_value=pl.col("value").filter(pl.col("asset_id") == f"security:{EQUITY}").sum(),
+        total_value=pl.col("value").sum(),
     )
     median = (
-        by_rollout_month.filter(pl.col("total_usd") > 0.0)
-        .with_columns(share=pl.col("equity_usd") / pl.col("total_usd"))
+        by_rollout_month.filter(pl.col("total_value") > 0.0)
+        .with_columns(share=pl.col("equity_value") / pl.col("total_value"))
         .group_by("month_index")
         .agg(pl.col("share").median())
     )
     return dict(zip(median.get_column("month_index").to_list(), median.get_column("share").to_list(), strict=True))
 
 
-def _terminal_liquid_usd(run: SimulationRun) -> np.ndarray:
+def _terminal_liquid_amount(run: SimulationRun) -> np.ndarray:
     """Cash plus marked lot value at the final month, per rollout. Nominal, not real."""
 
     return (
         project_net_worth(run)
         .filter((pl.col("agent_id") == "rai") & (pl.col("month_index") == HORIZON_MONTHS))
         .sort("rollout_index")
-        .get_column("liquid_net_worth_usd")
+        .get_column("liquid_net_worth_quanta")
+        .cast(pl.Float64)
         .to_numpy()
+        / 100
     )
 
 
@@ -310,17 +311,17 @@ def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:
 def main() -> None:
     config = _provider()
     print(f"structural_macro | {ROLLOUTS} rollouts x {HORIZON_MONTHS} months")
-    print(f"start ${INITIAL_WEALTH_USD:,.0f}, CA muni fund + broad equity, spend constant in REAL terms")
+    print(f"start ${INITIAL_WEALTH:,.0f}, CA muni fund + broad equity, spend constant in REAL terms")
     _print_parameter_summary(config)
 
     external = _sample(ROLLOUTS)
-    for monthly_spend_usd in MONTHLY_SPENDS_USD:
-        annual_rate = monthly_spend_usd * 12 / INITIAL_WEALTH_USD
-        print(f"\n--- ${monthly_spend_usd:,.0f}/mo = {annual_rate:.1%}/yr of the starting portfolio ---")
+    for monthly_spend in MONTHLY_SPENDS:
+        annual_rate = monthly_spend * 12 / INITIAL_WEALTH
+        print(f"\n--- ${monthly_spend:,.0f}/mo = {annual_rate:.1%}/yr of the starting portfolio ---")
         print(f"{'equity':>7} {'P[ruin]':>8} {'p10 terminal':>16} {'median terminal':>18} {'p90 terminal':>16}")
         for equity_share in EQUITY_SHARES:
-            run = _run(_scenario(equity_share, monthly_spend_usd), external, ROLLOUTS)
-            terminal = _terminal_liquid_usd(run)
+            run = _run(_scenario(equity_share, monthly_spend), external, ROLLOUTS)
+            terminal = _terminal_liquid_amount(run)
             print(
                 f"{equity_share:>7.0%} {_ruin_fraction(run, ROLLOUTS):>8.1%}"
                 f" ${np.percentile(terminal, 10):>15,.0f}"
@@ -340,7 +341,7 @@ def _print_diagnostics() -> None:
     """
 
     external = _sample(DIAGNOSTIC_ROLLOUTS)
-    spend = max(MONTHLY_SPENDS_USD)
+    spend = max(MONTHLY_SPENDS)
 
     # 1. Does the fixed-income sleeve actually pay? A dropped payout produces a perfectly
     # plausible projection, just one where bonds have no yield — so the check has to be a
@@ -359,7 +360,7 @@ def _print_diagnostics() -> None:
     # over time, NOT as a count of `asset_purchases`: that frame carries scheduled purchases
     # only and is empty for policy-driven buys, so counting it reported a confident zero for
     # every tolerance including one that provably fired (it demanded 123 purchase slots).
-    middle = MONTHLY_SPENDS_USD[1]
+    middle = MONTHLY_SPENDS[1]
     narrow = _sample(REBALANCE_ROLLOUTS)
     months = (0, 120, 240, 359)
     print(f"\n60/40 at ${middle:,.0f}/mo: median equity share of marked lots over 30y")

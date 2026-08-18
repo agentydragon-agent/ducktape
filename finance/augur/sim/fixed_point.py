@@ -23,7 +23,7 @@ from numpy.typing import NDArray
 
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 
-USD_CENTS = 100
+USD_QUANTA = 100
 BTC_SATOSHIS = 100_000_000
 ETH_GWEI = 1_000_000_000
 DEFAULT_UNIT_QUANTA = 1_000_000
@@ -49,6 +49,18 @@ def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
     return decimal
 
 
+def validate_currency_amount(value: Any) -> Decimal:
+    """Return one exact configured monetary amount.
+
+    Configuration and wire inputs must spell money as an integer, ``Decimal``, or
+    decimal string. A Python/JSON float is rejected rather than silently adopting
+    its binary approximation. Model-produced floats use the separately named
+    sampled-value quantization boundary below.
+    """
+
+    return _exact_decimal(value, field="currency amount")
+
+
 def validate_currency_quantum(value: Any) -> Decimal:
     """Return a positive finite currency quantum from an exact value."""
 
@@ -58,7 +70,7 @@ def validate_currency_quantum(value: Any) -> Decimal:
     return quantum
 
 
-def decimal_to_currency_quanta(value: Any, *, quantum: Any) -> np.int64:
+def decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
     """Convert an exact currency decimal to an integer count of ``quantum``.
 
     Unlike the old USD helper, this is validation rather than rounding: a
@@ -90,19 +102,30 @@ def currency_quanta_to_decimal_string(value: int | np.integer[Any], *, quantum: 
 
 
 def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
-    """Quantize a configured currency amount to its scenario's quantum.
+    """Validate and convert a configured amount to integer currency quanta.
 
-    Scenario and product configuration models still accept JSON numbers for
-    user-entered amounts. This is their single, explicit conversion into the
-    integer simulator representation. Exact decimal strings and ``Decimal``
-    values retain their spelling; numeric values use the same declared
-    half-up policy as sampled model paths.
+    Unlike sampled model output, configured money is never rounded: it must be
+    exact and already representable by the scenario's declared quantum.
     """
 
-    return sampled_decimal_to_currency_quanta(value, quantum=quantum)
+    return decimal_to_quanta(validate_currency_amount(value), quantum=quantum)
 
 
-def sampled_decimal_to_currency_quanta(value: Any, *, quantum: Any) -> np.int64:
+def round_currency_amount(value: Any, *, quantum: Any) -> Decimal:
+    """Round an exact derived monetary calculation to the declared quantum.
+
+    Configured amounts themselves are never rounded; use this only after exact
+    arithmetic (percentages, allocation fractions, periodicization) produces a
+    derived amount that must cross into the integer-money simulator.
+    """
+
+    amount = validate_currency_amount(value)
+    currency_quantum = validate_currency_quantum(quantum)
+    count = (amount / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return count * currency_quantum
+
+
+def sampled_decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
     """Quantize one model-produced sampled monetary value at the sim boundary.
 
     This is intentionally the *only* helper in this module that accepts a
@@ -124,13 +147,13 @@ def sampled_decimal_to_currency_quanta(value: Any, *, quantum: Any) -> np.int64:
         raise ValueError(f"sampled currency quantum count {count} does not fit in int64") from exc
 
 
-def sampled_array_to_currency_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
+def sampled_array_to_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
     """Vectorized model→sim monetary-path quantization with exact int64 output."""
 
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
     for idx in np.ndindex(arr.shape):
-        out[idx] = sampled_decimal_to_currency_quanta(arr[idx], quantum=quantum)
+        out[idx] = sampled_decimal_to_quanta(arr[idx], quantum=quantum)
     return out
 
 
@@ -138,25 +161,25 @@ def _decimal(value: Any) -> Decimal:
     return Decimal(str(value))
 
 
-def usd_to_cents(value: Any) -> np.int64:
-    cents = (_decimal(value) * USD_CENTS).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+def usd_to_quanta(value: Any) -> np.int64:
+    cents = (_decimal(value) * USD_QUANTA).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return np.int64(cents)
 
 
-def cents_to_usd(value: Any) -> float:
-    return float(np.asarray(value, dtype=np.float64) / float(USD_CENTS))
+def quanta_to_usd(value: Any) -> float:
+    return float(np.asarray(value, dtype=np.float64) / float(USD_QUANTA))
 
 
-def usd_array_to_cents(values: Any) -> NDArray[np.int64]:
+def usd_array_to_quanta(values: Any) -> NDArray[np.int64]:
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
     for idx in np.ndindex(arr.shape):
-        out[idx] = usd_to_cents(arr[idx])
+        out[idx] = usd_to_quanta(arr[idx])
     return out
 
 
-def cents_array_to_usd(values: Any) -> NDArray[np.float64]:
-    return np.asarray(values, dtype=np.float64) / float(USD_CENTS)
+def quanta_array_to_usd(values: Any) -> NDArray[np.float64]:
+    return np.asarray(values, dtype=np.float64) / float(USD_QUANTA)
 
 
 # Quantity quanta by symbol: the smallest fraction of a unit the ledger tracks. BTC and ETH

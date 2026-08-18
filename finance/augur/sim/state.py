@@ -19,7 +19,7 @@ import polars as pl
 from finance.augur.frames import FrameSpec
 
 CASH_BALANCES_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "agent_id": pl.Utf8(), "account_id": pl.Utf8(), "balance_currency_quanta": pl.Int64()}
+    {"rollout_index": pl.Int64(), "agent_id": pl.Utf8(), "account_id": pl.Utf8(), "balance_quanta": pl.Int64()}
 )
 
 # Running total of ordinary (W-2-style) income for the current tax
@@ -34,21 +34,21 @@ ORDINARY_INCOME_YTD_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "agent_id": pl.Utf8(),
         "income_source": pl.Utf8(),
-        "ordinary_income_currency_quanta": pl.Int64(),
+        "ordinary_income_quanta": pl.Int64(),
     }
 )
 
 # Outstanding tax liabilities — money owed to a tax authority that
 # hasn't been paid yet. The year-end accrual event creates one row
 # per `(rollout, agent, jurisdiction, tax_year_end_month)`; later
-# layers reduce `amount_owed_currency_quanta` as payments fire.
+# layers reduce `amount_owed_quanta` as payments fire.
 TAX_LIABILITIES_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),
         "agent_id": pl.Utf8(),
         "jurisdiction_id": pl.Utf8(),
         "tax_year_end_month": pl.Int64(),
-        "amount_owed_currency_quanta": pl.Int64(),
+        "amount_owed_quanta": pl.Int64(),
     }
 )
 
@@ -59,12 +59,7 @@ TAX_LIABILITIES_SCHEMA = pl.Schema(
 # `holding_period = sale_month - purchase_month` against the 12-
 # month LTCG threshold.
 CAPITAL_GAINS_YTD_SCHEMA = pl.Schema(
-    {
-        "rollout_index": pl.Int64(),
-        "agent_id": pl.Utf8(),
-        "classification": pl.Utf8(),
-        "gain_currency_quanta": pl.Int64(),
-    }
+    {"rollout_index": pl.Int64(), "agent_id": pl.Utf8(), "classification": pl.Utf8(), "gain_quanta": pl.Int64()}
 )
 
 # Per-rollout terminal status. "active" is the only running state;
@@ -93,7 +88,7 @@ ASSET_LOT_SCHEMA = pl.Schema(
         "account_id": pl.Utf8(),
         "asset_id": pl.Utf8(),
         "purchase_month_index": pl.Int64(),
-        "cost_basis_per_unit_currency_quanta": pl.Int64(),
+        "cost_basis_per_unit_quanta": pl.Int64(),
         # Exact raw quantity and scale are retained for integer valuation. The
         # human-facing quantity below may be fractional and must not be used to
         # reconstruct money after decoding.
@@ -109,7 +104,7 @@ PROPERTY_STATE_SCHEMA = pl.Schema(
         "property_id": pl.Utf8(),
         "location_id": pl.Utf8(),
         "purchase_month_index": pl.Int64(),
-        "adjusted_basis_currency_quanta": pl.Int64(),
+        "adjusted_basis_quanta": pl.Int64(),
     }
 )
 
@@ -118,8 +113,8 @@ PROPERTY_STAKE_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "property_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
-        "contribution_used_currency_quanta": pl.Int64(),
-        "equity_ledger_currency_quanta": pl.Int64(),
+        "contribution_used_quanta": pl.Int64(),
+        "equity_ledger_quanta": pl.Int64(),
     }
 )
 
@@ -132,13 +127,13 @@ LIABILITY_SCHEMA = pl.Schema(
         "counterparty_agent_id": pl.Utf8(),
         "counterparty_account_id": pl.Utf8(),
         "property_id": pl.Utf8(),
-        "principal_currency_quanta": pl.Int64(),
+        "principal_quanta": pl.Int64(),
         "annual_interest_rate": pl.Float64(),
         "term_months": pl.Int64(),
         "origination_month_index": pl.Int64(),
-        "monthly_payment_currency_quanta": pl.Int64(),
-        "interest_paid_ytd_currency_quanta": pl.Int64(),
-        "principal_paid_ytd_currency_quanta": pl.Int64(),
+        "monthly_payment_quanta": pl.Int64(),
+        "interest_paid_ytd_quanta": pl.Int64(),
+        "principal_paid_ytd_quanta": pl.Int64(),
     }
 )
 

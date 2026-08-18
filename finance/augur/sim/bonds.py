@@ -42,7 +42,7 @@ def coupon_months(*, purchase_month_index: int, maturity_month_index: int, coupo
     return list(range(purchase_month_index + coupon_period_months, maturity_month_index + 1, coupon_period_months))
 
 
-def coupon_amount_cents(*, face_cents: int, annual_coupon_rate: float, coupon_period_months: int) -> int:
+def coupon_amount_quanta(*, face_quanta: int, annual_coupon_rate: float, coupon_period_months: int) -> int:
     """One period's coupon, in cents, from a face ALREADY in cents.
 
     Takes cents rather than dollars so the dollars→cents conversion happens once, at the
@@ -58,7 +58,7 @@ def coupon_amount_cents(*, face_cents: int, annual_coupon_rate: float, coupon_pe
     given bond is the identical integer, so a 30-year ladder cannot drift.
     """
 
-    exact = Fraction(face_cents) * Fraction(str(annual_coupon_rate)) * Fraction(coupon_period_months, MONTHS_PER_YEAR)
+    exact = Fraction(face_quanta) * Fraction(str(annual_coupon_rate)) * Fraction(coupon_period_months, MONTHS_PER_YEAR)
     # Half-up on a non-negative rational, in integers: coupon rates and face are both
     # non-negative, so there is no half-away-from-zero case to worry about.
     return (2 * exact.numerator + exact.denominator) // (2 * exact.denominator)

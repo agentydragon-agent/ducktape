@@ -7,7 +7,7 @@ import {
   fetchProductRollout,
   fetchProductTerminalDistribution,
 } from "./client";
-import { fmtCurrency, fmtNumber } from "./lib/format";
+import { fmtQuanta, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
 
 import { MetricFanChart } from "./fan_chart";
@@ -678,7 +678,7 @@ export function ProductProjectionWorkspace({
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtCurrency(terminalP50, {
+                {fmtQuanta(terminalP50, {
                   currencyCode: activeTerminalDisplayResult?.currencyCode,
                   currencyQuantum: activeTerminalDisplayResult?.currencyQuantum,
                 })}

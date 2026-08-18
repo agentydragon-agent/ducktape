@@ -60,7 +60,7 @@ def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scen
             asset=SecurityKey(symbol=SP500_SYMBOL),
             purchase_month_index=-24,
             quantity=100.0,
-            cost_basis_per_unit_usd=80.0,
+            cost_basis_per_unit=80,
         )
         for i in range(n)
     ]
@@ -72,7 +72,7 @@ def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scen
             source_account_id=f"scale_brk_{i}",
             asset=SecurityKey(symbol=SP500_SYMBOL),
             quantity=100.0,
-            price_per_unit_usd=120.0,
+            price_per_unit=120,
             proceeds_account_id="checking",
         )
         for i in range(n)
@@ -90,8 +90,8 @@ def build_transfers_only_scenario(*, horizon_months: int) -> tuple[Scenario, dic
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -102,7 +102,7 @@ def build_transfers_only_scenario(*, horizon_months: int) -> tuple[Scenario, dic
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=8_000.0,
+                amount=8000,
             )
         ],
         tax_profiles=[],
@@ -117,8 +117,8 @@ def build_profile_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, 
 
     extra_agents = [Agent(agent_id="lender"), Agent(agent_id="property_seller")]
     extra_cash = [
-        InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
-        InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+        InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
+        InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
     ]
     purchase = ScheduledPropertyPurchase(
         month=0,
@@ -128,14 +128,14 @@ def build_profile_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, 
         buyer_agent_id="alice",
         buyer_account_id="checking",
         seller_agent_id="property_seller",
-        purchase_price_usd=1_200_000.0,
-        down_payment_usd=240_000.0,
-        buyer_closing_cost_usd=12_000.0,
+        purchase_price=1200000,
+        down_payment=240000,
+        buyer_closing_cost=12000,
         rented_fraction=0.0,
         mortgage=MortgageFinancing(
             liability_id="alice_mortgage",
             lender_agent_id="lender",
-            principal_usd=960_000.0,
+            principal=960000,
             annual_interest_rate=0.065,
             term_months=360,
         ),

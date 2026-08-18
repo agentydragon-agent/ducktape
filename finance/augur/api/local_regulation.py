@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import Field, NonNegativeFloat, model_validator
+from pydantic import Field, model_validator
 
-from finance.augur.api.schemas import ApiModel, Percentage
+from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, Percentage
 
 
 class TaxRegime(StrEnum):
@@ -37,8 +38,8 @@ class LocalRegulation(ApiModel):
     local_transfer_tax_pct: Percentage = Field(
         default=0, description="Local transfer-tax rate applied when the property is sold."
     )
-    special_assessment_annual_usd: NonNegativeFloat = Field(
-        default=0, description="Fixed annual local special assessment added to property-tax cash flow."
+    special_assessment_annual: NonNegativeCurrencyAmount = Field(
+        default=Decimal(0), description="Fixed annual local special assessment added to property-tax cash flow."
     )
     notes: str = Field(
         default="",

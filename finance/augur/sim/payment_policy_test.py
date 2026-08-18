@@ -16,12 +16,12 @@ def test_due_invoices_become_full_pay_actions_per_rollout() -> None:
     actions = decide(
         PaymentView(
             invoice_active=jnp.asarray([[True, True, False], [True, False, True]]),
-            invoice_due_cents=jnp.asarray([[125, 275, 400], [500, 600, 700]], dtype=jnp.int64),
+            invoice_due_quanta=jnp.asarray([[125, 275, 400], [500, 600, 700]], dtype=jnp.int64),
         )
     )
 
     assert np.array_equal(np.asarray(actions.active), np.asarray([[True, True, False], [True, False, True]]))
-    assert np.array_equal(np.asarray(actions.amount_cents), np.asarray([[125, 275, 0], [500, 0, 700]], dtype=np.int64))
+    assert np.array_equal(np.asarray(actions.amount_quanta), np.asarray([[125, 275, 0], [500, 0, 700]], dtype=np.int64))
 
 
 def test_zero_or_negative_due_cannot_create_an_active_payment() -> None:
@@ -30,12 +30,12 @@ def test_zero_or_negative_due_cannot_create_an_active_payment() -> None:
     actions = decide(
         PaymentView(
             invoice_active=jnp.asarray([[True, True, False]]),
-            invoice_due_cents=jnp.asarray([[0, -25, 100]], dtype=jnp.int64),
+            invoice_due_quanta=jnp.asarray([[0, -25, 100]], dtype=jnp.int64),
         )
     )
 
     assert np.array_equal(np.asarray(actions.active), np.asarray([[False, False, False]]))
-    assert np.array_equal(np.asarray(actions.amount_cents), np.asarray([[0, 0, 0]], dtype=np.int64))
+    assert np.array_equal(np.asarray(actions.amount_quanta), np.asarray([[0, 0, 0]], dtype=np.int64))
 
 
 def test_payment_policy_traces_with_a_dynamic_invoice_batch() -> None:
@@ -44,12 +44,12 @@ def test_payment_policy_traces_with_a_dynamic_invoice_batch() -> None:
     policy = jax.jit(decide)
     actions = policy(
         PaymentView(
-            invoice_active=jnp.asarray([[True, False]]), invoice_due_cents=jnp.asarray([[99, 101]], dtype=jnp.int64)
+            invoice_active=jnp.asarray([[True, False]]), invoice_due_quanta=jnp.asarray([[99, 101]], dtype=jnp.int64)
         )
     )
 
     assert np.array_equal(np.asarray(actions.active), np.asarray([[True, False]]))
-    assert np.array_equal(np.asarray(actions.amount_cents), np.asarray([[99, 0]], dtype=np.int64))
+    assert np.array_equal(np.asarray(actions.amount_quanta), np.asarray([[99, 0]], dtype=np.int64))
 
 
 if __name__ == "__main__":

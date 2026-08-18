@@ -22,7 +22,7 @@ from finance.augur.sim.compiler.helpers import (
     AccountSlots,
     AssetTable,
     StringTable,
-    amount_arrays_currency_quanta,
+    amount_arrays_quanta,
 )
 from finance.augur.sim.fixed_point import quantity_scale_for_asset
 from finance.augur.sim.scenario import Scenario
@@ -123,9 +123,7 @@ def compile_target_allocation_policies(
             floor_series[idx],
             floor_base_month[idx],
             floor_period[idx],
-        ) = amount_arrays_currency_quanta(
-            policy.cash_floor_usd, series_index_by_id, currency_quantum=scenario.currency.quantum
-        )
+        ) = amount_arrays_quanta(policy.cash_floor, series_index_by_id, currency_quantum=scenario.currency.quantum)
         (
             ceiling_kind[idx],
             ceiling_fixed[idx],
@@ -133,9 +131,7 @@ def compile_target_allocation_policies(
             ceiling_series[idx],
             ceiling_base_month[idx],
             ceiling_period[idx],
-        ) = amount_arrays_currency_quanta(
-            policy.cash_ceiling_usd, series_index_by_id, currency_quantum=scenario.currency.quantum
-        )
+        ) = amount_arrays_quanta(policy.cash_ceiling, series_index_by_id, currency_quantum=scenario.currency.quantum)
         prefixes.append(policy.cause_id_prefix)
         tolerances.append(policy.rebalance_tolerance)
         for sleeve_idx, sleeve in enumerate(policy.sleeves):

@@ -10,6 +10,7 @@ emits both in a single pass."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,7 +18,7 @@ from numpy.typing import NDArray
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.locations import Location
-from finance.augur.sim.runtime import mortgage_monthly_payment_usd
+from finance.augur.sim.runtime import mortgage_monthly_payment
 from finance.augur.sim.scenario import Scenario
 
 
@@ -32,7 +33,7 @@ class PropertyCompileOutput:
     id: NDArray[np.int64]
     location_id: NDArray[np.int64]
     location_tax_rate: NDArray[np.float64]
-    special_assessment_annual_usd: NDArray[np.int64]
+    special_assessment_annual: NDArray[np.int64]
     initial_assessed_value: NDArray[np.int64]
     month: NDArray[np.int64]
     buyer_agent: NDArray[np.int64]
@@ -82,7 +83,7 @@ def compile_properties_and_liabilities(
     prop_id = np.zeros(max(1, prop_count), dtype=np.int64)
     location_id = np.zeros(max(1, prop_count), dtype=np.int64)
     location_tax_rate = np.zeros(max(1, prop_count), dtype=np.float64)
-    special_assessment_annual_usd = np.zeros(max(1, prop_count), dtype=np.int64)
+    special_assessment_annual = np.zeros(max(1, prop_count), dtype=np.int64)
     initial_assessed_value = np.zeros(max(1, prop_count), dtype=np.int64)
     month_array = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
     buyer_agent = np.zeros(max(1, prop_count), dtype=np.int64)
@@ -124,8 +125,8 @@ def compile_properties_and_liabilities(
                 f"{purchase.location_id!r}; known location ids: {known_location_ids}"
             )
         location_tax_rate[idx] = float(location.annual_property_tax_rate)
-        special_assessment_annual_usd[idx] = currency_amount(location.annual_special_assessment_usd)
-        initial_assessed_value[idx] = currency_amount(purchase.purchase_price_usd)
+        special_assessment_annual[idx] = currency_amount(location.annual_special_assessment)
+        initial_assessed_value[idx] = currency_amount(purchase.purchase_price)
         month_array[idx] = int(purchase.month)
         buyer_agent[idx] = strings.require(purchase.buyer_agent_id)
         buyer_account[idx] = strings.require(purchase.buyer_account_id)
@@ -133,13 +134,13 @@ def compile_properties_and_liabilities(
         seller_agent[idx] = strings.require(purchase.seller_agent_id)
         seller_account[idx] = strings.require(purchase.seller_account_id)
         seller_slot[idx] = account_slot_by_key.resolve(purchase.seller_agent_id, purchase.seller_account_id)
-        mortgage_principal = purchase.mortgage.principal_usd if purchase.mortgage is not None else 0.0
-        purchase_price[idx] = currency_amount(purchase.purchase_price_usd)
-        closing_cost[idx] = currency_amount(purchase.buyer_closing_cost_usd)
-        down_payment[idx] = currency_amount(purchase.down_payment_usd)
-        adjusted_basis[idx] = currency_amount(purchase.purchase_price_usd + purchase.buyer_closing_cost_usd)
-        stake_contribution[idx] = currency_amount(purchase.down_payment_usd + purchase.buyer_closing_cost_usd)
-        equity_ledger[idx] = currency_amount(purchase.purchase_price_usd - mortgage_principal)
+        mortgage_principal = purchase.mortgage.principal if purchase.mortgage is not None else Decimal(0)
+        purchase_price[idx] = currency_amount(purchase.purchase_price)
+        closing_cost[idx] = currency_amount(purchase.buyer_closing_cost)
+        down_payment[idx] = currency_amount(purchase.down_payment)
+        adjusted_basis[idx] = currency_amount(purchase.purchase_price + purchase.buyer_closing_cost)
+        stake_contribution[idx] = currency_amount(purchase.down_payment + purchase.buyer_closing_cost)
+        equity_ledger[idx] = currency_amount(purchase.purchase_price - mortgage_principal)
         if purchase.mortgage is not None:
             mortgage_slot[idx] = len(liability_codes)
             mortgage = purchase.mortgage
@@ -155,13 +156,16 @@ def compile_properties_and_liabilities(
             liability_counterparty_slot.append(
                 account_slot_by_key.resolve(mortgage.lender_agent_id, mortgage.lender_account_id)
             )
-            liability_principal.append(currency_amount(mortgage.principal_usd))
+            liability_principal.append(currency_amount(mortgage.principal))
             liability_rate.append(float(mortgage.annual_interest_rate))
             liability_term.append(int(mortgage.term_months))
             liability_payment.append(
                 currency_amount(
-                    mortgage_monthly_payment_usd(
-                        mortgage.principal_usd, mortgage.annual_interest_rate, int(mortgage.term_months)
+                    mortgage_monthly_payment(
+                        mortgage.principal,
+                        mortgage.annual_interest_rate,
+                        int(mortgage.term_months),
+                        currency_quantum=scenario.currency.quantum,
                     )
                 )
             )
@@ -172,7 +176,7 @@ def compile_properties_and_liabilities(
             id=prop_id,
             location_id=location_id,
             location_tax_rate=location_tax_rate,
-            special_assessment_annual_usd=special_assessment_annual_usd,
+            special_assessment_annual=special_assessment_annual,
             initial_assessed_value=initial_assessed_value,
             month=month_array,
             buyer_agent=buyer_agent,

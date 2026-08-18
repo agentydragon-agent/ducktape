@@ -35,7 +35,7 @@ def decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) 
             "property_id": property_ids[props[mask]],
             "location_id": location_ids[props[mask]],
             "purchase_month_index": plan.properties.month.astype(np.int64)[props[mask]],
-            "adjusted_basis_currency_quanta": currency_quanta_column(basis.reshape(-1)[mask]),
+            "adjusted_basis_quanta": currency_quanta_column(basis.reshape(-1)[mask]),
         },
         PROPERTY_STATE_FRAME,
     )
@@ -60,8 +60,8 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
             "month_index": months[mask],
             "property_id": property_ids[props[mask]],
             "agent_id": buyer_ids[props[mask]],
-            "contribution_used_currency_quanta": currency_quanta_column(contribution.reshape(-1)[mask]),
-            "equity_ledger_currency_quanta": currency_quanta_column(equity.reshape(-1)[mask]),
+            "contribution_used_quanta": currency_quanta_column(contribution.reshape(-1)[mask]),
+            "equity_ledger_quanta": currency_quanta_column(equity.reshape(-1)[mask]),
         },
         PROPERTY_STAKE_FRAME,
     )
@@ -96,11 +96,11 @@ def decode_property_purchases(
         property_id=property_ids,
         location_id=location_ids,
         buyer_agent_id=buyer_agents,
-        purchase_price_currency_quanta=currency_quanta_column(plan.properties.purchase_price[props]),
-        closing_cost_currency_quanta=currency_quanta_column(plan.properties.closing_cost[props]),
-        adjusted_basis_currency_quanta=currency_quanta_column(plan.properties.adjusted_basis[props]),
-        stake_contribution_currency_quanta=currency_quanta_column(plan.properties.stake_contribution[props]),
-        equity_ledger_currency_quanta=currency_quanta_column(plan.properties.equity_ledger[props]),
+        purchase_price_quanta=currency_quanta_column(plan.properties.purchase_price[props]),
+        closing_cost_quanta=currency_quanta_column(plan.properties.closing_cost[props]),
+        adjusted_basis_quanta=currency_quanta_column(plan.properties.adjusted_basis[props]),
+        stake_contribution_quanta=currency_quanta_column(plan.properties.stake_contribution[props]),
+        equity_ledger_quanta=currency_quanta_column(plan.properties.equity_ledger[props]),
     )
     # Derived buyer-cash transfers: subset where `property_transfer_active` also holds.
     transfer_mask = buffers.properties.transfer_active[months, props, rollouts]
@@ -118,7 +118,7 @@ def decode_property_purchases(
             from_account_id=buyer_accounts[transfer_mask],
             to_agent_id=seller_agents[transfer_mask],
             to_account_id=seller_accounts[transfer_mask],
-            amount_currency_quanta=currency_quanta_column(plan.properties.stake_contribution[p_t]),
+            amount_quanta=currency_quanta_column(plan.properties.stake_contribution[p_t]),
             income_category=np.full(p_t.size, None, dtype=object),
         )
     else:

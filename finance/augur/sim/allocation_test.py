@@ -11,25 +11,25 @@ import pytest_bazel
 from finance.augur.sim.allocation import (
     deposit_by_sleeve,
     rebalance_by_sleeve,
-    target_value_cents,
+    target_value_quanta,
     withdrawal_by_sleeve,
 )
 
 
-def _deposit(value: list[list[int]], weights: list[int], invest_cents: list[int]) -> list[list[int]]:
+def _deposit(value: list[list[int]], weights: list[int], invest_quanta: list[int]) -> list[list[int]]:
     given = deposit_by_sleeve(
-        value_cents=jnp.asarray(value, dtype=jnp.int64),
+        value_quanta=jnp.asarray(value, dtype=jnp.int64),
         weights=np.asarray(weights, dtype=np.int64),
-        invest_cents=jnp.asarray(invest_cents, dtype=jnp.int64),
+        invest_quanta=jnp.asarray(invest_quanta, dtype=jnp.int64),
     )
     return [[int(x) for x in row] for row in given]
 
 
-def _withdraw(value: list[list[int]], weights: list[int], raise_cents: list[int]) -> list[list[int]]:
+def _withdraw(value: list[list[int]], weights: list[int], raise_quanta: list[int]) -> list[list[int]]:
     taken = withdrawal_by_sleeve(
-        value_cents=jnp.asarray(value, dtype=jnp.int64),
+        value_quanta=jnp.asarray(value, dtype=jnp.int64),
         weights=np.asarray(weights, dtype=np.int64),
-        raise_cents=jnp.asarray(raise_cents, dtype=jnp.int64),
+        raise_quanta=jnp.asarray(raise_quanta, dtype=jnp.int64),
     )
     return [[int(x) for x in row] for row in taken]
 
@@ -112,7 +112,7 @@ def test_no_sleeve_is_ever_taken_negative() -> None:
     weights = np.asarray([7, 1, 4, 2], dtype=np.int64)
     wanted = rng.integers(0, 8_000_000, size=64, dtype=np.int64)
 
-    taken = withdrawal_by_sleeve(value_cents=jnp.asarray(value), weights=weights, raise_cents=jnp.asarray(wanted))
+    taken = withdrawal_by_sleeve(value_quanta=jnp.asarray(value), weights=weights, raise_quanta=jnp.asarray(wanted))
 
     assert np.all(taken >= 0)
     assert np.all(taken <= value)
@@ -175,7 +175,7 @@ def test_no_sleeve_receives_a_negative_deposit() -> None:
     weights = np.asarray([7, 1, 4, 2], dtype=np.int64)
     wanted = rng.integers(0, 8_000_000, size=64, dtype=np.int64)
 
-    given = deposit_by_sleeve(value_cents=jnp.asarray(value), weights=weights, invest_cents=jnp.asarray(wanted))
+    given = deposit_by_sleeve(value_quanta=jnp.asarray(value), weights=weights, invest_quanta=jnp.asarray(wanted))
 
     assert np.all(given >= 0)
     assert np.all(given.sum(axis=0) == wanted)
@@ -190,8 +190,8 @@ def test_a_round_trip_through_both_sides_returns_to_target() -> None:
     value = jnp.asarray([[6_000], [2_000]], dtype=jnp.int64)
     amount = jnp.asarray([1_600], dtype=jnp.int64)
 
-    after_sale = value - withdrawal_by_sleeve(value_cents=value, weights=weights, raise_cents=amount)
-    restored = after_sale + deposit_by_sleeve(value_cents=after_sale, weights=weights, invest_cents=amount)
+    after_sale = value - withdrawal_by_sleeve(value_quanta=value, weights=weights, raise_quanta=amount)
+    restored = after_sale + deposit_by_sleeve(value_quanta=after_sale, weights=weights, invest_quanta=amount)
 
     assert [[int(x) for x in row] for row in restored] == [[6_000], [2_000]]
 
@@ -208,16 +208,16 @@ def test_both_splits_trace_under_jit() -> None:
     weights = np.asarray([3, 1], dtype=np.int64)
     value = jnp.asarray([[6_000], [2_000]], dtype=jnp.int64)
 
-    sell = jax.jit(lambda v, amount: withdrawal_by_sleeve(value_cents=v, weights=weights, raise_cents=amount))
-    buy = jax.jit(lambda v, amount: deposit_by_sleeve(value_cents=v, weights=weights, invest_cents=amount))
+    sell = jax.jit(lambda v, amount: withdrawal_by_sleeve(value_quanta=v, weights=weights, raise_quanta=amount))
+    buy = jax.jit(lambda v, amount: deposit_by_sleeve(value_quanta=v, weights=weights, invest_quanta=amount))
 
     assert [int(x) for x in sell(value, jnp.asarray([1_600])).sum(axis=0)] == [1_600]
     assert [int(x) for x in buy(value, jnp.asarray([1_600])).sum(axis=0)] == [1_600]
 
 
 def test_target_value_splits_by_weight() -> None:
-    target = target_value_cents(
-        weights=np.asarray([3, 1], dtype=np.int64), total_cents=jnp.asarray([8_000], dtype=jnp.int64)
+    target = target_value_quanta(
+        weights=np.asarray([3, 1], dtype=np.int64), total_quanta=jnp.asarray([8_000], dtype=jnp.int64)
     )
 
     assert [int(x) for x in target[:, 0]] == [6_000, 2_000]
@@ -229,9 +229,9 @@ def test_zero_and_negative_weights_are_rejected() -> None:
 
     with pytest.raises(ValueError, match="positive"):
         withdrawal_by_sleeve(
-            value_cents=jnp.asarray([[1], [1]], dtype=jnp.int64),
+            value_quanta=jnp.asarray([[1], [1]], dtype=jnp.int64),
             weights=np.asarray([1, 0], dtype=np.int64),
-            raise_cents=jnp.asarray([0], dtype=jnp.int64),
+            raise_quanta=jnp.asarray([0], dtype=jnp.int64),
         )
 
 
@@ -240,7 +240,7 @@ def test_zero_and_negative_weights_are_rejected() -> None:
 
 def _rebalance(value: list[list[int]], weights: list[int], tolerance: float) -> tuple[list[list[int]], list[list[int]]]:
     sell, buy = rebalance_by_sleeve(
-        value_cents=jnp.asarray(value, dtype=jnp.int64),
+        value_quanta=jnp.asarray(value, dtype=jnp.int64),
         weights=np.asarray(weights, dtype=np.int64),
         tolerance=tolerance,
     )
@@ -335,7 +335,7 @@ def test_a_negative_tolerance_is_rejected() -> None:
 
 def test_the_rebalance_traces_under_jit() -> None:
     weights = np.asarray([1, 1], dtype=np.int64)
-    rebalance = jax.jit(lambda v: rebalance_by_sleeve(value_cents=v, weights=weights, tolerance=0.25))
+    rebalance = jax.jit(lambda v: rebalance_by_sleeve(value_quanta=v, weights=weights, tolerance=0.25))
 
     sell, buy = rebalance(jnp.asarray([[900], [100]], dtype=jnp.int64))
 

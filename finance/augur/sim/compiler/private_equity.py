@@ -12,14 +12,8 @@ from numpy.typing import NDArray
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.sim.compiler.helpers import (
-    AMOUNT_FIXED,
-    NO_CODE,
-    AssetTable,
-    StringTable,
-    amount_arrays_currency_quanta,
-)
-from finance.augur.sim.fixed_point import sampled_array_to_currency_quanta
+from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_quanta
+from finance.augur.sim.fixed_point import sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario
 
 
@@ -45,7 +39,7 @@ class PEChannels:
     by field access instead of going through `external_values[series_index]`.
     """
 
-    mark_currency_quanta: NDArray[np.int64]
+    mark_quanta: NDArray[np.int64]
     regime_codes: NDArray[np.int64]
     event_kind_codes: NDArray[np.int64]
     sale_opportunity_active: NDArray[np.bool_]
@@ -53,7 +47,7 @@ class PEChannels:
     eligible_fractions: NDArray[np.float64]
     forced_sale_fractions: NDArray[np.float64]
     liquidity_blocked: NDArray[np.bool_]
-    forced_recovery_cashout_currency_quanta: NDArray[np.int64]
+    forced_recovery_cashout_quanta: NDArray[np.int64]
 
 
 @dataclass(frozen=True)
@@ -148,7 +142,7 @@ def compile_private_equity_tenders(
         owner_cash_slots = np.flatnonzero(cash_agent_codes == owner_code)
         if owner_cash_slots.size > 0:
             pe_policy_proceeds_cash_slot[policy_idx] = int(owner_cash_slots[0])
-        kind, fixed, base, series, base_month, period = amount_arrays_currency_quanta(
+        kind, fixed, base, series, base_month, period = amount_arrays_quanta(
             policy.liquid_net_worth_floor, series_index_by_id, currency_quantum=scenario.currency.quantum
         )
         pe_policy_floor_kind[policy_idx] = kind
@@ -202,7 +196,7 @@ def compile_pe_channels(
 
     issuer_count = issuers.codes.shape[0]
     snapshot_months = horizon_months + 1
-    mark_currency_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
+    mark_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
     regime_codes = np.full((issuer_count, rollout_count, snapshot_months), NO_CODE, dtype=np.int64)
     event_kind_codes = np.full(
         (issuer_count, rollout_count, snapshot_months), int(PrivateEquityEventKindCode.NONE), dtype=np.int64
@@ -212,7 +206,7 @@ def compile_pe_channels(
     eligible_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     forced_sale_fractions = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     liquidity_blocked = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
-    forced_recovery_cashout_currency_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
+    forced_recovery_cashout_quanta = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.int64)
     for issuer_idx, issuer_code in enumerate(issuers.codes):
         if int(issuer_code) < 0:
             continue
@@ -230,7 +224,7 @@ def compile_pe_channels(
             raise ValueError(
                 f"private-equity mark series for issuer {issuer_id!r} produced a negative or non-finite value"
             )
-        mark_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(mark_values, quantum=currency_quantum)
+        mark_quanta[issuer_idx] = sampled_array_to_quanta(mark_values, quantum=currency_quantum)
         regime_codes[issuer_idx] = private_equity.issuer_int_matrix(
             issuer_id, "regime_code", rollout_count=rollout_count, horizon_months=horizon_months
         )
@@ -258,11 +252,11 @@ def compile_pe_channels(
         executable_recovery = forced_recovery_values[:, :horizon_months]
         if executable_recovery.size and (executable_recovery < 0.0).any():
             raise ValueError("private-equity forced-recovery cashout series produced a negative value")
-        forced_recovery_cashout_currency_quanta[issuer_idx] = sampled_array_to_currency_quanta(
+        forced_recovery_cashout_quanta[issuer_idx] = sampled_array_to_quanta(
             forced_recovery_values, quantum=currency_quantum
         )
     return PEChannels(
-        mark_currency_quanta=mark_currency_quanta,
+        mark_quanta=mark_quanta,
         regime_codes=regime_codes,
         event_kind_codes=event_kind_codes,
         sale_opportunity_active=sale_opportunity_active,
@@ -270,5 +264,5 @@ def compile_pe_channels(
         eligible_fractions=eligible_fractions,
         forced_sale_fractions=forced_sale_fractions,
         liquidity_blocked=liquidity_blocked,
-        forced_recovery_cashout_currency_quanta=forced_recovery_cashout_currency_quanta,
+        forced_recovery_cashout_quanta=forced_recovery_cashout_quanta,
     )

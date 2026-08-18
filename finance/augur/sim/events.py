@@ -32,7 +32,7 @@ TRANSFER_EVENT_SCHEMA = pl.Schema(
         "from_account_id": pl.Utf8(),
         "to_agent_id": pl.Utf8(),
         "to_account_id": pl.Utf8(),
-        "amount_currency_quanta": pl.Int64(),
+        "amount_quanta": pl.Int64(),
         # Tax classification: when set (e.g. "ordinary" for W-2 wages),
         # apply_events increments the recipient's ordinary_income_ytd.
         # Null for non-income transfers (e.g. expense payments).
@@ -58,13 +58,13 @@ ASSET_PURCHASE_EVENT_SCHEMA = pl.Schema(
         "asset_id": pl.Utf8(),
         "lot_id": pl.Utf8(),
         "quantity": pl.Float64(),
-        "cost_basis_per_unit_currency_quanta": pl.Int64(),
+        "cost_basis_per_unit_quanta": pl.Int64(),
     }
 )
 
 # `TaxAccrual` records a year-end tax computation: a single
 # year's ordinary income for one agent under one jurisdiction has
-# been bracket-walked, and the resulting tax `amount_currency_quanta` is now
+# been bracket-walked, and the resulting tax `amount_quanta` is now
 # owed. apply_events appends a row to `state.tax_liabilities` and
 # zeroes the agent's `ordinary_income_ytd` for the next year.
 TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
@@ -75,7 +75,7 @@ TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
         "agent_id": pl.Utf8(),
         "jurisdiction_id": pl.Utf8(),
         "tax_year_end_month": pl.Int64(),
-        "amount_currency_quanta": pl.Int64(),
+        "amount_quanta": pl.Int64(),
     }
 )
 
@@ -90,28 +90,28 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         "agent_id": pl.Utf8(),
         "jurisdiction_id": pl.Utf8(),
         "tax_year_end_month": pl.Int64(),
-        "ordinary_income_currency_quanta": pl.Int64(),
-        "ltcg_currency_quanta": pl.Int64(),
-        "stcg_currency_quanta": pl.Int64(),
-        "standard_deduction_currency_quanta": pl.Int64(),
+        "ordinary_income_quanta": pl.Int64(),
+        "ltcg_quanta": pl.Int64(),
+        "stcg_quanta": pl.Int64(),
+        "standard_deduction_quanta": pl.Int64(),
         # MID under this jurisdiction's principal cap, summed across the profile's qualifying
         # mortgages. Zero when no MortgageInterestDeductionPolicy applies (e.g. cash buy, owner
         # doesn't live in the property, or jurisdiction excluded from the policy's cap map).
-        "mortgage_interest_deduction_currency_quanta": pl.Int64(),
+        "mortgage_interest_deduction_quanta": pl.Int64(),
         # Federal SALT deduction allowed this year: property tax paid this calendar year + state
         # income tax accrued this year for the profile's non-federal jurisdictions, capped per
         # the federal SALT schedule. Zero on state-jurisdiction links (SALT is a federal-only
         # Schedule A concept) and on federal links without a FederalSaltDeductionPolicy.
-        "salt_deduction_currency_quanta": pl.Int64(),
+        "salt_deduction_quanta": pl.Int64(),
         # Total itemized deductions used after comparing against the standard: MID + SALT today,
         # plus other Schedule A lines once we model them. Equals MID + SALT when itemized >
         # standard; equals standard otherwise.
-        "itemized_deduction_currency_quanta": pl.Int64(),
-        "ordinary_taxable_currency_quanta": pl.Int64(),
-        "capital_gain_taxable_currency_quanta": pl.Int64(),
-        "ordinary_tax_currency_quanta": pl.Int64(),
-        "capital_gain_tax_currency_quanta": pl.Int64(),
-        "total_tax_currency_quanta": pl.Int64(),
+        "itemized_deduction_quanta": pl.Int64(),
+        "ordinary_taxable_quanta": pl.Int64(),
+        "capital_gain_taxable_quanta": pl.Int64(),
+        "ordinary_tax_quanta": pl.Int64(),
+        "capital_gain_tax_quanta": pl.Int64(),
+        "total_tax_quanta": pl.Int64(),
     }
 )
 
@@ -125,7 +125,7 @@ TAX_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
         "tax_year_end_month": pl.Int64(),
-        "amount_currency_quanta": pl.Int64(),
+        "amount_quanta": pl.Int64(),
     }
 )
 
@@ -140,7 +140,7 @@ OBLIGATION_ACCRUAL_EVENT_SCHEMA = pl.Schema(
         "from_account_id": pl.Utf8(),
         "to_agent_id": pl.Utf8(),
         "to_account_id": pl.Utf8(),
-        "amount_due_currency_quanta": pl.Int64(),
+        "amount_due_quanta": pl.Int64(),
     }
 )
 
@@ -153,9 +153,9 @@ OBLIGATION_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
         "obligation_type": pl.Utf8(),
         "agent_id": pl.Utf8(),
         "from_account_id": pl.Utf8(),
-        "amount_due_currency_quanta": pl.Int64(),
-        "amount_paid_currency_quanta": pl.Int64(),
-        "shortfall_currency_quanta": pl.Int64(),
+        "amount_due_quanta": pl.Int64(),
+        "amount_paid_quanta": pl.Int64(),
+        "shortfall_quanta": pl.Int64(),
         "attempted_funding_sources": pl.Utf8(),
     }
 )
@@ -168,11 +168,11 @@ PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
         "property_id": pl.Utf8(),
         "location_id": pl.Utf8(),
         "buyer_agent_id": pl.Utf8(),
-        "purchase_price_currency_quanta": pl.Int64(),
-        "closing_cost_currency_quanta": pl.Int64(),
-        "adjusted_basis_currency_quanta": pl.Int64(),
-        "stake_contribution_currency_quanta": pl.Int64(),
-        "equity_ledger_currency_quanta": pl.Int64(),
+        "purchase_price_quanta": pl.Int64(),
+        "closing_cost_quanta": pl.Int64(),
+        "adjusted_basis_quanta": pl.Int64(),
+        "stake_contribution_quanta": pl.Int64(),
+        "equity_ledger_quanta": pl.Int64(),
     }
 )
 
@@ -187,10 +187,10 @@ MORTGAGE_ORIGINATION_EVENT_SCHEMA = pl.Schema(
         "counterparty_agent_id": pl.Utf8(),
         "counterparty_account_id": pl.Utf8(),
         "property_id": pl.Utf8(),
-        "principal_currency_quanta": pl.Int64(),
+        "principal_quanta": pl.Int64(),
         "annual_interest_rate": pl.Float64(),
         "term_months": pl.Int64(),
-        "monthly_payment_currency_quanta": pl.Int64(),
+        "monthly_payment_quanta": pl.Int64(),
     }
 )
 
@@ -205,9 +205,9 @@ MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
         "property_id": pl.Utf8(),
         "from_account_id": pl.Utf8(),
         "to_account_id": pl.Utf8(),
-        "interest_currency_quanta": pl.Int64(),
-        "principal_currency_quanta": pl.Int64(),
-        "total_payment_currency_quanta": pl.Int64(),
+        "interest_quanta": pl.Int64(),
+        "principal_quanta": pl.Int64(),
+        "total_payment_quanta": pl.Int64(),
     }
 )
 
@@ -221,12 +221,12 @@ ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
-        "deficit_currency_quanta": pl.Int64(),
+        "deficit_quanta": pl.Int64(),
         "obligation_id": pl.Utf8(),
         "obligation_type": pl.Utf8(),
-        "amount_due_currency_quanta": pl.Int64(),
-        "amount_paid_currency_quanta": pl.Int64(),
-        "shortfall_currency_quanta": pl.Int64(),
+        "amount_due_quanta": pl.Int64(),
+        "amount_paid_quanta": pl.Int64(),
+        "shortfall_quanta": pl.Int64(),
         "attempted_funding_sources": pl.Utf8(),
     }
 )
@@ -248,8 +248,8 @@ LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
         "lot_id": pl.Utf8(),
         "purchase_month_index": pl.Int64(),
         "units_sold": pl.Float64(),
-        "cost_basis_consumed_currency_quanta": pl.Int64(),
-        "proceeds_currency_quanta": pl.Int64(),
+        "cost_basis_consumed_quanta": pl.Int64(),
+        "proceeds_quanta": pl.Int64(),
         "proceeds_account_id": pl.Utf8(),
     }
 )
@@ -274,7 +274,7 @@ CAPITAL_IMPROVEMENT_EVENT_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "month_index": pl.Int64(),
         "property_id": pl.Utf8(),
-        "amount_currency_quanta": pl.Int64(),
+        "amount_quanta": pl.Int64(),
         "description": pl.Utf8(),
     }
 )
@@ -284,13 +284,13 @@ PROPERTY_SALE_EVENT_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "month_index": pl.Int64(),
         "property_id": pl.Utf8(),
-        "gross_proceeds_currency_quanta": pl.Int64(),
-        "mortgage_payoff_currency_quanta": pl.Int64(),
-        "net_cash_to_owner_currency_quanta": pl.Int64(),
-        "realized_gain_currency_quanta": pl.Int64(),
-        "depreciation_recapture_currency_quanta": pl.Int64(),
-        "section_121_exclusion_currency_quanta": pl.Int64(),
-        "long_term_capital_gain_currency_quanta": pl.Int64(),
+        "gross_proceeds_quanta": pl.Int64(),
+        "mortgage_payoff_quanta": pl.Int64(),
+        "net_cash_to_owner_quanta": pl.Int64(),
+        "realized_gain_quanta": pl.Int64(),
+        "depreciation_recapture_quanta": pl.Int64(),
+        "section_121_exclusion_quanta": pl.Int64(),
+        "long_term_capital_gain_quanta": pl.Int64(),
     }
 )
 
@@ -302,12 +302,12 @@ PRIVATE_EQUITY_EVENT_SCHEMA = pl.Schema(
         "asset_id": pl.Utf8(),
         "event_kind": pl.Utf8(),
         "regime": pl.Utf8(),
-        "mark_currency_quanta": pl.Int64(),
+        "mark_quanta": pl.Int64(),
         "sale_capacity_fraction": pl.Float64(),
         "eligible_fraction": pl.Float64(),
         "forced_sale_fraction": pl.Float64(),
         "liquidity_blocked": pl.Boolean(),
-        "forced_recovery_cashout_currency_quanta": pl.Int64(),
+        "forced_recovery_cashout_quanta": pl.Int64(),
     }
 )
 
@@ -321,17 +321,17 @@ PRIVATE_EQUITY_OPPORTUNITY_SCHEMA = pl.Schema(
         "event_kind": pl.Utf8(),
         "regime": pl.Utf8(),
         "outcome": pl.Utf8(),
-        "mark_currency_quanta": pl.Int64(),
+        "mark_quanta": pl.Int64(),
         "sale_capacity_fraction": pl.Float64(),
         "eligible_fraction": pl.Float64(),
         "liquidity_blocked": pl.Boolean(),
-        "floor_currency_quanta": pl.Int64(),
-        "liquid_net_worth_currency_quanta": pl.Int64(),
-        "shortfall_currency_quanta": pl.Int64(),
+        "floor_quanta": pl.Int64(),
+        "liquid_net_worth_quanta": pl.Int64(),
+        "shortfall_quanta": pl.Int64(),
         "units_held": pl.Float64(),
         "sellable_units": pl.Float64(),
         "target_units": pl.Float64(),
-        "proceeds_currency_quanta": pl.Int64(),
+        "proceeds_quanta": pl.Int64(),
     }
 )
 

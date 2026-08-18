@@ -46,4 +46,4 @@ jurisdiction_ids:
 annual_property_tax_rate: 0.0115
 # Aggregate residential CFD special tax: 2002-1 facilities +
 # 2005-1A police/fire services + 2005-1B (per CBS SF reporting).
-annual_special_assessment_usd: 2300.0
+annual_special_assessment: 2300

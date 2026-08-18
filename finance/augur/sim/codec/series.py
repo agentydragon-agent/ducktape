@@ -23,12 +23,7 @@ SERIES_VALUES_SCHEMA = pl.Schema(
 )
 SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
 MONEY_SERIES_VALUES_SCHEMA = pl.Schema(
-    {
-        "rollout_index": pl.Int64(),
-        "month_index": pl.Int64(),
-        "series_id": pl.Utf8(),
-        "value_currency_quanta": pl.Int64(),
-    }
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value_quanta": pl.Int64()}
 )
 MONEY_SERIES_VALUES_FRAME = FrameSpec("money_series_values", MONEY_SERIES_VALUES_SCHEMA)
 
@@ -75,7 +70,7 @@ def decode_money_series_values(plan: CompiledSimulation) -> pl.DataFrame:
                 "rollout_index": rollout_indices,
                 "month_index": month_indices,
                 "series_id": series_ids,
-                "value_currency_quanta": plan.external_money_values.reshape(-1).astype(np.int64, copy=False),
+                "value_quanta": plan.external_money_values.reshape(-1).astype(np.int64, copy=False),
             }
         )
     )

@@ -19,13 +19,13 @@ NET_WORTH_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "month_index": pl.Int64(),
         "agent_id": pl.Utf8(),
-        "cash_currency_quanta": pl.Int64(),
-        "liquid_asset_value_currency_quanta": pl.Int64(),
-        "asset_book_value_currency_quanta": pl.Int64(),
-        "property_book_value_currency_quanta": pl.Int64(),
-        "liability_principal_currency_quanta": pl.Int64(),
-        "liquid_net_worth_currency_quanta": pl.Int64(),
-        "book_net_worth_currency_quanta": pl.Int64(),
+        "cash_quanta": pl.Int64(),
+        "liquid_asset_value_quanta": pl.Int64(),
+        "asset_book_value_quanta": pl.Int64(),
+        "property_book_value_quanta": pl.Int64(),
+        "liability_principal_quanta": pl.Int64(),
+        "liquid_net_worth_quanta": pl.Int64(),
+        "book_net_worth_quanta": pl.Int64(),
     }
 )
 
@@ -36,7 +36,7 @@ ACCOUNT_BALANCE_SCHEMA = pl.Schema(
         "agent_id": pl.Utf8(),
         "account_id": pl.Utf8(),
         "account_type": pl.Utf8(),
-        "balance_currency_quanta": pl.Int64(),
+        "balance_quanta": pl.Int64(),
     }
 )
 
@@ -53,7 +53,7 @@ TRANSACTION_SCHEMA = pl.Schema(
         "to_account_id": pl.Utf8(),
         "asset_id": pl.Utf8(),
         "lot_id": pl.Utf8(),
-        "amount_currency_quanta": pl.Int64(),
+        "amount_quanta": pl.Int64(),
         "quantity": pl.Float64(),
     }
 )
@@ -67,15 +67,15 @@ TAX_BREAKDOWN_PROJECTION_SCHEMA = pl.Schema(
         "jurisdiction_id": pl.Utf8(),
         "tax_year": pl.Int64(),
         "tax_year_end_month": pl.Int64(),
-        "ordinary_income_currency_quanta": pl.Int64(),
-        "ltcg_currency_quanta": pl.Int64(),
-        "stcg_currency_quanta": pl.Int64(),
-        "standard_deduction_currency_quanta": pl.Int64(),
-        "ordinary_taxable_currency_quanta": pl.Int64(),
-        "capital_gain_taxable_currency_quanta": pl.Int64(),
-        "ordinary_tax_currency_quanta": pl.Int64(),
-        "capital_gain_tax_currency_quanta": pl.Int64(),
-        "total_tax_currency_quanta": pl.Int64(),
+        "ordinary_income_quanta": pl.Int64(),
+        "ltcg_quanta": pl.Int64(),
+        "stcg_quanta": pl.Int64(),
+        "standard_deduction_quanta": pl.Int64(),
+        "ordinary_taxable_quanta": pl.Int64(),
+        "capital_gain_taxable_quanta": pl.Int64(),
+        "ordinary_tax_quanta": pl.Int64(),
+        "capital_gain_tax_quanta": pl.Int64(),
+        "total_tax_quanta": pl.Int64(),
     }
 )
 
@@ -89,9 +89,9 @@ OBLIGATION_LIFECYCLE_SCHEMA = pl.Schema(
         "from_account_id": pl.Utf8(),
         "to_agent_id": pl.Utf8(),
         "to_account_id": pl.Utf8(),
-        "amount_due_currency_quanta": pl.Int64(),
-        "amount_paid_currency_quanta": pl.Int64(),
-        "shortfall_currency_quanta": pl.Int64(),
+        "amount_due_quanta": pl.Int64(),
+        "amount_paid_quanta": pl.Int64(),
+        "shortfall_quanta": pl.Int64(),
         "attempted_funding_sources": pl.Utf8(),
         "status": pl.Utf8(),
     }
@@ -103,10 +103,10 @@ FAILURE_PROJECTION_SCHEMA = pl.Schema(
         "month_index": pl.Int64(),
         "failure_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
-        "deficit_currency_quanta": pl.Int64(),
+        "deficit_quanta": pl.Int64(),
         "obligation_id": pl.Utf8(),
         "obligation_type": pl.Utf8(),
-        "shortfall_currency_quanta": pl.Int64(),
+        "shortfall_quanta": pl.Int64(),
         "attempted_funding_sources": pl.Utf8(),
     }
 )
@@ -119,8 +119,8 @@ ROLLOUT_SUMMARY_SCHEMA = pl.Schema(
         "failure_count": pl.Int64(),
         "first_failure_month": pl.Int64(),
         "final_month_index": pl.Int64(),
-        "final_liquid_net_worth_currency_quanta": pl.Int64(),
-        "final_book_net_worth_currency_quanta": pl.Int64(),
+        "final_liquid_net_worth_quanta": pl.Int64(),
+        "final_book_net_worth_quanta": pl.Int64(),
     }
 )
 
@@ -129,11 +129,11 @@ _NET_WORTH_COMPONENT_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "month_index": pl.Int64(),
         "agent_id": pl.Utf8(),
-        "cash_currency_quanta": pl.Int64(),
-        "liquid_asset_value_currency_quanta": pl.Int64(),
-        "asset_book_value_currency_quanta": pl.Int64(),
-        "property_book_value_currency_quanta": pl.Int64(),
-        "liability_principal_currency_quanta": pl.Int64(),
+        "cash_quanta": pl.Int64(),
+        "liquid_asset_value_quanta": pl.Int64(),
+        "asset_book_value_quanta": pl.Int64(),
+        "property_book_value_quanta": pl.Int64(),
+        "liability_principal_quanta": pl.Int64(),
     }
 )
 
@@ -151,8 +151,8 @@ _FINAL_NET_WORTH_FRAME = FrameSpec(
         {
             "rollout_index": pl.Int64(),
             "final_month_index": pl.Int64(),
-            "final_liquid_net_worth_currency_quanta": pl.Int64(),
-            "final_book_net_worth_currency_quanta": pl.Int64(),
+            "final_liquid_net_worth_quanta": pl.Int64(),
+            "final_book_net_worth_quanta": pl.Int64(),
         }
     ),
 )
@@ -222,7 +222,7 @@ def project_simulation_run(run: SimulationRun) -> ProjectionRun:
 def project_net_worth(run: SimulationRun) -> pl.DataFrame:
     """Per-rollout/per-month/per-agent balance and net-worth metrics.
 
-    `property_book_value_currency_quanta` is adjusted basis, not market value. Real
+    `property_book_value_quanta` is adjusted basis, not market value. Real
     property market valuation belongs in exogenous paths before this
     projection can expose market-value real-estate net worth.
     """
@@ -238,22 +238,21 @@ def project_net_worth(run: SimulationRun) -> pl.DataFrame:
     if components.is_empty():
         return NET_WORTH_FRAME.empty()
     metric_names = [
-        "cash_currency_quanta",
-        "liquid_asset_value_currency_quanta",
-        "asset_book_value_currency_quanta",
-        "property_book_value_currency_quanta",
-        "liability_principal_currency_quanta",
+        "cash_quanta",
+        "liquid_asset_value_quanta",
+        "asset_book_value_quanta",
+        "property_book_value_quanta",
+        "liability_principal_quanta",
     ]
     return (
         components.group_by(["rollout_index", "month_index", "agent_id"])
         .agg(pl.col(name).sum().alias(name) for name in metric_names)
         .with_columns(
-            liquid_net_worth_currency_quanta=pl.col("cash_currency_quanta")
-            + pl.col("liquid_asset_value_currency_quanta"),
-            book_net_worth_currency_quanta=pl.col("cash_currency_quanta")
-            + pl.col("asset_book_value_currency_quanta")
-            + pl.col("property_book_value_currency_quanta")
-            - pl.col("liability_principal_currency_quanta"),
+            liquid_net_worth_quanta=pl.col("cash_quanta") + pl.col("liquid_asset_value_quanta"),
+            book_net_worth_quanta=pl.col("cash_quanta")
+            + pl.col("asset_book_value_quanta")
+            + pl.col("property_book_value_quanta")
+            - pl.col("liability_principal_quanta"),
         )
         .sort(["rollout_index", "month_index", "agent_id"])
         .pipe(NET_WORTH_FRAME.normalize)
@@ -269,7 +268,7 @@ def project_account_balances(run: SimulationRun) -> pl.DataFrame:
         "agent_id",
         "account_id",
         pl.lit("cash", dtype=pl.Utf8()).alias("account_type"),
-        "balance_currency_quanta",
+        "balance_quanta",
     )
     liabilities = run.liabilities.select(
         "rollout_index",
@@ -277,7 +276,7 @@ def project_account_balances(run: SimulationRun) -> pl.DataFrame:
         "agent_id",
         pl.col("liability_id").alias("account_id"),
         pl.lit("liability", dtype=pl.Utf8()).alias("account_type"),
-        (-pl.col("principal_currency_quanta")).alias("balance_currency_quanta"),
+        (-pl.col("principal_quanta")).alias("balance_quanta"),
     )
     return ACCOUNT_BALANCE_FRAME.concat([cash, liabilities]).sort(
         ["rollout_index", "month_index", "agent_id", "account_type", "account_id"]
@@ -312,29 +311,22 @@ def project_obligation_lifecycle(run: SimulationRun) -> pl.DataFrame:
     if accruals.is_empty():
         return OBLIGATION_LIFECYCLE_FRAME.empty()
     settlements = run.events_log.obligation_settlements.select(
-        "rollout_index",
-        "obligation_id",
-        "amount_paid_currency_quanta",
-        "shortfall_currency_quanta",
-        "attempted_funding_sources",
+        "rollout_index", "obligation_id", "amount_paid_quanta", "shortfall_quanta", "attempted_funding_sources"
     )
     return (
         accruals.join(settlements, on=["rollout_index", "obligation_id"], how="left")
         .with_columns(
-            _has_settlement=pl.col("amount_paid_currency_quanta").is_not_null()
-            | pl.col("shortfall_currency_quanta").is_not_null(),
-            amount_paid_currency_quanta=pl.col("amount_paid_currency_quanta").fill_null(0),
-            shortfall_currency_quanta=pl.col("shortfall_currency_quanta").fill_null(
-                pl.col("amount_due_currency_quanta")
-            ),
+            _has_settlement=pl.col("amount_paid_quanta").is_not_null() | pl.col("shortfall_quanta").is_not_null(),
+            amount_paid_quanta=pl.col("amount_paid_quanta").fill_null(0),
+            shortfall_quanta=pl.col("shortfall_quanta").fill_null(pl.col("amount_due_quanta")),
             attempted_funding_sources=pl.col("attempted_funding_sources").fill_null(""),
         )
         .with_columns(
             status=pl.when(~pl.col("_has_settlement"))
             .then(pl.lit("due"))
-            .when(pl.col("shortfall_currency_quanta") <= 0)
+            .when(pl.col("shortfall_quanta") <= 0)
             .then(pl.lit("paid"))
-            .when(pl.col("amount_paid_currency_quanta") > 0)
+            .when(pl.col("amount_paid_quanta") > 0)
             .then(pl.lit("partial"))
             .otherwise(pl.lit("failed"))
         )
@@ -363,8 +355,8 @@ def project_rollout_summary(run: SimulationRun, *, net_worth: pl.DataFrame, fail
         .join(final_net_worth, on="rollout_index", how="left")
         .with_columns(
             failure_count=pl.col("failure_count").fill_null(0),
-            final_liquid_net_worth_currency_quanta=pl.col("final_liquid_net_worth_currency_quanta").fill_null(0),
-            final_book_net_worth_currency_quanta=pl.col("final_book_net_worth_currency_quanta").fill_null(0),
+            final_liquid_net_worth_quanta=pl.col("final_liquid_net_worth_quanta").fill_null(0),
+            final_book_net_worth_quanta=pl.col("final_book_net_worth_quanta").fill_null(0),
         )
         .pipe(ROLLOUT_SUMMARY_FRAME.normalize)
         .sort("rollout_index")
@@ -376,11 +368,11 @@ def _cash_net_worth_components(run: SimulationRun) -> pl.DataFrame:
         "rollout_index",
         "month_index",
         "agent_id",
-        pl.col("balance_currency_quanta").alias("cash_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("liquid_asset_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("asset_book_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("property_book_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("liability_principal_currency_quanta"),
+        pl.col("balance_quanta").alias("cash_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("liquid_asset_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("asset_book_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("property_book_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("liability_principal_quanta"),
     )
 
 
@@ -397,17 +389,15 @@ def _asset_net_worth_components(run: SimulationRun) -> pl.DataFrame:
         "rollout_index",
         "month_index",
         "agent_id",
-        pl.lit(0, dtype=pl.Int64()).alias("cash_currency_quanta"),
-        _quantity_value_currency_quanta("value_currency_quanta").alias("liquid_asset_value_currency_quanta"),
-        _quantity_value_currency_quanta("cost_basis_per_unit_currency_quanta").alias(
-            "asset_book_value_currency_quanta"
-        ),
-        pl.lit(0, dtype=pl.Int64()).alias("property_book_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("liability_principal_currency_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("cash_quanta"),
+        _quantity_value_quanta("value_quanta").alias("liquid_asset_value_quanta"),
+        _quantity_value_quanta("cost_basis_per_unit_quanta").alias("asset_book_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("property_book_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("liability_principal_quanta"),
     )
 
 
-def _quantity_value_currency_quanta(unit_value_column: str) -> pl.Expr:
+def _quantity_value_quanta(unit_value_column: str) -> pl.Expr:
     """Value a non-negative decoded lot without re-entering float arithmetic.
 
     `remaining_quantity` is convenient for people but it is a decimal display
@@ -435,11 +425,11 @@ def _property_net_worth_components(run: SimulationRun) -> pl.DataFrame:
         "rollout_index",
         "month_index",
         "agent_id",
-        pl.lit(0, dtype=pl.Int64()).alias("cash_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("liquid_asset_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("asset_book_value_currency_quanta"),
-        pl.col("adjusted_basis_currency_quanta").alias("property_book_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("liability_principal_currency_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("cash_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("liquid_asset_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("asset_book_value_quanta"),
+        pl.col("adjusted_basis_quanta").alias("property_book_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("liability_principal_quanta"),
     )
 
 
@@ -450,11 +440,11 @@ def _liability_net_worth_components(run: SimulationRun) -> pl.DataFrame:
         "rollout_index",
         "month_index",
         "agent_id",
-        pl.lit(0, dtype=pl.Int64()).alias("cash_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("liquid_asset_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("asset_book_value_currency_quanta"),
-        pl.lit(0, dtype=pl.Int64()).alias("property_book_value_currency_quanta"),
-        pl.col("principal_currency_quanta").alias("liability_principal_currency_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("cash_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("liquid_asset_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("asset_book_value_quanta"),
+        pl.lit(0, dtype=pl.Int64()).alias("property_book_value_quanta"),
+        pl.col("principal_quanta").alias("liability_principal_quanta"),
     )
 
 
@@ -474,7 +464,7 @@ def _transfer_transactions(run: SimulationRun) -> pl.DataFrame:
         "to_account_id",
         pl.lit(None, dtype=pl.Utf8()).alias("asset_id"),
         pl.lit(None, dtype=pl.Utf8()).alias("lot_id"),
-        "amount_currency_quanta",
+        "amount_quanta",
         pl.lit(None, dtype=pl.Float64()).alias("quantity"),
     )
 
@@ -495,7 +485,7 @@ def _lot_disposition_transactions(run: SimulationRun) -> pl.DataFrame:
         pl.col("proceeds_account_id").alias("to_account_id"),
         "asset_id",
         "lot_id",
-        pl.col("proceeds_currency_quanta").alias("amount_currency_quanta"),
+        pl.col("proceeds_quanta").alias("amount_quanta"),
         pl.col("units_sold").alias("quantity"),
     )
 
@@ -519,7 +509,7 @@ def _obligation_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
         "to_account_id",
         pl.lit(None, dtype=pl.Utf8()).alias("asset_id"),
         pl.lit(None, dtype=pl.Utf8()).alias("lot_id"),
-        pl.col("amount_paid_currency_quanta").alias("amount_currency_quanta"),
+        pl.col("amount_paid_quanta").alias("amount_quanta"),
         pl.lit(None, dtype=pl.Float64()).alias("quantity"),
     )
 
@@ -540,7 +530,7 @@ def _tax_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
         pl.lit(None, dtype=pl.Utf8()).alias("to_account_id"),
         pl.lit(None, dtype=pl.Utf8()).alias("asset_id"),
         pl.lit(None, dtype=pl.Utf8()).alias("lot_id"),
-        "amount_currency_quanta",
+        "amount_quanta",
         pl.lit(None, dtype=pl.Float64()).alias("quantity"),
     )
 
@@ -549,8 +539,8 @@ def _final_net_worth_by_rollout(net_worth: pl.DataFrame) -> pl.DataFrame:
     if net_worth.is_empty():
         return _FINAL_NET_WORTH_FRAME.empty()
     by_month = net_worth.group_by(["rollout_index", "month_index"]).agg(
-        pl.col("liquid_net_worth_currency_quanta").sum().alias("final_liquid_net_worth_currency_quanta"),
-        pl.col("book_net_worth_currency_quanta").sum().alias("final_book_net_worth_currency_quanta"),
+        pl.col("liquid_net_worth_quanta").sum().alias("final_liquid_net_worth_quanta"),
+        pl.col("book_net_worth_quanta").sum().alias("final_book_net_worth_quanta"),
     )
     final_months = by_month.group_by("rollout_index").agg(pl.col("month_index").max().alias("month_index"))
     return (

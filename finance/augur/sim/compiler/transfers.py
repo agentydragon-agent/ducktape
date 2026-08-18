@@ -14,7 +14,7 @@ from finance.augur.sim.compiler.helpers import (
     ORDINARY_DEDUCTION_CATEGORY,
     AccountSlots,
     StringTable,
-    amount_arrays_currency_quanta,
+    amount_arrays_quanta,
     empty_month_matrix,
 )
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
@@ -97,8 +97,8 @@ def compile_transfer_slots(
                 deduction_profile[month, idx] = buckets.ordinary_bucket(
                     profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
                 )
-            kind, fixed, base, series, base_month, period = amount_arrays_currency_quanta(
-                transfer.amount_usd, series_index_by_id, currency_quantum=scenario.currency.quantum
+            kind, fixed, base, series, base_month, period = amount_arrays_quanta(
+                transfer.amount, series_index_by_id, currency_quantum=scenario.currency.quantum
             )
             amount_kind[month, idx] = kind
             amount_fixed[month, idx] = fixed

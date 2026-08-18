@@ -149,7 +149,7 @@ state, events_log.filter(month ≤ M))`. The log is what survives
    world. Six long-form frames keyed by `(rollout_index,
 month_index)` plus entity-id columns:
    - `cash_balances` — `(rollout, month, agent_id, account_id,
-balance_usd)`. **Event-sourced** — cumulative cash deltas.
+balance)`. **Event-sourced** — cumulative cash deltas.
    - `asset_lots` — `(rollout, month, agent_id, position_id,
 lot_id, template_id, units, basis_usd, acquired_month,
 cost_basis_method, sellability_mask_ref, current_unit_price_
@@ -158,7 +158,7 @@ usd, current_market_value_usd)`. **Mixed**: units + basis +
      current_market_value_usd are trajectory-derived (refreshed
      each month from the exogenous trajectory bundle).
    - `liabilities` — `(rollout, month, agent_id, liability_id,
-template_id, counterparty_agent_id, principal_usd,
+template_id, counterparty_agent_id, principal,
 interest_accrued_this_month_usd, principal_paid_this_month_
 usd, deductibility_flag, …)`. Event-sourced.
    - `property_state` — `(rollout, month, property_id, location_
