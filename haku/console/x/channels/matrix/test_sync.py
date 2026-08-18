@@ -20,7 +20,7 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from haku.console.chat_models import AuthoredEventKind, PromptRejection, StoredEventKind
+from haku.console.chat_models import SPA_ORIGIN, AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
 from haku.console.database_schema import SessionEvent
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import (
@@ -274,7 +274,13 @@ async def carried_prompt(
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
     view, token = await chat_store.create(operator_id, MatrixSession())
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, f"[{event_id}] {body}", ledger.carrying((event_id,)))
+    await chat_store.enqueue_prompt(
+        operator_id,
+        view.session_id,
+        f"[{event_id}] {body}",
+        MatrixOrigin(address=MATRIX_ROOM, refs=(event_id,)),
+        ledger.carrying((event_id,)),
+    )
     return view.session_id
 
 
@@ -856,7 +862,7 @@ async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
         conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id,
     )
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi")
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "[$a] hi", SPA_ORIGIN)
     start = await chat_store.next_prompt(view.session_id)
     assert start is not None
     message_id = await chat_store.begin_assistant(view.session_id, start.turn_id, source_first_frame_seq=1)

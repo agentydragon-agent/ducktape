@@ -38,6 +38,7 @@ from haku.console.chat_models import (
     ChatSurface,
     FrameDirection,
     LeaseExpiryReason,
+    PromptOrigin,
     PromptRejection,
     SessionStatus,
     TurnOutcome,
@@ -781,8 +782,25 @@ class SessionStore:
             chat.updated_at = now
 
     async def enqueue_prompt(
-        self, operator_id: UUID, session_id: UUID, prompt_text: str, records: PromptRecords | None = None
+        self,
+        operator_id: UUID,
+        session_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin,
+        records: PromptRecords | None = None,
     ) -> SessionMessageView:
+        """Accept a prompt, recording which surface it arrived through.
+
+        The origin rides on the `PROMPT_ENQUEUED` event rather than on the transcript row, because
+        that event is already the prompt's provider-neutral place in the stream — and a surface
+        deciding whether it has already shown this prompt reads the stream, not the transcript.
+
+        Required, with no default. A default of the console's own surface would mean a channel
+        that forgot to pass one recorded the operator as having typed it into a browser — and the
+        reader this exists for would then post that prompt into every room including the one it
+        came from, which is the exact duplicate the origin is here to prevent. Silent, and in the
+        one direction that matters, so the type system holds it instead.
+        """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             chat = await db.scalar(
@@ -821,7 +839,7 @@ class SessionStore:
             # transcript does. Without it `session_events` holds only the agent's half.
             db.add(
                 session_events.prompt_enqueued(
-                    session_id=session_id, message_id=message.message_id, text=prompt_text, now=now
+                    session_id=session_id, message_id=message.message_id, text=prompt_text, origin=origin, now=now
                 )
             )
             chat.updated_at = now

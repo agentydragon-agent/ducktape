@@ -5,7 +5,7 @@ surfaces that read and write them live in `x/` — an enum here cannot invert th
 """
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +32,58 @@ class ChatSurface(StrEnum):
 
     SPA = "spa"
     MATRIX = "matrix"
+
+
+class PromptOriginKind(StrEnum):
+    """Which arm of `PromptOrigin` a prompt carries.
+
+    Its members coincide with `ChatSurface`'s and it stays its own vocabulary: this discriminates a
+    value stored inside a `prompt_enqueued` body, `ChatSurface` names how a session was created, and
+    one enum for both would make a change to either meaning rewrite the other's stored strings.
+    """
+
+    SPA = "spa"
+    MATRIX = "matrix"
+
+
+class SpaOrigin(BaseModel):
+    """The operator typed this into the console.
+
+    **No address, and that is not an inconsistency with the room's arm.** An address exists so a
+    channel can tell its own copy of a prompt from a sibling attachment's; a browser tab holds no
+    copy to confuse, because it renders the record rather than keeping one.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[PromptOriginKind.SPA] = PromptOriginKind.SPA
+
+
+class MatrixOrigin(BaseModel):
+    """The operator said this in a Matrix room, as one or more events folded into one prompt.
+
+    **Both strings are opaque to everything but the Matrix channel.** Only the channel that minted
+    an origin may look inside one; **everything else compares, it never interprets**. That is what
+    lets the conversation layer hold a channel's address without learning its vocabulary
+    (<plans/conversation_layers.md> § 1).
+
+    **`address` is why this is not just a ref.** One bot serves many rooms, so a bare event id
+    cannot tell a sibling room's copy from this room's — and telling them apart is the whole job of
+    the reader this exists for.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[PromptOriginKind.MATRIX] = PromptOriginKind.MATRIX
+    address: str = Field(description="Which room. Never parsed outside the Matrix channel.")
+    refs: tuple[str, ...] = Field(description="The events folded into this prompt, oldest first.")
+
+
+type PromptOrigin = SpaOrigin | MatrixOrigin
+
+# The console's own surface, as one value rather than one per call: `SpaOrigin` carries nothing, so
+# every instance is the same statement and a shared frozen one says so.
+SPA_ORIGIN = SpaOrigin()
 
 
 class FrameDirection(StrEnum):
