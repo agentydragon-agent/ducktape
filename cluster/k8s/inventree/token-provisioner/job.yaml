@@ -24,7 +24,7 @@ spec:
       serviceAccountName: inventree-token-provisioner
       containers:
         - name: provisioner
-          image: ghcr.io/agentydragon/inventree-token-provisioner:devel-20260817235956-e98ff40 # {"$imagepolicy": "flux-system:token-provisioner"}
+          image: ghcr.io/agentydragon/inventree-token-provisioner:devel-20260819221142-4375f37 # {"$imagepolicy": "flux-system:token-provisioner"}
           imagePullPolicy: Always
           env:
             - name: INVENTREE_ADMIN_USER
