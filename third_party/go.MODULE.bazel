@@ -76,8 +76,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/text",
-    sum = "h1:B3njUFyqtHDUI5jMn1YIr5B0IE2U0qck04r6d4KPAxE=",
-    version = "v0.33.0",
+    sum = "h1:JfKh3XmcRPqZPKevfXVpI1wXPTqbkE5f7JA92a55Yxg=",
+    version = "v0.36.0",
 )
 go_deps.module(
     path = "github.com/google/uuid",
@@ -134,6 +134,7 @@ use_repo(
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
     "com_github_bluekeyes_go_gitdiff",
+    "com_github_caarlos0_env_v11",
     "com_github_cheynewallace_tabby",
     "com_github_docker_docker",
     "com_github_elliotchance_orderedmap",
@@ -149,6 +150,8 @@ use_repo(
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",
     "com_github_tcm1911_r2g2",
+    "io_k8s_apimachinery",
+    "io_k8s_apiserver",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_metric",
     "io_opentelemetry_go_otel_sdk",

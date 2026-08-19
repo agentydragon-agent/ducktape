@@ -1,0 +1,53 @@
+package main
+
+import (
+	"testing"
+	"time"
+
+	"github.com/caarlos0/env/v11"
+)
+
+func TestParseEnvironmentConfig(t *testing.T) {
+	config, err := parseEnvironmentConfig(env.Options{Environment: map[string]string{
+		"HAKU_KUBE_AUTHORIZATION_URL":   "https://console.test/api/internal/kubernetes/authorize",
+		"KUBERNETES_SERVICE_HOST":       "10.0.0.1",
+		"KUBERNETES_SERVICE_PORT_HTTPS": "6443",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.AuthorizationURL.String() != "https://console.test/api/internal/kubernetes/authorize" {
+		t.Fatalf("authorization URL = %q", config.AuthorizationURL.String())
+	}
+	if config.ListenAddress != ":8080" || config.AuthorizationTimeout != 3*time.Second || config.RequestTimeout != 30*time.Second || config.MaxRequestBytes != 10<<20 {
+		t.Fatalf("unexpected defaults: %#v", config)
+	}
+	if config.kubernetesServicePort() != "6443" {
+		t.Fatalf("Kubernetes service port = %q", config.kubernetesServicePort())
+	}
+}
+
+func TestParseEnvironmentConfigRejectsInvalidValues(t *testing.T) {
+	base := map[string]string{
+		"HAKU_KUBE_AUTHORIZATION_URL": "https://console.test/api/internal/kubernetes/authorize",
+		"KUBERNETES_SERVICE_HOST":     "10.0.0.1",
+		"KUBERNETES_SERVICE_PORT":     "443",
+	}
+	for name, value := range map[string]string{
+		"HAKU_KUBE_AUTHORIZATION_URL":     "/relative/authorize",
+		"HAKU_KUBE_AUTHORIZATION_TIMEOUT": "0s",
+		"HAKU_KUBE_REQUEST_TIMEOUT":       "not-a-duration",
+		"HAKU_KUBE_MAX_REQUEST_BYTES":     "0",
+	} {
+		t.Run(name, func(t *testing.T) {
+			environment := make(map[string]string, len(base)+1)
+			for key, baseValue := range base {
+				environment[key] = baseValue
+			}
+			environment[name] = value
+			if _, err := parseEnvironmentConfig(env.Options{Environment: environment}); err == nil {
+				t.Fatalf("%s=%q was accepted", name, value)
+			}
+		})
+	}
+}
