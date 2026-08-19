@@ -109,6 +109,20 @@ async def test_deliberate_close_is_not_reclassified_as_runner_failure(
         # The credential column is untouched by cleanup: it verifies, it does not also record
         # that the sandbox is gone.
         assert record.bridge_token_fingerprint == SessionStore._fingerprint(token)
+    ended = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_ENDED))
+    assert ended.body == {"status": SessionStatus.CLOSED, "error": None}
+
+
+async def test_failure_records_the_final_status_and_error_once(chat_store, migrated_sessions, operator_id) -> None:
+    view, _ = await chat_store.create(operator_id)
+
+    await chat_store.fail(view.session_id, "runner failed")
+    await chat_store.fail(view.session_id, "a later observer also noticed")
+
+    ended = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_ENDED))
+    assert ended.body == {"status": SessionStatus.FAILED, "error": "runner failed"}
+    failed = await chat_store.get(operator_id, view.session_id)
+    assert (failed.status, failed.error) == (SessionStatus.FAILED, "runner failed")
 
 
 async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(
@@ -920,6 +934,36 @@ async def authored_events(migrated_sessions, session_id: UUID) -> list[Conversat
         )
 
 
+async def authored_events_of_kind(
+    migrated_sessions, session_id: UUID, kind: AuthoredEventKind
+) -> list[ConversationEvent]:
+    return [event for event in await authored_events(migrated_sessions, session_id) if event.kind == kind]
+
+
+async def test_creating_a_session_records_that_it_started_provisioning(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    view, _ = await chat_store.create(operator_id)
+
+    started = one(
+        await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_PROVISIONING)
+    )
+    assert started.body == {}
+    assert (started.session_id, started.turn_id, started.source_first_frame_seq) == (view.session_id, None, None)
+
+
+async def test_setup_narration_is_authored_into_the_conversation_record(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    view, _ = await chat_store.create(operator_id)
+
+    await chat_store.narrate(view.session_id, "cloning haku-state")
+    await chat_store.narrate(view.session_id, "starting the runner")
+
+    lines = await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SETUP_NARRATION)
+    assert [line.body for line in lines] == [{"text": "cloning haku-state"}, {"text": "starting the runner"}]
+
+
 async def test_a_replica_taking_a_session_over_records_who_it_took_it_from(
     chat_store, migrated_sessions, operator_id
 ) -> None:
@@ -932,7 +976,7 @@ async def test_a_replica_taking_a_session_over_records_who_it_took_it_from(
 
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
-    taken = one(await authored_events(migrated_sessions, view.session_id))
+    taken = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_ADOPTED))
     assert taken.kind == AuthoredEventKind.SESSION_ADOPTED
     assert taken.body == {"previous_holder": "haku-console-b", "holder": REPLICA}
     # A fact about the session, not about an exchange — which is what makes it writable at all for
@@ -951,7 +995,9 @@ async def test_the_first_runner_to_attach_is_not_a_takeover_and_neither_is_its_r
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
-    assert await authored_events(migrated_sessions, view.session_id) == []
+    assert [event.kind for event in await authored_events(migrated_sessions, view.session_id)] == [
+        AuthoredEventKind.SESSION_PROVISIONING
+    ]
 
 
 async def test_a_session_that_died_before_a_runner_ever_attached_says_so_in_a_row(
@@ -966,10 +1012,12 @@ async def test_a_session_that_died_before_a_runner_ever_attached_says_so_in_a_ro
 
     assert await chat_store.expire_stale_leases() == 1
 
-    lapsed = one(await authored_events(migrated_sessions, view.session_id))
+    lapsed = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.LEASE_EXPIRED))
     assert lapsed.kind == AuthoredEventKind.LEASE_EXPIRED
     assert lapsed.body == {"reason": LeaseExpiryReason.NEVER_ATTACHED, "last_holder": None}
     assert lapsed.turn_id is None
+    ended = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_ENDED))
+    assert ended.body == {"status": SessionStatus.FAILED, "error": "console session ended: a runner never attached"}
 
 
 async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, migrated_sessions, operator_id) -> None:
@@ -980,7 +1028,7 @@ async def test_a_lease_that_lapsed_names_the_replica_that_held_it(chat_store, mi
 
     assert await chat_store.expire_stale_leases() == 1
 
-    lapsed = one(await authored_events(migrated_sessions, view.session_id))
+    lapsed = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.LEASE_EXPIRED))
     assert lapsed.body == {"reason": LeaseExpiryReason.HOLDER_GONE, "last_holder": REPLICA}
 
 

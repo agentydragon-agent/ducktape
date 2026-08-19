@@ -356,6 +356,21 @@ class SessionStore:
     def _fingerprint(token: str) -> bytes:
         return hashlib.sha256(token.encode()).digest()
 
+    @staticmethod
+    async def _end_session(
+        db: AsyncSession, chat: Session, *, status: SessionStatus, error: str | None, now: datetime
+    ) -> None:
+        """Persist one final session state and its durable account in the same transaction."""
+        if status not in {SessionStatus.CLOSED, SessionStatus.FAILED}:
+            raise ValueError(f"a session may only end closed or failed, not {status}")
+        writer = await conversation_log.writer_for(
+            db, chat.conversation_id, session_id=chat.session_id, turn_id=None, now=now
+        )
+        writer.authored(session_events.SessionEndedBody(status=status, error=error))
+        chat.status = status
+        chat.error = error
+        chat.updated_at = now
+
     async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
         """Start a session, continuing *conversation_id* or opening a conversation of its own.
 
@@ -378,7 +393,7 @@ class SessionStore:
                 # `relationship()` does not order the unit of work.
                 await db.flush()
             db.add(
-                Session(
+                session := Session(
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
@@ -396,6 +411,14 @@ class SessionStore:
                     updated_at=now,
                 )
             )
+            # The event names the session, and the ORM rows have no relationship that would order
+            # their INSERTs for the foreign key. More importantly, the row and the fact commit in
+            # one transaction: a session can never exist without saying that it started coming up.
+            await db.flush([session])
+            writer = await conversation_log.writer_for(
+                db, conversation_id, session_id=session_id, turn_id=None, now=now
+            )
+            writer.authored(session_events.SessionProvisioningBody())
         view = await self.get(operator_id, session_id)
         return view, bridge_token
 
@@ -787,8 +810,10 @@ class SessionStore:
                 return
             chat.claim_cleaned_at = now
             if chat.status == SessionStatus.CLOSING:
-                chat.status = SessionStatus.CLOSED
-            chat.updated_at = now
+                await self._end_session(db, chat, status=SessionStatus.CLOSED, error=None, now=now)
+                await notify(db, SessionEventKind.UPDATE, session_id)
+            else:
+                chat.updated_at = now
 
     async def enqueue_prompt(
         self,
@@ -1025,59 +1050,83 @@ class SessionStore:
 
         Failures are not swallowed — a rollout with quiet holes looks complete while being wrong.
         """
-        uid = frame_uid(kind, payload)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            # `ON CONFLICT DO NOTHING` against the partial unique index rather than a read
-            # followed by a write: two replicas can be replaying the same buffer at once during
-            # an adoption, and a check-then-insert would let both through.
-            insert = (
-                pg_insert(SessionFrame)
-                .values(
-                    session_id=session_id,
-                    direction=direction,
-                    kind=kind,
-                    payload=payload,
-                    frame_uid=uid,
-                    runner_seq=runner_seq,
-                    created_at=now,
-                    updated_at=now,
-                )
-                # `index_where` as well as the columns, because the index is partial and Postgres
-                # will not infer one without its predicate. A row whose `frame_uid` is NULL does
-                # not satisfy that predicate, so it is simply inserted.
-                .on_conflict_do_nothing(
-                    index_elements=["session_id", "frame_uid"], index_where=text("frame_uid IS NOT NULL")
-                )
+            return await self._record_frame(db, session_id, direction, kind, payload, runner_seq=runner_seq, now=now)
+
+    @staticmethod
+    async def _record_frame(
+        db: AsyncSession,
+        session_id: UUID,
+        direction: FrameDirection,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        runner_seq: int | None,
+        now: datetime,
+    ) -> RecordedFrame:
+        """The transactional half of `record_frame`, shared by narration's compatibility write."""
+        uid = frame_uid(kind, payload)
+        # `ON CONFLICT DO NOTHING` against the partial unique index rather than a read followed by a
+        # write: two replicas can be replaying the same buffer at once during an adoption, and a
+        # check-then-insert would let both through.
+        insert = (
+            pg_insert(SessionFrame)
+            .values(
+                session_id=session_id,
+                direction=direction,
+                kind=kind,
+                payload=payload,
+                frame_uid=uid,
+                runner_seq=runner_seq,
+                created_at=now,
+                updated_at=now,
             )
-            inserted = await db.execute(insert.returning(SessionFrame.frame_seq))
-            if (inserted_seq := inserted.scalar_one_or_none()) is not None:
-                return RecordedFrame(fresh=True, frame_seq=int(inserted_seq))
-            # Nothing was inserted, so the partial index found this frame's identity already in
-            # the log. Read back the row it collided with, so a replay still names the frame it
-            # duplicates.
-            existing_seq = await db.scalar(
-                select(SessionFrame.frame_seq).where(
-                    SessionFrame.session_id == session_id, SessionFrame.frame_uid == uid
-                )
+            # `index_where` as well as the columns, because the index is partial and Postgres will
+            # not infer one without its predicate. A row whose `frame_uid` is NULL does not satisfy
+            # that predicate, so it is simply inserted.
+            .on_conflict_do_nothing(
+                index_elements=["session_id", "frame_uid"], index_where=text("frame_uid IS NOT NULL")
             )
-            if existing_seq is None:
-                raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
+        )
+        inserted = await db.execute(insert.returning(SessionFrame.frame_seq))
+        if (inserted_seq := inserted.scalar_one_or_none()) is not None:
+            return RecordedFrame(fresh=True, frame_seq=int(inserted_seq))
+        # Nothing was inserted, so the partial index found this frame's identity already in the
+        # log. Read back the row it collided with, so a replay still names the frame it duplicates.
+        existing_seq = await db.scalar(
+            select(SessionFrame.frame_seq).where(SessionFrame.session_id == session_id, SessionFrame.frame_uid == uid)
+        )
+        if existing_seq is None:
+            raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
         return RecordedFrame(fresh=False, frame_seq=int(existing_seq))
 
     async def narrate(self, session_id: UUID, text: str) -> None:
         """Record one thing the sandbox said while coming up, and wake whoever is watching.
 
-        The wake is what `record_frame` alone does not do. Narration is what a session that dies
-        during setup has instead of a transcript, so it has to reach a follower when it is said
-        rather than whenever the session next writes an event — which for that session is never.
-
-        Announced after the row commits rather than inside its transaction: `record_frame` owns
-        that transaction, and a wake for a frame that rolled back would send a reader to look for
-        something that is not there.
+        The conversation event is the fact. The `setup_output` frame is a temporary compatibility
+        copy for a replica whose session read still gets narration from the frame log; both commit
+        together, so neither reader can observe a half-written line during the rollout. Once every
+        reader uses `setup_narration`, the frame write goes away.
         """
-        await self.record_frame(session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(text))
+        now = datetime.now(UTC)
         async with self._sessions.begin() as db:
+            chat = await db.get(Session, session_id)
+            if chat is None:
+                raise KeyError(session_id)
+            await self._record_frame(
+                db,
+                session_id,
+                FrameDirection.FROM_AGENT,
+                SETUP_OUTPUT_KIND,
+                setup_output_frame(text),
+                runner_seq=None,
+                now=now,
+            )
+            writer = await conversation_log.writer_for(
+                db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
+            )
+            writer.authored(session_events.SetupNarrationBody(text=text))
             await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def highest_runner_seq(self, session_id: UUID) -> int | None:
@@ -1308,11 +1357,13 @@ class SessionStore:
         logger.error("session %s failed: %s", session_id, error)
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            chat = await db.get(Session, session_id)
-            if chat is not None and chat.status not in {SessionStatus.CLOSING, SessionStatus.CLOSED}:
-                chat.status = SessionStatus.FAILED
-                chat.error = error
-                chat.updated_at = now
+            chat = await db.get(Session, session_id, with_for_update=True)
+            if chat is not None and chat.status not in {
+                SessionStatus.CLOSING,
+                SessionStatus.CLOSED,
+                SessionStatus.FAILED,
+            }:
+                await self._end_session(db, chat, status=SessionStatus.FAILED, error=error, now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
             # An item still open when the session died says so on its own row: `failed` is one of
             # the three lifecycle states, so a half-written answer is neither lost nor shown as if
@@ -1341,6 +1392,8 @@ class SessionStore:
             )
             if chat is None:
                 raise KeyError(session_id)
+            if chat.status in {SessionStatus.CLOSED, SessionStatus.FAILED}:
+                return
             chat.status = SessionStatus.CLOSING
             chat.updated_at = datetime.now(UTC)
             await notify(db, SessionEventKind.PROMPT, session_id)
@@ -1459,18 +1512,18 @@ class SessionStore:
                     db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
                 )
                 writer.authored(session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder))
-                chat.status = SessionStatus.FAILED
-                chat.error = f"console session ended: {detail}"
-                chat.updated_at = now
+                await self._end_session(
+                    db, chat, status=SessionStatus.FAILED, error=f"console session ended: {detail}", now=now
+                )
                 await notify(db, SessionEventKind.UPDATE, session_id)
             return len(expired)
 
     async def closed(self, session_id: UUID) -> None:
         async with self._sessions.begin() as db:
-            chat = await db.get(Session, session_id)
-            if chat is not None and chat.status != SessionStatus.FAILED:
-                chat.status = SessionStatus.CLOSED
-                chat.updated_at = datetime.now(UTC)
+            chat = await db.get(Session, session_id, with_for_update=True)
+            if chat is not None and chat.status not in {SessionStatus.CLOSED, SessionStatus.FAILED}:
+                now = datetime.now(UTC)
+                await self._end_session(db, chat, status=SessionStatus.CLOSED, error=None, now=now)
                 await notify(db, SessionEventKind.UPDATE, session_id)
 
     async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
