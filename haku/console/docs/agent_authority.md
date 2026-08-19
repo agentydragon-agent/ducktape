@@ -48,8 +48,8 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
    identity and canonical Operator to the interaction exactly once.
 4. The Operator explicitly denies or allows a required name and access profile for a new Agent,
    or reconnects an existing owned Agent with a selected profile. This records intent but issues
-   no grant yet. The server chooses the configured profile rooted at the unique `never` policy as
-   the fail-closed default; profile and policy identifiers have no built-in meaning.
+   no grant yet. The server offers the deployment-configured default profile; profile and policy
+   identifiers have no built-in meaning. Missing or removed profile assignments fail closed.
 5. FastMCP performs its untouched Authentik callback and creates the downstream code.
 6. At exchange, Haku verifies the MCP-side access-token principal and requires the same active
    canonical Operator as the browser interaction. One locked transition creates the draft Agent

@@ -264,9 +264,9 @@ approval and execution revalidate that binding and queued work cannot transfer t
 credential. Enrollment is an Operator-authenticated browser ceremony layered over FastMCP's own
 authorize/callback/token path; the runtime caller it produces is `OperatorActor | AgentActor`, and
 an Agent's config-defined access profile is chosen at enrollment. The profile bundles its
-auto-approval policy and named logical Recall-index grants; the fail-closed default profile uses
-the sole `never` policy and grants no indexes. Agents submit and read only their own calls, and
-never approve themselves.
+auto-approval policy and named logical Recall-index grants. A missing or removed profile is
+fail-closed; the configured enrollment default is a reviewed deployment choice. Agents submit and
+read only their own calls, and never approve themselves.
 
 The durable contract, the eight-step ceremony, the FastMCP version-pinning seam, and the accepted
 credential boundary: <docs/agent_authority.md>.

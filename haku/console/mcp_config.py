@@ -445,14 +445,6 @@ class ConsoleConfigFile(BaseModel):
         for policy_id in policies:
             visit(policy_id)
 
-        fail_closed_policies = [
-            policy.id for policy in policies.values() if isinstance(policy, NeverAutoApprovalPolicy)
-        ]
-        if len(fail_closed_policies) != 1:
-            raise ValueError(
-                "auto_approval_policies must contain exactly one never policy to use as the fail-closed Agent default"
-            )
-
         profiles: dict[str, AccessProfile] = {}
         for profile in self.access_profiles:
             if profile.id in profiles:
@@ -465,9 +457,6 @@ class ConsoleConfigFile(BaseModel):
             profiles[profile.id] = profile
         if self.default_access_profile_id not in profiles:
             raise ValueError(f"default access profile {self.default_access_profile_id!r} is not configured")
-        default_profile = profiles[self.default_access_profile_id]
-        if not isinstance(policies[default_profile.auto_approval_policy], NeverAutoApprovalPolicy):
-            raise ValueError("default access profile must reference the fail-closed auto-approval policy")
 
         configured_recall_indexes = {index.index_id for index in self.recall_indexes}
         for profile in profiles.values():

@@ -374,16 +374,19 @@ def test_static_agent_access_profile_assignment_is_required() -> None:
         )
 
 
-def test_fail_closed_default_is_selected_by_policy_type_not_magic_id() -> None:
+def test_default_access_profile_does_not_require_a_never_policy() -> None:
     config = ConsoleConfigFile.model_validate(
         {
-            "auto_approval_policies": [{"id": "operator_review", "type": "never"}],
-            "access_profiles": [{"id": "operator-review", "auto_approval_policy": "operator_review"}],
-            "default_access_profile_id": "operator-review",
+            "auto_approval_policies": [
+                {"id": "operator_review", "type": "never"},
+                {"id": "selected_by_default", "type": "any_of", "policies": ["operator_review"]},
+            ],
+            "access_profiles": [{"id": "operator-default", "auto_approval_policy": "selected_by_default"}],
+            "default_access_profile_id": "operator-default",
         }
     )
 
-    assert config.default_access_profile_id == "operator-review"
+    assert config.default_access_profile_id == "operator-default"
 
 
 def test_profile_config_rejects_unknown_recall_index() -> None:
