@@ -194,6 +194,15 @@ py_test(
 )
 
 py_test(
+    name = "test_bazel_ci",
+    srcs = ["test_bazel_ci.py"],
+    data = ["bazel_ci.sh"],
+    deps = [
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_collect_bazel_ci_profiles",
     srcs = ["test_collect_bazel_ci_profiles.py"],
     deps = [
