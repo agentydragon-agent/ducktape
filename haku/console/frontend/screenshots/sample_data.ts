@@ -2,7 +2,7 @@
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
 import type { DeploymentInfo, ToolCallRecord } from "../client";
-import type { DaemonStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
+import type { DaemonStatus, IndexStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -350,4 +350,46 @@ export const SAMPLE_DEPLOYMENT: DeploymentInfo = {
     source_commit: "bfad4bf",
     source_commit_url: "https://github.com/agentydragon/ducktape/commit/bfad4bf",
   },
+};
+
+export const SAMPLE_INDEX_STATUS: IndexStatus = {
+  indexes: [
+    {
+      index_type: "git",
+      index_id: "ducktape",
+      indexed_commit: "83da566ac718a9ef",
+      remote_commit: "bfad4bf03a91b80c",
+      remote_seen_at: "2026-07-20T19:34:00Z",
+      branch: "devel",
+      indexed_at: "2026-07-20T19:30:00Z",
+      files: 1842,
+      chunks: 9350,
+      embedded_chunks: 9350,
+      superseded_chunks: 212,
+    },
+    {
+      index_type: "git",
+      index_id: "haku-state",
+      indexed_commit: "5eb73c778214a9ef",
+      remote_commit: "5eb73c778214a9ef",
+      remote_seen_at: "2026-07-20T19:34:00Z",
+      branch: "main",
+      indexed_at: "2026-07-20T19:33:00Z",
+      files: 96,
+      chunks: 481,
+      embedded_chunks: 481,
+      superseded_chunks: 0,
+    },
+    {
+      index_type: "chat",
+      index_id: "console-chats",
+      sessions: 128,
+      chunks: 774,
+      stale_sessions: 0,
+      unindexed_messages: 0,
+      lag_seconds: null,
+      last_indexed_at: "2026-07-20T19:33:30Z",
+      superseded_chunks: 34,
+    },
+  ],
 };
