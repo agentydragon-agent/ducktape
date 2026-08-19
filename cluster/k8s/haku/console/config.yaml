@@ -314,6 +314,7 @@ access_profiles:
     recall_index_ids:
       - haku-state
       - haku-conversations
+      - ducktape-public
   - id: public-coder
     auto_approval_policy: public_coder_github_reads
     recall_index_ids:
