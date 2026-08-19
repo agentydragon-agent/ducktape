@@ -410,12 +410,12 @@ def test_fan_and_selected_rollout_metrics_share_the_jax_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    _dense, metrics, _model_id = product._simulate_dense(scenario_key, seeds)
+    _plan, _buffers, metrics, _model_id = product._simulate_dense(scenario_key, seeds)
     expected_metrics = metrics.metric_arrays()
     expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
 
-    # The reduced product projection emits the same exact Int64 quanta as the full dense decode.
+    # The reduced summary emits the same exact Int64 quanta as the selected-rollout reducer.
     # Percentiles are intentionally interpolated host-side, where Decimal avoids float64's
     # unsafe-integer collapse.
     for name, expected_series in expected_metrics.items():
@@ -560,10 +560,10 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
 def test_metric_fan_does_not_materialize_rollout_events(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    def fail_rollout_events(*_args, **_kwargs):
-        raise AssertionError("metric fan should not build selected-rollout event detail")
+    def fail_rollout_projection(*_args, **_kwargs):
+        raise AssertionError("metric fan should not build selected-rollout detail")
 
-    monkeypatch.setattr(service, "rollout_events_from", fail_rollout_events)
+    monkeypatch.setattr(service, "project_product_rollout", fail_rollout_projection)
 
     product.metric_fan(
         MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,))

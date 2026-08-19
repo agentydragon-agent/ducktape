@@ -2,14 +2,17 @@
 
 `simulate(scenario, rollout_count) -> SimulationRun` materializes external series and runs the JAX
 engine: the whole month loop compiles into one XLA program, whose stacked outputs are scattered into
-NumPy buffers and decoded as Polars DataFrames for API and product projection code.
+NumPy buffers. Analytics consumers decode those buffers as Polars frames; selected product rollout
+detail projects directly from the plan and buffers.
 """
 
 from __future__ import annotations
 
 import polars as pl
 
+from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import SimulationRun
+from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.engine import (
     ProductMetricArrays,
     run_dense_simulation,
@@ -51,8 +54,8 @@ def simulate_with_external_series_and_product_metrics(
     external_series: ExternalSeriesContext,
     locations: dict[str, Location],
     primary_agent_id: str,
-) -> tuple[SimulationRun, ProductMetricArrays]:
-    """Run dense/event and selected-product projections in one engine dispatch."""
+) -> tuple[CompiledSimulation, SimulationBuffers, ProductMetricArrays]:
+    """Return raw dense outputs and selected-product metrics in one engine dispatch."""
 
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"

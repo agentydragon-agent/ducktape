@@ -24,7 +24,7 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
-from finance.augur.product.decode import rollout_events_from
+from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
@@ -45,8 +45,8 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
     TerminalMetrics,
 )
-from finance.augur.sim.codec.plan import SimulationRun
-from finance.augur.sim.compiler import compile_simulation
+from finance.augur.sim.buffers import SimulationBuffers
+from finance.augur.sim.compiler import CompiledSimulation, compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import (
     ProductMetricArrays,
@@ -143,22 +143,17 @@ class ProductService:
 
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         self._validate_scenario_key(scenario)
-        horizon_months = int(scenario.horizon_months)
-        dense, metrics, model_id = self._simulate_dense(scenario, (seed,))
-        monthly_arrays = {
-            name: values if name == "month_index" else values[:, 0] for name, values in metrics.metric_arrays().items()
-        }
-        failed_month = int(metrics.failed_month[0])
-        terminal = _terminal_metrics_from_arrays(
-            monthly_arrays, failed_month_index=None if failed_month < 0 else failed_month
+        plan, buffers, metrics, model_id = self._simulate_dense(scenario, (seed,))
+        projection = project_product_rollout(
+            plan,
+            buffers,
+            metrics,
+            rollout_index=0,
+            primary_agent_id=self._primary_agent_id,
+            asset_label_by_id=self._asset_label_by_id,
         )
-        events = tuple(
-            event
-            for event in rollout_events_from(
-                dense, primary_agent_id=self._primary_agent_id, asset_label_by_id=self._asset_label_by_id
-            )
-            if event.month_index < horizon_months
-        )
+        monthly_arrays = projection.monthly_metric_arrays
+        terminal = _terminal_metrics_from_arrays(monthly_arrays, failed_month_index=projection.failed_month_index)
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
         monthly_metrics_frame = {
@@ -167,14 +162,14 @@ class ProductService:
         }
         return RolloutResponse(
             model_id=model_id,
-            currency_code=dense.plan.currency_code,
-            currency_quantum=format(dense.plan.currency_quantum, "f"),
+            currency_code=projection.currency_code,
+            currency_quantum=projection.currency_quantum,
             rollout=RolloutOutput(
                 seed=seed,
                 failed=terminal.failed_month_index is not None,
                 monthly_metrics=monthly_metrics_frame,
                 terminal_metrics=terminal,
-                events=events,
+                events=projection.events,
             ),
         )
 
@@ -227,16 +222,16 @@ class ProductService:
 
     def _simulate_dense(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[SimulationRun, ProductMetricArrays, str]:
+    ) -> tuple[CompiledSimulation, SimulationBuffers, ProductMetricArrays, str]:
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        dense, metrics = simulate_with_external_series_and_product_metrics(
+        plan, buffers, metrics = simulate_with_external_series_and_product_metrics(
             scenario,
             rollout_count=len(seeds),
             external_series=materialize_sampled_exogenous(sampled),
             locations=self._locations,
             primary_agent_id=self._primary_agent_id,
         )
-        return dense, metrics, model_id
+        return plan, buffers, metrics, model_id
 
     def _scenario_and_sample(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
