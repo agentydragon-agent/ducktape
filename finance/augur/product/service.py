@@ -35,13 +35,12 @@ from finance.augur.product.scenarios import (
     security_distributions_from_portfolio,
 )
 from finance.augur.product.wire import (
-    MetricFanRequest,
     MetricFanResponse,
+    ProjectionSamplingRequest,
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
     ScenarioKey,
-    TerminalDistributionRequest,
     TerminalDistributionResponse,
     TerminalMetrics,
 )
@@ -101,7 +100,7 @@ class ProductService:
         # enough that overlapping fan + terminal requests can exceed the production pod limit.
         self._projection_lock = threading.Lock()
 
-    def metric_fan(self, request: MetricFanRequest) -> MetricFanResponse:
+    def metric_fan(self, request: ProjectionSamplingRequest) -> MetricFanResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         percentiles = tuple(float(pct) for pct in request.percentiles)
@@ -119,7 +118,7 @@ class ProductService:
                 failed_count=summary.failed_count,
             )
 
-    def terminal_distribution(self, request: TerminalDistributionRequest) -> TerminalDistributionResponse:
+    def terminal_distribution(self, request: ProjectionSamplingRequest) -> TerminalDistributionResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         percentiles = tuple(float(pct) for pct in request.percentiles)

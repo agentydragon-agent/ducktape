@@ -51,11 +51,10 @@ from finance.augur.product.portfolio import ProductPortfolioResponse, product_po
 from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
-    MetricFanRequest,
     MetricFanResponse,
+    ProjectionSamplingRequest,
     RolloutRequest,
     RolloutResponse,
-    TerminalDistributionRequest,
     TerminalDistributionResponse,
 )
 from finance.evidence.markets import Platform
@@ -180,11 +179,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         )
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
-    def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
+    def product_projection_metric_fan(request: ProjectionSamplingRequest) -> JSONResponse:
         return payload(product_service.metric_fan(request))
 
     @app.post("/api/product/projections/terminal_distribution", response_model=TerminalDistributionResponse)
-    def product_projection_terminal_distribution(request: TerminalDistributionRequest) -> JSONResponse:
+    def product_projection_terminal_distribution(request: ProjectionSamplingRequest) -> JSONResponse:
         return payload(product_service.terminal_distribution(request))
 
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
