@@ -510,23 +510,30 @@ Two operational notes:
 
 Manifests live in `cluster/k8s/haku/console/` (operator-owned — the perimeter is not
 Haku's to change); the `haku-console` namespace itself is `cluster/k8s/haku/console-namespace/`.
-The deployment runs two containers in one pod: the `haku-console` FastAPI API
-image and a separate `haku-console-static` nginx image that bakes in the
-fingerprinted SPA. nginx serves `/` and `/_console/assets/`, proxies `/api/*`, `/healthz`,
-`/mcp`, `/auth/*`, and the `/.well-known/oauth-*` discovery paths to FastAPI on
-localhost, and sets cache policy by route (fingerprinted assets immutable, app shell
-never stored, missing assets and API/health/mcp/auth uncached). **Invariant:** a new top-level
-backend prefix needs its own `location`, or it falls through to the SPA shell and returns
-`index.html` instead of reaching the app (this is what bit `/mcp`). No runtime asset copy or shared web
-volume is used. It also gzips both what it serves and what it proxies (`gzip_proxied any` — nginx
-leaves upstream responses alone otherwise), covering the ~1.8 MB SPA bundle and the API's JSON;
-`text/event-stream` is deliberately left out so the `/mcp` stream still flushes per event.
+The API and static shell run as separate Deployments. `haku-console` is the FastAPI API; the
+unprivileged `haku-console-static` nginx Deployment bakes in the fingerprinted SPA, serves `/` and
+`/_console/assets/`, and proxies `/api/*`, `/healthz`, `/mcp`, `/auth/*`, and the
+`/.well-known/oauth-*` discovery paths to the API Service. A static-only image change therefore
+does not restart API auth, MCP streams, or background workers. nginx sets cache policy by route
+(fingerprinted assets immutable, app shell never stored, missing assets and API/health/mcp/auth
+uncached). **Invariant:** a new top-level backend prefix needs its own `location`, or it falls
+through to the SPA shell and returns `index.html` instead of reaching the app (this is what bit
+`/mcp`). No runtime asset copy or shared web volume is used. It also gzips both what it serves and
+what it proxies (`gzip_proxied any` — nginx leaves upstream responses alone otherwise), covering
+the ~1.8 MB SPA bundle and the API's JSON; `text/event-stream` is deliberately left out so the
+`/mcp` stream still flushes per event.
 
-The pods are pinned to the **`hil-ovh` zone**, where both their Postgres and the public ingress
+The API reports the **Flux-selected** static version from a projected
+`haku-console-static-metadata` ConfigMap rather than an environment variable in its own pod
+template. Flux updates that ConfigMap alongside the static image, so Settings can report both
+selected revisions without making the API roll for frontend-only metadata. It is desired-state
+metadata, not proof that every static replica has completed its rollout.
+
+The API pods are pinned to the **`hil-ovh` zone**, where both their Postgres and the public ingress
 live. This is a latency constraint, not a preference: an operator API call opens a database session
 per read and each session costs several round trips, so a replica a WAN hop away turned a 4.6ms
-query into a two-second request. It costs no availability — the console cannot serve without that
-node-pinned database anyway.
+query into a two-second request. It costs no availability — the API cannot serve without that
+node-pinned database anyway. The static Deployment has no database dependency and is not pinned.
 
 The Deployment rolls with **`maxUnavailable: 0`**, so a replacement that never becomes Ready leaves
 the running version serving and a bad release is a no-op instead of an outage. It replaced
@@ -536,12 +543,13 @@ console fully down, where rolling would have been invisible.
 
 What follows from it, all of it real:
 
-- **Assets can skew during a roll.** Each static image contains only its own fingerprinted bundle,
-  so a browser can take the new shell from one pod and 404 on its chunk against the other. The
-  window is the roll's length and a refresh afterwards fixes it. Closing it needs session
-  persistence so a page load stays on one pod — Service `sessionAffinity` is not obviously honored
-  through Cilium's Gateway API path (Envoy load-balances endpoints itself), so that wants verifying
-  before it is added rather than being configured hopefully.
+- **Assets can skew during a static roll.** Each static image contains only its own fingerprinted
+  bundle, so a browser can take the new shell from one static replica and 404 on its chunk against
+  the other. The window is the static roll's length and a refresh afterwards fixes it. Closing it
+  needs session persistence so a page load stays on one replica — Service `sessionAffinity` is not
+  obviously honored through Cilium's Gateway API path (Envoy load-balances endpoints itself), so
+  that wants verifying before it is added rather than being configured hopefully. API/static
+  compatibility must remain additive across independent rolls.
 - **Migrations must be backward compatible for the length of a roll.** `Recreate` guaranteed no old
   pod outlived the migration; rolling does not, so old code runs against the new schema for a
   minute. Additive changes are fine. A destructive one (dropping or renaming a column an old

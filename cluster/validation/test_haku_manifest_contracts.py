@@ -172,10 +172,14 @@ def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
 
 
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
-    """The runtime commit stamp must track the actual images, and a bad release must not be an outage."""
-    deployment_path = k8s_dir / "haku" / "console" / "deployment.yaml"
+    """API and static releases are independently safe and report their actual images."""
+    console_dir = k8s_dir / "haku" / "console"
+    deployment_path = console_dir / "deployment.yaml"
+    static_deployment_path = console_dir / "static-deployment.yaml"
     raw = deployment_path.read_text(encoding="utf-8")
+    static_raw = static_deployment_path.read_text(encoding="utf-8")
     deployment = yaml.safe_load(raw)
+    static_deployment = yaml.safe_load(static_raw)
 
     # `maxUnavailable: 0` is the property worth pinning: a replacement that never becomes Ready
     # leaves the previous version serving. Recreate did the opposite — every pod deleted before one
@@ -183,9 +187,48 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
     assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
+    assert set(containers) == {"server"}
     runtime_tags = {entry["name"]: entry["value"] for entry in containers["server"]["env"] if "value" in entry}
     assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_IMAGE_TAG"]
-    assert containers["static"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_STATIC_IMAGE_TAG"]
+    assert "HAKU_CONSOLE_STATIC_IMAGE_TAG" not in runtime_tags
+    static_container = one(static_deployment["spec"]["template"]["spec"]["containers"])
+    assert static_container["name"] == "static"
+    static_tag = static_container["image"].rsplit(":", 1)[1]
+    static_metadata = yaml.safe_load((console_dir / "static-metadata.yaml").read_text(encoding="utf-8"))
+    assert static_metadata["data"]["image-tag"] == static_tag
+
+    static_tag_file = runtime_tags["HAKU_CONSOLE_STATIC_IMAGE_TAG_FILE"]
+    static_metadata_mount = next(
+        mount for mount in containers["server"]["volumeMounts"] if mount["name"] == "static-metadata"
+    )
+    assert static_tag_file == f"{static_metadata_mount['mountPath']}/image-tag"
+    static_metadata_volume = next(
+        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "static-metadata"
+    )
+    assert static_metadata_volume["configMap"]["name"] == static_metadata["metadata"]["name"]
+
+    api_service = yaml.safe_load((console_dir / "service.yaml").read_text(encoding="utf-8"))
+    static_service = yaml.safe_load((console_dir / "static-service.yaml").read_text(encoding="utf-8"))
+    assert api_service["spec"]["selector"] == {"app.kubernetes.io/name": "haku-console"}
+    assert api_service["spec"]["ports"][0]["targetPort"] == "api"
+    assert static_service["spec"]["selector"] == {"app.kubernetes.io/name": "haku-console-static"}
+    assert static_service["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": "http", "protocol": "TCP"}]
+    route = yaml.safe_load((console_dir / "httproute.yaml").read_text(encoding="utf-8"))
+    assert route["spec"]["rules"][0]["backendRefs"] == [{"name": "haku-console-static", "port": 8080}]
+    assert static_deployment["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
+    static_env = {entry["name"]: entry["value"] for entry in static_container["env"] if "value" in entry}
+    assert static_env["HAKU_CONSOLE_API_UPSTREAM"] == "haku-console.haku-console.svc.cluster.local:8080"
+
+    annotations = deployment["metadata"]["annotations"]
+    assert "reloader.stakater.com/auto" not in annotations
+    assert annotations["configmap.reloader.stakater.com/reload"] == "haku-console-config"
+    reloaded_secrets = set(annotations["secret.reloader.stakater.com/reload"].split(","))
+    referenced_secrets = {
+        entry["valueFrom"]["secretKeyRef"]["name"]
+        for entry in containers["server"]["env"]
+        if "valueFrom" in entry and "secretKeyRef" in entry["valueFrom"]
+    }
+    assert reloaded_secrets == referenced_secrets
 
     for marker in (
         '# {"$imagepolicy": "flux-system:haku-console"}',
@@ -193,7 +236,9 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
         '# {"$imagepolicy": "flux-system:haku-console-static"}',
         '# {"$imagepolicy": "flux-system:haku-console-static:tag"}',
     ):
-        assert raw.count(marker) == 1, f"missing or duplicated Flux marker: {marker}"
+        assert (raw + static_raw + (console_dir / "static-metadata.yaml").read_text(encoding="utf-8")).count(
+            marker
+        ) == 1, f"missing or duplicated Flux marker: {marker}"
 
 
 def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:

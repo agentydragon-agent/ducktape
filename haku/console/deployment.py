@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +14,10 @@ from util.image_tag import image_provenance
 class DeploymentImageInfo(BaseModel):
     image_tag: str | None = Field(
         default=None,
-        description="Container image tag selected by deployment automation, when provided by the runtime manifest.",
+        description=(
+            "Container image tag selected by deployment automation, when provided by the runtime manifest. "
+            "This is desired deployment metadata, not an attestation that every replica serves the tag."
+        ),
     )
     source_commit: str | None = Field(default=None, description="Ducktape commit parsed from image_tag.")
     source_commit_url: str | None = Field(
@@ -33,9 +37,25 @@ def _image_info(image_tag: str | None) -> DeploymentImageInfo:
     )
 
 
-def build_deployment_info(env: Mapping[str, str] | None = None) -> DeploymentInfo:
+def _projected_tag(path: Path | None) -> str | None:
+    """Read optional Flux metadata from a projected ConfigMap volume.
+
+    ConfigMap projection is eventually consistent. A missing or temporarily unreadable
+    file must make the frontend revision unknown, never make the Console API unavailable.
+    """
+    if path is None:
+        return None
+    try:
+        return path.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def build_deployment_info(
+    env: Mapping[str, str] | None = None, *, static_image_tag_file: Path | None = None
+) -> DeploymentInfo:
     source = env if env is not None else os.environ
     return DeploymentInfo(
         server=_image_info(source.get("HAKU_CONSOLE_IMAGE_TAG")),
-        frontend=_image_info(source.get("HAKU_CONSOLE_STATIC_IMAGE_TAG")),
+        frontend=_image_info(_projected_tag(static_image_tag_file) or source.get("HAKU_CONSOLE_STATIC_IMAGE_TAG")),
     )

@@ -13,6 +13,9 @@ resources:
   - httproute.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
+  - static-deployment.yaml
+  - static-metadata.yaml
+  - static-service.yaml
   - web-push-vapid.sops.yaml
 
 configMapGenerator:

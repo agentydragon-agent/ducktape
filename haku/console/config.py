@@ -411,6 +411,11 @@ class Settings(BaseSettings):
     # unset and serves the SPA from the haku-console-static nginx image.
     static_dir: Path | None = None
 
+    # Projected ConfigMap file naming the independently deployed static image tag.
+    # It is intentionally a file rather than an env var: Flux can update the static
+    # Deployment and this metadata without rolling the API Deployment.
+    static_image_tag_file: Path | None = None
+
     # Capability tier. launch_routine enables POST /api/capabilities/launch-routine
     # (None → the capability returns 503).
     launch_routine: LaunchRoutineConfig | None = None

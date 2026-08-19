@@ -29,6 +29,9 @@ def test_static_image_cache_contract() -> None:
         DockerContainer(load_oci_image(_STATIC_IMAGE))
         .with_env("HAKU_CONSOLE_HAKU_UI_URL", "https://haku-ui.test")
         .with_env("HAKU_CONSOLE_AUTH_ORIGIN", "https://auth.test")
+        # The image starts without a live API in this isolated container test;
+        # production supplies the separate API Service DNS name.
+        .with_env("HAKU_CONSOLE_API_UPSTREAM", "127.0.0.1:8080")
         .with_exposed_ports(8081)
     )
 
@@ -76,6 +79,7 @@ def test_static_image_cache_contract() -> None:
         nginx_config = rendered.output.decode()
         assert "proxy_set_header X-Forwarded-Proto https;" in nginx_config
         assert "proxy_set_header X-Forwarded-Proto $scheme;" not in nginx_config
+        assert "proxy_pass http://127.0.0.1:8080;" in nginx_config
         # The FastAPI side has no upstream here to serve a response, so the half of the compression
         # contract that covers proxied JSON (a tool-call history page is hundreds of KB of it) is
         # pinned in the rendered config rather than over the wire.
