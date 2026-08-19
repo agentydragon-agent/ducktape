@@ -73,7 +73,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local",
         "mcp_url": "http://haku-console.haku-console.svc.cluster.local:9090/mcp",
         "mcp_static_agent_id": "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2",
-        "system_prompt_template": "/etc/haku-console/config/matrix_system_prompt.md.j2",
+        "system_prompt_template": "/etc/haku-console/config/chat_system_prompt.md.j2",
     }
     # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
     # is a pod that never becomes Ready. Tie the three places that must agree — the configured

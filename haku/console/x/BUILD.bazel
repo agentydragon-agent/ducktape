@@ -44,12 +44,14 @@ py_library(
     srcs = ["session_runtime.py"],
     deps = [
         ":conversation_events",
+        ":conversation_history",
         ":frame_projection",
         ":sandbox_claims",
         ":session_notifications",
         ":session_store",
         ":session_views",
         ":setup_output",
+        ":system_prompt",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:operator_auth",
@@ -60,6 +62,16 @@ py_library(
         "@pypi//fastapi",
         "@pypi//more_itertools",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conversation_history",
+    srcs = ["conversation_history.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -326,11 +338,13 @@ py_test(
     srcs = ["test_session_runtime.py"],
     deps = [
         ":conftest",
+        ":conversation_history",
         ":frame_projection",
         ":sandbox_claims",
         ":session_notifications",
         ":session_runtime",
         ":session_store",
+        ":system_prompt",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:config",

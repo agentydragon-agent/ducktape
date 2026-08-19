@@ -85,6 +85,7 @@ from haku.console.x.channels.matrix import (
     room_subscription as matrix_room_subscription,
     sync as matrix_sync,
 )
+from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
@@ -287,12 +288,10 @@ def create_app(
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     # Matrix chat surface, absent when unconfigured: the console serves its approval queue
-    # without it and simply does not run the sync loop. Split around the Claude runtime below:
-    # ingress has to exist before the service, which takes the reply sink, and the
-    # supervisor has to come after it.
+    # without it and simply does not run the sync loop. The supervisor is composed after the
+    # channel-neutral Claude runtime because it provisions sessions through that service.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
-    matrix_surface: matrix_conversation.MatrixSurface | None = None
     matrix_notices: matrix_room_subscription.RoomNotices | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
@@ -310,7 +309,6 @@ def create_app(
             matrix_conversation.MatrixTurns(
                 matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
             ),
-            matrix_conversation.RoomTranscript(db_sessions),
             matrix_room_outbox,
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
@@ -329,16 +327,6 @@ def create_app(
             matrix_sync_service.bound_room,
             matrix_room_outbox,
         )
-        if claude_runtime is not None:
-            # The template is parsed here, at construction, so a broken one is a pod that never
-            # becomes Ready rather than a turn that fails hours later.
-            matrix_surface = matrix_conversation.MatrixSurface(
-                matrix_config,
-                claude_runtime,
-                SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
-                matrix_sync_service,
-            )
-
     # Resolving configured external identities is database I/O. Keep app construction pure and do
     # this during the async lifespan, after the event loop exists.
     if claude_runtime is not None:
@@ -355,7 +343,10 @@ def create_app(
             sandbox_claims.KubernetesSandboxClaims(claude_runtime),
             session_notifications,
             mcp_token=mcp_agent.token,
-            chat_frontend=matrix_surface,
+            conversation_history=ConversationHistory(db_sessions),
+            # Parsed at construction, so a broken deploy template prevents readiness rather than
+            # failing the first attached chat session hours later.
+            system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
         )
     # A followed conversation's own socket. Behind the Claude runtime because a follower opens on
     # the same read `GET /api/conversations/{id}` serves, which is the service's — a replica

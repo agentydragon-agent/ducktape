@@ -20,9 +20,6 @@ It is also the only holder of a Matrix credential, so the supervisor's lifecycle
 through `announce` rather than a second login, and an answer — a row until it has been said — is
 drained into the room from here (`outbox`).
 
-The one thing it is asked *for* rather than told is this room's recent conversation
-(`recent_history`), answered out of the console's own transcript. Still this object's to answer
-because it knows which room is bound.
 """
 
 from __future__ import annotations
@@ -40,7 +37,6 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemType
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -59,14 +55,12 @@ from haku.console.x.channels.matrix.conversation import (
     MatrixTurns,
     PromptAccepted,
     PromptRejected,
-    RoomTranscript,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.conversation_log import writer_for
-from haku.console.x.system_prompt import HistoryMessage
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +159,6 @@ class MatrixSyncService:
         conversations: MatrixConversationStore,
         identities: PostgresOperatorIdentityStore,
         turns: MatrixTurns,
-        transcript: RoomTranscript,
         outbox: RoomOutbox,
         revisions: RevisionLog,
         ledger: IngressLedger,
@@ -179,7 +172,6 @@ class MatrixSyncService:
         self._conversations = conversations
         self._identities = identities
         self._turns = turns
-        self._transcript = transcript
         self._revisions = revisions
         self._ledger = ledger
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
@@ -336,37 +328,6 @@ class MatrixSyncService:
             await self._revisions.retire(showing.revision_id)
 
         self.pacer.send(retire)
-
-    async def recent_history(self, before_session: UUID, limit: int) -> tuple[HistoryMessage, ...]:
-        """The tail of the live room's conversation, for re-awakening a replacement session.
-
-        **Answered from our own transcript, not from the homeserver's copy of the room.** Matrix is
-        one channel among several, so what a replacement session believes happened has to come from
-        the record every channel writes into; a second channel whose API cannot page a chat's
-        history could not have reproduced a memory read back out of `/messages`
-        (<../../../debug/channel_write_audit.md> § "What a second channel would need", #4130).
-
-        **A message the previous session never answered is still in here**, and it is also still
-        queued on the conversation, so the replacement both reads it as history and is handed it as
-        a prompt. That double is deliberate: the operator was left waiting on it.
-
-        Empty until something has been recorded for this room: a first-ever session and a session
-        whose room only just bound read the same, and both are correct.
-        """
-        if (binding := await self._conversations.bound_room()) is None:
-            return ()
-        return tuple(
-            HistoryMessage(
-                # The one per-channel step in this path: an item type becomes an address, and which
-                # addresses those are is the channel's own business.
-                sender=(self._config.operator_user_id if said.item_type is ItemType.PROMPT else self._config.user_id),
-                body=said.body,
-                sent_at=said.sent_at,
-            )
-            for said in await self._transcript.recent(
-                binding.conversation_id, before_session=before_session, limit=limit
-            )
-        )
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
         """Post a lifecycle notice into the live room, if there is one.

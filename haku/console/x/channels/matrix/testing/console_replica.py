@@ -42,18 +42,13 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
-from haku.console.x.channels.matrix.conversation import (
-    MatrixConversationStore,
-    MatrixSessionSupervisor,
-    MatrixSurface,
-    MatrixTurns,
-    RoomTranscript,
-)
+from haku.console.x.channels.matrix.conversation import MatrixConversationStore, MatrixSessionSupervisor, MatrixTurns
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
+from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
@@ -174,20 +169,19 @@ async def _serve() -> None:
         conversations,
         identities,
         MatrixTurns(matrix, conversations, store, identities, ledger),
-        RoomTranscript(sessions),
         outbox,
         RevisionLog(sessions),
         ledger,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
-    surface = MatrixSurface(matrix, runtime, SystemPromptTemplate.from_path(runtime.system_prompt_template), sync)
     service = SessionService(
         runtime,
         store,
         FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR"))),
         notifications,
         mcp_token=MCP_TOKEN,
-        chat_frontend=surface,
+        conversation_history=ConversationHistory(sessions),
+        system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template),
     )
     supervisor = MatrixSessionSupervisor(
         matrix, conversations, service, store, notifications, identities, sync.announce, engine

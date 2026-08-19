@@ -34,7 +34,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 CONSOLE_BIN = "_main/haku/console/x/channels/matrix/testing/console_replica_bin"
 RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
 STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
-SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/matrix_system_prompt.md.j2"
+SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/chat_system_prompt.md.j2"
 
 
 class _TextBlock(BaseModel):

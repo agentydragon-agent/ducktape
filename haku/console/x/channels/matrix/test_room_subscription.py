@@ -23,6 +23,7 @@ from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import RoomOutbox
 from haku.console.x.channels.matrix.room_subscription import (
     ABORTED_BY_OPERATOR,
+    NOTHING_SAID,
     RELAYED_PROMPT,
     RoomCursor,
     RoomNotices,
@@ -143,6 +144,40 @@ async def test_an_abort_recorded_after_the_room_started_reading_becomes_a_notice
     await notices.reconcile_once()
 
     assert room.said == [ABORTED_BY_OPERATOR]
+
+
+async def test_an_answered_turn_without_a_message_becomes_a_silence_notice(
+    chat_store, operator_id, served, notices, room
+) -> None:
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
+    turn = await chat_store.next_prompt(served)
+    assert turn is not None
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+
+    await notices.reconcile_once()
+
+    assert room.said == [NOTHING_SAID]
+    assert room.kinds == [RoomEventKind.NARRATION]
+
+
+async def test_an_answered_turn_with_a_message_needs_no_silence_notice(
+    chat_store, operator_id, served, notices, room
+) -> None:
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
+    turn = await chat_store.next_prompt(served)
+    assert turn is not None
+    await chat_store.close_answer(served, turn.turn_id, final_text="done", frame_seq=1)
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED, last_frame_seq=1, projected_frame_seq=1)
+
+    await notices.reconcile_once()
+
+    assert room.said == []
 
 
 async def test_turn_typing_is_derived_by_the_room_subscriber(chat_store, operator_id, served, notices, room) -> None:
@@ -290,6 +325,18 @@ async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
 
     assert room.said == ["not delivered — Haku is still working on the previous message; send it again"]
     assert room.kinds == [RoomEventKind.REJECTED]
+
+
+async def test_setup_narration_is_said_from_its_row(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    await notices.reconcile_once()
+    await author(migrated_sessions, chat_store, served, session_events.SetupNarrationBody(text="cloning haku-state"))
+
+    await notices.reconcile_once()
+
+    assert room.said == ["cloning haku-state"]
+    assert room.kinds == [RoomEventKind.NARRATION]
 
 
 async def test_something_haku_cannot_read_is_said_from_its_row(
