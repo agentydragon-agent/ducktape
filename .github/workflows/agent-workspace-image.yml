@@ -29,7 +29,7 @@ jobs:
     env:
       IMAGE: git.allegedly.works/ducktape-ci/agent-workspace
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Decrypts secrets/ci/* → exports FORGEJO_IMAGES_{USERNAME,PASSWORD}.
       - uses: ./.github/actions/setup-ci-secrets

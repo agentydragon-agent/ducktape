@@ -51,7 +51,7 @@ jobs:
     env:
       IMAGE: git.allegedly.works/ducktape-ci/haku-sandbox-image-nix
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-nix-attic
         with:

@@ -33,7 +33,7 @@ jobs:
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # jq is preinstalled on ubuntu-latest runners; no nix bootstrap needed
       # here (the matrix job just parses JSON and emits a matrix.include).
       - id: gen
@@ -85,7 +85,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
