@@ -18,10 +18,10 @@ from haku.console.database_schema import ChatAttachment, Session
 from haku.console.tools.recall_index import (
     ChatIndexStatus,
     ChatSource,
+    ContentSearchHit,
     GitIndexStatus,
     GitSource,
     IndexStatus,
-    SearchHit,
     SearchResults,
 )
 from haku.recall_index.chat_corpus import chat_chunker_key
@@ -78,7 +78,7 @@ class PostgresIndexSearcher:
     ) -> SearchResults:
         selected = self._selected(index_ids)
         embedding = await self._embedder.embed_query(query)
-        hits: list[SearchHit] = []
+        hits: list[ContentSearchHit] = []
         async with self._sessions() as session:
             for index in selected:
                 if isinstance(index, GitRecallIndexDefinition):
@@ -103,7 +103,7 @@ class PostgresIndexSearcher:
         *,
         limit: int,
         path_prefix: str | None,
-    ) -> list[SearchHit]:
+    ) -> list[ContentSearchHit]:
         state = await current_git_state(session, index.index_id)
         if state is None:
             return []
@@ -117,9 +117,9 @@ class PostgresIndexSearcher:
             budget=self._budget,
         )
         return [
-            SearchHit(
+            ContentSearchHit(
                 score=hit.score,
-                snippet=hit.text,
+                content=hit.text,
                 source=GitSource(
                     index_id=index.index_id,
                     path=hit.path,
@@ -141,7 +141,7 @@ class PostgresIndexSearcher:
         *,
         limit: int,
         session_id: UUID | None,
-    ) -> list[SearchHit]:
+    ) -> list[ContentSearchHit]:
         found = await search_chat(
             session,
             embedding,
@@ -166,9 +166,9 @@ class PostgresIndexSearcher:
             ).all()
         }
         return [
-            SearchHit(
+            ContentSearchHit(
                 score=hit.score,
-                snippet=hit.text,
+                content=hit.text,
                 source=ChatSource(
                     index_id=index.index_id,
                     session_id=hit.session_id,

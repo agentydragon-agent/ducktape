@@ -5,8 +5,9 @@ to every configured index, never to a conventionally named source; callers may n
 ``index_ids``. The current deployment config supplies Git indexes for haku-state and public
 Ducktape, plus a chat index over the console's completed messages.
 
-Search returns pointers, not authoritative source content. A Git hit names its indexed commit and
-blob; a chat hit names its session and messages. Read them through the source-specific tools.
+Search returns indexed chunk content by default, plus source pointers. Callers that only need
+provenance can suppress the content payload. A Git hit names its indexed commit and blob; a chat
+hit names its session and messages.
 """
 
 from __future__ import annotations
@@ -48,11 +49,16 @@ class ChatSource(BaseModel):
 
 
 class SearchHit(BaseModel):
-    """One match, its excerpt, and a source-specific pointer to the authoritative bytes."""
+    """One match and a source-specific pointer to its authoritative bytes."""
 
     score: float
-    snippet: str = Field(description="The matched excerpt, not a replacement for the source.")
     source: GitSource | ChatSource = Field(discriminator="kind")
+
+
+class ContentSearchHit(SearchHit):
+    """A matching indexed chunk returned with its text."""
+
+    content: str = Field(description="The matching indexed chunk text.")
 
 
 class GitIndexStatus(BaseModel):
@@ -88,10 +94,20 @@ class IndexStatus(BaseModel):
 
 
 class SearchResults(BaseModel):
-    """Hits plus status only when a selected configured index was behind."""
+    """Hits plus status only when a selected configured index was behind.
 
-    hits: list[SearchHit]
+    ``ContentSearchHit`` is emitted by default. ``SearchHit`` without ``content`` is emitted
+    when a caller opts out of returning indexed text.
+    """
+
+    hits: list[ContentSearchHit | SearchHit]
     index: IndexStatus | None = None
+
+    def without_content(self) -> SearchResults:
+        """Drop chunk text while retaining ranking, provenance, and stale-index status."""
+        return SearchResults(
+            hits=[SearchHit(score=hit.score, source=hit.source) for hit in self.hits], index=self.index
+        )
 
 
 class IndexSearcher(Protocol):
@@ -112,8 +128,9 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=HAKU_INDEX_SERVER_ID,
         instructions=(
-            "Semantic recall over the configured logical indexes. `search` returns snippets and source pointers; "
-            "use Git or conversation readers for the authoritative content. If a search is thin, check "
+            "Semantic recall over configured logical indexes. `search` returns matching chunk content by default "
+            "and source pointers; set `include_content=false` for pointers only. Use Git or conversation readers "
+            "for authoritative whole-source content. If a search is thin, check "
             "`index_status` before concluding the subject was never recorded."
         ),
     )
@@ -134,6 +151,13 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
         session_id: Annotated[
             UUID | None, Field(default=None, description="Restrict matching windows in selected chat indexes.")
         ] = None,
+        include_content: Annotated[
+            bool,
+            Field(
+                default=True,
+                description="Include matching indexed chunk text. Defaults to true; set false for provenance only.",
+            ),
+        ] = True,
     ) -> SearchResults:
         """Search configured indexes for recall.
 
@@ -141,13 +165,14 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
         decisions, dates, people, preferences, commitments, or anything the operator asked for
         earlier. Results compete in one ranking across the selected indexes.
         """
-        return await searcher.search(
+        results = await searcher.search(
             query,
             index_ids=None if index_ids is None else tuple(index_ids),
             limit=limit,
             path_prefix=path_prefix,
             session_id=session_id,
         )
+        return results if include_content else results.without_content()
 
     @mcp.tool
     async def index_status() -> IndexStatus:

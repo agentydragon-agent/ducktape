@@ -313,8 +313,10 @@ MCP servers from `@mcp.tool`-decorated functions:
   configured logical indexes: Git source at the indexed tips of `haku-state` and public
   `ducktape-public`, plus the console's own record of past chat sessions. An optional `index_ids`
   argument narrows the configured set; omitted, all configured indexes compete in one ranking. It
-  returns **pointers, not content**: a Git index id, path, commit, and blob sha, or a session, room,
-  and message ids to read through `haku_conversations`. `index_status` is the companion an empty
+  returns each matching indexed chunk by default, plus a Git index id, path, commit, and blob sha,
+  or a session, room, and message ids to read through `haku_conversations`. Set
+  `include_content=false` for provenance without chunk text; returned chunks remain retrieval
+  context rather than an authoritative whole-source read. `index_status` is the companion an empty
   result needs, since an index that has fallen behind is indistinguishable from a subject that never
   came up — and a `search` whose selected index is behind attaches that status to its own result
   rather than waiting to be asked, since a caller that would think to check is not the one that

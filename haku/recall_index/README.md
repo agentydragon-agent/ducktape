@@ -275,11 +275,13 @@ bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --sess
   (`_SETTLED_WITHIN`, two minutes) is the pipeline working, and a field present on every search
   is a field a reader learns to skip.
 
-  **Search returns pointers, not content, and there are no read tools here.** A Git hit carries
-  the index id, path, commit, and blob sha — Haku reads the file from that index's configured
-  source. A conversation hit carries the session, its room, and the ids of the messages in the
-  window — `haku_conversations` already owns reading past sessions. A second reader in this server
-  would be a second answer to "what does this file say", and the two would drift.
+  **Search returns each matching indexed chunk by default, plus its pointer.** Set
+  `include_content=false` to return provenance only. A Git hit always carries the index id, path,
+  commit, and blob sha; a conversation hit carries the session, its room, and the ids of the
+  messages in the window. The chunk is useful retrieval context, not an authoritative replacement
+  for the source: callers that need a whole Git file or wider conversation read it through that
+  source's reader. A second whole-source reader in this server would be a second answer to "what
+  does this file say", and the two would drift.
 
   Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — a configured
   server with no builder fails `validate_in_process_server_bindings` at startup — and the console
