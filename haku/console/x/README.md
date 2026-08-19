@@ -52,6 +52,11 @@ plumbing, the sandbox lifecycle, the `ChatFrontend` port and the SPA's own route
 inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
 `channels/`.
 
+Session provisioning, setup narration and ending are authored into `conversation_event` in the
+same transactions that make them true. Narration also writes a temporary `setup_output` frame for
+readers from the previous release; the event is the durable fact and the frame is only a rollout
+compatibility copy.
+
 **Two families of table, and the split is the point.** `sessions` and `session_frames` are one
 runner incarnation's — its lease, its claim, its wire log. `conversation_*` is what the thread
 durably is, and outlives every session that runs it: <../docs/conversation_schema.md> is the design.
@@ -94,11 +99,9 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
 - **Per session, not per connection.** Two consoles can be adopting one runner's window during a
   roll, so both compute the cursor from the same rows and agree. The runner treats it as a floor
   (`max(next, resume_from + 1)`), never as an assignment.
-- **It can legitimately sit below what the console holds, and never above.** A `setup_output` frame
-  is numbered by the runner and recorded by a different path — one frame decodes into however many
-  complete lines it finished — so its number is not on any row. The cost is a re-sent frame the log
-  already has, which the `frame_uid` dedup refuses. **This is also why there is no gap detection
-  yet**: a hole in the recorded numbers is what narration leaves behind, and the runner's replay
+- **It can legitimately sit below what the console holds, and never above.** Setup narration's
+  compatibility frame is minted by the console with no `runner_seq`. **This is also why there is no
+  gap detection yet**: narration leaves holes in the recorded runner numbers, and the runner's replay
   window retains only replayable frames, so an adopted connection's own sequence is sparse too.
   "A hole means loss" becomes true at the release that makes this the log's ordering
   (<../plans/conversation_layers.md> § 13), not before.
@@ -119,7 +122,7 @@ on every path, so that split is a seam and not a leaf.
 
 | Path               | Role                                                                                                                                                           |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setup_output.py`  | The bridge envelope's `kind` and the sandbox-narration row the console authors under it.                                                                       |
+| `setup_output.py`  | The bridge envelope's `kind` and frame shape retained temporarily as the setup-narration compatibility copy.                                                   |
 | `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
 | `room_status.py`   | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
 
