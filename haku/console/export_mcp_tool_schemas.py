@@ -135,8 +135,8 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
     # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
     # build their own inert client from a None token; routine and hostexec need an inert
-    # launcher/broker respectively. hostexec's `hosts` map is empty — registration only needs
-    # the tool's own schema, never a real host to route to.
+    # launcher/broker respectively, and haku_index needs an inert searcher. hostexec's `hosts` map
+    # is empty — registration only needs the tool's own schema, never a real host to route to.
     dependency: Any = inert
     servers = {
         server_id: registration.builder(None)
@@ -144,6 +144,7 @@ def build_schema_servers() -> dict[str, FastMCP]:
             InProcessServerDependencies(
                 routine_launcher=dependency,
                 hostexec=HostexecServerConfig(config=HostexecConfig(hosts={}), token_endpoint="", broker=dependency),
+                index=dependency,
             )
         ).items()
     }

@@ -1072,6 +1072,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":mcp_status_client",
         ":settings_panel",
         "//:node_modules/vitest",
     ],

@@ -19,10 +19,13 @@ import { useConsoleEvents } from "./console_events";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import {
+  getIndexStatus,
   getMcpServerStatus,
   listNodeDaemons,
   listMcpServers,
   type DaemonStatus,
+  type IndexState,
+  type IndexStatus,
   type McpOperatorAuthDegraded,
   type McpOperatorAuthStatus,
   type McpServerConnection,
@@ -463,6 +466,80 @@ function SystemStatusCard({ deployment }: { deployment: DeploymentInfo }) {
   );
 }
 
+type IndexDisplay = { label: string; color: string; description: string };
+
+export function indexStatusDisplay(index: IndexState): IndexDisplay {
+  if (index.index_type === "git") {
+    if (index.remote_commit && index.indexed_commit === index.remote_commit) {
+      return { label: "Current", color: "teal", description: "Indexed at the latest remote commit." };
+    }
+    if (!index.indexed_commit && index.remote_commit) {
+      return { label: "Not indexed", color: "orange", description: "The first index build is still pending." };
+    }
+    if (index.indexed_commit && index.remote_commit) {
+      return { label: "Behind", color: "orange", description: "A newer remote commit is waiting to be indexed." };
+    }
+    return { label: "Unknown", color: "gray", description: "The remote revision has not been observed yet." };
+  }
+  if (index.stale_sessions === 0 && index.unindexed_messages === 0) {
+    return { label: "Current", color: "teal", description: "All completed chat messages are indexed." };
+  }
+  return { label: "Catching up", color: "orange", description: "New or changed chat messages are waiting." };
+}
+
+function commitLabel(commit: string | null | undefined): string {
+  return commit?.slice(0, 12) ?? "none";
+}
+
+function IndexStatusCard({ index }: { index: IndexState }) {
+  const status = indexStatusDisplay(index);
+  const indexedAt = shortDate((index.index_type === "git" ? index.indexed_at : index.last_indexed_at) ?? null);
+  return (
+    <section className="haku-shell-card">
+      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text fw={600}>{index.index_id}</Text>
+          <Text size="xs" c="dimmed">
+            {status.description}
+          </Text>
+        </Stack>
+        <Badge color={status.color} variant="light">
+          {status.label}
+        </Badge>
+      </Group>
+      <Stack gap={4} mt="sm">
+        {index.index_type === "git" ? (
+          <>
+            <Text size="xs" c="dimmed">
+              {index.branch ?? "Git"} · {index.files ?? 0} files · {index.chunks ?? 0} chunks ·{" "}
+              {index.embedded_chunks ?? 0} embedded
+            </Text>
+            <Text size="xs" c="dimmed" ff="monospace">
+              indexed {commitLabel(index.indexed_commit)}
+              {index.remote_commit !== index.indexed_commit ? ` · remote ${commitLabel(index.remote_commit)}` : ""}
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text size="xs" c="dimmed">
+              {index.sessions} sessions · {index.chunks} chunks
+            </Text>
+            {(index.stale_sessions > 0 || index.unindexed_messages > 0) && (
+              <Text size="xs" c="dimmed">
+                {index.stale_sessions} stale sessions · {index.unindexed_messages} messages pending
+              </Text>
+            )}
+          </>
+        )}
+        <Text size="xs" c="dimmed">
+          {indexedAt ? `Last indexed ${indexedAt}` : "Not indexed yet"}
+          {(index.superseded_chunks ?? 0) > 0 ? ` · ${index.superseded_chunks} superseded chunks` : ""}
+        </Text>
+      </Stack>
+    </section>
+  );
+}
+
 // Operator settings are split by operational scope: service connectivity, callers, browser-local
 // preferences, execution workers, and the Console deployment itself.
 export function SettingsPanel() {
@@ -472,18 +549,22 @@ export function SettingsPanel() {
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerView[] | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [daemons, setDaemons] = useState<DaemonStatus[] | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [deploymentError, setDeploymentError] = useState<string | null>(null);
+  const [indexStatusError, setIndexStatusError] = useState<string | null>(null);
   const [daemonsError, setDaemonsError] = useState<string | null>(null);
   const [mcpLoading, setMcpLoading] = useState(false);
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [deploymentLoading, setDeploymentLoading] = useState(false);
+  const [indexStatusLoading, setIndexStatusLoading] = useState(false);
   const [daemonsLoading, setDaemonsLoading] = useState(false);
   const mcpGeneration = useRef(0);
   const agentsGeneration = useRef(0);
   const deploymentGeneration = useRef(0);
+  const indexStatusGeneration = useRef(0);
   const daemonGeneration = useRef(0);
 
   const loadMcpServers = useCallback(() => {
@@ -574,6 +655,24 @@ export function SettingsPanel() {
     );
   }, []);
 
+  const loadIndexStatus = useCallback(() => {
+    const generation = ++indexStatusGeneration.current;
+    setIndexStatusLoading(true);
+    void getIndexStatus().then(
+      (nextStatus) => {
+        if (generation !== indexStatusGeneration.current) return;
+        setIndexStatus(nextStatus);
+        setIndexStatusError(null);
+        setIndexStatusLoading(false);
+      },
+      (e: unknown) => {
+        if (generation !== indexStatusGeneration.current) return;
+        setIndexStatusError(displayableError(e));
+        setIndexStatusLoading(false);
+      }
+    );
+  }, []);
+
   const loadDaemons = useCallback(() => {
     const generation = ++daemonGeneration.current;
     setDaemonsLoading(true);
@@ -607,9 +706,10 @@ export function SettingsPanel() {
         break;
       case "system":
         loadDeployment();
+        loadIndexStatus();
         break;
     }
-  }, [activeTab, loadAgents, loadDaemons, loadDeployment, loadMcpServers]);
+  }, [activeTab, loadAgents, loadDaemons, loadDeployment, loadIndexStatus, loadMcpServers]);
 
   useEffect(() => {
     refreshActiveTab();
@@ -629,6 +729,7 @@ export function SettingsPanel() {
       mcpGeneration.current += 1;
       agentsGeneration.current += 1;
       deploymentGeneration.current += 1;
+      indexStatusGeneration.current += 1;
       daemonGeneration.current += 1;
     };
   }, []);
@@ -724,7 +825,7 @@ export function SettingsPanel() {
         : activeTab === "nodes"
           ? daemonsLoading
           : activeTab === "system"
-            ? deploymentLoading
+            ? deploymentLoading || indexStatusLoading
             : false;
 
   return (
@@ -870,7 +971,7 @@ export function SettingsPanel() {
           <Stack gap="xs" className="haku-page-list">
             <SectionHeading
               title="System"
-              description="Deployment status for the Console server and web application."
+              description="Deployment status for the Console server and web application, plus semantic recall indexes."
             />
             {deploymentError && (
               <Text c="red" size="sm">
@@ -883,6 +984,27 @@ export function SettingsPanel() {
               </Group>
             )}
             {deployment && <SystemStatusCard deployment={deployment} />}
+            <SectionHeading title="Indexes" description="How current each configured semantic recall corpus is." />
+            {indexStatusError && (
+              <Text c="red" size="sm">
+                Failed to load index status: {indexStatusError}
+              </Text>
+            )}
+            {!indexStatus && !indexStatusError && (
+              <Group justify="center" p="xl">
+                <Loader aria-label="Loading index status" />
+              </Group>
+            )}
+            {indexStatus && indexStatus.indexes.length === 0 && (
+              <section className="haku-shell-card">
+                <Text size="sm" c="dimmed">
+                  No semantic recall indexes are configured.
+                </Text>
+              </section>
+            )}
+            {indexStatus?.indexes.map((index) => (
+              <IndexStatusCard key={index.index_id} index={index} />
+            ))}
           </Stack>
         </Tabs.Panel>
       </div>

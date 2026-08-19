@@ -54,12 +54,13 @@ _EXPECTED_TOOLS = {
         "stock_entry_edit",
         "stock_get",
     ),
+    "haku_index": ("index_status", "search"),
     "haku_routine": ("launch_routine",),
     "hostexec": ("bash",),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_routine", "hostexec")
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grocy-sf", "haku_index", "haku_routine", "hostexec")
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:
@@ -167,6 +168,40 @@ async def test_hostexec_schemas_validate() -> None:
             "stdout": {"truncated_text": "partial", "total_bytes": 5_000},
             "stderr": "",
             "duration_ms": 30_000,
+        }
+    )
+
+
+async def test_index_status_schema_validates_each_index_kind() -> None:
+    schema = (await build_mcp_tool_results_schema())["properties"]["haku_index"]["properties"]["index_status"]
+    Draft202012Validator(schema).validate(
+        {
+            "indexes": [
+                {
+                    "index_type": "git",
+                    "index_id": "ducktape",
+                    "indexed_commit": "abc123",
+                    "remote_commit": "def456",
+                    "remote_seen_at": "2026-08-19T10:00:00Z",
+                    "branch": "devel",
+                    "indexed_at": "2026-08-19T09:59:00Z",
+                    "files": 100,
+                    "chunks": 200,
+                    "embedded_chunks": 200,
+                    "superseded_chunks": 3,
+                },
+                {
+                    "index_type": "chat",
+                    "index_id": "haku-conversations",
+                    "sessions": 12,
+                    "chunks": 34,
+                    "stale_sessions": 1,
+                    "unindexed_messages": 2,
+                    "lag_seconds": 10.5,
+                    "last_indexed_at": "2026-08-19T09:59:30Z",
+                    "superseded_chunks": 4,
+                },
+            ]
         }
     )
 
