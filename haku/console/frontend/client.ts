@@ -200,12 +200,12 @@ export async function listAgents(): Promise<AgentListResponse> {
   return data;
 }
 
-export async function updateAgentAutoApprovalPolicy(agentId: string, autoApprovalPolicy: string): Promise<AgentView> {
-  const { data, error } = await api.PUT("/api/agent-enrollment/agents/{agent_id}/auto-approval-policy", {
+export async function updateAgentAccessProfile(agentId: string, accessProfileId: string): Promise<AgentView> {
+  const { data, error } = await api.PUT("/api/agent-enrollment/agents/{agent_id}/access-profile", {
     params: { path: { agent_id: agentId } },
-    body: { auto_approval_policy: autoApprovalPolicy },
+    body: { access_profile_id: accessProfileId },
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to update Agent auto-approval policy"));
+  if (error || !data) throw new Error(errorDetail(error, "Failed to update Agent access profile"));
   return data;
 }
 

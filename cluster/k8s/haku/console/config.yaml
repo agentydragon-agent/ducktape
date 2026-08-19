@@ -306,6 +306,22 @@ auto_approval_policies:
       - managed_gmail_labels
   - id: manual_review
     type: never
+# Access profiles, not credential bindings, own durable Agent authority. A static bearer and a
+# DCR/OAuth binding assigned to `haku` therefore resolve the same policy/capability bundle.
+access_profiles:
+  - id: haku
+    auto_approval_policy: haku_v1
+    recall_index_ids:
+      - haku-state
+      - haku-conversations
+      - ducktape-public
+  - id: public-coder
+    auto_approval_policy: public_coder_github_reads
+    recall_index_ids:
+      - ducktape-public
+  - id: manual-review
+    auto_approval_policy: manual_review
+default_access_profile_id: manual-review
 #
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and
 # bearer bound to one Operator. The bearer and controller-fed Authentik user id are named env vars,
@@ -318,7 +334,7 @@ static_agents:
     display_name: Haku
     token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
     operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
-    auto_approval_policy: haku_v1
+    access_profile_id: haku
   - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
     display_name: public-coder-agent
     token_env_var: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
@@ -326,7 +342,7 @@ static_agents:
     # Coder may read the explicitly named Ducktape and Gaffer repositories without interrupting
     # the Operator. Everything else remains approval-wrapped, and Coder cannot approve its own
     # requests.
-    auto_approval_policy: public_coder_github_reads
+    access_profile_id: public-coder
 operator_connection_providers:
   google_mail:
     kind: google

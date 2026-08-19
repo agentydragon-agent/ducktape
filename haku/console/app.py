@@ -257,8 +257,8 @@ def create_app(
         db_sessions,
         public_base_url=settings.public_base_url,
         operator_identity_store=operator_identity_store,
-        auto_approval_policies=tuple(policy.id for policy in console_config.auto_approval_policies),
-        default_auto_approval_policy=console_config.default_agent_auto_approval_policy,
+        access_profiles=tuple(profile.id for profile in console_config.access_profiles),
+        default_access_profile_id=console_config.default_access_profile_id,
     )
     # Tests/new databases may let create_app read env-backed static credentials here. Schema
     # generation may inject already-canonical definitions because it deliberately has no database;
@@ -282,7 +282,7 @@ def create_app(
                 ),
                 secret_reference=agent.secret_reference,
                 token_fingerprint=fingerprint_static_token(agent.token.get_secret_value()),
-                auto_approval_policy=agent.auto_approval_policy,
+                access_profile_id=agent.access_profile_id,
             )
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])

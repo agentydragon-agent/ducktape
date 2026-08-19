@@ -290,6 +290,9 @@ def _service(
     config_file = write_config(
         tmp_path / "tool-call-service.yaml",
         {
+            "auto_approval_policies": [{"id": "manual", "type": "never"}],
+            "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+            "default_access_profile_id": "manual",
             "mcp": {
                 "servers": [
                     {
@@ -304,7 +307,7 @@ def _service(
                         },
                     }
                 ]
-            }
+            },
         },
     )
     return ToolCallApplicationService(

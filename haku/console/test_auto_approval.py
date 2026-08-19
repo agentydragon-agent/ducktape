@@ -15,7 +15,7 @@ from haku.console.auto_approval import (
     ToolAutoApprovalMode,
     auto_approve_tool_call,
 )
-from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.mcp_config import AccessProfile, ConsoleConfigFile
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.gmail import build_mcp
 from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
@@ -25,6 +25,7 @@ AGENT_ACTOR = AgentActor(
     agent_id=UUID("00000000-0000-0000-0000-000000000002"),
     operator_id=TEST_OPERATOR_ID,
     binding_id=UUID("00000000-0000-0000-0000-000000000003"),
+    access_profile_id="haku",
 )
 OPERATOR_ACTOR = OperatorActor(operator_id=TEST_OPERATOR_ID)
 
@@ -60,6 +61,11 @@ _GITHUB_TOOLS = [
     "list_pull_requests",
     "pull_request_read",
 ]
+_MANUAL_AUTHORITY_CONFIG = {
+    "auto_approval_policies": [{"id": "manual", "type": "never"}],
+    "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+    "default_access_profile_id": "manual",
+}
 _POLICIES = AutoApprovalPolicyRegistry(
     ConsoleConfigFile.model_validate(
         {
@@ -100,13 +106,18 @@ _POLICIES = AutoApprovalPolicyRegistry(
                 },
                 {"id": "none", "type": "never"},
             ],
+            "access_profiles": [
+                {"id": "haku", "auto_approval_policy": "haku_v1"},
+                {"id": "manual", "auto_approval_policy": "none"},
+            ],
+            "default_access_profile_id": "manual",
             "static_agents": [
                 {
                     "agent_id": str(AGENT_ACTOR.agent_id),
                     "display_name": "Test Agent",
                     "token_env_var": "TEST_AGENT_TOKEN",
                     "operator_subject_env": "TEST_AGENT_OPERATOR",
-                    "auto_approval_policy": "haku_v1",
+                    "access_profile_id": "haku",
                 }
             ],
         }
@@ -285,15 +296,15 @@ async def test_unassigned_agent_fails_closed_to_manual_approval() -> None:
         binding_id=UUID("00000000-0000-0000-0000-000000000098"),
     )
     decision = await _decision("labels_list", {}, actor=unassigned)
-    assert decision == (None, "manual: Agent has no auto-approval policy for gmail/labels_list")
+    assert decision == (None, "manual: Agent has no configured access profile for gmail/labels_list")
 
 
-async def test_durable_actor_policy_auto_approves_without_a_static_config_assignment() -> None:
+async def test_durable_actor_profile_auto_approves_without_a_static_config_assignment() -> None:
     enrolled = AgentActor(
         agent_id=UUID("00000000-0000-0000-0000-000000000099"),
         operator_id=TEST_OPERATOR_ID,
         binding_id=UUID("00000000-0000-0000-0000-000000000098"),
-        auto_approval_policy="haku_v1",
+        access_profile_id="haku",
     )
     policy_id, evaluation = await _decision("labels_list", {}, actor=enrolled)
     assert policy_id == AGENT_AUTO_APPROVAL_ID
@@ -306,7 +317,7 @@ async def test_durable_actor_policy_overrides_the_static_rollout_fallback() -> N
         agent_id=AGENT_ACTOR.agent_id,
         operator_id=AGENT_ACTOR.operator_id,
         binding_id=AGENT_ACTOR.binding_id,
-        auto_approval_policy="none",
+        access_profile_id="manual",
     )
     assert await _decision("labels_list", {}, actor=manually_approved) == (
         None,
@@ -318,35 +329,39 @@ def test_policy_config_rejects_cycles() -> None:
     with pytest.raises(ValidationError, match="contains a cycle"):
         ConsoleConfigFile.model_validate(
             {
+                **_MANUAL_AUTHORITY_CONFIG,
                 "auto_approval_policies": [
                     {"id": "one", "type": "any_of", "policies": ["two"]},
                     {"id": "two", "type": "any_of", "policies": ["one"]},
-                ]
+                    {"id": "manual", "type": "never"},
+                ],
             }
         )
 
 
-def test_policy_config_rejects_unknown_agent_policy() -> None:
-    with pytest.raises(ValidationError, match="unknown auto-approval policy"):
+def test_profile_config_rejects_unknown_static_agent_profile() -> None:
+    with pytest.raises(ValidationError, match="unknown access profile"):
         ConsoleConfigFile.model_validate(
             {
+                **_MANUAL_AUTHORITY_CONFIG,
                 "static_agents": [
                     {
                         "agent_id": str(AGENT_ACTOR.agent_id),
                         "display_name": "Test Agent",
                         "token_env_var": "TEST_AGENT_TOKEN",
                         "operator_subject_env": "TEST_AGENT_OPERATOR",
-                        "auto_approval_policy": "missing",
+                        "access_profile_id": "missing",
                     }
-                ]
+                ],
             }
         )
 
 
-def test_static_agent_policy_assignment_is_required() -> None:
-    with pytest.raises(ValidationError, match="auto_approval_policy"):
+def test_static_agent_access_profile_assignment_is_required() -> None:
+    with pytest.raises(ValidationError, match="access_profile_id"):
         ConsoleConfigFile.model_validate(
             {
+                **_MANUAL_AUTHORITY_CONFIG,
                 "static_agents": [
                     {
                         "agent_id": str(AGENT_ACTOR.agent_id),
@@ -354,15 +369,53 @@ def test_static_agent_policy_assignment_is_required() -> None:
                         "token_env_var": "TEST_AGENT_TOKEN",
                         "operator_subject_env": "TEST_AGENT_OPERATOR",
                     }
-                ]
+                ],
             }
         )
 
 
-def test_fail_closed_default_is_selected_by_policy_type_not_magic_id() -> None:
-    config = ConsoleConfigFile.model_validate({"auto_approval_policies": [{"id": "operator_review", "type": "never"}]})
+def test_default_access_profile_does_not_require_a_never_policy() -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            "auto_approval_policies": [
+                {"id": "operator_review", "type": "never"},
+                {"id": "selected_by_default", "type": "any_of", "policies": ["operator_review"]},
+            ],
+            "access_profiles": [{"id": "operator-default", "auto_approval_policy": "selected_by_default"}],
+            "default_access_profile_id": "operator-default",
+        }
+    )
 
-    assert config.default_agent_auto_approval_policy == "operator_review"
+    assert config.default_access_profile_id == "operator-default"
+
+
+def test_profile_config_rejects_unknown_recall_index() -> None:
+    with pytest.raises(ValidationError, match="unknown Recall indexes"):
+        ConsoleConfigFile.model_validate(
+            {
+                "auto_approval_policies": [{"id": "operator_review", "type": "never"}],
+                "access_profiles": [
+                    {
+                        "id": "operator-review",
+                        "auto_approval_policy": "operator_review",
+                        "recall_index_ids": ["not-configured"],
+                    }
+                ],
+                "default_access_profile_id": "operator-review",
+            }
+        )
+
+
+def test_access_profile_recall_index_ids_are_a_set() -> None:
+    profile = AccessProfile.model_validate(
+        {
+            "id": "operator-review",
+            "auto_approval_policy": "operator_review",
+            "recall_index_ids": ["ducktape-public", "ducktape-public"],
+        }
+    )
+
+    assert profile.recall_index_ids == {"ducktape-public"}
 
 
 async def _remote_decision(server_id: str, tool_name: str, arguments: dict) -> tuple[str | None, str | None]:

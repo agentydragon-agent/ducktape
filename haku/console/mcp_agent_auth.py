@@ -79,7 +79,7 @@ class _AuthorityStaticTokenVerifier(TokenVerifier, StaticAgentActorResolver):
             agent_id=authorization.agent_id,
             operator_id=authorization.operator_id,
             binding_id=authorization.binding_id,
-            auto_approval_policy=authorization.auto_approval_policy,
+            access_profile_id=authorization.access_profile_id,
         )
 
     async def _authorization(self, token: str, *, verification: bool) -> StaticAgentAuthorization | None:

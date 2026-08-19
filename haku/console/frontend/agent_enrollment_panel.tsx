@@ -25,7 +25,7 @@ export function AgentEnrollmentPanel({
   const [choice, setChoice] = useState<EnrollmentChoice>(initialChoice);
   const [displayName, setDisplayName] = useState("");
   const [reconnectAgentId, setReconnectAgentId] = useState<string | null>(null);
-  const [autoApprovalPolicy, setAutoApprovalPolicy] = useState<string | null>(null);
+  const [accessProfileId, setAccessProfileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
 
@@ -37,10 +37,10 @@ export function AgentEnrollmentPanel({
         setEnrollment(view);
         setDisplayName(view.suggested_agent_name);
         setReconnectAgentId(view.reconnectable_agents[0]?.agent_id ?? null);
-        setAutoApprovalPolicy(
+        setAccessProfileId(
           initialChoice === "reconnect"
-            ? (view.reconnectable_agents[0]?.auto_approval_policy ?? view.default_auto_approval_policy)
-            : view.default_auto_approval_policy
+            ? (view.reconnectable_agents[0]?.access_profile_id ?? view.default_access_profile_id)
+            : view.default_access_profile_id
         );
       },
       (reason: unknown) => {
@@ -70,13 +70,13 @@ export function AgentEnrollmentPanel({
   }
 
   function submit() {
-    if (!enrollment || autoApprovalPolicy === null) return;
+    if (!enrollment || accessProfileId === null) return;
     if (choice === "create") {
       void decide({
         kind: "create",
         form_token: enrollment.form_token,
         display_name: displayName,
-        auto_approval_policy: autoApprovalPolicy,
+        access_profile_id: accessProfileId,
       });
       return;
     }
@@ -85,7 +85,7 @@ export function AgentEnrollmentPanel({
         kind: "reconnect",
         form_token: enrollment.form_token,
         agent_id: reconnectAgentId,
-        auto_approval_policy: autoApprovalPolicy,
+        access_profile_id: accessProfileId,
       });
     }
   }
@@ -147,12 +147,12 @@ export function AgentEnrollmentPanel({
                   const nextChoice = value as EnrollmentChoice;
                   setChoice(nextChoice);
                   if (nextChoice === "create") {
-                    setAutoApprovalPolicy(enrollment.default_auto_approval_policy);
+                    setAccessProfileId(enrollment.default_access_profile_id);
                   } else {
                     const agent = enrollment.reconnectable_agents.find(
                       (candidate) => candidate.agent_id === reconnectAgentId
                     );
-                    setAutoApprovalPolicy(agent?.auto_approval_policy ?? enrollment.default_auto_approval_policy);
+                    setAccessProfileId(agent?.access_profile_id ?? enrollment.default_access_profile_id);
                   }
                 }}
                 label="What should this connection represent?"
@@ -185,9 +185,7 @@ export function AgentEnrollmentPanel({
                               (candidate) => candidate.agent_id === agentId
                             );
                             if (agent) {
-                              setAutoApprovalPolicy(
-                                agent.auto_approval_policy ?? enrollment.default_auto_approval_policy
-                              );
+                              setAccessProfileId(agent.access_profile_id ?? enrollment.default_access_profile_id);
                             }
                           }}
                           aria-label="Existing Agent"
@@ -210,14 +208,14 @@ export function AgentEnrollmentPanel({
               </Radio.Group>
 
               <Select
-                label="Auto-approval policy"
+                label="Access profile"
                 description="Controls which tool calls this Agent may run without asking you. The default requires approval for every call."
-                data={enrollment.auto_approval_policies.map((policy) => ({
-                  value: policy,
-                  label: policy.replaceAll("_", " "),
+                data={enrollment.access_profiles.map((profile) => ({
+                  value: profile,
+                  label: profile.replaceAll("_", " "),
                 }))}
-                value={autoApprovalPolicy}
-                onChange={setAutoApprovalPolicy}
+                value={accessProfileId}
+                onChange={setAccessProfileId}
                 allowDeselect={false}
                 disabled={deciding}
               />
@@ -232,7 +230,7 @@ export function AgentEnrollmentPanel({
                   disabled={
                     (choice === "create" && displayName.trim().length === 0) ||
                     (choice === "reconnect" && reconnectAgentId === null) ||
-                    autoApprovalPolicy === null
+                    accessProfileId === null
                   }
                 >
                   {choice === "create" ? "Continue" : "Reconnect"}

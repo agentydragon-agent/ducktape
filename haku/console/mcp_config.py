@@ -197,6 +197,7 @@ class ConsoleMcpConfig(BaseModel):
 
 
 type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
+type RecallIndexId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")]
 
 
 class AutoApprovalPolicyBase(BaseModel):
@@ -267,9 +268,19 @@ type AutoApprovalPolicy = Annotated[
 ]
 
 
-def _default_auto_approval_policies() -> list[AutoApprovalPolicy]:
-    """A fail-closed root for config-less development and schema generation."""
-    return [NeverAutoApprovalPolicy(id="manual_review")]
+class AccessProfile(BaseModel):
+    """A deploy-reviewed capability bundle assigned to one durable Agent.
+
+    The profile deliberately gathers all durable Agent authority in one config catalog: its
+    current auto-approval policy and the logical Recall indexes it may later search. Credential
+    bindings authenticate an Agent; they never independently select either capability.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
+    auto_approval_policy: AutoApprovalPolicyId
+    recall_index_ids: set[RecallIndexId] = Field(default_factory=set)
 
 
 class StaticAgentEntry(BaseModel):
@@ -286,9 +297,9 @@ class StaticAgentEntry(BaseModel):
     # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
     # never live request authority.
     operator_subject_env: str
-    # The root of this Agent's deploy-reviewed auto-approval policy graph. Every static Agent must
-    # choose explicitly; dynamically enrolled/OAuth Agents choose during enrollment or reconnect.
-    auto_approval_policy: AutoApprovalPolicyId
+    # Static Agents choose an explicit capability profile. OAuth/DCR Agents select one in the
+    # browser enrollment decision alongside their display name.
+    access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
 
     @field_validator("display_name")
     @classmethod
@@ -307,7 +318,7 @@ class LoadedStaticAgent(BaseModel):
     secret_reference: str
     token: SecretStr
     operator_external_user_key: str
-    auto_approval_policy: AutoApprovalPolicyId
+    access_profile_id: str
 
 
 class ConsoleConfigFile(BaseModel):
@@ -315,7 +326,9 @@ class ConsoleConfigFile(BaseModel):
     # Non-secret deployment wiring for the optional Console-owned Claude runtime.
     # The real OAuth bearer remains solely in the dedicated iron-proxy.
     claude_runtime: ClaudeRuntimeConfig | None = None
-    auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=_default_auto_approval_policies)
+    auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
+    access_profiles: list[AccessProfile] = Field(min_length=1)
+    default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
@@ -329,11 +342,6 @@ class ConsoleConfigFile(BaseModel):
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.
     recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
-
-    @property
-    def default_agent_auto_approval_policy(self) -> AutoApprovalPolicyId:
-        """The unique fail-closed policy offered as the default for new Agent decisions."""
-        return next(policy.id for policy in self.auto_approval_policies if isinstance(policy, NeverAutoApprovalPolicy))
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
@@ -437,19 +445,32 @@ class ConsoleConfigFile(BaseModel):
         for policy_id in policies:
             visit(policy_id)
 
-        fail_closed_policies = [
-            policy.id for policy in policies.values() if isinstance(policy, NeverAutoApprovalPolicy)
-        ]
-        if len(fail_closed_policies) != 1:
-            raise ValueError(
-                "auto_approval_policies must contain exactly one never policy to use as the fail-closed Agent default"
-            )
+        profiles: dict[str, AccessProfile] = {}
+        for profile in self.access_profiles:
+            if profile.id in profiles:
+                raise ValueError(f"duplicate access profile id {profile.id!r}")
+            if profile.auto_approval_policy not in policies:
+                raise ValueError(
+                    f"access profile {profile.id!r} references unknown auto-approval policy "
+                    f"{profile.auto_approval_policy!r}"
+                )
+            profiles[profile.id] = profile
+        if self.default_access_profile_id not in profiles:
+            raise ValueError(f"default access profile {self.default_access_profile_id!r} is not configured")
+
+        configured_recall_indexes = {index.index_id for index in self.recall_indexes}
+        for profile in profiles.values():
+            unknown_recall_indexes = set(profile.recall_index_ids) - configured_recall_indexes
+            if unknown_recall_indexes:
+                raise ValueError(
+                    f"access profile {profile.id!r} references unknown Recall indexes "
+                    f"{sorted(unknown_recall_indexes)!r}"
+                )
 
         for agent in self.static_agents:
-            if agent.auto_approval_policy not in policies:
+            if agent.access_profile_id not in profiles:
                 raise ValueError(
-                    f"static Agent {agent.agent_id} references unknown auto-approval policy "
-                    f"{agent.auto_approval_policy!r}"
+                    f"static Agent {agent.agent_id} references unknown access profile {agent.access_profile_id!r}"
                 )
         if self.hostexec is not None:
             if self.node_daemons is None:
@@ -471,8 +492,8 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
 
 def load_console_config(settings: Settings) -> ConsoleConfigFile:
     path = settings.config_file
-    if path is None or not path.exists():
-        return ConsoleConfigFile()
+    if not path.is_file():
+        raise RuntimeError(f"haku-console config file does not exist: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return ConsoleConfigFile.model_validate(raw)
 
@@ -507,7 +528,7 @@ def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
                 secret_reference=entry.token_env_var,
                 token=SecretStr(token),
                 operator_external_user_key=external_user_key,
-                auto_approval_policy=entry.auto_approval_policy,
+                access_profile_id=entry.access_profile_id,
             )
         )
     return loaded

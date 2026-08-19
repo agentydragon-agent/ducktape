@@ -58,7 +58,7 @@ _DEFAULT_STATIC_AGENTS = [
         "display_name": "Console Test Agent",
         "token_env_var": _DEFAULT_AGENT_TOKEN_ENV,
         "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "access_profile_id": "no_auto_approval",
     }
 ]
 
@@ -131,6 +131,7 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
             "public_base_url": "https://haku.test",
             "operator_oidc": TEST_OPERATOR_OIDC,
             "operator_identity": TEST_OPERATOR_IDENTITY,
+            "config_file": Path("/nonexistent/haku-console.yaml"),
             **overrides,
         }
     )
@@ -269,6 +270,8 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         {
             "static_agents": _DEFAULT_STATIC_AGENTS,
             "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+            "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
+            "default_access_profile_id": "no_auto_approval",
         },
     )
 

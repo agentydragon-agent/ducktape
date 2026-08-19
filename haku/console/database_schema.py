@@ -176,6 +176,10 @@ class EnrollmentInteraction(Base):
             name="ck_enrollment_interactions_reconnect_shape",
         ),
         CheckConstraint(
+            "access_profile_id IS NULL OR btrim(access_profile_id) <> ''",
+            name="ck_enrollment_interactions_access_profile_id_nonempty",
+        ),
+        CheckConstraint(
             """
             (
                 phase = 'awaiting_browser'
@@ -271,7 +275,8 @@ class EnrollmentInteraction(Base):
     decision_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     reconnect_agent_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     reconnect_predecessor_binding_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
-    auto_approval_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Config-defined profile ID. NULL remains fail-closed during the expand/contract rollout.
+    access_profile_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     closure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -322,6 +327,9 @@ class Agent(Base):
             "(status IN ('active', 'disabled', 'deleted') AND activated_at IS NOT NULL)",
             name="ck_agents_status_shape",
         ),
+        CheckConstraint(
+            "access_profile_id IS NULL OR btrim(access_profile_id) <> ''", name="ck_agents_access_profile_id_nonempty"
+        ),
         Index("idx_agents_owner_operator_id", "owner_operator_id"),
     )
 
@@ -336,7 +344,7 @@ class Agent(Base):
     activated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # NULL is fail-closed: this Agent's deploy-time static assignment has not been seeded yet.
-    auto_approval_policy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_profile_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AgentNameReservation(Base):
@@ -1448,7 +1456,9 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 # The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
 # in the one above, which hides a whole table — naming `conversation_item` there would stop the
 # comparison noticing any drift in it.
-UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset()
+UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
+    {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
+)
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.

@@ -318,7 +318,7 @@ _STATIC_AGENTS = [
         "display_name": "Haku",
         "token_env_var": _AGENT_TOKEN_ENV,
         "operator_subject_env": _AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "access_profile_id": "no_auto_approval",
     }
 ]
 
@@ -401,6 +401,8 @@ def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
         "mcp": {"servers": servers},
         "static_agents": _STATIC_AGENTS,
         "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+        "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
+        "default_access_profile_id": "no_auto_approval",
     }
 
 
@@ -480,13 +482,18 @@ def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
 @pytest.fixture
 def gmail_config_file(tmp_path: Path) -> Path:
     config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_mail"})])
-    config["static_agents"] = [{**_STATIC_AGENTS[0], "auto_approval_policy": "haku_v1"}]
+    config["static_agents"] = [{**_STATIC_AGENTS[0], "access_profile_id": "haku"}]
     config["auto_approval_policies"] = [
         {"id": "manual_review", "type": "never"},
         {"id": "gmail_reads", "type": "exact_tools", "tools": {"gmail": ["labels_list"]}},
         {"id": "managed_gmail_labels", "type": "gmail_label_namespace", "server": "gmail", "label_prefix": "haku/"},
         {"id": "haku_v1", "type": "any_of", "policies": ["gmail_reads", "managed_gmail_labels"]},
     ]
+    config["access_profiles"] = [
+        {"id": "manual-review", "auto_approval_policy": "manual_review"},
+        {"id": "haku", "auto_approval_policy": "haku_v1"},
+    ]
+    config["default_access_profile_id"] = "manual-review"
     config["operator_connection_providers"] = {
         "google_mail": {
             "kind": "google",
@@ -574,13 +581,20 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         async with sessions() as session:
             result = await session.execute(
-                select(CredentialBinding.binding_id, CredentialBinding.agent_id, Agent.owner_operator_id)
+                select(
+                    CredentialBinding.binding_id,
+                    CredentialBinding.agent_id,
+                    Agent.owner_operator_id,
+                    Agent.access_profile_id,
+                )
                 .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
                 .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
                 .where(StaticCredential.credential_fingerprint == fingerprint_static_token(bearer))
             )
-            binding_id, agent_id, operator_id = result.one()
-        return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
+            binding_id, agent_id, operator_id, access_profile_id = result.one()
+        return AgentActor(
+            agent_id=agent_id, operator_id=operator_id, binding_id=binding_id, access_profile_id=access_profile_id
+        )
 
     assert client.portal is not None
     return client.portal.call(resolve)
@@ -1192,15 +1206,20 @@ async def test_routing_executes_each_agent_as_its_own_operator(
         {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}},
     ]
     config["static_agents"] = [
-        {**_STATIC_AGENTS[0], "auto_approval_policy": "grocy_reads"},
+        {**_STATIC_AGENTS[0], "access_profile_id": "grocy-reader"},
         {
             "agent_id": "30000000-0000-4000-8000-000000000002",
             "display_name": "Ops Bot",
             "token_env_var": "HAKU_CONSOLE_TEST_AGENT2_TOKEN",
             "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
-            "auto_approval_policy": "grocy_reads",
+            "access_profile_id": "grocy-reader",
         },
     ]
+    config["access_profiles"] = [
+        {"id": "manual-review", "auto_approval_policy": "manual_review"},
+        {"id": "grocy-reader", "auto_approval_policy": "grocy_reads"},
+    ]
+    config["default_access_profile_id"] = "manual-review"
     with make_client(config_file=write_config(tmp_path / "routing.yaml", config)) as client:
         # products_list is an unconditionally auto-approved grocy read, so each call runs immediately.
         call_ids: list[str] = []
@@ -1270,7 +1289,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
             "display_name": name.replace("-", " ").title(),
             "token_env_var": token_env,
             "operator_subject_env": operator_env,
-            "auto_approval_policy": "no_auto_approval",
+            "access_profile_id": "no_auto_approval",
         }
         for index, (name, _, _, token_env, operator_env) in enumerate(agent_specs, start=10)
     ]
@@ -1724,9 +1743,10 @@ async def test_config_rejects_unknown_operator_connection() -> None:
     with pytest.raises(ValidationError, match="unknown operator connection 'missing'"):
         ConsoleConfigFile.model_validate(
             {
+                **_config([]),
                 "mcp": {
                     "servers": [_in_process_server("google", {"kind": "operator_connection", "connection": "missing"})]
-                }
+                },
             }
         )
 
@@ -1734,6 +1754,7 @@ async def test_config_rejects_unknown_operator_connection() -> None:
 async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_config([]),
             "operator_connection_providers": {
                 "google_mail": {
                     "kind": "google",
@@ -1762,6 +1783,7 @@ async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
 async def test_config_rejects_incompatible_registered_credential_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_config([]),
             "operator_connection_providers": {
                 "google": {
                     "kind": "google",

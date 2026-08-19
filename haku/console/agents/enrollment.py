@@ -22,8 +22,8 @@ class EnrollmentBrowserSession:
 class ReconnectableAgent:
     agent_id: UUID
     display_name: str
-    # NULL is accepted only for Agents created before durable policy assignment existed.
-    auto_approval_policy: str | None
+    # NULL is accepted only for Agents created before durable profile assignment existed.
+    access_profile_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,22 +35,22 @@ class EnrollmentPage:
     reconnectable_agents: tuple[ReconnectableAgent, ...]
     form_token: str
     upstream_authorization_url: str
-    auto_approval_policies: tuple[str, ...]
-    default_auto_approval_policy: str
+    access_profiles: tuple[str, ...]
+    default_access_profile_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class CreateAgentDecision:
     form_token: str
     display_name: str
-    auto_approval_policy: str
+    access_profile_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class ReconnectAgentDecision:
     form_token: str
     agent_id: UUID
-    auto_approval_policy: str
+    access_profile_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +94,7 @@ class AgentNameUnavailableError(ValueError):
     pass
 
 
-class AutoApprovalPolicyUnavailableError(ValueError):
+class AccessProfileUnavailableError(ValueError):
     pass
 
 
@@ -102,7 +102,7 @@ class AgentNotFoundError(LookupError):
     pass
 
 
-class AgentAutoApprovalPolicyManagedByDeploymentError(PermissionError):
+class AgentAccessProfileManagedByDeploymentError(PermissionError):
     pass
 
 
@@ -117,16 +117,16 @@ class OperatorAgent:
     activated_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
     # NULL is accepted only for Agents created before durable policy assignment existed.
-    auto_approval_policy: str | None
+    access_profile_id: str | None
 
 
 class AgentEnrollmentService(Protocol):
-    def available_auto_approval_policies(self) -> tuple[str, ...]: ...
+    def available_access_profiles(self) -> tuple[str, ...]: ...
 
     async def list_agents(self, *, operator_id: UUID) -> tuple[OperatorAgent, ...]: ...
 
-    async def set_auto_approval_policy(
-        self, *, operator_id: UUID, agent_id: UUID, auto_approval_policy: str
+    async def set_access_profile(
+        self, *, operator_id: UUID, agent_id: UUID, access_profile_id: str
     ) -> OperatorAgent: ...
 
     async def open_interaction(

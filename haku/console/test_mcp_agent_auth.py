@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
@@ -52,6 +53,7 @@ def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
         ),
         operator_identity=OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1"),
         mcp_oauth=mcp_oauth,
+        config_file=Path("/unused/haku-console.yaml"),
     )
 
 

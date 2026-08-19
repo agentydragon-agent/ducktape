@@ -175,10 +175,12 @@ def _console_config(path: Path, downstream_url: str) -> Path:
                     "display_name": "Haku",
                     "token_env_var": _AGENT_TOKEN_ENV,
                     "operator_subject_env": _AGENT_OPERATOR_ENV,
-                    "auto_approval_policy": "no_auto_approval",
+                    "access_profile_id": "no_auto_approval",
                 }
             ],
             "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+            "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
+            "default_access_profile_id": "no_auto_approval",
             "mcp": {
                 "servers": [
                     {

@@ -21,10 +21,10 @@ from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, Timeout
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.enrollment import (
-    AgentAutoApprovalPolicyManagedByDeploymentError,
+    AccessProfileUnavailableError,
+    AgentAccessProfileManagedByDeploymentError,
     AgentNameUnavailableError,
     AgentNotFoundError,
-    AutoApprovalPolicyUnavailableError,
     CreateAgentDecision,
     DenyEnrollmentDecision,
     EnrollmentAllowed,
@@ -105,7 +105,7 @@ class StaticAgentDefinition:
     operator_id: UUID
     secret_reference: str
     token_fingerprint: bytes
-    auto_approval_policy: str
+    access_profile_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +115,7 @@ class StaticAgentAuthorization:
     agent_id: UUID
     binding_id: UUID
     operator_id: UUID
-    auto_approval_policy: str | None = None
+    access_profile_id: str | None = None
 
 
 class StaticAgentDefinitionError(ValueError):
@@ -181,8 +181,8 @@ class PostgresAgentAuthority:
         interaction_lifetime: datetime.timedelta = _INTERACTION_LIFETIME,
         correlation_retention: datetime.timedelta = _CORRELATION_RETENTION,
         activation_lifetime: datetime.timedelta = _ACTIVATION_LIFETIME,
-        auto_approval_policies: Collection[str],
-        default_auto_approval_policy: str,
+        access_profiles: Collection[str],
+        default_access_profile_id: str,
     ) -> None:
         parsed_base = urlsplit(public_base_url)
         if (
@@ -203,19 +203,19 @@ class PostgresAgentAuthority:
         self._interaction_lifetime = interaction_lifetime
         self._correlation_retention = correlation_retention
         self._activation_lifetime = activation_lifetime
-        self._auto_approval_policies = tuple(dict.fromkeys(auto_approval_policies))
-        if not self._auto_approval_policies:
-            raise ValueError("at least one auto-approval policy must be configured")
-        if default_auto_approval_policy not in self._auto_approval_policies:
-            raise ValueError("default auto-approval policy must be configured")
-        self._default_auto_approval_policy = default_auto_approval_policy
+        self._access_profiles = tuple(dict.fromkeys(access_profiles))
+        if not self._access_profiles:
+            raise ValueError("at least one access profile must be configured")
+        if default_access_profile_id not in self._access_profiles:
+            raise ValueError("default access profile must be configured")
+        self._default_access_profile_id = default_access_profile_id
 
-    def available_auto_approval_policies(self) -> tuple[str, ...]:
-        return self._auto_approval_policies
+    def available_access_profiles(self) -> tuple[str, ...]:
+        return self._access_profiles
 
-    async def _require_auto_approval_policy(self, policy: str) -> None:
-        if policy not in self._auto_approval_policies:
-            raise AutoApprovalPolicyUnavailableError(f"Unknown auto-approval policy: {policy}")
+    async def _require_access_profile_id(self, access_profile_id: str) -> None:
+        if access_profile_id not in self._access_profiles:
+            raise AccessProfileUnavailableError(f"Unknown access profile: {access_profile_id}")
 
     async def _database_call(self, operation: Callable[[], Awaitable[_T]]) -> _T:
         try:
@@ -273,23 +273,21 @@ class PostgresAgentAuthority:
                     created_at=agent.created_at,
                     activated_at=agent.activated_at,
                     last_seen_at=agent.last_seen_at,
-                    auto_approval_policy=agent.auto_approval_policy,
+                    access_profile_id=agent.access_profile_id,
                 )
             )
         return tuple(agents)
 
-    async def set_auto_approval_policy(
-        self, *, operator_id: UUID, agent_id: UUID, auto_approval_policy: str
-    ) -> OperatorAgent:
-        await self._require_auto_approval_policy(auto_approval_policy)
-        await self._database_call(lambda: self._set_auto_approval_policy(operator_id, agent_id, auto_approval_policy))
+    async def set_access_profile(self, *, operator_id: UUID, agent_id: UUID, access_profile_id: str) -> OperatorAgent:
+        await self._require_access_profile_id(access_profile_id)
+        await self._database_call(lambda: self._set_access_profile(operator_id, agent_id, access_profile_id))
         agents = await self.list_agents(operator_id=operator_id)
         for agent in agents:
             if agent.agent_id == agent_id:
                 return agent
         raise AgentNotFoundError
 
-    async def _set_auto_approval_policy(self, operator_id: UUID, agent_id: UUID, policy: str) -> None:
+    async def _set_access_profile(self, operator_id: UUID, agent_id: UUID, access_profile_id: str) -> None:
         async with self._sessions.begin() as session:
             agent = await session.get(Agent, agent_id, with_for_update=True)
             if (
@@ -308,8 +306,8 @@ class PostgresAgentAuthority:
             if latest_binding is None:
                 raise AgentNotFoundError
             if latest_binding.kind is CredentialKind.STATIC:
-                raise AgentAutoApprovalPolicyManagedByDeploymentError
-            agent.auto_approval_policy = policy
+                raise AgentAccessProfileManagedByDeploymentError
+            agent.access_profile_id = access_profile_id
             agent.updated_at = await self._now()
 
     async def sweep_expired_state(self, *, batch_size: int = _EXPIRY_SWEEP_BATCH_SIZE) -> int:
@@ -435,7 +433,7 @@ class PostgresAgentAuthority:
         async with self._sessions.begin() as session:
             await self._lock_key(session, "static-agent-reconcile")
             for definition, name in sorted(prepared, key=lambda item: item[0].agent_id.int):
-                await self._require_auto_approval_policy(definition.auto_approval_policy)
+                await self._require_access_profile_id(definition.access_profile_id)
                 await self._lock_key(session, "static-agent", str(definition.agent_id))
                 await self._operator_identities.require_active_in_transaction(session, definition.operator_id)
                 agent = await session.get(Agent, definition.agent_id, with_for_update=True)
@@ -452,7 +450,7 @@ class PostgresAgentAuthority:
                         updated_at=now,
                         activated_at=now,
                         last_seen_at=None,
-                        auto_approval_policy=definition.auto_approval_policy,
+                        access_profile_id=definition.access_profile_id,
                     )
                     session.add(agent)
                     await session.flush()
@@ -478,8 +476,8 @@ class PostgresAgentAuthority:
                             f"static Agent slot {definition.agent_id} conflicts with durable Agent ownership or status"
                         )
                     await self._reconcile_static_name(session, agent, name, now)
-                    if agent.auto_approval_policy != definition.auto_approval_policy:
-                        agent.auto_approval_policy = definition.auto_approval_policy
+                    if agent.access_profile_id != definition.access_profile_id:
+                        agent.access_profile_id = definition.access_profile_id
                         agent.updated_at = now
 
                 active_row = (
@@ -509,7 +507,7 @@ class PostgresAgentAuthority:
                                 agent.agent_id,
                                 active_binding.binding_id,
                                 agent.owner_operator_id,
-                                agent.auto_approval_policy,
+                                agent.access_profile_id,
                             )
                         )
                         continue
@@ -577,7 +575,7 @@ class PostgresAgentAuthority:
                 )
                 authorizations.append(
                     StaticAgentAuthorization(
-                        agent.agent_id, binding_id, agent.owner_operator_id, agent.auto_approval_policy
+                        agent.agent_id, binding_id, agent.owner_operator_id, agent.access_profile_id
                     )
                 )
                 if agent.status is AgentStatus.DISABLED:
@@ -658,7 +656,7 @@ class PostgresAgentAuthority:
                 agent.last_seen_at = now
                 agent.updated_at = now
             return StaticAgentAuthorization(
-                agent.agent_id, binding.binding_id, operator.operator_id, agent.auto_approval_policy
+                agent.agent_id, binding.binding_id, operator.operator_id, agent.access_profile_id
             )
 
     @staticmethod
@@ -675,7 +673,7 @@ class PostgresAgentAuthority:
                 or not definition.secret_reference.strip()
                 or not isinstance(definition.token_fingerprint, bytes)
                 or not definition.token_fingerprint
-                or not definition.auto_approval_policy
+                or not definition.access_profile_id
             ):
                 raise StaticAgentDefinitionError("static Agent definitions require unique ids and nonempty evidence")
             try:
@@ -787,7 +785,7 @@ class PostgresAgentAuthority:
                 decision_digest=None,
                 reconnect_agent_id=None,
                 reconnect_predecessor_binding_id=None,
-                auto_approval_policy=None,
+                access_profile_id=None,
                 closure_reason=None,
                 created_at=now,
                 updated_at=now,
@@ -890,19 +888,19 @@ class PostgresAgentAuthority:
             normalize_agent_name(decision.display_name) if isinstance(decision, CreateAgentDecision) else None
         )
         if isinstance(decision, (CreateAgentDecision, ReconnectAgentDecision)):
-            await self._require_auto_approval_policy(decision.auto_approval_policy)
+            await self._require_access_profile_id(decision.access_profile_id)
         if isinstance(decision, CreateAgentDecision):
             assert normalized_name is not None
             decision_payload = {
                 "kind": "create",
                 "display_name_key": normalized_name.reservation_key,
-                "auto_approval_policy": decision.auto_approval_policy,
+                "access_profile_id": decision.access_profile_id,
             }
         elif isinstance(decision, ReconnectAgentDecision):
             decision_payload = {
                 "kind": "reconnect",
                 "agent_id": str(decision.agent_id),
-                "auto_approval_policy": decision.auto_approval_policy,
+                "access_profile_id": decision.access_profile_id,
             }
         elif isinstance(decision, DenyEnrollmentDecision):
             decision_payload = {"kind": "deny"}
@@ -1001,7 +999,7 @@ class PostgresAgentAuthority:
                     interaction.updated_at = now
                     result = EnrollmentDenied()
                 if not isinstance(decision, DenyEnrollmentDecision):
-                    interaction.auto_approval_policy = decision.auto_approval_policy
+                    interaction.access_profile_id = decision.access_profile_id
                     interaction.phase = EnrollmentPhase.ALLOWED
                     interaction.decision_digest = proposed_digest
                     interaction.updated_at = now
@@ -1105,7 +1103,7 @@ class PostgresAgentAuthority:
                             updated_at=now,
                             activated_at=None,
                             last_seen_at=None,
-                            auto_approval_policy=interaction.auto_approval_policy,
+                            access_profile_id=interaction.access_profile_id,
                         )
                     )
                     await session.flush()
@@ -1185,7 +1183,7 @@ class PostgresAgentAuthority:
                         agent_id=agent_id,
                         operator_id=resolved.operator_id,
                         binding_id=binding_id,
-                        auto_approval_policy=interaction.auto_approval_policy,
+                        access_profile_id=interaction.access_profile_id,
                     ),
                     grant_id=grant_id,
                     client_id=interaction.client_id,
@@ -1310,7 +1308,7 @@ class PostgresAgentAuthority:
                         # SQLAlchemy does not otherwise guarantee UPDATE ordering between two rows
                         # of the same table.
                         await session.flush()
-                        agent.auto_approval_policy = interaction.auto_approval_policy
+                        agent.access_profile_id = interaction.access_profile_id
                     else:
                         agent.status = AgentStatus.ACTIVE
                         agent.activated_at = now
@@ -1324,7 +1322,7 @@ class PostgresAgentAuthority:
                         agent_id=agent.agent_id,
                         operator_id=operator.operator_id,
                         binding_id=binding.binding_id,
-                        auto_approval_policy=agent.auto_approval_policy,
+                        access_profile_id=agent.access_profile_id,
                     ),
                     grant_id=grant_id,
                     client_id=client_id,
@@ -1339,7 +1337,7 @@ class PostgresAgentAuthority:
                         agent_id=agent.agent_id,
                         operator_id=operator.operator_id,
                         binding_id=binding.binding_id,
-                        auto_approval_policy=agent.auto_approval_policy,
+                        access_profile_id=agent.access_profile_id,
                     ),
                     grant_id=grant_id,
                     client_id=client_id,
@@ -1528,7 +1526,7 @@ class PostgresAgentAuthority:
     ) -> EnrollmentPage:
         reconnect_rows = (
             await session.execute(
-                select(Agent.agent_id, AgentNameReservation.display_name, Agent.auto_approval_policy)
+                select(Agent.agent_id, AgentNameReservation.display_name, Agent.access_profile_id)
                 .join(AgentNameReservation, AgentNameReservation.reservation_id == Agent.current_name_reservation_id)
                 .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
                 .where(
@@ -1548,12 +1546,12 @@ class PostgresAgentAuthority:
             suggested_agent_name=await self._suggested_name(interaction),
             reconnectable_agents=tuple(
                 ReconnectableAgent(
-                    agent_id=row.agent_id, display_name=row.display_name, auto_approval_policy=row.auto_approval_policy
+                    agent_id=row.agent_id, display_name=row.display_name, access_profile_id=row.access_profile_id
                 )
                 for row in reconnect_rows
             ),
-            auto_approval_policies=self.available_auto_approval_policies(),
-            default_auto_approval_policy=self._default_auto_approval_policy,
+            access_profiles=self.available_access_profiles(),
+            default_access_profile_id=self._default_access_profile_id,
             form_token=form_token,
             upstream_authorization_url=interaction.upstream_authorization_url,
         )

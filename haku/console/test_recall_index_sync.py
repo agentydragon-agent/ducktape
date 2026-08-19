@@ -27,6 +27,11 @@ from haku.recall_index.schema import ContentEmbedding
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
 _CHAT = ChatRecallIndexDefinition(index_id="console-chat")
+_MANUAL_AUTHORITY_CONFIG = {
+    "auto_approval_policies": [{"id": "manual", "type": "never"}],
+    "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+    "default_access_profile_id": "manual",
+}
 
 
 def test_recall_index_settings_contains_the_shared_chunk_budget() -> None:
@@ -37,6 +42,7 @@ def test_recall_index_settings_contains_the_shared_chunk_budget() -> None:
 def test_deploy_config_declares_each_index_explicitly() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_MANUAL_AUTHORITY_CONFIG,
             "recall_indexes": [
                 {
                     "index_id": "haku-state",
@@ -53,7 +59,7 @@ def test_deploy_config_declares_each_index_explicitly() -> None:
                     "branch": "devel",
                     "mirror_path": "/tmp/haku-recall-index/ducktape.git",
                 },
-            ]
+            ],
         }
     )
     assert [(index.index_id, index.index_type) for index in config.recall_indexes] == [

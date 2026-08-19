@@ -88,36 +88,50 @@ _OTHER_SIBLING_AGENT_TOKEN = "other-sibling-agent-token"
 _OTHER_SIBLING_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_OTHER_SIBLING_AGENT_TOKEN"
 _OTHER_SIBLING_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_OTHER_SIBLING_AGENT_OPERATOR"
 _MANUAL_POLICY_ID = "manual_review"
+_MANUAL_ACCESS_PROFILE_ID = "manual_review"
+_MANUAL_AUTHORITY_CONFIG = {
+    "auto_approval_policies": [{"id": _MANUAL_POLICY_ID, "type": "never"}],
+    "access_profiles": [{"id": _MANUAL_ACCESS_PROFILE_ID, "auto_approval_policy": _MANUAL_POLICY_ID}],
+    "default_access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
+}
 _STATIC_AGENTS = [
     {
         "agent_id": "40000000-0000-4000-8000-000000000001",
         "display_name": "Haku",
         "token_env_var": _AGENT_TOKEN_ENV,
         "operator_subject_env": _AGENT_OPERATOR_ENV,
-        "auto_approval_policy": _MANUAL_POLICY_ID,
+        "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000002",
         "display_name": "Sibling",
         "token_env_var": _SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _SIBLING_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": _MANUAL_POLICY_ID,
+        "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000003",
         "display_name": "Other",
         "token_env_var": _OTHER_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": _MANUAL_POLICY_ID,
+        "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
     {
         "agent_id": "40000000-0000-4000-8000-000000000004",
         "display_name": "Other Sibling",
         "token_env_var": _OTHER_SIBLING_AGENT_TOKEN_ENV,
         "operator_subject_env": _OTHER_SIBLING_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": _MANUAL_POLICY_ID,
+        "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
 ]
+
+
+def _with_manual_authority(config: dict[str, Any]) -> dict[str, Any]:
+    return {**_MANUAL_AUTHORITY_CONFIG, **config}
+
+
+def _write_console_config(path: Path, config: dict[str, Any]) -> Path:
+    return write_config(path, _with_manual_authority(config))
 
 
 def _assert_valid_json_schema(schema: dict[str, Any] | None) -> None:
@@ -197,11 +211,11 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
     calendar_client.get_event.return_value = CalendarEvent(
         event_id="series1", summary="Standup", recurrence=["RRULE:FREQ=WEEKLY"]
     )
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "console.yaml",
         {
             "static_agents": [
-                {**agent, **({"auto_approval_policy": "haku_v1"} if agent["display_name"] == "Haku" else {})}
+                {**agent, **({"access_profile_id": "haku"} if agent["display_name"] == "Haku" else {})}
                 for agent in _STATIC_AGENTS
             ],
             "auto_approval_policies": [
@@ -232,6 +246,11 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
                 {"id": "haku_v1", "type": "any_of", "policies": ["transparent_reads", "managed_gmail_labels"]},
                 {"id": _MANUAL_POLICY_ID, "type": "never"},
             ],
+            "access_profiles": [
+                {"id": "haku", "auto_approval_policy": "haku_v1"},
+                {"id": _MANUAL_ACCESS_PROFILE_ID, "auto_approval_policy": _MANUAL_POLICY_ID},
+            ],
+            "default_access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
             "mcp": {
                 "servers": [
                     {"id": "gmail", "backend": _in_process_backend({"kind": "none"})},
@@ -877,7 +896,7 @@ def _serve_upstream() -> Generator[str]:
 
 
 def _console_config(tmp_path: Path, upstream_url: str) -> Path:
-    return write_config(
+    return _write_console_config(
         tmp_path / "console.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1019,7 +1038,7 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
     migrated_db_url: str, migrated_sessions, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with _serve_upstream() as upstream_url:
-        config_file = write_config(
+        config_file = _write_console_config(
             tmp_path / "operator-tools.yaml",
             {
                 "static_agents": _STATIC_AGENTS,
@@ -1074,7 +1093,7 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
 async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     migrated_db_url: str, tmp_path: Path
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "connection-status.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1250,7 +1269,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
 async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "refresh-failure.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1293,7 +1312,7 @@ async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisi
 ) -> None:
     monkeypatch.delenv("MISSING_GOOGLE_CLIENT_ID", raising=False)
     monkeypatch.delenv("MISSING_GOOGLE_CLIENT_SECRET", raising=False)
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "unprovisioned-provider.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1344,7 +1363,7 @@ async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisi
 async def test_get_mcp_server_status_includes_schemas_only_when_requested(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "schema-detail.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1406,7 +1425,7 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
 async def test_tool_discovery_is_concurrent_and_preserves_config_order(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "concurrent-tools.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1443,7 +1462,7 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
 async def test_tool_discovery_isolates_unexpected_server_failure(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "isolated-tools.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1476,7 +1495,7 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
 async def test_tool_dispatch_reflects_only_target_server(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "targeted-dispatch.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1527,7 +1546,7 @@ async def test_tool_dispatch_reflects_only_target_server(
 async def test_targeted_dispatch_reports_a_known_degraded_server(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "degraded-dispatch.yaml",
         {
             "static_agents": _STATIC_AGENTS,
@@ -1764,7 +1783,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
                         "kind": "create",
                         "form_token": enrollment_data["form_token"],
                         "display_name": "OAuth Claude",
-                        "auto_approval_policy": enrollment_data["default_auto_approval_policy"],
+                        "access_profile_id": enrollment_data["default_access_profile_id"],
                     },
                     follow_redirects=False,
                 )
@@ -1815,38 +1834,47 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
 
 def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "duplicate-agent.yaml", {"static_agents": [*_STATIC_AGENTS, _STATIC_AGENTS[0]]}
     )
     with pytest.raises(ValidationError, match="duplicate static Agent id"):
         create_app(console_settings(migrated_db_url, config_file=config_file))
 
 
+def test_missing_deploy_config_fails_startup(migrated_db_url: str) -> None:
+    with pytest.raises(RuntimeError, match="config file does not exist"):
+        create_app(console_settings(migrated_db_url))
+
+
 def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
     with pytest.raises(ValidationError, match="duplicate MCP server id 'grocy'"):
         ConsoleConfigFile.model_validate(
-            {
-                "mcp": {
-                    "servers": [
-                        {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                        {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                    ]
+            _with_manual_authority(
+                {
+                    "mcp": {
+                        "servers": [
+                            {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
+                            {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
+                        ]
+                    }
                 }
-            }
+            )
         )
 
 
 def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> None:
     with pytest.raises(ValidationError, match="duplicate MCP server tool prefix 'grocy_sf'"):
         ConsoleConfigFile.model_validate(
-            {
-                "mcp": {
-                    "servers": [
-                        {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
-                        {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
-                    ]
+            _with_manual_authority(
+                {
+                    "mcp": {
+                        "servers": [
+                            {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
+                            {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
+                        ]
+                    }
                 }
-            }
+            )
         )
 
 
@@ -1854,7 +1882,7 @@ def test_duplicate_static_agent_tokens_fail_startup(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "99")
-    config_file = write_config(
+    config_file = _write_console_config(
         tmp_path / "duplicate-token.yaml",
         {
             "static_agents": [
@@ -1864,7 +1892,7 @@ def test_duplicate_static_agent_tokens_fail_startup(
                     "display_name": "Ops Bot",
                     "token_env_var": _AGENT_TOKEN_ENV,
                     "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
-                    "auto_approval_policy": _MANUAL_POLICY_ID,
+                    "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
                 },
             ]
         },
