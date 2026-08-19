@@ -19,6 +19,11 @@ left open rather than needing to have been told which row that is
 (`conversation_log.LogWriter._resume`). What it does have to be told is how much of that item has
 already been said, which `session_runtime._inherited` seeds from the row.
 
+A tool call whose JSON arguments are still arriving is the exception: it is deliberately not an
+item yet, so the turn loop leaves the durable cursor before its block start until the stop (or an
+early result) makes the call complete. Adoption then replays the whole composition. Calls already
+materialised are seeded by id so a late completed compatibility block cannot open one twice.
+
 `Projection.unprojected` is dropped here rather than logged: per frame in the hot path it would be a
 log line for every heartbeat. It is read on the two paths that re-fold stored frames instead —
 `session_store.read_transcript`'s `unreadable`, and the frame inspector's per-frame count

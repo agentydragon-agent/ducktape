@@ -295,6 +295,9 @@ class ResumedTurn:
     turn_id: UUID
     replay: tuple[ReceivedFrame, ...]
     streaming: OpenMessage | None = None
+    # Calls already materialised for this turn. A late completed backend block may repeat a call
+    # the stream declared before a replica handover; deriving these ids keeps that replay idempotent.
+    seen_call_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -778,6 +781,7 @@ class SessionStore:
                         turn_id=turn_id,
                         replay=await _unprojected_frames(db, session_id, cursor),
                         streaming=await _open_message(db, turn_id),
+                        seen_call_ids=await _seen_call_ids(db, turn_id),
                     )
         # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
         # finish, and a turn whose cursor sits before it has no position to resume from — so
@@ -1635,6 +1639,18 @@ async def _open_message(db: AsyncSession, turn_id: UUID) -> OpenMessage | None:
     # at frames rather than fabricating a span.
     first, last = span if span[0] is not None else (0, 0)
     return OpenMessage(text=item.item_text, first_frame_seq=first, last_frame_seq=last)
+
+
+async def _seen_call_ids(db: AsyncSession, turn_id: UUID) -> frozenset[str]:
+    """The provider call ids this turn already materialised, for idempotent replay."""
+    call_ids = await db.scalars(
+        select(ConversationItem.call_id).where(
+            ConversationItem.turn_id == turn_id,
+            ConversationItem.item_type == ItemType.TOOL_CALL,
+            ConversationItem.call_id.is_not(None),
+        )
+    )
+    return frozenset(call_id for call_id in call_ids if call_id is not None)
 
 
 async def _turn_state(db: AsyncSession, turn_id: UUID) -> TurnState:

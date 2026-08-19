@@ -22,6 +22,7 @@ from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, fi
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     command_lifecycle,
+    content_block_stop,
     heartbeat,
     input_json_delta,
     prompt,
@@ -33,11 +34,13 @@ from haku.console.x.claude_code.testing.wire import (
     thinking_block,
     tool_result,
     tool_use_block,
+    tool_use_start,
 )
 from haku.console.x.conversation_events import (
     CallRef,
     FrameRange,
     ItemSegment,
+    Json,
     MessageCompleted,
     MessageStarted,
     OpenItem,
@@ -51,7 +54,7 @@ from haku.console.x.conversation_events import (
     TurnCompleted,
 )
 
-BASH_RESULT = {"interrupted": False, "isImage": False, "noOutputExpected": False, "stderr": "", "stdout": "3\n"}
+BASH_RESULT: Json = {"interrupted": False, "isImage": False, "noOutputExpected": False, "stderr": "", "stdout": "3\n"}
 
 _MESSAGE = OpenRef(item_type=ItemType.MESSAGE)
 _REASONING = OpenRef(item_type=ItemType.REASONING)
@@ -398,6 +401,48 @@ def test_a_live_consumer_is_not_shown_tool_arguments_as_prose():
     arguments = recorded(1, input_json_delta('{"fi'))
 
     assert project_log([arguments], delta_source=DeltaSource.STREAM_EVENTS).events == ()
+
+
+def test_a_streamed_tool_call_can_be_answered_before_a_completed_assistant_block():
+    """Claude Code 2.1.220 can execute parallel calls from stream blocks before emitting the
+    completed `assistant` blocks. The call must exist before its result reaches the log."""
+    frames = [
+        recorded(1, tool_use_start("toolu_1", "Bash", index=1)),
+        recorded(2, input_json_delta('{"command": "true"}', index=1)),
+        recorded(3, content_block_stop(index=1)),
+        recorded(4, tool_result("toolu_1", "ok", structured=BASH_RESULT, is_error=False)),
+    ]
+    expected = (
+        ToolCallStarted(
+            call_id="toolu_1", tool_name="Bash", arguments={"command": "true"}, provenance=FrameRange(1, 3)
+        ),
+        ItemSegment(item=CallRef(call_id="toolu_1"), text="ok", provenance=FrameRange(4, 4)),
+        ToolCallCompleted(
+            item=CallRef(call_id="toolu_1"),
+            structured=BASH_RESULT,
+            outcome=ToolOutcome.SUCCEEDED,
+            provenance=FrameRange(4, 4),
+        ),
+    )
+
+    assert project_log(frames).events == expected
+    assert project_log(frames, delta_source=DeltaSource.STREAM_EVENTS).events == expected
+    assert all(_in_batches(batches) == Projection(events=expected, unprojected={}) for batches in _splits(frames))
+
+
+def test_a_completed_tool_block_does_not_repeat_the_streamed_call():
+    """Older Claude builds emit both shapes; whichever arrives second is a compatibility copy."""
+    events = project_log(
+        [
+            recorded(1, tool_use_start("toolu_1", "Bash", index=1)),
+            recorded(2, input_json_delta('{"command": "true"}', index=1)),
+            recorded(3, assistant(tool_use_block("toolu_1", "Bash", {"command": "true"}), message_id="msg_A")),
+            recorded(4, content_block_stop(index=1)),
+            recorded(5, tool_result("toolu_1", "ok", structured=BASH_RESULT)),
+        ]
+    ).events
+
+    assert len([event for event in events if isinstance(event, ToolCallStarted)]) == 1
 
 
 def census_session() -> list[RecordedFrame]:
