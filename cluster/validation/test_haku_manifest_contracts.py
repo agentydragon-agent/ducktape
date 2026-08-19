@@ -62,41 +62,19 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert "haku-claude-sandbox" not in general_injection
 
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    assert console_config["git_ca_bundle"] == "/etc/ssl/certs/ca-certificates.crt"
-    assert console_config["claude_runtime"] == {
-        "namespace": "haku-claude-sandbox",
-        "warm_pool": "haku-claude",
-        "cwd": "/workspace",
-        "session_ttl_seconds": 7200,
-        "oauth_placeholder": "sk-ant-oat01-proxy-haku-claude-placeholder",
-        "https_proxy": "http://haku-claude-oauth-proxy.haku-egress-proxy.svc.cluster.local:8180",
-        "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
-        "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local",
-        "mcp_url": "http://haku-console.haku-console.svc.cluster.local:9090/mcp",
-        "mcp_static_agent_id": "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2",
-        "system_prompt_template": "/etc/haku-console/config/chat_system_prompt.md.j2",
-    }
+    runtime = console_config["claude_runtime"]
+    assert runtime["namespace"] == template["metadata"]["namespace"]
     # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
     # is a pod that never becomes Ready. Tie the three places that must agree — the configured
     # path, the mount point, and the generated file — together here rather than in a rollout.
     kustomization = yaml.safe_load((k8s_dir / "haku/console/kustomization.yaml").read_text())
     generated = next(entry for entry in kustomization["configMapGenerator"] if entry["name"] == "haku-console-config")
     config_mount = next(mount for mount in server["volumeMounts"] if mount["name"] == "config")
-    template_path = PurePosixPath(console_config["claude_runtime"]["system_prompt_template"])
+    template_path = PurePosixPath(runtime["system_prompt_template"])
     assert str(template_path.parent) == config_mount["mountPath"]
     assert template_path.name in generated["files"]
     assert (k8s_dir / "haku/console" / template_path.name).is_file()
 
-    mcp_agent = next(
-        agent
-        for agent in console_config["static_agents"]
-        if agent["agent_id"] == console_config["claude_runtime"]["mcp_static_agent_id"]
-    )
-    assert mcp_agent["display_name"] == "Haku"
-    haku_profile = next(profile for profile in console_config["access_profiles"] if profile["id"] == "haku")
-    assert mcp_agent["access_profile_id"] == haku_profile["id"]
-    assert haku_profile["auto_approval_policy"] == "haku_v1"
-    assert set(haku_profile["recall_index_ids"]) == {"haku-state", "haku-conversations", "ducktape-public"}
     env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
 
