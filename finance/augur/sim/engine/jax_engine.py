@@ -21,9 +21,8 @@ outputs in one device→host transfer. The scan covers:
   tax-liability accrual, and the true-up settlement.
 
 Caching is JAX-native. `_program_impl` is module-level and
-`@partial(jax.jit, static_argnames=("p", "structure"))`: its compiled executable is keyed by JAX on
-the structural `SlotPlan` `p` and the hashable `_Static` (folded-event tuples + scalars — both
-natively hashable, no content hashing) plus the avals of the traced `_Operands` data pytree and the
+`@partial(jax.jit, static_argnames=("structure",))`: its compiled executable is keyed by JAX on
+the hashable `_Static` structural contract (including its `SlotPlan`) plus the avals of the traced `_Operands` data pytree and the
 seed/swept-config inputs. So an identical-structure plan — including sweeps over the traced numeric
 config (`_TracedConfig`) or rollout seeds — reuses the compiled program; only a structural change
 recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries that reuse
@@ -65,16 +64,18 @@ from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.quantiles import currency_quantile_plan, interpolate_currency_quantiles
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
 from finance.augur.sim.buffers import SimulationBuffers
-from finance.augur.sim.codec.plan import CompiledSimulation
+from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
-from finance.augur.sim.compiler.plan import SlotPlan, lot_order_for_pool
+from finance.augur.sim.compiler.plan import lot_order_for_pool
 from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
+    _BondInputs,
     _CapitalGainTarget,
     _DenseFinalOutput,
     _DenseProductTailOutput,
     _DenseScanOutput,
     _DispositionOutput,
+    _DistributionInputs,
     _FoldedHarvest,
     _FoldedLifecycleEvent,
     _FoldedPE,
@@ -89,19 +90,21 @@ from finance.augur.sim.engine.jax_types import (
     _ObligationMetadataInputs,
     _ObligationOutput,
     _PaymentBatch,
+    _PEChannelInputs,
     _PriorYearTaxObligationInputs,
     _PrivateEquityOpportunityOutput,
     _PrivateEquityOutput,
     _ProductTailOutput,
+    _PropertyCashflowInputs,
     _PropertyPurchaseOutput,
     _PropertySaleTraceOutput,
     _PropertyTaxObligationInputs,
     _SalePool,
-    _ScanMeta,
     _StateOutput,
     _Static,
     _TargetAllocationOutput,
     _TaxOutput,
+    _TransferInputs,
     _TransferOutput,
     _ConfiguredObligationInputs,
     _EstimatedTaxObligationInputs,
@@ -383,9 +386,8 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
 
 
 class _Operands(NamedTuple):
-    """Every device array the scan program closes over, packed into a single pytree (a `NamedTuple` is
-    an auto-registered JAX pytree node; nested `dict[str, jnp.ndarray]` values are valid pytree nodes
-    too). Passed to `_program_impl` as a TRACED argument: JAX keys the native compile cache on its
+    """Every device array the scan program closes over, packed into one named pytree. Passed to
+    `_program_impl` as a TRACED argument: JAX keys the native compile cache on its
     avals, so an identical-structure plan (identical shapes/dtypes) is a cache hit and differing VALUES
     reuse the same executable — no hand-rolled hashing of array contents."""
 
@@ -402,10 +404,10 @@ class _Operands(NamedTuple):
     prop0: jnp.ndarray
     liab0: jnp.ndarray
     # Whole-horizon static tables sliced by the traced month.
-    tr: dict[str, jnp.ndarray]
-    pc: dict[str, jnp.ndarray]
-    bond: dict[str, jnp.ndarray]
-    distribution: dict[str, jnp.ndarray]
+    transfers: _TransferInputs
+    property_cashflows: _PropertyCashflowInputs
+    bonds: _BondInputs
+    distributions: _DistributionInputs
     obligations: _ObligationInputs
     # Scheduled-sale stacked static data.
     sale_months_t: jnp.ndarray
@@ -457,10 +459,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     compiles it on first invocation."""
     validate_seed_dependent_inputs(plan)
 
-    baked, structure, p, meta = _build_program(plan)
+    baked, structure = _build_program(plan)
     external, money, pe, cfg = _program_inputs(plan)
-    ys, final_state = _program_impl(external, money, pe, cfg, baked, p, structure)
-    scatter_ys_to_buffers(plan, buffers, meta, ys, final_state)
+    ys, final_state = _program_impl(external, money, pe, cfg, baked, structure)
+    scatter_ys_to_buffers(plan, buffers, structure, ys, final_state)
 
 
 def run_jax_scan_with_product_metrics(
@@ -469,7 +471,7 @@ def run_jax_scan_with_product_metrics(
     """Fill dense buffers and return the selected actor's metrics from the same scan."""
 
     validate_seed_dependent_inputs(plan)
-    baked, structure, p, meta = _build_program(plan)
+    baked, structure = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
     external, money, pe, cfg = _program_inputs(plan)
     outputs, final_state = _program_impl(
@@ -478,14 +480,13 @@ def run_jax_scan_with_product_metrics(
         pe,
         cfg,
         baked,
-        p,
         structure,
         product_summary=product_static,
         product_inputs=product_inputs,
         emit_dense=True,
     )
     dense_ys, product_ys = outputs
-    scatter_ys_to_buffers(plan, buffers, meta, dense_ys, final_state.dense)
+    scatter_ys_to_buffers(plan, buffers, structure, dense_ys, final_state.dense)
     initial_ys, monthly_ys = product_ys
     return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_state.failed_month)
 
@@ -582,7 +583,7 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
     """Return every base metric directly from the JAX reducer without dense buffers."""
 
     validate_seed_dependent_inputs(plan)
-    baked, structure, p, _meta = _build_program(plan)
+    baked, structure = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
     external, money, pe, cfg = _program_inputs(plan)
     product_ys, product_tail = _program_impl(
@@ -591,7 +592,6 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
         pe,
         cfg,
         baked,
-        p,
         structure,
         product_summary=product_static,
         product_inputs=product_inputs,
@@ -629,7 +629,7 @@ def run_jax_product_summary(
     """
     validate_seed_dependent_inputs(plan)
 
-    baked, structure, p, _meta = _build_program(plan)
+    baked, structure = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
     external, money, pe, cfg = _program_inputs(plan)
     product_ys, product_tail = _program_impl(
@@ -638,7 +638,6 @@ def run_jax_product_summary(
         pe,
         cfg,
         baked,
-        p,
         structure,
         product_summary=product_static,
         product_inputs=product_inputs,
@@ -718,19 +717,19 @@ def _validate_product_tail(plan: CompiledSimulation, oversell: np.ndarray, ta_bu
     check_purchase_slot_exhaustion(plan, np.asarray(ta_buy_count))
 
 
-def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
+def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, jnp.ndarray, _PEChannelInputs, _TracedConfig]:
     """The traced program inputs: levels, integer money levels, PE channels and config."""
     pe_channels = plan.pe_channels
-    pe_ch_dyn = {
-        "mark_quanta": jnp.asarray(pe_channels.mark_quanta),
-        "regime": jnp.asarray(pe_channels.regime_codes),
-        "sale_opp": jnp.asarray(pe_channels.sale_opportunity_active),
-        "capacity": jnp.asarray(pe_channels.sale_capacity_fractions),
-        "eligible": jnp.asarray(pe_channels.eligible_fractions),
-        "forced_sale": jnp.asarray(pe_channels.forced_sale_fractions),
-        "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
-        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_quanta),
-    }
+    pe_ch_dyn = _PEChannelInputs(
+        mark_quanta=jnp.asarray(pe_channels.mark_quanta),
+        regime=jnp.asarray(pe_channels.regime_codes),
+        sale_opportunity_active=jnp.asarray(pe_channels.sale_opportunity_active),
+        capacity_fraction=jnp.asarray(pe_channels.sale_capacity_fractions),
+        eligible_fraction=jnp.asarray(pe_channels.eligible_fractions),
+        forced_sale_fraction=jnp.asarray(pe_channels.forced_sale_fractions),
+        liquidity_blocked=jnp.asarray(pe_channels.liquidity_blocked),
+        forced_recovery_cashout=jnp.asarray(pe_channels.forced_recovery_cashout_quanta),
+    )
     return jnp.asarray(plan.external_values), jnp.asarray(plan.external_money_values), pe_ch_dyn, _traced_config(plan)
 
 
@@ -793,20 +792,20 @@ def _product_summary_inputs(
 
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
-    baked, structure, p, _ = _build_program(plan)
+    baked, structure = _build_program(plan)
     external, money, pe, cfg = _program_inputs(plan)
-    text = _program_impl.lower(external, money, pe, cfg, baked, p, structure).compile().as_text()
+    text = _program_impl.lower(external, money, pe, cfg, baked, structure).compile().as_text()
     if text is None:
         raise RuntimeError("compiled program exposes no HLO text")
     return text
 
 
-def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPlan, _ScanMeta]:
+def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
     """Host-only build of the device program inputs for one plan *structure*. Does ALL numpy/Python
     precompute and packs the results into a `_Operands` pytree (every device array the scan closes over,
     a TRACED arg) and a `_Static` frozen dataclass (every natively-hashable Python value the bodies
-    read at trace time, a STATIC arg) — plus the plan's `SlotPlan` (`p`, already natively hashable) and
-    the host-side `_ScanMeta` for the post-scan scatter. The compiled program is `_program_impl`, whose
+    read at trace time, a STATIC arg) that includes the plan's natively hashable `SlotPlan` and is
+    also consumed by the post-scan scatter. The compiled program is `_program_impl`, whose
     native JAX cache reuses the executable across calls of the same structure (and across traced
     value/seed sweeps) — no hand-rolled hashing."""
     p = plan.slot_plan
@@ -1004,59 +1003,59 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
     # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
     t = plan.transfers
-    tr = {
-        "cause": jnp.asarray(t.cause),
-        "kind": jnp.asarray(t.amount_kind),
-        "fixed": jnp.asarray(t.amount_fixed),
-        "base": jnp.asarray(t.amount_base),
-        "series": jnp.asarray(t.amount_series),
-        "base_month": jnp.asarray(t.amount_base_month),
-        "period": jnp.asarray(t.amount_period),
-        "from_slot": jnp.asarray(t.from_slot),
-        "to_slot": jnp.asarray(t.to_slot),
-        "income_profile": jnp.asarray(t.income_profile),
-        "deduction_profile": jnp.asarray(t.deduction_profile),
-    }
+    transfers = _TransferInputs(
+        cause=jnp.asarray(t.cause),
+        amount_kind=jnp.asarray(t.amount_kind),
+        amount_fixed=jnp.asarray(t.amount_fixed),
+        amount_base=jnp.asarray(t.amount_base),
+        amount_series=jnp.asarray(t.amount_series),
+        amount_base_month=jnp.asarray(t.amount_base_month),
+        amount_period=jnp.asarray(t.amount_period),
+        from_slot=jnp.asarray(t.from_slot),
+        to_slot=jnp.asarray(t.to_slot),
+        income_profile=jnp.asarray(t.income_profile),
+        deduction_profile=jnp.asarray(t.deduction_profile),
+    )
     pcf = plan.property_cashflows
-    pc = {
-        "cause": jnp.asarray(pcf.cause),
-        "kind": jnp.asarray(pcf.amount_kind),
-        "fixed": jnp.asarray(pcf.amount_fixed),
-        "base": jnp.asarray(pcf.amount_base),
-        "series": jnp.asarray(pcf.amount_series),
-        "base_month": jnp.asarray(pcf.amount_base_month),
-        "period": jnp.asarray(pcf.amount_period),
-        "from_slot": jnp.asarray(pcf.from_slot),
-        "to_slot": jnp.asarray(pcf.to_slot),
-        "property_slot": jnp.asarray(np.where(pcf.property_slot >= 0, pcf.property_slot, 0)),
-        "income_profile": jnp.asarray(pcf.income_profile),
-        "deduction_profile": jnp.asarray(pcf.deduction_profile),
-    }
+    property_cashflows = _PropertyCashflowInputs(
+        cause=jnp.asarray(pcf.cause),
+        amount_kind=jnp.asarray(pcf.amount_kind),
+        amount_fixed=jnp.asarray(pcf.amount_fixed),
+        amount_base=jnp.asarray(pcf.amount_base),
+        amount_series=jnp.asarray(pcf.amount_series),
+        amount_base_month=jnp.asarray(pcf.amount_base_month),
+        amount_period=jnp.asarray(pcf.amount_period),
+        from_slot=jnp.asarray(pcf.from_slot),
+        to_slot=jnp.asarray(pcf.to_slot),
+        property_slot=jnp.asarray(np.where(pcf.property_slot >= 0, pcf.property_slot, 0)),
+        income_profile=jnp.asarray(pcf.income_profile),
+        deduction_profile=jnp.asarray(pcf.deduction_profile),
+    )
     bd = plan.bonds
-    bond = {
-        "coupon": jnp.asarray(bd.coupon),
-        "redemption": jnp.asarray(bd.redemption),
-        "to_slot": jnp.asarray(bd.to_slot),
-        "income_row": jnp.asarray(bd.income_row),
-        "indexed": jnp.asarray(bd.indexed),
-        "cpi_series": jnp.asarray(bd.cpi_series),
-        "index_base_month": jnp.asarray(bd.index_base_month),
-        "period_rate": jnp.asarray(bd.period_rate),
-        "face": jnp.asarray(bd.face),
-        "pays": jnp.asarray(bd.pays),
-        "matures": jnp.asarray(bd.matures),
-        "on_books": jnp.asarray(bd.on_books),
-    }
+    bonds = _BondInputs(
+        coupon=jnp.asarray(bd.coupon),
+        redemption=jnp.asarray(bd.redemption),
+        to_slot=jnp.asarray(bd.to_slot),
+        income_row=jnp.asarray(bd.income_row),
+        indexed=jnp.asarray(bd.indexed),
+        cpi_series=jnp.asarray(bd.cpi_series),
+        index_base_month=jnp.asarray(bd.index_base_month),
+        period_rate=jnp.asarray(bd.period_rate),
+        face=jnp.asarray(bd.face),
+        pays=jnp.asarray(bd.pays),
+        matures=jnp.asarray(bd.matures),
+        on_books=jnp.asarray(bd.on_books),
+    )
     dist = plan.distributions
-    distribution = {
+    distributions = _DistributionInputs(
         # Float, so `mask @ lot_remaining` is one matmul rather than an int64 gather-and-sum.
-        "lot_mask": jnp.asarray(dist.lot_mask, dtype=jnp.float64),
-        "series": jnp.asarray(dist.series),
-        "quantity_scale": jnp.asarray(dist.quantity_scale),
-        "fraction": jnp.asarray(dist.fraction),
-        "to_slot": jnp.asarray(dist.to_slot),
-        "income_row": jnp.asarray(dist.income_row),
-    }
+        lot_mask=jnp.asarray(dist.lot_mask, dtype=jnp.float64),
+        series=jnp.asarray(dist.series),
+        quantity_scale=jnp.asarray(dist.quantity_scale),
+        fraction=jnp.asarray(dist.fraction),
+        to_slot=jnp.asarray(dist.to_slot),
+        income_row=jnp.asarray(dist.income_row),
+    )
     ob = plan.obligations
     liabs = plan.liabilities
     property_tax = ob.property_tax
@@ -1295,7 +1294,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     taxc = plan.tax
     link_count = int(taxc.link_profile.shape[0])
     profile_count = int(p.tax_profile_count)
-    taxliab_count = int(p.tax_liability_count)
     tlq = plan.tax_liabilities
     tax_slot_table_np = np.full((horizon, max(1, link_count)), NO_CODE, dtype=np.int64)
     for m in range(11, horizon, 12):
@@ -1391,10 +1389,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         property_building_basis_0=property_building_basis_0,
         prop0=_zeros_i64((p.property_count, r)),
         liab0=_zeros_i64((p.liability_count, r)),
-        tr=tr,
-        pc=pc,
-        bond=bond,
-        distribution=distribution,
+        transfers=transfers,
+        property_cashflows=property_cashflows,
+        bonds=bonds,
+        distributions=distributions,
         obligations=obligations,
         sale_months_t=sale_months_t,
         sale_qty_t=sale_qty_t,
@@ -1457,20 +1455,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         for link in range(link_count)
     )
     structure = _Static(
-        rollout_count=r,
-        horizon=horizon,
-        cash_count=p.cash_count,
-        lot_count=p.lot_count,
-        property_count=p.property_count,
-        liability_count=p.liability_count,
-        tax_profile_count=p.tax_profile_count,
-        capital_gain_agent_count=p.capital_gain_agent_count,
-        tax_liability_count=p.tax_liability_count,
-        harvest_policy_count=p.harvest_policy_count,
-        scheduled_sale_count=p.scheduled_sale_count,
-        link_count=link_count,
-        profile_count=profile_count,
-        taxliab_count=taxliab_count,
+        slot_plan=p,
         n_sales=n_sales,
         sale_max_pool=sale_max_pool,
         lot_axis=lot_axis,
@@ -1478,8 +1463,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         ta_max_sleeves=int(ta_policies.sleeve_assets.shape[1]),
         pe_issuer_count=pe_issuer_count,
         n_pe_kinds=n_pe_kinds,
+        folded_purchases=tuple(folded_purchases),
         folded_lifecycle=tuple(folded_lifecycle),
         folded_pr=tuple(folded_pr),
+        folded_sale_events=tuple(folded_sale_events),
         folded_target_allocation=tuple(folded_target_allocation),
         folded_pe=tuple(folded_pe),
         folded_harvest=tuple(folded_harvest),
@@ -1510,30 +1497,16 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
             plan.tax.buckets.ordinary_bucket(profile) for profile in range(p.tax_profile_count)
         ),
     )
-
-    meta = _ScanMeta(
-        folded_sales=folded_sales,
-        folded_purchases=folded_purchases,
-        folded_lifecycle=folded_lifecycle,
-        folded_pr=folded_pr,
-        folded_sale_events=folded_sale_events,
-        folded_target_allocation=folded_target_allocation,
-        folded_pe=folded_pe,
-        link_count=link_count,
-        liability_count=p.liability_count,
-        horizon=horizon,
-    )
-    return baked, structure, p, meta
+    return baked, structure
 
 
-@partial(jax.jit, static_argnames=("p", "structure", "product_summary", "emit_dense"))
+@partial(jax.jit, static_argnames=("structure", "product_summary", "emit_dense"))
 def _program_impl(
     external_values: jnp.ndarray,
     external_money_values: jnp.ndarray,
-    pe_ch: dict[str, jnp.ndarray],
+    pe_ch: _PEChannelInputs,
     cfg: _TracedConfig,
     baked: _Operands,
-    p: SlotPlan,
     structure: _Static,
     product_summary: _ProductSummaryStatic | None = None,
     product_inputs: _ProductSummaryInputs | None = None,
@@ -1541,15 +1514,16 @@ def _program_impl(
 ) -> tuple:
     """Module-level, natively-cached scan program. `external_values` / `pe_ch` / `cfg` are TRACED
     (seed-varying series + swept numeric config); `baked` is a TRACED pytree of every device array the
-    bodies close over; `p` (`SlotPlan`) and `structure` are STATIC (`static_argnames`), so JAX keys the
-    compile cache on them and reuses the executable across identical-structure calls and across traced
+    bodies close over; `structure` is the one STATIC contract, so JAX keys the
+    compile cache on it and reuses the executable across identical-structure calls and across traced
     value/seed sweeps. A structural change is a fresh static key (exactly one extra compile)."""
-    r = structure.rollout_count
-    horizon = structure.horizon
-    lot_count = structure.lot_count
-    link_count = structure.link_count
-    profile_count = structure.profile_count
-    taxliab_count = structure.taxliab_count
+    p = structure.slot_plan
+    r = p.rollout_count
+    horizon = p.event_months
+    lot_count = p.lot_count
+    link_count = len(structure.link_tax_static)
+    profile_count = p.tax_profile_count
+    taxliab_count = p.tax_liability_count
     n_sales = structure.n_sales
     sale_max_pool = structure.sale_max_pool
     lot_axis = structure.lot_axis
@@ -1602,10 +1576,12 @@ def _program_impl(
     property_building_basis_0 = baked.property_building_basis_0
     prop0 = baked.prop0
     liab0 = baked.liab0
-    tr = dict(baked.tr)  # copy: `fixed`/`base` are overwritten with the traced cfg values below
-    pc = dict(baked.pc)
-    bond = baked.bond
-    distribution = baked.distribution
+    transfers = baked.transfers._replace(amount_fixed=cfg.transfer_amount_fixed, amount_base=cfg.transfer_amount_base)
+    property_cashflows = baked.property_cashflows._replace(
+        amount_fixed=cfg.property_cashflow_amount_fixed, amount_base=cfg.property_cashflow_amount_base
+    )
+    bonds = baked.bonds
+    distributions = baked.distributions
     obligation_inputs = baked.obligations
     sale_months_t = baked.sale_months_t
     sale_qty_t = baked.sale_qty_t
@@ -1633,10 +1609,6 @@ def _program_impl(
     folded_target_allocation = structure.folded_target_allocation
     # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
     tcfg = cfg
-    tr["fixed"] = cfg.transfer_amount_fixed
-    tr["base"] = cfg.transfer_amount_base
-    pc["fixed"] = cfg.property_cashflow_amount_fixed
-    pc["base"] = cfg.property_cashflow_amount_base
 
     def product_metrics(
         s: _ScanState, *, snapshot_month: jnp.ndarray, obligation_shortfall: jnp.ndarray, obligation_mask: jnp.ndarray
@@ -1654,7 +1626,7 @@ def _program_impl(
         pe_quanta = jnp.zeros((r,), dtype=jnp.int64)
         if product_summary.has_pe_lots:
             safe_issuer = jnp.maximum(product_inputs.pe_lot_issuer, 0)
-            pe_price = pe_ch["mark_quanta"][safe_issuer, :, snapshot_month]
+            pe_price = pe_ch.mark_quanta[safe_issuer, :, snapshot_month]
             pe_value = _value_quanta_from_quantity(s.lot_remaining, pe_price, lot_quantity_scale[:, None])
             pe_quanta = jnp.where(product_inputs.pe_lot_mask[:, None], pe_value, 0).sum(axis=0)
 
@@ -1923,17 +1895,17 @@ def _program_impl(
             le_fired.append(active_property)
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
-            tr["cause"][month],
-            tr["kind"][month],
-            tr["fixed"][month],
-            tr["base"][month],
-            tr["series"][month],
-            tr["base_month"][month],
-            tr["period"][month],
-            tr["from_slot"][month],
-            tr["to_slot"][month],
-            tr["income_profile"][month],
-            tr["deduction_profile"][month],
+            transfers.cause[month],
+            transfers.amount_kind[month],
+            transfers.amount_fixed[month],
+            transfers.amount_base[month],
+            transfers.amount_series[month],
+            transfers.amount_base_month[month],
+            transfers.amount_period[month],
+            transfers.from_slot[month],
+            transfers.to_slot[month],
+            transfers.income_profile[month],
+            transfers.deduction_profile[month],
             cash,
             ordinary,
             active,
@@ -1946,18 +1918,18 @@ def _program_impl(
         # is income arriving this month and must be able to fund this month's outflows, the same
         # ordering a paycheck gets.
         cash, ordinary = _bond_cashflows_jit(
-            bond["coupon"][month],
-            bond["redemption"][month],
-            bond["to_slot"],
-            bond["income_row"],
-            bond["indexed"],
-            bond["cpi_series"],
-            bond["index_base_month"],
-            bond["period_rate"],
-            bond["face"],
-            bond["pays"][month],
-            bond["matures"][month],
-            bond["on_books"][month],
+            bonds.coupon[month],
+            bonds.redemption[month],
+            bonds.to_slot,
+            bonds.income_row,
+            bonds.indexed,
+            bonds.cpi_series,
+            bonds.index_base_month,
+            bonds.period_rate,
+            bonds.face,
+            bonds.pays[month],
+            bonds.matures[month],
+            bonds.on_books[month],
             cash,
             ordinary,
             active,
@@ -1973,12 +1945,12 @@ def _program_impl(
         # which is what a record date means — a fund bought this month pays next month.
         if structure.has_distributions:
             cash, ordinary = _distribution_payouts_jit(
-                distribution["lot_mask"],
-                distribution["series"],
-                distribution["quantity_scale"],
-                distribution["fraction"],
-                distribution["to_slot"],
-                distribution["income_row"],
+                distributions.lot_mask,
+                distributions.series,
+                distributions.quantity_scale,
+                distributions.fraction,
+                distributions.to_slot,
+                distributions.income_row,
                 lot_remaining,
                 cash,
                 ordinary,
@@ -2041,18 +2013,18 @@ def _program_impl(
             transfer_active_rows = fires & stake_pos
 
         cash, ordinary, property_cashflow_active, property_cashflow_amount = _property_cashflows_jit(
-            pc["cause"][month],
-            pc["kind"][month],
-            pc["fixed"][month],
-            pc["base"][month],
-            pc["series"][month],
-            pc["base_month"][month],
-            pc["period"][month],
-            pc["from_slot"][month],
-            pc["to_slot"][month],
-            pc["property_slot"][month],
-            pc["income_profile"][month],
-            pc["deduction_profile"][month],
+            property_cashflows.cause[month],
+            property_cashflows.amount_kind[month],
+            property_cashflows.amount_fixed[month],
+            property_cashflows.amount_base[month],
+            property_cashflows.amount_series[month],
+            property_cashflows.amount_base_month[month],
+            property_cashflows.amount_period[month],
+            property_cashflows.from_slot[month],
+            property_cashflows.to_slot[month],
+            property_cashflows.property_slot[month],
+            property_cashflows.income_profile[month],
+            property_cashflows.deduction_profile[month],
             property_active,
             cash,
             ordinary,
@@ -2216,8 +2188,8 @@ def _program_impl(
                     cash_slots=(tp.cash_slot,),
                     lot_slots=tp.lot_slots,
                     external_cash_slot=structure.external_cash_slot,
-                    cash_count=structure.cash_count,
-                    lot_count=structure.lot_count,
+                    cash_count=p.cash_count,
+                    lot_count=p.lot_count,
                 ),
                 cash_quanta=cash,
                 lot_quantity=lot_remaining,
@@ -2506,15 +2478,15 @@ def _program_impl(
         for pei, fpe in enumerate(folded_pe):
             issuer_idx, policy_idx = fpe.issuer_idx, fpe.policy_idx
             ordered = np.asarray(fpe.ordered, dtype=np.int64)
-            mark_quanta = pe_ch["mark_quanta"][issuer_idx, :, month]
+            mark_quanta = pe_ch.mark_quanta[issuer_idx, :, month]
             positive_mark = mark_quanta > 0
-            tender_active = pe_ch["sale_opp"][issuer_idx, :, month] & active
-            public_active = pe_ch["regime"][issuer_idx, :, month] == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
-            liq_blocked = pe_ch["liq_blocked"][issuer_idx, :, month]
-            forced_sale_fraction = pe_ch["forced_sale"][issuer_idx, :, month]
-            forced_recovery = pe_ch["forced_recovery"][issuer_idx, :, month]
-            capacity = pe_ch["capacity"][issuer_idx, :, month]
-            eligible = pe_ch["eligible"][issuer_idx, :, month]
+            tender_active = pe_ch.sale_opportunity_active[issuer_idx, :, month] & active
+            public_active = pe_ch.regime[issuer_idx, :, month] == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
+            liq_blocked = pe_ch.liquidity_blocked[issuer_idx, :, month]
+            forced_sale_fraction = pe_ch.forced_sale_fraction[issuer_idx, :, month]
+            forced_recovery = pe_ch.forced_recovery_cashout[issuer_idx, :, month]
+            capacity = pe_ch.capacity_fraction[issuer_idx, :, month]
+            eligible = pe_ch.eligible_fraction[issuer_idx, :, month]
             units_held = lot_remaining[ordered].sum(axis=0)
             issuer_scale = lot_quantity_scale[ordered[0]]
             if policy_idx < 0:

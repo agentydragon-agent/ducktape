@@ -7,6 +7,8 @@ from typing import NamedTuple
 
 import jax
 
+from finance.augur.sim.compiler.plan import SlotPlan
+
 
 class _StateOutput(NamedTuple):
     cash: jax.Array
@@ -32,6 +34,70 @@ class _StateOutput(NamedTuple):
 class _TransferOutput(NamedTuple):
     active: jax.Array
     amount: jax.Array
+
+
+class _TransferInputs(NamedTuple):
+    cause: jax.Array
+    amount_kind: jax.Array
+    amount_fixed: jax.Array
+    amount_base: jax.Array
+    amount_series: jax.Array
+    amount_base_month: jax.Array
+    amount_period: jax.Array
+    from_slot: jax.Array
+    to_slot: jax.Array
+    income_profile: jax.Array
+    deduction_profile: jax.Array
+
+
+class _PropertyCashflowInputs(NamedTuple):
+    cause: jax.Array
+    amount_kind: jax.Array
+    amount_fixed: jax.Array
+    amount_base: jax.Array
+    amount_series: jax.Array
+    amount_base_month: jax.Array
+    amount_period: jax.Array
+    from_slot: jax.Array
+    to_slot: jax.Array
+    property_slot: jax.Array
+    income_profile: jax.Array
+    deduction_profile: jax.Array
+
+
+class _BondInputs(NamedTuple):
+    coupon: jax.Array
+    redemption: jax.Array
+    to_slot: jax.Array
+    income_row: jax.Array
+    indexed: jax.Array
+    cpi_series: jax.Array
+    index_base_month: jax.Array
+    period_rate: jax.Array
+    face: jax.Array
+    pays: jax.Array
+    matures: jax.Array
+    on_books: jax.Array
+
+
+class _DistributionInputs(NamedTuple):
+    lot_mask: jax.Array
+    series: jax.Array
+    quantity_scale: jax.Array
+    fraction: jax.Array
+    to_slot: jax.Array
+    income_row: jax.Array
+
+
+class _PEChannelInputs(NamedTuple):
+    mark_quanta: jax.Array
+    regime: jax.Array
+    sale_opportunity_active: jax.Array
+    capacity_fraction: jax.Array
+    eligible_fraction: jax.Array
+    forced_sale_fraction: jax.Array
+    liquidity_blocked: jax.Array
+    forced_recovery_cashout: jax.Array
 
 
 class _ObligationOutput(NamedTuple):
@@ -376,22 +442,9 @@ class _LinkTaxStatic:
 
 @dataclass(frozen=True)
 class _Static:
-    """Every hashable Python value the scan bodies read at trace time."""
+    """One hashable structural contract shared by the scan and host scatter."""
 
-    rollout_count: int
-    horizon: int
-    cash_count: int
-    lot_count: int
-    property_count: int
-    liability_count: int
-    tax_profile_count: int
-    capital_gain_agent_count: int
-    tax_liability_count: int
-    harvest_policy_count: int
-    scheduled_sale_count: int
-    link_count: int
-    profile_count: int
-    taxliab_count: int
+    slot_plan: SlotPlan
     n_sales: int
     sale_max_pool: int
     lot_axis: int
@@ -399,8 +452,10 @@ class _Static:
     ta_max_sleeves: int
     pe_issuer_count: int
     n_pe_kinds: int
+    folded_purchases: tuple[_FoldedPurchase, ...]
     folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]
     folded_pr: tuple[tuple[int, int], ...]
+    folded_sale_events: tuple[tuple[int, int], ...]
     folded_target_allocation: tuple[_FoldedTargetAllocation, ...]
     folded_pe: tuple[_FoldedPE, ...]
     folded_harvest: tuple[_FoldedHarvest, ...]
@@ -437,19 +492,3 @@ class _Static:
     # Same reason: a scenario with no distributing holding has nothing to gather a
     # dollars-per-unit row from, and the payout phase is skipped at trace time.
     has_distributions: bool
-
-
-@dataclass(frozen=True)
-class _ScanMeta:
-    """Structural data the post-scan host scatter needs."""
-
-    folded_sales: list[_FoldedSale]
-    folded_purchases: list[_FoldedPurchase]
-    folded_lifecycle: list[_FoldedLifecycleEvent]
-    folded_pr: list[tuple[int, int]]
-    folded_sale_events: list[tuple[int, int]]
-    folded_target_allocation: list[_FoldedTargetAllocation]
-    folded_pe: list[_FoldedPE]
-    link_count: int
-    liability_count: int
-    horizon: int
