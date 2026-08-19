@@ -23,8 +23,3 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-  healthChecks:
-    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
-      kind: Terraform
-      name: gaffer-private-flux
-      namespace: flux-system

@@ -4,7 +4,3 @@ resources:
   - source.yaml
   - bridge.yaml
   - image-update-automation.yaml
-  # Keep these while deploy-key-tf.yaml runs its destroy plan; delete them after
-  # the Terraform object reports the old deploy key destroyed.
-  - deploy-key-tf.yaml
-  - github-pat-gaffer-private-flux.sops.yaml

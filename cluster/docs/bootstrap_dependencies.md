@@ -203,12 +203,11 @@ mint it, commit, push. Flux picks up the new key on next reconcile.
 `sops`, update `githubAppInstallationID`, save (SOPS auto-re-encrypts on
 write), commit. Flux picks up the change on next source reconcile.
 
-The legacy SSH deploy keys (`secrets/shared/flux-deploy-key.yaml` for ducktape
-and the tofu-managed `gaffer-private-deploy-key` Secret) are not part of the
-cold-start bootstrap path. They remain documented only for cleanup of old auth
-paths. See `CLEANUP` markers in
-`cluster/k8s/gaffer-private-source/deploy-key-tf.yaml` and
-`tf/gitops/gaffer-private-flux/main.tf`.
+The legacy SSH deploy key (`secrets/shared/flux-deploy-key.yaml` for ducktape)
+is not part of the cold-start bootstrap path. The former tofu-managed
+`gaffer-private-deploy-key` and its fine-grained PAT bootstrap path were
+successfully destroyed and removed; do not recreate them. Gaffer-private uses
+the GitHub App authentication above.
 
 ## L6: Cluster Services
 
