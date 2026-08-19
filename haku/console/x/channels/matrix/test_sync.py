@@ -222,9 +222,17 @@ async def watermark(store: MatrixSyncStore) -> str | None:
 
 
 async def recorded(sessions) -> list[tuple[StoredEventKind, dict[str, Any]]]:
-    """The authored rows a pass wrote, oldest first — the durable half of what the room hears."""
+    """The ingress facts a pass wrote, excluding lifecycle facts from fixture setup."""
     async with sessions() as db:
-        rows = (await db.scalars(select(ConversationEvent).order_by(ConversationEvent.event_seq))).all()
+        rows = (
+            await db.scalars(
+                select(ConversationEvent)
+                .where(
+                    ConversationEvent.kind.in_((AuthoredEventKind.PROMPT_REJECTED, AuthoredEventKind.UNREADABLE_INPUT))
+                )
+                .order_by(ConversationEvent.event_seq)
+            )
+        ).all()
     return [(row.kind, row.body) for row in rows]
 
 
