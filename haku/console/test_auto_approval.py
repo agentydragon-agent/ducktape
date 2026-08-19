@@ -81,9 +81,22 @@ _POLICIES = AutoApprovalPolicyRegistry(
                     "tools": _GITHUB_TOOLS,
                 },
                 {
+                    "id": "public_gaffer_private_reads",
+                    "type": "github_repository",
+                    "server": "github",
+                    "owner": "agentydragon",
+                    "repository": "gaffer-private",
+                    "tools": _GITHUB_TOOLS,
+                },
+                {
                     "id": "haku_v1",
                     "type": "any_of",
-                    "policies": ["safe_tools", "managed_gmail_labels", "public_ducktape_reads"],
+                    "policies": [
+                        "safe_tools",
+                        "managed_gmail_labels",
+                        "public_ducktape_reads",
+                        "public_gaffer_private_reads",
+                    ],
                 },
                 {"id": "none", "type": "never"},
             ],
@@ -381,6 +394,26 @@ async def test_public_ducktape_reads_auto_approve(tool_name: str, arguments: dic
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
     assert "reviewed read targets repository agentydragon/ducktape" in evaluation
+
+
+@pytest.mark.parametrize("tool_name", _GITHUB_TOOLS)
+async def test_private_gaffer_reads_auto_approve(tool_name: str) -> None:
+    arguments: dict[str, object] = {"owner": "agentydragon", "repo": "gaffer-private"}
+    if tool_name in {"actions_get", "actions_list"}:
+        arguments["method"] = "list_workflow_runs"
+    elif tool_name == "get_job_logs":
+        arguments["run_id"] = 789
+        arguments["failed_only"] = True
+    elif tool_name == "issue_read":
+        arguments["issue_number"] = 123
+    elif tool_name == "pull_request_read":
+        arguments.update({"pullNumber": 456, "method": "get"})
+    elif tool_name == "get_file_contents":
+        arguments["path"] = "README.md"
+    policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert "reviewed read targets repository agentydragon/gaffer-private" in evaluation
 
 
 @pytest.mark.parametrize(
