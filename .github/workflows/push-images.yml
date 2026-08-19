@@ -188,7 +188,7 @@ jobs:
           - { image: "//cluster/k8s/haku/mailbox/image:image", image_name: stalwart, test_target: "" }
           - { image: "//cpap:image", image_name: cpap-sync, test_target: "" }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -244,7 +244,7 @@ jobs:
             echo "digest_file=${DIGEST_FILE}"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: imjasonh/setup-crane@v0.4
+      - uses: imjasonh/setup-crane@v0.7
         if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
 
       - name: Authenticate to Forgejo registry
@@ -363,7 +363,7 @@ jobs:
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

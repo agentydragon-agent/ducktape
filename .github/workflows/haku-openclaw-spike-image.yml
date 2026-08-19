@@ -36,7 +36,7 @@ jobs:
     env:
       IMAGE: git.allegedly.works/ducktape-ci/haku-openclaw-spike
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Load Attic trusted pubkeys
         id: attic_keys

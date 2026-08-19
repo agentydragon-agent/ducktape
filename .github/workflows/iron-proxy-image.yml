@@ -37,12 +37,12 @@ jobs:
       IRON_PROXY_REVISION: c90f4fe31607552ed05675fc7ad239d94b431af2
     steps:
       - name: Checkout Ducktape
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Checkout pinned iron-proxy source
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ironsh/iron-proxy
           ref: ${{ env.IRON_PROXY_REVISION }}
@@ -52,7 +52,7 @@ jobs:
       - name: Exclude checkout metadata from the image context
         run: printf '.git\n' > .build/iron-proxy/.dockerignore
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26.1"
           cache-dependency-path: .build/iron-proxy/go.sum

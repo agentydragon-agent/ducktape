@@ -24,17 +24,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
       # Only cache roles - collections are bundled in ansible package
       - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-restore
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.ansible/roles
           key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
@@ -70,7 +70,7 @@ jobs:
 
       - name: Save Ansible Galaxy roles cache
         if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.ansible/roles
           key: ${{ steps.cache-ansible-restore.outputs.cache-primary-key }}

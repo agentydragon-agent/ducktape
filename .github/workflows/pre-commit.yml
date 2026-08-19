@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # ============================================================================
       # ENVIRONMENT SETUP
@@ -30,7 +30,7 @@ jobs:
       # Cache Ansible Galaxy roles (required for syntax check - meta/main.yml dependencies)
       - name: Restore Ansible Galaxy roles cache
         id: cache-ansible-roles-restore
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.ansible/roles
           key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
@@ -46,7 +46,7 @@ jobs:
 
       - name: Restore pre-commit cache
         id: cache-precommit-restore
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -92,14 +92,14 @@ jobs:
 
       - name: Save pre-commit cache
         if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.cache/pre-commit
           key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy roles cache
         if: always() && steps.cache-ansible-roles-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.ansible/roles
           key: ${{ steps.cache-ansible-roles-restore.outputs.cache-primary-key }}
