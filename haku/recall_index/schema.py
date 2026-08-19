@@ -129,9 +129,7 @@ class GitSyncState(Base):
     __tablename__ = "git_sync_state"
     __table_args__ = (
         CheckConstraint(
-            "(commit_sha IS NULL) = (chunker_key IS NULL)"
-            " AND (commit_sha IS NULL) = (model_key IS NULL)"
-            " AND (commit_sha IS NULL) = (synced_at IS NULL)",
+            "(commit_sha IS NULL) = (chunker_key IS NULL) AND (commit_sha IS NULL) = (synced_at IS NULL)",
             name="ck_git_sync_state_indexed_half",
         ),
     )
@@ -142,7 +140,6 @@ class GitSyncState(Base):
     remote_seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     commit_sha: Mapped[str | None] = mapped_column(Text, nullable=True)
     chunker_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    model_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -180,7 +177,7 @@ class ChatChunkMessage(Base):
 
 
 class ChatSessionState(Base):
-    """The source shape and retrieval regime at which one session was last indexed."""
+    """The source shape and chunker regime at which one session was last materialized."""
 
     __tablename__ = "chat_sessions"
 
@@ -189,5 +186,4 @@ class ChatSessionState(Base):
     message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     chunker_key: Mapped[str] = mapped_column(Text, nullable=False)
-    model_key: Mapped[str] = mapped_column(Text, nullable=False)
     indexed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -188,9 +188,7 @@ class PostgresIndexSearcher:
             for index in self._indexes.values():
                 if isinstance(index, GitRecallIndexDefinition):
                     state = await current_git_state(session, index.index_id)
-                    summary = await git_index_summary(
-                        session, index_id=index.index_id, model_key=model_key, budget=self._budget
-                    )
+                    summary = await git_index_summary(session, index_id=index.index_id, budget=self._budget)
                     counts = await chunk_counts(
                         session, IndexType.GIT, index_id=index.index_id, model_key=model_key, budget=self._budget
                     )
@@ -205,6 +203,7 @@ class PostgresIndexSearcher:
                             files=summary.files,
                             chunks=summary.chunks,
                             embedded_chunks=counts.current,
+                            pending_chunks=counts.pending,
                             superseded_chunks=counts.superseded,
                         )
                     )
@@ -221,15 +220,11 @@ class PostgresIndexSearcher:
         )
         shapes = await session_shapes(session)
         states = await chat_session_states(session, index.index_id)
-        stale = [
-            shape
-            for shape in shapes
-            if not is_indexed(states.get(shape.session_id), shape, model_key=model_key, budget=self._budget)
-        ]
+        stale = [shape for shape in shapes if not is_indexed(states.get(shape.session_id), shape, budget=self._budget)]
         unindexed = sum(
             shape.message_count - state.message_count
             if (state := states.get(shape.session_id)) is not None
-            and (state.chunker_key, state.model_key) == (chat_chunker_key(self._budget), model_key)
+            and state.chunker_key == chat_chunker_key(self._budget)
             else shape.message_count
             for shape in stale
         )
@@ -238,6 +233,8 @@ class PostgresIndexSearcher:
             index_id=index.index_id,
             sessions=summary.sessions,
             chunks=summary.chunks,
+            embedded_chunks=counts.current,
+            pending_chunks=counts.pending,
             stale_sessions=len(stale),
             unindexed_messages=unindexed,
             lag_seconds=(
@@ -252,5 +249,7 @@ class PostgresIndexSearcher:
 
 def _is_behind(status: GitIndexStatus | ChatIndexStatus) -> bool:
     if isinstance(status, GitIndexStatus):
-        return status.indexed_commit != status.remote_commit
-    return status.lag_seconds is not None and status.lag_seconds > _SETTLED_WITHIN.total_seconds()
+        return status.indexed_commit != status.remote_commit or status.pending_chunks > 0
+    return status.pending_chunks > 0 or (
+        status.lag_seconds is not None and status.lag_seconds > _SETTLED_WITHIN.total_seconds()
+    )

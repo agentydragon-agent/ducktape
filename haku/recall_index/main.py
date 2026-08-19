@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.recall_index.chat_sync import sync_chat
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from haku.recall_index.embedding_sync import embed_pending
 from haku.recall_index.git_tree import fetch_branch, open_mirror
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.recall_index.query import query_chat, query_git
@@ -77,7 +78,6 @@ async def _index_git(
     password: str | None,
 ) -> None:
     engine = create_async_engine(database_url)
-    embedder = _embedder()
     try:
         await ensure_schema(engine)
         repository = open_mirror(mirror, repo_url, username=username, password=password)
@@ -90,7 +90,6 @@ async def _index_git(
                 commit_sha,
                 index_id=index_id,
                 branch=branch,
-                embedder=embedder,
                 now=datetime.datetime.now(datetime.UTC),
                 budget=_budget(),
             )
@@ -102,7 +101,7 @@ async def _index_git(
         return
     typer.echo(
         f"{outcome.commit_sha[:12]} {outcome.tip_files} files, {outcome.chunks_written} chunks written "
-        f"({outcome.blobs_embedded} blobs embedded, {outcome.blobs_reused} reused, "
+        f"({outcome.contents_materialized} content values materialized, "
         f"{outcome.skipped_binary} binary, {outcome.skipped_large} oversized)"
     )
 
@@ -117,19 +116,18 @@ def index_git(
     username: Annotated[str | None, typer.Option(envvar="HAKU_STATE_INDEX_GIT_USERNAME")] = None,
     password: Annotated[str | None, typer.Option(envvar="HAKU_STATE_INDEX_GIT_PASSWORD")] = None,
 ) -> None:
-    """Fetch `branch` into the mirror and swap the git index to its tip."""
+    """Fetch `branch` into the mirror and materialize its source chunks."""
     asyncio.run(_index_git(database_url, index_id, repo_url, branch, mirror, username, password))
 
 
 async def _index_chat(database_url: str, index_id: str) -> None:
     engine = create_async_engine(database_url)
-    embedder = _embedder()
     try:
         await ensure_schema(engine)
         async with async_sessionmaker(engine)() as session:
             await register_index(session, index_id, index_type=IndexType.CHAT)
             report = await sync_chat(
-                session, index_id=index_id, embedder=embedder, now=datetime.datetime.now(datetime.UTC), budget=_budget()
+                session, index_id=index_id, now=datetime.datetime.now(datetime.UTC), budget=_budget()
             )
             await session.commit()
     finally:
@@ -137,17 +135,38 @@ async def _index_chat(database_url: str, index_id: str) -> None:
     typer.echo(
         f"{report.sessions_indexed} sessions indexed, {report.sessions_unchanged} unchanged, "
         f"{report.sessions_forgotten} forgotten; {report.windows_written} windows written "
-        f"({report.windows_embedded} embedded, {report.windows_reused} reused)"
+        f"({report.contents_materialized} content values materialized)"
     )
 
 
 @app.command("index-chat")
 def index_chat(index_id: Annotated[str, typer.Argument()], database_url: DatabaseUrl) -> None:
-    """Index every chat session that has changed since it was last indexed.
+    """Materialize every chat session that has changed since it was last indexed.
 
     The database must be the console's own: the corpus is its `conversation_item` table.
     """
     asyncio.run(_index_chat(database_url, index_id))
+
+
+async def _embed(database_url: str) -> None:
+    """Drain the global content queue for the configured embedding model."""
+    engine = create_async_engine(database_url)
+    total = 0
+    try:
+        async with async_sessionmaker(engine)() as session:
+            while (report := await embed_pending(session, embedder=_embedder())).contents_embedded:
+                total += report.contents_embedded
+                await session.commit()
+            await session.rollback()
+    finally:
+        await engine.dispose()
+    typer.echo(f"{total} content values embedded")
+
+
+@app.command()
+def embed(database_url: DatabaseUrl) -> None:
+    """Embed source-materialized content that lacks a vector for the configured model."""
+    asyncio.run(_embed(database_url))
 
 
 async def _query_git(database_url: str, index_id: str, query: str, limit: int, path_prefix: str | None) -> None:
@@ -223,7 +242,7 @@ async def _status(database_url: str, index_id: str, index_type: str) -> None:
         else:
             typer.echo(
                 f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat() if git.synced_at else '?'} "
-                f"(chunker v{git.chunker_key}, model {git.model_key})"
+                f"(chunker {git.chunker_key})"
             )
         return
 

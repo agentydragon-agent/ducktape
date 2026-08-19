@@ -365,6 +365,7 @@ export const SAMPLE_INDEX_STATUS: IndexStatus = {
       files: 1842,
       chunks: 9350,
       embedded_chunks: 9350,
+      pending_chunks: 0,
       superseded_chunks: 212,
     },
     {
@@ -378,6 +379,7 @@ export const SAMPLE_INDEX_STATUS: IndexStatus = {
       files: 96,
       chunks: 481,
       embedded_chunks: 481,
+      pending_chunks: 0,
       superseded_chunks: 0,
     },
     {
@@ -389,6 +391,8 @@ export const SAMPLE_INDEX_STATUS: IndexStatus = {
       unindexed_messages: 0,
       lag_seconds: null,
       last_indexed_at: "2026-07-20T19:33:30Z",
+      embedded_chunks: 774,
+      pending_chunks: 0,
       superseded_chunks: 34,
     },
   ],

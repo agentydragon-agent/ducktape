@@ -331,11 +331,13 @@ MCP servers from `@mcp.tool`-decorated functions:
   in `config.yaml` is what builds it, and the console refuses to start if it is listed without an
   embedder configured — search embeds its query, so a search tool with nowhere to embed is a tool
   that can only fail. The chat corpus is the console's own database; `haku-state` uses its configured
-  Forgejo credential, while the public Ducktape clone is anonymous. **All configured corpora are kept
-  current by this process** (`recall_index_sync.py`): a chat sweep every minute over the console's own
-  tables and one Git poll every thirty seconds per bare mirror on the pod's `/tmp` — an `ls-remote`
-  that pulls objects only when its tip actually moved. Each corpus has its own Postgres advisory lock,
-  so one replica syncs it and a long git fetch never delays another sweep.
+  Forgejo credential, while the public Ducktape clone is anonymous. **Source materialization and
+  embedding run as separate maintenance stages** (`recall_index_sync.py`): a chat sweep every minute
+  over the console's own tables and one Git poll every thirty seconds per bare mirror on the pod's
+  `/tmp` materialize source chunks without calling the embedding provider. A separate shared worker
+  drains the globally de-duplicated pending content queue for the active model. Source leadership is
+  per index and embedding leadership is per model, so a long Git fetch and a cold embedding batch do
+  not block one another; status reports pending chunks until the source material becomes searchable.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
   ordinary approval-gated tool call rather than a bespoke capability. It uses the

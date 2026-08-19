@@ -65,7 +65,6 @@ _CHAT_SEARCH_SQL = text(f"""
         JOIN {SCHEMA}.content_embeddings e ON e.content_sha = c.content_sha
         WHERE w.index_id = :index_id
           AND s.chunker_key = :chunker_key
-          AND s.model_key = :model_key
           AND e.model_key = :model_key
           AND (CAST(:session_id AS uuid) IS NULL OR w.session_id = CAST(:session_id AS uuid))
     ), ranked AS (
@@ -117,6 +116,7 @@ class GitIndexSummary:
 @dataclass(frozen=True, slots=True)
 class ChunkCounts:
     current: int
+    pending: int
     superseded: int
 
 
@@ -135,6 +135,14 @@ class ContentEmbeddingRow:
     content: str
     model_key: str
     embedding: list[float]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentRow:
+    """One globally-addressed string awaiting zero or more model embeddings."""
+
+    content_sha: str
+    content: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +199,27 @@ async def embedded_content(session: AsyncSession, content_shas: Iterable[str], *
     return set(result.scalars())
 
 
+async def pending_content(session: AsyncSession, *, model_key: str, limit: int) -> list[ContentRow]:
+    """Return globally queued content with no vector for ``model_key`` yet.
+
+    Sources populate ``contents`` independently of an embedding endpoint. This is therefore the
+    shared work queue across Git and chat sources, and across every configured logical index.
+    The caller owns no durable claim: vector insertion is conflict-safe, so a rare competing
+    worker can at worst repeat an embedding request rather than publish a conflicting result.
+    """
+    result = await session.execute(
+        select(Content.content_sha, Content.content)
+        .outerjoin(
+            ContentEmbedding,
+            (ContentEmbedding.content_sha == Content.content_sha) & (ContentEmbedding.model_key == model_key),
+        )
+        .where(ContentEmbedding.content_sha.is_(None))
+        .order_by(Content.created_at, Content.content_sha)
+        .limit(limit)
+    )
+    return [ContentRow(content_sha=content_sha, content=content) for content_sha, content in result]
+
+
 async def git_chunked_blobs(
     session: AsyncSession, index_id: str, blob_shas: Iterable[str], *, chunker_key: str
 ) -> set[str]:
@@ -234,8 +263,30 @@ def _content_map(rows: Iterable[tuple[str, str]]) -> dict[str, str]:
     return content_by_sha
 
 
+async def insert_contents(session: AsyncSession, rows: Iterable[ContentRow]) -> None:
+    """Persist source material without requiring an embedding provider.
+
+    The content table is both the source-independent deduplication layer and the embedding
+    worker's durable queue. Existing bytes under an address are verified rather than silently
+    accepted: a hash collision must fail before it can cross source boundaries.
+    """
+    content_by_sha = _content_map((row.content_sha, row.content) for row in rows)
+    if not content_by_sha:
+        return
+    existing = await session.execute(
+        select(Content.content_sha, Content.content).where(Content.content_sha.in_(content_by_sha))
+    )
+    for address, content in existing:
+        if content_by_sha[address] != content:
+            raise AssertionError(f"content address collision: {address}")
+    await session.execute(
+        pg_insert(Content).on_conflict_do_nothing(index_elements=["content_sha"]),
+        [{"content_sha": address, "content": content} for address, content in content_by_sha.items()],
+    )
+
+
 async def insert_content_embeddings(session: AsyncSession, rows: Sequence[ContentEmbeddingRow]) -> None:
-    """Persist content and vectors, retaining an existing vector as the authoritative result.
+    """Persist vectors, retaining an existing vector as the authoritative result.
 
     The two inserts are conflict-safe, so independently-running sync workers cannot duplicate
     durable rows.  Callers de-duplicate misses before asking an embedding provider; a rare race
@@ -243,17 +294,7 @@ async def insert_content_embeddings(session: AsyncSession, rows: Sequence[Conten
     """
     if not rows:
         return
-    content_by_sha = _content_map((row.content_sha, row.content) for row in rows)
-    existing = await session.execute(
-        select(Content.content_sha, Content.content).where(Content.content_sha.in_(content_by_sha))
-    )
-    for address, content in existing:
-        if content_by_sha[address] != content:
-            raise AssertionError(f"content address collision: {address}")
-    content_statement = pg_insert(Content).on_conflict_do_nothing(index_elements=["content_sha"])
-    await session.execute(
-        content_statement, [{"content_sha": address, "content": content} for address, content in content_by_sha.items()]
-    )
+    await insert_contents(session, (ContentRow(content_sha=row.content_sha, content=row.content) for row in rows))
     embedding_statement = pg_insert(ContentEmbedding).on_conflict_do_nothing(
         index_elements=["content_sha", "model_key"]
     )
@@ -294,7 +335,6 @@ async def replace_tip(
     commit_sha: str,
     branch: str,
     chunker_key: str,
-    model_key: str,
     now: datetime.datetime,
 ) -> None:
     """Atomically make one Git tree the searchable tip after its content is materialized."""
@@ -304,13 +344,7 @@ async def replace_tip(
             insert(GitTipEntry),
             [{"index_id": index_id, "path": entry.path, "blob_sha": entry.blob_sha} for entry in entries],
         )
-    indexed = {
-        "commit_sha": commit_sha,
-        "branch": branch,
-        "chunker_key": chunker_key,
-        "model_key": model_key,
-        "synced_at": now,
-    }
+    indexed = {"commit_sha": commit_sha, "branch": branch, "chunker_key": chunker_key, "synced_at": now}
     await session.execute(
         pg_insert(GitSyncState)
         .values(index_id=index_id, **indexed)
@@ -393,7 +427,6 @@ async def replace_chat_session(
     message_count: int,
     last_message_at: datetime.datetime,
     chunker_key: str,
-    model_key: str,
     now: datetime.datetime,
 ) -> None:
     """Replace one session's source windows after their global content has been materialized."""
@@ -433,7 +466,6 @@ async def replace_chat_session(
         "message_count": message_count,
         "last_message_at": last_message_at,
         "chunker_key": chunker_key,
-        "model_key": model_key,
         "indexed_at": now,
     }
     await session.execute(
@@ -481,7 +513,7 @@ async def search_chat(
 
 
 async def git_index_summary(
-    session: AsyncSession, *, index_id: str, model_key: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
+    session: AsyncSession, *, index_id: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET
 ) -> GitIndexSummary:
     files = (
         await session.execute(select(func.count()).select_from(GitTipEntry).where(GitTipEntry.index_id == index_id))
@@ -491,10 +523,6 @@ async def git_index_summary(
             select(func.count())
             .select_from(GitTipEntry)
             .join(GitChunk, (GitChunk.index_id == GitTipEntry.index_id) & (GitChunk.blob_sha == GitTipEntry.blob_sha))
-            .join(
-                ContentEmbedding,
-                (ContentEmbedding.content_sha == GitChunk.content_sha) & (ContentEmbedding.model_key == model_key),
-            )
             .where(GitTipEntry.index_id == index_id, GitChunk.chunker_key == chunker_key_for(IndexType.GIT, budget))
         )
     ).scalar_one()
@@ -509,29 +537,61 @@ async def chunk_counts(
     model_key: str,
     budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
 ) -> ChunkCounts:
-    """Count source occurrences reachable under a complete current retrieval regime."""
+    """Count current source occurrences, queued ones, and obsolete chunker regimes."""
     match index_type:
         case IndexType.GIT:
             total = (
                 await session.execute(select(func.count()).select_from(GitChunk).where(GitChunk.index_id == index_id))
             ).scalar_one()
+            source_current = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(GitTipEntry)
+                    .join(
+                        GitChunk,
+                        (GitChunk.index_id == GitTipEntry.index_id) & (GitChunk.blob_sha == GitTipEntry.blob_sha),
+                    )
+                    .where(
+                        GitTipEntry.index_id == index_id, GitChunk.chunker_key == chunker_key_for(IndexType.GIT, budget)
+                    )
+                )
+            ).scalar_one()
             current = (
                 await session.execute(
                     select(func.count())
-                    .select_from(GitChunk)
+                    .select_from(GitTipEntry)
+                    .join(
+                        GitChunk,
+                        (GitChunk.index_id == GitTipEntry.index_id) & (GitChunk.blob_sha == GitTipEntry.blob_sha),
+                    )
                     .join(
                         ContentEmbedding,
                         (ContentEmbedding.content_sha == GitChunk.content_sha)
                         & (ContentEmbedding.model_key == model_key),
                     )
                     .where(
-                        GitChunk.index_id == index_id, GitChunk.chunker_key == chunker_key_for(IndexType.GIT, budget)
+                        GitTipEntry.index_id == index_id, GitChunk.chunker_key == chunker_key_for(IndexType.GIT, budget)
                     )
                 )
             ).scalar_one()
         case IndexType.CHAT:
             total = (
                 await session.execute(select(func.count()).select_from(ChatChunk).where(ChatChunk.index_id == index_id))
+            ).scalar_one()
+            source_current = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(ChatChunk)
+                    .join(
+                        ChatSessionState,
+                        (ChatSessionState.index_id == ChatChunk.index_id)
+                        & (ChatSessionState.session_id == ChatChunk.session_id),
+                    )
+                    .where(
+                        ChatChunk.index_id == index_id,
+                        ChatSessionState.chunker_key == chunker_key_for(IndexType.CHAT, budget),
+                    )
+                )
             ).scalar_one()
             current = (
                 await session.execute(
@@ -551,10 +611,9 @@ async def chunk_counts(
                         ChatChunk.index_id == index_id,
                         ChatSessionState.chunker_key == chunker_key_for(IndexType.CHAT, budget),
                     )
-                    .where(ChatSessionState.model_key == model_key)
                 )
             ).scalar_one()
-    return ChunkCounts(current=current, superseded=total - current)
+    return ChunkCounts(current=current, pending=source_current - current, superseded=total - source_current)
 
 
 async def chat_index_summary(session: AsyncSession, index_id: str) -> ChatIndexSummary:

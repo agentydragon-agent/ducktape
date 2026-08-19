@@ -26,6 +26,7 @@ from haku.console.config import ChatRecallIndexDefinition, ConfiguredRecallIndex
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.embedder import Embedder
+from haku.recall_index.embedding_sync import EmbeddingSyncReport, embed_pending
 from haku.recall_index.git_tree import fetch_branch, open_mirror, remote_tip
 from haku.recall_index.schema import IndexType
 from haku.recall_index.store import current_git_state, record_remote_tip, register_index
@@ -37,6 +38,7 @@ DEFAULT_CHAT_INTERVAL = datetime.timedelta(seconds=60)
 # As short as chat's, because the common tick is one `ls-remote` — refs only, no objects — and
 # fetching happens only when the tip actually moved.
 DEFAULT_GIT_INTERVAL = datetime.timedelta(seconds=30)
+DEFAULT_EMBED_INTERVAL = datetime.timedelta(seconds=5)
 
 
 def advisory_lock_for(index_id: str) -> int:
@@ -44,6 +46,21 @@ def advisory_lock_for(index_id: str) -> int:
     return int.from_bytes(
         hashlib.blake2b(f"recall-index:{index_id}".encode(), digest_size=8).digest(), byteorder="big", signed=True
     )
+
+
+@asynccontextmanager
+async def _leading(engine: AsyncEngine, scope: str) -> AsyncIterator[bool]:
+    """Hold one cross-replica maintenance lock, or yield false to the current leader."""
+    lock = advisory_lock_for(scope)
+    async with engine.connect() as leader:
+        if not await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": lock}):
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            if not await leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": lock}):
+                logger.error("Recall maintenance %s advisory lock %#x was not held at release", scope, lock)
 
 
 def _git_credentials(index: GitRecallIndexDefinition) -> tuple[str | None, str | None]:
@@ -70,62 +87,41 @@ def _fetch(repository: pygit2.Repository, index: GitRecallIndexDefinition) -> st
 
 
 class RecallIndexMaintenance:
-    """Sync configured logical indexes, with one cross-replica leader per index."""
+    """Materialize configured source chunks, with one cross-replica leader per index."""
 
     def __init__(
         self,
         engine: AsyncEngine,
         sessions: async_sessionmaker[AsyncSession],
         *,
-        embedder: Embedder,
         indexes: Iterable[ConfiguredRecallIndex],
         budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
-        self._embedder = embedder
         self._indexes = tuple(indexes)
         self._budget = budget
 
-    @asynccontextmanager
-    async def _leading(self, index_id: str) -> AsyncIterator[bool]:
-        """Hold one index's lock, or yield false when another replica owns its sweep."""
-        lock = advisory_lock_for(index_id)
-        async with self._engine.connect() as leader:
-            if not await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": lock}):
-                yield False
-                return
-            try:
-                yield True
-            finally:
-                if not await leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": lock}):
-                    logger.error("Recall index %s advisory lock %#x was not held at release", index_id, lock)
-
     async def sync_index_once(self, index: ConfiguredRecallIndex) -> SyncOutcome | ChatSyncReport | None:
         """Synchronize one explicitly configured index, if this replica wins its lock."""
-        async with self._leading(index.index_id) as leading:
+        async with _leading(self._engine, f"source:{index.index_id}") as leading:
             if not leading:
                 return None
             async with self._sessions() as session:
                 await register_index(session, index.index_id, index_type=IndexType(index.index_type))
                 if isinstance(index, ChatRecallIndexDefinition):
                     report = await sync_chat(
-                        session,
-                        index_id=index.index_id,
-                        embedder=self._embedder,
-                        now=datetime.datetime.now(datetime.UTC),
-                        budget=self._budget,
+                        session, index_id=index.index_id, now=datetime.datetime.now(datetime.UTC), budget=self._budget
                     )
                     await session.commit()
                     if report.sessions_indexed or report.sessions_forgotten:
                         logger.info(
-                            "Chat index %s: %d sessions indexed, %d forgotten, %d windows written (%d embedded, %d reused)",
+                            "Chat index %s: %d sessions indexed, %d forgotten, %d windows written (%d content values materialized)",
                             index.index_id,
                             report.sessions_indexed,
                             report.sessions_forgotten,
                             report.windows_written,
-                            report.windows_embedded,
-                            report.windows_reused,
+                            report.contents_materialized,
                         )
                     return report
 
@@ -138,11 +134,7 @@ class RecallIndexMaintenance:
                 )
                 await session.commit()
                 if is_current(
-                    await current_git_state(session, index.index_id),
-                    tip,
-                    branch=index.branch,
-                    model_key=self._embedder.model_key,
-                    budget=self._budget,
+                    await current_git_state(session, index.index_id), tip, branch=index.branch, budget=self._budget
                 ):
                     return AlreadyCurrent(commit_sha=tip)
                 commit_sha = await asyncio.to_thread(_fetch, repository, index)
@@ -152,20 +144,18 @@ class RecallIndexMaintenance:
                     commit_sha,
                     index_id=index.index_id,
                     branch=index.branch,
-                    embedder=self._embedder,
                     now=datetime.datetime.now(datetime.UTC),
                     budget=self._budget,
                 )
                 await session.commit()
         if not isinstance(outcome, AlreadyCurrent):
             logger.info(
-                "Git index %s: %s, %d files, %d chunks written (%d blobs embedded, %d reused)",
+                "Git index %s: %s, %d files, %d chunks written (%d content values materialized)",
                 index.index_id,
                 outcome.commit_sha[:12],
                 outcome.tip_files,
                 outcome.chunks_written,
-                outcome.blobs_embedded,
-                outcome.blobs_reused,
+                outcome.contents_materialized,
             )
         return outcome
 
@@ -204,3 +194,47 @@ class RecallIndexMaintenance:
             for sweep in sweeps:
                 with suppress(asyncio.CancelledError):
                     await sweep
+
+
+class RecallEmbeddingMaintenance:
+    """Drain one model's globally shared content queue off the source-sync path."""
+
+    def __init__(self, engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession], *, embedder: Embedder) -> None:
+        self._engine = engine
+        self._sessions = sessions
+        self._embedder = embedder
+
+    async def embed_once(self) -> EmbeddingSyncReport | None:
+        async with _leading(self._engine, f"embedding:{self._embedder.model_key}") as leading:
+            if not leading:
+                return None
+            async with self._sessions() as session:
+                report = await embed_pending(session, embedder=self._embedder)
+                await session.commit()
+        if report.contents_embedded:
+            logger.info(
+                "Recall embedding model %s: %d content values embedded",
+                self._embedder.model_key,
+                report.contents_embedded,
+            )
+        return report
+
+    async def _sweep(self, interval: datetime.timedelta) -> None:
+        while True:
+            try:
+                report = await self.embed_once()
+            except Exception:
+                logger.exception("Recall embedding sweep for model %s failed", self._embedder.model_key)
+                report = None
+            if report is None or report.contents_embedded == 0:
+                await asyncio.sleep(interval.total_seconds())
+
+    @asynccontextmanager
+    async def run(self, *, interval: datetime.timedelta = DEFAULT_EMBED_INTERVAL) -> AsyncIterator[None]:
+        sweep = asyncio.create_task(self._sweep(interval), name=f"recall-index-embed-{self._embedder.model_key}")
+        try:
+            yield
+        finally:
+            sweep.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweep

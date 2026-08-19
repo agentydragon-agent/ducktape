@@ -118,10 +118,8 @@ py_library(
     deps = [
         ":chunking",
         ":content",
-        ":embedder",
         ":git_tree",
         ":store",
-        "@pypi//more_itertools",
         "@pypi//pygit2",
         "@pypi//sqlalchemy",
     ],
@@ -134,10 +132,19 @@ py_library(
     deps = [
         ":chat_corpus",
         ":chat_source",
-        ":embedder",
         ":schema",
         ":store",
-        "@pypi//more_itertools",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "embedding_sync",
+    srcs = ["embedding_sync.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":embedder",
+        ":store",
         "@pypi//sqlalchemy",
     ],
 )
@@ -149,6 +156,7 @@ py_library(
     deps = [
         ":chat_sync",
         ":chunking",
+        ":embedding_sync",
         ":git_tree",
         ":openai_embedder",
         ":query",
@@ -229,6 +237,7 @@ py_test(
     deps = [
         ":chat_sync",
         ":conftest",
+        ":embedding_sync",
         ":fake_embedder",
         ":query",
         ":schema",
@@ -280,6 +289,7 @@ py_test(
         ":conftest",
         ":content",
         ":embedder",
+        ":embedding_sync",
         ":fake_embedder",
         ":git_tree",
         ":query",

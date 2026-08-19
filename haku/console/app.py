@@ -72,7 +72,7 @@ from haku.console.models import ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.recall_index_sync import RecallIndexMaintenance
+from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import conversation_follow, sandbox_claims, session_runtime, subscription
@@ -416,8 +416,9 @@ def create_app(
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     # Built alongside the index's search tools below, and None when a test injects its own
-    # in-process servers: a test that wants the sweeps drives `RecallIndexMaintenance` itself.
+    # in-process servers: a test that wants either background stage drives it itself.
     index_maintenance: RecallIndexMaintenance | None = None
+    embedding_maintenance: RecallEmbeddingMaintenance | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -441,8 +442,9 @@ def create_app(
                     "search embeds its query, so it cannot run without one"
                 )
             # Two clients over one configuration, differing only in patience. A search embeds one
-            # query on the request path and should fail rather than hang; a sweep embeds batches
-            # off it, where waiting out a cold model load is exactly what you want.
+            # query on the request path and should fail rather than hang; the shared background
+            # worker embeds source-materialized content batches where waiting out a cold model is
+            # exactly what we want.
             index_budget = settings.recall_index.chunk_budget
             index_searcher = PostgresIndexSearcher(
                 db_sessions,
@@ -451,11 +453,12 @@ def create_app(
                 budget=index_budget,
             )
             index_maintenance = RecallIndexMaintenance(
+                db_engine, db_sessions, indexes=console_config.recall_indexes, budget=index_budget
+            )
+            embedding_maintenance = RecallEmbeddingMaintenance(
                 db_engine,
                 db_sessions,
                 embedder=_embedder(settings.embedder, timeout=settings.embedder.sync_timeout_seconds),
-                indexes=console_config.recall_indexes,
-                budget=index_budget,
             )
         in_process_servers = build_in_process_servers(
             InProcessServerDependencies(
@@ -537,6 +540,7 @@ def create_app(
         noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
         following = follow.run() if follow is not None else contextlib.nullcontext()
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
+        embedding = embedding_maintenance.run() if embedding_maintenance is not None else contextlib.nullcontext()
         async with (
             agent_authority.expiry_maintenance(),
             oauth_maintenance.run(),
@@ -544,6 +548,7 @@ def create_app(
             supervising,
             noticing,
             indexing,
+            embedding,
         ):
             await console_event_hub.start()
             await session_notifications.start()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Sequence
 from pathlib import Path
 
 import pygit2
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.recall_index.content import content_sha
 from haku.recall_index.embedder import EMBED_BATCH
+from haku.recall_index.embedding_sync import embed_pending
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.query import query_git
 from haku.recall_index.schema import ContentEmbedding, IndexType
@@ -38,6 +38,14 @@ def commit(repo: pygit2.Repository, files: dict[str, str]) -> str:
     return str(repo.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "c", index.write_tree(repo), parents))
 
 
+async def embed_all(session: AsyncSession, embedder: FakeEmbedder) -> int:
+    total = 0
+    while (report := await embed_pending(session, embedder=embedder)).contents_embedded:
+        total += report.contents_embedded
+        await session.commit()
+    return total
+
+
 async def run_sync(
     session: AsyncSession,
     repo: pygit2.Repository,
@@ -47,8 +55,9 @@ async def run_sync(
     index_id: str = _GIT_INDEX,
 ) -> SyncOutcome:
     await register_index(session, index_id, index_type=IndexType.GIT)
-    outcome = await sync(session, repo, commit_sha, index_id=index_id, branch="main", embedder=embedder, now=_NOW)
+    outcome = await sync(session, repo, commit_sha, index_id=index_id, branch="main", now=_NOW)
     await session.commit()
+    await embed_all(session, embedder)
     return outcome
 
 
@@ -151,7 +160,7 @@ async def test_restoring_deleted_content_costs_no_embedding(
         await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "back.md": "zeta zeta"}), embedder)
     )
 
-    assert report.blobs_embedded == 0
+    assert report.contents_materialized == 2
     assert next(hit.path for hit in await find(session, embedder, "zeta")) == "back.md"
 
 
@@ -163,45 +172,24 @@ async def test_resync_of_an_unchanged_tip_does_no_work(
     first = as_report(await run_sync(session, repo, head, embedder))
     second = await run_sync(session, repo, head, embedder)
 
-    assert first.blobs_embedded == 2
+    assert first.contents_materialized == 2
     assert second == AlreadyCurrent(commit_sha=head)
     assert next(hit.path for hit in await find(session, embedder, "alpha")) == "a.md"
 
 
-async def test_a_changed_model_resyncs_the_same_commit(session: AsyncSession, repo: pygit2.Repository) -> None:
-    """Same tree, different regime: the stored vectors no longer answer for this content."""
+async def test_a_changed_model_re_embeds_without_re_syncing_the_source(
+    session: AsyncSession, repo: pygit2.Repository
+) -> None:
+    """A new vector space drains the shared content queue without re-reading Git."""
     head = commit(repo, {"a.md": "alpha", "b.md": "beta"})
     await run_sync(session, repo, head, FakeEmbedder())
 
     successor = FakeEmbedder(model_key="fake-v2")
-    report = as_report(await run_sync(session, repo, head, successor))
-
-    assert report.blobs_embedded == 2
+    assert await sync(session, repo, head, index_id=_GIT_INDEX, branch="main", now=_NOW) == AlreadyCurrent(
+        commit_sha=head
+    )
+    assert await embed_all(session, successor) == 2
     assert next(hit.path for hit in await find(session, successor, "beta")) == "b.md"
-
-
-async def test_a_failed_sync_leaves_the_previous_tip_searchable(
-    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
-) -> None:
-    first = commit(repo, {"a.md": "alpha"})
-    await run_sync(session, repo, first, embedder)
-
-    with pytest.raises(RuntimeError):
-        await sync(
-            session,
-            repo,
-            commit(repo, {"a.md": "alpha", "b.md": "beta"}),
-            index_id=_GIT_INDEX,
-            branch="main",
-            embedder=ExplodingEmbedder(),
-            now=_NOW,
-        )
-    await session.rollback()
-
-    state = await current_git_state(session, _GIT_INDEX)
-    assert state is not None
-    assert state.commit_sha == first
-    assert [hit.path for hit in await find(session, embedder, "alpha")] == ["a.md"]
 
 
 async def test_binary_and_oversized_blobs_stay_out_of_the_index(
@@ -218,61 +206,42 @@ async def test_binary_and_oversized_blobs_stay_out_of_the_index(
     assert all(hit.path != "logo.png" for hit in await find(session, embedder, "alpha"))
 
 
-class FailsAfter:
-    """Embeds `calls` batches and then dies — an endpoint that drops a call mid-sync."""
-
-    def __init__(self, inner: FakeEmbedder, *, calls: int) -> None:
-        self._inner = inner
-        self._left = calls
-
-    @property
-    def model_key(self) -> str:
-        return self._inner.model_key
-
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        if self._left == 0:
-            raise RuntimeError("embedder died")
-        self._left -= 1
-        return await self._inner.embed_documents(texts)
-
-    async def embed_query(self, text: str) -> list[float]:
-        return await self._inner.embed_query(text)
-
-
-async def test_a_failed_sync_keeps_the_embeddings_it_already_paid_for(
+async def test_a_failed_embedding_worker_leaves_the_source_tip_published(
     session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
 ) -> None:
-    """Otherwise a first sync too big to finish in one go starts over forever."""
-    head = commit(repo, {f"n{index}.md": f"alpha {index}" for index in range(EMBED_BATCH + 8)})
+    """Source progress does not wait for a provider; a later worker retry fills vectors."""
+    head = commit(repo, {"a.md": "alpha", "b.md": "beta"})
+    await register_index(session, _GIT_INDEX, index_type=IndexType.GIT)
+    report = as_report(await sync(session, repo, head, index_id=_GIT_INDEX, branch="main", now=_NOW))
+    await session.commit()
 
-    with pytest.raises(RuntimeError):
-        await sync(
-            session, repo, head, index_id=_GIT_INDEX, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW
-        )
-    await session.rollback()
-
-    kept = await session.execute(select(func.count()).select_from(ContentEmbedding))
-    assert kept.scalar_one() == EMBED_BATCH
-
-    report = as_report(await run_sync(session, repo, head, embedder))
-
-    assert (report.blobs_reused, report.blobs_embedded) == (EMBED_BATCH, 8)
-
-
-async def test_a_failed_sync_publishes_no_tip(
-    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
-) -> None:
-    """Committing chunks early must not make a half-indexed tree searchable."""
-    head = commit(repo, {f"n{index}.md": f"alpha {index}" for index in range(EMBED_BATCH + 8)})
-
-    with pytest.raises(RuntimeError):
-        await sync(
-            session, repo, head, index_id=_GIT_INDEX, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW
-        )
-    await session.rollback()
-
-    assert await current_git_state(session, _GIT_INDEX) is None
+    assert report.contents_materialized == 2
+    state = await current_git_state(session, _GIT_INDEX)
+    assert state is not None
+    assert state.commit_sha == head
     assert await find(session, embedder, "alpha") == []
+    with pytest.raises(RuntimeError):
+        await embed_pending(session, embedder=ExplodingEmbedder())
+    await session.rollback()
+
+    assert await embed_all(session, embedder) == 2
+    assert {hit.path for hit in await find(session, embedder, "alpha")} == {"a.md", "b.md"}
+
+
+async def test_shared_embedding_worker_drains_source_material_in_bounded_batches(
+    session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
+) -> None:
+    """The worker, not a source sync, chooses the provider request size."""
+    head = commit(repo, {f"n{number}.md": f"text {number}" for number in range(EMBED_BATCH + 1)})
+    await register_index(session, _GIT_INDEX, index_type=IndexType.GIT)
+    await sync(session, repo, head, index_id=_GIT_INDEX, branch="main", now=_NOW)
+    await session.commit()
+
+    first = await embed_pending(session, embedder=embedder)
+    await session.commit()
+    second = await embed_pending(session, embedder=embedder)
+
+    assert (first.contents_embedded, second.contents_embedded) == (EMBED_BATCH, 1)
 
 
 if __name__ == "__main__":

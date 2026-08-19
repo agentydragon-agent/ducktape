@@ -71,6 +71,7 @@ class GitIndexStatus(BaseModel):
     files: int = 0
     chunks: int = 0
     embedded_chunks: int = 0
+    pending_chunks: int = 0
     superseded_chunks: int = 0
 
 
@@ -79,6 +80,8 @@ class ChatIndexStatus(BaseModel):
     index_id: str
     sessions: int
     chunks: int
+    embedded_chunks: int
+    pending_chunks: int
     stale_sessions: int
     unindexed_messages: int
     lag_seconds: float | None

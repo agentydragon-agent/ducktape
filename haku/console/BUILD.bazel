@@ -74,6 +74,7 @@ py_library(
         "//haku/recall_index:chat_sync",
         "//haku/recall_index:chunking",
         "//haku/recall_index:embedder",
+        "//haku/recall_index:embedding_sync",
         "//haku/recall_index:git_tree",
         "//haku/recall_index:sync",
         "@pypi//pygit2",

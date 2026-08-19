@@ -513,6 +513,7 @@ function IndexStatusCard({ index }: { index: IndexState }) {
             <Text size="xs" c="dimmed">
               {index.branch ?? "Git"} · {index.files ?? 0} files · {index.chunks ?? 0} chunks ·{" "}
               {index.embedded_chunks ?? 0} embedded
+              {(index.pending_chunks ?? 0) > 0 ? ` · ${index.pending_chunks} pending` : ""}
             </Text>
             <Text size="xs" c="dimmed" ff="monospace">
               indexed {commitLabel(index.indexed_commit)}
@@ -522,7 +523,8 @@ function IndexStatusCard({ index }: { index: IndexState }) {
         ) : (
           <>
             <Text size="xs" c="dimmed">
-              {index.sessions} sessions · {index.chunks} chunks
+              {index.sessions} sessions · {index.chunks} chunks · {index.embedded_chunks} embedded
+              {index.pending_chunks > 0 ? ` · ${index.pending_chunks} pending` : ""}
             </Text>
             {(index.stale_sessions > 0 || index.unindexed_messages > 0) && (
               <Text size="xs" c="dimmed">

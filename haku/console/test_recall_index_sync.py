@@ -19,7 +19,7 @@ from haku.console.database_schema import Conversation, ConversationItem, Operato
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.recall_index_sync import RecallIndexMaintenance, advisory_lock_for
+from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance, advisory_lock_for
 from haku.console.tools.recall_index import ChatIndexStatus, ChatSource, GitIndexStatus
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.schema import ContentEmbedding
@@ -147,10 +147,21 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
 def maintenance(
     engine: AsyncEngine,
     sessions: async_sessionmaker[AsyncSession],
-    embedder: FakeEmbedder,
     *indexes: GitRecallIndexDefinition | ChatRecallIndexDefinition,
 ) -> RecallIndexMaintenance:
-    return RecallIndexMaintenance(engine, sessions, embedder=embedder, indexes=indexes)
+    return RecallIndexMaintenance(engine, sessions, indexes=indexes)
+
+
+async def synchronize_and_embed(
+    engine: AsyncEngine,
+    sessions: async_sessionmaker[AsyncSession],
+    embedder: FakeEmbedder,
+    *indexes: GitRecallIndexDefinition | ChatRecallIndexDefinition,
+) -> None:
+    await maintenance(engine, sessions, *indexes).sync_all_once()
+    worker = RecallEmbeddingMaintenance(engine, sessions, embedder=embedder)
+    while (report := await worker.embed_once()) is not None and report.contents_embedded:
+        pass
 
 
 async def test_every_configured_index_is_synchronized_and_searchable(
@@ -162,7 +173,7 @@ async def test_every_configured_index_is_synchronized_and_searchable(
 ) -> None:
     session_id = await say(migrated_sessions, operator_id, "we decided to keep the egress fence")
     indexes = (haku_state, _CHAT)
-    await maintenance(migrated_engine, migrated_sessions, embedder, *indexes).sync_all_once()
+    await synchronize_and_embed(migrated_engine, migrated_sessions, embedder, *indexes)
 
     results = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).search(
         "egress", index_ids=None, limit=5, path_prefix=None, session_id=None
@@ -180,7 +191,7 @@ async def test_identical_content_across_configured_indexes_shares_one_embedding(
     embedder: FakeEmbedder,
 ) -> None:
     await say(migrated_sessions, operator_id, "the egress fence keys on haku-sandbox")
-    await maintenance(migrated_engine, migrated_sessions, embedder, haku_state, _CHAT).sync_all_once()
+    await synchronize_and_embed(migrated_engine, migrated_sessions, embedder, haku_state, _CHAT)
     async with migrated_sessions() as session:
         assert await session.scalar(select(func.count()).select_from(ContentEmbedding)) == 1
 
@@ -194,7 +205,7 @@ async def test_status_reads_all_configured_indexes_not_fixed_names(
 ) -> None:
     await say(migrated_sessions, operator_id, "status source")
     indexes = (haku_state, _CHAT)
-    await maintenance(migrated_engine, migrated_sessions, embedder, *indexes).sync_all_once()
+    await synchronize_and_embed(migrated_engine, migrated_sessions, embedder, *indexes)
     status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).status()
     assert [(entry.index_id, entry.index_type) for entry in status.indexes] == [
         ("haku-state", "git"),
@@ -202,21 +213,30 @@ async def test_status_reads_all_configured_indexes_not_fixed_names(
     ]
 
 
-async def test_failed_configured_git_index_reports_the_remote_tip(
+async def test_source_current_but_embedding_pending_reports_the_remote_tip_and_pending_work(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
     haku_state: GitRecallIndexDefinition,
     embedder: FakeEmbedder,
 ) -> None:
     indexes = (haku_state,)
+    await maintenance(migrated_engine, migrated_sessions, *indexes).sync_index_once(haku_state)
+    worker = RecallEmbeddingMaintenance(migrated_engine, migrated_sessions, embedder=ExplodingEmbedder())
     with pytest.raises(RuntimeError):
-        await maintenance(migrated_engine, migrated_sessions, ExplodingEmbedder(), *indexes).sync_index_once(haku_state)
-    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).status()
+        await worker.embed_once()
+
+    searcher = PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes)
+    status = await searcher.status()
     (git,) = status.indexes
     assert isinstance(git, GitIndexStatus)
-    assert git.indexed_commit is None
-    assert git.remote_commit is not None
+    assert git.indexed_commit == git.remote_commit
     assert git.branch == "main"
+    assert git.pending_chunks == 1
+    results = await searcher.search(
+        "egress", index_ids=(haku_state.index_id,), limit=5, path_prefix=None, session_id=None
+    )
+    assert results.hits == []
+    assert results.index is not None
 
 
 async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
@@ -227,9 +247,9 @@ async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
 ) -> None:
     await say(migrated_sessions, operator_id, "the leader indexes this one")
     async with migrated_engine.connect() as leader:
-        lock = advisory_lock_for(_CHAT.index_id)
+        lock = advisory_lock_for(f"source:{_CHAT.index_id}")
         assert await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": lock})
-        assert await maintenance(migrated_engine, migrated_sessions, embedder, _CHAT).sync_index_once(_CHAT) is None
+        assert await maintenance(migrated_engine, migrated_sessions, _CHAT).sync_index_once(_CHAT) is None
 
     status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=(_CHAT,)).status()
     (chat,) = status.indexes
