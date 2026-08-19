@@ -28,7 +28,7 @@ MESSAGES = [UUID("22222222-2222-2222-2222-222222222222"), UUID("33333333-3333-33
 def _git_hit(score: float) -> SearchHit:
     return SearchHit(
         score=score,
-        snippet="how to file an intake item",
+        content="how to file an intake item",
         source=GitSource(
             index_id="haku-state",
             path="notes/intake.md",
@@ -43,7 +43,7 @@ def _git_hit(score: float) -> SearchHit:
 def _chat_hit(score: float) -> SearchHit:
     return SearchHit(
         score=score,
-        snippet="user: what about the egress fence",
+        content="user: what about the egress fence",
         source=ChatSource(
             index_id="haku-conversations",
             session_id=SESSION,
@@ -113,6 +113,7 @@ class _Searcher:
 async def test_a_git_hit_carries_the_index_and_exact_file_pointer() -> None:
     async with Client(build_mcp(_Searcher(_git_hit(0.9)))) as client:
         (hit,) = (await client.call_tool("search", {"query": "intake"})).data.hits
+    assert hit.content == "how to file an intake item"
     assert (hit.source["index_id"], hit.source["path"], hit.source["commit_sha"], hit.source["blob_sha"]) == (
         "haku-state",
         "notes/intake.md",
@@ -130,6 +131,16 @@ async def test_a_chat_hit_carries_its_index_session_room_and_messages() -> None:
         "!room:allegedly.works",
     )
     assert hit.source["message_ids"] == [str(message_id) for message_id in MESSAGES]
+
+
+async def test_content_is_included_by_default_or_explicit_request_and_omitted_on_request() -> None:
+    async with Client(build_mcp(_Searcher(_git_hit(0.9)))) as client:
+        default = await client.call_tool("search", {"query": "intake"})
+        explicit = await client.call_tool("search", {"query": "intake", "include_content": True})
+        pointer_only = await client.call_tool("search", {"query": "intake", "include_content": False})
+    assert default.structured_content["hits"][0]["content"] == "how to file an intake item"
+    assert explicit.structured_content["hits"][0]["content"] == "how to file an intake item"
+    assert "content" not in pointer_only.structured_content["hits"][0]
 
 
 async def test_omitted_index_ids_means_the_configured_set_not_special_source_names() -> None:

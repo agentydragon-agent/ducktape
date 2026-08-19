@@ -13,9 +13,10 @@ permissions or query scopes:
 | `git`      | files at a branch tip of a configured Git remote | a path and a byte range    |
 | `chat`     | configured console `conversation_item` source    | a session and its item ids |
 
-The deployment registry in `cluster/k8s/haku/console/config.yaml` currently declares
-`haku-state` as a Git index over Haku's Forgejo remote and `haku-conversations` as a chat index.
-Adding another index is a reviewed configuration change; it is not an unscoped runtime default.
+The deployment registry in `cluster/k8s/haku/console/config.yaml` currently declares two Git
+indexes — `haku-state` over Haku's Forgejo remote and `ducktape-public` over the public
+Ducktape `devel` branch — plus `haku-conversations` as a chat index. Adding another index is a
+reviewed configuration change; it is not an unscoped runtime default.
 
 The index is derived state: it can be thrown away and rebuilt from git and Postgres at any time.
 
@@ -39,9 +40,10 @@ The index has globally-addressed semantic content plus index-type-specific occur
 
 `contents` and `content_embeddings` are global deduplication layers, but they are not a recall
 authority. Every Git and chat occurrence belongs to one durable `index_id`; `indexes` names that
-boundary and carries its `index_type`. The deployed registrations are `haku-state` (Git) and
-`haku-conversations` (chat). A second Git index may reuse an identical content vector, but its tip,
-revision state, and matches remain a separate set of occurrences.
+boundary and carries its `index_type`. The deployed registrations are `haku-state` and
+`ducktape-public` (Git), plus `haku-conversations` (chat). A second Git index may reuse an
+identical content vector, but its tip, revision state, and matches remain a separate set of
+occurrences.
 
 An index is its upstream collection: a Git index's configured remote and branch or the Console chat
 index's `conversation_item` collection are part of that index's type-specific deployment
@@ -273,11 +275,13 @@ bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --sess
   (`_SETTLED_WITHIN`, two minutes) is the pipeline working, and a field present on every search
   is a field a reader learns to skip.
 
-  **Search returns pointers, not content, and there are no read tools here.** A haku-state hit
-  carries the path, the commit, and the blob sha — Haku reads the file from its own clone. A
-  conversation hit carries the session, its room, and the ids of the messages in the window —
-  `haku_conversations` already owns reading past sessions. A second reader in this server would be
-  a second answer to "what does this file say", and the two would drift.
+  **Search returns each matching indexed chunk by default, plus its pointer.** Set
+  `include_content=false` to return provenance only. A Git hit always carries the index id, path,
+  commit, and blob sha; a conversation hit carries the session, its room, and the ids of the
+  messages in the window. The chunk is useful retrieval context, not an authoritative replacement
+  for the source: callers that need a whole Git file or wider conversation read it through that
+  source's reader. A second whole-source reader in this server would be a second answer to "what
+  does this file say", and the two would drift.
 
   Listing the server in `cluster/k8s/haku/console/config.yaml` is what builds it — a configured
   server with no builder fails `validate_in_process_server_bindings` at startup — and the console
@@ -298,10 +302,10 @@ bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --sess
   version serving — so a change to either side wants the `Database` CR reconciled first.
 
 - **Sync.** `haku/console/recall_index_sync.py` sweeps every configured index from the console
-  process. The current chat index runs every minute over the console's own tables; the configured
-  haku-state Git index runs every thirty seconds against a bare mirror on the pod's `/tmp`. Each
-  logical index takes its own Postgres advisory lock, so exactly one replica syncs it and a slow
-  fetch never delays another index.
+  process. The current chat index runs every minute over the console's own tables; each configured
+  Git index runs every thirty seconds against its own bare mirror on the pod's `/tmp`. Each logical
+  index takes its own Postgres advisory lock, so exactly one replica syncs it and a slow fetch
+  never delays another index.
 
   **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
   the common case — nothing moved — costs almost nothing and can be asked often. The gate is
@@ -314,11 +318,11 @@ bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --sess
   again; `sync_chat` skips a session whose newest message is under `quiet_for` old (30s) and
   reports it as `sessions_settling`. Nothing records the skip, so the next sweep still sees the
   session as changed — the only cost is the delay, and `index_status` therefore has a lag floor of
-  the quiet window. The git half needs a credential, and it is **Haku's own Forgejo account**
-  (operator, 2026-08-15) rather than a second read-only one — so
-  the console holds something that could write haku-state even though nothing in it does. That cost
-  is recorded where it is paid: <../console/README.md> and `tf/gitops/haku-state/main.tf`, which
-  reflects the Secret into `haku-console`.
+  the quiet window. Git credentials are per-index: `haku-state` uses **Haku's own Forgejo account**
+  (operator, 2026-08-15), so the console holds something that could write haku-state even though
+  nothing in it does. `ducktape-public` needs none: it clones the canonical public GitHub remote
+  anonymously. The Forgejo credential cost is recorded where it is paid: <../console/README.md>
+  and `tf/gitops/haku-state/main.tf`, which reflects the Secret into `haku-console`.
 
 ## Not here yet
 

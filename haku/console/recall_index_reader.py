@@ -119,7 +119,7 @@ class PostgresIndexSearcher:
         return [
             SearchHit(
                 score=hit.score,
-                snippet=hit.text,
+                content=hit.text,
                 source=GitSource(
                     index_id=index.index_id,
                     path=hit.path,
@@ -168,7 +168,7 @@ class PostgresIndexSearcher:
         return [
             SearchHit(
                 score=hit.score,
-                snippet=hit.text,
+                content=hit.text,
                 source=ChatSource(
                     index_id=index.index_id,
                     session_id=hit.session_id,

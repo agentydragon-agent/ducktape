@@ -46,13 +46,24 @@ def test_deploy_config_declares_each_index_explicitly() -> None:
                     "password_env_var": "HAKU_STATE_GIT_PASSWORD",
                 },
                 {"index_id": "haku-conversations", "index_type": "chat"},
+                {
+                    "index_id": "ducktape-public",
+                    "index_type": "git",
+                    "repo_url": "https://github.com/agentydragon/ducktape.git",
+                    "branch": "devel",
+                    "mirror_path": "/tmp/haku-recall-index/ducktape.git",
+                },
             ]
         }
     )
     assert [(index.index_id, index.index_type) for index in config.recall_indexes] == [
         ("haku-state", "git"),
         ("haku-conversations", "chat"),
+        ("ducktape-public", "git"),
     ]
+    ducktape = config.recall_indexes[2]
+    assert isinstance(ducktape, GitRecallIndexDefinition)
+    assert (ducktape.branch, ducktape.username_env_var, ducktape.password_env_var) == ("devel", None, None)
 
 
 @pytest.fixture
