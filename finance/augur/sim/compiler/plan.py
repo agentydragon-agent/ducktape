@@ -551,7 +551,7 @@ def compile_simulation(
         liability_count=liabilities.codes.shape[0],
         max_transfer_slots=transfers.cause.shape[1],
         max_property_cashflow_slots=property_cashflows.cause.shape[1],
-        max_obligation_slots=obligations.cause.shape[1],
+        max_obligation_slots=obligations.metadata.cause.shape[1],
         scheduled_sale_count=sales.month.shape[0],
         target_allocation_policy_count=target_allocation_policies.sleeve_assets.shape[0],
         max_target_allocation_sleeves=target_allocation_policies.sleeve_assets.shape[1],

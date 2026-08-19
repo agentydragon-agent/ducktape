@@ -436,14 +436,14 @@ def _obligation_rows(
 ) -> tuple[_ObligationEvent, ...]:
     rows: list[_ObligationEvent] = []
     for month, slot in np.argwhere(buffers.obligations.active[:, :, rollout_index]):
-        if int(plan.obligations.agent[month, slot]) != primary_agent_code:
+        if int(plan.obligations.metadata.agent[month, slot]) != primary_agent_code:
             continue
         rows.append(
             _ObligationEvent(
                 month=int(month),
                 slot=int(slot),
-                obligation_id=_required_text(plan, int(plan.obligations.id[month, slot])),
-                obligation_type=ObligationType(_required_text(plan, int(plan.obligations.type[month, slot]))),
+                obligation_id=_required_text(plan, int(plan.obligations.metadata.id[month, slot])),
+                obligation_type=ObligationType(_required_text(plan, int(plan.obligations.metadata.type[month, slot]))),
                 due=int(buffers.obligations.due[month, slot, rollout_index]),
                 paid=int(buffers.obligations.paid[month, slot, rollout_index]),
                 shortfall=int(buffers.obligations.shortfall[month, slot, rollout_index]),
