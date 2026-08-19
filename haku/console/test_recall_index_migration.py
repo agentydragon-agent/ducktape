@@ -85,7 +85,7 @@ def test_the_schema_rename_preserves_the_derived_index(db_url: str) -> None:
 
 
 def test_logical_index_migration_backfills_existing_occurrences(db_url: str) -> None:
-    """0084 changes every occurrence key without re-embedding or dropping the published tip."""
+    """0085 changes every occurrence key without re-embedding or dropping the published tip."""
     apply_migrations(db_url, "0083")
     engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
     session_id = "00000000-0000-0000-0000-000000000001"

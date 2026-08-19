@@ -145,7 +145,7 @@ async def _index_chat(database_url: str, index_id: str) -> None:
 def index_chat(index_id: Annotated[str, typer.Argument()], database_url: DatabaseUrl) -> None:
     """Index every chat session that has changed since it was last indexed.
 
-    The database must be the console's own: the corpus is its `session_messages` table.
+    The database must be the console's own: the corpus is its `conversation_item` table.
     """
     asyncio.run(_index_chat(database_url, index_id))
 
@@ -213,23 +213,26 @@ async def _status(database_url: str, index_id: str, index_type: str) -> None:
             chat = await chat_index_summary(session, index_id) if index_type == "chat" else None
     finally:
         await engine.dispose()
-    if index_type == "git" and git is None:
-        typer.echo("git: empty — no sweep has looked at the remote yet")
-    elif index_type == "git" and git.commit_sha is None:
-        typer.echo(
-            f"git: {git.branch}@{git.remote_commit[:12] if git.remote_commit else '?'} seen, nothing indexed yet"
-        )
-    elif index_type == "git":
-        typer.echo(
-            f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat() if git.synced_at else '?'} "
-            f"(chunker v{git.chunker_key}, model {git.model_key})"
-        )
-    if index_type == "chat" and chat is not None and chat.last_indexed_at is None:
+    if index_type == "git":
+        if git is None:
+            typer.echo("git: empty — no sweep has looked at the remote yet")
+        elif git.commit_sha is None:
+            typer.echo(
+                f"git: {git.branch}@{git.remote_commit[:12] if git.remote_commit else '?'} seen, nothing indexed yet"
+            )
+        else:
+            typer.echo(
+                f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat() if git.synced_at else '?'} "
+                f"(chunker v{git.chunker_key}, model {git.model_key})"
+            )
+        return
+
+    if chat is None or chat.last_indexed_at is None:
         typer.echo("chat: empty — nothing synced yet")
-    elif index_type == "chat" and chat is not None:
-        typer.echo(
-            f"chat: {chat.sessions} sessions, {chat.chunks} windows, last indexed {chat.last_indexed_at.isoformat()}"
-        )
+        return
+    typer.echo(
+        f"chat: {chat.sessions} sessions, {chat.chunks} windows, last indexed {chat.last_indexed_at.isoformat()}"
+    )
 
 
 @app.command()

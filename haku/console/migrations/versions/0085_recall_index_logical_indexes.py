@@ -9,8 +9,8 @@ The two existing corpora are seeded as internal compatibility registrations so t
 keeps its established behaviour.  This does not grant an additional caller access to either one;
 the actor-bound public API arrives separately.
 
-Revision ID: 0084
-Revises: 0083
+Revision ID: 0085
+Revises: 0084
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0084"
-down_revision: str | None = "0083"
+revision: str = "0085"
+down_revision: str | None = "0084"
 branch_labels: str | None = None
 depends_on: str | None = None
 

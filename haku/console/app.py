@@ -446,6 +446,7 @@ def create_app(
             index_searcher = PostgresIndexSearcher(
                 db_sessions,
                 _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),
+                indexes=console_config.recall_indexes,
                 budget=index_budget,
             )
             index_maintenance = RecallIndexMaintenance(

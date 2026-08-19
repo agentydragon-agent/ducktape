@@ -8,10 +8,10 @@ index has an `index_id` and an `index_type`; it never obtains identity from a Py
 conventional name. `git` and `chat` are index types — storage and provenance shapes — rather than
 permissions or query scopes:
 
-| index type | source shape                                     | a hit points at               |
-| ---------- | ------------------------------------------------ | ----------------------------- |
-| `git`      | files at a branch tip of a configured Git remote | a path and a byte range       |
-| `chat`     | configured console `conversation_item` source    | a session and its item ids    |
+| index type | source shape                                     | a hit points at            |
+| ---------- | ------------------------------------------------ | -------------------------- |
+| `git`      | files at a branch tip of a configured Git remote | a path and a byte range    |
+| `chat`     | configured console `conversation_item` source    | a session and its item ids |
 
 The deployment registry in `cluster/k8s/haku/console/config.yaml` currently declares
 `haku-state` as a Git index over Haku's Forgejo remote and `haku-conversations` as a chat index.
@@ -44,7 +44,7 @@ boundary and carries its `index_type`. The deployed registrations are `haku-stat
 revision state, and matches remain a separate set of occurrences.
 
 An index is its upstream collection: a Git index's configured remote and branch or the Console chat
-index's `session_messages` collection are part of that index's type-specific deployment
+index's `conversation_item` collection are part of that index's type-specific deployment
 configuration, not a second durable database identity. Future Flux artifact ingestion adds an
 index type/configuration shape; it does not add a generic source layer. Reader grants and RLS bind
 callers to `index_id`, never to the global content cache.
