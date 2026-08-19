@@ -6,17 +6,15 @@ actionable checklist. Remove entries once done.
 ## The console as a channel, not a viewer
 
 Direction set 2026-08-15: Matrix and the console frontend should be two **messaging channels**
-onto one conversation, each able to do broadly what the other can. The console still cannot show a
-session's lifecycle at all. Design, the parity gaps it closes, and the traps in each:
+onto one conversation, each able to do broadly what the other can. The lifecycle facts are in the
+conversation record; projecting that record consistently onto both channels is what remains.
+Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
-1. **Record lifecycle transitions** as frame-log rows, the way narration already is, so a session
-   that never got past `provisioning` has a durable record. **Not** the status line or the typing
-   indicator — those are renderings of live state each channel derives for itself.
-2. **Reconcile a channel against the conversation** rather than sending to it: one loop per
+1. **Reconcile a channel against the conversation** rather than sending to it: one loop per
    `(channel, conversation)` over its own cursor. `RoomNotices` is that loop for one event kind;
    every other outbound fact is still pushed at the room by whoever noticed it.
-3. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
+2. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
    so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
    its true provenance. Under the loop the send only enqueues; the room being one message behind
    is a divergence the reconciler already closes. The subtle part is `_is_conversational`, which
@@ -287,44 +285,25 @@ schema — is still unobserved, so leave it unimplemented rather than guessed.
 
 ## Scope conversation reads to the reader's trust tier
 
-**The policy is decided** (operator, 2026-08-15) and now needs building. `list_sessions`,
-`read_rollout`, and `list_turns` (<tools/conversations.py>) are unscoped — any Haku may read any
-session, whichever room or operator it served — under R5.3a's deliberate deferral, whose stated
-condition for revisiting (more than one agent) has arrived. An agent reads the transcripts and
-conversations **its tier** gives it. The fence is the tier, **not** the room: cross-room and
-cross-session reads stay open within a tier, so an agent keeps its own history.
+**The policy is decided** (operator, 2026-08-15): an agent reads the transcripts and
+indexes its tier grants. The fence is the tier, not the room, so cross-room and cross-session
+reads remain open within a tier.
 
-Three things it needs, in order:
+Named logical indexes, multi-index search, and the public `ducktape-public` index are built. The
+remaining boundary is ordered work:
 
-1. **A tier on `sessions`** — from the room's fixed tier for a Matrix conversation, from the agent
-   kind otherwise, with the room's authoritative where both exist. A session's room is its
-   conversation's live `chat_attachment`, not a column on the session.
-2. **Unlabelled reads as highest**, so every session predating the column is unreadable by a lower
-   tier rather than treated as unclassified-therefore-fine.
-3. **The decision function at the one call site** R5.3a identified, in the shape the approval
-   policy already has — never scoping smeared through the transport.
+1. Add a tier to agent kinds and conversations. Matrix room tier is authoritative; data predating
+   the field reads as highest trust.
+2. Route chat occurrences to tier-specific indexes while keeping `chunks` as the shared embedding
+   cache.
+3. Give each agent explicit readable index ids and enforce them in <recall_index_reader.py>.
+   Omitted `index_ids` means all granted indexes; unknown or ungranted names fail closed.
+4. Apply the same decision to `haku_conversations` (`list_sessions`, `list_turns`, and transcript/
+   rollout reads), so semantic discovery and direct drilldown share one boundary.
+5. Replace the single `haku_recall_reads` authority with per-index grants.
 
-**Semantic search is the urgent half, because it is already unscoped and live.** `haku_index`'s
-`search`/`index_status` were exposed to Haku unscoped on 2026-08-15 — a fair call then, since they
-granted no reachability `haku_conversations` did not already have — and
-<../recall_index/README.md> § Read scoping names the condition for revisiting: the moment a room
-Haku should not see exists, ranked retrieval is where it leaks first. Several agents is that
-moment. A drilldown makes reading another conversation deliberate; ranked retrieval surfaces it by
-accident, at the top of the results.
-
-**Do it by naming indexes rather than filtering rows.** `Corpus` (<../recall_index/schema.py>)
-stays the **type** — `git`/`chat`, deciding how content is chunked and addressed — and gains named
-**instances** configured per repo and per tier ("index `foobar` is of type `git`, indexes this
-remote"), in the discriminated shape `mcp.servers` already uses. The gate becomes "which indexes
-may this agent search", checked once in <recall_index_reader.py>, which shrinks in the process:
-its hardcoded `haku_state`/`conversations` → `git`/`chat` mapping is replaced by config names, so
-what is left is the permission check. `haku_recall_reads` becomes per-index grants. That beats a
-per-row tier filter — a missed predicate on one read path leaks, an index an agent cannot name
-does not. `chunks` is untouched: it is a content-addressed embedding cache, identity lives on the
-occurrence rows, and the instance goes there. Full design:
-<../plans/information_trust_tiers.md>. The wider inventory — the drilldown tools, the identity it
-keys on, and the RLS-scoped-Postgres-role alternative — stays in <../recall_index/README.md>
-§ Read scoping.
+Full trust design: <../plans/information_trust_tiers.md>. Current index operation and the RLS
+alternative: <../recall_index/README.md> § Read scoping.
 
 ## A second runner, and binding an agent to one
 

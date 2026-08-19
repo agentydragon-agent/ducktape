@@ -1,8 +1,13 @@
 # Information trust tiers — which provider may see what, and who enforces it
 
-**Status: design sketch, nothing built.** Operator, 2026-08-15: several agent kinds, each cloning
-a different workspace repo, talking to each other in Matrix rooms the operator is also in, with
-the high-trust agent delegating unsensitive work down.
+**Status: partially built.** Named logical recall indexes, per-index Git configuration, multi-index
+search, and the public `ducktape-public` index are live. Trust-tier labels, per-agent index grants,
+room membership enforcement, and classifier backstops remain design work tracked below and in
+<../console/TODO.md>.
+
+Operator, 2026-08-15: several agent kinds, each cloning a different workspace repo, talking to
+each other in Matrix rooms the operator is also in, with the high-trust agent delegating
+unsensitive work down.
 
 **v0 ships the structural half only** — workspace repos, room tiers, enforced membership — and
 governs message content by instructing agents not to share, with a classifier added later as a
@@ -125,106 +130,30 @@ through the transport. Three things it needs:
   session; ranked retrieval surfaces it by accident, at the top of the results, in answer to an
   innocent question.
 
-### Corpus as a type, with an instance per tier
+### Named indexes are the landed foundation
 
-Operator, 2026-08-15, and it is a better mechanism than the per-row tier predicate this document
-proposed first. `Corpus` in <../recall_index/schema.py> is today an enum of `git` and `chat`, doing
-two jobs at once. Split them: **the type says how content is indexed, the instance says who may
-read it.** One `chat` instance per tier, one `git` instance per repo.
+The structural index split is built. `recall_indexes` configures named `git` and `chat` indexes;
+`search(index_ids=...)` ranks across the selected names; `index_status` reports each configured
+index; production carries `haku-state`, `haku-conversations`, and public `ducktape-public`. The
+implementation and operational contract live in <../recall_index/README.md>; this plan no longer
+repeats them.
 
-The type keeps the job it already has, which is real — `chunker_key` is scoped by corpus because
-the two chunk by different rules, and `content_sha` means a blob sha for `git` and a hash of a
-rendered message window for `chat`. The instance is the new axis, and **the argument for putting
-it in the primary key is the one the enum's own docstring already makes**: different namespaces
-that a lookup forgetting to name is a bug the key shape should catch.
+What is deliberately **not** built is the trust boundary:
 
-**Why this beats filtering rows by tier at query time:** enforcement moves to index time. The
-sweep routes a session's chunks into a corpus; the gate becomes "which corpora may this agent
-search", which is coarse, structural, and the kind of check doctrine prefers. A missed predicate
-on one read path leaks — a corpus an agent cannot name does not. The tier does not disappear; it
-becomes the sweep's **routing input** rather than a filter every reader must remember.
+- Assign a tier to each agent kind and conversation. Matrix room tier is authoritative when a
+  conversation has a room; pre-tier data reads as highest trust.
+- Route chat occurrences to tier-specific indexes. Keep `chunks` as the shared,
+  content-addressed embedding cache; access follows occurrence/index membership, not the vector.
+- Give each agent an explicit set of readable index ids and enforce it once in
+  <../console/recall_index_reader.py>. Omitted `index_ids` means all **granted** indexes, not all
+  configured indexes; naming an ungranted or unknown index fails closed.
+- Apply the same tier decision to `haku_conversations` drilldowns so semantic discovery and direct
+  transcript reads have one boundary.
+- Replace the single `haku_recall_reads` authority with per-index grants in policy/configuration.
 
-**A shared embedding across instances is fine, and the schema already says why.** An earlier draft
-of this section claimed content addressing made cross-instance sharing a leak — that a `chat` row
-serving a high and a low corpus at once was the very thing being prevented. It is not, and
-`ChatChunk`'s own docstring makes the argument: it is keyed by position in the session rather than
-by content, "because two sessions can hold the same exchange verbatim: they are then two windows
-sharing one cached vector, and a search that matches it must be able to say which session each hit
-came from."
-
-That is the separation this design needs, already built:
-
-- **`chunks` is a content-addressed embedding cache.** Sharing a row is sharing an embedding of
-  byte-identical text. A searcher who can reach it through their own corpus was entitled to that
-  text anyway, so nothing crosses.
-- **The occurrence rows carry identity** — `chat_chunks`/`chat_chunk_messages` say which session
-  and which messages, `git_tip` says which path at which commit — and those are what a hit hands
-  back, since the index returns pointers rather than content.
-
-**So the instance goes on the occurrences, not in the chunk key.** `chunks` keeps `corpus` as the
-**type** (a blob sha and a rendered-window hash really are different namespaces, and `chunker_key`
-is scoped by it) and gains nothing. The dedup win holds for chat exactly as it does for git.
-
-What it touches, none of it large:
-
-- **Occurrence tables become per-instance, and one wart disappears.** The two git tables are not
-  duplicates of each other, which is worth stating since the names suggest it: `git_tip` is one
-  row **per path** at the indexed commit — the tip's contents — while `git_sync_state` is a single
-  row saying **which** commit that is, under which chunker and model, plus what the remote head
-  was last seen pointing at. They cannot merge: the remote half is true before anything is indexed
-  at all, so it would need a row with no path, and the indexed commit would otherwise repeat on
-  every path row. Per instance, `git_tip`'s key becomes `(index, path)` and `git_sync_state` gets
-  one row per index — which **removes** its `id = 1` singleton CHECK, because the index name is a
-  natural key where `id` was a placeholder for having none. Chat occurrences already carry
-  `session_id`, so their instance can be derived from the session rather than stored; derive
-  first, store only if the join proves hot.
-- **Filter occurrences before ranking, not after.** The searches already materialize a CTE
-  filtering `corpus` + `model_key` before the distance operator runs — load-bearing rather than
-  cosmetic, since pgvector errors on mixed dimensions — so the permitted-instance join belongs in
-  that same CTE. Ranking globally and dropping afterwards would work, but a short top-K would then
-  hint that hidden matches exist.
-- **The sweeps run per instance**, with an advisory lock each; one lock per type iterating its
-  instances is the simpler first step, exactly as with the Matrix supervisor.
-- **`recall_index_reader.py` is where the grant lands**, and mostly **shrinks**: it exists to map
-  the tool surface's `haku_state`/`conversations` vocabulary onto the index's `git`/`chat`, and
-  with named indexes the names are the config, so the mapping stops being a hardcoded translation
-  and becomes a permission check.
-- **The grant is config in a shape that exists.** `haku_recall_reads` is one atom granting the
-  index reads; it becomes per-index grants.
-
-### Configuration: named indexes with type-discriminated settings
-
-Operator, 2026-08-15: **"index `foobar` is of type `git`, indexes this remote"**, with room for
-more settings later. That is a named instance carrying type-specific configuration, and this
-codebase already has the pattern — `mcp.servers` entries select a discriminated `backend`
-(`remote_mcp` with a URL and auth, or `in_process` with a credential kind), and STYLE prefers a
-union of variant types over a flag plus optional fields that permit nonsense:
-
-```yaml
-indexes:
-  - name: haku-state
-    type: git
-    remote: ...
-  - name: ducktape
-    type: git
-    remote: ...
-  - name: conversations-high
-    type: chat
-    tier: high
-```
-
-A `git` index names a remote; a `chat` index names which sessions it covers, which is where the
-tier does its routing work. `index_status` becomes per index, and the tool's `corpus` argument
-becomes an index name — so adding a second repo stops being a schema question and becomes a config
-entry.
-
-**The migration is cheap because embeddings are a cache.** `chunks` is derived data, recomputable
-from its sources, so a mis-routed occurrence is a re-index rather than a loss. That makes this much
-safer to do early than late.
-
-**It makes the RLS option more attractive**, without deciding it. <../recall_index/README.md> keeps
-a scoped-Postgres-role alternative in its inventory; with corpora as first-class the natural RLS
-policy is per corpus, which would move the gate from the query builder into the database.
+These are tracked as one ordered item in <../console/TODO.md> § Scope conversation reads to the
+reader's trust tier. The RLS alternative and read-surface inventory remain in
+<../recall_index/README.md> § Read scoping.
 
 ## Running more than one agent at once
 
