@@ -150,7 +150,7 @@ def test_logical_index_migration_backfills_existing_occurrences(db_url: str) -> 
 
 
 def test_embedding_split_preserves_source_progress_without_a_model_claim(db_url: str) -> None:
-    """0087 retains materialized source state while making embedding completion global."""
+    """0088 retains materialized source state while making embedding completion global."""
     apply_migrations(db_url, "0086")
     engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
     session_id = "00000000-0000-0000-0000-000000000002"
