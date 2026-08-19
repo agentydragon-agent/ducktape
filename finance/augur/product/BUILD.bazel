@@ -37,6 +37,12 @@ py_library(
 )
 
 py_library(
+    name = "quantiles",
+    srcs = ["quantiles.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_library(
     name = "decode",
     srcs = ["decode.py"],
     deps = [
@@ -57,6 +63,7 @@ py_library(
     srcs = ["service.py"],
     deps = [
         ":decode",
+        ":quantiles",
         ":scenarios",
         ":wire",
         "//finance/augur/api:portfolio",
@@ -167,6 +174,7 @@ py_test(
         ":asset_key",
         ":conftest",
         ":decode",
+        ":quantiles",
         ":scenarios",
         ":service",
         ":testing",

@@ -40,6 +40,7 @@ from finance.augur.model.testing import (
 from finance.augur.product import decode, service
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import build_scenario, resolve_primary_agent_id
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from finance.augur.product.wire import (
@@ -71,7 +72,7 @@ from finance.augur.product.wire import (
     SleeveWeight,
     TerminalDistributionRequest,
 )
-from finance.augur.sim.engine.jax_engine import ProductSummary
+from finance.augur.sim.engine.jax_engine import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from finance.augur.sim.simulate import simulate_with_external_series
@@ -425,19 +426,24 @@ def test_reduced_product_summary_matches_dense_metric_decode(
         summary, _model_id = product._simulate_product_summary(
             scenario_key, seeds, metric=name, percentiles=percentiles
         )
-        np.testing.assert_array_equal(summary.failed_month, expected_failed)
+        assert summary.failed_count == int((expected_failed >= 0).sum())
+        expected_monthly_percentiles = np.asarray(
+            [currency_quantiles(month, percentiles) for month in expected_series], dtype=np.int64
+        )
         # Terminal shortfall is cumulative over the horizon; every other metric is the end snapshot.
         expected_terminal = expected_series.sum(axis=0) if name == "shortfall_quanta" else expected_series[-1]
-        np.testing.assert_array_equal(summary.terminal_samples, expected_terminal)
-        np.testing.assert_array_equal(summary.monthly_samples, expected_series)
+        np.testing.assert_array_equal(summary.monthly_percentiles, expected_monthly_percentiles)
+        np.testing.assert_array_equal(
+            summary.terminal_percentiles, np.asarray(currency_quantiles(expected_terminal, percentiles), dtype=np.int64)
+        )
 
 
 def test_currency_quantiles_preserve_int64_precision_and_round_half_up() -> None:
     # Float64 maps both endpoints to the same number. Exact Decimal interpolation
     # must retain the individual quantum between them.
     samples = np.asarray([9_007_199_254_740_993, 9_007_199_254_740_995], dtype=np.int64)
-    assert service._currency_quantiles(samples, (50.0,)) == (9_007_199_254_740_994,)
-    assert service._currency_quantiles(np.asarray([0, 1], dtype=np.int64), (50.0,)) == (1,)
+    assert currency_quantiles(samples, (50.0,)) == (9_007_199_254_740_994,)
+    assert currency_quantiles(np.asarray([0, 1], dtype=np.int64), (50.0,)) == (1,)
 
 
 def test_product_valuation_avoids_overflowing_intermediate_product() -> None:
@@ -463,7 +469,7 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     def slow_simulate_product_summary(
         scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductSummary, str]:
+    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
