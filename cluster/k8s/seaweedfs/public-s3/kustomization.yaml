@@ -8,7 +8,8 @@ resources:
   #   vm-images:         admin, cluster-secrets
   #   claude-reader:     admin, cluster-secrets, claude-web
   - drivefs-artifacts-credentials.sops.yaml
-  - vm-images-credentials.sops.yaml
+  # VM-image consumer compatibility values are projected from native IAM.
+  - vm-images-credentials-externalsecret.yaml
   - claude-reader-credentials.sops.yaml
   # ESO assembles these into one gateway config; Reloader rolls the
   # deployment when it changes (cluster-wide autoReloadAll).

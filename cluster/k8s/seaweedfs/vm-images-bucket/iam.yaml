@@ -1,0 +1,47 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: vm-images-ci-writer
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: vm-images-ci-writer
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: vm-images-ci-writer
+  secretRef:
+    name: s3-identity-vm-images-ci-writer
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: vm-images-cdi-reader
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: vm-images-cdi-reader
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: vm-images-cdi-reader
+  secretRef:
+    name: s3-identity-vm-images-cdi-reader
+  reclaimPolicy: Retain
