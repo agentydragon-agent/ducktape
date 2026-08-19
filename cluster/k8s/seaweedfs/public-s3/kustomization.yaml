@@ -12,8 +12,8 @@ resources:
   - vm-images-credentials-externalsecret.yaml
   - claude-reader-credentials.sops.yaml
   # Registers the unchanged SOPS-provided Claude credential with native IAM
-  # and declares its replacement authorization policy. The static gateway
-  # entry remains for this no-rotation compatibility phase.
+  # and declares its authorization policy. The SOPS Secret remains for the
+  # external Claude web-session delivery path, not the public gateway config.
   - claude-reader-iam.yaml
   # ESO assembles these into one gateway config; Reloader rolls the
   # deployment when it changes (cluster-wide autoReloadAll).
