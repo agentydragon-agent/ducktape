@@ -165,6 +165,26 @@ them.
 
 ## 2. The tables
 
+### Conversation identity
+
+`conversation` pins the runner implementation for the life of the thread. A replacement session
+names the same row and therefore inherits the same value; there is no mutation path or launch
+selector in this release.
+
+```text
+conversation
+  conversation_id  PK
+  operator_id       NOT NULL
+  runtime_kind      NOT NULL          'claude_code'
+  next_event_seq    NOT NULL
+  created_at        NOT NULL
+```
+
+The column is text constrained by the application's closed `RuntimeKind` enum and an ordinary
+database CHECK. It is not a PostgreSQL enum: the next runtime can widen the CHECK transactionally
+before its writers ship, without an enum-type rollout. The identity says which adapter owns the
+session wire; the event vocabulary below remains provider-neutral.
+
 ### The log
 
 `conversation_event` is the record. Every fact is written here, once, and everything else in this

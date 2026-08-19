@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from more_itertools import one
+from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -33,8 +34,9 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.config import ClaudeRuntimeConfig
+from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
+from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, frame_kind
 from haku.console.x.claude_code.testing.wire import (
     assistant,
@@ -65,6 +67,47 @@ from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeMessage
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
     assert all(field.is_required() for field in ClaudeRuntimeConfig.model_fields.values())
+    assert ChatRuntimesConfig.model_fields["claude_code"].is_required()
+    assert not ConsoleConfigFile.model_fields["chat_runtimes"].is_required()
+
+
+def _console_config(**overrides: object) -> dict[str, object]:
+    config: dict[str, object] = {
+        "chat_runtimes": {"claude_code": runtime_config().model_dump(mode="json")},
+        "auto_approval_policies": [{"id": "manual", "type": "never"}],
+        "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+        "default_access_profile_id": "manual",
+    }
+    config.update(overrides)
+    return config
+
+
+def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
+    parsed = ConsoleConfigFile.model_validate(_console_config())
+    assert parsed.chat_runtimes is not None
+    assert parsed.chat_runtimes.claude_code == runtime_config()
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        ConsoleConfigFile.model_validate(
+            _console_config(
+                chat_runtimes={
+                    "claude_code": runtime_config().model_dump(mode="json"),
+                    "codex_app_server": runtime_config().model_dump(mode="json"),
+                }
+            )
+        )
+
+    with pytest.raises(ValidationError, match="claude_runtime was replaced"):
+        ConsoleConfigFile.model_validate(_console_config(claude_runtime=runtime_config().model_dump(mode="json")))
+
+    assert ConsoleConfigFile.model_validate(_console_config(chat_runtimes=None)).chat_runtimes is None
+
+
+def test_chat_runtime_config_fails_closed_when_malformed() -> None:
+    malformed = runtime_config().model_dump(mode="json")
+    del malformed["namespace"]
+    with pytest.raises(ValidationError, match="namespace"):
+        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": malformed}))
 
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
@@ -1679,6 +1722,7 @@ async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_beh
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
     assert view.status is SessionStatus.FAILED
+    assert view.runtime_kind == "claude_code"
     assert view.sandbox.step is ProvisioningStep.WAITING_FOR_POD
     assert view.sandbox.claim_message == "no warm sandbox available"
 

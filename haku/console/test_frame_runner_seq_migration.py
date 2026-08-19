@@ -17,7 +17,9 @@ def _conversation(conn: Connection, operator_id: UUID) -> UUID:
     """The thread a session runs, which every session carries and owes."""
     conversation_id = uuid4()
     conn.execute(
-        text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :operator_id, :n)"),
+        text(
+            "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) VALUES (:id, :operator_id, 'claude_code', :n)"
+        ),
         {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
     )
     return conversation_id

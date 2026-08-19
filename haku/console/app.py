@@ -194,14 +194,13 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_runtime = console_config.claude_runtime
+    claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
     session_store = SessionStore(db_sessions)
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
     # console one, neither of which depends on this replica running a Claude runtime.
     session_live_updates = SessionLiveUpdates(session_notifications, console_event_hub, db_sessions)
-    session_service: session_runtime.SessionService | None = None
     tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
@@ -355,6 +354,8 @@ def create_app(
             # failing the first attached chat session hours later.
             system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
         )
+    else:
+        session_service = None
     # A followed conversation's own socket. Behind the Claude runtime because a follower opens on
     # the same read `GET /api/conversations/{id}` serves, which is the service's — a replica
     # without one answers neither.

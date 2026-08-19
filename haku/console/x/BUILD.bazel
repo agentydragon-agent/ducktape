@@ -160,7 +160,10 @@ py_library(
 py_library(
     name = "conversation_records",
     srcs = ["conversation_records.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//haku/console:chat_models",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -350,6 +353,7 @@ py_test(
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console:mcp_config",
         "//haku/console/x/claude_code:frames",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/testing:recording_claims",

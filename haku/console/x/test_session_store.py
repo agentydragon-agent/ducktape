@@ -370,6 +370,7 @@ async def test_a_frame_reaches_the_inspector_with_its_payload_whole(chat_store, 
 
     assert page.frames[0].payload == payload
     assert page.frames[0].direction == FrameDirection.TO_AGENT
+    assert page.runtime_kind == "claude_code"
 
 
 async def test_sessions_come_back_newest_first_with_the_channels_holding_their_thread(
@@ -384,6 +385,7 @@ async def test_sessions_come_back_newest_first_with_the_channels_holding_their_t
     sessions = await chat_store.list_sessions(cursor=None, limit=10)
 
     assert sessions[0].session_id == matrix.session_id
+    assert sessions[0].runtime_kind == "claude_code"
     assert [attachment.address for attachment in sessions[0].attachments] == ["!room:example.org"]
     assert sessions[1].attachments == []
 
@@ -601,11 +603,13 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     detail = await chat_store.get_operator_conversation(operator_id, conversation_id)
 
     assert page.conversations[0].conversation_id == conversation_id
+    assert page.conversations[0].runtime_kind == "claude_code"
     assert [attachment.address for attachment in page.conversations[0].attachments] == [ROOM]
     assert page.conversations[0].live_session is not None
     assert page.conversations[0].live_session.session_id == matrix.session_id
     assert page.conversations[0].item_count == 1
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
+    assert detail.runtime_kind == "claude_code"
     assert detail.session.session_id == matrix.session_id
     assert detail.session.items[0].text == "What is happening?"
     assert detail.session.turns == []
@@ -647,6 +651,8 @@ async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_
     detail = await chat_store.get_operator_conversation(operator_id, conversation_id)
 
     assert [conversation.conversation_id for conversation in page.conversations] == [conversation_id]
+    assert page.conversations[0].runtime_kind == "claude_code"
+    assert detail.runtime_kind == "claude_code"
     assert detail.session.session_id == second.session_id
     assert [session.session_id for session in detail.earlier_sessions] == [first.session_id]
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
@@ -892,6 +898,7 @@ async def test_a_session_opens_its_own_conversation_unless_it_is_given_one(
 
     async with migrated_sessions() as db:
         assert (await db.get(Session, continued.session_id)).conversation_id == opened
+        assert (await db.get(Conversation, opened)).runtime_kind == "claude_code"
 
 
 async def _items(migrated_sessions, session_id: UUID) -> list[UUID]:

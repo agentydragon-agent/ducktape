@@ -62,7 +62,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert "haku-claude-sandbox" not in general_injection
 
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    runtime = console_config["claude_runtime"]
+    runtime = console_config["chat_runtimes"]["claude_code"]
     assert runtime["namespace"] == template["metadata"]["namespace"]
     # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
     # is a pod that never becomes Ready. Tie the three places that must agree — the configured

@@ -11,7 +11,7 @@ import pytest_bazel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ItemStatus, ItemType, SessionStatus
+from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, SessionStatus
 from haku.console.database_schema import Base as ConsoleBase, Conversation, ConversationItem, Operator, Session
 from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
@@ -54,7 +54,14 @@ async def new_operator(source: AsyncSession) -> UUID:
 async def new_session(source: AsyncSession, operator_id: UUID) -> UUID:
     session_id = uuid.uuid4()
     conversation_id = uuid.uuid4()
-    source.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=_NOW))
+    source.add(
+        Conversation(
+            conversation_id=conversation_id,
+            operator_id=operator_id,
+            runtime_kind=RuntimeKind.CLAUDE_CODE,
+            created_at=_NOW,
+        )
+    )
     # Before the session that points at it: a bare `ForeignKey` does not order the unit of work.
     await source.flush()
     source.add(

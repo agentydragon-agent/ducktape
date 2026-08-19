@@ -18,10 +18,12 @@ shape stops here: a CLI frame's `type`, its content blocks and its `result` enve
 this layer and nowhere above it. A session ends when its runner does, and a conversation outlives
 however many of them it takes.
 
-**Conversation** — the durable, provider-neutral, runner-implementation-neutral record of one
-thread: an ordered stream of neutral events, addressed by position, plus the transcript rows those
-events point at. It is what every reader reads and the only thing a channel is offered. It has no
-end.
+**Conversation** — the durable, provider-neutral record of one thread, pinned to one
+`runtime_kind`: an ordered stream of neutral events, addressed by position, plus the transcript
+rows those events point at. The pin says which implementation owns prompt/context/projection/replay
+semantics across replacement sessions; it does not put that implementation's wire vocabulary into
+the record. A conversation is what every reader reads and the only thing a channel is offered. It
+has no end.
 
 **Channel** — how one messaging service holds and interacts with a copy of a conversation. It owns
 its address, its credential, its rate budget, its rendering vocabulary, its position in the

@@ -38,6 +38,7 @@ from haku.console.chat_models import (
     LeaseExpiryReason,
     PromptOrigin,
     PromptRejection,
+    RuntimeKind,
     SessionStatus,
     TurnOutcome,
 )
@@ -331,6 +332,14 @@ class SessionOutcome:
     error: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class OperatorSessionIdentity:
+    """The conversation identity needed by a session-addressed operator inspection."""
+
+    status: SessionStatus
+    runtime_kind: RuntimeKind
+
+
 class PositionUnusableError(Exception):
     """An update cannot be served from a follower's position; it must be sent the conversation whole.
 
@@ -391,7 +400,14 @@ class SessionStore:
         async with self._sessions.begin() as db:
             if conversation_id is None:
                 conversation_id = uuid4()
-                db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
+                db.add(
+                    Conversation(
+                        conversation_id=conversation_id,
+                        operator_id=operator_id,
+                        runtime_kind=RuntimeKind.CLAUDE_CODE,
+                        created_at=now,
+                    )
+                )
                 # Flushed before the session that points at it: a `ForeignKey` carrying no
                 # `relationship()` does not order the unit of work.
                 await db.flush()
@@ -480,10 +496,10 @@ class SessionStore:
         """
         activity = func.max(Session.updated_at).label("last_activity_at")
         page = (
-            select(Conversation.conversation_id, Conversation.created_at, activity)
+            select(Conversation.conversation_id, Conversation.runtime_kind, Conversation.created_at, activity)
             .join(Session, Session.conversation_id == Conversation.conversation_id)
             .where(Conversation.operator_id == operator_id)
-            .group_by(Conversation.conversation_id, Conversation.created_at)
+            .group_by(Conversation.conversation_id, Conversation.runtime_kind, Conversation.created_at)
             .order_by(activity.desc(), Conversation.conversation_id.desc())
             .limit(limit + 1)
         )
@@ -502,6 +518,7 @@ class SessionStore:
             conversations=[
                 ConversationSummary(
                     conversation_id=row.conversation_id,
+                    runtime_kind=row.runtime_kind,
                     created_at=row.created_at,
                     last_activity_at=row.last_activity_at,
                     attachments=attachments[row.conversation_id],
@@ -556,6 +573,7 @@ class SessionStore:
         turns = await self.list_turns(current.session_id, cursor=None, limit=100)
         return ConversationView(
             conversation_id=conversation_id,
+            runtime_kind=conversation.runtime_kind,
             created_at=conversation.created_at,
             attachments=attachments,
             session=ConversationSessionView(
@@ -1162,25 +1180,30 @@ class SessionStore:
         Deliberately unscoped: every session, whichever room it served. Inclusive of the row the
         cursor names, which is the first row the previous page did not return.
         """
-        query = select(Session).order_by(Session.created_at.desc(), Session.session_id.desc())
+        query = (
+            select(Session, Conversation.runtime_kind)
+            .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+            .order_by(Session.created_at.desc(), Session.session_id.desc())
+        )
         if cursor is not None:
             query = query.where(
                 tuple_(Session.created_at, Session.session_id)
                 <= tuple_(literal(cursor.created_at), literal(cursor.session_id))
             )
         async with self._sessions() as db:
-            threads = [(row, row.conversation_id) for row in (await db.scalars(query.limit(limit))).all()]
-            attachments = await _live_attachments(db, {thread for _, thread in threads})
+            sessions = (await db.execute(query.limit(limit))).all()
+            attachments = await _live_attachments(db, {row.conversation_id for row, _ in sessions})
         return [
             SessionRecord(
                 session_id=row.session_id,
-                conversation_id=thread,
-                attachments=attachments[thread],
+                conversation_id=row.conversation_id,
+                runtime_kind=runtime_kind,
+                attachments=attachments[row.conversation_id],
                 status=row.status,
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row, thread in threads
+            for row, runtime_kind in sessions
         ]
 
     async def read_frames(
@@ -1264,13 +1287,20 @@ class SessionStore:
         if before_seq is not None:
             query = query.where(SessionFrame.frame_seq < before_seq)
         async with self._sessions() as db:
-            owned = await db.scalar(
-                select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
-            )
+            owned = (
+                await db.execute(
+                    select(Session, Conversation.runtime_kind)
+                    .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+                    .where(Session.session_id == session_id, Session.operator_id == operator_id)
+                )
+            ).one_or_none()
             if owned is None:
                 raise KeyError(session_id)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
-        return frame_page(list(reversed(rows)), limit=limit, conversation_id=owned.conversation_id)
+        session, runtime_kind = owned
+        return frame_page(
+            list(reversed(rows)), limit=limit, conversation_id=session.conversation_id, runtime_kind=runtime_kind
+        )
 
     async def apply_frame(
         self, session_id: UUID, turn_id: UUID, frame_seq: int, events: Sequence[ConversationEvent]
@@ -1443,19 +1473,19 @@ class SessionStore:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
-    async def operator_status(self, operator_id: UUID, session_id: UUID) -> SessionStatus:
-        """The stored status of this Operator's session, raising `KeyError` for one that is not theirs.
-
-        Stored, never the derived `responding` — that is `session_view` reading an open turn, and
-        no path writes it.
-        """
+    async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
+        """The immutable conversation identity behind one Operator-owned session."""
         async with self._sessions() as db:
-            status = await db.scalar(
-                select(Session.status).where(Session.session_id == session_id, Session.operator_id == operator_id)
-            )
-            if status is None:
+            row = (
+                await db.execute(
+                    select(Session.status, Conversation.runtime_kind)
+                    .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+                    .where(Session.session_id == session_id, Session.operator_id == operator_id)
+                )
+            ).one_or_none()
+            if row is None:
                 raise KeyError(session_id)
-            return status
+            return OperatorSessionIdentity(status=row.status, runtime_kind=row.runtime_kind)
 
     async def renew_lease(self, session_id: UUID) -> None:
         """Assert that this replica still holds *session_id* and is still working on it.

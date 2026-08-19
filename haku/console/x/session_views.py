@@ -22,6 +22,7 @@ from haku.console.chat_models import (
     ItemStatus,
     ItemType,
     ReasoningDisclosure,
+    RuntimeKind,
     SessionStatus,
     ToolOutcome,
     TurnOutcome,
@@ -104,6 +105,7 @@ class ConversationSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: UUID
+    runtime_kind: RuntimeKind
     created_at: datetime
     last_activity_at: datetime = Field(
         description="When the most recent session under this conversation last moved. What the list is ordered by."
@@ -204,6 +206,7 @@ class ConversationView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: UUID
+    runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]
     session: ConversationSessionView
@@ -302,6 +305,9 @@ class SessionProvisioningView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
+    runtime_kind: RuntimeKind = Field(
+        description="The immutable runner implementation pinned by this session's conversation."
+    )
     status: SessionStatus = Field(
         description="The session's stored status. `responding` never appears here: it is derived "
         "from an open turn by `session_view` and is not on the row."
@@ -354,6 +360,7 @@ class SessionFramePage(BaseModel):
         description="The thread this session ran. The inspector is addressed by session, so this is what its reader "
         "needs to get back to the conversation the session belongs to."
     )
+    runtime_kind: RuntimeKind = Field(description="The immutable runner implementation whose wire these frames use.")
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
@@ -377,7 +384,9 @@ def _unprojected(row: SessionFrame) -> dict[str, int] | None:
     return dict(folded.unprojected) or None
 
 
-def frame_page(rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID) -> SessionFramePage:
+def frame_page(
+    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: RuntimeKind
+) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
     A short page is the first one, the same rule the MCP reader uses in the other direction:
@@ -397,6 +406,7 @@ def frame_page(rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUI
     return SessionFramePage(
         frames=frames,
         conversation_id=conversation_id,
+        runtime_kind=runtime_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
 

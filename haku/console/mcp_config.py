@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import (
-    ClaudeRuntimeConfig,
+    ChatRuntimesConfig,
     ConfiguredRecallIndex,
     GitRecallIndexDefinition,
     HostexecConfig,
@@ -327,9 +327,10 @@ class ConsoleConfigFile(BaseModel):
     # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
-    # Non-secret deployment wiring for the optional Console-owned Claude runtime.
-    # The real OAuth bearer remains solely in the dedicated iron-proxy.
-    claude_runtime: ClaudeRuntimeConfig | None = None
+    # Closed implementation kinds, not deploy-chosen runtime instance ids. The deployment names
+    # Claude under this catalog; absent config preserves the existing console-without-chat mode.
+    # The real Claude OAuth bearer remains solely in the dedicated iron-proxy.
+    chat_runtimes: ChatRuntimesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
@@ -346,6 +347,13 @@ class ConsoleConfigFile(BaseModel):
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.
     recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_retired_runtime_shape(cls, value: object) -> object:
+        if isinstance(value, dict) and "claude_runtime" in value:
+            raise ValueError("claude_runtime was replaced by chat_runtimes.claude_code")
+        return value
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:

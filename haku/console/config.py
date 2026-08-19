@@ -286,7 +286,7 @@ class MatrixConfig(BaseModel):
 class ClaudeRuntimeConfig(BaseModel):
     """Explicit deploy-time wiring for the Console-owned Claude chat runtime."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     namespace: str
     warm_pool: str
@@ -315,6 +315,19 @@ class ClaudeRuntimeConfig(BaseModel):
             "CURL_CA_BUNDLE": self.ca_bundle,
             "REQUESTS_CA_BUNDLE": self.ca_bundle,
         }
+
+
+class ChatRuntimesConfig(BaseModel):
+    """The closed catalog of chat-runtime implementations this deployment can launch.
+
+    A field is an implementation kind, not an arbitrary runtime-instance id. There is exactly one
+    configuration per implementation until a concrete need for several instances of one kind
+    exists; adding another implementation therefore extends this model with another named field.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    claude_code: ClaudeRuntimeConfig
 
 
 class WebPushConfig(BaseModel):

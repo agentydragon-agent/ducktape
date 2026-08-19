@@ -42,6 +42,7 @@ from haku.console.chat_models import (
     ItemStatus,
     ItemType,
     ReasoningDisclosure,
+    RuntimeKind,
     SessionStatus,
     StoredEventKind,
     ToolOutcome,
@@ -879,6 +880,11 @@ class Conversation(Base):
     operator_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
     )
+    # Immutable conversation identity. It lives here rather than on a session so a replacement
+    # runner necessarily inherits the implementation whose prompt, replay and projection semantics
+    # created the thread. Text + CHECK is deliberate: the next runtime widens one transactional
+    # constraint rather than altering a PostgreSQL enum type.
+    runtime_kind: Mapped[RuntimeKind] = mapped_column(TextBackedStrEnumColumn(RuntimeKind), nullable=False)
     # The next `conversation_event.event_seq` to hand out, taken under `SELECT … FOR UPDATE` in the
     # writing transaction. A counter here rather than a sequence because the log's address must be
     # **dense** — a sequence is unique but leaves gaps, and a gap a channel cannot distinguish from
@@ -887,6 +893,7 @@ class Conversation(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        CheckConstraint("runtime_kind IN ('claude_code')", name="ck_conversation_runtime_kind"),
         CheckConstraint("next_event_seq > 0", name="ck_conversation_next_event_seq"),
         Index("idx_conversation_operator", "operator_id", "created_at"),
     )
