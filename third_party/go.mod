@@ -11,6 +11,9 @@ require (
 // Direct dependencies for finance/worthy
 require github.com/fsouza/go-dockerclient v1.13.0
 
+// Direct dependencies for haku/kube_api_proxy
+require github.com/caarlos0/env/v11 v11.3.1
+
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect

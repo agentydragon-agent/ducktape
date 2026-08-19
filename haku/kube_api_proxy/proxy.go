@@ -1,6 +1,3 @@
-// Copyright 2026 agentydragon
-// SPDX-License-Identifier: Apache-2.0
-
 // Package kubeapiproxy implements an approval-aware reverse proxy for the
 // Kubernetes API. Request parsing uses the local, pinned adaptation of the
 // upstream apiserver RequestInfoFactory so authorization follows Kubernetes'

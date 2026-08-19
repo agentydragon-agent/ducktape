@@ -7,7 +7,7 @@ while the proxy is the only Kubernetes request path available to an Agent.
 
 ```text
 Agent --Haku bearer--> kube API proxy
-                       |  parse with Kubernetes RequestInfoFactory
+                       |  classify Kubernetes API path and verb
                        |  POST bearer + attributes + minimal PolicyRule
                        v
                     Haku Console
@@ -25,10 +25,10 @@ expiry reaper stopped.
 
 ## Implemented
 
-- A pinned, narrow adaptation of Kubernetes apiserver v0.34.1's
-  `RequestInfoFactory` maps HTTP method/path/query to its canonical API group,
-  resource, subresource, namespace, object name and verb. The Apache-2.0
-  upstream notice and the one conservative selector difference live beside it.
+- The request classifier maps Kubernetes' conventional `/api` and `/apis`
+  method/path/query forms to API group, resource, subresource, namespace,
+  object name and verb. Field-selected list requests remain conservatively
+  classified as `list` rather than approximating Kubernetes' selector parser.
 - The proxy derives the minimal equivalent resource or non-resource `PolicyRule`
   and sends it to Console with the original bearer in the `Authorization`
   header. The credential is never copied into JSON or logs.
@@ -92,19 +92,24 @@ invalid identity, and a non-2xx response when grant state cannot be read.
 
 ## Configuration
 
-| Environment                          |    Default | Meaning                                      |
-| ------------------------------------ | ---------: | -------------------------------------------- |
-| `HAKU_KUBE_AUTHORIZATION_URL`        |   required | Absolute HTTPS Console authorization URL     |
-| `HAKU_KUBE_ALLOW_INSECURE_AUTHORITY` |    `false` | Development/test-only plain-HTTP opt-in      |
-| `HAKU_KUBE_LISTEN_ADDRESS`           |    `:8080` | Proxy listen address                         |
-| `HAKU_KUBE_AUTHORIZATION_TIMEOUT`    |       `3s` | Maximum Console decision latency             |
-| `HAKU_KUBE_REQUEST_TIMEOUT`          |      `30s` | Maximum ordinary Kubernetes request lifetime |
-| `HAKU_KUBE_MAX_REQUEST_BYTES`        | `10485760` | Maximum request body size                    |
+| Environment                          |            Default | Meaning                                      |
+| ------------------------------------ | -----------------: | -------------------------------------------- |
+| `HAKU_KUBE_AUTHORIZATION_URL`        |           required | Absolute HTTPS Console authorization URL     |
+| `HAKU_KUBE_ALLOW_INSECURE_AUTHORITY` |            `false` | Development/test-only plain-HTTP opt-in      |
+| `HAKU_KUBE_LISTEN_ADDRESS`           |            `:8080` | Proxy listen address                         |
+| `HAKU_KUBE_AUTHORIZATION_TIMEOUT`    |               `3s` | Maximum Console decision latency             |
+| `HAKU_KUBE_REQUEST_TIMEOUT`          |              `30s` | Maximum ordinary Kubernetes request lifetime |
+| `HAKU_KUBE_MAX_REQUEST_BYTES`        |         `10485760` | Maximum request body size                    |
+| `HAKU_KUBE_SERVICEACCOUNT_DIRECTORY` | Kubernetes default | Projected CA and token directory             |
+| `KUBERNETES_SERVICE_HOST`            |           required | In-cluster Kubernetes API host               |
+| `KUBERNETES_SERVICE_PORT_HTTPS`      |           required | In-cluster API port (`..._PORT` fallback)    |
 
 The Kubernetes API address, CA and rotating projected bearer are loaded from
 Kubernetes' standard in-cluster environment and ServiceAccount files. This is
-the narrow subset of `client-go/rest.InClusterConfig` needed here, without
-bringing client-go's full dependency graph into the proxy image.
+the narrow in-cluster information needed by the proxy. Environment variables
+are decoded and validated together with `github.com/caarlos0/env/v11`; malformed
+configured durations, booleans and sizes stop startup rather than silently
+falling back to defaults.
 
 ## Deployment status and TODOs
 

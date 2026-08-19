@@ -1,6 +1,3 @@
-// Copyright 2026 agentydragon
-// SPDX-License-Identifier: Apache-2.0
-
 package kubeapiproxy
 
 import (

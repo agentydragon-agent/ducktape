@@ -1,6 +1,3 @@
-// Copyright 2026 agentydragon
-// SPDX-License-Identifier: Apache-2.0
-
 package kubeapiproxy
 
 import (
@@ -15,26 +12,25 @@ import (
 	"strings"
 )
 
-const defaultServiceAccountDirectory = "/var/run/secrets/kubernetes.io/serviceaccount"
+// InClusterConfig identifies the Kubernetes API and projected ServiceAccount
+// files used by the proxy's upstream identity.
+type InClusterConfig struct {
+	ServiceHost             string
+	ServicePort             string
+	ServiceAccountDirectory string
+}
 
 // InClusterUpstream builds the API URL and rotating ServiceAccount bearer
-// transport from Kubernetes' standard projected files. This is the small
-// subset of client-go/rest.InClusterConfig needed by this proxy.
-func InClusterUpstream() (*url.URL, http.RoundTripper, error) {
-	host := os.Getenv("KUBERNETES_SERVICE_HOST")
-	port := os.Getenv("KUBERNETES_SERVICE_PORT_HTTPS")
-	if port == "" {
-		port = os.Getenv("KUBERNETES_SERVICE_PORT")
+// transport from Kubernetes' standard projected files.
+func InClusterUpstream(config InClusterConfig) (*url.URL, http.RoundTripper, error) {
+	if config.ServiceHost == "" || config.ServicePort == "" {
+		return nil, nil, fmt.Errorf("Kubernetes service host and port are required")
 	}
-	if host == "" || port == "" {
-		return nil, nil, fmt.Errorf("KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT_HTTPS are required")
+	if config.ServiceAccountDirectory == "" {
+		return nil, nil, fmt.Errorf("Kubernetes ServiceAccount directory is required")
 	}
 
-	serviceAccountDirectory := os.Getenv("HAKU_KUBE_SERVICEACCOUNT_DIRECTORY")
-	if serviceAccountDirectory == "" {
-		serviceAccountDirectory = defaultServiceAccountDirectory
-	}
-	caFile := filepath.Join(serviceAccountDirectory, "ca.crt")
+	caFile := filepath.Join(config.ServiceAccountDirectory, "ca.crt")
 	caPEM, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read Kubernetes CA %s: %w", caFile, err)
@@ -43,7 +39,7 @@ func InClusterUpstream() (*url.URL, http.RoundTripper, error) {
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return nil, nil, fmt.Errorf("Kubernetes CA %s contains no certificates", caFile)
 	}
-	upstream, err := url.Parse("https://" + net.JoinHostPort(strings.Trim(host, "[]"), port))
+	upstream, err := url.Parse("https://" + net.JoinHostPort(strings.Trim(config.ServiceHost, "[]"), config.ServicePort))
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct Kubernetes API URL: %w", err)
 	}
@@ -56,7 +52,7 @@ func InClusterUpstream() (*url.URL, http.RoundTripper, error) {
 	}
 	return upstream, &serviceAccountTransport{
 		base:      base,
-		tokenFile: filepath.Join(serviceAccountDirectory, "token"),
+		tokenFile: filepath.Join(config.ServiceAccountDirectory, "token"),
 	}, nil
 }
 

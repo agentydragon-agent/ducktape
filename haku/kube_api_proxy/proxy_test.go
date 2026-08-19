@@ -1,6 +1,3 @@
-// Copyright 2026 agentydragon
-// SPDX-License-Identifier: Apache-2.0
-
 package kubeapiproxy
 
 import (
@@ -97,6 +94,52 @@ func request(t *testing.T, client *http.Client, method string, rawURL string, to
 		t.Fatal(err)
 	}
 	return response
+}
+
+func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
+	body, err := json.Marshal(AuthorizationRequest{
+		Attributes: RequestAttributes{
+			ResourceRequest: true,
+			APIGroup:        "apps",
+			APIVersion:      "v1",
+			FieldSelector:   "metadata.name=web",
+			LabelSelector:   "app=web",
+		},
+		RequiredRules: []PolicyRule{{
+			APIGroups:       []string{"apps"},
+			Resources:       []string{"deployments"},
+			ResourceNames:   []string{"web"},
+			NonResourceURLs: []string{"/version"},
+			Verbs:           []string{"get"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Unix(1, 0).UTC()
+	decisionBody, err := json.Marshal(AuthorizationResponse{Allowed: true, LeaseID: "lease", ExpiresAt: &expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(body) + string(decisionBody)
+	for _, field := range []string{
+		"resource_request",
+		"api_group",
+		"api_version",
+		"field_selector",
+		"label_selector",
+		"required_rules",
+		"api_groups",
+		"resources",
+		"resource_names",
+		"non_resource_urls",
+		"lease_id",
+		"expires_at",
+	} {
+		if !strings.Contains(encoded, `"`+field+`"`) {
+			t.Errorf("JSON does not contain %q: %s", field, encoded)
+		}
+	}
 }
 
 func TestNamedPodLogRequestIsAuthorizedAndForwarded(t *testing.T) {

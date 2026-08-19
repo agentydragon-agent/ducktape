@@ -134,6 +134,7 @@ use_repo(
     "com_github_blacktop_go_dwarf",
     "com_github_blacktop_go_macho",
     "com_github_bluekeyes_go_gitdiff",
+    "com_github_caarlos0_env_v11",
     "com_github_cheynewallace_tabby",
     "com_github_docker_docker",
     "com_github_elliotchance_orderedmap",
