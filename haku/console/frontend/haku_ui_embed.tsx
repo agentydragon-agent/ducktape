@@ -77,6 +77,15 @@ export function routeFromLocation(loc: { pathname: string; hash: string }): stri
     : rememberedEmbedPath();
 }
 
+/** Whether an approvals drawer opened by an incoming approval should close after the queue drains. */
+export function shouldCloseAutoOpenedApprovalQueue(
+  approvalsOpen: boolean,
+  openedAutomatically: boolean,
+  pendingApprovalCount: number
+): boolean {
+  return approvalsOpen && openedAutomatically && pendingApprovalCount === 0;
+}
+
 export function HakuUiEmbed({
   uiUrl,
   launchAvailable,
@@ -113,12 +122,21 @@ export function HakuUiEmbed({
   const [screenshotApprovals, setScreenshotApprovals] = useState<ScreenshotApproval[]>([]);
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const approvalsOpenedAutomaticallyRef = useRef(false);
   // A deep-linked call opens the drawer on arrival — following the link *is* the request to
   // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
   // closed, while closing it on the same call leaves it closed.
   useEffect(() => {
-    if (toolCallId) setApprovalsOpen(true);
+    if (toolCallId) {
+      approvalsOpenedAutomaticallyRef.current = true;
+      setApprovalsOpen(true);
+    }
   }, [toolCallId]);
+
+  function setApprovalsOpenFromUser(open: boolean) {
+    approvalsOpenedAutomaticallyRef.current = false;
+    setApprovalsOpen(open);
+  }
   const [decidingNonToolApprovalIds, setDecidingNonToolApprovalIds] = useState<string[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);
   // Computed once: later routeChanged mirroring must not rewrite `src` (that would
@@ -228,7 +246,10 @@ export function HakuUiEmbed({
   }
 
   function openApprovalQueue() {
-    setApprovalsOpen(true);
+    setApprovalsOpen((open) => {
+      if (!open) approvalsOpenedAutomaticallyRef.current = true;
+      return true;
+    });
   }
 
   function setNonToolDeciding(id: string, deciding: boolean) {
@@ -341,6 +362,16 @@ export function HakuUiEmbed({
   const liveStatus = useConsoleEvents((event) => {
     if (changedSessionId(event) === null) refreshToolApprovals();
   });
+
+  const pendingApprovalCount = toolApprovals.length + geolocationApprovals.length + screenshotApprovals.length;
+  useEffect(() => {
+    if (
+      shouldCloseAutoOpenedApprovalQueue(approvalsOpen, approvalsOpenedAutomaticallyRef.current, pendingApprovalCount)
+    ) {
+      approvalsOpenedAutomaticallyRef.current = false;
+      setApprovalsOpen(false);
+    }
+  }, [approvalsOpen, pendingApprovalCount]);
 
   // The session's absolute deadline, surfaced in the rail once it is near. Expiry is otherwise
   // invisible until a background request 401s and navigates the tab away mid-task.
@@ -581,7 +612,7 @@ export function HakuUiEmbed({
         onNavigate={onNavigate}
         approvalsOpen={approvalsOpen}
         focusedToolCallId={toolCallId ?? null}
-        onApprovalsOpenChange={setApprovalsOpen}
+        onApprovalsOpenChange={setApprovalsOpenFromUser}
         liveStatus={liveStatus}
         syncError={syncError}
         syncing={syncsInFlight > 0}
