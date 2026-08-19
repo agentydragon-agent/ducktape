@@ -15,13 +15,13 @@ from finance.augur.sim.codec.helpers import (
     code_column,
     codes_to_asset_wire_ids,
     codes_to_strings,
+    currency_quanta_column,
     frame_from_columns,
     lot_quantity_column,
     quantity_column,
     r_first_view,
     state_axes,
     state_history_frame_from_columns,
-    usd_column,
 )
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.enums import PrivateEquityDispositionKind, PrivateEquityOpportunityOutcome
@@ -49,7 +49,7 @@ def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Data
             "month_index": months,
             "agent_id": code_column(plan, plan.cash_agent_codes[slots]),
             "account_id": code_column(plan, plan.cash_account_codes[slots]),
-            "balance_usd": usd_column(state.reshape(-1)),
+            "balance_quanta": currency_quanta_column(state.reshape(-1)),
         },
         CASH_BALANCES_FRAME,
     )
@@ -77,7 +77,9 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
             "account_id": code_column(plan, plan.lot_account_codes[slots]),
             "asset_id": asset_code_column(plan, plan.lot_asset_codes[slots]),
             "purchase_month_index": purchase_month.reshape(-1),
-            "cost_basis_per_unit_usd": usd_column(basis.reshape(-1)),
+            "cost_basis_per_unit_quanta": currency_quanta_column(basis.reshape(-1)),
+            "remaining_quantity_quanta": np.asarray(state.reshape(-1), dtype=np.int64),
+            "quantity_scale": np.asarray(plan.lot_quantity_scale[slots], dtype=np.int64),
             "remaining_quantity": lot_quantity_column(plan, slots, state.reshape(-1)),
         },
         ASSET_LOT_FRAME,
@@ -200,13 +202,13 @@ def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
                     "asset_id": PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id,
                     "event_kind": event_code.name.lower(),
                     "regime": regime_code.name.lower(),
-                    "mark_usd": float(channels.marks[issuer_idx, rollout, month]),
+                    "mark_quanta": int(channels.mark_quanta[issuer_idx, rollout, month]),
                     "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
                     "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
                     "forced_sale_fraction": float(channels.forced_sale_fractions[issuer_idx, rollout, month]),
                     "liquidity_blocked": bool(channels.liquidity_blocked[issuer_idx, rollout, month]),
-                    "forced_recovery_cashout_usd": float(
-                        usd_column(channels.forced_recovery_cashout_cents[issuer_idx, rollout, month])
+                    "forced_recovery_cashout_quanta": int(
+                        channels.forced_recovery_cashout_quanta[issuer_idx, rollout, month]
                     ),
                 }
             )
@@ -240,17 +242,15 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
                 "event_kind": event_code.name.lower(),
                 "regime": regime_code.name.lower(),
                 "outcome": outcome.name.lower(),
-                "mark_usd": float(channels.marks[issuer_idx, rollout, month]),
+                "mark_quanta": int(channels.mark_quanta[issuer_idx, rollout, month]),
                 "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
                 "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
                 "liquidity_blocked": bool(channels.liquidity_blocked[issuer_idx, rollout, month]),
-                "floor_usd": float(usd_column(buffers.private_equity_opportunities.floor[month, issuer_idx, rollout])),
-                "liquid_net_worth_usd": float(
-                    usd_column(buffers.private_equity_opportunities.liquid_net_worth[month, issuer_idx, rollout])
+                "floor_quanta": int(buffers.private_equity_opportunities.floor[month, issuer_idx, rollout]),
+                "liquid_net_worth_quanta": int(
+                    buffers.private_equity_opportunities.liquid_net_worth[month, issuer_idx, rollout]
                 ),
-                "shortfall_usd": float(
-                    usd_column(buffers.private_equity_opportunities.shortfall[month, issuer_idx, rollout])
-                ),
+                "shortfall_quanta": int(buffers.private_equity_opportunities.shortfall[month, issuer_idx, rollout]),
                 "units_held": float(
                     quantity_column(
                         buffers.private_equity_opportunities.units_held[month, issuer_idx, rollout],
@@ -269,9 +269,7 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
                         _pe_issuer_scale(plan, issuer_idx),
                     )
                 ),
-                "proceeds_usd": float(
-                    usd_column(buffers.private_equity_opportunities.proceeds[month, issuer_idx, rollout])
-                ),
+                "proceeds_quanta": int(buffers.private_equity_opportunities.proceeds[month, issuer_idx, rollout]),
             }
         )
     return EVENT_FRAMES.private_equity_opportunities.normalize(pl.DataFrame(rows))
@@ -312,7 +310,7 @@ def _lot_disposition_frame(
         lot_id=codes_to_strings(plan, plan.lot_id_codes)[lots],
         purchase_month_index=plan.lot_purchase_month.astype(np.int64)[lots],
         units_sold=lot_quantity_column(plan, lots, units),
-        cost_basis_consumed_usd=usd_column(basis),
-        proceeds_usd=usd_column(proceeds),
+        cost_basis_consumed_quanta=currency_quanta_column(basis),
+        proceeds_quanta=currency_quanta_column(proceeds),
         proceeds_account_id=codes_to_strings(plan, proceeds_account_codes),
     )

@@ -38,7 +38,7 @@ _PROPERTY_LIFECYCLE_SCENARIOS = {
             "propertyId": "location_a_property",
             "propertyLifecycleEvents": [
                 {"kind": "set_rented_fraction", "month": 24, "rentedFractionPct": 50},
-                {"kind": "capital_improvement", "month": 60, "amountUsd": 50000},
+                {"kind": "capital_improvement", "month": 60, "amount": 50000},
                 {"kind": "property_sale", "month": 120, "closingCostPct": 6},
             ],
         },
@@ -74,6 +74,13 @@ def page(browser: Browser) -> Iterator[Page]:
             page.close()
         finally:
             context.close()
+
+
+@pytest.fixture
+def page_errors(page: Page) -> list[str]:
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    return errors
 
 
 @pytest.fixture
@@ -129,44 +136,46 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
         server_log.close()
 
 
-def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) -> None:
+def test_product_shell_renders_metric_fan_charts(page: Page, page_errors: list[str], augur_server: str) -> None:
     """Smoke-test the product surface end-to-end: load `/product`, select a few metrics,
     confirm the matching fan chart renders for each."""
     page.goto(f"{augur_server}/product", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
+    page.wait_for_timeout(1_000)
+    assert not page_errors
     page.get_by_label("Metric to plot").wait_for(state="visible", timeout=15_000)
-    page.get_by_label("Metric to plot").select_option("cash_usd")
-    page.locator("[data-product-fan-chart='cashUsd']").wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Metric to plot").select_option("cash")
+    page.locator("[data-product-fan-chart='cashQuanta']").wait_for(state="visible", timeout=30_000)
     # The linear/log scale toggle is in the sidebar's SharedControls.
     page.get_by_label("Chart scale").get_by_text("Log", exact=True).click()
-    page.locator("[data-product-fan-chart='cashUsd'][data-product-scale='log']").wait_for(
+    page.locator("[data-product-fan-chart='cashQuanta'][data-product-scale='log']").wait_for(
         state="visible", timeout=15_000
     )
     page.locator("[data-product-distribution-scale='log']").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Chart scale").get_by_text("Linear", exact=True).click()
-    page.locator("[data-product-fan-chart='cashUsd'][data-product-scale='linear']").wait_for(
+    page.locator("[data-product-fan-chart='cashQuanta'][data-product-scale='linear']").wait_for(
         state="visible", timeout=15_000
     )
     page.locator("[data-product-distribution-scale='linear']").wait_for(state="visible", timeout=15_000)
-    page.get_by_label("Metric to plot").select_option("holding_value_usd")
-    page.locator("[data-product-fan-chart='holdingValueUsd']").wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Metric to plot").select_option("holding_value")
+    page.locator("[data-product-fan-chart='holdingValueQuanta']").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Initial portfolio").wait_for(state="visible", timeout=15_000)
     # Grand total (cash + holdings + bond face) is shown in the collapsed accordion summary.
-    assert page.locator("[data-product-portfolio-subtotal='total']").inner_text() == "$1,260,500"
+    assert page.locator("[data-product-portfolio-subtotal='total']").inner_text() == "USD\u00a01,260,500.00"
     # Open the accordion to see per-bucket subtotals inline with their positions.
     page.get_by_text("Initial portfolio").click()
-    assert page.locator("[data-product-portfolio-subtotal='public-securities']").inner_text() == "$835,500"
-    assert page.locator("[data-product-portfolio-subtotal='private-securities']").inner_text() == "$25,000"
+    assert page.locator("[data-product-portfolio-subtotal='public-securities']").inner_text() == "USD\u00a0835,500.00"
+    assert page.locator("[data-product-portfolio-subtotal='private-securities']").inner_text() == "USD\u00a025,000.00"
     # The ladder gets its own group rather than a row in either of those: face is not a mark, so
     # folding it into a "value" subtotal would assert a price the model does not produce.
-    assert page.locator("[data-product-portfolio-subtotal='bonds']").inner_text() == "$150,000"
+    assert page.locator("[data-product-portfolio-subtotal='bonds']").inner_text() == "USD\u00a0150,000.00"
     assert page.get_by_text("Bonds (held to maturity)").is_visible()
 
 
 def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: Page, augur_server: str) -> None:
     page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
-    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     # Select a rollout by clicking the terminal-distribution plot (the per-rollout "sliver" strip
     # was replaced by the quantile-line distribution in #1848; the plot is the click-to-inspect surface).
     plot = page.locator("[data-product-terminal-distribution-plot]")
@@ -196,7 +205,7 @@ def test_distribution_click_away_clears_selection(page: Page, augur_server: str)
     clears the selection (click-away-to-deselect)."""
     page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
-    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     plot = page.locator("[data-product-terminal-distribution-plot]")
     plot.wait_for(state="visible", timeout=30_000)
     box = plot.bounding_box()

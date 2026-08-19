@@ -48,10 +48,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def target_value_cents(*, weights: NDArray[np.int64] | jnp.ndarray, total_cents: jnp.ndarray) -> jnp.ndarray:
+def target_value_quanta(*, weights: NDArray[np.int64] | jnp.ndarray, total_quanta: jnp.ndarray) -> jnp.ndarray:
     """Each sleeve's on-target value: `total * weight_i / sum(weight)`, floored.
 
-    `weights` is `(sleeve,)`, `total_cents` is `(rollout,)`, result is `(sleeve, rollout)`.
+    `weights` is `(sleeve,)`, `total_quanta` is `(rollout,)`, result is `(sleeve, rollout)`.
     """
 
     _validate_weights(weights)
@@ -61,16 +61,16 @@ def target_value_cents(*, weights: NDArray[np.int64] | jnp.ndarray, total_cents:
     # full compile per arm. Weights are swept numeric config; only their RATIOS matter, and
     # nothing here needs their values at trace time.
     weights = jnp.asarray(weights)
-    return (weights[:, None] * total_cents[None, :]) // jnp.sum(weights)
+    return (weights[:, None] * total_quanta[None, :]) // jnp.sum(weights)
 
 
 def withdrawal_by_sleeve(
-    *, value_cents: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, raise_cents: jnp.ndarray
+    *, value_quanta: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, raise_quanta: jnp.ndarray
 ) -> jnp.ndarray:
     """Split a cash-raise across sleeves so what remains is as close to target as possible.
 
-    `value_cents` is `(sleeve, rollout)`, `weights` is `(sleeve,)`, `raise_cents` is
-    `(rollout,)`. Result is `(sleeve, rollout)` and sums to exactly `raise_cents` per
+    `value_quanta` is `(sleeve, rollout)`, `weights` is `(sleeve,)`, `raise_quanta` is
+    `(rollout,)`. Result is `(sleeve, rollout)` and sums to exactly `raise_quanta` per
     rollout, except where the sleeves cannot cover it, in which case every sleeve is
     drained and the caller sees a total short of the request.
 
@@ -78,24 +78,24 @@ def withdrawal_by_sleeve(
     """
 
     _validate_weights(weights)
-    if value_cents.ndim != 2:
-        raise ValueError(f"value_cents must be (sleeve, rollout), got {value_cents.shape}")
-    if value_cents.shape[0] != weights.shape[0]:
-        raise ValueError(f"value_cents has {value_cents.shape[0]} sleeves but weights has {weights.shape[0]}")
-    if raise_cents.shape != (value_cents.shape[1],):
-        raise ValueError(f"raise_cents must be (rollout,), got {raise_cents.shape}")
+    if value_quanta.ndim != 2:
+        raise ValueError(f"value_quanta must be (sleeve, rollout), got {value_quanta.shape}")
+    if value_quanta.shape[0] != weights.shape[0]:
+        raise ValueError(f"value_quanta has {value_quanta.shape[0]} sleeves but weights has {weights.shape[0]}")
+    if raise_quanta.shape != (value_quanta.shape[1],):
+        raise ValueError(f"raise_quanta must be (rollout,), got {raise_quanta.shape}")
 
-    available = value_cents.sum(axis=0)
-    wanted = jnp.minimum(jnp.maximum(raise_cents, 0), available)
+    available = value_quanta.sum(axis=0)
+    wanted = jnp.minimum(jnp.maximum(raise_quanta, 0), available)
 
     # Water level per rollout. Candidate levels are the sleeve value-per-weight ratios: between
     # two adjacent ratios the set of contributing sleeves is fixed, so the level solves a linear
     # equation there. Walking the ratios in descending order grows that set one sleeve at a time.
     # Ratios are compared as float only to ORDER them; every amount below stays in integer cents.
-    ratio = value_cents / weights[:, None]
+    ratio = value_quanta / weights[:, None]
     order = jnp.argsort(-ratio, axis=0, stable=True)
-    value_sorted = jnp.take_along_axis(value_cents, order, axis=0)
-    weight_sorted = jnp.take_along_axis(jnp.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
+    value_sorted = jnp.take_along_axis(value_quanta, order, axis=0)
+    weight_sorted = jnp.take_along_axis(jnp.broadcast_to(weights[:, None], value_quanta.shape), order, axis=0)
     ratio_sorted = jnp.take_along_axis(ratio, order, axis=0)
 
     value_prefix = jnp.cumsum(value_sorted, axis=0)
@@ -110,13 +110,13 @@ def withdrawal_by_sleeve(
     chosen = jnp.argmax(feasible, axis=0)
     water = jnp.take_along_axis(level, chosen[None, :], axis=0)
 
-    taken = jnp.maximum(value_cents - _round_half_up(water * weights[:, None]), 0)
-    taken = jnp.minimum(taken, value_cents)
-    return _settle_residual(taken=taken, value_cents=value_cents, wanted=wanted)
+    taken = jnp.maximum(value_quanta - _round_half_up(water * weights[:, None]), 0)
+    taken = jnp.minimum(taken, value_quanta)
+    return _settle_residual(taken=taken, value_quanta=value_quanta, wanted=wanted)
 
 
 def deposit_by_sleeve(
-    *, value_cents: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, invest_cents: jnp.ndarray
+    *, value_quanta: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, invest_quanta: jnp.ndarray
 ) -> jnp.ndarray:
     """Split cash to invest across sleeves so the result is as close to target as possible.
 
@@ -126,27 +126,27 @@ def deposit_by_sleeve(
 
     Simpler than the withdrawal in one respect — there is no availability cap, since you
     can always buy more of a sleeve but cannot sell more than you hold. So the result
-    always sums to exactly `invest_cents`.
+    always sums to exactly `invest_quanta`.
 
     Shapes and exactness match `withdrawal_by_sleeve`. Investing zero deposits nothing.
     """
 
     _validate_weights(weights)
-    if value_cents.ndim != 2:
-        raise ValueError(f"value_cents must be (sleeve, rollout), got {value_cents.shape}")
-    if value_cents.shape[0] != weights.shape[0]:
-        raise ValueError(f"value_cents has {value_cents.shape[0]} sleeves but weights has {weights.shape[0]}")
-    if invest_cents.shape != (value_cents.shape[1],):
-        raise ValueError(f"invest_cents must be (rollout,), got {invest_cents.shape}")
+    if value_quanta.ndim != 2:
+        raise ValueError(f"value_quanta must be (sleeve, rollout), got {value_quanta.shape}")
+    if value_quanta.shape[0] != weights.shape[0]:
+        raise ValueError(f"value_quanta has {value_quanta.shape[0]} sleeves but weights has {weights.shape[0]}")
+    if invest_quanta.shape != (value_quanta.shape[1],):
+        raise ValueError(f"invest_quanta must be (rollout,), got {invest_quanta.shape}")
 
-    wanted = jnp.maximum(invest_cents, 0)
+    wanted = jnp.maximum(invest_quanta, 0)
 
     # Same construction as the withdrawal with the inequality flipped: walk the ratios
     # ASCENDING, so the set of receiving sleeves grows from the most underweight up.
-    ratio = value_cents / weights[:, None]
+    ratio = value_quanta / weights[:, None]
     order = jnp.argsort(ratio, axis=0, stable=True)
-    value_sorted = jnp.take_along_axis(value_cents, order, axis=0)
-    weight_sorted = jnp.take_along_axis(jnp.broadcast_to(weights[:, None], value_cents.shape), order, axis=0)
+    value_sorted = jnp.take_along_axis(value_quanta, order, axis=0)
+    weight_sorted = jnp.take_along_axis(jnp.broadcast_to(weights[:, None], value_quanta.shape), order, axis=0)
     ratio_sorted = jnp.take_along_axis(ratio, order, axis=0)
 
     value_prefix = jnp.cumsum(value_sorted, axis=0)
@@ -158,12 +158,12 @@ def deposit_by_sleeve(
     chosen = jnp.argmax(level <= next_ratio, axis=0)
     water = jnp.take_along_axis(level, chosen[None, :], axis=0)
 
-    given = jnp.maximum(_round_half_up(water * weights[:, None]) - value_cents, 0)
-    return _settle_residual(taken=given, value_cents=given + wanted[None, :], wanted=wanted)
+    given = jnp.maximum(_round_half_up(water * weights[:, None]) - value_quanta, 0)
+    return _settle_residual(taken=given, value_quanta=given + wanted[None, :], wanted=wanted)
 
 
 def rebalance_by_sleeve(
-    *, value_cents: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, tolerance: float
+    *, value_quanta: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, tolerance: float
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Trim every sleeve above target and top up every sleeve below it — or trade nothing at all.
 
@@ -171,7 +171,7 @@ def rebalance_by_sleeve(
     only ever move money that was already moving, so a sleeve that quietly doubles is never sold
     down. This one trades for no reason but the drift.
 
-    Returns `(sell_cents, buy_cents)`, both `(sleeve, rollout)`. They are disjoint per sleeve — a
+    Returns `(sell_quanta, buy_quanta)`, both `(sleeve, rollout)`. They are disjoint per sleeve — a
     sleeve is above target or below it, never both — and each is zero in a rollout that did not
     trigger.
 
@@ -192,20 +192,20 @@ def rebalance_by_sleeve(
     _validate_weights(weights)
     if tolerance < 0:
         raise ValueError(f"rebalance tolerance must not be negative; got {tolerance=}")
-    if value_cents.ndim != 2:
-        raise ValueError(f"value_cents must be (sleeve, rollout), got {value_cents.shape}")
-    if value_cents.shape[0] != weights.shape[0]:
-        raise ValueError(f"value_cents has {value_cents.shape[0]} sleeves but weights has {weights.shape[0]}")
+    if value_quanta.ndim != 2:
+        raise ValueError(f"value_quanta must be (sleeve, rollout), got {value_quanta.shape}")
+    if value_quanta.shape[0] != weights.shape[0]:
+        raise ValueError(f"value_quanta has {value_quanta.shape[0]} sleeves but weights has {weights.shape[0]}")
 
-    target = target_value_cents(weights=weights, total_cents=value_cents.sum(axis=0))
-    drift = value_cents - target
+    target = target_value_quanta(weights=weights, total_quanta=value_quanta.sum(axis=0))
+    drift = value_quanta - target
     # `target > 0` guards the empty portfolio: with nothing held every sleeve is exactly on target,
     # and the relative test would be comparing zero against zero.
     fires = ((jnp.abs(drift) >= tolerance * target) & (target > 0)).any(axis=0)
     return jnp.where(fires, jnp.maximum(drift, 0), 0), jnp.where(fires, jnp.maximum(-drift, 0), 0)
 
 
-def _settle_residual(*, taken: jnp.ndarray, value_cents: jnp.ndarray, wanted: jnp.ndarray) -> jnp.ndarray:
+def _settle_residual(*, taken: jnp.ndarray, value_quanta: jnp.ndarray, wanted: jnp.ndarray) -> jnp.ndarray:
     """Absorb the cent that rounding the water level costs, so the split is exact.
 
     The level is fractional, so per-sleeve amounts round and the total drifts from `wanted`
@@ -216,7 +216,7 @@ def _settle_residual(*, taken: jnp.ndarray, value_cents: jnp.ndarray, wanted: jn
     residual = wanted - taken.sum(axis=0)
     # Room each sleeve has to move in the needed direction: toward its cap when the residual
     # is positive, toward zero when negative.
-    headroom = jnp.where(residual >= 0, value_cents - taken, taken)
+    headroom = jnp.where(residual >= 0, value_quanta - taken, taken)
     # The sleeve with the MOST room, so the correction is absorbed whenever any single sleeve
     # can absorb it. Selecting by size of contribution instead would pick a fully-drained
     # sleeve over a roomy one.
@@ -229,7 +229,7 @@ def _settle_residual(*, taken: jnp.ndarray, value_cents: jnp.ndarray, wanted: jn
     # some sleeve always has room — but if those ever stopped holding, a total off by a cent is
     # a far better failure than a negative holding or an oversold sleeve, which would create
     # money. This is the guarantee the fuzz tests assert.
-    return jnp.clip(adjusted, 0, value_cents)
+    return jnp.clip(adjusted, 0, value_quanta)
 
 
 def _round_half_up(values: jnp.ndarray) -> jnp.ndarray:
@@ -240,7 +240,7 @@ def _validate_weights(weights: NDArray[np.int64] | jnp.ndarray) -> None:
     """Shape always; POSITIVITY whenever the values are concrete.
 
     `weights` may arrive TRACED — the engine passes a device array so that sweeping an allocation
-    does not recompile (see `target_value_cents`) — and a tracer has no values to test, so
+    does not recompile (see `target_value_quanta`) — and a tracer has no values to test, so
     `np.any(weights <= 0)` would raise on the tracer itself instead of rejecting a bad weight.
     Shape stays checkable either way, because a tracer's shape is static.
 

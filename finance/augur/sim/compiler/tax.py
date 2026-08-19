@@ -8,9 +8,9 @@ capital-gain-agent index also live here since they're tax-routing concerns."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Protocol
 
 import numpy as np
@@ -20,8 +20,8 @@ from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
 from finance.augur.sim.compiler.helpers import AccountSlots, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
-from finance.augur.sim.fixed_point import usd_to_cents
-from finance.augur.sim.jurisdictions import Jurisdiction, JurisdictionLevel, load_jurisdiction
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.jurisdictions import BracketUpper, Jurisdiction, JurisdictionLevel, load_jurisdiction
 from finance.augur.sim.scenario import FilingStatus, InterestIncome, Scenario, TransferIncomeCategory
 
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
@@ -32,25 +32,25 @@ SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
 # is the single source of truth; new `FilingStatus` variants must add an entry here or
 # `section_121_exclusion_for` raises NotImplementedError — which keeps "I forgot this
 # branch" from silently falling through to a wrong tax number.
-_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS: dict[FilingStatus, float] = {FilingStatus.SINGLE: 250_000.0}
-_OPEN_ENDED_BRACKET_UPPER_CENTS = np.iinfo(np.int64).max
+_SECTION_121_EXCLUSION_BY_FILING_STATUS: dict[FilingStatus, Decimal] = {FilingStatus.SINGLE: Decimal(250_000)}
+_OPEN_ENDED_BRACKET_UPPER_QUANTA = np.iinfo(np.int64).max
 
 
-def section_121_exclusion_for(filing_status: FilingStatus) -> float:
-    if filing_status not in _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS:
+def section_121_exclusion_for(filing_status: FilingStatus) -> Decimal:
+    if filing_status not in _SECTION_121_EXCLUSION_BY_FILING_STATUS:
         raise NotImplementedError(
             f"§121 exclusion cap is not implemented for filing_status={filing_status!r}; "
-            f"add a {filing_status} entry to _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS "
+            f"add a {filing_status} entry to _SECTION_121_EXCLUSION_BY_FILING_STATUS "
             f"and audit every other place that branches on filing status (jurisdiction "
             f"bracket lookups, standard-deduction lookups, MID, SALT cap, NIIT thresholds)."
         )
-    return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
+    return _SECTION_121_EXCLUSION_BY_FILING_STATUS[filing_status]
 
 
-def bracket_upper_to_cents(upper_usd: float) -> np.int64:
-    if math.isinf(upper_usd):
-        return np.int64(_OPEN_ENDED_BRACKET_UPPER_CENTS)
-    return usd_to_cents(upper_usd)
+def bracket_upper_to_quanta(upper: BracketUpper, *, currency_quantum: object) -> np.int64:
+    if upper == "Infinity":
+        return np.int64(_OPEN_ENDED_BRACKET_UPPER_QUANTA)
+    return currency_amount_to_quanta(upper, quantum=currency_quantum)
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class TaxCompileOutput:
 
     - `profile_section_121_exclusion`: §121 primary-residence exclusion cap, USD.
       Looked up by filing status at compile time
-      (`_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`); only `single` is wired today
+      (`_SECTION_121_EXCLUSION_BY_FILING_STATUS`); only `single` is wired today
       ($250k). Engine reads on every property sale to compute the exclusion ceiling.
     - `link_section_1250_rate`: §1250 unrecaptured-depreciation rate cap. Positive ⇒
       federal-style flat rate (0.25 for `federal_us`); 0.0 ⇒ no separate cap, recapture
@@ -161,17 +161,27 @@ def compile_tax(
         payment_account.append(strings.require(profile.payment_account_id))
         authority_agent.append(strings.require(profile.tax_authority_agent_id))
         authority_account.append(strings.require(profile.tax_authority_account_id))
-        prior_year_tax.append(usd_to_cents(profile.prior_year_tax_usd))
-        section_121_exclusion.append(usd_to_cents(section_121_exclusion_for(profile.filing_status)))
+        prior_year_tax.append(currency_amount_to_quanta(profile.prior_year_tax, quantum=scenario.currency.quantum))
+        section_121_exclusion.append(
+            currency_amount_to_quanta(
+                section_121_exclusion_for(profile.filing_status), quantum=scenario.currency.quantum
+            )
+        )
         for jurisdiction_id in profile.jurisdiction_ids:
             jurisdiction = jurisdictions[jurisdiction_id]
             ordinary = [
-                (bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                (
+                    bracket_upper_to_quanta(bracket.upper, currency_quantum=scenario.currency.quantum),
+                    float(bracket.rate),
+                )
                 for bracket in jurisdiction.ordinary_income_brackets[profile.filing_status]
             ]
             ltcg = (
                 [
-                    (bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                    (
+                        bracket_upper_to_quanta(bracket.upper, currency_quantum=scenario.currency.quantum),
+                        float(bracket.rate),
+                    )
                     for bracket in jurisdiction.ltcg_brackets[profile.filing_status]
                 ]
                 if jurisdiction.ltcg_brackets is not None
@@ -181,7 +191,11 @@ def compile_tax(
             max_ltcg = max(max_ltcg, len(ltcg))
             link_profile.append(profile_index)
             link_jurisdiction.append(strings.require(jurisdiction_id))
-            standard_deduction.append(usd_to_cents(jurisdiction.standard_deduction[profile.filing_status]))
+            standard_deduction.append(
+                currency_amount_to_quanta(
+                    jurisdiction.standard_deduction[profile.filing_status], quantum=scenario.currency.quantum
+                )
+            )
             has_ltcg.append(1 if jurisdiction.ltcg_brackets is not None else 0)
             # Federal-us gets the §1250 25% flat rate cap; all other jurisdictions tax
             # unrecaptured-depreciation as ordinary income (CA, etc.).

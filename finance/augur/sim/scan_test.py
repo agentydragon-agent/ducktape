@@ -7,13 +7,13 @@ sales, purchases, property tax, mortgages, year-end tax) with exact expected val
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import polars as pl
-import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
 from finance.augur.sim.locations import Location
-from finance.augur.sim.runtime import mortgage_monthly_payment_usd
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
@@ -33,13 +33,13 @@ from finance.augur.sim.scenario import (
 from finance.augur.sim.simulate import simulate
 
 
-def _cash(run, agent_id: str, month_index: int) -> float:
+def _cash(run, agent_id: str, month_index: int) -> int:
     # `.item()` is typed Any; coerce so the lint aspect's mypy doesn't flag no-any-return.
-    return float(
+    return int(
         run.cash_balances.filter(
             (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_index") == 0)
         )
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
         .item()
     )
 
@@ -49,9 +49,9 @@ def test_transfers_only_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="bob")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=500.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=100),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=500),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -62,7 +62,7 @@ def test_transfers_only_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=1_000.0,
+                amount=1000,
             )
         ],
         scheduled_transfers=[
@@ -73,7 +73,7 @@ def test_transfers_only_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=250.0,
+                amount=250,
             )
         ],
         tax_profiles=[],
@@ -82,11 +82,11 @@ def test_transfers_only_scan() -> None:
     run = simulate(scenario, rollout_count=4, locations={})
 
     # alice: 100 opening + 12 paychecks of 1000 + a 250 gift = 12350.
-    assert _cash(run, "alice", 12) == pytest.approx(100.0 + 12 * 1_000.0 + 250.0)
-    assert _cash(run, "bob", 12) == pytest.approx(500.0 - 250.0)
-    assert _cash(run, "payroll", 12) == pytest.approx(-12 * 1_000.0)
+    assert _cash(run, "alice", 12) == 1_235_000
+    assert _cash(run, "bob", 12) == 25_000
+    assert _cash(run, "payroll", 12) == -1_200_000
     # Mid-horizon snapshot: 6 paychecks landed by month 6 (months 0..5), gift not yet (fires at 6).
-    assert _cash(run, "alice", 6) == pytest.approx(100.0 + 6 * 1_000.0)
+    assert _cash(run, "alice", 6) == 610_000
 
 
 def test_configured_obligation_scan() -> None:
@@ -95,9 +95,9 @@ def test_configured_obligation_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -108,7 +108,7 @@ def test_configured_obligation_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=5_000.0,
+                amount=5000,
             )
         ],
         recurring_obligations=[
@@ -121,7 +121,7 @@ def test_configured_obligation_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=2_000.0,
+                amount_due=2000,
             )
         ],
         tax_profiles=[],
@@ -130,9 +130,9 @@ def test_configured_obligation_scan() -> None:
     run = simulate(scenario, rollout_count=4, locations={})
 
     # alice: 1000 opening + 12 paychecks of 5000 - 12 rents of 2000 = 37000.
-    assert _cash(run, "alice", 12) == pytest.approx(1_000.0 + 12 * 5_000.0 - 12 * 2_000.0)
-    assert _cash(run, "landlord", 12) == pytest.approx(12 * 2_000.0)
-    assert _cash(run, "payroll", 12) == pytest.approx(-12 * 5_000.0)
+    assert _cash(run, "alice", 12) == 3_700_000
+    assert _cash(run, "landlord", 12) == 2_400_000
+    assert _cash(run, "payroll", 12) == -6_000_000
 
 
 def test_obligation_failure_scan() -> None:
@@ -143,8 +143,8 @@ def test_obligation_failure_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         recurring_obligations=[
             RecurringObligation(
@@ -156,7 +156,7 @@ def test_obligation_failure_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=600.0,
+                amount_due=600,
             )
         ],
         tax_profiles=[],
@@ -164,20 +164,20 @@ def test_obligation_failure_scan() -> None:
     )
     run = simulate(scenario, rollout_count=4, locations={})
 
-    assert _cash(run, "alice", 1) == pytest.approx(400.0)  # after month 0: rent paid (1000 -> 400)
-    assert _cash(run, "landlord", 1) == pytest.approx(600.0)  # month 0's rent landed pre-failure
-    assert _cash(run, "alice", 12) == pytest.approx(0.0)  # whole rollout zeroed after month-1 failure
-    assert _cash(run, "landlord", 12) == pytest.approx(0.0)  # landlord's column zeroed too
+    assert _cash(run, "alice", 1) == 40_000  # after month 0: rent paid (1000 -> 400)
+    assert _cash(run, "landlord", 1) == 60_000  # month 0's rent landed pre-failure
+    assert _cash(run, "alice", 12) == 0  # whole rollout zeroed after month-1 failure
+    assert _cash(run, "landlord", 12) == 0  # landlord's column zeroed too
 
 
-def _gain(run, agent_id: str, classification: str, month_index: int) -> float:
+def _gain(run, agent_id: str, classification: str, month_index: int) -> int:
     rows = run.capital_gains_ytd.filter(
         (pl.col("agent_id") == agent_id)
         & (pl.col("classification") == classification)
         & (pl.col("month_index") == month_index)
         & (pl.col("rollout_index") == 0)
-    ).get_column("gain_usd")
-    return float(rows.item()) if len(rows) else 0.0
+    ).get_column("gain_quanta")
+    return int(rows.item()) if len(rows) else 0
 
 
 def test_scheduled_sale_scan() -> None:
@@ -187,7 +187,7 @@ def test_scheduled_sale_scan() -> None:
     # the scan. Deterministic fixed price keeps the assertion exact across rollouts.
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="alice_sp500",
@@ -196,7 +196,7 @@ def test_scheduled_sale_scan() -> None:
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 purchase_month_index=-24,  # long-term when sold at month 3
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_asset_sales=[
@@ -207,7 +207,7 @@ def test_scheduled_sale_scan() -> None:
                 source_account_id="brokerage",
                 asset=SecurityKey(symbol=SP500_SYMBOL),
                 quantity=100.0,
-                price_per_unit_usd=120.0,
+                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
@@ -216,11 +216,11 @@ def test_scheduled_sale_scan() -> None:
     )
     run = simulate(scenario, rollout_count=4, locations={})
 
-    assert _cash(run, "alice", 3) == pytest.approx(0.0)  # before the month-3 sale
-    assert _cash(run, "alice", 4) == pytest.approx(100.0 * 120.0)  # proceeds credited after month 3
+    assert _cash(run, "alice", 3) == 0  # before the month-3 sale
+    assert _cash(run, "alice", 4) == 1_200_000  # proceeds credited after month 3
     # Long-term realized gain = 100 * (120 - 80) = 4000, held in YTD through the (sub-year) horizon.
-    assert _gain(run, "alice", "ltcg", 4) == pytest.approx(4_000.0)
-    assert _gain(run, "alice", "stcg", 4) == pytest.approx(0.0)
+    assert _gain(run, "alice", "ltcg", 4) == 400_000
+    assert _gain(run, "alice", "stcg", 4) == 0
 
 
 def test_cash_property_purchase_scan() -> None:
@@ -231,8 +231,8 @@ def test_cash_property_purchase_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -243,9 +243,9 @@ def test_cash_property_purchase_scan() -> None:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,  # all-cash
-                buyer_closing_cost_usd=10_000.0,
+                purchase_price=500000,
+                down_payment=500000,  # all-cash
+                buyer_closing_cost=10000,
                 rented_fraction=0.0,
             )
         ],
@@ -263,9 +263,9 @@ def test_cash_property_purchase_scan() -> None:
     run = simulate(scenario, rollout_count=4, locations=locations)
 
     # stake = down payment + closing = 510k, moved buyer -> seller during month 2 (snapshot index 3).
-    assert _cash(run, "alice", 2) == pytest.approx(600_000.0)  # before purchase
-    assert _cash(run, "alice", 3) == pytest.approx(600_000.0 - 510_000.0)
-    assert _cash(run, "seller", 3) == pytest.approx(510_000.0)
+    assert _cash(run, "alice", 2) == 60_000_000  # before purchase
+    assert _cash(run, "alice", 3) == 9_000_000
+    assert _cash(run, "seller", 3) == 51_000_000
 
 
 def test_property_tax_scan() -> None:
@@ -276,9 +276,9 @@ def test_property_tax_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="county")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="county", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="county", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -289,9 +289,9 @@ def test_property_tax_scan() -> None:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=500000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
             )
         ],
@@ -314,23 +314,22 @@ def test_property_tax_scan() -> None:
     run = simulate(scenario, rollout_count=4, locations=locations)
 
     # After month 0: 500k purchase, no tax yet (accrues only once owned). Then $500/mo for months 1-3.
-    assert _cash(run, "alice", 1) == pytest.approx(100_000.0)
-    assert _cash(run, "alice", 4) == pytest.approx(100_000.0 - 3 * 500.0)
-    assert _cash(run, "county", 4) == pytest.approx(3 * 500.0)
+    assert _cash(run, "alice", 1) == 10_000_000
+    assert _cash(run, "alice", 4) == 9_850_000
+    assert _cash(run, "county", 4) == 150_000
 
 
 def test_financed_purchase_scan() -> None:
     # A mortgage-financed home purchase: month 0 originates the loan (down payment moves buyer ->
     # seller, liability principal set), then monthly mortgage-payment obligations (interest/principal
     # split) settle buyer -> lender from month 1. No tax profile, so it routes through the scan.
-    principal = 400_000.0
-    payment = mortgage_monthly_payment_usd(principal, 0.06, 360)
+    principal = 400_000
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=300000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -341,14 +340,14 @@ def test_financed_purchase_scan() -> None:
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=100000,
+                buyer_closing_cost=0,
                 rented_fraction=0.0,
                 mortgage=MortgageFinancing(
                     liability_id="alice_mortgage",
                     lender_agent_id="lender",
-                    principal_usd=principal,
+                    principal=principal,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),
@@ -365,17 +364,17 @@ def test_financed_purchase_scan() -> None:
     run = simulate(scenario, rollout_count=4, locations=locations)
 
     # After month 0: down payment only (mortgage payments start the month after origination).
-    assert _cash(run, "alice", 1) == pytest.approx(300_000.0 - 100_000.0)
+    assert _cash(run, "alice", 1) == 20_000_000
     # Months 1 & 2 each pay one mortgage bill to the lender; alice's cash nets both off.
-    assert _cash(run, "lender", 3) == pytest.approx(2 * payment)
-    assert _cash(run, "alice", 3) == pytest.approx(300_000.0 - 100_000.0 - 2 * payment)
+    assert _cash(run, "lender", 3) == 479_640
+    assert _cash(run, "alice", 3) == 19_520_360
 
 
-def _federal_tax(run) -> float:
+def _federal_tax(run) -> int:
     rows = run.tax_liabilities.filter(
         (pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_index") == 0)
-    ).get_column("amount_owed_usd")
-    return float(rows.sum())
+    ).get_column("amount_owed_quanta")
+    return int(rows.sum())
 
 
 def test_year_end_tax_scan() -> None:
@@ -385,9 +384,9 @@ def test_year_end_tax_scan() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -398,7 +397,7 @@ def test_year_end_tax_scan() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=120_000.0 / 12.0,
+                amount=Decimal(120000) / Decimal(12),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -408,7 +407,7 @@ def test_year_end_tax_scan() -> None:
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=15_000.0,  # > 0 -> quarterly estimated-tax obligations next year
+                prior_year_tax=15000,  # > 0 -> quarterly estimated-tax obligations next year
             )
         ],
         horizon_months=36,
@@ -416,8 +415,8 @@ def test_year_end_tax_scan() -> None:
     run = simulate(scenario, rollout_count=2, locations={})
     federal_tax = _federal_tax(run)
 
-    assert federal_tax > 0.0  # a real federal tax accrued at year-end
-    assert _cash(run, "irs", 36) > 0.0  # estimated payments and true-ups reached the tax authority
+    assert federal_tax > 0  # a real federal tax accrued at year-end
+    assert _cash(run, "irs", 36) > 0  # estimated payments and true-ups reached the tax authority
 
 
 if __name__ == "__main__":

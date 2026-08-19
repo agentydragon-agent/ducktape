@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
+from pydantic import (
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    StringConstraints,
+    model_validator,
+)
 
-from finance.augur.api.schemas import ApiModel, Frame, Percentage
+from finance.augur.api.schemas import ApiModel, Frame, NonNegativeCurrencyAmount, Percentage, PositiveCurrencyAmount
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.product.asset_key import AssetKey
+from finance.augur.sim.fixed_point import validate_currency_quantum
 
 SpendIndex = Literal["none", "inflation"]
 PrivateEquityEventKind = Literal[
@@ -25,17 +35,19 @@ PrivateEquityOpportunityOutcome = Literal[
     "sold", "floor_satisfied", "capacity_zero", "liquidity_blocked", "no_policy", "no_units", "nonpositive_mark"
 ]
 MetricName = Literal[
-    "cash_usd",
-    "holding_value_usd",
-    "private_equity_value_usd",
-    "property_value_usd",
-    "mortgage_balance_usd",
-    "home_equity_usd",
-    "liquid_net_worth_usd",
-    "net_worth_usd",
-    "shortfall_usd",
-    "bond_value_usd",
+    "cash",
+    "holding_value",
+    "private_equity_value",
+    "property_value",
+    "mortgage_balance",
+    "home_equity",
+    "liquid_net_worth",
+    "net_worth",
+    "shortfall",
+    "bond_value",
 ]
+# Decimal integer strings keep Int64 money exact across the JSON/JavaScript boundary.
+type CurrencyQuanta = Annotated[str, StringConstraints(pattern=r"^-?(0|[1-9][0-9]*)$")]
 MAX_HORIZON_MONTHS = 100 * 12
 
 
@@ -66,8 +78,8 @@ class FundingPolicy(ApiModel):
     accumulates and nothing buys with it.
     """
 
-    cash_floor_usd: NonNegativeFloat = 0.0
-    cash_ceiling_usd: NonNegativeFloat = 0.0
+    cash_floor: NonNegativeCurrencyAmount = Decimal(0)
+    cash_ceiling: NonNegativeCurrencyAmount = Decimal(0)
     # Matches PrivateEquityTenderPolicyWire.index_floor_to_inflation: when true, both bounds are
     # today-dollar real-terms targets inflated by CPI each month. When false they stay nominal.
     # Both bounds share the flag because indexing them differently would let a band that starts
@@ -86,10 +98,10 @@ class FundingPolicy(ApiModel):
 
     @model_validator(mode="after")
     def _reject_inverted_band_and_duplicate_symbols(self) -> FundingPolicy:
-        if self.cash_floor_usd > self.cash_ceiling_usd:
+        if self.cash_floor > self.cash_ceiling:
             raise ValueError(
-                f"cash floor must not exceed its ceiling; got floor={self.cash_floor_usd}, "
-                f"ceiling={self.cash_ceiling_usd}. An inverted band has no interior, so every "
+                f"cash floor must not exceed its ceiling; got floor={self.cash_floor}, "
+                f"ceiling={self.cash_ceiling}. An inverted band has no interior, so every "
                 "balance crosses both bounds at once."
             )
         symbols = [sleeve.symbol for sleeve in self.sleeve_weights]
@@ -105,12 +117,12 @@ class PrivateEquityTenderPolicyWire(ApiModel):
     """User-facing PE tender policy. At each tender event for any held PE position, the
     engine sells units to lift liquid net worth (cash + non-PE holdings) to this floor.
 
-    `liquid_net_worth_floor_usd` of 0 disables PE sales entirely (LNW always >= floor).
+    `liquid_net_worth_floor` of 0 disables PE sales entirely (LNW always >= floor).
     `index_floor_to_inflation` (default true) inflates the floor with CPI so the real-terms
     target stays constant over long horizons. Set to false to keep the floor nominal.
     """
 
-    liquid_net_worth_floor_usd: NonNegativeFloat = 0.0
+    liquid_net_worth_floor: NonNegativeCurrencyAmount = Decimal(0)
     index_floor_to_inflation: bool = True
 
 
@@ -135,13 +147,13 @@ class RentalIncomePlan(ApiModel):
     user lives elsewhere). `fraction_rented` < 1.0 means partial rental (e.g. owner
     occupies the main unit and rents the ADU / rents rooms).
 
-    `full_property_monthly_rent_usd` is the full-property market rent before vacancy and
+    `full_property_monthly_rent` is the full-property market rent before vacancy and
     management fees. Collected rent is this amount multiplied by `fraction_rented` and
-    `(1 - vacancy_pct)`. If `None`, the translator falls back to `Property.rent_estimate_usd`
+    `(1 - vacancy_pct)`. If `None`, the translator falls back to `Property.rent_estimate`
     for the purchased property; if that's also missing, the request is rejected.
     """
 
-    full_property_monthly_rent_usd: NonNegativeFloat | None = None
+    full_property_monthly_rent: NonNegativeCurrencyAmount | None = None
     fraction_rented: PositiveFloat = Field(default=1.0, le=1.0)
     # 0..1 multiplier on collected rent. Captures marketing-time vacancy + tenant turnover
     # vacancy in a smoothed-average form; per-rollout stochastic vacancy is a future model.
@@ -186,7 +198,7 @@ class CapitalImprovementEventWire(ApiModel):
 
     kind: Literal["capital_improvement"] = "capital_improvement"
     month: PositiveInt
-    amount_usd: PositiveFloat
+    amount: PositiveCurrencyAmount
     description: str = ""
 
 
@@ -253,23 +265,46 @@ DEFAULT_ANNUAL_MAINTENANCE_PCT = 1.0
 
 class ScenarioKey(ApiModel):
     model_id: str
+    currency_code: str = "USD"
+    currency_quantum: Decimal = Decimal("0.01")
     horizon_months: PositiveInt = Field(le=MAX_HORIZON_MONTHS)
-    monthly_spend_usd: PositiveFloat
+    monthly_spend: PositiveCurrencyAmount
     spend_index: SpendIndex
     funding_policy: FundingPolicy = Field(default_factory=FundingPolicy)
     pe_tender_policy: PrivateEquityTenderPolicyWire = Field(default_factory=PrivateEquityTenderPolicyWire)
-    monthly_rent_usd: NonNegativeFloat = 0.0
+    monthly_rent: NonNegativeCurrencyAmount = Decimal(0)
     rental_location_id: str | None = None
     property_purchase: PropertyPurchase | None = None
     annual_insurance_pct: NonNegativeFloat = DEFAULT_ANNUAL_INSURANCE_PCT
     annual_maintenance_pct: NonNegativeFloat = DEFAULT_ANNUAL_MAINTENANCE_PCT
 
+    @classmethod
+    def _normalize_currency_code(cls, code: str) -> str:
+        normalized = code.strip().upper()
+        if not normalized:
+            raise ValueError("currency_code must not be empty")
+        return normalized
+
+    @classmethod
+    def _validate_currency_quantum(cls, quantum: object) -> Decimal:
+        return validate_currency_quantum(quantum)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_currency(cls, value: object) -> object:
+        if isinstance(value, dict):
+            copy = dict(value)
+            copy["currency_code"] = cls._normalize_currency_code(str(copy.get("currency_code", "USD")))
+            copy["currency_quantum"] = cls._validate_currency_quantum(copy.get("currency_quantum", "0.01"))
+            return copy
+        return value
+
     @model_validator(mode="after")
     def _rent_location_consistency(self) -> ScenarioKey:
-        if self.monthly_rent_usd > 0 and self.rental_location_id is None:
-            raise ValueError("rental_location_id is required when monthly_rent_usd > 0")
-        if self.monthly_rent_usd == 0 and self.rental_location_id is not None:
-            raise ValueError("rental_location_id must be unset when monthly_rent_usd == 0")
+        if self.monthly_rent > 0 and self.rental_location_id is None:
+            raise ValueError("rental_location_id is required when monthly_rent > 0")
+        if self.monthly_rent == 0 and self.rental_location_id is not None:
+            raise ValueError("rental_location_id must be unset when monthly_rent == 0")
         return self
 
 
@@ -303,24 +338,24 @@ class RolloutRequest(ApiModel):
 
 
 class TerminalMetrics(ApiModel):
-    cash_usd: float
-    holding_value_usd: NonNegativeFloat
-    private_equity_value_usd: NonNegativeFloat = 0.0
-    property_value_usd: NonNegativeFloat = 0.0
-    mortgage_balance_usd: NonNegativeFloat = 0.0
-    home_equity_usd: float = 0.0
-    liquid_net_worth_usd: float
-    net_worth_usd: float
-    shortfall_usd: NonNegativeFloat
-    # Par face still on the books. In `net_worth_usd` but deliberately not in
-    # `liquid_net_worth_usd`: held to maturity, a bond is neither marked nor saleable.
-    bond_value_usd: NonNegativeFloat = 0.0
+    cash_quanta: CurrencyQuanta
+    holding_value_quanta: CurrencyQuanta
+    private_equity_value_quanta: CurrencyQuanta
+    property_value_quanta: CurrencyQuanta
+    mortgage_balance_quanta: CurrencyQuanta
+    home_equity_quanta: CurrencyQuanta
+    liquid_net_worth_quanta: CurrencyQuanta
+    net_worth_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
+    # Par face still on the books. In `net_worth_quanta` but deliberately not in
+    # `liquid_net_worth_quanta`: held to maturity, a bond is neither marked nor saleable.
+    bond_value_quanta: CurrencyQuanta
     failed_month_index: NonNegativeInt | None = None
 
 
 class _RolloutEventBase(ApiModel):
     month_index: NonNegativeInt
-    amount_usd: NonNegativeFloat
+    amount_quanta: CurrencyQuanta
 
 
 class HoldingSaleEvent(_RolloutEventBase):
@@ -328,8 +363,8 @@ class HoldingSaleEvent(_RolloutEventBase):
     asset: AssetKey
     asset_label: str | None = None
     units: NonNegativeFloat
-    proceeds_usd: NonNegativeFloat
-    cost_basis_usd: NonNegativeFloat
+    proceeds_quanta: CurrencyQuanta
+    cost_basis_quanta: CurrencyQuanta
 
 
 class PrivateEquityMarkerEvent(_RolloutEventBase):
@@ -339,12 +374,12 @@ class PrivateEquityMarkerEvent(_RolloutEventBase):
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
     regime: PrivateEquityRegime
-    mark_usd: NonNegativeFloat
+    mark_quanta: CurrencyQuanta
     sale_capacity_fraction: NonNegativeFloat = Field(le=1.0)
     eligible_fraction: NonNegativeFloat = Field(le=1.0)
     forced_sale_fraction: NonNegativeFloat = Field(le=1.0)
     liquidity_blocked: bool
-    forced_recovery_cashout_usd: NonNegativeFloat
+    forced_recovery_cashout_quanta: CurrencyQuanta
 
 
 class PrivateEquityOpportunityEvent(_RolloutEventBase):
@@ -355,41 +390,41 @@ class PrivateEquityOpportunityEvent(_RolloutEventBase):
     event_kind: PrivateEquityEventKind
     regime: PrivateEquityRegime
     outcome: PrivateEquityOpportunityOutcome
-    mark_usd: NonNegativeFloat
+    mark_quanta: CurrencyQuanta
     sale_capacity_fraction: NonNegativeFloat = Field(le=1.0)
     eligible_fraction: NonNegativeFloat = Field(le=1.0)
     liquidity_blocked: bool
-    floor_usd: NonNegativeFloat
+    floor_quanta: CurrencyQuanta
     # Liquid net worth at the tender opportunity; can go negative when spending/obligations
     # outrun liquid assets (the PE floor policy still evaluates against it).
-    liquid_net_worth_usd: float
-    shortfall_usd: NonNegativeFloat
+    liquid_net_worth_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
     units_held: NonNegativeFloat
     sellable_units: NonNegativeFloat
     target_units: NonNegativeFloat
-    proceeds_usd: NonNegativeFloat
+    proceeds_quanta: CurrencyQuanta
 
 
 class MonthlyExpenseEvent(_RolloutEventBase):
     kind: Literal["monthly_expense"] = "monthly_expense"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class OutsideRentPaymentEvent(_RolloutEventBase):
     kind: Literal["outside_rent"] = "outside_rent"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class PropertyPurchaseEvent(_RolloutEventBase):
     kind: Literal["property_purchase"] = "property_purchase"
     property_id: str
-    purchase_price_usd: NonNegativeFloat
-    down_payment_usd: NonNegativeFloat
-    mortgage_principal_usd: NonNegativeFloat
+    purchase_price_quanta: CurrencyQuanta
+    down_payment_quanta: CurrencyQuanta
+    mortgage_principal_quanta: CurrencyQuanta
 
 
 class ClosingCostPaymentEvent(_RolloutEventBase):
@@ -399,69 +434,69 @@ class ClosingCostPaymentEvent(_RolloutEventBase):
 
 class MortgagePaymentEvent(_RolloutEventBase):
     kind: Literal["mortgage_payment"] = "mortgage_payment"
-    interest_usd: NonNegativeFloat
-    principal_usd: NonNegativeFloat
+    interest_quanta: CurrencyQuanta
+    principal_quanta: CurrencyQuanta
 
 
 class PropertyTaxPaymentEvent(_RolloutEventBase):
     kind: Literal["property_tax_payment"] = "property_tax_payment"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class HoaDuesPaymentEvent(_RolloutEventBase):
     kind: Literal["hoa_dues_payment"] = "hoa_dues_payment"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class HomeownersInsurancePaymentEvent(_RolloutEventBase):
     kind: Literal["homeowners_insurance_payment"] = "homeowners_insurance_payment"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class PropertyMaintenancePaymentEvent(_RolloutEventBase):
     kind: Literal["property_maintenance_payment"] = "property_maintenance_payment"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
     jurisdiction_id: str
     tax_year_end_month: NonNegativeInt
-    ordinary_income_usd: float
-    ltcg_usd: float
-    stcg_usd: float
-    ordinary_tax_usd: NonNegativeFloat
-    capital_gain_tax_usd: NonNegativeFloat
-    total_tax_usd: NonNegativeFloat
+    ordinary_income_quanta: CurrencyQuanta
+    ltcg_quanta: CurrencyQuanta
+    stcg_quanta: CurrencyQuanta
+    ordinary_tax_quanta: CurrencyQuanta
+    capital_gain_tax_quanta: CurrencyQuanta
+    total_tax_quanta: CurrencyQuanta
     # MID under this jurisdiction's principal cap, 0.0 when not active.
-    mortgage_interest_deduction_usd: NonNegativeFloat = 0.0
+    mortgage_interest_deduction_quanta: CurrencyQuanta
     # Sum of itemized lines (today MID is the only one). Consumer renders the larger of itemized
     # vs. standard as the "deduction used".
-    itemized_deduction_usd: NonNegativeFloat = 0.0
-    standard_deduction_usd: NonNegativeFloat = 0.0
+    itemized_deduction_quanta: CurrencyQuanta
+    standard_deduction_quanta: CurrencyQuanta
 
 
 class TaxPaymentEvent(_RolloutEventBase):
     kind: Literal["tax_payment"] = "tax_payment"
     obligation_type: str
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class RolloutFailureEvent(_RolloutEventBase):
     kind: Literal["failure"] = "failure"
-    amount_due_usd: NonNegativeFloat
-    amount_paid_usd: NonNegativeFloat
-    shortfall_usd: NonNegativeFloat
+    amount_due_quanta: CurrencyQuanta
+    amount_paid_quanta: CurrencyQuanta
+    shortfall_quanta: CurrencyQuanta
 
 
 class SetRentedFractionMarkerEvent(_RolloutEventBase):
@@ -496,13 +531,13 @@ class PropertySaleMarkerEvent(_RolloutEventBase):
 
     kind: Literal["property_sale"] = "property_sale"
     property_id: str
-    gross_proceeds_usd: NonNegativeFloat
-    mortgage_payoff_usd: NonNegativeFloat
-    net_cash_to_owner_usd: float
-    realized_gain_usd: float
-    depreciation_recapture_usd: NonNegativeFloat
-    section_121_exclusion_usd: NonNegativeFloat
-    long_term_capital_gain_usd: NonNegativeFloat
+    gross_proceeds_quanta: CurrencyQuanta
+    mortgage_payoff_quanta: CurrencyQuanta
+    net_cash_to_owner_quanta: CurrencyQuanta
+    realized_gain_quanta: CurrencyQuanta
+    depreciation_recapture_quanta: CurrencyQuanta
+    section_121_exclusion_quanta: CurrencyQuanta
+    long_term_capital_gain_quanta: CurrencyQuanta
 
 
 type RolloutEvent = Annotated[
@@ -539,6 +574,8 @@ class RolloutOutput(ApiModel):
 
 class MetricFanResponse(ApiModel):
     model_id: str
+    currency_code: str
+    currency_quantum: str
     metric: MetricName
     monthly_metric_fan: Frame
     terminal_metric_percentiles: Frame
@@ -548,6 +585,8 @@ class MetricFanResponse(ApiModel):
 
 class TerminalDistributionResponse(ApiModel):
     model_id: str
+    currency_code: str
+    currency_quantum: str
     metric: MetricName
     terminal_metric_percentiles: Frame
     terminal_metric_samples: Frame
@@ -557,5 +596,7 @@ class TerminalDistributionResponse(ApiModel):
 
 class RolloutResponse(ApiModel):
     model_id: str
+    currency_code: str
+    currency_quantum: str
     rollout: RolloutOutput
     diagnostics: tuple[str, ...] = ()

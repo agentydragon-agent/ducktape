@@ -8,6 +8,7 @@ index maps, calls every per-domain `compile_*` helper, and assembles the
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -47,7 +48,11 @@ from finance.augur.sim.compiler.properties import (
     compile_properties_and_liabilities,
 )
 from finance.augur.sim.compiler.property_cashflows import PropertyCashflowCompileOutput, compile_property_cashflows
-from finance.augur.sim.compiler.series import collect_level_series_keys, external_values_cube
+from finance.augur.sim.compiler.series import (
+    collect_level_series_keys,
+    external_money_values_cube,
+    external_values_cube,
+)
 from finance.augur.sim.compiler.target_allocation import (
     TargetAllocationCompileOutput,
     compile_target_allocation_policies,
@@ -62,7 +67,7 @@ from finance.augur.sim.compiler.tax import (
 from finance.augur.sim.compiler.tlh_harvest import HarvestPolicyCompileOutput, compile_harvest_policies
 from finance.augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer_slots
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.jurisdictions import Jurisdiction
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import PropertySaleEvent, Scenario
@@ -110,16 +115,21 @@ class SlotPlan:
 class CompiledSimulation:
     horizon_months: int
     rollout_count: int
+    currency_code: str
+    currency_quantum: Decimal
     slot_plan: SlotPlan
     strings: tuple[str, ...]
     # Typed asset identity for each lot/sale/chain asset code (`lot_asset_codes`,
     # `sales.asset`, `target_allocation_policies.sleeve_assets`). Decode lifts those codes back
     # to `AssetKey`.
     assets: tuple[AssetKey, ...]
-    # Typed level-series identity for each row of `external_values` (the dense price cube);
-    # the row index is `series_index_by_id[key]`. PE marks live in `pe_channels`, not here.
+    # Typed level-series identity for each row of the external cubes; the row index is
+    # `series_index_by_id[key]`. PE marks live in `pe_channels`, not here.
     series_keys: tuple[LevelSeriesKey, ...]
+    # Heterogeneous model levels (CPI and other non-money ratios remain float-valued).
     external_values: NDArray[np.float64]
+    # Price-like model levels quantized to integer scenario-currency quanta before sim.
+    external_money_values: NDArray[np.int64]
     agent_codes: NDArray[np.int64]
     cash_agent_codes: NDArray[np.int64]
     cash_account_codes: NDArray[np.int64]
@@ -243,6 +253,9 @@ def compile_simulation(
     assets = AssetTable()
     horizon = int(scenario.horizon_months)
 
+    def currency_amount(value: object) -> np.int64:
+        return currency_amount_to_quanta(value, quantum=scenario.currency.quantum)
+
     account_slot_by_key: dict[tuple[str, str], int] = {}
     cash_agent_codes: list[int] = []
     cash_account_codes: list[int] = []
@@ -254,7 +267,7 @@ def compile_simulation(
         account_slot_by_key[key] = len(cash_initial_balance)
         cash_agent_codes.append(strings.require(entry.agent_id))
         cash_account_codes.append(strings.require(entry.account_id))
-        cash_initial_balance.append(usd_to_cents(entry.balance_usd))
+        cash_initial_balance.append(currency_amount(entry.balance))
 
     # One more cash row than the scenario declares: the rest of the world. Every counterparty
     # the scenario does not model settles here, so no flow is discarded and total cash across
@@ -277,6 +290,13 @@ def compile_simulation(
     _reject_missing_property_sale_home_values(scenario, external_series)
     external_values = external_values_cube(
         external_series, series_index_by_id=series_index_by_id, rollout_count=rollout_count, horizon_months=horizon
+    )
+    external_money_values = external_money_values_cube(
+        external_series,
+        series_index_by_id=series_index_by_id,
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+        currency_quantum=scenario.currency.quantum,
     )
 
     profile_index_by_agent = {profile.agent_id: idx for idx, profile in enumerate(scenario.tax_profiles)}
@@ -308,8 +328,8 @@ def compile_simulation(
     # Building basis = (purchase price × (1 - land_fraction)) + capitalized closing costs.
     property_building_basis = np.array(
         [
-            usd_to_cents(
-                float(p.purchase_price_usd) * (1.0 - float(p.land_value_fraction)) + float(p.buyer_closing_cost_usd)
+            currency_amount(
+                p.purchase_price * (Decimal(1) - Decimal(str(p.land_value_fraction))) + p.buyer_closing_cost
             )
             for p in scenario.scheduled_property_purchases
         ],
@@ -386,7 +406,7 @@ def compile_simulation(
         lot_assets.append(lot.asset)
         lot_purchase_month.append(int(lot.purchase_month_index))
         lot_fifo_rank.append(int(lot.purchase_month_index))
-        lot_cost_basis_per_unit.append(usd_to_cents(lot.cost_basis_per_unit_usd))
+        lot_cost_basis_per_unit.append(currency_amount(lot.cost_basis_per_unit))
         lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
         lot_quantity_scale.append(scale)
 
@@ -493,7 +513,11 @@ def compile_simulation(
         cash_agent_codes=cash_agent_codes_arr,
     )
     pe_channels = compile_pe_channels(
-        pe_issuers, private_equity=external_series.private_equity, rollout_count=rollout_count, horizon_months=horizon
+        pe_issuers,
+        private_equity=external_series.private_equity,
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+        currency_quantum=scenario.currency.quantum,
     )
 
     # Reduced-form TLH harvest policies. Pass the intern lookups (`strings.require` / `assets.require`)
@@ -539,11 +563,14 @@ def compile_simulation(
     return CompiledSimulation(
         horizon_months=horizon,
         rollout_count=rollout_count,
+        currency_code=scenario.currency.code,
+        currency_quantum=scenario.currency.quantum,
         slot_plan=slot_plan,
         strings=tuple(strings.values),
         assets=tuple(assets.values),
         series_keys=series_keys,
         external_values=external_values,
+        external_money_values=external_money_values,
         agent_codes=np.asarray(agent_codes, dtype=np.int64),
         cash_agent_codes=np.asarray(cash_agent_codes, dtype=np.int64),
         cash_account_codes=np.asarray(cash_account_codes, dtype=np.int64),

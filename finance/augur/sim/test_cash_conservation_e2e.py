@@ -22,7 +22,6 @@ conserves cash trivially and proves nothing.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import pytest_bazel
 from numpy.typing import NDArray
 
@@ -42,7 +41,6 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import cents_to_usd
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -92,9 +90,9 @@ def _scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="bob"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=400_000.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10_000.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=400000),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=10000),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_bonds=[
             BondHolding(
@@ -102,8 +100,8 @@ def _scenario() -> Scenario:
                 agent_id="alice",
                 account_id="checking",
                 issuer_jurisdiction_id="federal_us",
-                face_value_usd=500_000.0,
-                purchase_price_usd=500_000.0,
+                face_value=500000,
+                purchase_price=500000,
                 annual_coupon_rate=0.05,
                 coupon_period_months=6,
                 purchase_month_index=0,
@@ -117,8 +115,8 @@ def _scenario() -> Scenario:
                 lot_id="bought",
                 agent_id="alice",
                 asset=_VTI,
-                amount_usd=200_000.0,
-                price_per_unit_usd=100.0,
+                amount=200000,
+                price_per_unit=100,
             )
         ],
         scheduled_asset_sales=[
@@ -129,7 +127,7 @@ def _scenario() -> Scenario:
                 asset=_VTI,
                 quantity=2_000.0,
                 proceeds_account_id="checking",
-                price_per_unit_usd=150.0,
+                price_per_unit=150,
             )
         ],
         recurring_transfers=[
@@ -141,7 +139,7 @@ def _scenario() -> Scenario:
                 from_account_id="payroll",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=12_000.0,
+                amount=12000,
                 income_category=ORDINARY_INCOME,
             ),
             # To an agent that does not exist: a landlord outside the model.
@@ -152,7 +150,7 @@ def _scenario() -> Scenario:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="deposits",
-                amount_usd=4_000.0,
+                amount=4000,
             ),
         ],
         scheduled_transfers=[
@@ -164,7 +162,7 @@ def _scenario() -> Scenario:
                 from_account_id="checking",
                 to_agent_id="bob",
                 to_account_id="checking",
-                amount_usd=25_000.0,
+                amount=25000,
             )
         ],
         tax_profiles=[
@@ -189,7 +187,7 @@ def _scheduled_sale_scenario() -> Scenario:
 
     return Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000_000.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000000)],
         scheduled_asset_purchases=[
             ScheduledAssetPurchase(
                 month=1,
@@ -197,8 +195,8 @@ def _scheduled_sale_scenario() -> Scenario:
                 lot_id="bought",
                 agent_id="alice",
                 asset=_VTI,
-                amount_usd=500_000.0,
-                price_per_unit_usd=100.0,
+                amount=500000,
+                price_per_unit=100,
             )
         ],
         scheduled_asset_sales=[
@@ -209,7 +207,7 @@ def _scheduled_sale_scenario() -> Scenario:
                 asset=_VTI,
                 quantity=5_000.0,
                 proceeds_account_id="checking",
-                price_per_unit_usd=150.0,
+                price_per_unit=150,
             )
         ],
         tax_profiles=[],
@@ -223,8 +221,8 @@ def _target_allocation_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -233,7 +231,7 @@ def _target_allocation_scenario() -> Scenario:
                 asset=_VTI,
                 purchase_month_index=-1,
                 quantity=200.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         recurring_obligations=[
@@ -245,7 +243,7 @@ def _target_allocation_scenario() -> Scenario:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=5_000.0,
+                amount_due=5000,
             )
         ],
         external_series=SeriesModelBundle.independent(
@@ -253,10 +251,7 @@ def _target_allocation_scenario() -> Scenario:
         ),
         target_allocation_policies=[
             TargetAllocationPolicy(
-                agent_id="alice",
-                account_id="checking",
-                sleeves=[SleeveTarget(asset=_VTI, weight=1)],
-                cash_ceiling_usd=0.0,
+                agent_id="alice", account_id="checking", sleeves=[SleeveTarget(asset=_VTI, weight=1)], cash_ceiling=0
             )
         ],
         tax_profiles=[],
@@ -269,7 +264,7 @@ def _tender_scenario(*, horizon_months: int) -> Scenario:
 
     return Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=100000)],
         initial_lots=[
             InitialLot(
                 lot_id="acme_lot",
@@ -278,14 +273,14 @@ def _tender_scenario(*, horizon_months: int) -> Scenario:
                 asset=_ACME,
                 purchase_month_index=-36,
                 quantity=100.0,
-                cost_basis_per_unit_usd=10.0,
+                cost_basis_per_unit=10,
             )
         ],
         private_equity_tender_policies=[
             PrivateEquityTenderPolicy(
                 owner_agent_id="alice",
                 proceeds_account_id="checking",
-                liquid_net_worth_floor=FixedAmount(amount_usd=500_000.0),
+                liquid_net_worth_floor=FixedAmount(amount=500000),
             )
         ],
         tax_profiles=[],
@@ -340,10 +335,10 @@ def _property_scenario(*, horizon_months: int, sale_month: int, capex_month: int
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="bank"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="bank", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="bank", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -354,19 +349,19 @@ def _property_scenario(*, horizon_months: int, sale_month: int, capex_month: int
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
+                purchase_price=500000,
+                down_payment=100000,
                 mortgage=MortgageFinancing(
                     liability_id="house_mortgage",
                     lender_agent_id="bank",
-                    principal_usd=400_000.0,
+                    principal=400000,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),
             )
         ],
         property_lifecycle_events=[
-            CapitalImprovementEvent(month=capex_month, property_id="house", amount_usd=30_000.0, description="roof"),
+            CapitalImprovementEvent(month=capex_month, property_id="house", amount=30000, description="roof"),
             PropertySaleEvent(month=sale_month, property_id="house", closing_cost_pct=6.0),
         ],
         tax_profiles=[
@@ -427,7 +422,7 @@ def test_a_scheduled_sale_does_not_mint_cash() -> None:
     run = simulate(_scheduled_sale_scenario(), rollout_count=1, locations={})
     totals = _total_cash_by_month(run)
 
-    assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() == 750_000.0
+    assert run.events_log.lot_dispositions.get_column("proceeds_quanta").sum() == 75_000_000
     assert np.all(totals == totals[0])
 
 
@@ -435,7 +430,7 @@ def test_a_target_allocation_sale_does_not_mint_cash() -> None:
     run = simulate(_target_allocation_scenario(), rollout_count=1, locations={})
     totals = _total_cash_by_month(run)
 
-    assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() > 0.0
+    assert run.events_log.lot_dispositions.get_column("proceeds_quanta").sum() > 0
     assert np.all(totals == totals[0])
 
 
@@ -450,7 +445,7 @@ def test_a_private_equity_tender_does_not_mint_cash() -> None:
     totals = _total_cash_by_month(run)
 
     # The whole 100-unit stake tenders at $50: a $5,000 credit that nothing used to debit.
-    assert run.events_log.lot_dispositions.get_column("proceeds_usd").sum() == 5_000.0
+    assert run.events_log.lot_dispositions.get_column("proceeds_quanta").sum() == 500_000
     assert np.all(totals == totals[0])
 
 
@@ -465,7 +460,7 @@ def test_a_property_sale_does_not_mint_cash() -> None:
     totals = _total_cash_by_month(run)
 
     assert run.events_log.rollout_failures.is_empty()
-    assert run.events_log.property_sale_events.row(0, named=True)["net_cash_to_owner_usd"] > 0.0
+    assert run.events_log.property_sale_events.row(0, named=True)["net_cash_to_owner_quanta"] > 0
     assert run.events_log.capital_improvement_events.height == 1
     assert np.all(totals == totals[0])
 
@@ -485,10 +480,10 @@ def test_a_property_sale_debits_the_boundary_by_its_net_not_its_gross() -> None:
     # Snapshot `m` holds the state before month `m`, so month `sale_month`'s move is the diff
     # between snapshots `sale_month + 1` and `sale_month`.
     external = np.asarray(run.buffers.state.cash_state)[:, run.plan.external_cash_slot, 0]
-    moved_usd = cents_to_usd(int(external[sale_month + 1] - external[sale_month]))
+    moved_quanta = int(external[sale_month + 1] - external[sale_month])
     sale = run.events_log.property_sale_events.row(0, named=True)
 
-    assert moved_usd == pytest.approx(-sale["net_cash_to_owner_usd"], abs=0.01)
+    assert moved_quanta == -int(sale["net_cash_to_owner_quanta"])
 
 
 if __name__ == "__main__":

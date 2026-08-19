@@ -1,14 +1,19 @@
-"""Fixed-point helpers for Augur's engine-internal accounting.
+"""Exact money and fixed-point helpers for Augur.
 
-Public scenario/config/product surfaces still speak in dollars and units as
-floats. The dense engine uses integer quanta so cash/accounting paths do not
-depend on binary floating-point exactness.
+The simulator's money contract is a currency-specific integer quantum count.
+``Decimal`` is used only at an explicitly declared boundary: parsing an exact
+human/API decimal or quantizing a model-owned sampled price path before that
+path enters the simulator.  The JAX engine must receive and produce integer
+money values only.
+
+Keeping conversion policy here provides one auditable definition rather than
+several subtly different ``round(value * 100)`` calls.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 import numpy as np
@@ -16,35 +21,120 @@ from numpy.typing import NDArray
 
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 
-USD_CENTS = 100
 BTC_SATOSHIS = 100_000_000
 ETH_GWEI = 1_000_000_000
 DEFAULT_UNIT_QUANTA = 1_000_000
+MONEY_FACTOR_SCALE = 1_000_000_000
 
 
-def _decimal(value: Any) -> Decimal:
-    return Decimal(str(value))
+def _exact_decimal(value: Any, *, field: str = "value") -> Decimal:
+    """Parse an exact external decimal without silently accepting a float.
+
+    Floats are deliberately rejected for scenario/API money inputs: converting
+    a binary float through ``str`` merely hides the lossy boundary.  Model
+    sampling has a separate, named quantization entrypoint below because it is
+    the one intended float-to-money boundary.
+    """
+
+    if isinstance(value, float):
+        raise TypeError(f"{field} must be an integer quantum count, Decimal, or decimal string; floats are not exact")
+    try:
+        decimal = value if isinstance(value, Decimal) else Decimal(value)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an exact decimal value") from exc
+    if not decimal.is_finite():
+        raise ValueError(f"{field} must be finite")
+    return decimal
 
 
-def usd_to_cents(value: Any) -> np.int64:
-    cents = (_decimal(value) * USD_CENTS).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-    return np.int64(cents)
+def validate_currency_amount(value: Any) -> Decimal:
+    """Return one exact configured monetary amount.
+
+    Configuration and wire inputs must spell money as an integer, ``Decimal``, or
+    decimal string. A Python/JSON float is rejected rather than silently adopting
+    its binary approximation. Model-produced floats use the separately named
+    sampled-value quantization boundary below.
+    """
+
+    return _exact_decimal(value, field="currency amount")
 
 
-def cents_to_usd(value: Any) -> float:
-    return float(np.asarray(value, dtype=np.float64) / float(USD_CENTS))
+def validate_currency_quantum(value: Any) -> Decimal:
+    """Return a positive finite currency quantum from an exact value."""
+
+    quantum = _exact_decimal(value, field="currency quantum")
+    if quantum <= 0:
+        raise ValueError(f"currency quantum must be positive; got {quantum}")
+    return quantum
 
 
-def usd_array_to_cents(values: Any) -> NDArray[np.int64]:
+def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
+    """Validate and convert a configured amount to integer currency quanta.
+
+    Unlike sampled model output, configured money is never rounded: it must be
+    exact and already representable by the scenario's declared quantum.
+    """
+
+    amount = validate_currency_amount(value)
+    currency_quantum = validate_currency_quantum(quantum)
+    count = amount / currency_quantum
+    if count != count.to_integral_value():
+        raise ValueError(f"{amount} is not an integer multiple of currency quantum {currency_quantum}")
+    try:
+        return np.int64(int(count))
+    except OverflowError as exc:
+        raise ValueError(f"currency quantum count {count} does not fit in int64") from exc
+
+
+def round_currency_amount(value: Any, *, quantum: Any) -> Decimal:
+    """Round an exact derived monetary calculation to the declared quantum.
+
+    Configured amounts themselves are never rounded; use this only after exact
+    arithmetic (percentages, allocation fractions, periodicization) produces a
+    derived amount that must cross into the integer-money simulator.
+    """
+
+    amount = validate_currency_amount(value)
+    currency_quantum = validate_currency_quantum(quantum)
+    count = (amount / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return count * currency_quantum
+
+
+def ratio_to_money_factor(numerator: int | np.integer[Any], denominator: int | np.integer[Any]) -> np.int64:
+    """Compile one exact integer ratio to the simulator's dimensionless factor scale."""
+
+    numerator_int = int(numerator)
+    denominator_int = int(denominator)
+    if denominator_int <= 0:
+        raise ValueError("money factor denominator must be positive")
+    factor = (Decimal(numerator_int) * MONEY_FACTOR_SCALE / Decimal(denominator_int)).quantize(
+        Decimal(1), rounding=ROUND_HALF_UP
+    )
+    try:
+        return np.int64(int(factor))
+    except OverflowError as exc:
+        raise ValueError(f"money factor {factor} does not fit in int64") from exc
+
+
+def sampled_array_to_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
+    """Quantize a model-produced monetary path at the simulator boundary."""
+
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
+    currency_quantum = validate_currency_quantum(quantum)
     for idx in np.ndindex(arr.shape):
-        out[idx] = usd_to_cents(arr[idx])
+        try:
+            sampled = Decimal(str(arr[idx]))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("sampled monetary value must be numeric") from exc
+        if not sampled.is_finite():
+            raise ValueError("sampled monetary value must be finite")
+        count = (sampled / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        try:
+            out[idx] = np.int64(int(count))
+        except OverflowError as exc:
+            raise ValueError(f"sampled currency quantum count {count} does not fit in int64") from exc
     return out
-
-
-def cents_array_to_usd(values: Any) -> NDArray[np.float64]:
-    return np.asarray(values, dtype=np.float64) / float(USD_CENTS)
 
 
 # Quantity quanta by symbol: the smallest fraction of a unit the ledger tracks. BTC and ETH
@@ -61,7 +151,7 @@ def quantity_scale_for_asset(asset: AssetKey) -> int:
 
 
 def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:
-    quanta = (_decimal(value) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    quanta = (Decimal(str(value)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return np.int64(quanta)
 
 

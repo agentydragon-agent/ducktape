@@ -10,19 +10,18 @@ jurisdiction_id: california
 
 ordinary_income_brackets:
   single:
-    - { upper_usd: 10412.0, rate: 0.010 }
-    - { upper_usd: 24684.0, rate: 0.020 }
-    - { upper_usd: 38959.0, rate: 0.040 }
-    - { upper_usd: 54081.0, rate: 0.060 }
-    - { upper_usd: 68350.0, rate: 0.080 }
-    - { upper_usd: 349137.0, rate: 0.093 }
-    - { upper_usd: 418961.0, rate: 0.103 }
-    - { upper_usd: 698271.0, rate: 0.113 }
-    - { upper_usd: .inf, rate: 0.123 }
+    - { upper: 10412, rate: 0.010 }
+    - { upper: 24684, rate: 0.020 }
+    - { upper: 38959, rate: 0.040 }
+    - { upper: 54081, rate: 0.060 }
+    - { upper: 68350, rate: 0.080 }
+    - { upper: 349137, rate: 0.093 }
+    - { upper: 418961, rate: 0.103 }
+    - { upper: 698271, rate: 0.113 }
+    - { upper: "Infinity", rate: 0.123 }
 
 standard_deduction:
-  single: 5363.0
-
+  single: 5363
 level: state
 
 # 31 USC 3124 bars states from taxing federal obligations, so Treasury interest is exempt.

@@ -1,9 +1,31 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import pytest_bazel
 
-from finance.augur.sim.compiler.plan import lot_order_for_pool
+from finance.augur.sim.compiler.plan import compile_simulation, lot_order_for_pool
+from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.scenario import Agent, Currency, InitialAccountBalance, Scenario
+
+
+def test_compiler_uses_the_scenario_currency_quantum_for_static_money() -> None:
+    scenario = Scenario(
+        currency=Currency(code="CHF", quantum=Decimal("0.05")),
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance="1.25")],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+
+    plan = compile_simulation(
+        scenario, rollout_count=1, external_series=ExternalSeriesContext(), jurisdictions={}, locations={}
+    )
+
+    assert plan.currency_code == "CHF"
+    assert plan.currency_quantum == Decimal("0.05")
+    assert plan.cash_initial_balance.tolist() == [25, 0]
 
 
 def test_lot_order_for_pool_is_account_scoped_fifo() -> None:

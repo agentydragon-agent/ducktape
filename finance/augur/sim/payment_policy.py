@@ -26,19 +26,19 @@ class PaymentView(NamedTuple):
     """
 
     invoice_active: jnp.ndarray
-    invoice_due_cents: jnp.ndarray
+    invoice_due_quanta: jnp.ndarray
 
 
 class PayActions(NamedTuple):
     """A dense batch of actor-controlled payments.
 
-    ``active`` and ``amount_cents`` are ``(payment_slot, rollout)``. An inactive slot always has
+    ``active`` and ``amount_quanta`` are ``(payment_slot, rollout)``. An inactive slot always has
     amount zero; an active slot has a positive integer amount. The current storage unit is cents;
     the action boundary treats it as the configured currency's money quantum.
     """
 
     active: jnp.ndarray
-    amount_cents: jnp.ndarray
+    amount_quanta: jnp.ndarray
 
 
 def decide(view: PaymentView) -> PayActions:
@@ -50,5 +50,5 @@ def decide(view: PaymentView) -> PayActions:
     decision, but settlement will still require their complete emitted batch to be executable.
     """
 
-    active = view.invoice_active & (view.invoice_due_cents > 0)
-    return PayActions(active=active, amount_cents=jnp.where(active, view.invoice_due_cents, 0))
+    active = view.invoice_active & (view.invoice_due_quanta > 0)
+    return PayActions(active=active, amount_quanta=jnp.where(active, view.invoice_due_quanta, 0))

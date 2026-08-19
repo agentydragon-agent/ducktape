@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from finance.augur.api.schemas import ApiModel
+from decimal import Decimal
+
+from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount
 
 
 class FinanceSnapshot(ApiModel):
@@ -12,4 +14,4 @@ class FinanceSnapshot(ApiModel):
     """
 
     as_of_date: str
-    cash_usd: float = 0.0
+    cash: NonNegativeCurrencyAmount = Decimal(0)

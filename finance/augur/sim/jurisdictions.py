@@ -12,11 +12,15 @@ runfiles tree (which preserves the source layout) can find them.
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
+from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
+
+from finance.augur.sim.fixed_point import validate_currency_amount
 
 
 class JurisdictionLevel(StrEnum):
@@ -30,14 +34,32 @@ class JurisdictionLevel(StrEnum):
 _DATA_DIR = Path(__file__).parent / "data" / "jurisdictions"
 
 
+def _validate_bracket_upper(value: object) -> Decimal | Literal["Infinity"]:
+    if isinstance(value, float):
+        raise TypeError("tax bracket upper must be an exact decimal string or integer")
+    try:
+        upper = value if isinstance(value, Decimal) else Decimal(value)  # type: ignore[arg-type]
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("tax bracket upper must be an exact decimal or Infinity") from exc
+    if upper == Decimal("Infinity"):
+        return "Infinity"
+    if upper.is_nan() or upper < 0:
+        raise ValueError("tax bracket upper must be nonnegative")
+    return upper
+
+
+type BracketUpper = Annotated[Decimal | Literal["Infinity"], BeforeValidator(_validate_bracket_upper)]
+type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
+
+
 class TaxBracket(BaseModel):
-    """One marginal-rate slice. `upper_usd` is the inclusive upper
-    edge; `math.inf` in YAML (`.inf`) denotes the open-ended top
+    """One marginal-rate slice. `upper` is the inclusive upper
+    edge; the exact string `Infinity` denotes the open-ended top
     bracket. Brackets in a schedule are walked low to high, and the
     rate applies to income in the slice
-    `(previous_upper, upper_usd]`."""
+    `(previous_upper, upper]`."""
 
-    upper_usd: float
+    upper: BracketUpper
     rate: float
 
 
@@ -51,7 +73,7 @@ class Jurisdiction(BaseModel):
     jurisdiction_id: str
     ordinary_income_brackets: dict[str, list[TaxBracket]]
     ltcg_brackets: dict[str, list[TaxBracket]] | None = Field(default=None)
-    standard_deduction: dict[str, float]
+    standard_deduction: dict[str, CurrencyAmount]
     level: JurisdictionLevel
     exempt_interest_from_levels: frozenset[JurisdictionLevel] = Field(
         default=frozenset(),

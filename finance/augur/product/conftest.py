@@ -34,7 +34,7 @@ def make_product_service(augur_config: Config, catalog: CatalogResponse) -> Make
         resolved = resolve_portfolio_sources(cfg)
         return ProductService(
             portfolio=resolved.portfolio,
-            initial_cash_usd=float(resolved.snapshot.cash_usd),
+            initial_cash=resolved.snapshot.cash,
             primary_agent_id=resolve_primary_agent_id(cfg),
             security_distributions=cfg.security_distributions,
             harvest_policies=resolved.harvest_policies,

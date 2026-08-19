@@ -109,7 +109,7 @@ def build_catalog(config: Config) -> CatalogResponse:
     locations = [location for location in available_locations if location.id in selected_location_ids]
     properties = sorted(
         (property_ for property_ in loaded_properties if property_.location_id in selected_location_ids),
-        key=lambda property_: (location_by_id[property_.location_id].city, property_.price_usd, property_.id),
+        key=lambda property_: (location_by_id[property_.location_id].city, property_.price, property_.id),
     )
     if not properties:
         raise ValueError("Augur property catalog has no properties after applying location_selection")

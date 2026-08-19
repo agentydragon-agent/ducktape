@@ -38,11 +38,9 @@ def test_metric_fan_scale(make_product_service: MakeProductService, augur_config
     # so the scenario must reference that id regardless of the config's default preset name.
     model = augur_config.models[augur_config.default_model_id].realize_model()
     service: ProductService = make_product_service(model)
-    scenario = ScenarioKey(
-        model_id="current_model", horizon_months=horizon, monthly_spend_usd=5_000.0, spend_index="none"
-    )
+    scenario = ScenarioKey(model_id="current_model", horizon_months=horizon, monthly_spend=5000, spend_index="none")
     request = MetricFanRequest(
-        scenario=scenario, first_seed=0, rollout_count=rollouts, metric="cash_usd", percentiles=(5.0, 50.0, 95.0)
+        scenario=scenario, first_seed=0, rollout_count=rollouts, metric="cash", percentiles=(5.0, 50.0, 95.0)
     )
 
     profiler = cProfile.Profile() if profile else None

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest_bazel
 
 from finance.augur.sim.jurisdictions import load_jurisdiction
@@ -15,9 +13,9 @@ def test_load_federal_us_has_seven_ordinary_brackets() -> None:
     single = fed.ordinary_income_brackets["single"]
     assert len(single) == 7
     assert single[0].rate == 0.10
-    assert single[0].upper_usd == 11600.0
+    assert single[0].upper == 11600.0
     assert single[-1].rate == 0.37
-    assert math.isinf(single[-1].upper_usd)
+    assert single[-1].upper == "Infinity"
 
 
 def test_load_federal_us_has_three_ltcg_brackets() -> None:
@@ -25,7 +23,7 @@ def test_load_federal_us_has_three_ltcg_brackets() -> None:
     assert fed.ltcg_brackets is not None
     ltcg = fed.ltcg_brackets["single"]
     assert [b.rate for b in ltcg] == [0.0, 0.15, 0.20]
-    assert math.isinf(ltcg[-1].upper_usd)
+    assert ltcg[-1].upper == "Infinity"
 
 
 def test_load_california_omits_ltcg_brackets() -> None:

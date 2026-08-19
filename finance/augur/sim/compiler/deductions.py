@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput
 from finance.augur.sim.compiler.tax import TaxCompileOutput
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, ratio_to_money_factor
 from finance.augur.sim.scenario import MortgageInterestDeductionPolicy, Scenario
 
 
@@ -20,15 +20,15 @@ from finance.augur.sim.scenario import MortgageInterestDeductionPolicy, Scenario
 class MIDCompileOutput:
     """Per-(tax_link, liability) Mortgage Interest Deduction (§163(h)(3)) plumbing.
 
-    - `principal_ratio[link, lia]` = pro-rata `min(1, principal_cap[jurisdiction] /
+    - `principal_factor[link, lia]` = fixed-point pro-rata `min(1, principal_cap[jurisdiction] /
       liability_principal[lia])` for liabilities owned by the link's profile agent and
-      listed in a MortgageInterestDeductionPolicy; 0.0 otherwise. Engine does
-      `interest_ytd @ principal_ratio[link]` per link to get MID per rollout.
-    - `link_active[link]`: True iff that link has at least one non-zero principal_ratio
+      listed in a MortgageInterestDeductionPolicy; zero otherwise. Engine does
+      integer ratio scaling per liability and sums the results to get MID per rollout.
+    - `link_active[link]`: True iff that link has at least one non-zero principal factor
       entry; lets the engine skip the matmul + max for jurisdictions or scenarios
       without MID-eligible debt."""
 
-    principal_ratio: NDArray[np.float64]
+    principal_factor: NDArray[np.int64]
     link_active: NDArray[np.bool_]
 
 
@@ -52,24 +52,24 @@ class SaltCompileOutput:
 def compile_mortgage_interest_deductions(
     scenario: Scenario, strings: StringTable, *, tax: TaxCompileOutput, liabilities: LiabilityCompileOutput
 ) -> MIDCompileOutput:
-    """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
+    """Compile the precomputed per-(tax_link, liability) MID factor matrix.
 
     For each (link, liability) pair, the ratio is the pro-rata
     `min(1, principal_cap / origination_principal)` factor applied to YTD interest
     when the engine sums MID at year-end. Zero where: (a) the liability isn't
     owned by the link's profile agent, (b) the liability has no
     MortgageInterestDeductionPolicy entry, (c) the policy's
-    per_jurisdiction_principal_cap_usd map omits the link's jurisdiction, or
+    per_jurisdiction_principal_cap map omits the link's jurisdiction, or
     (d) the policy's `debt_class == "home_equity"` (TCJA disallow §163(h)(3)).
     """
 
     link_count = tax.link_profile.shape[0]
     liability_count = liabilities.codes.shape[0]
-    ratio = np.zeros((max(1, link_count), max(1, liability_count)), dtype=np.float64)
+    factor = np.zeros((max(1, link_count), max(1, liability_count)), dtype=np.int64)
     active = np.zeros(max(1, link_count), dtype=np.bool_)
 
     if link_count == 0 or liability_count == 0 or not scenario.mortgage_interest_deduction_policies:
-        return MIDCompileOutput(principal_ratio=ratio, link_active=active)
+        return MIDCompileOutput(principal_factor=factor, link_active=active)
 
     liability_slot_by_code = {int(liabilities.codes[lia]): lia for lia in range(liability_count)}
     policies_by_liability_slot: dict[int, MortgageInterestDeductionPolicy] = {}
@@ -98,24 +98,25 @@ def compile_mortgage_interest_deductions(
                 continue
             if policy.debt_class == "home_equity":
                 # TCJA (§163(h)(3), 2018-2025): home-equity-debt interest is not deductible.
-                # Leave ratio[link, lia_slot] at 0.0 so the engine sums in nothing for this
+                # Leave factor[link, lia_slot] at zero so the engine sums in nothing for this
                 # liability. Callers who layer a HELOC-for-improvement should tag it
                 # "acquisition" — we do not model the substantial-improvement carve-out.
                 continue
-            cap = policy.per_jurisdiction_principal_cap_usd.get(jurisdiction_id)
+            cap = policy.per_jurisdiction_principal_cap.get(jurisdiction_id)
             if cap is None:
                 continue
-            principal = float(liabilities.principal[lia_slot])
-            if principal <= 0.0:
+            principal = int(liabilities.principal[lia_slot])
+            if principal <= 0:
                 continue
             # Principal-cap ratio only. The owner-vs-rented split is now applied at runtime
             # via parallel `liability_rental_interest_ytd` accumulation that mirrors
             # `current.property_rented_fraction` — mid-horizon lifecycle events take effect
             # immediately in MID/Schedule E.
-            ratio[link, lia_slot] = min(1.0, float(usd_to_cents(cap)) / principal)
-        active[link] = bool(np.any(ratio[link] > 0.0))
+            cap_quanta = int(currency_amount_to_quanta(cap, quantum=scenario.currency.quantum))
+            factor[link, lia_slot] = ratio_to_money_factor(min(cap_quanta, principal), principal)
+        active[link] = bool(np.any(factor[link] > 0))
 
-    return MIDCompileOutput(principal_ratio=ratio, link_active=active)
+    return MIDCompileOutput(principal_factor=factor, link_active=active)
 
 
 def compile_federal_salt_deductions(
@@ -181,7 +182,7 @@ def compile_federal_salt_deductions(
             contributing_mask[federal_link, sibling] = True
 
         # Forward-fill the cap schedule across the horizon's calendar years. Entries are
-        # tuples (effective_year_index, cap_usd); for each year, pick the latest entry whose
+        # tuples (effective_year_index, cap); for each year, pick the latest entry whose
         # effective_year_index <= year. If no entry applies (e.g. schedule starts at year 2),
         # the cap is 0 (no allowed deduction). An empty schedule means SALT is effectively
         # uncapped — represent that by a large sentinel cap.
@@ -194,6 +195,8 @@ def compile_federal_salt_deductions(
             if not applicable:
                 salt_cap_by_year[federal_link, year] = 0.0
             else:
-                salt_cap_by_year[federal_link, year] = usd_to_cents(applicable[-1].cap_usd)
+                salt_cap_by_year[federal_link, year] = currency_amount_to_quanta(
+                    applicable[-1].cap, quantum=scenario.currency.quantum
+                )
 
     return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)

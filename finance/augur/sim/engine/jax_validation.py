@@ -17,13 +17,13 @@ def validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:
     for issuer_idx, issuer_code in enumerate(plan.pe_issuers.codes):
         if int(issuer_code) < 0:
             continue
-        marks = pe_channels.marks[issuer_idx, :, : plan.horizon_months]
+        marks = pe_channels.mark_quanta[issuer_idx, :, : plan.horizon_months]
         if marks.size and (not np.isfinite(marks).all() or (marks < 0.0).any()):
             raise ValueError(
                 f"private-equity mark series for issuer {plan.strings[int(issuer_code)]!r} "
                 "produced a negative or non-finite value"
             )
-        forced_recovery = pe_channels.forced_recovery_cashout_cents[issuer_idx, :, : plan.horizon_months]
+        forced_recovery = pe_channels.forced_recovery_cashout_quanta[issuer_idx, :, : plan.horizon_months]
         if forced_recovery.size and (forced_recovery < 0).any():
             raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 

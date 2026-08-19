@@ -8,15 +8,15 @@ export const DEFAULT_FIRST_SEED = 1;
 
 export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
-  monthlySpendUsd: 1400,
+  monthlySpend: 1400,
   spendIndex: "inflation",
   sleeveWeights: null,
-  cashFloorUsd: 4000,
-  cashCeilingUsd: 10000,
+  cashFloor: 4000,
+  cashCeiling: 10000,
   cashBandIndexToInflation: true,
-  peLnwFloorUsd: 0,
+  peLnwFloor: 0,
   peIndexFloorToInflation: true,
-  monthlyRentUsd: 0,
+  monthlyRent: 0,
   rentalLocationId: null,
   propertyId: null,
   livesHere: true,
@@ -27,9 +27,9 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   annualInsurancePct: 0.4,
   annualMaintenancePct: 1.0,
   // Full-property monthly rent override before rented-fraction and vacancy scaling:
-  // null means "use the property's rent_estimate_usd"; 0 means "no rent collected";
+  // null means "use the property's rent_estimate"; 0 means "no rent collected";
   // any positive value overrides the property record.
-  rentalFullPropertyMonthlyUsd: null,
+  rentalFullPropertyMonthly: null,
   // 0 = not rented (pure primary residence); 100 = fully rented out; in between = partial
   // (e.g. owner-occupied + ADU). Drives whether `initial_rental` is emitted on the wire.
   rentalFractionRentedPct: 0,
@@ -59,17 +59,21 @@ export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_v
 // (value, mortgage, home equity) plus liquid net worth feed Net worth. Cash shortfall is a
 // diagnostic, kept last. This order drives the metric picker and both terminal tables.
 export const METRIC_OPTIONS = [
-  { value: "holding_value_usd", chartValue: "holdingValueUsd", label: "Holdings value" },
-  { value: "private_equity_value_usd", chartValue: "privateEquityValueUsd", label: "Private equity value" },
+  { value: "holding_value", chartValue: "holdingValueQuanta", label: "Holdings value" },
+  {
+    value: "private_equity_value",
+    chartValue: "privateEquityValueQuanta",
+    label: "Private equity value",
+  },
   // Face still on the books. Above Liquid net worth because it is NOT in it — a bond held to
   // maturity is neither marked nor saleable — but it is in Net worth below.
-  { value: "bond_value_usd", chartValue: "bondValueUsd", label: "Bond value" },
-  { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
-  { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
-  { value: "property_value_usd", chartValue: "propertyValueUsd", label: "Property value" },
-  { value: "mortgage_balance_usd", chartValue: "mortgageBalanceUsd", label: "Mortgage balance" },
-  { value: "home_equity_usd", chartValue: "homeEquityUsd", label: "Home equity" },
-  { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
+  { value: "bond_value", chartValue: "bondValueQuanta", label: "Bond value" },
+  { value: "cash", chartValue: "cashQuanta", label: "Cash balance" },
+  { value: "liquid_net_worth", chartValue: "liquidNetWorthQuanta", label: "Liquid net worth" },
+  { value: "property_value", chartValue: "propertyValueQuanta", label: "Property value" },
+  { value: "mortgage_balance", chartValue: "mortgageBalanceQuanta", label: "Mortgage balance" },
+  { value: "home_equity", chartValue: "homeEquityQuanta", label: "Home equity" },
+  { value: "net_worth", chartValue: "netWorthQuanta", label: "Net worth" },
 ];
 
 export const METRIC_BY_VALUE = new Map(METRIC_OPTIONS.map((metric) => [metric.value, metric]));
@@ -82,6 +86,16 @@ export function productInputDefaults(bootstrap) {
   const overrides = bootstrap.productInputDefaults ?? {};
   const overridesNotNull = Object.fromEntries(Object.entries(overrides).filter(([, value]) => value != null));
   const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull };
+  for (const key of [
+    "monthlySpend",
+    "cashFloor",
+    "cashCeiling",
+    "peLnwFloor",
+    "monthlyRent",
+    "rentalFullPropertyMonthly",
+  ]) {
+    if (base[key] != null) base[key] = Number(base[key]);
+  }
   // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so we
   // only fall back to the first location when YAML didn't pin a `rental_location_id`. `horizonMonths`
   // is NOT part of the input object — it's the tab-shared `?h=` control (see `horizonMonthsDefault`).
@@ -177,7 +191,7 @@ export function defaultLifecycleEvent(kind, suggestedMonth) {
   const base = { _id: nextLifecycleEventId(), kind, month: Math.max(1, suggestedMonth || 12) };
   if (kind === "set_rented_fraction") return { ...base, rentedFractionPct: 0 };
   if (kind === "set_primary_residence") return { ...base, livesHere: false };
-  if (kind === "capital_improvement") return { ...base, amountUsd: 25000 };
+  if (kind === "capital_improvement") return { ...base, amount: 25000 };
   if (kind === "property_sale") return { ...base, closingCostPct: 6 };
   throw new Error(`unknown lifecycle event kind ${kind}`);
 }
@@ -196,12 +210,12 @@ export function buildRentalIncomePlan(input) {
   // `rentalFractionRentedPct` = 0 → property isn't rented at all; no rental plan on the wire.
   const fractionPct = Number(input.rentalFractionRentedPct) || 0;
   if (fractionPct <= 0) return null;
-  // `rentalFullPropertyMonthlyUsd` is null → use property default; numeric → explicit override (incl. 0).
-  const override = input.rentalFullPropertyMonthlyUsd;
-  const fullPropertyMonthlyRentUsd = override == null ? null : Math.max(0, Number(override) || 0);
+  // `rentalFullPropertyMonthly` is null → use property default; numeric → explicit override (incl. 0).
+  const override = input.rentalFullPropertyMonthly;
+  const fullPropertyMonthlyRent = override == null ? null : String(Math.max(0, Number(override) || 0));
   const fraction = Math.min(1, Math.max(0.01, fractionPct / 100));
   const vacancyPct = Math.min(1, Math.max(0, (Number(input.rentalVacancyPct) || 0) / 100));
-  return { fullPropertyMonthlyRentUsd, fractionRented: fraction, vacancyPct };
+  return { fullPropertyMonthlyRent, fractionRented: fraction, vacancyPct };
 }
 
 export function buildRentalManagement(input) {
@@ -255,7 +269,7 @@ export function buildLifecycleEvents(events) {
         return {
           kind: "capital_improvement",
           month: event.month,
-          amountUsd: Number(event.amountUsd) || 0,
+          amount: String(Number(event.amount) || 0),
           description: "",
         };
       }
@@ -274,12 +288,12 @@ export function buildLifecycleEvents(events) {
 // `max(1, ...)` keeps a holding too small to round to 1% inside the target rather than silently
 // outside it — weight 0 means "never sell this", which is not what "you own a little of it" says.
 export function seedSleeveWeights(sellable) {
-  const held = (sellable ?? []).filter((row) => row.symbol && Number(row.valueUsd) > 0);
-  const total = held.reduce((sum, row) => sum + Number(row.valueUsd), 0);
-  if (!total) return [];
+  const held = (sellable ?? []).filter((row) => row.symbol && BigInt(row.valueQuanta ?? 0) > 0n);
+  const total = held.reduce((sum, row) => sum + BigInt(row.valueQuanta), 0n);
+  if (total === 0n) return [];
   return held.map((row) => ({
     symbol: row.symbol,
-    weight: Math.max(1, Math.round((100 * Number(row.valueUsd)) / total)),
+    weight: Math.max(1, Number((100n * BigInt(row.valueQuanta) + total / 2n) / total)),
   }));
 }
 
@@ -296,27 +310,26 @@ export function resolveSleeveWeights(sleeveWeights, sellable) {
 
 export function productScenario(input, bootstrap, modelId, horizonMonths, sellable) {
   const sleeveWeights = resolveSleeveWeights(input.sleeveWeights, sellable);
-  const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
-  const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
+  const monthlyRent = Math.max(0, Number(input.monthlyRent) || 0);
+  const rentalLocationId = monthlyRent > 0 ? input.rentalLocationId : null;
   return {
     modelId: modelId || defaultModel(bootstrap),
     horizonMonths: clampHorizonMonths(horizonMonths, bootstrap),
-    monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
+    monthlySpend: String(Math.max(1, Number(input.monthlySpend) || 1)),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
     fundingPolicy: {
-      cashFloorUsd: Math.max(0, Number(input.cashFloorUsd) || 0),
-      cashCeilingUsd: Math.max(
-        Math.max(0, Number(input.cashFloorUsd) || 0),
-        Math.max(0, Number(input.cashCeilingUsd) || 0)
+      cashFloor: String(Math.max(0, Number(input.cashFloor) || 0)),
+      cashCeiling: String(
+        Math.max(Math.max(0, Number(input.cashFloor) || 0), Math.max(0, Number(input.cashCeiling) || 0))
       ),
       cashBandIndexToInflation: Boolean(input.cashBandIndexToInflation),
       sleeveWeights,
     },
     peTenderPolicy: {
-      liquidNetWorthFloorUsd: Math.max(0, Number(input.peLnwFloorUsd) || 0),
+      liquidNetWorthFloor: String(Math.max(0, Number(input.peLnwFloor) || 0)),
       indexFloorToInflation: Boolean(input.peIndexFloorToInflation),
     },
-    monthlyRentUsd,
+    monthlyRent: String(monthlyRent),
     rentalLocationId,
     propertyPurchase: buildPropertyPurchase(input),
     annualInsurancePct: Math.max(0, Number(input.annualInsurancePct) || 0),

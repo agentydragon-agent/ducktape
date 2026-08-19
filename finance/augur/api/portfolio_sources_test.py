@@ -76,7 +76,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
                 quantity=2.0,
-                cost_basis=700.0,
+                cost_basis=700,
                 institution_price=400.0,
                 institution_value=800.0,
                 iso_currency_code="USD",
@@ -91,7 +91,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
                 quantity=1.0,
-                cost_basis=200.0,
+                cost_basis=200,
                 institution_price=500.0,
                 institution_value=500.0,
                 iso_currency_code="USD",
@@ -103,7 +103,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
 
     resolved = resolve_portfolio_sources(minimal_config(portfolio_sources=plaid_config))
 
-    assert resolved.snapshot.cash_usd == 600.0
+    assert resolved.snapshot.cash == 600.0
     assert resolved.snapshot.as_of_date == "2026-06-01"
     assert resolved.portfolio.accounts == (
         PortfolioAccountConfig(
@@ -120,13 +120,13 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
         label="SP500 proxy",
         symbol=SP500_SYMBOL,
         security_kind="other",
-        unit_value_usd=1000.0,
+        unit_value=1000,
         lots=(
             HoldingTaxLotConfig(
                 lot_id="wealthfront_sp500_plaid_aggregate",
                 holding_period_months_at_start=24,
                 quantity=1.3,
-                cost_basis_usd=900.0,
+                cost_basis=900,
             ),
         ),
     )
@@ -182,7 +182,7 @@ def test_plaid_source_reuses_existing_portfolio_account(
     resolved = resolve_portfolio_sources(config)
 
     assert len(resolved.portfolio.accounts) == 1
-    assert resolved.portfolio.holdings[0].total_cost_basis_usd == 0.0
+    assert resolved.portfolio.holdings[0].total_cost_basis == 0.0
 
 
 def test_plaid_source_expands_holding_period_buckets(
@@ -209,7 +209,7 @@ def test_plaid_source_expands_holding_period_buckets(
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
                 quantity=1000.0,
-                cost_basis=600.0,
+                cost_basis=600,
                 institution_price=1.0,
                 institution_value=1000.0,
                 iso_currency_code="USD",
@@ -245,18 +245,15 @@ def test_plaid_source_expands_holding_period_buckets(
     [holding] = resolved.portfolio.holdings
     assert holding.lots == (
         HoldingTaxLotConfig(
-            lot_id="wealthfront_sp500_plaid_lt12", holding_period_months_at_start=4, quantity=0.25, cost_basis_usd=300.0
+            lot_id="wealthfront_sp500_plaid_lt12", holding_period_months_at_start=4, quantity=0.25, cost_basis=300
         ),
         HoldingTaxLotConfig(
-            lot_id="wealthfront_sp500_plaid_ltcore",
-            holding_period_months_at_start=16,
-            quantity=0.75,
-            cost_basis_usd=300.0,
+            lot_id="wealthfront_sp500_plaid_ltcore", holding_period_months_at_start=16, quantity=0.75, cost_basis=300
         ),
     )
     # The split preserves the live Plaid aggregate exactly.
     assert holding.total_quantity == 1.0
-    assert holding.total_cost_basis_usd == 600.0
+    assert holding.total_cost_basis == 600.0
 
 
 def test_holding_period_buckets_market_value_fractions_must_sum_to_one() -> None:

@@ -46,6 +46,7 @@ py_library(
     name = "locations",
     srcs = ["locations.py"],
     deps = [
+        ":fixed_point",
         "@pypi//pydantic",
     ],
 )
@@ -69,6 +70,7 @@ py_library(
     data = [":jurisdiction_data"],
     deps = [
         ":enums",
+        ":fixed_point",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -110,6 +112,7 @@ py_test(
         ":fixed_point",
         "//finance/augur/product:asset_key",
         "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -787,6 +790,7 @@ py_library(
     name = "bench_scenario",
     srcs = ["bench_scenario.py"],
     deps = [
+        ":fixed_point",
         ":scenario",
         "//finance/augur/model:gbm",
         "//finance/augur/model:level_series_groups",

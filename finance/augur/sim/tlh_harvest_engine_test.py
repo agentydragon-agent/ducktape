@@ -50,7 +50,7 @@ def _harvest_scenario(
     *,
     horizon_months: int,
     quantity: float = 1000.0,
-    cost_basis_per_unit_usd: float = 1.0,
+    cost_basis_per_unit: int = 1,
     purchase_month_index: int = 0,
     with_harvest: bool,
     short_term_fraction: float = 1.0,
@@ -71,7 +71,7 @@ def _harvest_scenario(
             asset=SecurityKey(symbol=SP500_SYMBOL),
             purchase_month_index=purchase_month_index,
             quantity=quantity,
-            cost_basis_per_unit_usd=cost_basis_per_unit_usd,
+            cost_basis_per_unit=cost_basis_per_unit,
         )
     ]
     if extra_lots:
@@ -92,9 +92,9 @@ def _harvest_scenario(
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="brokerage", balance_usd=0.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="brokerage", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=lots,
         scheduled_asset_sales=scheduled_asset_sales or [],
@@ -120,7 +120,7 @@ def _ytd_gain(result, *, month_index: int, classification: str, rollout_index: i
     )
     if rows.is_empty():
         return 0.0
-    return float(rows.get_column("gain_usd").sum())
+    return float(rows.get_column("gain_quanta").sum())
 
 
 def _harvested_short_term_in_month(result, *, calendar_month: int, rollout_index: int = 0) -> float:
@@ -185,7 +185,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         asset=SecurityKey(symbol=SecuritySymbol("gainco")),
         purchase_month_index=-3,  # short-term when sold at month 6
         quantity=100.0,
-        cost_basis_per_unit_usd=100.0,
+        cost_basis_per_unit=100,
     )
     gain_sale = ScheduledAssetSale(
         month=6,
@@ -194,7 +194,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         source_account_id="brokerage",
         asset=SecurityKey(symbol=SecuritySymbol("gainco")),
         quantity=100.0,
-        price_per_unit_usd=400.0,  # $30k short-term gain
+        price_per_unit=400,  # $30k short-term gain
         proceeds_account_id="checking",
     )
     # SP500 sleeve drops then recovers so harvesting books meaningful losses through the year.
@@ -215,7 +215,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
         )
         result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
         accruals = result.events_log.tax_accruals.filter(pl.col("jurisdiction_id") == "federal_us")
-        return float(accruals.get_column("amount_usd").sum())
+        return float(accruals.get_column("amount_quanta").sum())
 
     tax_with = year_tax(with_harvest=True)
     tax_without = year_tax(with_harvest=False)
@@ -240,7 +240,7 @@ def test_give_back_makes_sale_gain_larger_by_cumulative_harvest_and_is_bounded()
         source_account_id="brokerage",
         asset=SecurityKey(symbol=SP500_SYMBOL),
         quantity=1000.0,
-        price_per_unit_usd=1.0,
+        price_per_unit=1,
         proceeds_account_id="checking",
     )
     external_series = _sp500_levels([levels])
@@ -295,7 +295,7 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
             source_account_id="brokerage",
             asset=SecurityKey(symbol=SP500_SYMBOL),
             quantity=500.0,
-            price_per_unit_usd=1.0,
+            price_per_unit=1,
             proceeds_account_id="checking",
         ),
         ScheduledAssetSale(
@@ -305,7 +305,7 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
             source_account_id="brokerage",
             asset=SecurityKey(symbol=SP500_SYMBOL),
             quantity=500.0,
-            price_per_unit_usd=1.0,
+            price_per_unit=1,
             proceeds_account_id="checking",
         ),
     ]

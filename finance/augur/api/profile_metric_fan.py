@@ -41,7 +41,7 @@ def main() -> int:
     catalog = build_catalog(config)
     service = ProductService(
         portfolio=resolved_portfolio.portfolio,
-        initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
+        initial_cash=resolved_portfolio.snapshot.cash,
         primary_agent_id=resolve_primary_agent_id(config),
         security_distributions=config.security_distributions,
         known_location_ids=catalog.location_ids,
@@ -55,7 +55,7 @@ def main() -> int:
         scenario=ScenarioKey(
             model_id=config.default_model_id,
             horizon_months=args.horizon_months,
-            monthly_spend_usd=args.monthly_spend_usd,
+            monthly_spend=args.monthly_spend,
             spend_index=args.spend_index,
         ),
         first_seed=0,
@@ -101,7 +101,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rollout-count", type=int, default=DEFAULT_ROLLOUT_COUNT)
     parser.add_argument("--monthly-spend-usd", type=float, default=DEFAULT_MONTHLY_SPEND_USD)
     parser.add_argument("--spend-index", choices=["none", "inflation"], default="inflation")
-    parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth_usd")
+    parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth")
     parser.add_argument("--percentiles", type=float, nargs="+", default=list(DEFAULT_PERCENTILES))
     parser.add_argument("--profile-output", type=Path, default=DEFAULT_PROFILE_OUTPUT)
     parser.add_argument("--max-seconds", type=float, default=60.0)

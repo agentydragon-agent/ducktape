@@ -325,9 +325,9 @@ water-fills the raise across sleeves by how overweight each one is:
 
 ```python
 for policy in policies:
-    orders = decide(view, universe, floor_cents, ceiling_cents)  # per-sleeve [R]
+    orders = decide(view, universe, floor_quanta, ceiling_quanta)  # per-sleeve [R]
     for sleeve in range(S):
-        remaining = orders.sell_cents[sleeve]
+        remaining = orders.sell_quanta[sleeve]
         for pool in sleeve_pools(policy, sleeve):
             available = available_value_for_pool(pool)  # [R]
             sale_target = np.minimum(np.clip(remaining, 0, None), available)

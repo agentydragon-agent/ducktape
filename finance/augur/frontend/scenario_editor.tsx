@@ -100,7 +100,7 @@ const KNOBS = [
     needs: "rented",
   },
   {
-    key: "rentalFullPropertyMonthlyUsd",
+    key: "rentalFullPropertyMonthly",
     label: "Full-property rent",
     kind: "usd",
     step: 100,
@@ -127,15 +127,15 @@ const KNOBS = [
     group: "Management",
     needs: "managed",
   },
-  { key: "monthlySpendUsd", label: "Monthly spend", kind: "usd", min: 1, step: 100, group: "Spending" },
+  { key: "monthlySpend", label: "Monthly spend", kind: "usd", min: 1, step: 100, group: "Spending" },
   { key: "spendIndex", label: "Spend index", kind: "index", group: "Spending" },
-  { key: "monthlyRentUsd", label: "Monthly rent", kind: "usd", step: 100, group: "Outside rent" },
+  { key: "monthlyRent", label: "Monthly rent", kind: "usd", step: 100, group: "Outside rent" },
   { key: "rentalLocationId", label: "Rent location", kind: "location", group: "Outside rent" },
   { key: "sleeveWeights", label: "Target allocation", kind: "sleeveWeights", group: "Cash band" },
-  { key: "cashFloorUsd", label: "Floor", kind: "usd", step: 1000, group: "Cash band" },
-  { key: "cashCeilingUsd", label: "Refill to", kind: "usd", step: 1000, group: "Cash band" },
+  { key: "cashFloor", label: "Floor", kind: "usd", step: 1000, group: "Cash band" },
+  { key: "cashCeiling", label: "Refill to", kind: "usd", step: 1000, group: "Cash band" },
   { key: "cashBandIndexToInflation", label: "Band index", kind: "boolIndex", group: "Cash band" },
-  { key: "peLnwFloorUsd", label: "PE LNW floor", kind: "usd", step: 10000, group: "Private equity" },
+  { key: "peLnwFloor", label: "PE LNW floor", kind: "usd", step: 10000, group: "Private equity" },
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
 ];
 
@@ -163,10 +163,10 @@ const HOUSE_FACTS = [
   },
   { label: "Sqft", value: (property) => numOrDash(property.sqft) },
   { label: "Year built", value: (property) => property.yearBuilt ?? "—" },
-  { label: "Price", value: (property) => usdOrDash(property.priceUsd) },
-  { label: "HOA / mo", value: (property) => usdOrDash(property.hoaMonthlyUsd) },
-  { label: "Property tax / yr", value: (property) => usdOrDash(property.annualTaxOnListUsd) },
-  { label: "Rent estimate", value: (property) => usdOrDash(property.rentEstimateUsd) },
+  { label: "Price", value: (property) => usdOrDash(property.price) },
+  { label: "HOA / mo", value: (property) => usdOrDash(property.hoaMonthly) },
+  { label: "Property tax / yr", value: (property) => usdOrDash(property.annualTaxOnList) },
+  { label: "Rent estimate", value: (property) => usdOrDash(property.rentEstimate) },
 ];
 
 function propertyOptions(bootstrap) {
@@ -215,9 +215,9 @@ function knobApplies(knob, input) {
 // Placeholder text for the full-property-rent cell: left blank, it falls back to the property's rent
 // estimate, so "" and "$0" mean different things. Other knobs have no placeholder.
 function cellPlaceholder(knob, input, bootstrap) {
-  if (knob.key !== "rentalFullPropertyMonthlyUsd") return undefined;
+  if (knob.key !== "rentalFullPropertyMonthly") return undefined;
   const property = findProperty(bootstrap, input.propertyId);
-  const estimate = Number(property?.rentEstimateUsd);
+  const estimate = Number(property?.rentEstimate);
   return estimate > 0 ? `${fmtUsd(estimate)} (property default)` : "(required)";
 }
 

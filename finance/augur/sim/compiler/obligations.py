@@ -21,7 +21,7 @@ from finance.augur.sim.compiler.helpers import (
     ORDINARY_DEDUCTION_CATEGORY,
     AccountSlots,
     StringTable,
-    amount_arrays_cents,
+    amount_arrays_quanta,
     empty_month_matrix,
 )
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
@@ -173,8 +173,8 @@ def compile_obligation_slots(
                 to_agent[month, idx] = strings.require(config.to_agent_id)
                 to_account[month, idx] = strings.require(config.to_account_id)
                 to_slot[month, idx] = account_slot_by_key.resolve(config.to_agent_id, config.to_account_id)
-                kind, fixed, base, series, base_month, period = amount_arrays_cents(
-                    config.amount_due_usd, series_index_by_id
+                kind, fixed, base, series, base_month, period = amount_arrays_quanta(
+                    config.amount_due, series_index_by_id, currency_quantum=scenario.currency.quantum
                 )
                 amount_kind[month, idx] = kind
                 amount_fixed[month, idx] = fixed

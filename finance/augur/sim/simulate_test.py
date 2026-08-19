@@ -6,6 +6,7 @@ event log, and produces Polars boundary frames for projections and APIs.
 
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
 from typing import cast
 
 import numpy as np
@@ -31,7 +32,7 @@ from finance.augur.model.series import (
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.fixed_point import cents_to_usd, usd_to_cents
+from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -68,8 +69,16 @@ CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
 
 
+def usd_to_quanta(value: object) -> np.int64:
+    return np.int64((Decimal(str(value)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def quanta_to_usd(value: object) -> float:
+    return float(Decimal(int(cast(int, value))) / 100)
+
+
 def _engine_usd(value: float) -> float:
-    return cents_to_usd(usd_to_cents(value))
+    return quanta_to_usd(usd_to_quanta(value))
 
 
 def _external_series_context_for_levels(
@@ -98,12 +107,12 @@ def _property_link_validation_scenario(
             Agent(agent_id="irs"),
         ],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000_000.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=1_000_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000000),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=1000000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=scheduled_property_purchases
         or [
@@ -115,8 +124,8 @@ def _property_link_validation_scenario(
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
+                purchase_price=500000,
+                down_payment=500000,
             )
         ],
         property_tax_policies=property_tax_policies or [],
@@ -130,8 +139,8 @@ def alice_bob_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=20.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=20),
         ],
         scheduled_transfers=[
             ScheduledTransfer(
@@ -141,7 +150,7 @@ def alice_bob_scenario() -> Scenario:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=5.0,
+                amount=5,
             )
         ],
         tax_profiles=[],
@@ -154,8 +163,8 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
         {
             "agents": [{"agent_id": "alice"}, {"agent_id": "landlord"}],
             "initial_cash": [
-                {"agent_id": "alice", "account_id": "checking", "balance_usd": 10_000.0},
-                {"agent_id": "landlord", "account_id": "checking", "balance_usd": 0.0},
+                {"agent_id": "alice", "account_id": "checking", "balance": 10000},
+                {"agent_id": "landlord", "account_id": "checking", "balance": 0},
             ],
             "recurring_obligations": [
                 {
@@ -166,9 +175,9 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
                     "from_account_id": "checking",
                     "to_agent_id": "landlord",
                     "to_account_id": "checking",
-                    "amount_due_usd": {
+                    "amount_due": {
                         "kind": "series_indexed",
-                        "base_amount_usd": 1_000.0,
+                        "base_amount": 1000,
                         "series": {"kind": "rent", "location_id": "san_francisco_ca"},
                         "base_month_index": 0,
                         "adjustment_period_months": 12,
@@ -180,7 +189,7 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
         }
     )
 
-    amount = scenario.recurring_obligations[0].amount_due_usd
+    amount = scenario.recurring_obligations[0].amount_due
     assert isinstance(amount, SeriesIndexedAmount)
     assert amount.series == RentKey(location_id=LocationId("san_francisco_ca"))
 
@@ -188,9 +197,7 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
 def test_series_indexed_amount_cannot_fire_before_base_month() -> None:
     rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
     scenario = _series_indexed_rent_obligation_scenario(
-        SeriesIndexedAmount(
-            base_amount_usd=1_000.0, series=rent_series_id, base_month_index=1, adjustment_period_months=12
-        ),
+        SeriesIndexedAmount(base_amount=1000, series=rent_series_id, base_month_index=1, adjustment_period_months=12),
         horizon_months=2,
     )
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0, 110.0, 120.0]])
@@ -202,9 +209,7 @@ def test_series_indexed_amount_cannot_fire_before_base_month() -> None:
 def test_series_indexed_amount_requires_external_series_coverage() -> None:
     rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
     scenario = _series_indexed_rent_obligation_scenario(
-        SeriesIndexedAmount(
-            base_amount_usd=1_000.0, series=rent_series_id, base_month_index=0, adjustment_period_months=12
-        ),
+        SeriesIndexedAmount(base_amount=1000, series=rent_series_id, base_month_index=0, adjustment_period_months=12),
         horizon_months=13,
     )
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0] * 12])
@@ -216,9 +221,7 @@ def test_series_indexed_amount_requires_external_series_coverage() -> None:
 def test_series_indexed_amount_rejects_zero_base_level() -> None:
     rent_series_id = RentKey(location_id=LocationId("san_francisco_ca"))
     scenario = _series_indexed_rent_obligation_scenario(
-        SeriesIndexedAmount(
-            base_amount_usd=1_000.0, series=rent_series_id, base_month_index=0, adjustment_period_months=12
-        ),
+        SeriesIndexedAmount(base_amount=1000, series=rent_series_id, base_month_index=0, adjustment_period_months=12),
         horizon_months=1,
     )
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[0.0, 100.0]])
@@ -231,8 +234,8 @@ def _series_indexed_rent_obligation_scenario(amount: SeriesIndexedAmount, *, hor
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=20_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=20000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         recurring_obligations=[
             RecurringObligation(
@@ -243,7 +246,7 @@ def _series_indexed_rent_obligation_scenario(amount: SeriesIndexedAmount, *, hor
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=amount,
+                amount_due=amount,
             )
         ],
         tax_profiles=[],
@@ -256,7 +259,7 @@ def test_scenario_requires_explicit_tax_profiles() -> None:
         Scenario.model_validate(
             {
                 "agents": [{"agent_id": "alice"}],
-                "initial_cash": [{"agent_id": "alice", "account_id": "checking", "balance_usd": 100.0}],
+                "initial_cash": [{"agent_id": "alice", "account_id": "checking", "balance": 100}],
                 "horizon_months": 1,
             }
         )
@@ -266,19 +269,19 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
     with pytest.raises(ValidationError, match=r"duplicate funding policies.*alice/checking"):
         Scenario(
             agents=[Agent(agent_id="alice")],
-            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=100)],
             target_allocation_policies=[
                 TargetAllocationPolicy(
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                    cash_ceiling_usd=0.0,
+                    cash_ceiling=0,
                 ),
                 TargetAllocationPolicy(
                     agent_id="alice",
                     account_id="checking",
                     sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("qqq")), weight=1)],
-                    cash_ceiling_usd=0.0,
+                    cash_ceiling=0,
                 ),
             ],
             tax_profiles=[],
@@ -308,12 +311,12 @@ def test_scenario_rejects_duplicate_mortgage_liability_ids() -> None:
                     buyer_agent_id="alice",
                     buyer_account_id="checking",
                     seller_agent_id="seller",
-                    purchase_price_usd=500_000.0,
-                    down_payment_usd=100_000.0,
+                    purchase_price=500000,
+                    down_payment=100000,
                     mortgage=MortgageFinancing(
                         liability_id="shared_mortgage",
                         lender_agent_id="lender",
-                        principal_usd=400_000.0,
+                        principal=400000,
                         annual_interest_rate=0.06,
                         term_months=360,
                     ),
@@ -326,12 +329,12 @@ def test_scenario_rejects_duplicate_mortgage_liability_ids() -> None:
                     buyer_agent_id="bob",
                     buyer_account_id="checking",
                     seller_agent_id="seller",
-                    purchase_price_usd=600_000.0,
-                    down_payment_usd=120_000.0,
+                    purchase_price=600000,
+                    down_payment=120000,
                     mortgage=MortgageFinancing(
                         liability_id="shared_mortgage",
                         lender_agent_id="lender",
-                        principal_usd=480_000.0,
+                        principal=480000,
                         annual_interest_rate=0.06,
                         term_months=360,
                     ),
@@ -379,7 +382,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
     ):
         Scenario(
             agents=[Agent(agent_id="alice")],
-            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
             initial_lots=[
                 InitialLot(
                     lot_id="old_a",
@@ -387,7 +390,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=10.0,
-                    cost_basis_per_unit_usd=80.0,
+                    cost_basis_per_unit=80,
                 ),
                 InitialLot(
                     lot_id="old_b",
@@ -395,7 +398,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=-12,
                     quantity=5.0,
-                    cost_basis_per_unit_usd=90.0,
+                    cost_basis_per_unit=90,
                 ),
             ],
             tax_profiles=[],
@@ -406,7 +409,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
 def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> None:
     Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="taxable_old",
@@ -415,7 +418,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             ),
             InitialLot(
                 lot_id="ira_old",
@@ -424,7 +427,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
-                cost_basis_per_unit_usd=70.0,
+                cost_basis_per_unit=70,
             ),
         ],
         tax_profiles=[],
@@ -440,7 +443,7 @@ def test_transfer_income_category_allows_only_ordinary() -> None:
         "from_account_id": "checking",
         "to_agent_id": "alice",
         "to_account_id": "checking",
-        "amount_usd": 100.0,
+        "amount": 100,
         "income_category": "gift",
     }
     recurring_data = {
@@ -450,7 +453,7 @@ def test_transfer_income_category_allows_only_ordinary() -> None:
         "from_account_id": "checking",
         "to_agent_id": "alice",
         "to_account_id": "checking",
-        "amount_usd": 100.0,
+        "amount": 100,
         "income_category": "gift",
     }
 
@@ -466,7 +469,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
     with pytest.raises(ValidationError, match=r"scheduled asset sale 'late_sale'.*outside scenario horizon"):
         Scenario(
             agents=[Agent(agent_id="alice")],
-            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
             initial_lots=[
                 InitialLot(
                     lot_id="seed",
@@ -474,7 +477,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     purchase_month_index=0,
                     quantity=1.0,
-                    cost_basis_per_unit_usd=100.0,
+                    cost_basis_per_unit=100,
                 )
             ],
             scheduled_asset_sales=[
@@ -485,7 +488,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     quantity=1.0,
                     proceeds_account_id="checking",
-                    price_per_unit_usd=100.0,
+                    price_per_unit=100,
                 )
             ],
             tax_profiles=[],
@@ -495,7 +498,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
     with pytest.raises(ValidationError, match=r"scheduled asset sale 'pre_sale'.*outside scenario horizon"):
         Scenario(
             agents=[Agent(agent_id="alice")],
-            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
             scheduled_asset_sales=[
                 ScheduledAssetSale(
                     month=-1,
@@ -504,7 +507,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     asset=SecurityKey(symbol=SecuritySymbol("vti")),
                     quantity=1.0,
                     proceeds_account_id="checking",
-                    price_per_unit_usd=100.0,
+                    price_per_unit=100,
                 )
             ],
             tax_profiles=[],
@@ -517,8 +520,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0),
-                InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -529,8 +532,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
                     buyer_agent_id="alice",
                     buyer_account_id="checking",
                     seller_agent_id="seller",
-                    purchase_price_usd=500_000.0,
-                    down_payment_usd=100_000.0,
+                    purchase_price=500000,
+                    down_payment=100000,
                 )
             ],
             tax_profiles=[],
@@ -541,8 +544,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0),
-                InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=100000),
+                InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
             ],
             scheduled_property_purchases=[
                 ScheduledPropertyPurchase(
@@ -553,8 +556,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
                     buyer_agent_id="alice",
                     buyer_account_id="checking",
                     seller_agent_id="seller",
-                    purchase_price_usd=500_000.0,
-                    down_payment_usd=100_000.0,
+                    purchase_price=500000,
+                    down_payment=100000,
                 )
             ],
             tax_profiles=[],
@@ -567,8 +570,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance=10),
             ],
             scheduled_transfers=[
                 ScheduledTransfer(
@@ -578,7 +581,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:
                     from_account_id="checking",
                     to_agent_id="alice",
                     to_account_id="checking",
-                    amount_usd=5.0,
+                    amount=5,
                 )
             ],
             tax_profiles=[],
@@ -589,8 +592,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance=10),
             ],
             scheduled_transfers=[
                 ScheduledTransfer(
@@ -600,7 +603,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:
                     from_account_id="checking",
                     to_agent_id="alice",
                     to_account_id="checking",
-                    amount_usd=5.0,
+                    amount=5,
                 )
             ],
             tax_profiles=[],
@@ -613,8 +616,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_obligations() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="vendor")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
-                InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
+                InitialAccountBalance(agent_id="vendor", account_id="checking", balance=0),
             ],
             scheduled_obligations=[
                 ScheduledObligation(
@@ -625,7 +628,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_obligations() -> None:
                     from_account_id="checking",
                     to_agent_id="vendor",
                     to_account_id="checking",
-                    amount_due_usd=5.0,
+                    amount_due=5,
                 )
             ],
             tax_profiles=[],
@@ -636,8 +639,8 @@ def test_scenario_rejects_out_of_horizon_scheduled_obligations() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="vendor")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
-                InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
+                InitialAccountBalance(agent_id="vendor", account_id="checking", balance=0),
             ],
             scheduled_obligations=[
                 ScheduledObligation(
@@ -648,7 +651,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_obligations() -> None:
                     from_account_id="checking",
                     to_agent_id="vendor",
                     to_account_id="checking",
-                    amount_due_usd=5.0,
+                    amount_due=5,
                 )
             ],
             tax_profiles=[],
@@ -661,8 +664,8 @@ def test_scenario_rejects_reversed_recurring_windows() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance=10),
             ],
             recurring_transfers=[
                 RecurringTransfer(
@@ -673,7 +676,7 @@ def test_scenario_rejects_reversed_recurring_windows() -> None:
                     from_account_id="checking",
                     to_agent_id="alice",
                     to_account_id="checking",
-                    amount_usd=5.0,
+                    amount=5,
                 )
             ],
             tax_profiles=[],
@@ -684,8 +687,8 @@ def test_scenario_rejects_reversed_recurring_windows() -> None:
         Scenario(
             agents=[Agent(agent_id="alice"), Agent(agent_id="vendor")],
             initial_cash=[
-                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
-                InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
+                InitialAccountBalance(agent_id="vendor", account_id="checking", balance=0),
             ],
             recurring_obligations=[
                 RecurringObligation(
@@ -697,7 +700,7 @@ def test_scenario_rejects_reversed_recurring_windows() -> None:
                     from_account_id="checking",
                     to_agent_id="vendor",
                     to_account_id="checking",
-                    amount_due_usd=5.0,
+                    amount_due=5,
                 )
             ],
             tax_profiles=[],
@@ -709,9 +712,9 @@ def test_scenario_allows_noop_recurring_windows_outside_horizon() -> None:
     Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="bob"), Agent(agent_id="vendor")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
-            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
-            InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=10),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance=10),
+            InitialAccountBalance(agent_id="vendor", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -722,7 +725,7 @@ def test_scenario_allows_noop_recurring_windows_outside_horizon() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=5.0,
+                amount=5,
             )
         ],
         recurring_obligations=[
@@ -735,7 +738,7 @@ def test_scenario_allows_noop_recurring_windows_outside_horizon() -> None:
                 from_account_id="checking",
                 to_agent_id="vendor",
                 to_account_id="checking",
-                amount_due_usd=5.0,
+                amount_due=5,
             )
         ],
         tax_profiles=[],
@@ -749,8 +752,8 @@ def _property_lifecycle_validation_scenario(
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -761,8 +764,8 @@ def _property_lifecycle_validation_scenario(
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
+                purchase_price=500000,
+                down_payment=500000,
             )
         ],
         property_lifecycle_events=property_lifecycle_events,
@@ -824,8 +827,8 @@ def _primary_residence_validation_scenario(
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -836,8 +839,8 @@ def _primary_residence_validation_scenario(
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
+                purchase_price=500000,
+                down_payment=500000,
             )
         ],
         initial_primary_residences=initial_primary_residences or [],
@@ -889,14 +892,22 @@ def test_alice_gives_bob_five_dollars_one_rollout(alice_bob_scenario: Scenario) 
     result = simulate(alice_bob_scenario, rollout_count=1, locations={})
 
     initial = result.cash_balances.filter(pl.col("month_index") == 0).sort("agent_id")
-    assert initial.get_column("balance_usd").to_list() == [10.0, 20.0]
+    assert initial.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list() == [
+        10.0,
+        20.0,
+    ]
 
     post = result.cash_balances.filter(pl.col("month_index") == 1).sort("agent_id")
-    assert post.get_column("balance_usd").to_list() == [15.0, 15.0]
+    assert post.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list() == [
+        15.0,
+        15.0,
+    ]
 
     # Conservation invariant: total cash unchanged at every month.
     totals = (
-        result.cash_balances.group_by("month_index").agg(pl.col("balance_usd").sum().alias("total")).sort("month_index")
+        result.cash_balances.group_by("month_index")
+        .agg((pl.col("balance_quanta").sum() / 100).alias("total"))
+        .sort("month_index")
     )
     assert totals.get_column("total").to_list() == [30.0, 30.0]
 
@@ -905,7 +916,7 @@ def test_alice_gives_bob_five_dollars_one_rollout(alice_bob_scenario: Scenario) 
     txn = result.events_log.transfers.row(0, named=True)
     assert txn["from_agent_id"] == "bob"
     assert txn["to_agent_id"] == "alice"
-    assert txn["amount_usd"] == 5.0
+    assert txn["amount_quanta"] / 100 == 5.0
     assert txn["month_index"] == 0
 
 
@@ -915,7 +926,7 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
     the loop."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=100)],
         tax_profiles=[],
         horizon_months=5,
     )
@@ -924,7 +935,10 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
 
     # Six rows: initial month 0 through end-of-horizon month 5.
     assert result.cash_balances.height == 6
-    assert result.cash_balances.get_column("balance_usd").to_list() == [100.0] * 6
+    assert (
+        result.cash_balances.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
+        == [100.0] * 6
+    )
     assert result.events_log.transfers.is_empty()
 
 
@@ -941,8 +955,8 @@ def test_recurring_paycheck_accrues_monthly() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -952,7 +966,7 @@ def test_recurring_paycheck_accrues_monthly() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=3000.0,
+                amount=3000,
             )
         ],
         tax_profiles=[],
@@ -963,7 +977,8 @@ def test_recurring_paycheck_accrues_monthly() -> None:
 
     alice_final = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert alice_final == 1000.0 + 12 * 3000.0
@@ -971,7 +986,8 @@ def test_recurring_paycheck_accrues_monthly() -> None:
     # Conservation: payroll sink goes negative by the same amount.
     payroll_final = (
         result.cash_balances.filter((pl.col("agent_id") == "payroll") & (pl.col("month_index") == 12))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert payroll_final == -12 * 3000.0
@@ -989,8 +1005,8 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="sink")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="sink", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="sink", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -1001,7 +1017,7 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=100.0,
+                amount=100,
             )
         ],
         tax_profiles=[],
@@ -1015,7 +1031,8 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
     balances = (
         result.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .to_list()
     )
     assert balances == [0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0]
@@ -1030,8 +1047,8 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="employer")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0),
-            InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -1041,7 +1058,7 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=2000.0,
+                amount=2000,
             )
         ],
         tax_profiles=[],
@@ -1056,7 +1073,10 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
         "rollout_index"
     )
     assert alice_final.height == rollout_count
-    assert alice_final.get_column("balance_usd").to_list() == [49000.0] * rollout_count
+    assert (
+        alice_final.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
+        == [49000.0] * rollout_count
+    )
 
     # Event log expands rollouts × months: 1000 × 24 = 24000 events.
     assert result.events_log.transfers.height == rollout_count * 24
@@ -1064,7 +1084,7 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     # Conservation at every month, across every rollout.
     totals = (
         result.cash_balances.group_by(["rollout_index", "month_index"])
-        .agg(pl.col("balance_usd").sum().alias("total"))
+        .agg((pl.col("balance_quanta").sum() / 100).alias("total"))
         .sort(["rollout_index", "month_index"])
     )
     assert totals.get_column("total").unique().to_list() == [1000.0]
@@ -1078,8 +1098,8 @@ def test_combined_one_off_and_recurring() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="employer")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -1089,7 +1109,7 @@ def test_combined_one_off_and_recurring() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=1000.0,
+                amount=1000,
             )
         ],
         scheduled_transfers=[
@@ -1100,7 +1120,7 @@ def test_combined_one_off_and_recurring() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=5000.0,
+                amount=5000,
             )
         ],
         tax_profiles=[],
@@ -1115,7 +1135,8 @@ def test_combined_one_off_and_recurring() -> None:
     # Alice at end-of-horizon: 10 × $1000 paychecks + $5000 bonus = $15000.
     alice_final = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 10))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert alice_final == 15000.0
@@ -1130,7 +1151,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     consumption with cost_basis_consumed = 30 × $80 = $2400."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="alice_vti_seed",
@@ -1138,7 +1159,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_asset_sales=[
@@ -1148,7 +1169,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=30.0,
-                price_per_unit_usd=120.0,
+                price_per_unit=120,
                 proceeds_account_id="checking",
             )
         ],
@@ -1172,7 +1193,8 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     cash_trajectory = (
         result.cash_balances.filter(pl.col("agent_id") == "alice")
         .sort("month_index")
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .to_list()
     )
     assert cash_trajectory == [0.0, 0.0, 0.0, 0.0, 3600.0, 3600.0, 3600.0]
@@ -1185,8 +1207,8 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     assert disp["month_index"] == 3
     assert disp["purchase_month_index"] == -24
     assert disp["units_sold"] == 30.0
-    assert disp["cost_basis_consumed_usd"] == 2400.0
-    assert disp["proceeds_usd"] == 3600.0
+    assert disp["cost_basis_consumed_quanta"] / 100 == 2400.0
+    assert disp["proceeds_quanta"] / 100 == 3600.0
 
 
 def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
@@ -1196,7 +1218,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
     disposition — they remain in state for historical reference)."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="alice_vti_seed",
@@ -1204,7 +1226,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=100.0,
-                cost_basis_per_unit_usd=90.0,
+                cost_basis_per_unit=90,
             )
         ],
         scheduled_asset_sales=[
@@ -1214,7 +1236,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit_usd=150.0,
+                price_per_unit=150,
                 proceeds_account_id="checking",
             )
         ],
@@ -1230,8 +1252,8 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
     assert result.events_log.lot_dispositions.height == 1
     disp = result.events_log.lot_dispositions.row(0, named=True)
     assert disp["units_sold"] == 100.0
-    assert disp["proceeds_usd"] == 15000.0
-    assert disp["cost_basis_consumed_usd"] == 9000.0
+    assert disp["proceeds_quanta"] / 100 == 15000.0
+    assert disp["cost_basis_consumed_quanta"] / 100 == 9000.0
 
 
 def test_asset_sale_scales_across_rollouts() -> None:
@@ -1240,7 +1262,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
     over the rollout dimension."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="seed",
@@ -1248,7 +1270,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=0,
                 quantity=50.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             )
         ],
         scheduled_asset_sales=[
@@ -1258,7 +1280,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=20.0,
-                price_per_unit_usd=110.0,
+                price_per_unit=110,
                 proceeds_account_id="checking",
             )
         ],
@@ -1284,7 +1306,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
     plus 20 units of lot B. Proceeds = 120 × $200 = $24000."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="lot_a_old",
@@ -1292,7 +1314,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-6,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             ),
             InitialLot(
                 lot_id="lot_b_younger",
@@ -1300,7 +1322,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=2,
                 quantity=50.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             ),
         ],
         scheduled_asset_sales=[
@@ -1310,7 +1332,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=120.0,
-                price_per_unit_usd=200.0,
+                price_per_unit=200,
                 proceeds_account_id="checking",
             )
         ],
@@ -1327,11 +1349,11 @@ def test_fifo_sale_crossing_two_lots() -> None:
         for row in result.events_log.lot_dispositions.sort("purchase_month_index").iter_rows(named=True)
     }
     assert by_lot["lot_a_old"]["units_sold"] == 100.0
-    assert by_lot["lot_a_old"]["cost_basis_consumed_usd"] == 8000.0
-    assert by_lot["lot_a_old"]["proceeds_usd"] == 20000.0
+    assert by_lot["lot_a_old"]["cost_basis_consumed_quanta"] / 100 == 8000.0
+    assert by_lot["lot_a_old"]["proceeds_quanta"] / 100 == 20000.0
     assert by_lot["lot_b_younger"]["units_sold"] == 20.0
-    assert by_lot["lot_b_younger"]["cost_basis_consumed_usd"] == 2000.0
-    assert by_lot["lot_b_younger"]["proceeds_usd"] == 4000.0
+    assert by_lot["lot_b_younger"]["cost_basis_consumed_quanta"] / 100 == 2000.0
+    assert by_lot["lot_b_younger"]["proceeds_quanta"] / 100 == 4000.0
 
     # Post-sale lot snapshot: lot A is empty, lot B has 30 units.
     post = (
@@ -1348,7 +1370,8 @@ def test_fifo_sale_crossing_two_lots() -> None:
     # Cash credited with full $24000.
     assert (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 9))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
         == 24000.0
     )
@@ -1357,7 +1380,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
 def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="old",
@@ -1365,7 +1388,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             ),
             InitialLot(
                 lot_id="new",
@@ -1373,7 +1396,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-6,
                 quantity=100.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             ),
         ],
         scheduled_asset_sales=[
@@ -1383,7 +1406,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=70.0,
-                price_per_unit_usd=150.0,
+                price_per_unit=150,
                 proceeds_account_id="checking",
             ),
             ScheduledAssetSale(
@@ -1392,7 +1415,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=70.0,
-                price_per_unit_usd=150.0,
+                price_per_unit=150,
                 proceeds_account_id="checking",
             ),
         ],
@@ -1414,7 +1437,12 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
         {"lot_id": "new", "remaining_quantity": pytest.approx(60.0)},
         {"lot_id": "old", "remaining_quantity": pytest.approx(0.0)},
     ]
-    final_cash = result.cash_balances.filter(pl.col("month_index") == 2).get_column("balance_usd").item()
+    final_cash = (
+        result.cash_balances.filter(pl.col("month_index") == 2)
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .item()
+    )
     assert final_cash == pytest.approx(21_000.0)
 
 
@@ -1426,7 +1454,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
     months old (LTCG) and the younger lot is 4 months old (STCG)."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="long_held",
@@ -1434,7 +1462,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("btc")),
                 purchase_month_index=-12,
                 quantity=2.0,
-                cost_basis_per_unit_usd=20000.0,
+                cost_basis_per_unit=20000,
             ),
             InitialLot(
                 lot_id="short_held",
@@ -1442,7 +1470,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("btc")),
                 purchase_month_index=2,
                 quantity=1.0,
-                cost_basis_per_unit_usd=40000.0,
+                cost_basis_per_unit=40000,
             ),
         ],
         scheduled_asset_sales=[
@@ -1452,7 +1480,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("btc")),
                 quantity=2.5,
-                price_per_unit_usd=60000.0,
+                price_per_unit=60000,
                 proceeds_account_id="checking",
             )
         ],
@@ -1483,7 +1511,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     `(agent, asset)` filter in FIFO doesn't bleed across assets."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="vti_lot",
@@ -1491,7 +1519,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=0,
                 quantity=10.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             ),
             InitialLot(
                 lot_id="qqq_lot",
@@ -1499,7 +1527,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("qqq")),
                 purchase_month_index=0,
                 quantity=10.0,
-                cost_basis_per_unit_usd=200.0,
+                cost_basis_per_unit=200,
             ),
         ],
         scheduled_asset_sales=[
@@ -1509,7 +1537,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=4.0,
-                price_per_unit_usd=150.0,
+                price_per_unit=150,
                 proceeds_account_id="checking",
             ),
             ScheduledAssetSale(
@@ -1518,7 +1546,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("qqq")),
                 quantity=3.0,
-                price_per_unit_usd=250.0,
+                price_per_unit=250,
                 proceeds_account_id="checking",
             ),
         ],
@@ -1536,7 +1564,8 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     # Cash: 4×150 + 3×250 = $1350.
     assert (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
         == 1350.0
     )
@@ -1545,7 +1574,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
 def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="taxable_vti",
@@ -1554,7 +1583,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             ),
             InitialLot(
                 lot_id="ira_vti",
@@ -1563,7 +1592,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=10.0,
-                cost_basis_per_unit_usd=70.0,
+                cost_basis_per_unit=70,
             ),
         ],
         scheduled_asset_sales=[
@@ -1574,7 +1603,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 source_account_id="taxable",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=8.0,
-                price_per_unit_usd=100.0,
+                price_per_unit=100,
                 proceeds_account_id="checking",
             )
         ],
@@ -1599,7 +1628,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
 def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="taxable_vti",
@@ -1608,7 +1637,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-12,
                 quantity=5.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         scheduled_asset_sales=[
@@ -1619,7 +1648,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 source_account_id="taxable",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=6.0,
-                price_per_unit_usd=100.0,
+                price_per_unit=100,
                 proceeds_account_id="checking",
             )
         ],
@@ -1632,7 +1661,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
 
 
 def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_bundle) -> None:
-    """L5 — when a ScheduledAssetSale omits `price_per_unit_usd`,
+    """L5 — when a ScheduledAssetSale omits `price_per_unit`,
     the engine reads the per-month price from the scenario's
     SeriesModelBundle. With a Deterministic model the price is identical
     across rollouts; the sale's proceeds reflect the configured
@@ -1640,7 +1669,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
     horizon = 6
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="seed",
@@ -1648,7 +1677,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-3,
                 quantity=10.0,
-                cost_basis_per_unit_usd=90.0,
+                cost_basis_per_unit=90,
             )
         ],
         scheduled_asset_sales=[
@@ -1672,7 +1701,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
     assert result.events_log.lot_dispositions.height == 1
     disp = result.events_log.lot_dispositions.row(0, named=True)
     assert disp["units_sold"] == 4.0
-    assert disp["proceeds_usd"] == 600.0
+    assert disp["proceeds_quanta"] / 100 == 600.0
 
     # External series values on the run match the configured path.
     vti = result.series_values.filter(pl.col("series_id") == "security:vti").sort("month_index")
@@ -1694,7 +1723,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
     )
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="seed",
@@ -1702,7 +1731,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=0,
                 quantity=5.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             )
         ],
         scheduled_asset_sales=[
@@ -1731,9 +1760,11 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
     # Divergence: distinct per-rollout proceeds — far more than one
     # cluster, but bounded by the GBM variance. Loose check: at
     # least 100 distinct cash balances across 200 rollouts.
-    cash_at_end = result_a.cash_balances.filter(
-        (pl.col("agent_id") == "alice") & (pl.col("month_index") == 6)
-    ).get_column("balance_usd")
+    cash_at_end = (
+        result_a.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+    )
     assert cash_at_end.n_unique() > 100
 
 
@@ -1755,9 +1786,9 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -1768,7 +1799,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=200_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(200000) / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -1793,29 +1824,35 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert accruals.height == 2
     accruals_by_jurisdiction = {row["jurisdiction_id"]: row for row in accruals.iter_rows(named=True)}
     annual_income = 12 * _engine_usd(200_000.0 / 12.0)
-    assert accruals_by_jurisdiction["federal_us"]["amount_usd"] == pytest.approx(37538.51, abs=0.01)
-    assert accruals_by_jurisdiction["california"]["amount_usd"] == pytest.approx(14754.09, abs=0.02)
+    assert accruals_by_jurisdiction["federal_us"]["amount_quanta"] / 100 == pytest.approx(37538.51, abs=0.01)
+    assert accruals_by_jurisdiction["california"]["amount_quanta"] / 100 == pytest.approx(14754.09, abs=0.02)
     assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
     assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
     breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
-    assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(annual_income, abs=0.02)
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(185_400.04, abs=0.02)
-    assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(37_538.51, abs=0.01)
-    assert breakdowns["federal_us"]["total_tax_usd"] == pytest.approx(37_538.51, abs=0.01)
+    assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(annual_income, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_taxable_quanta"] / 100 == pytest.approx(185_400.04, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_tax_quanta"] / 100 == pytest.approx(37_538.51, abs=0.01)
+    assert breakdowns["federal_us"]["total_tax_quanta"] / 100 == pytest.approx(37_538.51, abs=0.01)
 
     # tax_liabilities at end-of-horizon has two rows (one per
     # jurisdiction) with matching amounts.
     end_liabilities = result.tax_liabilities.filter(pl.col("month_index") == 12).sort("jurisdiction_id")
     assert end_liabilities.height == 2
-    assert end_liabilities.get_column("amount_owed_usd").to_list()[0] == pytest.approx(14754.09, abs=0.02)
-    assert end_liabilities.get_column("amount_owed_usd").to_list()[1] == pytest.approx(37538.51, abs=0.01)
+    assert end_liabilities.get_column("amount_owed_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).to_list()[0] == pytest.approx(14754.09, abs=0.02)
+    assert end_liabilities.get_column("amount_owed_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).to_list()[1] == pytest.approx(37538.51, abs=0.01)
 
     # YTD reflects accumulated income across the year; the year-end
     # reset at month 11 (visible at month_index 12) drops it back
     # to 0. At month_index 11 (post-month-10) Alice has had 11
     # paychecks.
     ytd_alice = result.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").sort("month_index")
-    ytd_values = ytd_alice.get_column("ordinary_income_usd").to_list()
+    ytd_values = (
+        ytd_alice.get_column("ordinary_income_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
+    )
     assert ytd_values[11] == pytest.approx(11 * _engine_usd(200_000.0 / 12.0), abs=0.02)
     assert ytd_values[12] == 0.0
 
@@ -1838,9 +1875,9 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -1849,7 +1886,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         recurring_transfers=[
@@ -1861,7 +1898,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=50_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(50000) / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -1872,7 +1909,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit_usd=280.0,
+                price_per_unit=280,
                 proceeds_account_id="checking",
             )
         ],
@@ -1890,22 +1927,22 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     result = simulate(scenario, rollout_count=1, locations={})
 
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
-    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.26, abs=0.01)
-    assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
+    assert accruals["federal_us"]["amount_quanta"] / 100 == pytest.approx(5272.26, abs=0.01)
+    assert accruals["california"]["amount_quanta"] / 100 == pytest.approx(2712.36, abs=0.01)
     breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.04, abs=0.02)
-    assert breakdowns["federal_us"]["capital_gain_taxable_usd"] == pytest.approx(20_000.0, abs=0.02)
-    assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(4_016.0, abs=0.01)
-    assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.26, abs=0.01)
-    assert breakdowns["california"]["ordinary_taxable_usd"] == pytest.approx(64_637.04, abs=0.02)
-    assert breakdowns["california"]["capital_gain_tax_usd"] == 0.0
+    assert breakdowns["federal_us"]["ordinary_taxable_quanta"] / 100 == pytest.approx(35_400.04, abs=0.02)
+    assert breakdowns["federal_us"]["capital_gain_taxable_quanta"] / 100 == pytest.approx(20_000.0, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_tax_quanta"] / 100 == pytest.approx(4_016.0, abs=0.01)
+    assert breakdowns["federal_us"]["capital_gain_tax_quanta"] / 100 == pytest.approx(1_256.26, abs=0.01)
+    assert breakdowns["california"]["ordinary_taxable_quanta"] / 100 == pytest.approx(64_637.04, abs=0.02)
+    assert breakdowns["california"]["capital_gain_tax_quanta"] / 100 == 0.0
 
     # YTD captured the LTCG ($20k) before year-end reset.
     cg_at_month_11 = result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
     assert cg_at_month_11.height == 1
     row = cg_at_month_11.row(0, named=True)
     assert row["classification"] == "ltcg"
-    assert row["gain_usd"] == pytest.approx(20_000.0, abs=0.02)
+    assert row["gain_quanta"] / 100 == pytest.approx(20_000.0, abs=0.02)
 
 
 def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
@@ -1922,9 +1959,9 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1_000.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -1933,7 +1970,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         recurring_transfers=[
@@ -1945,7 +1982,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=50_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(50000) / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -1956,7 +1993,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit_usd=280.0,
+                price_per_unit=280,
                 proceeds_account_id="checking",
             )
         ],
@@ -1966,7 +2003,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=4_000.0,
+                prior_year_tax=4000,
             )
         ],
         horizon_months=13,
@@ -1975,33 +2012,46 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
-    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.26, abs=0.01)
-    assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
+    assert accruals["federal_us"]["amount_quanta"] / 100 == pytest.approx(5272.26, abs=0.01)
+    assert accruals["california"]["amount_quanta"] / 100 == pytest.approx(2712.36, abs=0.01)
 
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
         ["month_index", "cause_id"]
     )
-    assert tax_payments.select("month_index", "cause_id", "amount_usd").to_dicts() == [
-        {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_usd": pytest.approx(1_000.0)},
-        {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_usd": pytest.approx(1_000.0)},
-        {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_usd": pytest.approx(1_000.0)},
-        {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_usd": pytest.approx(1_000.0)},
-        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_usd": pytest.approx(3_984.62, abs=0.02)},
+    assert tax_payments.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
+        {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_quanta": 100_000},
+        {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_quanta": 100_000},
+        {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_quanta": 100_000},
+        {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_quanta": 100_000},
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_quanta": pytest.approx(398_462, abs=2)},
     ]
-    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(7_984.62, abs=0.02)
+    assert tax_payments.get_column("amount_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).sum() == pytest.approx(7_984.62, abs=0.02)
 
     tax_settlement = result.events_log.tax_settlements.row(0, named=True)
     assert tax_settlement["month_index"] == 12
     assert tax_settlement["tax_year_end_month"] == 11
-    assert tax_settlement["amount_usd"] == pytest.approx(7_984.62, abs=0.02)
-    liabilities_due = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
+    assert tax_settlement["amount_quanta"] / 100 == pytest.approx(7_984.62, abs=0.02)
+    liabilities_due = (
+        result.tax_liabilities.filter(pl.col("month_index") == 12)
+        .get_column("amount_owed_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .sum()
+    )
     assert liabilities_due == pytest.approx(7_984.62, abs=0.02)
-    liabilities_settled = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
+    liabilities_settled = (
+        result.tax_liabilities.filter(pl.col("month_index") == 13)
+        .get_column("amount_owed_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .sum()
+    )
     assert liabilities_settled == pytest.approx(0.0, abs=0.02)
 
     final_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert final_cash == pytest.approx(71_015.42, abs=0.02)
@@ -2023,9 +2073,9 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2034,7 +2084,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             ),
             InitialLot(
                 lot_id="alice_short_ixus",
@@ -2042,7 +2092,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("ixus")),
                 purchase_month_index=0,
                 quantity=10.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             ),
         ],
         recurring_transfers=[
@@ -2054,7 +2104,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=50_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(50000) / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -2065,7 +2115,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=100.0,
-                price_per_unit_usd=200.0,
+                price_per_unit=200,
                 proceeds_account_id="checking",
             ),
             ScheduledAssetSale(
@@ -2074,7 +2124,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("ixus")),
                 quantity=10.0,
-                price_per_unit_usd=200.0,
+                price_per_unit=200,
                 proceeds_account_id="checking",
             ),
         ],
@@ -2092,17 +2142,17 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     accrual = result.events_log.tax_accruals.row(0, named=True)
-    assert accrual["amount_usd"] == pytest.approx(4_196.0, abs=0.01)
+    assert accrual["amount_quanta"] / 100 == pytest.approx(4_196.0, abs=0.01)
     breakdown = result.events_log.tax_breakdowns.row(0, named=True)
-    assert breakdown["ordinary_income_usd"] == pytest.approx(50_000.04, abs=0.02)
-    assert breakdown["ltcg_usd"] == pytest.approx(10_000.0, abs=0.02)
-    assert breakdown["stcg_usd"] == pytest.approx(1_500.0, abs=0.02)
-    assert breakdown["ordinary_taxable_usd"] == pytest.approx(36_900.04, abs=0.02)
-    assert breakdown["ordinary_tax_usd"] == pytest.approx(4_196.0, abs=0.01)
-    assert breakdown["capital_gain_tax_usd"] == pytest.approx(0.0, abs=0.02)
+    assert breakdown["ordinary_income_quanta"] / 100 == pytest.approx(50_000.04, abs=0.02)
+    assert breakdown["ltcg_quanta"] / 100 == pytest.approx(10_000.0, abs=0.02)
+    assert breakdown["stcg_quanta"] / 100 == pytest.approx(1_500.0, abs=0.02)
+    assert breakdown["ordinary_taxable_quanta"] / 100 == pytest.approx(36_900.04, abs=0.02)
+    assert breakdown["ordinary_tax_quanta"] / 100 == pytest.approx(4_196.0, abs=0.01)
+    assert breakdown["capital_gain_tax_quanta"] / 100 == pytest.approx(0.0, abs=0.02)
 
     gains = {
-        row["classification"]: row["gain_usd"]
+        row["classification"]: row["gain_quanta"] / 100
         for row in result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
         .sort("classification")
         .iter_rows(named=True)
@@ -2121,10 +2171,10 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="landlord"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2133,7 +2183,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=100.0,
+                cost_basis_per_unit=100,
             )
         ],
         recurring_transfers=[
@@ -2145,7 +2195,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=50_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(50000) / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             ),
             RecurringTransfer(
@@ -2156,7 +2206,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_usd=50_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(50000) / Decimal(12), quantum=Decimal("0.01")),
             ),
         ],
         external_series=deterministic_series_bundle([100.0] * 14),
@@ -2166,7 +2216,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=2_000.0,
+                prior_year_tax=2000,
             )
         ],
         target_allocation_policies=[
@@ -2174,7 +2224,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         horizon_months=13,
@@ -2185,28 +2235,31 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
         ["month_index", "cause_id"]
     )
-    assert tax_payments.select("month_index", "cause_id", "amount_usd").to_dicts() == [
-        {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_usd": pytest.approx(500.0)},
-        {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_usd": pytest.approx(500.0)},
-        {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_usd": pytest.approx(500.0)},
-        {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_usd": pytest.approx(500.0)},
-        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_usd": pytest.approx(2_016.0)},
+    assert tax_payments.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
+        {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_quanta": 50_000},
+        {"month_index": 5, "cause_id": "alice_estimated_tax_q2_y0", "amount_quanta": 50_000},
+        {"month_index": 8, "cause_id": "alice_estimated_tax_q3_y0", "amount_quanta": 50_000},
+        {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_quanta": 50_000},
+        {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_quanta": 201_600},
     ]
-    assert result.events_log.tax_settlements.get_column("amount_usd").sum() == pytest.approx(4_016.0, abs=0.01)
+    assert result.events_log.tax_settlements.get_column("amount_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).sum() == pytest.approx(4_016.0, abs=0.01)
 
     policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("allocation_sale"))
     # Fixed-point FIFO sells fractional quanta for whole-unit-scale assets too: month-12 needs exactly
     # $2,516 at $100/unit, so it sells 25.16 units with no excess cash.
-    assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_usd").to_dicts() == [
-        {"month_index": 3, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"month_index": 5, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"month_index": 8, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"month_index": 12, "units_sold": pytest.approx(25.16), "proceeds_usd": pytest.approx(2_516.0)},
+    assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_quanta").to_dicts() == [
+        {"month_index": 3, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
+        {"month_index": 5, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
+        {"month_index": 8, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
+        {"month_index": 12, "units_sold": pytest.approx(25.16), "proceeds_quanta": 251_600},
     ]
 
     final_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert final_cash == pytest.approx(0.0, abs=0.02)
@@ -2217,7 +2270,12 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     )
     # 100 - (5+5+5+25.16) = 59.84 units remaining.
     assert remaining_vti == pytest.approx(59.84, abs=0.02)
-    final_due = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
+    final_due = (
+        result.tax_liabilities.filter(pl.col("month_index") == 13)
+        .get_column("amount_owed_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .sum()
+    )
     assert final_due == pytest.approx(0.0, abs=0.02)
     assert result.rollout_status.row(0, named=True)["status"] == "active"
 
@@ -2227,8 +2285,8 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -2238,7 +2296,7 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=5_000.0,
+                amount=5000,
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -2259,9 +2317,9 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -2272,7 +2330,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=200_000.0 / 12.0,
+                amount=round_currency_amount(Decimal(200000) / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -2292,31 +2350,45 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     # Year-end tax: $37,538.51 federal + $14,754.09 CA = $52,292.60.
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax"))
     assert tax_payments.height == 1
-    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(52_292.60, abs=0.02)
+    assert tax_payments.get_column("amount_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).sum() == pytest.approx(52_292.60, abs=0.02)
     assert tax_payments.row(0, named=True)["cause_id"] == "alice_tax_true_up_y0"
     # Tax true-up fires in January after the year-end accrual.
     assert set(tax_payments.get_column("month_index").to_list()) == {12}
     assert result.events_log.tax_settlements.height == 1
     settlement = result.events_log.tax_settlements.row(0, named=True)
     assert settlement["cause_id"] == "alice_tax_settlement_y0"
-    assert settlement["amount_usd"] == pytest.approx(52_292.60, abs=0.02)
+    assert settlement["amount_quanta"] / 100 == pytest.approx(52_292.60, abs=0.02)
 
-    due_before_payment = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
+    due_before_payment = (
+        result.tax_liabilities.filter(pl.col("month_index") == 12)
+        .get_column("amount_owed_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .sum()
+    )
     assert due_before_payment == pytest.approx(52_292.60, abs=0.02)
-    due_after_payment = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
+    due_after_payment = (
+        result.tax_liabilities.filter(pl.col("month_index") == 13)
+        .get_column("amount_owed_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .sum()
+    )
     assert due_after_payment == pytest.approx(0.0, abs=0.02)
 
     # Cash flow: $200,000.04 income - $52,292.60 tax = $147,707.44 at end of horizon.
     alice_end_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert alice_end_cash == pytest.approx(147_707.44, abs=0.02)
     # The IRS sink accumulates the tax inflows.
     irs_end_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 13))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert irs_end_cash == pytest.approx(52_292.60, abs=0.02)
@@ -2331,9 +2403,9 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -2344,7 +2416,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=500_000.0 / 12.0,  # big tax bill
+                amount=round_currency_amount(Decimal(500000) / Decimal(12), quantum=Decimal("0.01")),  # big tax bill
                 income_category=ORDINARY_INCOME,
             ),
             RecurringTransfer(
@@ -2355,7 +2427,9 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 from_account_id="checking",
                 to_agent_id="payroll",  # use payroll as sink
                 to_account_id="checking",
-                amount_usd=500_000.0 / 12.0,  # spend it all on rent
+                amount=round_currency_amount(
+                    Decimal(500000) / Decimal(12), quantum=Decimal("0.01")
+                ),  # spend it all on rent
             ),
         ],
         tax_profiles=[
@@ -2384,8 +2458,8 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=100),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2394,7 +2468,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -2406,7 +2480,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -2415,7 +2489,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -2426,21 +2500,22 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
 
     accrual = result.events_log.obligation_accruals.row(0, named=True)
     assert accrual["obligation_id"] == "rent_due_m0"
-    assert accrual["amount_due_usd"] == pytest.approx(500.0)
+    assert accrual["amount_due_quanta"] / 100 == pytest.approx(500.0)
 
     settlement = result.events_log.obligation_settlements.row(0, named=True)
-    assert settlement["amount_paid_usd"] == pytest.approx(500.0)
-    assert settlement["shortfall_usd"] == pytest.approx(0.0)
+    assert settlement["amount_paid_quanta"] / 100 == pytest.approx(500.0)
+    assert settlement["shortfall_quanta"] / 100 == pytest.approx(0.0)
     assert settlement["attempted_funding_sources"] == "security:vti"
 
     funding_sale = result.events_log.lot_dispositions.row(0, named=True)
     assert funding_sale["cause_id"] == "allocation_sale_m0_security:vti"
     assert funding_sale["units_sold"] == pytest.approx(4.0)
-    assert funding_sale["proceeds_usd"] == pytest.approx(400.0)
+    assert funding_sale["proceeds_quanta"] / 100 == pytest.approx(400.0)
 
     final_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert final_cash == pytest.approx(0.0)
@@ -2451,8 +2526,8 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2461,7 +2536,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -2473,7 +2548,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             )
         ],
         target_allocation_policies=[
@@ -2481,7 +2556,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -2495,9 +2570,9 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
 
     sales = result.events_log.lot_dispositions.sort("rollout_index")
     # Fixed-point FIFO sells the exact fractional quanta needed for each rollout's price.
-    assert sales.select("rollout_index", "units_sold", "proceeds_usd").to_dicts() == [
-        {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_usd": pytest.approx(500.0)},
+    assert sales.select("rollout_index", "units_sold", "proceeds_quanta").to_dicts() == [
+        {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
+        {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_quanta": 50_000},
     ]
     assert result.events_log.rollout_failures.is_empty()
 
@@ -2506,8 +2581,8 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="taxable", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="taxable", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2517,7 +2592,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=5.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             ),
             InitialLot(
                 lot_id="alice_ira_vti",
@@ -2526,7 +2601,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             ),
         ],
         scheduled_obligations=[
@@ -2538,7 +2613,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 from_account_id="taxable",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=400.0,
+                amount_due=400,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -2547,7 +2622,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 agent_id="alice",
                 account_id="taxable",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -2573,8 +2648,8 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2584,7 +2659,7 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=5.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -2596,7 +2671,7 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=400.0,
+                amount_due=400,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -2606,7 +2681,7 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
                 account_id="checking",
                 source_account_ids=("taxable",),
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -2629,8 +2704,8 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=20_000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=20000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         recurring_obligations=[
             RecurringObligation(
@@ -2641,8 +2716,8 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=SeriesIndexedAmount(
-                    base_amount_usd=1_000.0, series=rent_series_id, base_month_index=0, adjustment_period_months=12
+                amount_due=SeriesIndexedAmount(
+                    base_amount=1000, series=rent_series_id, base_month_index=0, adjustment_period_months=12
                 ),
             )
         ],
@@ -2658,15 +2733,23 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
     accruals = result.events_log.obligation_accruals.sort(["rollout_index", "month_index"])
     for rollout_index in (0, 1):
         first_year = accruals.filter((pl.col("rollout_index") == rollout_index) & (pl.col("month_index") < 12))
-        assert first_year.get_column("amount_due_usd").to_list() == pytest.approx([1_000.0] * 12)
+        assert first_year.get_column("amount_due_quanta").map_elements(
+            quanta_to_usd, return_dtype=pl.Float64
+        ).to_list() == pytest.approx([1_000.0] * 12)
 
     reset_amounts = (
-        accruals.filter(pl.col("month_index") == 12).sort("rollout_index").get_column("amount_due_usd").to_list()
+        accruals.filter(pl.col("month_index") == 12)
+        .sort("rollout_index")
+        .get_column("amount_due_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .to_list()
     )
     assert reset_amounts == pytest.approx([1_100.0, 900.0])
 
     final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort(["rollout_index", "agent_id"])
-    assert final_cash.get_column("balance_usd").to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
+    assert final_cash.get_column("balance_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
     assert result.events_log.rollout_failures.is_empty()
 
 
@@ -2677,8 +2760,8 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="tenant"), Agent(agent_id="alice")],
         initial_cash=[
-            InitialAccountBalance(agent_id="tenant", account_id="checking", balance_usd=20_000.0),
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="tenant", account_id="checking", balance=20000),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -2688,8 +2771,8 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=1_500.0, series=rent_series_id, base_month_index=0, adjustment_period_months=12
+                amount=SeriesIndexedAmount(
+                    base_amount=1500, series=rent_series_id, base_month_index=0, adjustment_period_months=12
                 ),
             )
         ],
@@ -2701,13 +2784,17 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
     transfers = result.events_log.transfers.sort("month_index")
-    assert transfers.filter(pl.col("month_index") < 12).get_column("amount_usd").to_list() == pytest.approx(
-        [1_500.0] * 12
-    )
-    assert transfers.filter(pl.col("month_index") == 12).get_column("amount_usd").item() == pytest.approx(1_800.0)
+    assert transfers.filter(pl.col("month_index") < 12).get_column("amount_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).to_list() == pytest.approx([1_500.0] * 12)
+    assert transfers.filter(pl.col("month_index") == 12).get_column("amount_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).item() == pytest.approx(1_800.0)
 
     final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort("agent_id")
-    assert final_cash.get_column("balance_usd").to_list() == pytest.approx([19_800.0, 200.0])
+    assert final_cash.get_column("balance_quanta").map_elements(
+        quanta_to_usd, return_dtype=pl.Float64
+    ).to_list() == pytest.approx([19_800.0, 200.0])
 
 
 def test_due_now_obligation_failure_aborts_payment() -> None:
@@ -2716,8 +2803,8 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=100),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         scheduled_obligations=[
             ScheduledObligation(
@@ -2728,7 +2815,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             )
         ],
         tax_profiles=[],
@@ -2738,15 +2825,15 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     settlement = result.events_log.obligation_settlements.row(0, named=True)
-    assert settlement["amount_due_usd"] == pytest.approx(500.0)
-    assert settlement["amount_paid_usd"] == pytest.approx(0.0)
-    assert settlement["shortfall_usd"] == pytest.approx(500.0)
+    assert settlement["amount_due_quanta"] / 100 == pytest.approx(500.0)
+    assert settlement["amount_paid_quanta"] / 100 == pytest.approx(0.0)
+    assert settlement["shortfall_quanta"] / 100 == pytest.approx(500.0)
     assert result.events_log.transfers.is_empty()
 
     failure = result.events_log.rollout_failures.row(0, named=True)
     assert failure["obligation_id"] == "rent_due_m0"
     assert failure["obligation_type"] == "rent"
-    assert failure["shortfall_usd"] == pytest.approx(500.0)
+    assert failure["shortfall_quanta"] / 100 == pytest.approx(500.0)
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
 
 
@@ -2757,8 +2844,8 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2767,7 +2854,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=10.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -2779,7 +2866,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -2791,8 +2878,8 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
 
     assert result.events_log.lot_dispositions.is_empty()
     settlement = result.events_log.obligation_settlements.row(0, named=True)
-    assert settlement["amount_paid_usd"] == pytest.approx(0.0)
-    assert settlement["shortfall_usd"] == pytest.approx(500.0)
+    assert settlement["amount_paid_quanta"] / 100 == pytest.approx(0.0)
+    assert settlement["shortfall_quanta"] / 100 == pytest.approx(500.0)
     assert result.events_log.rollout_failures.height == 1
 
 
@@ -2807,8 +2894,8 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=2500.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=2500),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2817,7 +2904,7 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -2829,7 +2916,7 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=1000.0,
+                amount_due=1000,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -2838,8 +2925,8 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_floor_usd=2000.0,
-                cash_ceiling_usd=6500.0,
+                cash_floor=2000,
+                cash_ceiling=6500,
             )
         ],
         tax_profiles=[],
@@ -2850,10 +2937,11 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
 
     sale = result.events_log.lot_dispositions.row(0, named=True)
     assert sale["units_sold"] == pytest.approx(50.0)
-    assert sale["proceeds_usd"] == pytest.approx(5000.0)
+    assert sale["proceeds_quanta"] / 100 == pytest.approx(5000.0)
     alice_final = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert alice_final == pytest.approx(6500.0)
@@ -2867,8 +2955,8 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=3500.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=3500),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -2877,7 +2965,7 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-24,
                 quantity=100.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_obligations=[
@@ -2889,7 +2977,7 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=1000.0,
+                amount_due=1000,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -2898,8 +2986,8 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_floor_usd=2000.0,
-                cash_ceiling_usd=6500.0,
+                cash_floor=2000,
+                cash_ceiling=6500,
             )
         ],
         tax_profiles=[],
@@ -2911,7 +2999,8 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
     assert result.events_log.lot_dispositions.is_empty()
     alice_final = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert alice_final == pytest.approx(2500.0)
@@ -2926,14 +3015,14 @@ def test_a_band_it_cannot_refill_does_not_fail_the_rollout() -> None:
 
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000)],
         target_allocation_policies=[
             TargetAllocationPolicy(
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_floor_usd=2000.0,
-                cash_ceiling_usd=6500.0,
+                cash_floor=2000,
+                cash_ceiling=6500,
             )
         ],
         tax_profiles=[],
@@ -2951,9 +3040,9 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord"), Agent(agent_id="utility")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="utility", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="utility", account_id="checking", balance=0),
         ],
         scheduled_obligations=[
             ScheduledObligation(
@@ -2964,7 +3053,7 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             ),
             ScheduledObligation(
                 month=0,
@@ -2974,7 +3063,7 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
                 from_account_id="checking",
                 to_agent_id="utility",
                 to_account_id="checking",
-                amount_due_usd=500.0,
+                amount_due=500,
             ),
         ],
         tax_profiles=[],
@@ -2984,26 +3073,22 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     settlements = result.events_log.obligation_settlements.sort("obligation_id")
-    assert settlements.select("obligation_id", "amount_paid_usd", "shortfall_usd").to_dicts() == [
-        {"obligation_id": "rent_due_m0", "amount_paid_usd": pytest.approx(0.0), "shortfall_usd": pytest.approx(500.0)},
-        {
-            "obligation_id": "utility_due_m0",
-            "amount_paid_usd": pytest.approx(0.0),
-            "shortfall_usd": pytest.approx(500.0),
-        },
+    assert settlements.select("obligation_id", "amount_paid_quanta", "shortfall_quanta").to_dicts() == [
+        {"obligation_id": "rent_due_m0", "amount_paid_quanta": 0, "shortfall_quanta": 50_000},
+        {"obligation_id": "utility_due_m0", "amount_paid_quanta": 0, "shortfall_quanta": 50_000},
     ]
     assert result.events_log.transfers.is_empty()
     assert result.events_log.rollout_failures.height == 2
 
 
 def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundle) -> None:
-    """If `ScheduledAssetSale.price_per_unit_usd` is set the engine
+    """If `ScheduledAssetSale.price_per_unit` is set the engine
     uses that scalar; sampled series is ignored for that sale. This is the
     test-fixture path used in L4 tests; still valid in the
     external-series-aware engine."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
         initial_lots=[
             InitialLot(
                 lot_id="seed",
@@ -3011,7 +3096,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=0,
                 quantity=10.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         scheduled_asset_sales=[
@@ -3021,7 +3106,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
                 agent_id="alice",
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 quantity=3.0,
-                price_per_unit_usd=99.0,
+                price_per_unit=99,
                 proceeds_account_id="checking",
             )
         ],
@@ -3031,7 +3116,12 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
     )
 
     result = simulate(scenario, rollout_count=1, locations={})
-    assert result.events_log.lot_dispositions.get_column("proceeds_usd").item() == 3.0 * 99.0
+    assert (
+        result.events_log.lot_dispositions.get_column("proceeds_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .item()
+        == 3.0 * 99.0
+    )
 
 
 def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_location: Location) -> None:
@@ -3047,10 +3137,10 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
             Agent(agent_id="sf_tax_collector"),
         ],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=120_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="bank", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=120000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="bank", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -3061,13 +3151,13 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=100_000.0,
-                buyer_closing_cost_usd=10_000.0,
+                purchase_price=500000,
+                down_payment=100000,
+                buyer_closing_cost=10000,
                 mortgage=MortgageFinancing(
                     liability_id="sf_home_mortgage",
                     lender_agent_id="bank",
-                    principal_usd=400_000.0,
+                    principal=400000,
                     annual_interest_rate=0.06,
                     term_months=360,
                 ),
@@ -3090,22 +3180,23 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
     final_property = result.property_state.filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_property["location_id"] == "san_francisco"
     assert final_property["purchase_month_index"] == 0
-    assert final_property["adjusted_basis_usd"] == pytest.approx(510_000.0)
+    assert final_property["adjusted_basis_quanta"] / 100 == pytest.approx(510_000.0)
 
     final_stake = result.property_stakes.filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_stake["agent_id"] == "alice"
-    assert final_stake["contribution_used_usd"] == pytest.approx(110_000.0)
-    assert final_stake["equity_ledger_usd"] == pytest.approx(100_000.0)
+    assert final_stake["contribution_used_quanta"] / 100 == pytest.approx(110_000.0)
+    assert final_stake["equity_ledger_quanta"] / 100 == pytest.approx(100_000.0)
 
     mortgage_payment = _engine_usd(400_000.0 * 0.005 / (1.0 - (1.005**-360)))
     final_liability = result.liabilities.filter(pl.col("month_index") == 2).row(0, named=True)
-    assert final_liability["principal_usd"] == pytest.approx(400_000.0 - (mortgage_payment - 2_000.0))
-    assert final_liability["interest_paid_ytd_usd"] == pytest.approx(2_000.0)
-    assert final_liability["principal_paid_ytd_usd"] == pytest.approx(mortgage_payment - 2_000.0)
+    assert final_liability["principal_quanta"] / 100 == pytest.approx(400_000.0 - (mortgage_payment - 2_000.0))
+    assert final_liability["interest_paid_ytd_quanta"] / 100 == pytest.approx(2_000.0)
+    assert final_liability["principal_paid_ytd_quanta"] / 100 == pytest.approx(mortgage_payment - 2_000.0)
 
     final_cash = (
         result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "alice"))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     # Property tax: 500_000 * 0.012 / 12 = 500.0 (basis excludes closing cost).
@@ -3121,8 +3212,8 @@ def test_real_estate_purchase_requires_known_location(san_francisco_location: Lo
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -3133,8 +3224,8 @@ def test_real_estate_purchase_requires_known_location(san_francisco_location: Lo
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,
+                purchase_price=500000,
+                down_payment=500000,
             )
         ],
         tax_profiles=[],
@@ -3157,9 +3248,9 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_fra
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="sf_tax_collector")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=600000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -3170,9 +3261,9 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_fra
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,  # cash purchase
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=500000,  # cash purchase
+                buyer_closing_cost=0,
                 mortgage=None,
             )
         ],
@@ -3192,7 +3283,8 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_fra
     # SF: 500_000 * 0.01180 / 12 = 491.6666..., rounded to cents at the obligation boundary.
     sf_tax = (
         result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "sf_tax_collector"))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert sf_tax == pytest.approx(_engine_usd(500_000.0 * 0.01180 / 12.0))
@@ -3205,9 +3297,9 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_m
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="vallejo_tax_collector")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=700_000.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="vallejo_tax_collector", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=700000),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="vallejo_tax_collector", account_id="checking", balance=0),
         ],
         scheduled_property_purchases=[
             ScheduledPropertyPurchase(
@@ -3218,9 +3310,9 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_m
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=500_000.0,
-                down_payment_usd=500_000.0,  # cash purchase
-                buyer_closing_cost_usd=0.0,
+                purchase_price=500000,
+                down_payment=500000,  # cash purchase
+                buyer_closing_cost=0,
                 mortgage=None,
             )
         ],
@@ -3241,7 +3333,8 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_m
     expected_monthly = _engine_usd(500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0)
     tax_collected = (
         result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "vallejo_tax_collector"))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert tax_collected == pytest.approx(expected_monthly)
@@ -3257,8 +3350,8 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -3267,7 +3360,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-1,
                 quantity=200.0,
-                cost_basis_per_unit_usd=50.0,
+                cost_basis_per_unit=50,
             )
         ],
         recurring_obligations=[
@@ -3279,7 +3372,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=5000.0,
+                amount_due=5000,
             )
         ],
         external_series=deterministic_series_bundle([100.0] * 4),
@@ -3288,7 +3381,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -3301,12 +3394,13 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
     m0_dispositions = result.events_log.lot_dispositions.filter(pl.col("month_index") == 0)
     assert m0_dispositions.height == 1
     assert m0_dispositions.row(0, named=True)["units_sold"] == pytest.approx(40.0, abs=0.02)
-    assert m0_dispositions.row(0, named=True)["proceeds_usd"] == pytest.approx(4000.0, abs=0.02)
+    assert m0_dispositions.row(0, named=True)["proceeds_quanta"] / 100 == pytest.approx(4000.0, abs=0.02)
 
     # End-of-horizon (month 3) cash for Alice should be at the floor (0).
     end_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 3))
-        .get_column("balance_usd")
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert end_cash == pytest.approx(0.0, abs=0.02)
@@ -3318,8 +3412,8 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -3328,7 +3422,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-1,
                 quantity=5.0,  # only $500 of VTI at $100/unit
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         recurring_obligations=[
@@ -3340,7 +3434,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=1000.0,
+                amount_due=1000,
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
@@ -3349,7 +3443,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -3363,7 +3457,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     assert result.events_log.rollout_failures.height == 1
     failure = result.events_log.rollout_failures.row(0, named=True)
     assert failure["month_index"] == 0
-    assert failure["deficit_usd"] == pytest.approx(1000.0, abs=0.02)
+    assert failure["deficit_quanta"] / 100 == pytest.approx(1000.0, abs=0.02)
     assert failure["agent_id"] == "alice"
 
     status_row = result.rollout_status.row(0, named=True)
@@ -3371,7 +3465,10 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     assert status_row["failed_month"] == 0
 
     failed_cash = result.cash_balances.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
-    assert failed_cash.get_column("balance_usd").to_list() == [0.0, 0.0]
+    assert failed_cash.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list() == [
+        0.0,
+        0.0,
+    ]
     failed_lots = result.asset_lots.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
     assert failed_lots.get_column("remaining_quantity").to_list() == [0.0]
 
@@ -3380,9 +3477,9 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord"), Agent(agent_id="employer")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -3391,7 +3488,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
                 asset=SecurityKey(symbol=SecuritySymbol("vti")),
                 purchase_month_index=-1,
                 quantity=1.0,
-                cost_basis_per_unit_usd=80.0,
+                cost_basis_per_unit=80,
             )
         ],
         recurring_obligations=[
@@ -3403,7 +3500,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=1000.0,
+                amount_due=1000,
             )
         ],
         recurring_transfers=[
@@ -3414,7 +3511,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=10_000.0,
+                amount=10000,
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -3424,7 +3521,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
                 agent_id="alice",
                 account_id="checking",
                 sleeves=[SleeveTarget(asset=SecurityKey(symbol=SecuritySymbol("vti")), weight=1)],
-                cash_ceiling_usd=0.0,
+                cash_ceiling=0,
             )
         ],
         tax_profiles=[],
@@ -3436,22 +3533,25 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
     assert result.events_log.transfers.is_empty()
     failed_cash = result.cash_balances.filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
-    assert failed_cash.get_column("balance_usd").to_list() == [0.0] * failed_cash.height
+    assert (
+        failed_cash.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
+        == [0.0] * failed_cash.height
+    )
 
 
 def _mid_scenario(
     *,
-    purchase_price_usd: float,
-    down_payment_usd: float,
+    purchase_price: Decimal | int,
+    down_payment: Decimal | int,
     annual_rate: float,
     term_months: int,
-    annual_w2_income_usd: float = 200_000.0,
+    annual_w2_income: Decimal | int = 200_000,
     horizon_months: int = 13,
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] | None = None,
     federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] | None = None,
 ) -> Scenario:
     """A minimal MID scenario: $W2 wages all year + property purchase on month 0."""
-    mortgage_principal = purchase_price_usd - down_payment_usd
+    mortgage_principal = purchase_price - down_payment
     return Scenario(
         agents=[
             Agent(agent_id="alice"),
@@ -3462,12 +3562,12 @@ def _mid_scenario(
             Agent(agent_id="sf_tax_collector"),
         ],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=down_payment_usd + 50_000.0),
-            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="bank", account_id="checking", balance_usd=0.0),
-            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=down_payment + Decimal(50000)),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="bank", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance=0),
         ],
         recurring_transfers=[
             RecurringTransfer(
@@ -3478,7 +3578,7 @@ def _mid_scenario(
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=annual_w2_income_usd / 12.0,
+                amount=round_currency_amount(annual_w2_income / Decimal(12), quantum=Decimal("0.01")),
                 income_category=ORDINARY_INCOME,
             )
         ],
@@ -3491,13 +3591,13 @@ def _mid_scenario(
                 buyer_agent_id="alice",
                 buyer_account_id="checking",
                 seller_agent_id="seller",
-                purchase_price_usd=purchase_price_usd,
-                down_payment_usd=down_payment_usd,
-                buyer_closing_cost_usd=0.0,
+                purchase_price=purchase_price,
+                down_payment=down_payment,
+                buyer_closing_cost=0,
                 mortgage=MortgageFinancing(
                     liability_id="sf_home_mortgage",
                     lender_agent_id="bank",
-                    principal_usd=mortgage_principal,
+                    principal=mortgage_principal,
                     annual_interest_rate=annual_rate,
                     term_months=term_months,
                 ),
@@ -3539,7 +3639,7 @@ def _liability_year_interest(result, *, liability_id: str, through_month: int) -
     rows = result.events_log.mortgage_payments.filter(
         (pl.col("liability_id") == liability_id) & (pl.col("month_index") <= through_month)
     )
-    return float(rows.get_column("interest_usd").sum())
+    return float(rows.get_column("interest_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).sum())
 
 
 def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard(san_francisco_location: Location) -> None:
@@ -3554,14 +3654,14 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard(sa
     """
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     baseline = simulate(
-        _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
+        _mid_scenario(purchase_price=900000, down_payment=180000, annual_rate=0.07, term_months=360),
         rollout_count=1,
         locations={"san_francisco": san_francisco_location},
     )
     deducted = simulate(
         _mid_scenario(
-            purchase_price_usd=900_000.0,
-            down_payment_usd=180_000.0,
+            purchase_price=900000,
+            down_payment=180000,
             annual_rate=0.07,
             term_months=360,
             mortgage_interest_deduction_policies=mid_policies,
@@ -3579,21 +3679,21 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard(sa
     california_deducted = _accrual_breakdown(deducted, jurisdiction_id="california")
 
     # Baseline: standard deduction wins, no MID.
-    assert federal_baseline["mortgage_interest_deduction_usd"] == 0.0
-    assert federal_baseline["itemized_deduction_usd"] == 0.0
-    assert federal_baseline["standard_deduction_usd"] == pytest.approx(14_600.0)
+    assert federal_baseline["mortgage_interest_deduction_quanta"] / 100 == 0.0
+    assert federal_baseline["itemized_deduction_quanta"] / 100 == 0.0
+    assert federal_baseline["standard_deduction_quanta"] / 100 == pytest.approx(14_600.0)
 
     # Deducted: full first-year interest itemized federally + CA (no cap clip at $720k).
-    assert federal_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
-    assert federal_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
-    assert california_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
-    assert california_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
+    assert federal_deducted["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(year_1_interest, rel=1e-5)
+    assert federal_deducted["itemized_deduction_quanta"] / 100 == pytest.approx(year_1_interest, rel=1e-5)
+    assert california_deducted["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(year_1_interest, rel=1e-5)
+    assert california_deducted["itemized_deduction_quanta"] / 100 == pytest.approx(year_1_interest, rel=1e-5)
 
     # Tax savings: (itemized - standard) * marginal rate. Both jurisdictions stay in the same
     # bracket either way ($200k W-2 → fed 24%, CA 9.3%).
-    federal_savings = federal_baseline["total_tax_usd"] - federal_deducted["total_tax_usd"]
+    federal_savings = federal_baseline["total_tax_quanta"] / 100 - federal_deducted["total_tax_quanta"] / 100
     assert federal_savings == pytest.approx((year_1_interest - 14_600.0) * 0.24, abs=0.5)
-    california_savings = california_baseline["total_tax_usd"] - california_deducted["total_tax_usd"]
+    california_savings = california_baseline["total_tax_quanta"] / 100 - california_deducted["total_tax_quanta"] / 100
     assert california_savings == pytest.approx((year_1_interest - 5_363.0) * 0.093, abs=0.5)
 
 
@@ -3612,14 +3712,14 @@ def test_home_equity_debt_class_zeros_out_mid_under_tcja(san_francisco_location:
         )
     ]
     baseline = simulate(
-        _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
+        _mid_scenario(purchase_price=900000, down_payment=180000, annual_rate=0.07, term_months=360),
         rollout_count=1,
         locations={"san_francisco": san_francisco_location},
     )
     home_equity = simulate(
         _mid_scenario(
-            purchase_price_usd=900_000.0,
-            down_payment_usd=180_000.0,
+            purchase_price=900000,
+            down_payment=180000,
             annual_rate=0.07,
             term_months=360,
             mortgage_interest_deduction_policies=home_equity_policies,
@@ -3633,11 +3733,15 @@ def test_home_equity_debt_class_zeros_out_mid_under_tcja(san_francisco_location:
     california_baseline = _accrual_breakdown(baseline, jurisdiction_id="california")
     california_home_equity = _accrual_breakdown(home_equity, jurisdiction_id="california")
     # Both jurisdictions: the home-equity policy must produce zero MID.
-    assert federal_home_equity["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-9)
-    assert california_home_equity["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-9)
+    assert federal_home_equity["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0.0, abs=1e-9)
+    assert california_home_equity["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(0.0, abs=1e-9)
     # Standard deduction wins (same as baseline), and total tax matches the no-policy baseline.
-    assert federal_home_equity["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=0.02)
-    assert california_home_equity["total_tax_usd"] == pytest.approx(california_baseline["total_tax_usd"], abs=0.02)
+    assert federal_home_equity["total_tax_quanta"] / 100 == pytest.approx(
+        federal_baseline["total_tax_quanta"] / 100, abs=0.02
+    )
+    assert california_home_equity["total_tax_quanta"] / 100 == pytest.approx(
+        california_baseline["total_tax_quanta"] / 100, abs=0.02
+    )
 
 
 def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_francisco_location: Location) -> None:
@@ -3646,14 +3750,14 @@ def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_franci
     out. Locks the per-(link, liability) classification path so a future regression that
     re-mixes them surfaces here.
     """
-    purchase_price_usd = 900_000.0
-    down_payment_usd = 180_000.0
-    mortgage_principal = purchase_price_usd - down_payment_usd
-    heloc_principal = 60_000.0
+    purchase_price = Decimal(900_000)
+    down_payment = Decimal(180_000)
+    mortgage_principal = purchase_price - down_payment
+    heloc_principal = Decimal(60_000)
     heloc_rate = 0.08
     base = _mid_scenario(
-        purchase_price_usd=purchase_price_usd,
-        down_payment_usd=down_payment_usd,
+        purchase_price=purchase_price,
+        down_payment=down_payment,
         annual_rate=0.07,
         term_months=360,
         mortgage_interest_deduction_policies=[
@@ -3681,13 +3785,13 @@ def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_franci
                     buyer_agent_id="alice",
                     buyer_account_id="checking",
                     seller_agent_id="seller",
-                    purchase_price_usd=heloc_principal,
-                    down_payment_usd=0.0,
-                    buyer_closing_cost_usd=0.0,
+                    purchase_price=heloc_principal,
+                    down_payment=0,
+                    buyer_closing_cost=0,
                     mortgage=MortgageFinancing(
                         liability_id="alice_heloc",
                         lender_agent_id="bank",
-                        principal_usd=heloc_principal,
+                        principal=heloc_principal,
                         annual_interest_rate=heloc_rate,
                         term_months=360,
                     ),
@@ -3704,8 +3808,8 @@ def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_franci
     # but must not contribute to the deduction.
     assert heloc_interest > 0.0
     assert mortgage_principal > 0.0  # the helper sized the acquisition mortgage as expected
-    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(acquisition_interest, rel=1e-5)
-    assert federal["mortgage_interest_deduction_usd"] < acquisition_interest + heloc_interest
+    assert federal["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(acquisition_interest, rel=1e-5)
+    assert federal["mortgage_interest_deduction_quanta"] / 100 < acquisition_interest + heloc_interest
 
 
 def test_mortgage_interest_deduction_inactive_when_policy_empty(san_francisco_location: Location) -> None:
@@ -3715,19 +3819,19 @@ def test_mortgage_interest_deduction_inactive_when_policy_empty(san_francisco_lo
     breakdown columns report 0.0 MID and 0.0 itemized; the standard deduction wins.
     """
     result = simulate(
-        _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
+        _mid_scenario(purchase_price=900000, down_payment=180000, annual_rate=0.07, term_months=360),
         rollout_count=1,
         locations={"san_francisco": san_francisco_location},
     )
 
     federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
     california = _accrual_breakdown(result, jurisdiction_id="california")
-    assert federal["mortgage_interest_deduction_usd"] == 0.0
-    assert federal["itemized_deduction_usd"] == 0.0
-    assert federal["standard_deduction_usd"] == pytest.approx(14_600.0)
-    assert california["mortgage_interest_deduction_usd"] == 0.0
-    assert california["itemized_deduction_usd"] == 0.0
-    assert california["standard_deduction_usd"] == pytest.approx(5_363.0)
+    assert federal["mortgage_interest_deduction_quanta"] / 100 == 0.0
+    assert federal["itemized_deduction_quanta"] / 100 == 0.0
+    assert federal["standard_deduction_quanta"] / 100 == pytest.approx(14_600.0)
+    assert california["mortgage_interest_deduction_quanta"] / 100 == 0.0
+    assert california["itemized_deduction_quanta"] / 100 == 0.0
+    assert california["standard_deduction_quanta"] / 100 == pytest.approx(5_363.0)
 
 
 def test_mid_federal_cap_clips_but_ca_cap_does_not(san_francisco_location: Location) -> None:
@@ -3735,8 +3839,8 @@ def test_mid_federal_cap_clips_but_ca_cap_does_not(san_francisco_location: Locat
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=1_050_000.0,
-            down_payment_usd=200_000.0,
+            purchase_price=1050000,
+            down_payment=200000,
             annual_rate=0.07,
             term_months=360,
             mortgage_interest_deduction_policies=mid_policies,
@@ -3748,9 +3852,11 @@ def test_mid_federal_cap_clips_but_ca_cap_does_not(san_francisco_location: Locat
     raw_interest = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
     federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
     california = _accrual_breakdown(result, jurisdiction_id="california")
-    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest * (750_000.0 / 850_000.0), rel=1e-5)
-    assert california["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest, rel=1e-5)
-    assert california["itemized_deduction_usd"] > federal["itemized_deduction_usd"]
+    assert federal["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(
+        raw_interest * (750_000.0 / 850_000.0), rel=1e-5
+    )
+    assert california["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(raw_interest, rel=1e-5)
+    assert california["itemized_deduction_quanta"] / 100 > federal["itemized_deduction_quanta"] / 100
 
 
 def test_mid_below_standard_falls_back_to_standard_deduction(san_francisco_location: Location) -> None:
@@ -3759,14 +3865,14 @@ def test_mid_below_standard_falls_back_to_standard_deduction(san_francisco_locat
     """
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     baseline = simulate(
-        _mid_scenario(purchase_price_usd=200_000.0, down_payment_usd=120_000.0, annual_rate=0.05, term_months=360),
+        _mid_scenario(purchase_price=200000, down_payment=120000, annual_rate=0.05, term_months=360),
         rollout_count=1,
         locations={"san_francisco": san_francisco_location},
     )
     with_policy = simulate(
         _mid_scenario(
-            purchase_price_usd=200_000.0,
-            down_payment_usd=120_000.0,
+            purchase_price=200000,
+            down_payment=120000,
             annual_rate=0.05,
             term_months=360,
             mortgage_interest_deduction_policies=mid_policies,
@@ -3782,12 +3888,12 @@ def test_mid_below_standard_falls_back_to_standard_deduction(san_francisco_locat
     # Both itemized and MID report the sum of itemized lines (MID is the only one today). The
     # standard-deduction comparison happens inside the tax math and uses max(itemized, standard),
     # so the consumer can detect "standard won" by `standard > itemized`.
-    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(interest, rel=1e-5)
-    assert federal["itemized_deduction_usd"] == pytest.approx(interest, rel=1e-5)
-    assert federal["standard_deduction_usd"] == pytest.approx(14_600.0)
+    assert federal["mortgage_interest_deduction_quanta"] / 100 == pytest.approx(interest, rel=1e-5)
+    assert federal["itemized_deduction_quanta"] / 100 == pytest.approx(interest, rel=1e-5)
+    assert federal["standard_deduction_quanta"] / 100 == pytest.approx(14_600.0)
     # Total tax matches the no-policy baseline exactly because the standard deduction wins.
     federal_baseline = _accrual_breakdown(baseline, jurisdiction_id="federal_us")
-    assert federal["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=0.02)
+    assert federal["total_tax_quanta"] / 100 == pytest.approx(federal_baseline["total_tax_quanta"] / 100, abs=0.02)
 
 
 def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) -> None:
@@ -3797,8 +3903,8 @@ def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) 
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=600_000.0,
-            down_payment_usd=200_000.0,
+            purchase_price=600000,
+            down_payment=200000,
             annual_rate=0.07,
             term_months=360,
             horizon_months=25,
@@ -3817,8 +3923,8 @@ def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) 
         key=lambda row: row["month_index"],
     )
     assert len(federal_rows) == 2  # year-end accruals at month 11 and month 23
-    year_1_mid = federal_rows[0]["mortgage_interest_deduction_usd"]
-    year_2_mid = federal_rows[1]["mortgage_interest_deduction_usd"]
+    year_1_mid = federal_rows[0]["mortgage_interest_deduction_quanta"] / 100
+    year_2_mid = federal_rows[1]["mortgage_interest_deduction_quanta"] / 100
     # Year-1 MID = sum of interest on payments 1..11 (origination at month 0 has no payment;
     # first amortizing payment lands at month 1, so year 1 has only 11 payments).
     expected_year_1 = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
@@ -3848,14 +3954,14 @@ def test_salt_deduction_under_cap_passes_through_in_full(san_francisco_location:
 
     Single filer with $200k W-2 wages + $900k home. Year-1 property tax ≈ $10.8k; CA state tax
     on $200k ordinary ≈ $15-17k. SALT ≈ $26-28k, well under the $40k cap, so the federal
-    salt_deduction_usd equals state+property tax exactly.
+    salt_deduction equals state+property tax exactly.
     """
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     salt_policies = [FederalSaltDeductionPolicy(profile_id="alice")]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=900_000.0,
-            down_payment_usd=180_000.0,
+            purchase_price=900000,
+            down_payment=180000,
             annual_rate=0.07,
             term_months=360,
             mortgage_interest_deduction_policies=mid_policies,
@@ -3871,35 +3977,36 @@ def test_salt_deduction_under_cap_passes_through_in_full(san_francisco_location:
         result.events_log.obligation_settlements.filter(
             (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
         )
-        .get_column("amount_paid_usd")
+        .get_column("amount_paid_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
     )
-    expected_salt = property_tax_paid + float(ca["total_tax_usd"])
+    expected_salt = property_tax_paid + float(ca["total_tax_quanta"] / 100)
     assert expected_salt < 40_000.0
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-5)
+    assert float(fed["salt_deduction_quanta"] / 100) == pytest.approx(expected_salt, rel=1e-5)
     # Itemized = MID + SALT; both should land in the federal row.
-    assert float(fed["itemized_deduction_usd"]) == pytest.approx(
-        float(fed["mortgage_interest_deduction_usd"]) + expected_salt, rel=1e-5
+    assert float(fed["itemized_deduction_quanta"] / 100) == pytest.approx(
+        float(fed["mortgage_interest_deduction_quanta"] / 100) + expected_salt, rel=1e-5
     )
     # CA row never gets SALT (federal-only concept).
-    assert float(ca["salt_deduction_usd"]) == 0.0
+    assert float(ca["salt_deduction_quanta"] / 100) == 0.0
 
 
 def test_salt_cap_binds_for_high_income_high_property_tax(san_francisco_location: Location) -> None:
     """Crank income high enough that property tax + CA state tax > $40k cap; deduction clips to cap.
 
     Use $1.5M home (≈ $18k/yr property tax) + $1M W-2 wages (CA state tax ≈ $90k+).
-    Year-0 SALT total ≫ $40k → salt_deduction_usd clips to the cap exactly.
+    Year-0 SALT total ≫ $40k → salt_deduction clips to the cap exactly.
     """
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     salt_policies = [FederalSaltDeductionPolicy(profile_id="alice")]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=1_500_000.0,
-            down_payment_usd=400_000.0,
+            purchase_price=1500000,
+            down_payment=400000,
             annual_rate=0.07,
             term_months=360,
-            annual_w2_income_usd=1_000_000.0,
+            annual_w2_income=1_000_000,
             mortgage_interest_deduction_policies=mid_policies,
             federal_salt_deduction_policies=salt_policies,
         ),
@@ -3913,14 +4020,15 @@ def test_salt_cap_binds_for_high_income_high_property_tax(san_francisco_location
         result.events_log.obligation_settlements.filter(
             (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
         )
-        .get_column("amount_paid_usd")
+        .get_column("amount_paid_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
     )
-    raw_salt = property_tax_paid + float(ca["total_tax_usd"])
+    raw_salt = property_tax_paid + float(ca["total_tax_quanta"] / 100)
     assert raw_salt > 40_000.0
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(40_000.0, rel=1e-5)
-    assert float(fed["itemized_deduction_usd"]) == pytest.approx(
-        float(fed["mortgage_interest_deduction_usd"]) + 40_000.0, rel=1e-5
+    assert float(fed["salt_deduction_quanta"] / 100) == pytest.approx(40_000.0, rel=1e-5)
+    assert float(fed["itemized_deduction_quanta"] / 100) == pytest.approx(
+        float(fed["mortgage_interest_deduction_quanta"] / 100) + 40_000.0, rel=1e-5
     )
 
 
@@ -3929,8 +4037,8 @@ def test_salt_inactive_when_policy_empty_matches_no_salt_baseline(san_francisco_
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=900_000.0,
-            down_payment_usd=180_000.0,
+            purchase_price=900000,
+            down_payment=180000,
             annual_rate=0.07,
             term_months=360,
             mortgage_interest_deduction_policies=mid_policies,
@@ -3940,9 +4048,9 @@ def test_salt_inactive_when_policy_empty_matches_no_salt_baseline(san_francisco_
     )
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
-    assert float(fed["salt_deduction_usd"]) == 0.0
-    assert float(fed["itemized_deduction_usd"]) == pytest.approx(
-        float(fed["mortgage_interest_deduction_usd"]), rel=1e-5
+    assert float(fed["salt_deduction_quanta"] / 100) == 0.0
+    assert float(fed["itemized_deduction_quanta"] / 100) == pytest.approx(
+        float(fed["mortgage_interest_deduction_quanta"] / 100), rel=1e-5
     )
 
 
@@ -3951,15 +4059,15 @@ def test_salt_cap_schedule_tightens_from_year_zero_to_year_four(san_francisco_lo
 
     Run a 5-year horizon so we accrue at year-end month 11 (year 0, $40k cap) and
     year-end month 59 (year 4, $10k cap). Both years see the same income shape, so any
-    drop in salt_deduction_usd from year 0 to year 4 must come from the schedule
+    drop in salt_deduction from year 0 to year 4 must come from the schedule
     transition. The default cap_schedule encodes both entries; we don't override it here.
     """
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     salt_policies = [FederalSaltDeductionPolicy(profile_id="alice")]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=900_000.0,
-            down_payment_usd=180_000.0,
+            purchase_price=900000,
+            down_payment=180000,
             annual_rate=0.07,
             term_months=360,
             horizon_months=60,
@@ -3976,8 +4084,8 @@ def test_salt_cap_schedule_tightens_from_year_zero_to_year_four(san_francisco_lo
     assert year_4 is not None
     # Year 0: total SALT well over $10k but under $40k — uncapped or capped at $40k.
     # Year 4: any SALT total > $10k clips to $10k.
-    assert float(year_4["salt_deduction_usd"]) == pytest.approx(10_000.0, rel=1e-5)
-    assert float(year_0["salt_deduction_usd"]) > float(year_4["salt_deduction_usd"])
+    assert float(year_4["salt_deduction_quanta"] / 100) == pytest.approx(10_000.0, rel=1e-5)
+    assert float(year_0["salt_deduction_quanta"] / 100) > float(year_4["salt_deduction_quanta"] / 100)
 
 
 def test_salt_uncapped_when_cap_schedule_is_empty(san_francisco_location: Location) -> None:
@@ -3989,11 +4097,11 @@ def test_salt_uncapped_when_cap_schedule_is_empty(san_francisco_location: Locati
     salt_policies = [FederalSaltDeductionPolicy(profile_id="alice", cap_schedule=[])]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=1_500_000.0,
-            down_payment_usd=400_000.0,
+            purchase_price=1500000,
+            down_payment=400000,
             annual_rate=0.07,
             term_months=360,
-            annual_w2_income_usd=1_000_000.0,
+            annual_w2_income=1_000_000,
             mortgage_interest_deduction_policies=mid_policies,
             federal_salt_deduction_policies=salt_policies,
         ),
@@ -4007,13 +4115,14 @@ def test_salt_uncapped_when_cap_schedule_is_empty(san_francisco_location: Locati
         result.events_log.obligation_settlements.filter(
             (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
         )
-        .get_column("amount_paid_usd")
+        .get_column("amount_paid_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
     )
-    expected_salt = property_tax_paid + float(ca["total_tax_usd"])
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-5)
+    expected_salt = property_tax_paid + float(ca["total_tax_quanta"] / 100)
+    assert float(fed["salt_deduction_quanta"] / 100) == pytest.approx(expected_salt, rel=1e-5)
     # No cap applied — should easily exceed the default $40k cap.
-    assert float(fed["salt_deduction_usd"]) > 40_000.0
+    assert float(fed["salt_deduction_quanta"] / 100) > 40_000.0
 
 
 def test_salt_cap_uses_overriding_schedule_first_year(san_francisco_location: Location) -> None:
@@ -4021,13 +4130,13 @@ def test_salt_cap_uses_overriding_schedule_first_year(san_francisco_location: Lo
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     salt_policies = [
         FederalSaltDeductionPolicy(
-            profile_id="alice", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=5_000.0)]
+            profile_id="alice", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap=5000)]
         )
     ]
     result = simulate(
         _mid_scenario(
-            purchase_price_usd=900_000.0,
-            down_payment_usd=180_000.0,
+            purchase_price=900000,
+            down_payment=180000,
             annual_rate=0.07,
             term_months=360,
             mortgage_interest_deduction_policies=mid_policies,
@@ -4039,18 +4148,18 @@ def test_salt_cap_uses_overriding_schedule_first_year(san_francisco_location: Lo
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     # SALT total far exceeds $5k → cap binds at $5k exactly.
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(5_000.0, rel=1e-5)
+    assert float(fed["salt_deduction_quanta"] / 100) == pytest.approx(5_000.0, rel=1e-5)
 
 
 def _pe_tender_scenario(
     *,
-    initial_cash_usd: float,
-    monthly_spend_usd: float,
+    initial_cash: Decimal | int,
+    monthly_spend: Decimal | int,
     pe_units: float,
-    pe_cost_basis_per_unit_usd: float,
+    pe_cost_basis_per_unit: Decimal | int,
     pe_holding_period_months: int,
     horizon_months: int,
-    lnw_floor_usd: float,
+    lnw_floor: Decimal | int,
 ) -> Scenario:
     """A minimal PE-only scenario: Alice holds N units of acme PE, spends $M/month, has
     a `PrivateEquityTenderPolicy` with a fixed LNW floor. No income, no property."""
@@ -4058,8 +4167,8 @@ def _pe_tender_scenario(
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="spend_sink")],
         initial_cash=[
-            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=initial_cash_usd),
-            InitialAccountBalance(agent_id="spend_sink", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=initial_cash),
+            InitialAccountBalance(agent_id="spend_sink", account_id="checking", balance=0),
         ],
         initial_lots=[
             InitialLot(
@@ -4069,7 +4178,7 @@ def _pe_tender_scenario(
                 asset=PrivateEquityAssetKey(issuer_id=IssuerId("acme")),
                 purchase_month_index=-pe_holding_period_months,
                 quantity=pe_units,
-                cost_basis_per_unit_usd=pe_cost_basis_per_unit_usd,
+                cost_basis_per_unit=pe_cost_basis_per_unit,
             )
         ],
         recurring_obligations=[
@@ -4082,14 +4191,14 @@ def _pe_tender_scenario(
                 from_account_id="checking",
                 to_agent_id="spend_sink",
                 to_account_id="checking",
-                amount_due_usd=float(monthly_spend_usd),
+                amount_due=monthly_spend,
             )
         ],
         private_equity_tender_policies=[
             PrivateEquityTenderPolicy(
                 owner_agent_id="alice",
                 proceeds_account_id="checking",
-                liquid_net_worth_floor=FixedAmount(amount_usd=lnw_floor_usd),
+                liquid_net_worth_floor=FixedAmount(amount=lnw_floor),
             )
         ],
         tax_profiles=[],
@@ -4185,7 +4294,7 @@ def _pe_lot_remaining_at(result, *, lot_id: str, month_index: int) -> float:
 
 def _alice_cash_at(result, *, month_index: int) -> float:
     rows = result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == month_index))
-    return float(rows.get_column("balance_usd").sum())
+    return float(rows.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).sum())
 
 
 def _pe_opportunity_at(result, *, month_index: int) -> dict[str, object]:
@@ -4201,13 +4310,13 @@ def test_pe_tender_never_fires_leaves_position_intact() -> None:
     """Without any tender event, the PE position carries through the horizon untouched."""
 
     scenario = _pe_tender_scenario(
-        initial_cash_usd=100_000.0,
-        monthly_spend_usd=0.0,
+        initial_cash=100000,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=24,
-        lnw_floor_usd=500_000.0,  # floor above LNW; would sell if a tender fired
+        lnw_floor=500000,  # floor above LNW; would sell if a tender fired
     )
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=None, tender_mark_usd=None, horizon_months=24)
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
@@ -4221,22 +4330,22 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     """A tender at month 5 with LNW below the floor triggers a sale that lifts LNW
     toward the floor. PE position drained by `min(units_held, shortfall / mark)`."""
 
-    initial_cash = 30_000.0
-    monthly_spend = 1_000.0
+    initial_cash = Decimal(30_000)
+    monthly_spend = Decimal(1_000)
     horizon = 12
     tender_month = 5
     initial_mark = 50.0
     tender_mark = 60.0
     pe_units = 100.0
-    floor = 50_000.0
+    floor = Decimal(50_000)
     scenario = _pe_tender_scenario(
-        initial_cash_usd=initial_cash,
-        monthly_spend_usd=monthly_spend,
+        initial_cash=initial_cash,
+        monthly_spend=monthly_spend,
         pe_units=pe_units,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
-        lnw_floor_usd=floor,
+        lnw_floor=floor,
     )
     external = _pe_external_series(
         initial_mark_usd=initial_mark, tender_month=tender_month, tender_mark_usd=tender_mark, horizon_months=horizon
@@ -4259,7 +4368,7 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     row = disp.row(0, named=True)
     assert row["asset_id"] == "private_equity:acme"
     assert row["units_sold"] == pytest.approx(100.0, abs=0.02)
-    assert row["proceeds_usd"] == pytest.approx(6_000.0, abs=1.0)
+    assert row["proceeds_quanta"] / 100 == pytest.approx(6_000.0, abs=1.0)
     assert row["cause_id"] == "pe_tender_m5_acme"
     [marker] = result.events_log.private_equity_events.filter(
         (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
@@ -4270,13 +4379,13 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
 
 def test_pe_tender_capacity_fraction_limits_sale() -> None:
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=1_000_000.0,
+        lnw_floor=1000000,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4293,18 +4402,18 @@ def test_pe_tender_capacity_fraction_limits_sale() -> None:
     assert opportunity["outcome"] == "sold"
     assert opportunity["sellable_units"] == pytest.approx(25.0)
     assert opportunity["target_units"] == pytest.approx(25.0)
-    assert opportunity["proceeds_usd"] == pytest.approx(2_500.0)
+    assert quanta_to_usd(cast(int, opportunity["proceeds_quanta"])) == pytest.approx(2_500.0)
 
 
 def test_pe_tender_zero_capacity_emits_capacity_zero_opportunity_trace() -> None:
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=1_000_000.0,
+        lnw_floor=1000000,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4324,13 +4433,13 @@ def test_pe_tender_zero_capacity_emits_capacity_zero_opportunity_trace() -> None
 
 def test_pe_tender_eligible_fraction_limits_sale() -> None:
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=1_000_000.0,
+        lnw_floor=1000000,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4347,13 +4456,13 @@ def test_pe_tender_eligible_fraction_limits_sale() -> None:
 
 def test_pe_tender_liquidity_blocked_prevents_sale() -> None:
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=1_000_000.0,
+        lnw_floor=1000000,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4381,13 +4490,13 @@ def test_pe_public_market_regime_allows_floor_sale_without_tender_event() -> Non
         default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
     )
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
-        lnw_floor_usd=5_000.0,
+        lnw_floor=5000,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4409,13 +4518,13 @@ def test_pe_public_market_regime_allows_floor_sale_without_tender_event() -> Non
 def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> None:
     horizon = 12
     scenario = _pe_tender_scenario(
-        initial_cash_usd=10_000.0,
-        monthly_spend_usd=0.0,
+        initial_cash=10000,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
-        lnw_floor_usd=0.0,
+        lnw_floor=0,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4437,13 +4546,13 @@ def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> No
 def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() -> None:
     horizon = 12
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=horizon,
-        lnw_floor_usd=0.0,
+        lnw_floor=0,
     )
     external = _pe_external_series(
         initial_mark_usd=100.0,
@@ -4460,19 +4569,19 @@ def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() 
     assert disp.height == 1
     row = disp.row(0, named=True)
     assert row["units_sold"] == pytest.approx(100.0)
-    assert row["proceeds_usd"] == pytest.approx(100.0)
+    assert row["proceeds_quanta"] / 100 == pytest.approx(100.0)
     assert row["cause_id"] == "pe_forced_recovery_m5_acme"
 
 
 def test_pe_tender_missing_protocol_series_fails_loudly() -> None:
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=1_000_000.0,
+        lnw_floor=1000000,
     )
     # The scenario holds a `private_equity:acme` lot but the materialized
     # ExternalSeriesContext omits the typed PrivateEquityBundle entirely —
@@ -4502,13 +4611,13 @@ def test_pe_unknown_regime_code_fails_loudly() -> None:
 
 def test_pe_missing_typed_protocol_fails_loudly() -> None:
     scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
+        initial_cash=0,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=1_000_000.0,
+        lnw_floor=1000000,
     )
     # An empty PE bundle on the ExternalSeriesContext (engine sees an issuer
     # with no PE channels) is rejected at compile time.
@@ -4538,13 +4647,13 @@ def test_pe_tender_fires_above_floor_no_sale() -> None:
     """When LNW already exceeds the floor, a tender opportunity passes without a sale."""
 
     scenario = _pe_tender_scenario(
-        initial_cash_usd=200_000.0,
-        monthly_spend_usd=0.0,
+        initial_cash=200000,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=50_000.0,
+        lnw_floor=50000,
     )
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
@@ -4553,20 +4662,20 @@ def test_pe_tender_fires_above_floor_no_sale() -> None:
     assert _alice_cash_at(result, month_index=6) == pytest.approx(200_000.0)
     opportunity = _pe_opportunity_at(result, month_index=5)
     assert opportunity["outcome"] == "floor_satisfied"
-    assert opportunity["shortfall_usd"] == pytest.approx(0.0)
+    assert quanta_to_usd(cast(int, opportunity["shortfall_quanta"])) == pytest.approx(0.0)
 
 
 def test_pe_tender_inactive_when_no_policy() -> None:
     """Regression: a tender event fires but no PrivateEquityTenderPolicy → no sale."""
 
     scenario = _pe_tender_scenario(
-        initial_cash_usd=30_000.0,
-        monthly_spend_usd=1_000.0,
+        initial_cash=30000,
+        monthly_spend=1000,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=50_000.0,
+        lnw_floor=50000,
     )
     scenario_no_policy = scenario.model_copy(update={"private_equity_tender_policies": []})
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
@@ -4580,13 +4689,13 @@ def test_pe_tender_zero_floor_never_sells() -> None:
     """A floor of $0 means LNW is always at-or-above the floor → tenders never trigger sales."""
 
     scenario = _pe_tender_scenario(
-        initial_cash_usd=1_000.0,
-        monthly_spend_usd=0.0,
+        initial_cash=1000,
+        monthly_spend=0,
         pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
+        pe_cost_basis_per_unit=10,
         pe_holding_period_months=36,
         horizon_months=12,
-        lnw_floor_usd=0.0,
+        lnw_floor=0,
     )
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
@@ -4597,13 +4706,13 @@ def test_pe_tender_disposition_recorded() -> None:
     """PE tender sales produce lot_dispositions rows with correct fields."""
 
     scenario = _pe_tender_scenario(
-        initial_cash_usd=10_000.0,
-        monthly_spend_usd=0.0,
+        initial_cash=10000,
+        monthly_spend=0,
         pe_units=200.0,
-        pe_cost_basis_per_unit_usd=20.0,
+        pe_cost_basis_per_unit=20,
         pe_holding_period_months=24,
         horizon_months=12,
-        lnw_floor_usd=100_000.0,
+        lnw_floor=100000,
     )
     tender_month = 3
     tender_mark = 80.0
@@ -4622,8 +4731,8 @@ def test_pe_tender_disposition_recorded() -> None:
     assert row["lot_id"] == "acme_lot_a"
     assert row["agent_id"] == "alice"
     assert row["units_sold"] == pytest.approx(200.0, abs=0.02)
-    assert row["cost_basis_consumed_usd"] == pytest.approx(4_000.0, abs=1.0)
-    assert row["proceeds_usd"] == pytest.approx(16_000.0, abs=1.0)
+    assert row["cost_basis_consumed_quanta"] / 100 == pytest.approx(4_000.0, abs=1.0)
+    assert row["proceeds_quanta"] / 100 == pytest.approx(16_000.0, abs=1.0)
     assert row["cause_id"] == f"pe_tender_m{tender_month}_acme"
 
 

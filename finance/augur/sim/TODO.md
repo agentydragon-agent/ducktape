@@ -154,7 +154,7 @@ Still missing:
   in CA); term / sunset modeling (real CFDs end when bonds repay);
   itemized breakdown (real bills list each CFD separately, e.g. Mare
   Island bills show CFD 2002-1 / 2005-1A / 2005-1B). Today
-  `Location.annual_special_assessment_usd` is a flat aggregate.
+  `Location.annual_special_assessment` is a flat aggregate.
 - **HOA, insurance, maintenance** — knobs exist but model is coarse:
   - HOA is indexed to CPI; real HOAs ratchet in lumpy board votes that
     often outpace CPI. Needs a per-HOA dues schedule.
@@ -441,7 +441,7 @@ starts and held to maturity, indexed or not. Everything below is what that shape
       `InstrumentSpec.duration_years` is a constant, right for a fund that rolls and wrong for a
       bond that ages.
 
-- [ ] **Non-par purchase.** `purchase_price_usd` is required to EQUAL face, so a real holding
+- [ ] **Non-par purchase.** `purchase_price` is required to EQUAL face, so a real holding
       bought at 98.5 raises rather than being silently treated as par. Amortizing a
       discount/premium needs the discount curve above.
 - [ ] **A ladder that rolls**, which needs a real yield and a policy trigger. Full write-up in

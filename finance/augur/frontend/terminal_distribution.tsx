@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart";
+import { axisCoordinate, fanChartAxis, fmtAxisMetricValue } from "./lib/chart";
+import { currencyQuantaChartNumber, currencyQuantaCompare, fmtQuanta } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
 import { scenarioColor } from "./input_helpers";
-import { useCurrencyDisplay } from "./hooks";
 import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricSamples } from "./data_helpers";
 
 function terminalPercentilePoints(result, metric) {
@@ -11,7 +11,9 @@ function terminalPercentilePoints(result, metric) {
     .map((row) => ({
       percentile: Number(row.percentile) / 100,
       rawPercentile: Number(row.percentile),
-      value: Number(row.value),
+      value: currencyQuantaChartNumber(row.valueQuanta, result.currencyQuantum),
+      currencyQuanta: row.valueQuanta,
+      currency: { currencyCode: result.currencyCode, currencyQuantum: result.currencyQuantum },
     }))
     .filter(
       (point) =>
@@ -41,13 +43,15 @@ function valueAtPercentile(entry, percentile) {
 function terminalFailedSamplePoints(result, metric) {
   const samples = terminalMetricSamples(result, metric)
     .slice()
-    .sort((left, right) => left.value - right.value || left.seed - right.seed);
+    .sort((left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed);
   if (samples.length === 0) return [];
   return samples
     .map((sample, index) => ({
       seed: sample.seed,
       percentile: samples.length === 1 ? 0.5 : index / (samples.length - 1),
       value: sample.value,
+      currencyQuanta: sample.currencyQuanta,
+      currency: sample.currency,
       failed: sample.failed,
     }))
     .filter((point) => point.failed);
@@ -76,7 +80,6 @@ export function TerminalDistributionChart({
   metric,
   metricScale = "linear",
 }) {
-  const { display: currencyDisplay } = useCurrencyDisplay();
   const svgRef = useRef(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [svgWidth, setSvgWidth] = useState<number | null>(null);
@@ -114,7 +117,7 @@ export function TerminalDistributionChart({
         .map((scenario, index) => {
           const result = resultsById.get(scenario.id);
           const samples = terminalMetricSamples(result, metric).sort(
-            (left, right) => left.value - right.value || left.seed - right.seed
+            (left, right) => currencyQuantaCompare(left.currencyQuanta, right.currencyQuanta) || left.seed - right.seed
           );
           return {
             id: scenario.id,
@@ -173,6 +176,7 @@ export function TerminalDistributionChart({
     ...entry.points.map((point) => point.value),
     ...entry.failedPoints.map((point) => point.value),
   ]);
+  const chartCurrency = series[0]?.points[0]?.currency;
   const yAxis = fanChartAxis(metric.chartValue, allValues, metricScale);
   const svgHeight = 260;
   const margin = { left: 82, right: 20, top: 16, bottom: 34 };
@@ -312,11 +316,14 @@ export function TerminalDistributionChart({
     hoverPercentile == null
       ? []
       : series.map((entry) => {
+          const point = entry.points[nearestPointIndex(entry, hoverPercentile)];
           return {
             id: entry.id,
             label: entry.label,
             color: entry.color,
             value: valueAtPercentile(entry, hoverPercentile),
+            currencyQuanta: point?.currencyQuanta,
+            currency: point?.currency,
           };
         });
   const xTicks = [0, 0.25, 0.5, 0.75, 1];
@@ -369,7 +376,7 @@ export function TerminalDistributionChart({
                 textAnchor="end"
                 className="fill-slate-500 text-[11px] augur-tabular"
               >
-                {fmtAxisMetricValue(metric.chartValue, value)}
+                {fmtAxisMetricValue(metric.chartValue, value, chartCurrency)}
               </text>
             </g>
           );
@@ -494,7 +501,7 @@ export function TerminalDistributionChart({
                       <tspan fill={row.color} fontWeight="700">
                         ●{" "}
                       </tspan>
-                      {row.label}: {fmtMetricValue(metric.chartValue, row.value, currencyDisplay)}
+                      {row.label}: {fmtQuanta(row.currencyQuanta, row.currency)}
                     </text>
                   ))}
                 </g>

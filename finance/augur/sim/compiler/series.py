@@ -12,9 +12,17 @@ from typing import Any
 
 import numpy as np
 
-from finance.augur.model.series import HomeValueKey, InflationKey, LevelSeriesKey, LocationId, SecurityDistributionKey
+from finance.augur.model.series import (
+    HomeValueKey,
+    InflationKey,
+    LevelSeriesKey,
+    LocationId,
+    SecurityDistributionKey,
+    SecurityKey,
+)
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 
 
@@ -57,22 +65,22 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     for distribution in scenario.security_distributions:
         add(SecurityDistributionKey(symbol=asset_price_key(distribution.asset).symbol))
     for scheduled_transfer in scenario.scheduled_transfers:
-        _add_amount_series_key(scheduled_transfer.amount_usd, add)
+        _add_amount_series_key(scheduled_transfer.amount, add)
     for recurring_transfer in scenario.recurring_transfers:
-        _add_amount_series_key(recurring_transfer.amount_usd, add)
+        _add_amount_series_key(recurring_transfer.amount, add)
     for scheduled_cashflow in scenario.scheduled_property_cashflows:
-        _add_amount_series_key(scheduled_cashflow.amount_usd, add)
+        _add_amount_series_key(scheduled_cashflow.amount, add)
     for recurring_cashflow in scenario.recurring_property_cashflows:
-        _add_amount_series_key(recurring_cashflow.amount_usd, add)
+        _add_amount_series_key(recurring_cashflow.amount, add)
     for scheduled_obligation in scenario.scheduled_obligations:
-        _add_amount_series_key(scheduled_obligation.amount_due_usd, add)
+        _add_amount_series_key(scheduled_obligation.amount_due, add)
     for recurring_obligation in scenario.recurring_obligations:
-        _add_amount_series_key(recurring_obligation.amount_due_usd, add)
+        _add_amount_series_key(recurring_obligation.amount_due, add)
     for sale in scenario.scheduled_asset_sales:
-        if sale.price_per_unit_usd is None:
+        if sale.price_per_unit is None:
             add(asset_price_key(sale.asset))
     # Unconditional, unlike a sale: a purchase leaves a LOT BEHIND, and that lot has to be
-    # markable for the rest of the horizon. A fixed `price_per_unit_usd` sets the execution
+    # markable for the rest of the horizon. A fixed `price_per_unit` sets the execution
     # price only — without the series the lot's `lot_asset_series_index` is NO_CODE and it
     # cannot be valued afterwards. A sale leaves nothing behind, so it demands a series only
     # when it needs one to price the sale itself.
@@ -83,8 +91,8 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
             add(asset_price_key_or_none(sleeve.asset))
         # Both band bounds, not just the floor: the ceiling is the refill TARGET, so a raise
         # cannot be sized without it, and an indexed ceiling needs its series sampled.
-        _add_amount_series_key(policy.cash_floor_usd, add)
-        _add_amount_series_key(policy.cash_ceiling_usd, add)
+        _add_amount_series_key(policy.cash_floor, add)
+        _add_amount_series_key(policy.cash_ceiling, add)
     for pe_policy in scenario.private_equity_tender_policies:
         _add_amount_series_key(pe_policy.liquid_net_worth_floor, add)
     # A property is valued at sale off its location's home-value series.
@@ -120,19 +128,19 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     for key, _ in external_series.levels.value_rows():
         add(key)
     for scheduled_transfer in scenario.scheduled_transfers:
-        _add_amount_series_key(scheduled_transfer.amount_usd, add)
+        _add_amount_series_key(scheduled_transfer.amount, add)
     for recurring_transfer in scenario.recurring_transfers:
-        _add_amount_series_key(recurring_transfer.amount_usd, add)
+        _add_amount_series_key(recurring_transfer.amount, add)
     for scheduled_cashflow in scenario.scheduled_property_cashflows:
-        _add_amount_series_key(scheduled_cashflow.amount_usd, add)
+        _add_amount_series_key(scheduled_cashflow.amount, add)
     for recurring_cashflow in scenario.recurring_property_cashflows:
-        _add_amount_series_key(recurring_cashflow.amount_usd, add)
+        _add_amount_series_key(recurring_cashflow.amount, add)
     for scheduled_obligation in scenario.scheduled_obligations:
-        _add_amount_series_key(scheduled_obligation.amount_due_usd, add)
+        _add_amount_series_key(scheduled_obligation.amount_due, add)
     for recurring_obligation in scenario.recurring_obligations:
-        _add_amount_series_key(recurring_obligation.amount_due_usd, add)
+        _add_amount_series_key(recurring_obligation.amount_due, add)
     for sale in scenario.scheduled_asset_sales:
-        if sale.price_per_unit_usd is None:
+        if sale.price_per_unit is None:
             add(asset_price_key(sale.asset))
     # Conditional HERE even though the demand list above is unconditional, and the asymmetry is
     # the point of this function: this guards `compile_purchases`' `[]` lookup, which only runs
@@ -140,7 +148,7 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     # cube row; leaving it absent resolves to NO_CODE and reports "no modeled price series",
     # which is the real problem.
     for asset_purchase in scenario.scheduled_asset_purchases:
-        if asset_purchase.price_per_unit_usd is None:
+        if asset_purchase.price_per_unit is None:
             add(asset_price_key(asset_purchase.asset))
     for policy in scenario.target_allocation_policies:
         for sleeve in policy.sleeves:
@@ -151,6 +159,16 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
 def _add_amount_series_key(amount: Any, add: Any) -> None:
     if isinstance(amount, SeriesIndexedAmount):
         add(amount.series)
+
+
+def _frame_values(frame: Any, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, ...]:
+    rollout_index = frame.get_column("rollout_index").to_numpy()
+    month_index = frame.get_column("month_index").to_numpy()
+    raw_values = frame.get_column("value").to_numpy()
+    in_bounds = (
+        (rollout_index >= 0) & (rollout_index < rollout_count) & (month_index >= 0) & (month_index <= horizon_months)
+    )
+    return rollout_index, month_index, raw_values, in_bounds
 
 
 def external_values_cube(
@@ -170,13 +188,40 @@ def external_values_cube(
         index = series_index_by_id.get(key)
         if index is None:
             continue
-        rollout_index = frame.get_column("rollout_index").to_numpy()
-        month_index = frame.get_column("month_index").to_numpy()
-        keep = (
-            (rollout_index >= 0)
-            & (rollout_index < rollout_count)
-            & (month_index >= 0)
-            & (month_index <= horizon_months)
-        )
-        values[index, rollout_index[keep], month_index[keep]] = frame.get_column("value").to_numpy()[keep]
+        rollout_index, month_index, raw_values, keep = _frame_values(frame, rollout_count, horizon_months)
+        values[index, rollout_index[keep], month_index[keep]] = raw_values[keep]
+    return values
+
+
+def external_money_values_cube(
+    external_series: ExternalSeriesContext,
+    *,
+    series_index_by_id: dict[LevelSeriesKey, int],
+    rollout_count: int,
+    horizon_months: int,
+    currency_quantum: object,
+) -> np.ndarray:
+    """Compile price-like sampled levels to integer currency quantum counts.
+
+    ``external_values_cube`` remains the heterogeneous level cube for rates and
+    index ratios (CPI, rent and other non-money values).  This companion cube
+    is the only price input the dense engine may use for traded security
+    prices and per-unit distributions.  Missing/non-finite observations stay
+    zero so the engine's existing non-positive-price handling is preserved.
+    """
+
+    values = np.zeros((len(series_index_by_id), rollout_count, horizon_months + 1), dtype=np.int64)
+    money_keys = (SecurityKey, SecurityDistributionKey, HomeValueKey)
+    for key, frame in external_series.levels.value_rows():
+        if not isinstance(key, money_keys):
+            continue
+        index = series_index_by_id.get(key)
+        if index is None:
+            continue
+        rollout_index, month_index, raw_values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
+        keep = in_bounds & np.isfinite(raw_values)
+        if keep.any():
+            values[index, rollout_index[keep], month_index[keep]] = sampled_array_to_quanta(
+                raw_values[keep], quantum=currency_quantum
+            )
     return values

@@ -8,4 +8,4 @@ jurisdiction_ids:
 # voter-approved city/county bond surcharges.
 annual_property_tax_rate: 0.01180
 # No Mello-Roos / CFD special assessments on standard SF parcels.
-annual_special_assessment_usd: 0.0
+annual_special_assessment: 0

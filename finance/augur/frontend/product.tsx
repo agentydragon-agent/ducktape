@@ -7,8 +7,7 @@ import {
   fetchProductRollout,
   fetchProductTerminalDistribution,
 } from "./client";
-import { fmtNumber } from "./lib/format";
-import { fmtMetricValue } from "./lib/chart";
+import { fmtQuanta, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
 
 import { MetricFanChart } from "./fan_chart";
@@ -245,7 +244,7 @@ export function ProductProjectionWorkspace({
   onChangeSettingsOpen,
 }) {
   const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
-  const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
+  const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth");
   // One metric-fan response per scenario id. Every scenario shares the seed set, and identical
   // seeds reproduce identical sampled exogenous paths, so the overlaid fans are apples-to-apples
   // (no backend comparison endpoint needed). Updated in place as each fan arrives so the comparison
@@ -679,7 +678,10 @@ export function ProductProjectionWorkspace({
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
+                {fmtQuanta(terminalP50, {
+                  currencyCode: activeTerminalDisplayResult?.currencyCode,
+                  currencyQuantum: activeTerminalDisplayResult?.currencyQuantum,
+                })}
               </div>
             </div>
             <div className="augur-card p-4">

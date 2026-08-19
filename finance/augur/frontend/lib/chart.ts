@@ -1,4 +1,4 @@
-import { fmtNumber, fmtPct, fmtUsd, fmtUsdCompact } from "./format";
+import { fmtChartCurrency, fmtNumber, fmtPct } from "./format";
 
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const LOG_SCALE_UNIT = 1;
@@ -8,21 +8,21 @@ export function normalizeMetricScale(metricScale) {
 }
 
 export function metricIsCurrency(metricName) {
-  return metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow");
+  return metricName?.endsWith("Quanta") || metricName?.includes("Value") || metricName?.includes("CashFlow");
 }
 
-export function fmtMetricValue(metricName, value, currencyDisplay = "exact") {
+export function fmtMetricValue(metricName, value, _currencyDisplay = "exact", currency) {
   if (metricName?.endsWith("Pct")) {
     return fmtPct(value);
   }
   if (metricIsCurrency(metricName)) {
-    return currencyDisplay === "compact" ? fmtUsdCompact(value) : fmtUsd(value);
+    return fmtChartCurrency(value, currency);
   }
   return fmtNumber(value);
 }
 
-export function fmtAxisMetricValue(metricName, value) {
-  return fmtMetricValue(metricName, value, "compact");
+export function fmtAxisMetricValue(metricName, value, currency) {
+  return fmtMetricValue(metricName, value, "compact", currency);
 }
 
 export function niceCurrencyTickStep(rawStep) {

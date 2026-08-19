@@ -35,8 +35,6 @@ arrive.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -79,14 +77,6 @@ class HarvestYieldParams(BaseModel):
         return self
 
 
-@dataclass(frozen=True)
-class HarvestSplit:
-    """Gross harvested loss split by holding period, per rollout (USD, non-negative)."""
-
-    short_term_usd: npt.NDArray[np.float64]
-    long_term_usd: npt.NDArray[np.float64]
-
-
 def monthly_harvest_fraction(
     period_return: npt.NDArray[np.float64], embedded_gain_fraction: npt.NDArray[np.float64], params: HarvestYieldParams
 ) -> npt.NDArray[np.float64]:
@@ -107,16 +97,3 @@ def monthly_harvest_fraction(
     # Drawdowns surface more lots below basis; up months get no kicker (drawdown == 0).
     drawdown = np.maximum(0.0, -period_return)
     return base_monthly * (1.0 + params.drawdown_sensitivity * drawdown)
-
-
-def split_short_long(
-    gross_harvest_usd: npt.NDArray[np.float64], short_term_fraction: npt.NDArray[np.float64]
-) -> HarvestSplit:
-    """Split gross harvested loss into ST/LT by the harvestable short-term share.
-
-    `short_term_fraction` (per rollout, in `[0, 1]`) is seeded from the holding's
-    holding-period buckets — near 1.0 for a young account (mostly short-term losses).
-    """
-
-    stf = np.clip(short_term_fraction, 0.0, 1.0)
-    return HarvestSplit(short_term_usd=gross_harvest_usd * stf, long_term_usd=gross_harvest_usd * (1.0 - stf))

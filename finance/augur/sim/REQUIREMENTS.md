@@ -1153,14 +1153,14 @@ count + horizon months):
 - **Lot disposition log**: every sale of a capital-gains-eligible
   position emits one row per consumed lot, carrying `(rollout,
 month, agent_id, position_id, lot_id, units_sold, proceeds_usd,
-basis_consumed_usd, realized_gain_usd, holding_period_days,
+basis_consumed_usd, realized_gain, holding_period_days,
 tax_classification)`. Sales that consume two lots emit two rows;
   the lot identity carries through from the lot's acquisition.
   This is the audit trail for every tax-relevant capital event and
   the primary input to per-month tax allocation.
 - **Failure-event log**: every unfunded required obligation emits a
   row carrying `(rollout, month, obligation_id, obligation_type,
-amount_due_usd, amount_paid_usd, shortfall_usd, attempted_funding_
+amount_due, amount_paid, shortfall, attempted_funding_
 sources)`. Failure-event rows do not retroactively delete; they
   record the moment the rollout became invalid for surviving-rollout
   metrics.
@@ -1226,7 +1226,7 @@ are not maintained alongside as separate state.
 
 - **Year-zero estimated tax: prior-year value is scenario
   configuration.** When the safe-harbor rule kicks in for year 0
-  of a simulation, the simulator uses a `prior_year_tax_usd` value
+  of a simulation, the simulator uses a `prior_year_tax` value
   that the scenario supplies as part of the agent's (or tax
   household's) tax profile. No engine-side fallback (no estimate
   from the configured ordinary income, no "skip quarterlies in year

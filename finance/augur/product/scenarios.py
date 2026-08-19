@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from more_itertools import one
 
@@ -24,6 +25,7 @@ from finance.augur.product.wire import (
     SetPrimaryResidenceEventWire,
     SetRentedFractionEventWire,
 )
+from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
 from finance.augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from finance.augur.sim.scenario import (
@@ -31,6 +33,7 @@ from finance.augur.sim.scenario import (
     Agent,
     BondHolding,
     CapitalImprovementEvent,
+    Currency,
     DistributionTaxSlice,
     FilingStatus,
     FixedAmount,
@@ -93,6 +96,12 @@ MANAGEMENT_FEE_CAUSE_ID = "management_fee"
 LEASING_FEE_CAUSE_ID = "leasing_fee"
 
 
+def _amount(value: object) -> Decimal:
+    """Make an existing exact/configured product amount explicit before sim validation."""
+
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
 def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[str, Location]:
     return {
         loc.location_id: Location(
@@ -100,7 +109,7 @@ def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[str
             display_name=loc.label,
             jurisdiction_ids=[str(r) for r in loc.local_regulation.default_tax_regimes],
             annual_property_tax_rate=float(loc.local_regulation.property_tax_annual_pct) / 100.0,
-            annual_special_assessment_usd=float(loc.local_regulation.special_assessment_annual_usd),
+            annual_special_assessment=_amount(loc.local_regulation.special_assessment_annual),
         )
         for loc in locations
     }
@@ -178,7 +187,7 @@ def build_scenario(
     scenario_key: ScenarioKey,
     *,
     primary_agent_id: str,
-    initial_cash_usd: float,
+    initial_cash: Decimal,
     initial_lots: tuple[InitialLot, ...],
     properties_by_id: dict[str, Property],
     initial_bonds: tuple[BondHolding, ...] = (),
@@ -187,16 +196,17 @@ def build_scenario(
 ) -> Scenario:
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
+    currency_quantum = scenario_key.currency_quantum
 
     agents = [
         Agent(agent_id=primary_agent_id),
         Agent(agent_id=SPEND_SINK_AGENT_ID),
         Agent(agent_id=TAX_AUTHORITY_AGENT_ID),
     ]
-    initial_cash = [
-        InitialAccountBalance(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID, balance_usd=initial_cash_usd),
-        InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance_usd=0.0),
-        InitialAccountBalance(agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance_usd=0.0),
+    initial_balances = [
+        InitialAccountBalance(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID, balance=initial_cash),
+        InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance=0),
+        InitialAccountBalance(agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance=0),
     ]
     recurring_obligations = [
         RecurringObligation(
@@ -208,17 +218,17 @@ def build_scenario(
             from_account_id=PRIMARY_ACCOUNT_ID,
             to_agent_id=SPEND_SINK_AGENT_ID,
             to_account_id=SPEND_SINK_ACCOUNT_ID,
-            amount_due_usd=_monthly_spend_amount(scenario_key),
+            amount_due=_monthly_spend_amount(scenario_key),
         )
     ]
     recurring_transfers: list[RecurringTransfer] = []
     scheduled_transfers: list[ScheduledTransfer] = []
 
-    if scenario_key.monthly_rent_usd > 0:
+    if scenario_key.monthly_rent > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
         agents.append(Agent(agent_id=LANDLORD_AGENT_ID))
-        initial_cash.append(
-            InitialAccountBalance(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID, balance_usd=0.0)
+        initial_balances.append(
+            InitialAccountBalance(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID, balance=0)
         )
         recurring_obligations.append(
             RecurringObligation(
@@ -230,8 +240,8 @@ def build_scenario(
                 from_account_id=PRIMARY_ACCOUNT_ID,
                 to_agent_id=LANDLORD_AGENT_ID,
                 to_account_id=LANDLORD_ACCOUNT_ID,
-                amount_due_usd=SeriesIndexedAmount(
-                    base_amount_usd=float(scenario_key.monthly_rent_usd),
+                amount_due=SeriesIndexedAmount(
+                    base_amount=scenario_key.monthly_rent,
                     series=RentKey(location_id=LocationId(scenario_key.rental_location_id)),
                     adjustment_period_months=12,
                 ),
@@ -249,17 +259,15 @@ def build_scenario(
     if scenario_key.property_purchase is not None:
         property_ = properties_by_id[scenario_key.property_purchase.property_id]
         agents.append(Agent(agent_id=PROPERTY_SELLER_AGENT_ID))
-        initial_cash.append(
-            InitialAccountBalance(
-                agent_id=PROPERTY_SELLER_AGENT_ID, account_id=PROPERTY_SELLER_ACCOUNT_ID, balance_usd=0.0
-            )
+        initial_balances.append(
+            InitialAccountBalance(agent_id=PROPERTY_SELLER_AGENT_ID, account_id=PROPERTY_SELLER_ACCOUNT_ID, balance=0)
         )
-        mortgage = _sim_mortgage_for(scenario_key.property_purchase, property_)
+        mortgage = _sim_mortgage_for(scenario_key.property_purchase, property_, currency_quantum=currency_quantum)
         if mortgage is not None:
             agents.append(Agent(agent_id=MORTGAGE_LENDER_AGENT_ID))
-            initial_cash.append(
+            initial_balances.append(
                 InitialAccountBalance(
-                    agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance_usd=0.0
+                    agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance=0
                 )
             )
             if scenario_key.property_purchase.is_primary_residence:
@@ -268,7 +276,11 @@ def build_scenario(
                 )
         scheduled_property_purchases.append(
             _sim_property_purchase(
-                scenario_key.property_purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage
+                scenario_key.property_purchase,
+                property_,
+                primary_agent_id=primary_agent_id,
+                mortgage=mortgage,
+                currency_quantum=currency_quantum,
             )
         )
         if scenario_key.property_purchase.is_primary_residence:
@@ -304,11 +316,9 @@ def build_scenario(
         # `property_id`, the sim reads the runtime rented fraction at settlement time so
         # mid-horizon stop/restart events resize the Schedule E share.
         property_deduction_category, property_deductible_fraction = _schedule_e_split(initial_rented_fraction)
-        if property_.hoa_monthly_usd > 0:
+        if property_.hoa_monthly > 0:
             agents.append(Agent(agent_id=HOA_AGENT_ID))
-            initial_cash.append(
-                InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance_usd=0.0)
-            )
+            initial_balances.append(InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance=0))
             recurring_obligations.append(
                 RecurringObligation(
                     start_month=0,
@@ -319,10 +329,8 @@ def build_scenario(
                     from_account_id=PRIMARY_ACCOUNT_ID,
                     to_agent_id=HOA_AGENT_ID,
                     to_account_id=HOA_ACCOUNT_ID,
-                    amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=float(property_.hoa_monthly_usd),
-                        series=InflationKey(),
-                        adjustment_period_months=1,
+                    amount_due=SeriesIndexedAmount(
+                        base_amount=_amount(property_.hoa_monthly), series=InflationKey(), adjustment_period_months=1
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
@@ -331,15 +339,18 @@ def build_scenario(
             )
         if scenario_key.annual_insurance_pct > 0:
             agents.append(Agent(agent_id=INSURER_AGENT_ID))
-            initial_cash.append(
-                InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance_usd=0.0)
+            initial_balances.append(
+                InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance=0)
             )
             effective_insurance_pct = insurance_rate(
                 base_annual_pct=float(scenario_key.annual_insurance_pct),
                 occupancy_mode=initial_occupancy_mode,
                 rented_fraction=initial_rented_fraction,
             )
-            monthly_insurance_usd = effective_insurance_pct / 100.0 * float(property_.price_usd) / 12.0
+            monthly_insurance = round_currency_amount(
+                _amount(property_.price) * _amount(effective_insurance_pct) / Decimal(100 * 12),
+                quantum=currency_quantum,
+            )
             recurring_obligations.append(
                 RecurringObligation(
                     start_month=0,
@@ -350,8 +361,8 @@ def build_scenario(
                     from_account_id=PRIMARY_ACCOUNT_ID,
                     to_agent_id=INSURER_AGENT_ID,
                     to_account_id=INSURER_ACCOUNT_ID,
-                    amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_insurance_usd, series=InflationKey(), adjustment_period_months=1
+                    amount_due=SeriesIndexedAmount(
+                        base_amount=monthly_insurance, series=InflationKey(), adjustment_period_months=1
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
@@ -360,9 +371,9 @@ def build_scenario(
             )
         if scenario_key.annual_maintenance_pct > 0:
             agents.append(Agent(agent_id=MAINTENANCE_VENDOR_AGENT_ID))
-            initial_cash.append(
+            initial_balances.append(
                 InitialAccountBalance(
-                    agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance_usd=0.0
+                    agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance=0
                 )
             )
             effective_maintenance_pct = maintenance_rate(
@@ -370,7 +381,10 @@ def build_scenario(
                 occupancy_mode=initial_occupancy_mode,
                 rented_fraction=initial_rented_fraction,
             )
-            monthly_maintenance_usd = effective_maintenance_pct / 100.0 * float(property_.price_usd) / 12.0
+            monthly_maintenance = round_currency_amount(
+                _amount(property_.price) * _amount(effective_maintenance_pct) / Decimal(100 * 12),
+                quantum=currency_quantum,
+            )
             recurring_obligations.append(
                 RecurringObligation(
                     start_month=0,
@@ -381,8 +395,8 @@ def build_scenario(
                     from_account_id=PRIMARY_ACCOUNT_ID,
                     to_agent_id=MAINTENANCE_VENDOR_AGENT_ID,
                     to_account_id=MAINTENANCE_VENDOR_ACCOUNT_ID,
-                    amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_maintenance_usd, series=InflationKey(), adjustment_period_months=1
+                    amount_due=SeriesIndexedAmount(
+                        base_amount=monthly_maintenance, series=InflationKey(), adjustment_period_months=1
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
@@ -394,9 +408,10 @@ def build_scenario(
             property_=property_,
             primary_agent_id=primary_agent_id,
             horizon_months=horizon_months,
+            currency_quantum=currency_quantum,
         )
         agents.extend(rental_wiring.agents)
-        initial_cash.extend(rental_wiring.initial_cash)
+        initial_balances.extend(rental_wiring.initial_cash)
         recurring_property_cashflows.extend(rental_wiring.recurring_property_cashflows)
         scheduled_property_cashflows.extend(rental_wiring.scheduled_property_cashflows)
 
@@ -404,11 +419,12 @@ def build_scenario(
         scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
     )
     return Scenario(
+        currency=Currency(code=scenario_key.currency_code, quantum=scenario_key.currency_quantum),
         agents=agents,
         initial_lots=list(initial_lots),
         initial_bonds=list(initial_bonds),
         security_distributions=list(security_distributions),
-        initial_cash=initial_cash,
+        initial_cash=initial_balances,
         recurring_obligations=recurring_obligations,
         recurring_transfers=recurring_transfers,
         scheduled_transfers=scheduled_transfers,
@@ -439,23 +455,23 @@ def build_scenario(
     )
 
 
-def _resolve_monthly_rent(rental: RentalIncomePlan, *, property_: Property) -> float:
+def _resolve_monthly_rent(rental: RentalIncomePlan, *, property_: Property) -> Decimal:
     """Resolve full-property gross monthly rent for a landlord rental.
 
-    User-supplied `full_property_monthly_rent_usd` wins. Otherwise fall back to the
-    deployment's `Property.rent_estimate_usd`. The caller scales the resulting full-property
+    User-supplied `full_property_monthly_rent` wins. Otherwise fall back to the
+    deployment's `Property.rent_estimate`. The caller scales the resulting full-property
     rent by `fraction_rented` and vacancy. If neither rent source is set, reject the request —
     the deployment is missing data the scenario needs.
     """
 
-    if rental.full_property_monthly_rent_usd is not None:
-        return float(rental.full_property_monthly_rent_usd)
-    if property_.rent_estimate_usd is None:
+    if rental.full_property_monthly_rent is not None:
+        return rental.full_property_monthly_rent
+    if property_.rent_estimate is None:
         raise ValueError(
-            f"property {property_.id!r} has no rent_estimate_usd and the scenario did not supply "
-            "full_property_monthly_rent_usd; one or the other is required to model rental income"
+            f"property {property_.id!r} has no rent_estimate and the scenario did not supply "
+            "full_property_monthly_rent; one or the other is required to model rental income"
         )
-    return float(property_.rent_estimate_usd)
+    return _amount(property_.rent_estimate)
 
 
 def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory | None, float]:
@@ -491,7 +507,7 @@ def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: str)
         raise TypeError("SetPrimaryResidenceEventWire is lowered separately from property lifecycle events")
     if isinstance(event, CapitalImprovementEventWire):
         return CapitalImprovementEvent(
-            month=month, property_id=property_id, amount_usd=float(event.amount_usd), description=event.description
+            month=month, property_id=property_id, amount=event.amount, description=event.description
         )
     if isinstance(event, PropertySaleEventWire):
         return PropertySaleEvent(month=month, property_id=property_id, closing_cost_pct=float(event.closing_cost_pct))
@@ -535,17 +551,22 @@ _EMPTY_LANDLORD_RENTAL_WIRING = LandlordRentalWiring(
 class _RentalCashflowSegment:
     start_month: int
     end_month: int
-    fraction_rented: float
+    fraction_rented: Decimal
 
 
 @dataclass(frozen=True)
 class _RentalCashflowTerms:
-    base_monthly_rent: float
-    vacancy_multiplier: float
+    base_monthly_rent: Decimal
+    vacancy_multiplier: Decimal
 
 
 def _wire_landlord_rental(
-    purchase: PropertyPurchase, *, property_: Property, primary_agent_id: str, horizon_months: int
+    purchase: PropertyPurchase,
+    *,
+    property_: Property,
+    primary_agent_id: str,
+    horizon_months: int,
+    currency_quantum: Decimal,
 ) -> LandlordRentalWiring:
     """Wire up tenant→owner rent + owner→agency management/leasing fees.
 
@@ -569,13 +590,15 @@ def _wire_landlord_rental(
 
     agents: list[Agent] = [Agent(agent_id=TENANT_AGENT_ID)]
     initial_cash: list[InitialAccountBalance] = [
-        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance_usd=0.0)
+        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance=0)
     ]
     recurring_property_cashflows: list[RecurringPropertyCashflow] = []
     scheduled_property_cashflows: list[ScheduledPropertyCashflow] = []
     for segment in rental_segments:
         leased_monthly_rent = base_monthly_rent * segment.fraction_rented
-        base_monthly_collected = leased_monthly_rent * vacancy_multiplier
+        base_monthly_collected = round_currency_amount(
+            leased_monthly_rent * vacancy_multiplier, quantum=currency_quantum
+        )
         recurring_property_cashflows.append(
             RecurringPropertyCashflow(
                 start_month=segment.start_month,
@@ -586,8 +609,8 @@ def _wire_landlord_rental(
                 from_account_id=TENANT_ACCOUNT_ID,
                 to_agent_id=primary_agent_id,
                 to_account_id=PRIMARY_ACCOUNT_ID,
-                amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=base_monthly_collected, series=rent_series, adjustment_period_months=12
+                amount=SeriesIndexedAmount(
+                    base_amount=base_monthly_collected, series=rent_series, adjustment_period_months=12
                 ),
                 # Rental income is ordinary income (taxed at owner's marginal bracket).
                 # §469 passive-loss limitation is explicitly deferred per the plan.
@@ -600,13 +623,15 @@ def _wire_landlord_rental(
         agents.append(Agent(agent_id=PROPERTY_MANAGEMENT_AGENT_ID))
         initial_cash.append(
             InitialAccountBalance(
-                agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance_usd=0.0
+                agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance=0
             )
         )
-        management_fee_fraction = float(management.management_fee_pct) / 100.0
+        management_fee_fraction = Decimal(str(management.management_fee_pct)) / Decimal(100)
         if management_fee_fraction > 0:
             for segment in rental_segments:
-                base_monthly_collected = base_monthly_rent * segment.fraction_rented * vacancy_multiplier
+                base_monthly_collected = round_currency_amount(
+                    base_monthly_rent * segment.fraction_rented * vacancy_multiplier, quantum=currency_quantum
+                )
                 recurring_property_cashflows.append(
                     RecurringPropertyCashflow(
                         start_month=segment.start_month,
@@ -617,8 +642,10 @@ def _wire_landlord_rental(
                         from_account_id=PRIMARY_ACCOUNT_ID,
                         to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
                         to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
-                        amount_usd=SeriesIndexedAmount(
-                            base_amount_usd=base_monthly_collected * management_fee_fraction,
+                        amount=SeriesIndexedAmount(
+                            base_amount=round_currency_amount(
+                                base_monthly_collected * management_fee_fraction, quantum=currency_quantum
+                            ),
                             series=rent_series,
                             adjustment_period_months=12,
                         ),
@@ -626,10 +653,12 @@ def _wire_landlord_rental(
                         deduction_category="ordinary",
                     )
                 )
-        leasing_fee_months_val = float(management.leasing_fee_months)
+        leasing_fee_months_val = Decimal(str(management.leasing_fee_months))
         if leasing_fee_months_val > 0:
             for segment in rental_segments:
-                leasing_fee_base = base_monthly_rent * segment.fraction_rented * leasing_fee_months_val
+                leasing_fee_base = round_currency_amount(
+                    base_monthly_rent * segment.fraction_rented * leasing_fee_months_val, quantum=currency_quantum
+                )
                 scheduled_property_cashflows.extend(
                     ScheduledPropertyCashflow(
                         month=fire_month,
@@ -639,8 +668,8 @@ def _wire_landlord_rental(
                         from_account_id=PRIMARY_ACCOUNT_ID,
                         to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
                         to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
-                        amount_usd=SeriesIndexedAmount(
-                            base_amount_usd=leasing_fee_base, series=rent_series, adjustment_period_months=12
+                        amount=SeriesIndexedAmount(
+                            base_amount=leasing_fee_base, series=rent_series, adjustment_period_months=12
                         ),
                         # Leasing fee is a Schedule E deduction against rental income.
                         deduction_category="ordinary",
@@ -661,18 +690,18 @@ def _rental_cashflow_terms(purchase: PropertyPurchase, *, property_: Property) -
     if purchase.initial_rental is not None:
         return _RentalCashflowTerms(
             base_monthly_rent=_resolve_monthly_rent(purchase.initial_rental, property_=property_),
-            vacancy_multiplier=1.0 - float(purchase.initial_rental.vacancy_pct),
+            vacancy_multiplier=Decimal(1) - Decimal(str(purchase.initial_rental.vacancy_pct)),
         )
     if not _has_positive_rented_fraction_event(purchase):
         return None
-    if property_.rent_estimate_usd is None:
+    if property_.rent_estimate is None:
         raise ValueError(
-            f"property {property_.id!r} has a future rented-fraction event but no rent_estimate_usd; "
-            "set initial_rental.full_property_monthly_rent_usd so product lowering knows full-property rent"
+            f"property {property_.id!r} has a future rented-fraction event but no rent_estimate; "
+            "set initial_rental.full_property_monthly_rent so product lowering knows full-property rent"
         )
     return _RentalCashflowTerms(
-        base_monthly_rent=float(property_.rent_estimate_usd),
-        vacancy_multiplier=1.0 - float(RentalIncomePlan().vacancy_pct),
+        base_monthly_rent=_amount(property_.rent_estimate),
+        vacancy_multiplier=Decimal(1) - Decimal(str(RentalIncomePlan().vacancy_pct)),
     )
 
 
@@ -709,7 +738,7 @@ def _rental_cashflow_segments(purchase: PropertyPurchase, *, horizon_months: int
         if isinstance(event, PropertySaleEventWire):
             return tuple(segments)
         current_start = event_month
-        current_fraction = float(event.rented_fraction)
+        current_fraction = Decimal(str(event.rented_fraction))
     if current_start <= end_month and current_fraction > 0:
         segments.append(
             _RentalCashflowSegment(start_month=current_start, end_month=end_month, fraction_rented=current_fraction)
@@ -717,29 +746,41 @@ def _rental_cashflow_segments(purchase: PropertyPurchase, *, horizon_months: int
     return tuple(segments)
 
 
-def _sim_mortgage_for(purchase: PropertyPurchase, property_: Property) -> SimMortgageFinancing | None:
+def _sim_mortgage_for(
+    purchase: PropertyPurchase, property_: Property, *, currency_quantum: Decimal
+) -> SimMortgageFinancing | None:
     if isinstance(purchase.financing, CashFinancing):
         return None
     assert isinstance(purchase.financing, MortgageFinancing)
-    principal = float(property_.price_usd) * (1.0 - purchase.financing.down_payment_pct / 100.0)
+    principal = round_currency_amount(
+        _amount(property_.price) * (Decimal(1) - _amount(purchase.financing.down_payment_pct) / Decimal(100)),
+        quantum=currency_quantum,
+    )
     return SimMortgageFinancing(
         liability_id=f"{property_.id}_mortgage",
         lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
         lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
-        principal_usd=principal,
+        principal=principal,
         annual_interest_rate=purchase.financing.annual_rate_pct / 100.0,
         term_months=purchase.financing.term_months,
     )
 
 
 def _sim_property_purchase(
-    purchase: PropertyPurchase, property_: Property, *, primary_agent_id: str, mortgage: SimMortgageFinancing | None
+    purchase: PropertyPurchase,
+    property_: Property,
+    *,
+    primary_agent_id: str,
+    mortgage: SimMortgageFinancing | None,
+    currency_quantum: Decimal,
 ) -> ScheduledPropertyPurchase:
-    purchase_price = float(property_.price_usd)
+    purchase_price = _amount(property_.price)
     if isinstance(purchase.financing, CashFinancing):
         down_payment = purchase_price
     else:
-        down_payment = purchase_price * purchase.financing.down_payment_pct / 100.0
+        down_payment = round_currency_amount(
+            purchase_price * _amount(purchase.financing.down_payment_pct) / Decimal(100), quantum=currency_quantum
+        )
     rented_fraction = _initial_rented_fraction(purchase)
     return ScheduledPropertyPurchase(
         month=0,
@@ -750,9 +791,11 @@ def _sim_property_purchase(
         buyer_account_id=PRIMARY_ACCOUNT_ID,
         seller_agent_id=PROPERTY_SELLER_AGENT_ID,
         seller_account_id=PROPERTY_SELLER_ACCOUNT_ID,
-        purchase_price_usd=purchase_price,
-        down_payment_usd=down_payment,
-        buyer_closing_cost_usd=purchase_price * float(purchase.closing_cost_pct) / 100.0,
+        purchase_price=purchase_price,
+        down_payment=down_payment,
+        buyer_closing_cost=round_currency_amount(
+            purchase_price * _amount(purchase.closing_cost_pct) / Decimal(100), quantum=currency_quantum
+        ),
         mortgage=mortgage,
         rented_fraction=rented_fraction,
         # The wire schema doesn't yet expose this knob; we use the sim default (0.20) until
@@ -760,17 +803,17 @@ def _sim_property_purchase(
     )
 
 
-def _initial_rented_fraction(purchase: PropertyPurchase) -> float:
-    return float(purchase.initial_rental.fraction_rented) if purchase.initial_rental is not None else 0.0
+def _initial_rented_fraction(purchase: PropertyPurchase) -> Decimal:
+    return Decimal(str(purchase.initial_rental.fraction_rented)) if purchase.initial_rental is not None else Decimal(0)
 
 
-def _monthly_spend_amount(scenario_key: ScenarioKey) -> float | SeriesIndexedAmount:
+def _monthly_spend_amount(scenario_key: ScenarioKey) -> Decimal | SeriesIndexedAmount:
     if scenario_key.spend_index == "inflation":
         return SeriesIndexedAmount(
-            base_amount_usd=float(scenario_key.monthly_spend_usd), series=InflationKey(), adjustment_period_months=1
+            base_amount=scenario_key.monthly_spend, series=InflationKey(), adjustment_period_months=1
         )
     if scenario_key.spend_index == "none":
-        return float(scenario_key.monthly_spend_usd)
+        return scenario_key.monthly_spend
     raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
 
@@ -805,25 +848,27 @@ def _target_allocation_policies_from_funding_policy(
             account_id=PRIMARY_ACCOUNT_ID,
             source_account_ids=tuple(dict.fromkeys(lot.account_id for lot in initial_lots if lot.asset in targeted)),
             sleeves=sleeves,
-            cash_floor_usd=_band_bound_amount(
-                float(funding_policy.cash_floor_usd), index_to_inflation=funding_policy.cash_band_index_to_inflation
+            cash_floor=_band_bound_amount(
+                funding_policy.cash_floor, index_to_inflation=funding_policy.cash_band_index_to_inflation
             ),
-            cash_ceiling_usd=_band_bound_amount(
-                float(funding_policy.cash_ceiling_usd), index_to_inflation=funding_policy.cash_band_index_to_inflation
+            cash_ceiling=_band_bound_amount(
+                funding_policy.cash_ceiling, index_to_inflation=funding_policy.cash_band_index_to_inflation
             ),
             cause_id_prefix="product_funding_sale",
         )
     ]
 
 
-def _band_bound_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount | SeriesIndexedAmount | float:
-    """Translate a UI scalar + index flag into the sim `AmountSpec`. An indexed bound tracks CPI
-    monthly (period=1) so the real-terms band stays constant; a nominal bound stays the raw
-    float."""
+def _band_bound_amount(amount: Decimal, *, index_to_inflation: bool) -> Decimal | SeriesIndexedAmount:
+    """Translate an exact configured amount + index flag into the sim `AmountSpec`.
 
-    if not index_to_inflation or usd <= 0:
-        return usd
-    return SeriesIndexedAmount(base_amount_usd=usd, series=InflationKey(), adjustment_period_months=1)
+    An indexed bound tracks CPI monthly (period=1) so the real-terms band stays constant; a
+    nominal bound remains the exact configured amount.
+    """
+
+    if not index_to_inflation or amount <= 0:
+        return amount
+    return SeriesIndexedAmount(base_amount=amount, series=InflationKey(), adjustment_period_months=1)
 
 
 def _build_private_equity_tender_policies(
@@ -837,17 +882,17 @@ def _build_private_equity_tender_policies(
     """
 
     holds_pe = any(isinstance(lot.asset, PrivateEquityAssetKey) for lot in initial_lots)
-    floor_usd = float(scenario_key.pe_tender_policy.liquid_net_worth_floor_usd)
+    floor = scenario_key.pe_tender_policy.liquid_net_worth_floor
     if not holds_pe:
         return []
-    if floor_usd > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation:
-        floor: FixedAmount | SeriesIndexedAmount = SeriesIndexedAmount(
-            base_amount_usd=floor_usd, series=InflationKey(), adjustment_period_months=1
+    if floor > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation:
+        floor_amount: FixedAmount | SeriesIndexedAmount = SeriesIndexedAmount(
+            base_amount=floor, series=InflationKey(), adjustment_period_months=1
         )
     else:
-        floor = FixedAmount(amount_usd=floor_usd)
+        floor_amount = FixedAmount(amount=floor)
     return [
         PrivateEquityTenderPolicy(
-            owner_agent_id=primary_agent_id, proceeds_account_id=PRIMARY_ACCOUNT_ID, liquid_net_worth_floor=floor
+            owner_agent_id=primary_agent_id, proceeds_account_id=PRIMARY_ACCOUNT_ID, liquid_net_worth_floor=floor_amount
         )
     ]

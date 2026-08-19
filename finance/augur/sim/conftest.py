@@ -49,7 +49,7 @@ def san_francisco_location() -> Location:
         display_name="San Francisco, CA",
         jurisdiction_ids=["federal_us", "california"],
         annual_property_tax_rate=0.01180,
-        annual_special_assessment_usd=0.0,
+        annual_special_assessment=0,
     )
 
 
@@ -60,5 +60,5 @@ def vallejo_mare_island_location() -> Location:
         display_name="Vallejo, CA — Mare Island",
         jurisdiction_ids=["federal_us", "california"],
         annual_property_tax_rate=0.0115,
-        annual_special_assessment_usd=2300.0,
+        annual_special_assessment=2300,
     )

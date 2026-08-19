@@ -23,12 +23,12 @@ function baseWith(overrides, label = "Base") {
 }
 
 test("a base with no variants encodes as ?scenarios= and round-trips", () => {
-  const search = scenarioSetToSearch(baseWith({ monthlySpendUsd: 4200 }), []);
+  const search = scenarioSetToSearch(baseWith({ monthlySpend: 4200 }), []);
   expect(search).toContain("scenarios=");
 
   const decoded = scenarioSetFromSearch(search, bootstrap);
   expect(decoded.variants).toHaveLength(0);
-  expect(decoded.base.input.monthlySpendUsd).toBe(4200);
+  expect(decoded.base.input.monthlySpend).toBe(4200);
   expect(decoded.activeId).toBe("base");
 });
 
@@ -36,26 +36,26 @@ test("a URL with no ?scenarios= decodes to a default base with no variants", () 
   const decoded = scenarioSetFromSearch("", bootstrap);
   expect(decoded.variants).toHaveLength(0);
   expect(decoded.base.label).toBe("Base");
-  expect(decoded.base.input.monthlySpendUsd).toBe(productInputDefaults(bootstrap).monthlySpendUsd);
+  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
   expect(decoded.activeId).toBe("base");
 });
 
 test("base + variants encode as ?scenarios= and round-trip base input, labels, and overrides", () => {
-  const base = baseWith({ monthlyRentUsd: 3000 }, "Rent");
-  const variants = [makeVariant("Mortgage", { financingKind: "mortgage", monthlySpendUsd: 5000 })];
+  const base = baseWith({ monthlyRent: 3000 }, "Rent");
+  const variants = [makeVariant("Mortgage", { financingKind: "mortgage", monthlySpend: 5000 })];
   const search = scenarioSetToSearch(base, variants);
   expect(search).toContain("scenarios=");
   expect(search).not.toMatch(/(^|&)s=/);
 
   const decoded = scenarioSetFromSearch(search, bootstrap);
   expect(decoded.base.label).toBe("Rent");
-  expect(decoded.base.input.monthlyRentUsd).toBe(3000);
+  expect(decoded.base.input.monthlyRent).toBe(3000);
   expect(decoded.variants).toHaveLength(1);
   expect(decoded.variants[0].label).toBe("Mortgage");
-  expect(decoded.variants[0].overrides).toMatchObject({ financingKind: "mortgage", monthlySpendUsd: 5000 });
+  expect(decoded.variants[0].overrides).toMatchObject({ financingKind: "mortgage", monthlySpend: 5000 });
   // The variant inherits the base's rent (not overridden) and applies only its own overrides.
   const resolved = resolveVariant(decoded.base.input, decoded.variants[0].overrides);
-  expect(resolved.monthlyRentUsd).toBe(3000);
+  expect(resolved.monthlyRent).toBe(3000);
   expect(resolved.financingKind).toBe("mortgage");
   expect(decoded.activeId).toBe("base");
 });
@@ -88,7 +88,7 @@ test("a variant's lifecycle-event override survives a round-trip with regenerate
 
 test("decoding caps variants at MAX_VARIANTS (untrusted hand-edited link)", () => {
   const variants = Array.from({ length: MAX_VARIANTS + 3 }, (_, index) =>
-    makeVariant(`V${index}`, { monthlySpendUsd: 1000 + index })
+    makeVariant(`V${index}`, { monthlySpend: 1000 + index })
   );
   const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), variants), bootstrap);
   expect(decoded.variants).toHaveLength(MAX_VARIANTS);
@@ -97,7 +97,7 @@ test("decoding caps variants at MAX_VARIANTS (untrusted hand-edited link)", () =
 test("a malformed ?scenarios= blob falls back to a base with no variants", () => {
   const decoded = scenarioSetFromSearch("scenarios=not-json", bootstrap);
   expect(decoded.variants).toHaveLength(0);
-  expect(decoded.base.input.monthlySpendUsd).toBe(productInputDefaults(bootstrap).monthlySpendUsd);
+  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
 });
 
 test("an unrecognized ?scenarios= version falls back to a base with no variants", () => {
@@ -110,8 +110,8 @@ test("an unrecognized ?scenarios= version falls back to a base with no variants"
 // -- Target allocation: seeding, and what reaches the wire ---------------------
 
 const SELLABLE = [
-  { symbol: "spy", label: "S&P 500", valueUsd: 900_000 },
-  { symbol: "btc", label: "Bitcoin", valueUsd: 100_000 },
+  { symbol: "spy", label: "S&P 500", valueQuanta: "900000" },
+  { symbol: "btc", label: "Bitcoin", valueQuanta: "100000" },
 ];
 
 test("an unedited target allocation seeds from what is held, not equal weights", () => {
@@ -125,7 +125,7 @@ test("an unedited target allocation seeds from what is held, not equal weights",
 
 test("a holding too small to round to one percent stays inside the target", () => {
   // Weight 0 means "never sell this", which is not what "you own a little of it" says.
-  const weights = resolveSleeveWeights(null, [...SELLABLE, { symbol: "doge", label: "Doge", valueUsd: 100 }]);
+  const weights = resolveSleeveWeights(null, [...SELLABLE, { symbol: "doge", label: "Doge", valueQuanta: "100" }]);
   expect(weights.find((sleeve) => sleeve.symbol === "doge").weight).toBe(1);
 });
 
@@ -161,11 +161,11 @@ test("the cash ceiling is never below the floor", () => {
   // The wire validator rejects an inverted band outright (it has no interior), so the editor must
   // not be able to submit one while the user is mid-edit on the floor.
   const scenario = productScenario(
-    { ...productInputDefaults(bootstrap), cashFloorUsd: 50_000, cashCeilingUsd: 10_000 },
+    { ...productInputDefaults(bootstrap), cashFloor: 50_000, cashCeiling: 10_000 },
     bootstrap,
     "m",
     12,
     SELLABLE
   );
-  expect(scenario.fundingPolicy.cashCeilingUsd).toBe(50_000);
+  expect(scenario.fundingPolicy.cashCeiling).toBe("50000");
 });

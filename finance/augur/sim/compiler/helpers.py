@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import AssetKey
-from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import FixedAmount, SeriesIndexedAmount
 
 NO_CODE = -1
@@ -123,37 +124,25 @@ class AccountSlots:
         return resolved
 
 
-def amount_arrays(
-    amount: Any, series_index_by_id: dict[LevelSeriesKey, int]
-) -> tuple[int, float, float, int, int, int]:
-    if isinstance(amount, int | float):
-        return AMOUNT_FIXED, float(amount), 0.0, NO_CODE, 0, 1
-    if isinstance(amount, FixedAmount):
-        return AMOUNT_FIXED, float(amount.amount_usd), 0.0, NO_CODE, 0, 1
-    if isinstance(amount, SeriesIndexedAmount):
-        return (
-            AMOUNT_SERIES_INDEXED,
-            0.0,
-            float(amount.base_amount_usd),
-            series_index_by_id[amount.series],
-            int(amount.base_month_index),
-            int(amount.adjustment_period_months),
-        )
-    raise TypeError(f"unsupported amount spec: {amount!r}")
-
-
-def amount_arrays_cents(
-    amount: Any, series_index_by_id: dict[LevelSeriesKey, int]
+def amount_arrays_quanta(
+    amount: Any, series_index_by_id: dict[LevelSeriesKey, int], *, currency_quantum: object
 ) -> tuple[int, np.int64, np.int64, int, int, int]:
-    if isinstance(amount, int | float):
-        return AMOUNT_FIXED, usd_to_cents(amount), np.int64(0), NO_CODE, 0, 1
+    if isinstance(amount, Decimal):
+        return AMOUNT_FIXED, currency_amount_to_quanta(amount, quantum=currency_quantum), np.int64(0), NO_CODE, 0, 1
     if isinstance(amount, FixedAmount):
-        return AMOUNT_FIXED, usd_to_cents(amount.amount_usd), np.int64(0), NO_CODE, 0, 1
+        return (
+            AMOUNT_FIXED,
+            currency_amount_to_quanta(amount.amount, quantum=currency_quantum),
+            np.int64(0),
+            NO_CODE,
+            0,
+            1,
+        )
     if isinstance(amount, SeriesIndexedAmount):
         return (
             AMOUNT_SERIES_INDEXED,
             np.int64(0),
-            usd_to_cents(amount.base_amount_usd),
+            currency_amount_to_quanta(amount.base_amount, quantum=currency_quantum),
             series_index_by_id[amount.series],
             int(amount.base_month_index),
             int(amount.adjustment_period_months),

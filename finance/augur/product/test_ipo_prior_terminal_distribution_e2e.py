@@ -39,11 +39,11 @@ _ISSUER = IssuerId("private_holding_a")
 _SCENARIO = ScenarioKey(
     model_id="current_model",
     horizon_months=24,
-    monthly_spend_usd=5_000.0,
+    monthly_spend=5000,
     spend_index="none",
     funding_policy=FundingPolicy(
-        cash_floor_usd=10_000.0,
-        cash_ceiling_usd=50_000.0,
+        cash_floor=10000,
+        cash_ceiling=50000,
         cash_band_index_to_inflation=False,
         sleeve_weights=(
             SleeveWeight(symbol="VOO", weight=1),
@@ -98,19 +98,15 @@ async def _product_for_ipo_probability(
     return make_product_service(model)
 
 
-def _private_equity_spread(product: ProductService) -> tuple[float, int]:
+def _private_equity_spread(product: ProductService) -> tuple[int, int]:
     """Terminal PE value's p10-to-p90 spread, plus the failure count."""
 
     response = product.terminal_distribution(
         TerminalDistributionRequest(
-            scenario=_SCENARIO,
-            first_seed=0,
-            rollout_count=64,
-            metric="private_equity_value_usd",
-            percentiles=(10.0, 90.0),
+            scenario=_SCENARIO, first_seed=0, rollout_count=64, metric="private_equity_value", percentiles=(10.0, 90.0)
         )
     )
-    low, high = (float(value) for value in response.terminal_metric_percentiles["value"])  # type: ignore[arg-type]
+    low, high = (int(str(value)) for value in response.terminal_metric_percentiles["value_quanta"])
     return high - low, response.failed_count
 
 

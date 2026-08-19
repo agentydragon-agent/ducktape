@@ -25,8 +25,8 @@ def _policy(**overrides: object) -> TargetAllocationPolicy:
             "agent_id": "alice",
             "account_id": "checking",
             "sleeves": [SleeveTarget(asset=_VTI, weight=3), SleeveTarget(asset=_BND, weight=1)],
-            "cash_floor_usd": 10_000.0,
-            "cash_ceiling_usd": 50_000.0,
+            "cash_floor": 10_000,
+            "cash_ceiling": 50_000,
             **overrides,
         }
     )
@@ -47,14 +47,14 @@ def test_an_inverted_band_is_rejected() -> None:
     policy relies on is exactly this check."""
 
     with pytest.raises(ValidationError, match="floor must not exceed its ceiling"):
-        _policy(cash_floor_usd=50_000.0, cash_ceiling_usd=10_000.0)
+        _policy(cash_floor=50_000, cash_ceiling=10_000)
 
 
 def test_a_negative_floor_is_rejected() -> None:
     """A negative floor would mean the agent aims to be overdrawn."""
 
     with pytest.raises(ValidationError, match="floor must not be negative"):
-        _policy(cash_floor_usd=-1.0)
+        _policy(cash_floor=-1)
 
 
 def test_the_band_is_checked_on_indexed_bounds_too() -> None:
@@ -64,8 +64,8 @@ def test_the_band_is_checked_on_indexed_bounds_too() -> None:
 
     with pytest.raises(ValidationError, match="floor must not exceed its ceiling"):
         _policy(
-            cash_floor_usd=SeriesIndexedAmount(base_amount_usd=50_000.0, series=InflationKey()),
-            cash_ceiling_usd=SeriesIndexedAmount(base_amount_usd=10_000.0, series=InflationKey()),
+            cash_floor=SeriesIndexedAmount(base_amount=50000, series=InflationKey()),
+            cash_ceiling=SeriesIndexedAmount(base_amount=10000, series=InflationKey()),
         )
 
 

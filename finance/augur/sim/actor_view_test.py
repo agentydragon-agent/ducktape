@@ -25,16 +25,16 @@ def _view(*, month: int = 6, cash_slots: tuple[int, ...] = (0, 1), lot_slots: tu
         month=jnp.asarray(month, dtype=jnp.int64),
         slots=ActorSlots(cash_slots=cash_slots, lot_slots=lot_slots, external_cash_slot=3, cash_count=4, lot_count=3),
         # Row 2 is another agent; row 3 is `rest_of_world`.
-        cash_cents=jnp.asarray([[100, 200], [10, 20], [7_000, 8_000], [-9_999, -9_999]], dtype=jnp.int64),
+        cash_quanta=jnp.asarray([[100, 200], [10, 20], [7_000, 8_000], [-9_999, -9_999]], dtype=jnp.int64),
         lot_quantity=jnp.asarray([[500, 1_000], [200, 400], [9_999, 9_999]], dtype=jnp.int64),
-        lot_cost_basis_per_unit_cents=jnp.asarray([[50, 60], [70, 80], [1, 1]], dtype=jnp.int64),
+        lot_cost_basis_per_unit_quanta=jnp.asarray([[50, 60], [70, 80], [1, 1]], dtype=jnp.int64),
         # Marked value, computed by the caller (see `build_actor_view`). Every row is
         # distinct so a slice that grabbed the wrong lot is visible; row 2 is another agent's.
-        lot_value_cents=jnp.asarray([[500, 2_000], [600, 1_600], [777, 888]], dtype=jnp.int64),
+        lot_value_quanta=jnp.asarray([[500, 2_000], [600, 1_600], [777, 888]], dtype=jnp.int64),
         lot_purchase_month=_PURCHASE_MONTH,
-        scheduled_outflow_cents=jnp.asarray([11, 22], dtype=jnp.int64),
+        scheduled_outflow_quanta=jnp.asarray([11, 22], dtype=jnp.int64),
         # Two tradable instruments, priced whether or not they are held.
-        instrument_price_cents=jnp.asarray([[100, 110], [20, 22]], dtype=jnp.int64),
+        instrument_price_quanta=jnp.asarray([[100, 110], [20, 22]], dtype=jnp.int64),
         instrument_quantity_scale=jnp.asarray([1, 100], dtype=jnp.int64),
     )
 
@@ -46,10 +46,10 @@ def test_every_field_carries_the_rollout_axis() -> None:
 
     view = _view()
 
-    assert view.cash_cents.shape == (2, 2)
-    assert view.lot_quantity.shape == view.lot_value_cents.shape == (2, 2)
-    assert view.lot_cost_basis_per_unit_cents.shape == view.lot_holding_months.shape == (2, 2)
-    assert view.scheduled_outflow_cents.shape == (2,)
+    assert view.cash_quanta.shape == (2, 2)
+    assert view.lot_quantity.shape == view.lot_value_quanta.shape == (2, 2)
+    assert view.lot_cost_basis_per_unit_quanta.shape == view.lot_holding_months.shape == (2, 2)
+    assert view.scheduled_outflow_quanta.shape == (2,)
 
 
 def test_only_the_agents_own_rows_are_visible() -> None:
@@ -58,8 +58,8 @@ def test_only_the_agents_own_rows_are_visible() -> None:
 
     view = _view()
 
-    assert [[int(x) for x in row] for row in view.cash_cents] == [[100, 200], [10, 20]]
-    assert [int(x) for x in view.total_cash_cents] == [110, 220]
+    assert [[int(x) for x in row] for row in view.cash_quanta] == [[100, 200], [10, 20]]
+    assert [int(x) for x in view.total_cash_quanta] == [110, 220]
     assert [[int(x) for x in row] for row in view.lot_quantity] == [[500, 1_000], [200, 400]]
 
 
@@ -75,7 +75,7 @@ def test_value_and_quantity_are_sliced_by_the_same_rows() -> None:
     view = _view(lot_slots=(1, 0))
 
     assert [[int(x) for x in row] for row in view.lot_quantity] == [[200, 400], [500, 1_000]]
-    assert [[int(x) for x in row] for row in view.lot_value_cents] == [[600, 1_600], [500, 2_000]]
+    assert [[int(x) for x in row] for row in view.lot_value_quanta] == [[600, 1_600], [500, 2_000]]
 
 
 def test_holding_period_is_months_since_acquisition() -> None:
@@ -98,8 +98,8 @@ def test_the_month_reaches_only_the_holding_period() -> None:
 
     early, late = _view(month=6), _view(month=7)
 
-    assert np.array_equal(np.asarray(early.lot_value_cents), np.asarray(late.lot_value_cents))
-    assert np.array_equal(np.asarray(early.cash_cents), np.asarray(late.cash_cents))
+    assert np.array_equal(np.asarray(early.lot_value_quanta), np.asarray(late.lot_value_quanta))
+    assert np.array_equal(np.asarray(early.cash_quanta), np.asarray(late.cash_quanta))
     assert not np.array_equal(np.asarray(early.lot_holding_months), np.asarray(late.lot_holding_months))
 
 
@@ -107,7 +107,7 @@ def test_sleeves_aggregate_over_view_rows() -> None:
     """Sleeve grouping indexes the VIEW's lot axis, which has already narrowed to this
     agent. Grouping by plan indices would read another agent's lots."""
 
-    sleeves = _view().sleeve_value_cents(((0,), (1,)))
+    sleeves = _view().sleeve_value_quanta(((0,), (1,)))
 
     assert [[int(x) for x in row] for row in sleeves] == [[500, 2_000], [600, 1_600]]
     assert [int(x) for x in sleeves.sum(axis=0)] == [1_100, 3_600]
@@ -147,7 +147,7 @@ def test_an_agent_with_no_lots_still_produces_a_well_shaped_view() -> None:
     view = _view(lot_slots=())
 
     assert view.lot_quantity.shape == (0, 2)
-    assert [int(x) for x in view.total_cash_cents] == [110, 220]
+    assert [int(x) for x in view.total_cash_quanta] == [110, 220]
 
 
 if __name__ == "__main__":

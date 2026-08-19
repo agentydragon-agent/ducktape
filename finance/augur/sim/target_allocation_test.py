@@ -15,7 +15,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
-from finance.augur.sim.target_allocation import SleeveOrders, SleeveUniverse, _quanta_for_cents, decide
+from finance.augur.sim.target_allocation import SleeveOrders, SleeveUniverse, _quanta_for_quanta, decide
 
 _PURCHASE_MONTH = np.asarray([0, 0], dtype=np.int64)
 # Sleeve 0 is worth 900 cents and sleeve 1 is worth 100, against equal weights — so sleeve 0
@@ -30,15 +30,15 @@ def _view(*, funding_cash: int, other_cash: int = 50_000, outflow: int = 0):
     return build_actor_view(
         month=jnp.asarray(3, dtype=jnp.int64),
         slots=ActorSlots(cash_slots=(0, 1), lot_slots=(0, 1), external_cash_slot=2, cash_count=2, lot_count=2),
-        cash_cents=jnp.asarray([[funding_cash], [other_cash]], dtype=jnp.int64),
+        cash_quanta=jnp.asarray([[funding_cash], [other_cash]], dtype=jnp.int64),
         lot_quantity=jnp.asarray(_QUANTITY, dtype=jnp.int64),
-        lot_cost_basis_per_unit_cents=jnp.asarray([[50], [50]], dtype=jnp.int64),
-        lot_value_cents=jnp.asarray(_VALUE, dtype=jnp.int64),
+        lot_cost_basis_per_unit_quanta=jnp.asarray([[50], [50]], dtype=jnp.int64),
+        lot_value_quanta=jnp.asarray(_VALUE, dtype=jnp.int64),
         lot_purchase_month=_PURCHASE_MONTH,
-        scheduled_outflow_cents=jnp.asarray([outflow], dtype=jnp.int64),
+        scheduled_outflow_quanta=jnp.asarray([outflow], dtype=jnp.int64),
         # A cent a quantum, so an order's quanta and the cents it raises read the same and the
-        # composition stays hand-checkable. `_quanta_for_cents` is exercised on its own below.
-        instrument_price_cents=jnp.asarray([[1], [1]], dtype=jnp.int64),
+        # composition stays hand-checkable. `_quanta_for_quanta` is exercised on its own below.
+        instrument_price_quanta=jnp.asarray([[1], [1]], dtype=jnp.int64),
         instrument_quantity_scale=jnp.asarray([1, 1], dtype=jnp.int64),
     )
 
@@ -55,8 +55,8 @@ def _act(
     return decide(
         view=_view(funding_cash=funding_cash, other_cash=other_cash, outflow=outflow),
         universe=_UNIVERSE,
-        floor_cents=jnp.asarray([floor], dtype=jnp.int64),
-        ceiling_cents=jnp.asarray([ceiling], dtype=jnp.int64),
+        floor_quanta=jnp.asarray([floor], dtype=jnp.int64),
+        ceiling_quanta=jnp.asarray([ceiling], dtype=jnp.int64),
         rebalance_tolerance=rebalance_tolerance,
     )
 
@@ -152,18 +152,18 @@ def test_rollouts_are_decided_independently() -> None:
         view=build_actor_view(
             month=jnp.asarray(3, dtype=jnp.int64),
             slots=ActorSlots(cash_slots=(0,), lot_slots=(0, 1), external_cash_slot=1, cash_count=1, lot_count=2),
-            cash_cents=jnp.asarray([[50, 5_000]], dtype=jnp.int64),
+            cash_quanta=jnp.asarray([[50, 5_000]], dtype=jnp.int64),
             lot_quantity=jnp.asarray([[900, 900], [100, 100]], dtype=jnp.int64),
-            lot_cost_basis_per_unit_cents=jnp.asarray([[50, 50], [50, 50]], dtype=jnp.int64),
-            lot_value_cents=jnp.asarray([[900, 900], [100, 100]], dtype=jnp.int64),
+            lot_cost_basis_per_unit_quanta=jnp.asarray([[50, 50], [50, 50]], dtype=jnp.int64),
+            lot_value_quanta=jnp.asarray([[900, 900], [100, 100]], dtype=jnp.int64),
             lot_purchase_month=_PURCHASE_MONTH,
-            scheduled_outflow_cents=jnp.asarray([0, 0], dtype=jnp.int64),
-            instrument_price_cents=jnp.asarray([[1, 1], [1, 1]], dtype=jnp.int64),
+            scheduled_outflow_quanta=jnp.asarray([0, 0], dtype=jnp.int64),
+            instrument_price_quanta=jnp.asarray([[1, 1], [1, 1]], dtype=jnp.int64),
             instrument_quantity_scale=jnp.asarray([1, 1], dtype=jnp.int64),
         ),
         universe=_UNIVERSE,
-        floor_cents=jnp.asarray([100, 100], dtype=jnp.int64),
-        ceiling_cents=jnp.asarray([1_000, 1_000], dtype=jnp.int64),
+        floor_quanta=jnp.asarray([100, 100], dtype=jnp.int64),
+        ceiling_quanta=jnp.asarray([1_000, 1_000], dtype=jnp.int64),
     )
 
     assert [int(x) for x in actions.sell_quanta.sum(axis=0)] == [950, 0]
@@ -175,7 +175,7 @@ def test_the_policy_traces_under_jit() -> None:
     separately. `universe` is closed over, exactly as the engine will hold it."""
 
     decided = jax.jit(
-        lambda view, floor, ceiling: decide(view=view, universe=_UNIVERSE, floor_cents=floor, ceiling_cents=ceiling)
+        lambda view, floor, ceiling: decide(view=view, universe=_UNIVERSE, floor_quanta=floor, ceiling_quanta=ceiling)
     )(_view(funding_cash=50), jnp.asarray([100], dtype=jnp.int64), jnp.asarray([1_000], dtype=jnp.int64))
 
     assert [int(x) for x in decided.sell_quanta[:, 0]] == [875, 75]
@@ -197,11 +197,11 @@ def test_weights_and_sleeves_must_agree() -> None:
 # -- Pricing an order ----------------------------------------------------------------------
 
 
-def _quanta(cents: int, price_cents: int, scale: int, round_up: bool = True) -> int:
+def _quanta(cents: int, price_quanta: int, scale: int, round_up: bool = True) -> int:
     return int(
-        _quanta_for_cents(
+        _quanta_for_quanta(
             cents=jnp.asarray([[cents]], dtype=jnp.int64),
-            unit_price_cents=jnp.asarray([[price_cents]], dtype=jnp.int64),
+            unit_price_quanta=jnp.asarray([[price_quanta]], dtype=jnp.int64),
             quantity_scale=jnp.asarray([[scale]], dtype=jnp.int64),
             round_up=round_up,
         )[0, 0]
@@ -215,35 +215,35 @@ def test_an_order_is_never_a_quantum_short_of_the_ask() -> None:
     Under a zero-width band that cent is not cosmetic: the raise IS the shortfall, so an
     obligation goes unpaid and the rollout fails for an arithmetic artifact."""
 
-    assert _quanta(cents=10, price_cents=3, scale=1) == 4
-    assert _quanta(cents=9, price_cents=3, scale=1) == 3
+    assert _quanta(cents=10, price_quanta=3, scale=1) == 4
+    assert _quanta(cents=9, price_quanta=3, scale=1) == 3
 
 
 @pytest.mark.parametrize("scale", [1, 100, 100_000_000])
-@pytest.mark.parametrize("price_cents", [1, 7, 333, 5_000_000])
-def test_an_order_covers_its_ask_across_scales_and_prices(scale: int, price_cents: int) -> None:
+@pytest.mark.parametrize("price_quanta", [1, 7, 333, 5_000_000])
+def test_an_order_covers_its_ask_across_scales_and_prices(scale: int, price_quanta: int) -> None:
     """Swept rather than spot-checked. Whether a division lands exactly depends on the
     (price, scale) pair, so a single example proves nothing about the rest — which is how an
     earlier version of this arithmetic passed inspection while undershooting."""
 
     for cents in (1, 999, 1_000_000, 123_456_789):
-        quanta = _quanta(cents=cents, price_cents=price_cents, scale=scale)
+        quanta = _quanta(cents=cents, price_quanta=price_quanta, scale=scale)
         # What the engine will pay for those quanta, by its own valuation.
-        assert quanta * price_cents / scale >= cents, f"{cents=} {price_cents=} {scale=}"
+        assert quanta * price_quanta / scale >= cents, f"{cents=} {price_quanta=} {scale=}"
 
 
 def test_an_unpriceable_sleeve_orders_nothing() -> None:
     """A sleeve with no modeled price series reads price 0. Unpriceable is not free: dividing
     by it would either explode or hand over an unbounded quantity for nothing."""
 
-    assert _quanta(cents=1_000, price_cents=0, scale=1) == 0
+    assert _quanta(cents=1_000, price_quanta=0, scale=1) == 0
 
 
 def test_a_zero_ask_orders_nothing_however_it_is_priced() -> None:
     """Ceiling division turns any positive numerator into at least one quantum, so a zero ask
     has to be special-cased or every quiet month would trade a single share."""
 
-    assert _quanta(cents=0, price_cents=12_345, scale=1) == 0
+    assert _quanta(cents=0, price_quanta=12_345, scale=1) == 0
 
 
 def test_a_purchase_never_spends_more_than_it_was_given() -> None:
@@ -251,24 +251,24 @@ def test_a_purchase_never_spends_more_than_it_was_given() -> None:
     are the cents ABOVE the floor the policy is keeping; buying a 4th unit at 3 cents to place a
     10-cent deposit spends 12, and the 2 cents come out of the floor the band just promised."""
 
-    assert _quanta(cents=10, price_cents=3, scale=1, round_up=False) == 3
-    assert _quanta(cents=9, price_cents=3, scale=1, round_up=False) == 3
+    assert _quanta(cents=10, price_quanta=3, scale=1, round_up=False) == 3
+    assert _quanta(cents=9, price_quanta=3, scale=1, round_up=False) == 3
 
 
 @pytest.mark.parametrize("scale", [1, 100, 100_000_000])
-@pytest.mark.parametrize("price_cents", [1, 7, 333, 5_000_000])
-def test_a_purchase_stays_within_budget_across_scales_and_prices(scale: int, price_cents: int) -> None:
+@pytest.mark.parametrize("price_quanta", [1, 7, 333, 5_000_000])
+def test_a_purchase_stays_within_budget_across_scales_and_prices(scale: int, price_quanta: int) -> None:
     """Swept for the same reason the sell side is: whether the division lands exactly depends on
     the (price, scale) pair, and overspending by a quantum at a five-figure unit price is a
     four-figure overdraft."""
 
     for cents in (1, 999, 1_000_000, 123_456_789):
-        quanta = _quanta(cents=cents, price_cents=price_cents, scale=scale, round_up=False)
-        assert quanta * price_cents / scale <= cents, f"{cents=} {price_cents=} {scale=}"
+        quanta = _quanta(cents=cents, price_quanta=price_quanta, scale=scale, round_up=False)
+        assert quanta * price_quanta / scale <= cents, f"{cents=} {price_quanta=} {scale=}"
 
 
 def test_an_unpriceable_sleeve_buys_nothing() -> None:
-    assert _quanta(cents=1_000, price_cents=0, scale=1, round_up=False) == 0
+    assert _quanta(cents=1_000, price_quanta=0, scale=1, round_up=False) == 0
 
 
 # -- Rebalancing on drift alone ------------------------------------------------------------

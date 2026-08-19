@@ -66,7 +66,7 @@ def _wait_for_product_chart_geometry(page: Page) -> None:
     page.wait_for_function(
         """
         () => {
-          const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
+          const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
           if (!chart) return false;
           // Horizon is now driven by the wheel/`?h=`, not an input. Use the chart's own rightmost
           // "N yr" tick as the final-year marker whose geometry must have settled within bounds.
@@ -139,13 +139,13 @@ def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
     page.wait_for_function(
         """
         () => {
-          const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
+          const chart = document.querySelector("[data-product-fan-chart='netWorthQuanta'] svg[role='img']");
           if (!chart) return false;
           const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
             const points = (polygon.getAttribute("points") || "")
@@ -234,7 +234,7 @@ def _wait_for_distribution_failures(page: Page) -> None:
     chart's red failure markers render."""
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     _wait_for_terminal_distribution_density(page, min_series=1)
     page.locator("[data-product-distribution-failed]").first.wait_for(state="visible", timeout=30_000)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
@@ -272,7 +272,7 @@ _PROPERTY_LIFECYCLE_SCENARIOS = {
             "propertyId": "location_a_property",
             "propertyLifecycleEvents": [
                 {"kind": "set_rented_fraction", "month": 24, "rentedFractionPct": 50},
-                {"kind": "capital_improvement", "month": 60, "amountUsd": 50000},
+                {"kind": "capital_improvement", "month": 60, "amount": 50000},
                 {"kind": "property_sale", "month": 120, "closingCostPct": 6},
             ],
         },
@@ -290,7 +290,7 @@ _PROPERTY_LIFECYCLE_URL = "/product?" + urlencode({"scenarios": json.dumps(_PROP
 # URL-encoded `?scenarios=` param.
 _COMPARISON_SCENARIOS = {
     "v": 2,
-    "base": {"label": "Rent", "input": {"monthlyRentUsd": 3000}},
+    "base": {"label": "Rent", "input": {"monthlyRent": 3000}},
     "variants": [
         {
             "label": "Buy A",
@@ -298,7 +298,7 @@ _COMPARISON_SCENARIOS = {
                 "propertyId": "location_a_property",
                 "financingKind": "mortgage",
                 "livesHere": True,
-                "monthlyRentUsd": 0,
+                "monthlyRent": 0,
             },
         },
         {
@@ -307,7 +307,7 @@ _COMPARISON_SCENARIOS = {
                 "propertyId": "location_b_property",
                 "financingKind": "mortgage",
                 "livesHere": True,
-                "monthlyRentUsd": 0,
+                "monthlyRent": 0,
             },
         },
     ],
@@ -318,13 +318,13 @@ _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_S
 # fixture portfolio so weaker-market paths exhaust cash and holdings before the 10y horizon, while
 # stronger-market paths survive. This is the only fixture with a non-zero failure rate, so it
 # exercises the distribution chart's failed-rollout markers (red dots, pinned at the frozen-to-0
-# terminal value). `cashCeilingUsd` is raised so each crossing of the floor refills a chunk large
+# terminal value). `cashCeiling` is raised so each crossing of the floor refills a chunk large
 # enough to keep funding ahead of spend — a bust then means holdings genuinely ran out, which is
 # market-path-dependent (hence partial). The target allocation is left unset, so it seeds from the
 # fixture holdings and every sellable position can fund the band.
 _FAILURE_SCENARIOS = {
     "v": 2,
-    "base": {"label": "Aggressive drawdown", "input": {"monthlySpendUsd": 9000, "cashCeilingUsd": 40000}},
+    "base": {"label": "Aggressive drawdown", "input": {"monthlySpend": 9000, "cashCeiling": 40000}},
     "variants": [],
 }
 _FAILURE_URL = "/product?" + urlencode({"scenarios": json.dumps(_FAILURE_SCENARIOS), "h": "120"})
@@ -337,7 +337,7 @@ def _wait_for_scenario_comparison(page: Page) -> None:
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
     # The editor spreadsheet shows Base + the two variants as columns (rows = knobs), including the

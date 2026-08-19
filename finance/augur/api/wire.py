@@ -7,13 +7,14 @@ deployment `Config` by `augur.api.catalog`."""
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import Field, PositiveInt
 
 from finance.augur.api.local_regulation import LocalRegulation
-from finance.augur.api.schemas import ApiModel
+from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
 
 PropertyId = str
 
@@ -44,14 +45,14 @@ class Property(ApiModel):
     address: str
     neighborhood: str
     type: str
-    price_usd: float
-    rent_estimate_usd: float | None = None
+    price: PositiveCurrencyAmount
+    rent_estimate: NonNegativeCurrencyAmount | None = None
     beds: float
     baths: float
     sqft: float
     year_built: int
-    hoa_monthly_usd: float = 0
-    annual_tax_on_list_usd: float | None = None
+    hoa_monthly: NonNegativeCurrencyAmount = Decimal(0)
+    annual_tax_on_list: NonNegativeCurrencyAmount | None = None
     source_url: str | None = None
     image_url: str | None = None
     notes: str = Field(
@@ -75,14 +76,14 @@ class ProductInputDefaults(ApiModel):
     horizon_months: PositiveInt | None = None
     rollout_count: PositiveInt | None = None
     first_seed: int | None = None
-    monthly_spend_usd: float | None = None
+    monthly_spend: PositiveCurrencyAmount | None = None
     spend_index: Literal["inflation", "none"] | None = None
-    cash_floor_usd: float | None = None
-    cash_ceiling_usd: float | None = None
+    cash_floor: NonNegativeCurrencyAmount | None = None
+    cash_ceiling: NonNegativeCurrencyAmount | None = None
     cash_band_index_to_inflation: bool | None = None
-    pe_lnw_floor_usd: float | None = None
+    pe_lnw_floor: NonNegativeCurrencyAmount | None = None
     pe_index_floor_to_inflation: bool | None = None
-    monthly_rent_usd: float | None = None
+    monthly_rent: NonNegativeCurrencyAmount | None = None
     rental_location_id: str | None = None
     property_id: str | None = None
     lives_here: bool | None = None
@@ -92,7 +93,7 @@ class ProductInputDefaults(ApiModel):
     annual_rate_pct: float | None = None
     annual_insurance_pct: float | None = None
     annual_maintenance_pct: float | None = None
-    rental_full_property_monthly_usd: float | None = None
+    rental_full_property_monthly: NonNegativeCurrencyAmount | None = None
     rental_fraction_rented_pct: float | None = None
     rental_vacancy_pct: float | None = None
     use_rental_management: bool | None = None

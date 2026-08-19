@@ -25,16 +25,16 @@ from typing import Protocol, Self
 
 # What the simulation emits directly, before any metric is derived from another.
 BASE_METRIC_NAMES = (
-    "cash_usd",
-    "holding_value_usd",
-    "private_equity_value_usd",
-    "property_value_usd",
-    "mortgage_balance_usd",
-    "shortfall_usd",
-    "bond_value_usd",
+    "cash_quanta",
+    "holding_value_quanta",
+    "private_equity_value_quanta",
+    "property_value_quanta",
+    "mortgage_balance_quanta",
+    "shortfall_quanta",
+    "bond_value_quanta",
 )
 
-DERIVED_METRIC_NAMES = ("home_equity_usd", "liquid_net_worth_usd", "net_worth_usd")
+DERIVED_METRIC_NAMES = ("home_equity_quanta", "liquid_net_worth_quanta", "net_worth_quanta")
 
 METRIC_NAMES = (*BASE_METRIC_NAMES, *DERIVED_METRIC_NAMES)
 
@@ -57,20 +57,20 @@ def compose_metric[T: MetricValue](name: str, base: Callable[[str], T]) -> T:
     """
 
     match name:
-        case "home_equity_usd":
-            return base("property_value_usd") - base("mortgage_balance_usd")
-        case "liquid_net_worth_usd":
+        case "home_equity_quanta":
+            return base("property_value_quanta") - base("mortgage_balance_quanta")
+        case "liquid_net_worth_quanta":
             # Excludes private equity AND bonds by design. PE is saleable only at sparse
             # tender events; a bond held to maturity is never marked and never sold. Neither
             # is "cash you could get tomorrow", which is what this metric means — and the
             # PrivateEquityTenderPolicy floor reads it with exactly that meaning.
-            return base("cash_usd") + base("holding_value_usd")
-        case "net_worth_usd":
+            return base("cash_quanta") + base("holding_value_quanta")
+        case "net_worth_quanta":
             return (
-                compose_metric("liquid_net_worth_usd", base)
-                + compose_metric("home_equity_usd", base)
-                + base("private_equity_value_usd")
-                + base("bond_value_usd")
+                compose_metric("liquid_net_worth_quanta", base)
+                + compose_metric("home_equity_quanta", base)
+                + base("private_equity_value_quanta")
+                + base("bond_value_quanta")
             )
         case _ if name in BASE_METRIC_NAMES:
             return base(name)
