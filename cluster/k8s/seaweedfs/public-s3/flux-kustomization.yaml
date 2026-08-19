@@ -12,10 +12,9 @@ spec:
     kind: GitRepository
     name: ducktape
     # Gate on Bucket CRs managed in this repo that the public identities target.
-    # claude-reader also reads attic and listing-monitor-captures,
-    # which already exist (and for gaffer-side buckets are reconciled from a
-    # different repo) — SeaweedFS tolerates bucket-scoped read actions for buckets
-    # it doesn't manage, so they are not gated here.
+    # claude-reader retains its remaining cross-bucket static policy for
+    # external/public-gateway compatibility; its eventual native-policy migration
+    # is tracked separately.
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
