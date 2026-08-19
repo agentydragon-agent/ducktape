@@ -41,6 +41,13 @@ def test_export_schema_emits_openapi_with_components() -> None:
         doc["paths"][path]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
         for path in ("/api/product/projections/metric_fan", "/api/product/projections/terminal_distribution")
     }
+    assert "/api/product/projections/summary" in paths
+    assert (
+        doc["paths"]["/api/product/projections/summary"]["post"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]["$ref"]
+        == "#/components/schemas/ProductProjectionRequest"
+    )
     assert request_schema_refs == {"#/components/schemas/ProjectionSamplingRequest"}
     assert "MetricFanRequest" not in doc["components"]["schemas"]
     assert "TerminalDistributionRequest" not in doc["components"]["schemas"]

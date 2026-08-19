@@ -56,6 +56,7 @@ from finance.augur.product.wire import (
     OutsideRentPaymentEvent,
     PrivateEquityMarkerEvent,
     PrivateEquityOpportunityEvent,
+    ProductProjectionRequest,
     ProjectionSamplingRequest,
     PropertyMaintenancePaymentEvent,
     PropertyPurchase,
@@ -537,6 +538,40 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
         "value_quanta": [_usd_quanta(value) for value in [10_000.0, 20_000.0, 30_000.0]],
         "failed": [False, False, False],
     }
+
+
+def test_combined_product_projection_runs_shared_reducer_once(
+    product: service.ProductService,
+    counting_model: CountingModel,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario_key: ScenarioKey,
+) -> None:
+    original = service.run_jax_product_summaries
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "run_jax_product_summaries", counted)
+
+    response = product.projection_summary(
+        ProductProjectionRequest(
+            scenario=scenario_key,
+            first_seed=7,
+            rollout_count=2,
+            metric="cash",
+            fan_percentiles=(5, 50, 95),
+            terminal_percentiles=(0, 50, 100),
+        )
+    )
+
+    assert calls == 1
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert response.metric_fan.metric == "cash"
+    assert response.terminal_distribution.metric == "cash"
+    assert response.terminal_distribution.terminal_metric_samples["seed"] == [7, 8]
 
 
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(

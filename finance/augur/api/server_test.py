@@ -181,6 +181,21 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "failed": [False, False],
     }
 
+    combined = _post_json(
+        server_url,
+        "/api/product/projections/summary",
+        {
+            "scenario": scenario,
+            "first_seed": 7,
+            "rollout_count": 2,
+            "metric": "cash",
+            "fan_percentiles": [0, 50, 100],
+            "terminal_percentiles": [0, 1, 2, 50, 100],
+        },
+    )
+    assert combined["metric_fan"] == fan
+    assert combined["terminal_distribution"] == terminal_distribution
+
     holding_fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",

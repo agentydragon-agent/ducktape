@@ -11,6 +11,8 @@ import {
   zDeploymentInfo,
   zMetricFanResponse,
   zProductPortfolioResponse,
+  zProductProjectionRequest,
+  zProductProjectionResponse,
   zProjectionSamplingRequest,
   zRolloutRequest,
   zRolloutResponse,
@@ -135,6 +137,16 @@ export function fetchProductTerminalDistribution(terminalDistributionRequest, { 
     zProjectionSamplingRequest,
     zTerminalDistributionResponse,
     terminalDistributionRequest,
+    signal
+  );
+}
+
+export function fetchProductProjectionSummary(projectionSummaryRequest, { signal }: FetchOptions = {}) {
+  return apiPost(
+    "/api/product/projections/summary",
+    zProductProjectionRequest,
+    zProductProjectionResponse,
+    projectionSummaryRequest,
     signal
   );
 }

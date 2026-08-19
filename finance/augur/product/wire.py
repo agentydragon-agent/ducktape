@@ -325,6 +325,21 @@ class RolloutRequest(ApiModel):
     seed: NonNegativeInt
 
 
+class ProductProjectionRequest(ApiModel):
+    """Request both product projections for one shared scenario and seed batch."""
+
+    scenario: ScenarioKey
+    first_seed: NonNegativeInt
+    rollout_count: PositiveInt
+    metric: MetricName
+    fan_percentiles: tuple[Percentage, ...] = Field(min_length=1)
+    terminal_percentiles: tuple[Percentage, ...] = Field(min_length=1)
+
+    @property
+    def rollout_seeds(self) -> tuple[int, ...]:
+        return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
+
+
 class TerminalMetrics(ApiModel):
     cash_quanta: CurrencyQuanta
     holding_value_quanta: CurrencyQuanta
@@ -580,6 +595,13 @@ class TerminalDistributionResponse(ApiModel):
     terminal_metric_samples: Frame
     failed_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()
+
+
+class ProductProjectionResponse(ApiModel):
+    """Both product projection payloads, produced from one simulation batch."""
+
+    metric_fan: MetricFanResponse
+    terminal_distribution: TerminalDistributionResponse
 
 
 class RolloutResponse(ApiModel):
