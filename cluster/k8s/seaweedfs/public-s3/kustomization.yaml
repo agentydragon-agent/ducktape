@@ -18,9 +18,9 @@ resources:
   # and declares its authorization policy. The SOPS Secret remains for the
   # external Claude web-session delivery path, not the public gateway config.
   - claude-reader-iam.yaml
-  # ESO assembles these into one gateway config; Reloader rolls the
-  # deployment when it changes (cluster-wide autoReloadAll).
-  - s3-config-externalsecret.yaml
+  # Credentialed tenants are native IAM; the remaining anonymous read rule is
+  # public bootstrap configuration and needs no Secret or external provider.
+  - bootstrap-config.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
