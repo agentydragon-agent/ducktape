@@ -20,6 +20,21 @@ reviewed configuration change; it is not an unscoped runtime default.
 
 The index is derived state: it can be thrown away and rebuilt from git and Postgres at any time.
 
+## Source materialization and embedding are separate stages
+
+Git and chat sweeps own their source-specific work: they chunk changed source material, write the
+occurrence rows that preserve provenance, and insert the normalized strings into global
+`contents`. They never wait for an embedding endpoint. `contents` is consequently the durable,
+content-addressed queue shared by every source and logical index.
+
+One independent embedding maintenance loop then selects content that lacks a vector for the active
+`model_key`, sends bounded batches to the configured provider, and writes
+`content_embeddings`. Search joins source occurrences through that model-specific table, so a
+materialized chunk becomes searchable only after its vector arrives. A model change does not
+re-fetch or re-chunk Git/chat sources: the worker drains the same global content queue for the new
+model. Status distinguishes current source chunks, embedded chunks, and pending chunks so a
+partial result cannot be mistaken for an up-to-date empty corpus.
+
 ## Design
 
 The index has globally-addressed semantic content plus index-type-specific occurrences:
@@ -91,18 +106,16 @@ content address, which is why an identical embedding input can be shared across 
 Search joins `git_tip` to `git_chunks`, then to `contents` and `content_embeddings`, so
 content that is no longer at the branch tip is unreachable **by construction**, not by a delete
 pass someone has to remember to run. History is never indexed — only `git ls-tree -r <tip>` is. A
-sync publishes that tip in one transaction: a run that dies halfway — embedder gone, connection
-lost — leaves the previous tip searchable rather than a half-swapped one; `test_sync.py` asserts
-this.
+sync publishes that tip in one transaction: a source-stage failure leaves the previous tip in
+place rather than a half-swapped one. Embedding failures happen after this source publication and
+are surfaced as pending chunks instead; `test_sync.py` asserts both boundaries.
 
-**Embeddings commit as they are computed; the tip swap is the atomic step.** A first sync of a
-repository this size is minutes of embedding, and as one transaction it could only finish or lose
-everything — against an endpoint that occasionally fails a call, that is a run which starts over
-forever and never commits (observed in production, 2026-08-15: mirror cloned, `git_tip` empty for
-half an hour, no error logged). Content embeddings are unreachable until `git_tip` names their
-source occurrences, so committing them early is invisible to searches and makes a retry resume:
-the next attempt finds the durable `(content_sha, model_key)` rows and pays only for what is left.
-`test_sync.py` asserts both halves — the work survives, and the half-indexed tip is not published.
+**The tip swap is the source atomic step.** A Git sweep writes source chunks and swaps the tip in
+one transaction, so a source failure leaves the previous tree visible. It does not call the
+embedding provider. After that commit, the shared embedding worker fills vectors in bounded,
+independently committed batches; a provider failure leaves the new tip and its pending content
+visible to status, then a later worker retry resumes. Search sees only the subset whose vectors
+exist for its active model.
 
 A sync whose commit and regime already match what `git_sync_state` records returns
 `AlreadyCurrent` without touching git or the tables, so it costs one `SELECT`. That is what lets
@@ -123,8 +136,8 @@ The unit of skipping is a session: one grouped scan gets every session's message
 message, and a session that matches what `chat_sessions` recorded under the same regime is never
 read. A session that has changed is re-windowed **wholesale**, because its trailing window changes
 shape as it grows and appending would leave a stale partial window searchable beside the one that
-supersedes it. Re-windowing is nearly free when it produces content already embedded by the active
-model.
+supersedes it. Re-windowing is nearly free when it produces content already present in the global
+content queue; the shared worker decides later whether that content still needs a vector.
 
 **Two differences from the git corpus are worth knowing, because they are weaker properties:**
 
@@ -224,12 +237,14 @@ export HAKU_STATE_INDEX_DATABASE_URL=postgresql+asyncpg://postgres:x@localhost:5
 bb run //haku/recall_index:main -- index-git haku-state haku-state-git \
     https://git.allegedly.works/haku/haku-state \
     --mirror /tmp/haku-state.git --username haku --password "$FORGEJO_TOKEN"
+bb run //haku/recall_index:main -- embed
 bb run //haku/recall_index:main -- query-git haku-state "how do I file an intake item"
 bb run //haku/recall_index:main -- status haku-state git
 ```
 
-`index-git` is idempotent and incremental: re-running it after new commits embeds only blobs it
-has never seen.
+`index-git` is idempotent and incremental: re-running it after new commits materializes only
+previously unseen source blobs. `embed` then drains the shared content queue for the selected
+model.
 
 A configured chat index reads the console's own tables, so `index-chat` wants a database that has
 them — the console's, or a restored copy of it. There is no repository to clone and no credential
@@ -237,6 +252,7 @@ to pass:
 
 ```bash
 bb run //haku/recall_index:main -- index-chat haku-conversations console-session-messages
+bb run //haku/recall_index:main -- embed
 bb run //haku/recall_index:main -- query-chat haku-conversations "what did we decide about the egress fence"
 bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --session-id 0e4b…
 ```
@@ -310,8 +326,8 @@ bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --sess
   **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
   the common case — nothing moved — costs almost nothing and can be asked often. The gate is
   `sync.is_current`, the same predicate the sync itself early-outs on, because it must compare the
-  whole regime: a new embedding model has to re-index a tip that never moved, and a commit-only
-  comparison would skip it forever.
+  source regime: a chunker change has to re-materialize a tip that never moved, while a new
+  embedding model is handled independently by the shared worker's model-specific queue.
 
   **A chat session is left to settle before it is indexed.** A changed session is re-windowed
   wholesale, so indexing one mid-exchange re-chunks its whole tail and the next turn does it

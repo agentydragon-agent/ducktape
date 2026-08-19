@@ -15,6 +15,7 @@ from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, SessionS
 from haku.console.database_schema import Base as ConsoleBase, Conversation, ConversationItem, Operator, Session
 from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
+from haku.recall_index.embedding_sync import embed_pending
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.query import query_chat
 from haku.recall_index.schema import ChatChunk, ContentEmbedding, IndexType
@@ -121,12 +122,21 @@ _SETTLED = _NOW + datetime.timedelta(hours=1)
 _CHAT_INDEX = "test-chat"
 
 
+async def embed_all(session: AsyncSession, embedder: FakeEmbedder) -> int:
+    total = 0
+    while (report := await embed_pending(session, embedder=embedder)).contents_embedded:
+        total += report.contents_embedded
+        await session.commit()
+    return total
+
+
 async def run_sync(
     session: AsyncSession, embedder: FakeEmbedder, *, index_id: str = _CHAT_INDEX, now: datetime.datetime = _SETTLED
 ) -> ChatSyncReport:
     await register_index(session, index_id, index_type=IndexType.CHAT)
-    report = await sync_chat(session, index_id=index_id, embedder=embedder, now=now)
+    report = await sync_chat(session, index_id=index_id, now=now)
     await session.commit()
+    await embed_all(session, embedder)
     return report
 
 
@@ -195,7 +205,7 @@ async def test_an_unchanged_session_is_not_re_indexed(
     await run_sync(chat_source, embedder)
 
     again = await run_sync(chat_source, embedder)
-    assert (again.sessions_indexed, again.sessions_unchanged, again.windows_embedded) == (0, 1, 0)
+    assert (again.sessions_indexed, again.sessions_unchanged, again.contents_materialized) == (0, 1, 0)
 
 
 async def test_a_new_message_re_windows_the_session(
@@ -228,7 +238,7 @@ async def test_the_same_exchange_in_another_session_costs_no_embedding(
     await say(chat_source, second, "zeta filing", minute=0)
     report = await run_sync(chat_source, embedder)
 
-    assert (report.sessions_indexed, report.windows_embedded, report.windows_reused) == (1, 0, 1)
+    assert (report.sessions_indexed, report.contents_materialized) == (1, 1)
     assert {hit.session_id for hit in await find(chat_source, embedder, "zeta")} == {first, second}
 
 
@@ -262,14 +272,17 @@ async def test_the_session_filter_narrows_the_search(
     assert [hit.session_id for hit in hits] == [second]
 
 
-async def test_a_changed_model_re_embeds_the_same_messages(chat_source: AsyncSession, operator_id: UUID) -> None:
+async def test_a_changed_model_re_embeds_without_re_syncing_messages(
+    chat_source: AsyncSession, operator_id: UUID
+) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "alpha", minute=0)
     await run_sync(chat_source, FakeEmbedder())
 
     successor = FakeEmbedder(model_key="fake-v2")
-    report = await run_sync(chat_source, successor)
-    assert (report.sessions_indexed, report.windows_embedded) == (1, 1)
+    report = await sync_chat(chat_source, index_id=_CHAT_INDEX, now=_SETTLED)
+    assert report.sessions_unchanged == 1
+    assert await embed_all(chat_source, successor) == 1
     assert len(await find(chat_source, successor, "alpha")) == 1
 
 

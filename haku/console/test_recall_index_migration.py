@@ -149,5 +149,60 @@ def test_logical_index_migration_backfills_existing_occurrences(db_url: str) -> 
         engine.dispose()
 
 
+def test_embedding_split_preserves_source_progress_without_a_model_claim(db_url: str) -> None:
+    """0087 retains materialized source state while making embedding completion global."""
+    apply_migrations(db_url, "0086")
+    engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
+    session_id = "00000000-0000-0000-0000-000000000002"
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO recall_index.indexes (index_id, index_type) VALUES ('git', 'git'), ('chat', 'chat')")
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO recall_index.git_sync_state
+                        (index_id, branch, commit_sha, chunker_key, model_key, synced_at)
+                    VALUES ('git', 'main', 'commit', 'chunker', 'old-model', now())
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO recall_index.chat_sessions
+                        (index_id, session_id, message_count, last_message_at, chunker_key, model_key, indexed_at)
+                    VALUES ('chat', '{session_id}', 1, now(), 'chunker', 'old-model', now())
+                    """
+                )
+            )
+
+        apply_migrations(db_url)
+
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT commit_sha FROM recall_index.git_sync_state WHERE index_id = 'git'"))
+                == "commit"
+            )
+            assert (
+                connection.scalar(text("SELECT message_count FROM recall_index.chat_sessions WHERE index_id = 'chat'"))
+                == 1
+            )
+            for table in ("git_sync_state", "chat_sessions"):
+                assert (
+                    connection.scalar(
+                        text(
+                            "SELECT count(*) FROM information_schema.columns "
+                            "WHERE table_schema = 'recall_index' AND table_name = :table AND column_name = 'model_key'"
+                        ),
+                        {"table": table},
+                    )
+                    == 0
+                )
+    finally:
+        engine.dispose()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
