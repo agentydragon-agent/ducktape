@@ -33,7 +33,7 @@ spec:
           # $imagepolicy marker, so it silently stopped tracking the image its
           # two siblings roll on. Still on the pre-rename path until Flux writes
           # the first tag pushed as `iron-proxy`.
-          image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260809231643-86f9b6c # {"$imagepolicy": "flux-system:iron-proxy"}
+          image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260819201301-06b8b19 # {"$imagepolicy": "flux-system:iron-proxy"}
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
             - name: CLAUDE_CODE_OAUTH_TOKEN

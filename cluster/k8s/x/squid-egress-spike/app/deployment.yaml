@@ -57,7 +57,7 @@ spec:
         # squid.conf cannot read environment variables -- its ${...} covers only
         # process_name/process_number/service_name.
         - name: prepare
-          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260815024022-da9005e # {"$imagepolicy": "flux-system:squid-ssl"}
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260819201216-06b8b19 # {"$imagepolicy": "flux-system:squid-ssl"}
           envFrom:
             - configMapRef:
                 name: squid-spike-fake-credentials
@@ -94,7 +94,7 @@ spec:
               readOnly: true
       containers:
         - name: squid
-          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260815024022-da9005e # {"$imagepolicy": "flux-system:squid-ssl"}
+          image: git.allegedly.works/ducktape-ci/squid-ssl:devel-20260819201216-06b8b19 # {"$imagepolicy": "flux-system:squid-ssl"}
           args: ["-f", "/etc/squid/squid.conf", "-N"]
           ports:
             - name: proxy

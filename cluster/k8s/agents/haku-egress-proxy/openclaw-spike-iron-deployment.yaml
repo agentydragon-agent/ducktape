@@ -29,7 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: iron-proxy
-          image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260809231643-86f9b6c # {"$imagepolicy": "flux-system:iron-proxy"}
+          image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260819201301-06b8b19 # {"$imagepolicy": "flux-system:iron-proxy"}
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
             - name: CLAUDE_CODE_OAUTH_TOKEN

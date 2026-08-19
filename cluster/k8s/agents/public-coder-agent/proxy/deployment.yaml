@@ -60,7 +60,7 @@ spec:
           # TODO(public-coder-agent): Return to the first official release containing
           # https://github.com/ironsh/iron-proxy/commit/c90f4fe31607552ed05675fc7ad239d94b431af2
           # and remove the temporary image build after verifying ALPN still negotiates h2.
-          image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260809231643-86f9b6c # {"$imagepolicy": "flux-system:iron-proxy"}
+          image: git.allegedly.works/ducktape-ci/iron-proxy:devel-20260819201301-06b8b19 # {"$imagepolicy": "flux-system:iron-proxy"}
           args: ["-config", "/etc/iron-proxy/iron.yaml"]
           env:
             # The real GitHub credential lives here and nowhere else. It reaches
