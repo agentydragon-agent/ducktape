@@ -7,8 +7,8 @@ agent, initial cash); does not know about properties, locations, or bootstrap.
 from __future__ import annotations
 
 import threading
-from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from decimal import Decimal
+from typing import Any, overload
 
 import numpy as np
 
@@ -30,6 +30,7 @@ from finance.augur.product.decode import (
     rollout_events_from,
     terminal_metrics_from_arrays,
 )
+from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
     build_scenario,
@@ -51,7 +52,7 @@ from finance.augur.product.wire import (
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler import compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.engine.jax_engine import ProductSummary, run_jax_product_summary
+from finance.augur.sim.engine.jax_engine import ProductMetricFanSummary, ProductTerminalSummary, run_jax_product_summary
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import load_jurisdictions_for
@@ -112,9 +113,9 @@ class ProductService:
                 currency_code=summary.currency_code,
                 currency_quantum=summary.currency_quantum,
                 metric=request.metric,
-                monthly_metric_fan=_monthly_fan_frame(summary, percentiles),
-                terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
-                failed_count=_failed_count(summary),
+                monthly_metric_fan=_monthly_fan_frame(summary),
+                terminal_metric_percentiles=_quantile_frame(summary.percentiles, summary.terminal_percentiles),
+                failed_count=summary.failed_count,
             )
 
     def terminal_distribution(self, request: TerminalDistributionRequest) -> TerminalDistributionResponse:
@@ -132,7 +133,7 @@ class ProductService:
                 metric=request.metric,
                 terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
                 terminal_metric_samples=_terminal_samples_frame(request.rollout_seeds, summary),
-                failed_count=_failed_count(summary),
+                failed_count=_failed_count(summary.failed_month),
             )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
@@ -191,9 +192,19 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
+    @overload
+    def _simulate_product_summary(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
+    ) -> tuple[ProductMetricFanSummary, str]: ...
+
+    @overload
+    def _simulate_product_summary(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: None
+    ) -> tuple[ProductTerminalSummary, str]: ...
+
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> tuple[ProductSummary, str]:
+    ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
         self._validate_scenario_key(scenario_key)
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
         plan = compile_simulation(
@@ -254,32 +265,25 @@ class ProductService:
         return scenario, sampled, model_id
 
 
-def _monthly_fan_frame(summary: ProductSummary, percentiles: tuple[float, ...]) -> Frame:
+def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:
     month_indices = summary.month_index
-    # Keep sampled integer currency quanta intact through the public-product
-    # reduction. NumPy's percentile promotes them to float64; `_currency_quantiles`
-    # is the explicit exact/half-up interpolation boundary instead.
-    bands = np.asarray(
-        [_currency_quantiles(summary.monthly_samples[month], percentiles) for month in range(month_indices.size)],
-        dtype=np.int64,
-    ).T
-    percentile_array = np.asarray(percentiles, dtype=np.float64)
+    percentile_array = np.asarray(summary.percentiles, dtype=np.float64)
     return {
         "month_index": np.repeat(month_indices, percentile_array.size).tolist(),
         "percentile": np.tile(percentile_array, month_indices.size).tolist(),
-        "value_quanta": [_quanta(value) for value in bands.T.reshape(-1)],
+        "value_quanta": [_quanta(value) for value in summary.monthly_percentiles.reshape(-1)],
     }
 
 
 def _percentile_frame(samples: np.ndarray, percentiles: tuple[float, ...]) -> Frame:
-    percentile_array = np.asarray(percentiles, dtype=np.float64)
-    return {
-        "percentile": percentile_array.tolist(),
-        "value_quanta": [_quanta(value) for value in _currency_quantiles(samples, percentiles)],
-    }
+    return _quantile_frame(percentiles, np.asarray(currency_quantiles(samples, percentiles), dtype=np.int64))
 
 
-def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductSummary) -> Frame:
+def _quantile_frame(percentiles: tuple[float, ...], values: np.ndarray) -> Frame:
+    return {"percentile": list(percentiles), "value_quanta": [_quanta(value) for value in values]}
+
+
+def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductTerminalSummary) -> Frame:
     return {
         "seed": list(seeds),
         "value_quanta": [_quanta(value) for value in summary.terminal_samples],
@@ -287,35 +291,11 @@ def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductSummary) -> 
     }
 
 
-def _failed_count(summary: ProductSummary) -> int:
-    return int((summary.failed_month >= 0).sum())
+def _failed_count(failed_month: np.ndarray) -> int:
+    return int((failed_month >= 0).sum())
 
 
 def _quanta(value: int | np.integer[Any]) -> str:
     """Serialize an integer quantum count without a lossy JSON number."""
 
     return str(value)
-
-
-def _currency_quantiles(samples: np.ndarray, percentiles: tuple[float, ...]) -> tuple[int, ...]:
-    """Linear quantiles, rounded half-up to the nearest currency quantum.
-
-    NumPy's percentile machinery promotes Int64 values to float64, which can
-    lose individual quanta above JavaScript's safe-integer range.  Product
-    percentiles are derived values, so this is their explicit rounding point;
-    Decimal keeps the interpolation and the final quantum count exact.
-    """
-
-    ordered = sorted(int(value) for value in np.asarray(samples, dtype=np.int64))
-    if not ordered:
-        raise ValueError("cannot calculate percentiles from no samples")
-    last = len(ordered) - 1
-    result: list[int] = []
-    for percentile in percentiles:
-        rank = Decimal(str(percentile)) * last / Decimal(100)
-        low = int(rank // 1)
-        high = min(low + 1, last)
-        fraction = rank - low
-        value = Decimal(ordered[low]) + Decimal(ordered[high] - ordered[low]) * fraction
-        result.append(int(value.to_integral_value(rounding=ROUND_HALF_UP)))
-    return tuple(result)

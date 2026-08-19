@@ -50,7 +50,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import partial
-from typing import NamedTuple
+from typing import NamedTuple, overload
 
 import jax
 
@@ -62,6 +62,7 @@ import numpy as np
 from finance.augur.model.series import PrivateEquityRegimeCode
 from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric
 from finance.augur.product.asset_key import PrivateEquityAssetKey
+from finance.augur.product.quantiles import currency_quantile_plan, interpolate_currency_quantiles
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import CompiledSimulation
@@ -441,20 +442,26 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
 
 
 @dataclass(frozen=True)
-class ProductSummary:
-    """Reduced product projection for the percentile (fan / terminal) endpoints.
-
-    Carries one requested metric's exact integer-quanta samples. Percentile
-    interpolation is deliberately host-side: NumPy/JAX quantile helpers promote
-    Int64 values to float64 and can lose individual quanta above 2^53.
-    """
+class ProductMetricFanSummary:
+    """Exact percentile reductions for one product metric."""
 
     month_index: np.ndarray  # (H+1,)
+    failed_count: int
+    currency_code: str
+    currency_quantum: str
+    percentiles: tuple[float, ...]
+    terminal_percentiles: np.ndarray  # (P,) exact integer currency quantum counts
+    monthly_percentiles: np.ndarray  # (H+1, P) exact integer currency quantum counts
+
+
+@dataclass(frozen=True)
+class ProductTerminalSummary:
+    """Per-rollout terminal samples for one product metric."""
+
     failed_month: np.ndarray  # (R,) int64; -1 = never failed
     currency_code: str
     currency_quantum: str
     terminal_samples: np.ndarray  # (R,) requested metric's int64 currency quantum count per rollout
-    monthly_samples: np.ndarray  # (H+1, R) requested metric's int64 currency quantum counts
 
 
 # The base metrics the scan emits per month, in the order `product_metrics` returns them.
@@ -481,16 +488,27 @@ def _product_metric_series(
     return compose_metric(metric, base)
 
 
+@overload
+def run_jax_product_summary(
+    plan: CompiledSimulation, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
+) -> ProductMetricFanSummary: ...
+
+
+@overload
+def run_jax_product_summary(
+    plan: CompiledSimulation, *, primary_agent_id: str, metric: str, percentiles: None
+) -> ProductTerminalSummary: ...
+
+
 def run_jax_product_summary(
     plan: CompiledSimulation, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...] | None
-) -> ProductSummary:
-    """Run the JAX month loop and reduce, on-device, to the requested metric's monthly percentile
-    bands (when `percentiles` is given) and its per-rollout terminal samples.
+) -> ProductMetricFanSummary | ProductTerminalSummary:
+    """Run the JAX month loop for one product metric.
 
-    Shares the exact accounting scan with `run_jax_scan`; only the emitted summary differs. Avoiding
-    the full dense `SimulationRun` history/event slabs — and reducing each metric to percentiles
-    before the device→host copy — means neither the host nor the response ever holds per-rollout
-    monthly state. The full dense trace is reserved for the selected-rollout detail endpoint.
+    A metric-fan request sorts on-device and transfers only the two order statistics needed for
+    each percentile. Exact half-up interpolation remains host-side, avoiding float64's unsafe-integer
+    boundary without copying the full `(month, rollout)` sample matrix. A terminal-distribution
+    request transfers only the per-rollout terminal vector.
     """
     validate_seed_dependent_inputs(plan)
 
@@ -501,24 +519,78 @@ def run_jax_product_summary(
         external, money, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
     )
     oversell, final_failed_month, ta_buy_count = product_tail
-    if bool(np.asarray(jax.device_get(oversell))):
-        raise ValueError("scheduled asset sale exceeds available lots")
-    check_purchase_slot_exhaustion(plan, np.asarray(jax.device_get(ta_buy_count)))
-
     initial_ys, monthly_ys = product_ys
     series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
     # Terminal sample: cumulative over the horizon for shortfall, end-of-horizon snapshot otherwise.
     terminal = series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
-    del percentiles  # Percentiles are interpolated exactly by ProductService on the host.
+    if percentiles is None:
+        oversell_host, failed_host, buy_count_host, terminal_host = jax.device_get(
+            (oversell, final_failed_month, ta_buy_count, terminal)
+        )
+        _validate_product_tail(plan, oversell_host, buy_count_host)
+        return ProductTerminalSummary(
+            failed_month=np.asarray(failed_host, dtype=np.int64),
+            currency_code=plan.currency_code,
+            currency_quantum=format(plan.currency_quantum, "f"),
+            terminal_samples=np.asarray(terminal_host, dtype=np.int64),
+        )
 
-    return ProductSummary(
+    quantile_plan = currency_quantile_plan(plan.rollout_count, percentiles)
+    lower_indices = jnp.asarray([item.lower_index for item in quantile_plan], dtype=jnp.int32)
+    upper_indices = jnp.asarray([item.upper_index for item in quantile_plan], dtype=jnp.int32)
+    ordered = jnp.sort(series, axis=1)
+    monthly_lower = ordered[:, lower_indices]
+    monthly_upper = ordered[:, upper_indices]
+    if metric == "shortfall_quanta":
+        ordered_terminal = jnp.sort(terminal)
+        terminal_lower = ordered_terminal[lower_indices]
+        terminal_upper = ordered_terminal[upper_indices]
+    else:
+        terminal_lower = monthly_lower[-1]
+        terminal_upper = monthly_upper[-1]
+    (
+        oversell_host,
+        failed_count_host,
+        buy_count_host,
+        monthly_lower_host,
+        monthly_upper_host,
+        terminal_lower_host,
+        terminal_upper_host,
+    ) = jax.device_get(
+        (
+            oversell,
+            (final_failed_month >= 0).sum(),
+            ta_buy_count,
+            monthly_lower,
+            monthly_upper,
+            terminal_lower,
+            terminal_upper,
+        )
+    )
+    _validate_product_tail(plan, oversell_host, buy_count_host)
+    return ProductMetricFanSummary(
         month_index=np.arange(plan.horizon_months + 1, dtype=np.int64),
-        failed_month=np.asarray(jax.device_get(final_failed_month), dtype=np.int64),
+        failed_count=int(failed_count_host),
         currency_code=plan.currency_code,
         currency_quantum=format(plan.currency_quantum, "f"),
-        terminal_samples=np.asarray(jax.device_get(terminal), dtype=np.int64),
-        monthly_samples=np.asarray(jax.device_get(series), dtype=np.int64),
+        percentiles=percentiles,
+        terminal_percentiles=interpolate_currency_quantiles(
+            np.asarray(terminal_lower_host, dtype=np.int64),
+            np.asarray(terminal_upper_host, dtype=np.int64),
+            quantile_plan,
+        ),
+        monthly_percentiles=interpolate_currency_quantiles(
+            np.asarray(monthly_lower_host, dtype=np.int64),
+            np.asarray(monthly_upper_host, dtype=np.int64),
+            quantile_plan,
+        ),
     )
+
+
+def _validate_product_tail(plan: CompiledSimulation, oversell: np.ndarray, ta_buy_count: np.ndarray) -> None:
+    if bool(np.asarray(oversell)):
+        raise ValueError("scheduled asset sale exceeds available lots")
+    check_purchase_slot_exhaustion(plan, np.asarray(ta_buy_count))
 
 
 def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:

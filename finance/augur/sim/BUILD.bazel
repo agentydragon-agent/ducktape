@@ -585,6 +585,7 @@ py_library(
         ":target_allocation",
         "//finance/augur/model:series",
         "//finance/augur/product:metric_composition",
+        "//finance/augur/product:quantiles",
         "@pypi//jax",
         "@pypi//numpy",
     ],
