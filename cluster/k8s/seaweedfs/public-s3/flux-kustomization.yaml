@@ -12,8 +12,8 @@ spec:
     kind: GitRepository
     name: ducktape
     # Gate on Bucket CRs managed in this repo that the public identities target.
-    # Claude's static gateway entry is a temporary no-rotation compatibility
-    # path; its identity, credential, and policy now reconcile natively here.
+    # Claude's identity, unchanged SOPS-delivered credential, and policy all
+    # reconcile natively here; its static gateway entry has been removed.
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
