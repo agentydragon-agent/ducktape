@@ -20,13 +20,12 @@ outputs in one device→host transfer. The scan covers:
   capital-loss netting, the two-pass SALT walk over MID + LTCG brackets + the §1250 worksheet,
   tax-liability accrual, and the true-up settlement.
 
-Caching is JAX-native. `_program_impl` is module-level and
-`@partial(jax.jit, static_argnames=("structure",))`: its compiled executable is keyed by JAX on
-the hashable `_Static` structural contract (including its `SlotPlan`) plus the avals of the traced `_Operands` data pytree and the
-seed/swept-config inputs. So an identical-structure plan — including sweeps over the traced numeric
-config (`_TracedConfig`) or rollout seeds — reuses the compiled program; only a structural change
-recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries that reuse
-across processes.
+Caching is JAX-native. `_program_impl` is a module-level `jax.jit` of one registered
+`_SimulationProgram` dataclass. JAX flattens its dynamic input tree and includes its immutable,
+hashable structural metadata in the native cache key. So an identical-structure plan — including
+sweeps over traced numeric values or rollout seeds — reuses the compiled program; only a structural
+change recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries
+that reuse across processes.
 
 Integer accounting note: engine monetary state uses int64 currency quanta and explicit quantity
 quanta. JAX x64 is required so those arrays do not silently truncate to int32.
@@ -297,10 +296,6 @@ class _TracedConfig(NamedTuple):
     link_ltcg_upper: jnp.ndarray
     link_ltcg_rate: jnp.ndarray
     mid_principal_factor: jnp.ndarray
-    transfer_amount_fixed: jnp.ndarray
-    transfer_amount_base: jnp.ndarray
-    property_cashflow_amount_fixed: jnp.ndarray
-    property_cashflow_amount_base: jnp.ndarray
     cost_basis_per_unit: jnp.ndarray
     # Month-0 opening value of the carried per-rollout purchase month; policy-chosen
     # purchases overwrite their slot's entry when they fill it.
@@ -355,10 +350,6 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
         link_ltcg_upper=jnp.asarray(plan.tax.link_ltcg_upper),
         link_ltcg_rate=jnp.asarray(plan.tax.link_ltcg_rate),
         mid_principal_factor=jnp.asarray(plan.mid.principal_factor),
-        transfer_amount_fixed=jnp.asarray(plan.transfers.amount_fixed),
-        transfer_amount_base=jnp.asarray(plan.transfers.amount_base),
-        property_cashflow_amount_fixed=jnp.asarray(plan.property_cashflows.amount_fixed),
-        property_cashflow_amount_base=jnp.asarray(plan.property_cashflows.amount_base),
         cost_basis_per_unit=jnp.asarray(plan.lot_cost_basis_per_unit),
         lot_purchase_month=jnp.asarray(plan.lot_purchase_month),
         cash_initial_balance=jnp.asarray(plan.cash_initial_balance),
@@ -371,16 +362,15 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
 
 
 class _Operands(NamedTuple):
-    """Every device array the scan program closes over, packed into one named pytree. Passed to
-    `_program_impl` as a TRACED argument: JAX keys the native compile cache on its
-    avals, so an identical-structure plan (identical shapes/dtypes) is a cache hit and differing VALUES
-    reuse the same executable — no hand-rolled hashing of array contents."""
+    """Device arrays the scan closes over, nested in `_SimulationProgram.dynamic`.
+
+    JAX keys the native compile cache on their avals, so identical shapes/dtypes reuse the executable
+    when values change—without hand-rolled hashing of array contents.
+    """
 
     # Carry-init device constants.
-    cash0: jnp.ndarray
     ordinary0: jnp.ndarray
     property_tax_ytd0: jnp.ndarray
-    lot0: jnp.ndarray
     cg_active0: jnp.ndarray
     cg_ytd0: jnp.ndarray
     tlh0: jnp.ndarray
@@ -437,17 +427,45 @@ class _Operands(NamedTuple):
     ta_sleeve_weights: list[jnp.ndarray]
 
 
+class _ProgramDynamic(NamedTuple):
+    """Array-valued leaves JAX traces and keys by shape/dtype."""
+
+    external_values: jax.Array
+    external_money_values: jax.Array
+    pe_channels: _PEChannelInputs
+    swept: _TracedConfig
+    operands: _Operands
+    product_inputs: _ProductSummaryInputs | None
+
+
+@dataclass(frozen=True)
+class _ProgramStatic:
+    """Hashable topology and output mode included by value in JAX's cache key."""
+
+    structure: _Static
+    product_summary: _ProductSummaryStatic | None
+    emit_dense: bool
+
+
+@partial(jax.tree_util.register_dataclass, data_fields=("dynamic",), meta_fields=("static",))
+@dataclass(frozen=True)
+class _SimulationProgram:
+    """The single JIT boundary: dynamic leaves plus immutable static metadata."""
+
+    dynamic: _ProgramDynamic
+    static: _ProgramStatic
+
+
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     """Single-program `lax.scan` engine: the whole month loop compiles into one XLA program (one
     dispatch for all months) whose only traced inputs are the seed-varying series and swept numeric
-    config. `_build_program` builds + `jax.jit`-wraps the device program for this plan structure; JAX
-    compiles it on first invocation."""
+    config. `_build_program` packs the registered device-program PyTree; the module-level JIT compiles
+    it on first invocation."""
     validate_seed_dependent_inputs(plan)
 
-    baked, structure = _build_program(plan)
-    external, money, pe, cfg = _program_inputs(plan)
-    ys, final_state = _program_impl(external, money, pe, cfg, baked, structure)
-    scatter_ys_to_buffers(plan, buffers, structure, ys, final_state)
+    program = _build_program(plan)
+    ys, final_state = _program_impl(program)
+    scatter_ys_to_buffers(plan, buffers, program.static.structure, ys, final_state)
 
 
 def run_jax_scan_with_product_metrics(
@@ -456,22 +474,11 @@ def run_jax_scan_with_product_metrics(
     """Fill dense buffers and return the selected actor's metrics from the same scan."""
 
     validate_seed_dependent_inputs(plan)
-    baked, structure = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
-    external, money, pe, cfg = _program_inputs(plan)
-    outputs, final_state = _program_impl(
-        external,
-        money,
-        pe,
-        cfg,
-        baked,
-        structure,
-        product_summary=product_static,
-        product_inputs=product_inputs,
-        emit_dense=True,
-    )
+    program = _build_program(plan, product_summary=product_static, product_inputs=product_inputs, emit_dense=True)
+    outputs, final_state = _program_impl(program)
     dense_ys, product_ys = outputs
-    scatter_ys_to_buffers(plan, buffers, structure, dense_ys, final_state.dense)
+    scatter_ys_to_buffers(plan, buffers, program.static.structure, dense_ys, final_state.dense)
     initial_ys, monthly_ys = product_ys
     return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_state.failed_month)
 
@@ -568,20 +575,9 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
     """Return every base metric directly from the JAX reducer without dense buffers."""
 
     validate_seed_dependent_inputs(plan)
-    baked, structure = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
-    external, money, pe, cfg = _program_inputs(plan)
-    product_ys, product_tail = _program_impl(
-        external,
-        money,
-        pe,
-        cfg,
-        baked,
-        structure,
-        product_summary=product_static,
-        product_inputs=product_inputs,
-        emit_dense=False,
-    )
+    program = _build_program(plan, product_summary=product_static, product_inputs=product_inputs, emit_dense=False)
+    product_ys, product_tail = _program_impl(program)
     oversell_host, buy_count_host = jax.device_get(
         (product_tail.sale_oversell, product_tail.target_allocation_buy_count)
     )
@@ -614,20 +610,9 @@ def run_jax_product_summary(
     """
     validate_seed_dependent_inputs(plan)
 
-    baked, structure = _build_program(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
-    external, money, pe, cfg = _program_inputs(plan)
-    product_ys, product_tail = _program_impl(
-        external,
-        money,
-        pe,
-        cfg,
-        baked,
-        structure,
-        product_summary=product_static,
-        product_inputs=product_inputs,
-        emit_dense=False,
-    )
+    program = _build_program(plan, product_summary=product_static, product_inputs=product_inputs, emit_dense=False)
+    product_ys, product_tail = _program_impl(program)
     initial_ys, monthly_ys = product_ys
     series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
     # Terminal sample: cumulative over the horizon for shortfall, end-of-horizon snapshot otherwise.
@@ -702,10 +687,10 @@ def _validate_product_tail(plan: CompiledSimulation, oversell: np.ndarray, ta_bu
     check_purchase_slot_exhaustion(plan, np.asarray(ta_buy_count))
 
 
-def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, jnp.ndarray, _PEChannelInputs, _TracedConfig]:
-    """The traced program inputs: levels, integer money levels, PE channels and config."""
+def _pe_channel_inputs(plan: CompiledSimulation) -> _PEChannelInputs:
+    """Pack rollout-varying private-equity channels as traced leaves."""
     pe_channels = plan.pe_channels
-    pe_ch_dyn = _PEChannelInputs(
+    return _PEChannelInputs(
         mark_quanta=jnp.asarray(pe_channels.mark_quanta),
         regime=jnp.asarray(pe_channels.regime_codes),
         sale_opportunity_active=jnp.asarray(pe_channels.sale_opportunity_active),
@@ -715,7 +700,6 @@ def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, jnp.ndarray,
         liquidity_blocked=jnp.asarray(pe_channels.liquidity_blocked),
         forced_recovery_cashout=jnp.asarray(pe_channels.forced_recovery_cashout_quanta),
     )
-    return jnp.asarray(plan.external_values), jnp.asarray(plan.external_money_values), pe_ch_dyn, _traced_config(plan)
 
 
 def _product_summary_inputs(
@@ -777,30 +761,31 @@ def _product_summary_inputs(
 
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
-    baked, structure = _build_program(plan)
-    external, money, pe, cfg = _program_inputs(plan)
-    text = _program_impl.lower(external, money, pe, cfg, baked, structure).compile().as_text()
+    program = _build_program(plan)
+    text = _program_impl.lower(program).compile().as_text()
     if text is None:
         raise RuntimeError("compiled program exposes no HLO text")
     return text
 
 
-def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
-    """Host-only build of the device program inputs for one plan *structure*. Does ALL numpy/Python
-    precompute and packs the results into a `_Operands` pytree (every device array the scan closes over,
-    a TRACED arg) and a `_Static` frozen dataclass (every natively-hashable Python value the bodies
-    read at trace time, a STATIC arg) that includes the plan's natively hashable `SlotPlan` and is
-    also consumed by the post-scan scatter. The compiled program is `_program_impl`, whose
-    native JAX cache reuses the executable across calls of the same structure (and across traced
-    value/seed sweeps) — no hand-rolled hashing."""
+def _build_program(
+    plan: CompiledSimulation,
+    *,
+    product_summary: _ProductSummaryStatic | None = None,
+    product_inputs: _ProductSummaryInputs | None = None,
+    emit_dense: bool = True,
+) -> _SimulationProgram:
+    """Build the one registered PyTree consumed by `_program_impl`.
+
+    Array values are dynamic leaves; immutable topology and output mode are static metadata. JAX
+    therefore owns flattening and cache-key construction without parallel JIT argument protocols.
+    """
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
-    cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
     # One row per (profile, income source) — see `TaxCompileOutput.income_bucket`.
     ordinary0 = _zeros_i64((p.income_bucket_count, r))
     property_tax_ytd0 = _zeros_i64((p.tax_profile_count, r))
-    lot0 = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
     cg_active0 = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     cg_ytd0 = _zeros_i64((p.capital_gain_agent_count, 2, r))
     # TLH give-back ledger starts at zero (the harvest phase populates it during the scan); the
@@ -1362,10 +1347,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
     ]
 
     baked = _Operands(
-        cash0=cash0,
         ordinary0=ordinary0,
         property_tax_ytd0=property_tax_ytd0,
-        lot0=lot0,
         cg_active0=cg_active0,
         cg_ytd0=cg_ytd0,
         tlh0=tlh0,
@@ -1480,26 +1463,33 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
             plan.tax.buckets.ordinary_bucket(profile) for profile in range(p.tax_profile_count)
         ),
     )
-    return baked, structure
+    return _SimulationProgram(
+        dynamic=_ProgramDynamic(
+            external_values=jnp.asarray(plan.external_values),
+            external_money_values=jnp.asarray(plan.external_money_values),
+            pe_channels=_pe_channel_inputs(plan),
+            swept=_traced_config(plan),
+            operands=baked,
+            product_inputs=product_inputs,
+        ),
+        static=_ProgramStatic(structure=structure, product_summary=product_summary, emit_dense=emit_dense),
+    )
 
 
-@partial(jax.jit, static_argnames=("structure", "product_summary", "emit_dense"))
-def _program_impl(
-    external_values: jnp.ndarray,
-    external_money_values: jnp.ndarray,
-    pe_ch: _PEChannelInputs,
-    cfg: _TracedConfig,
-    baked: _Operands,
-    structure: _Static,
-    product_summary: _ProductSummaryStatic | None = None,
-    product_inputs: _ProductSummaryInputs | None = None,
-    emit_dense: bool = True,
-) -> tuple:
-    """Module-level, natively-cached scan program. `external_values` / `pe_ch` / `cfg` are TRACED
-    (seed-varying series + swept numeric config); `baked` is a TRACED pytree of every device array the
-    bodies close over; `structure` is the one STATIC contract, so JAX keys the
-    compile cache on it and reuses the executable across identical-structure calls and across traced
-    value/seed sweeps. A structural change is a fresh static key (exactly one extra compile)."""
+@jax.jit
+def _program_impl(program: _SimulationProgram) -> tuple:
+    """Module-level scan program whose one registered PyTree defines the complete JIT boundary."""
+    dynamic = program.dynamic
+    static = program.static
+    external_values = dynamic.external_values
+    external_money_values = dynamic.external_money_values
+    pe_ch = dynamic.pe_channels
+    cfg = dynamic.swept
+    baked = dynamic.operands
+    product_inputs = dynamic.product_inputs
+    structure = static.structure
+    product_summary = static.product_summary
+    emit_dense = static.emit_dense
     p = structure.slot_plan
     r = p.rollout_count
     horizon = p.event_months
@@ -1548,10 +1538,8 @@ def _program_impl(
     folded_purchases = structure.folded_purchases_present
     folded_sales = structure.folded_sales_present
     # Device arrays unpacked from the baked pytree (SAME names the bodies use).
-    cash0 = baked.cash0
     ordinary0 = baked.ordinary0
     property_tax_ytd0 = baked.property_tax_ytd0
-    lot0 = baked.lot0
     cg_active0 = baked.cg_active0
     cg_ytd0 = baked.cg_ytd0
     tlh0 = baked.tlh0
@@ -1559,10 +1547,8 @@ def _program_impl(
     property_building_basis_0 = baked.property_building_basis_0
     prop0 = baked.prop0
     liab0 = baked.liab0
-    transfers = baked.transfers._replace(amount_fixed=cfg.transfer_amount_fixed, amount_base=cfg.transfer_amount_base)
-    property_cashflows = baked.property_cashflows._replace(
-        amount_fixed=cfg.property_cashflow_amount_fixed, amount_base=cfg.property_cashflow_amount_base
-    )
+    transfers = baked.transfers
+    property_cashflows = baked.property_cashflows
     bonds = baked.bonds
     distributions = baked.distributions
     obligation_inputs = baked.obligations
@@ -1590,8 +1576,6 @@ def _program_impl(
     ta_sleeve_series = baked.ta_sleeve_series
     ta_sleeve_weights = baked.ta_sleeve_weights
     folded_target_allocation = structure.folded_target_allocation
-    # Swept numeric config (traced): cost basis + amount entries of the transfer/cashflow tables.
-    tcfg = cfg
 
     def product_metrics(
         s: _ScanState, *, snapshot_month: jnp.ndarray, obligation_shortfall: jnp.ndarray, obligation_mask: jnp.ndarray
@@ -1707,7 +1691,7 @@ def _program_impl(
         def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
                 link_tax_static[link],
-                tcfg,
+                cfg,
                 ordinary,
                 cg_ytd,
                 recapture,
@@ -1725,7 +1709,7 @@ def _program_impl(
                 jnp.where(dec, ordinary[profile_ordinary_bucket[profile]], 0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0),
-                jnp.where(dec, tcfg.link_standard_deduction[link], 0),  # traced value
+                jnp.where(dec, cfg.link_standard_deduction[link], 0),  # traced value
                 jnp.where(dec, mid, 0),
                 jnp.where(dec, salt_deduction, 0),
                 jnp.where(dec, itemized, 0),
@@ -1938,7 +1922,7 @@ def _program_impl(
         # Property purchases (after transfers, before sales — eager order). Vectorized over all real
         # purchases at once (no Python loop): each fires when its static month equals the traced month
         # for the rollouts still active then, into its own property buffer (distinct indices, no
-        # cross-purchase dependency). Pure-value purchase amounts are gathered from `tcfg` by index.
+        # cross-purchase dependency). Pure-value purchase amounts are gathered from `cfg` by index.
         # The down payment (stake_contribution) moves buyer->seller via sentinel-aware scatter-add
         # (shared/absent cash slots fall out, duplicates accumulate); financed purchases originate the
         # mortgage liability (principal + monthly payment set, YTD interest/principal reset).
@@ -1948,16 +1932,16 @@ def _program_impl(
         if folded_purchases:
             fires = (month == pur_month)[:, None] & active[None, :]  # (P, R)
             stake_pos = (pur_stake > 0)[:, None]  # (P, 1) static
-            # Gathered `tcfg` columns are 1-D per-entity (P,)/(M,) -> `[:, None]` to broadcast over R.
+            # Gathered `cfg` columns are 1-D per-entity (P,)/(M,) -> `[:, None]` to broadcast over R.
             property_active = property_active.at[pur_buf].set(jnp.where(fires, True, property_active[pur_buf]))
             property_basis = property_basis.at[pur_buf].set(
-                jnp.where(fires, tcfg.property_adjusted_basis[pur_buf][:, None], property_basis[pur_buf])
+                jnp.where(fires, cfg.property_adjusted_basis[pur_buf][:, None], property_basis[pur_buf])
             )
             property_contribution = property_contribution.at[pur_buf].set(
                 jnp.where(fires, pur_stake[:, None], property_contribution[pur_buf])
             )
             property_equity = property_equity.at[pur_buf].set(
-                jnp.where(fires, tcfg.property_equity_ledger[pur_buf][:, None], property_equity[pur_buf])
+                jnp.where(fires, cfg.property_equity_ledger[pur_buf][:, None], property_equity[pur_buf])
             )
             stake_flow = jnp.where(fires & stake_pos, pur_stake[:, None], 0)  # (P, R)
             cash = _move_cash(
@@ -1971,10 +1955,10 @@ def _program_impl(
             mfires = fires[pur_mort_rows]  # (M, R)
             liab_active = liab_active.at[pur_mort_idx].set(jnp.where(mfires, True, liab_active[pur_mort_idx]))
             liab_principal = liab_principal.at[pur_mort_idx].set(
-                jnp.where(mfires, tcfg.liability_principal[pur_mort_idx][:, None], liab_principal[pur_mort_idx])
+                jnp.where(mfires, cfg.liability_principal[pur_mort_idx][:, None], liab_principal[pur_mort_idx])
             )
             liab_monthly = liab_monthly.at[pur_mort_idx].set(
-                jnp.where(mfires, tcfg.liability_monthly_payment[pur_mort_idx][:, None], liab_monthly[pur_mort_idx])
+                jnp.where(mfires, cfg.liability_monthly_payment[pur_mort_idx][:, None], liab_monthly[pur_mort_idx])
             )
             liab_interest_ytd = liab_interest_ytd.at[pur_mort_idx].set(
                 jnp.where(mfires, 0, liab_interest_ytd[pur_mort_idx])
@@ -2842,12 +2826,12 @@ def _program_impl(
         return carry, (dense_output, product_output) if product_output is not None else dense_output
 
     init = _ScanState(
-        cash=cash0,
+        cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
         ordinary_ytd=ordinary0,
         property_tax_ytd=property_tax_ytd0,
-        lot_remaining=lot0,
-        cost_basis_per_unit=_zeros_i64((p.lot_count, r)),
-        lot_purchase_month=_zeros_i64((p.lot_count, r)),
+        lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
+        cost_basis_per_unit=jnp.broadcast_to(cfg.cost_basis_per_unit[:, None], (p.lot_count, r)),
+        lot_purchase_month=jnp.broadcast_to(cfg.lot_purchase_month[:, None], (p.lot_count, r)),
         capital_gain_active=cg_active0,
         capital_gain_ytd=cg_ytd0,
         tlh=tlh0,
@@ -2880,13 +2864,6 @@ def _program_impl(
         ta_buy_count=_zeros_i64((ta_policy_count, ta_max_sleeves, r)),
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
-    # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
-    init = init._replace(
-        cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
-        lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
-        cost_basis_per_unit=jnp.broadcast_to(cfg.cost_basis_per_unit[:, None], (p.lot_count, r)),
-        lot_purchase_month=jnp.broadcast_to(cfg.lot_purchase_month[:, None], (p.lot_count, r)),
-    )
     if product_summary is not None:
         product_inputs_local = product_inputs
         assert product_inputs_local is not None
