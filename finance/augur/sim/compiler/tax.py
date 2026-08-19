@@ -71,10 +71,6 @@ class TaxCompileOutput:
       is taxed as ordinary inside the standard bracket walk (state-style, e.g. CA)."""
 
     profile_agent: NDArray[np.int64]
-    profile_payment_slot: NDArray[np.int64]
-    profile_payment_account: NDArray[np.int64]
-    profile_authority_agent: NDArray[np.int64]
-    profile_authority_account: NDArray[np.int64]
     profile_prior_year_tax: NDArray[np.int64]
     profile_section_121_exclusion: NDArray[np.int64]
     link_profile: NDArray[np.int64]
@@ -139,10 +135,6 @@ def compile_tax(
     scenario: Scenario, strings: StringTable, account_slot_by_key: AccountSlots, jurisdictions: dict[str, Jurisdiction]
 ) -> TaxCompileOutput:
     profile_agent: list[int] = []
-    payment_slot: list[int] = []
-    payment_account: list[int] = []
-    authority_agent: list[int] = []
-    authority_account: list[int] = []
     prior_year_tax: list[np.int64] = []
     link_profile: list[int] = []
     link_jurisdiction: list[int] = []
@@ -157,10 +149,11 @@ def compile_tax(
     max_ltcg = 1
     for profile_index, profile in enumerate(scenario.tax_profiles):
         profile_agent.append(strings.require(profile.agent_id))
-        payment_slot.append(account_slot_by_key.resolve(profile.agent_id, profile.payment_account_id))
-        payment_account.append(strings.require(profile.payment_account_id))
-        authority_agent.append(strings.require(profile.tax_authority_agent_id))
-        authority_account.append(strings.require(profile.tax_authority_account_id))
+        # Validate/string-intern payment routing even when the horizon contains no tax-payment month.
+        account_slot_by_key.resolve(profile.agent_id, profile.payment_account_id)
+        strings.require(profile.payment_account_id)
+        strings.require(profile.tax_authority_agent_id)
+        strings.require(profile.tax_authority_account_id)
         prior_year_tax.append(currency_amount_to_quanta(profile.prior_year_tax, quantum=scenario.currency.quantum))
         section_121_exclusion.append(
             currency_amount_to_quanta(
@@ -244,10 +237,6 @@ def compile_tax(
 
     return TaxCompileOutput(
         profile_agent=np.asarray(profile_agent, dtype=np.int64),
-        profile_payment_slot=np.asarray(payment_slot, dtype=np.int64),
-        profile_payment_account=np.asarray(payment_account, dtype=np.int64),
-        profile_authority_agent=np.asarray(authority_agent, dtype=np.int64),
-        profile_authority_account=np.asarray(authority_account, dtype=np.int64),
         profile_prior_year_tax=np.asarray(prior_year_tax, dtype=np.int64),
         profile_section_121_exclusion=np.asarray(section_121_exclusion, dtype=np.int64),
         link_profile=np.asarray(link_profile, dtype=np.int64),

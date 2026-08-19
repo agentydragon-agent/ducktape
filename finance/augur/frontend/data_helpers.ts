@@ -19,86 +19,39 @@ function cu(value, currencyMeta) {
 
 export const SELECTED_ROLLOUT_COLOR = "#0f766e";
 export const FAILED_ROLLOUT_COLOR = "#ef4444";
-// Canonical order of event kinds — drives both the legend's chip order and the in-month
-// vertical stacking order on the chart. Mirrors `priority` in `augur/product/decode.py`
-// so the wire-emit order and the visual order agree (the decoder already sorts events by
-// (month_index, priority[kind]) before sending).
-export const ROLLOUT_EVENT_KIND_ORDER = [
-  "property_purchase",
-  "closing_cost_payment",
-  "set_primary_residence",
-  "set_rented_fraction",
-  "capital_improvement",
-  "property_sale",
-  "private_equity_event",
-  "private_equity_opportunity",
-  "holding_sale",
-  "tax_accrual",
-  "tax_payment",
-  "property_tax_payment",
-  "hoa_dues_payment",
-  "homeowners_insurance_payment",
-  "property_maintenance_payment",
-  "mortgage_payment",
-  "monthly_expense",
-  "outside_rent",
-  "failure",
+// Canonical event vocabulary. Array order drives legend/marker stacking and mirrors
+// `priority` in `augur/product/decode.py`; recurring events start hidden to avoid clutter.
+type RolloutEventMetadata = { kind: string; label: string; color: string; hidden?: boolean };
+const ROLLOUT_EVENT_METADATA: RolloutEventMetadata[] = [
+  { kind: "property_purchase", label: "Property purchase", color: "#1d4ed8" },
+  { kind: "closing_cost_payment", label: "Closing cost", color: "#7e22ce" },
+  { kind: "set_primary_residence", label: "Set primary home", color: "#2563eb" },
+  { kind: "set_rented_fraction", label: "Set rented %", color: "#0ea5e9" },
+  { kind: "capital_improvement", label: "Capital improvement", color: "#15803d" },
+  { kind: "property_sale", label: "Property sale", color: "#be123c" },
+  { kind: "private_equity_event", label: "PE event", color: "#9333ea" },
+  { kind: "private_equity_opportunity", label: "PE opportunity", color: "#6d28d9" },
+  { kind: "holding_sale", label: "Holding sale", color: "#0f766e" },
+  { kind: "tax_accrual", label: "Tax accrual", color: "#b45309" },
+  { kind: "tax_payment", label: "Tax payment", color: "#7c3aed" },
+  { kind: "property_tax_payment", label: "Property tax", color: "#a16207", hidden: true },
+  { kind: "hoa_dues_payment", label: "HOA dues", color: "#14b8a6" },
+  { kind: "homeowners_insurance_payment", label: "Homeowners insurance", color: "#9333ea", hidden: true },
+  { kind: "property_maintenance_payment", label: "Maintenance", color: "#d97706", hidden: true },
+  { kind: "mortgage_payment", label: "Mortgage payment", color: "#0369a1" },
+  { kind: "monthly_expense", label: "Monthly expense", color: "#64748b", hidden: true },
+  { kind: "outside_rent", label: "Outside rent", color: "#0891b2", hidden: true },
+  { kind: "failure", label: "Rollout failure", color: "#dc2626" },
 ];
 
-export const ROLLOUT_EVENT_KIND_LABELS = {
-  property_purchase: "Property purchase",
-  closing_cost_payment: "Closing cost",
-  set_primary_residence: "Set primary home",
-  set_rented_fraction: "Set rented %",
-  capital_improvement: "Capital improvement",
-  property_sale: "Property sale",
-  private_equity_event: "PE event",
-  private_equity_opportunity: "PE opportunity",
-  holding_sale: "Holding sale",
-  tax_accrual: "Tax accrual",
-  tax_payment: "Tax payment",
-  property_tax_payment: "Property tax",
-  hoa_dues_payment: "HOA dues",
-  homeowners_insurance_payment: "Homeowners insurance",
-  property_maintenance_payment: "Maintenance",
-  mortgage_payment: "Mortgage payment",
-  monthly_expense: "Monthly expense",
-  outside_rent: "Outside rent",
-  failure: "Rollout failure",
-};
-
-// Kinds that fire every month produce one marker per row at the same x position — visual
-// clutter rather than signal. They start hidden in the legend; users can toggle them back on
-// if they want to confirm the per-month accrual is firing.
-export const DEFAULT_HIDDEN_EVENT_KINDS = new Set([
-  "monthly_expense",
-  "outside_rent",
-  "property_tax_payment",
-  "homeowners_insurance_payment",
-  "property_maintenance_payment",
-]);
-
-export const ROLLOUT_EVENT_COLORS = {
-  holding_sale: "#0f766e",
-  monthly_expense: "#64748b",
-  outside_rent: "#0891b2",
-  property_purchase: "#1d4ed8",
-  closing_cost_payment: "#7e22ce",
-  mortgage_payment: "#0369a1",
-  property_tax_payment: "#a16207",
-  hoa_dues_payment: "#14b8a6",
-  homeowners_insurance_payment: "#9333ea",
-  property_maintenance_payment: "#d97706",
-  tax_accrual: "#b45309",
-  tax_payment: "#7c3aed",
-  failure: "#dc2626",
-  set_primary_residence: "#2563eb",
-  set_rented_fraction: "#0ea5e9",
-  capital_improvement: "#15803d",
-  property_sale: "#be123c",
-  private_equity_event: "#9333ea",
-  private_equity_opportunity: "#6d28d9",
-};
+export const ROLLOUT_EVENT_KIND_ORDER = ROLLOUT_EVENT_METADATA.map(({ kind }) => kind);
+export const ROLLOUT_EVENT_KIND_LABELS = Object.fromEntries(
+  ROLLOUT_EVENT_METADATA.map(({ kind, label }) => [kind, label])
+);
+export const ROLLOUT_EVENT_COLORS = Object.fromEntries(ROLLOUT_EVENT_METADATA.map(({ kind, color }) => [kind, color]));
+export const DEFAULT_HIDDEN_EVENT_KINDS = new Set(
+  ROLLOUT_EVENT_METADATA.filter(({ hidden }) => hidden).map(({ kind }) => kind)
+);
 
 // Pixel pitch between vertical marker stacks (events stack upward above the rollout line).
 export const EVENT_MARKER_STACK_PITCH_PX = 12;

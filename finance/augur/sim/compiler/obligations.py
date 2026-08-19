@@ -78,15 +78,7 @@ class EstimatedTaxObligationPlan:
 
 
 @dataclass(frozen=True)
-class Q4EstimatedTaxObligationPlan:
-    active: NDArray[np.bool_]
-    profile_index: NDArray[np.int64]
-    prior_year_tax: NDArray[np.int64]
-    tax_year_end_month: NDArray[np.int64]
-
-
-@dataclass(frozen=True)
-class TaxTrueUpObligationPlan:
+class PriorYearTaxObligationPlan:
     active: NDArray[np.bool_]
     profile_index: NDArray[np.int64]
     prior_year_tax: NDArray[np.int64]
@@ -102,8 +94,8 @@ class ObligationCompileOutput:
     property_tax: PropertyTaxObligationPlan
     mortgage: MortgageObligationPlan
     estimated_tax: EstimatedTaxObligationPlan
-    q4_estimated_tax: Q4EstimatedTaxObligationPlan
-    tax_true_up: TaxTrueUpObligationPlan
+    q4_estimated_tax: PriorYearTaxObligationPlan
+    tax_true_up: PriorYearTaxObligationPlan
 
 
 def estimated_tax_quarter(month: int) -> int | None:
@@ -409,10 +401,10 @@ def compile_obligation_slots(
         estimated_tax=EstimatedTaxObligationPlan(
             active=estimated_active, profile_index=estimated_profile, prior_year_tax=estimated_prior
         ),
-        q4_estimated_tax=Q4EstimatedTaxObligationPlan(
+        q4_estimated_tax=PriorYearTaxObligationPlan(
             active=q4_active, profile_index=q4_profile, prior_year_tax=q4_prior, tax_year_end_month=q4_year_end
         ),
-        tax_true_up=TaxTrueUpObligationPlan(
+        tax_true_up=PriorYearTaxObligationPlan(
             active=true_up_active,
             profile_index=true_up_profile,
             prior_year_tax=true_up_prior,
