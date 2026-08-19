@@ -3,6 +3,7 @@
 # Console-owned Claude Agent Sandbox runtime. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
   # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
   # Git rather than being inferred from an environment-variable name; only the Git credential is

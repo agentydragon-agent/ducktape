@@ -32,6 +32,19 @@ def _callbacks(username: str | None, password: str | None) -> pygit2.RemoteCallb
     return pygit2.RemoteCallbacks(credentials=pygit2.UserPass(username, password))
 
 
+def configure_ca_trust(ca_bundle: Path) -> None:
+    """Point libgit2 at the process's reviewed CA bundle.
+
+    libgit2 does not inherit Python's TLS context and ignores ``SSL_CERT_FILE``/
+    ``GIT_SSL_CAINFO``. Without this explicit process-wide setting an HTTPS source can fail with
+    ``user rejected certificate`` even when the same image's HTTP clients trust the remote.
+
+    The directory must be ``None`` rather than an empty string: OpenSSL treats ``""`` as a path
+    and rejects it while loading the bundle.
+    """
+    pygit2.settings.set_ssl_cert_locations(str(ca_bundle), None)
+
+
 def open_mirror(path: Path, url: str, *, username: str | None = None, password: str | None = None) -> pygit2.Repository:
     """Open the bare mirror at `path`, cloning it from `url` if it isn't there yet."""
     if (path / "HEAD").exists():
