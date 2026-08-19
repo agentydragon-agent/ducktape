@@ -178,20 +178,24 @@ class _CompletedTurn:
 def _inherited(turn: TurnStart | ResumedTurn) -> ProjectionState:
     """Where an adopting replica's fold picks the turn up.
 
-    Empty for a turn this process opened, and for one whose predecessor had no message open. What
-    the store hands back is the item, so the prose lands on the same row either way; what this
-    carries is how much of it has been said, without which the completed block arriving next is
-    stored on top of the half already there.
+    Empty only for a turn this process opened. What the store hands back is the open message, when
+    there is one, so the prose lands on the same row either way; what this carries is how much of it
+    has been said, without which the completed block arriving next is stored on top of the half
+    already there. Materialised call ids are inherited independently of prose so completed
+    compatibility blocks arriving after a roll stay duplicates rather than new calls.
     """
-    if isinstance(turn, TurnStart) or turn.streaming is None:
+    if isinstance(turn, TurnStart):
         return ProjectionState()
+    if turn.streaming is None:
+        return ProjectionState(seen_call_ids=turn.seen_call_ids)
     return ProjectionState(
         open_message=OpenItem(
             opened_at_frame_seq=turn.streaming.first_frame_seq,
             last_frame_seq=turn.streaming.last_frame_seq,
             backend_item_id=None,
             delivered=turn.streaming.text,
-        )
+        ),
+        seen_call_ids=turn.seen_call_ids,
     )
 
 
@@ -665,6 +669,12 @@ class SessionService:
                 finished = first((event for event in events if isinstance(event, TurnCompleted)), None)
                 if finished is not None:
                     completed = _CompletedTurn(finished, received)
+                elif folding.open_tool_call is not None:
+                    # A partial call is not a conversation event yet. Keep the durable cursor before
+                    # its first stream frame so another replica replays the whole composition rather
+                    # than inheriting half a JSON value that no row can represent.
+                    if events:
+                        raise AssertionError("a composing tool call emitted a conversation event")
                 else:
                     await self._store.apply_frame(session_id, turn_id, frame_seq, events)
             result = completed.frame.payload

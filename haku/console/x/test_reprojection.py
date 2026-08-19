@@ -17,6 +17,7 @@ from sqlalchemy import delete, update
 from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, FrameDirection, ItemType, TurnOutcome
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session
 from haku.console.x import reprojection
+from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
 from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.frame_projection import projected
 from haku.console.x.session_store import BridgeAuthentication
@@ -48,7 +49,10 @@ async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dic
     for payload in frames:
         recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, payload["type"], payload)
         state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
-        await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
+        if state.open_tool_call is None:
+            await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
+        else:
+            assert not events
     return session_id, started.turn_id
 
 
@@ -79,6 +83,26 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
     assert turn.unprojected_frames == 0
     # And the invariant the whole shape exists for: every item's text is exactly its segments.
     assert report.items == ()
+
+
+async def test_a_streamed_tool_declaration_agrees_with_its_multiframe_provenance(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    session_id, _ = await _turn_through_the_write_path(
+        chat_store,
+        operator_id,
+        [
+            tool_use_start("toolu_1", "Bash", index=1),
+            input_json_delta('{"command": "ls"}', index=1),
+            content_block_stop(index=1),
+            _tool_result("toolu_1", "a.py"),
+        ],
+    )
+
+    async with migrated_sessions() as db:
+        report = await reprojection.check_session(db, session_id)
+
+    assert one(report.turns).outcome == reprojection.Agrees()
 
 
 async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated_sessions, operator_id) -> None:

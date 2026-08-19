@@ -62,6 +62,7 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenItem,
     OpenRef,
+    OpenToolCall,
     Projection,
     ProjectionState,
     ReasoningCompleted,
@@ -133,10 +134,23 @@ def project(
     not an event. Raises `ValueError` on a payload with no `type`: that is a caller handing it a
     row the CLI never sent, not anything the wire can do.
     """
-    projector = _Projector(delta_source=delta_source, open_message=state.open_message)
+    projector = _Projector(
+        delta_source=delta_source,
+        open_message=state.open_message,
+        open_tool_call=state.open_tool_call,
+        seen_call_ids=set(state.seen_call_ids),
+    )
     for frame in frames:
         projector.fold(frame)
-    return ProjectionState(open_message=projector.open_message), projector.projected()
+    return (
+        ProjectionState(
+            open_message=projector.open_message,
+            open_reasoning=state.open_reasoning,
+            open_tool_call=projector.open_tool_call,
+            seen_call_ids=frozenset(projector.seen_call_ids),
+        ),
+        projector.projected(),
+    )
 
 
 def finish(state: ProjectionState) -> Projection:
@@ -197,6 +211,8 @@ def project_log(
 class _Projector:
     delta_source: DeltaSource
     open_message: OpenItem | None
+    open_tool_call: OpenToolCall | None
+    seen_call_ids: set[str]
     events: list[ConversationEvent] = field(default_factory=list)
     unprojected: dict[str, int] = field(default_factory=dict)
 
@@ -206,8 +222,7 @@ class _Projector:
     def fold(self, frame: RecordedFrame) -> None:
         kind = frames.frame_kind(frame.payload)
         if kind == frames.DELTA_FRAME_KIND:
-            if self.delta_source is DeltaSource.STREAM_EVENTS:
-                self._stream_delta(frame)
+            self._stream_event(frame)
             return
         if kind in _IGNORED_KINDS:
             return
@@ -232,7 +247,73 @@ class _Projector:
         self.open_message = None
         self.events.append(_completed(open_message))
 
-    def _stream_delta(self, frame: RecordedFrame) -> None:
+    def _stream_event(self, frame: RecordedFrame) -> None:
+        """One increment of prose or tool arguments still being written.
+
+        Tool composition is read under both delta policies. Claude Code 2.1.220 can execute a tool
+        and return its result before emitting the completed `assistant` block that used to declare
+        the call. The stream's start, JSON fragments and stop are therefore the first complete
+        account of the call, not merely a lower-granularity copy. Completed assistant blocks remain
+        a compatible second source and are deduplicated by call id.
+
+        Prose deltas remain live-only: a stored log prefers the completed text block, while a live
+        consumer displays the answer as it is written.
+        """
+        event = frame.payload.get("event")
+        if not isinstance(event, dict):
+            return
+        event_type = event.get("type")
+        if event_type == "content_block_start":
+            block = event.get("content_block")
+            index = event.get("index")
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                return
+            call_id, name, arguments = block.get("id"), block.get("name"), block.get("input")
+            if not (
+                isinstance(index, int)
+                and isinstance(call_id, str)
+                and isinstance(name, str)
+                and isinstance(arguments, dict)
+            ):
+                self._unprojected("stream_event/tool_use_start")
+                return
+            if self.open_tool_call is not None:
+                self._unprojected("stream_event/overlapping_tool_use")
+            self.open_tool_call = OpenToolCall(
+                call_id=call_id,
+                tool_name=name,
+                block_index=index,
+                opened_at_frame_seq=frame.frame_seq,
+                last_frame_seq=frame.frame_seq,
+                initial_arguments=dict(arguments),
+            )
+            return
+        if event_type == "content_block_delta":
+            delta = event.get("delta")
+            index = event.get("index")
+            if (
+                isinstance(delta, dict)
+                and delta.get("type") == "input_json_delta"
+                and (opened := self.open_tool_call) is not None
+                and index == opened.block_index
+            ):
+                partial = delta.get("partial_json")
+                if isinstance(partial, str):
+                    self.open_tool_call = replace(
+                        opened, last_frame_seq=frame.frame_seq, partial_json=opened.partial_json + partial
+                    )
+                else:
+                    self._unprojected("stream_event/input_json_delta")
+                return
+            if self.delta_source is DeltaSource.STREAM_EVENTS:
+                self._stream_text(frame, event)
+            return
+        if event_type == "content_block_stop":
+            index = event.get("index")
+            if (opened := self.open_tool_call) is not None and index == opened.block_index:
+                self._finish_stream_call(last_frame_seq=frame.frame_seq)
+
+    def _stream_text(self, frame: RecordedFrame, event: dict[str, Any]) -> None:
         """One increment of an answer still being written, for a consumer holding the live wire.
 
         **It attaches to the open message rather than keying itself.** A delta carries no
@@ -242,8 +323,7 @@ class _Projector:
         exists to rule out. A CLI writes one answer at a time, which is what makes "the open one"
         unambiguous.
         """
-        event = frame.payload.get("event")
-        if not isinstance(event, dict) or not (text := frames.text_delta(event)):
+        if not (text := frames.text_delta(event)):
             return
         if self.open_message is None:
             self.open_message = OpenItem(
@@ -260,6 +340,36 @@ class _Projector:
                 provenance=FrameRange(frame.frame_seq, frame.frame_seq),
             )
         )
+
+    def _finish_stream_call(self, *, last_frame_seq: int) -> None:
+        """Emit the complete call being composed, or count a malformed composition."""
+        opened = self.open_tool_call
+        if opened is None:
+            return
+        self.open_tool_call = None
+        arguments: Any = opened.initial_arguments
+        if opened.partial_json:
+            try:
+                arguments = json.loads(opened.partial_json)
+            except json.JSONDecodeError:
+                self._unprojected("stream_event/tool_use_arguments")
+                return
+        if not isinstance(arguments, dict):
+            self._unprojected("stream_event/tool_use_arguments")
+            return
+        self._start_call(
+            call_id=opened.call_id,
+            name=opened.tool_name,
+            arguments=arguments,
+            provenance=FrameRange(opened.opened_at_frame_seq, last_frame_seq),
+        )
+
+    def _start_call(self, *, call_id: str, name: str, arguments: dict[str, Any], provenance: FrameRange) -> None:
+        """Open one call once, whichever of the stream or completed block declared it first."""
+        if call_id in self.seen_call_ids:
+            return
+        self.seen_call_ids.add(call_id)
+        self.events.append(ToolCallStarted(call_id=call_id, tool_name=name, arguments=arguments, provenance=provenance))
 
     def _assistant(self, frame: RecordedFrame) -> None:
         where = FrameRange(frame.frame_seq, frame.frame_seq)
@@ -304,9 +414,9 @@ class _Projector:
                     and isinstance(name := block.get("name"), str)
                     and isinstance(arguments := block.get("input"), dict)
                 ):
-                    self.events.append(
-                        ToolCallStarted(call_id=call_id, tool_name=name, arguments=arguments, provenance=where)
-                    )
+                    self._start_call(call_id=call_id, name=name, arguments=arguments, provenance=where)
+                    if self.open_tool_call is not None and self.open_tool_call.call_id == call_id:
+                        self.open_tool_call = None
                 case block_type:
                     self._unprojected(f"{frames.ASSISTANT_FRAME_KIND}/{block_type}")
 
@@ -365,6 +475,8 @@ class _Projector:
         for block in content:
             match block.get("type") if isinstance(block, dict) else None:
                 case "tool_result" if isinstance(call_id := block.get("tool_use_id"), str):
+                    if self.open_tool_call is not None and self.open_tool_call.call_id == call_id:
+                        self._finish_stream_call(last_frame_seq=self.open_tool_call.last_frame_seq)
                     # Addressed by the call id: the ask was frames ago, and a fold resuming from a
                     # cursor after it has no position to name.
                     answered = CallRef(call_id=call_id)

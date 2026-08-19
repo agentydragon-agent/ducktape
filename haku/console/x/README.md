@@ -85,7 +85,9 @@ did not take is diagnosable from nothing else. **Deltas included**, because a lo
 cannot be folded over; not burying the reader is answered at the read instead, where `read_frames`
 leaves `stream_event` out of its default view. They are also what makes an interrupted turn's
 half-answer survive: an answer no `assistant` frame ever completed is in the log as the deltas that
-wrote it.
+wrote it. Tool argument deltas are load-bearing too: some Claude Code builds can execute a call and
+return its result before writing the completed `assistant` block, so the stream's block start,
+partial JSON and stop are what first make that call addressable.
 
 **A row carries two numbers, and only one of them is this end's.** `frame_seq` is Postgres's
 `Identity` and is still the log's ordering, its keyset cursors and every reference to a frame.
@@ -182,10 +184,10 @@ Decisions worth knowing before changing it:
   this for are a session's last ones, and paging forward from frame one to reach them is what would
   make a long session expensive to debug. Each page still comes back in wire order.
 - **Deltas are a mode, not a checkbox.** The default view is `read_frames`' own — everything except
-  `stream_event` — because a turn streams those in the hundreds and the completed `assistant` frame
-  repeats their content. Interleaving them would bury the frames they duplicate, so "Stream deltas"
-  asks for that kind alone; the one question they answer is how far an answer got before it was cut
-  off.
+  `stream_event` — because a turn streams those in the hundreds and completed blocks normally
+  repeat their content. Interleaving them would bury the coarser frames, so "Stream deltas" asks
+  for that kind alone. They answer how far an answer got before it was cut off and, for a tool
+  result with no preceding completed `assistant` block, where its call and arguments were declared.
 - **Nothing is clipped, and the page size is what bounds the response.** The MCP reader clips a
   frame to a context budget; here the wire is the answer, so clipping would be the lossy projection
   again one level down. The browser's other cost is drawn down instead: a payload builds its

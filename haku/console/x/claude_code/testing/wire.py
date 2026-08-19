@@ -155,10 +155,25 @@ def text_delta(text: str) -> dict[str, Any]:
     return stream_event({"delta": {"text": text, "type": "text_delta"}, "index": 0, "type": "content_block_delta"})
 
 
-def input_json_delta(partial_json: str) -> dict[str, Any]:
+def tool_use_start(call_id: str, name: str, *, index: int = 0) -> dict[str, Any]:
+    """The streaming declaration that precedes a tool's argument fragments."""
+    return stream_event(
+        {"content_block": tool_use_block(call_id, name, {}), "index": index, "type": "content_block_start"}
+    )
+
+
+def content_block_stop(*, index: int = 0) -> dict[str, Any]:
+    return stream_event({"index": index, "type": "content_block_stop"})
+
+
+def input_json_delta(partial_json: str, *, index: int = 0) -> dict[str, Any]:
     """A tool's arguments arriving a fragment at a time — 863 of 950 production deltas."""
     return stream_event(
-        {"delta": {"partial_json": partial_json, "type": "input_json_delta"}, "index": 0, "type": "content_block_delta"}
+        {
+            "delta": {"partial_json": partial_json, "type": "input_json_delta"},
+            "index": index,
+            "type": "content_block_delta",
+        }
     )
 
 

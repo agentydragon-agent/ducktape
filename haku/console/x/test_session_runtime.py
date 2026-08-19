@@ -38,6 +38,8 @@ from haku.console.database_schema import ConversationEvent, ConversationItem, Se
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, frame_kind
 from haku.console.x.claude_code.testing.wire import (
     assistant,
+    content_block_stop,
+    input_json_delta,
     prompt,
     result,
     text_block,
@@ -45,6 +47,7 @@ from haku.console.x.claude_code.testing.wire import (
     thinking_block,
     tool_result,
     tool_use_block,
+    tool_use_start,
 )
 from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, runtime_config
 from haku.console.x.conversation_events import ProjectionState
@@ -193,6 +196,49 @@ async def test_run_turn_preserves_assistant_message_boundaries_around_tool_use(
         (ItemType.MESSAGE, "The Haku Console catalog is available.", None, ItemStatus.COMPLETE),
     ]
     assert await chat_store.status(view.session_id) == SessionStatus.READY, "the turn was not completed"
+
+
+async def test_run_turn_accepts_a_stream_only_tool_call_before_its_result(
+    chat_store, chat_service, operator_id
+) -> None:
+    """A result cannot outrun the streamed declaration that made its call addressable.
+
+    Captured from the production failure on 2026-08-19: Claude Code 2.1.220 executed two parallel
+    calls without first emitting their completed `assistant` blocks. The first result used to make
+    `LogWriter` fail the whole session with "no call was asked under this id".
+    """
+    view, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "update the notes", SPA_ORIGIN)
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+
+    client = _FakeCli(
+        [
+            tool_use_start("toolu_01", "Bash", index=1),
+            input_json_delta('{"command": "true"}', index=1),
+            content_block_stop(index=1),
+            tool_result("toolu_01", "ok", structured={"stdout": "ok"}, is_error=False),
+            result(text="updated"),
+        ]
+    )
+    await chat_service._run_turn(
+        client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
+    )
+
+    call = one(
+        item
+        for item in (await chat_store.get(operator_id, view.session_id)).items
+        if item.item_type is ItemType.TOOL_CALL
+    )
+    assert (call.tool_name, call.arguments, call.text, call.outcome, call.status) == (
+        "Bash",
+        {"command": "true"},
+        "ok",
+        ToolOutcome.SUCCEEDED,
+        ItemStatus.COMPLETE,
+    )
+    assert await chat_store.status(view.session_id) == SessionStatus.READY
 
 
 async def _open_items(sessions, session_id) -> list[UUID]:
@@ -412,7 +458,10 @@ async def _folded(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *pa
             session_id, FrameDirection.FROM_AGENT, frame_kind(payload) or "assistant", payload
         )
         folding, events = projected(folding, frame_seq=recorded.frame_seq, payload=payload)
-        await chat_store.apply_frame(session_id, turn_id, recorded.frame_seq, events)
+        if folding.open_tool_call is None:
+            await chat_store.apply_frame(session_id, turn_id, recorded.frame_seq, events)
+        else:
+            assert not events
 
 
 async def test_adoption_picks_the_answer_up_where_it_stopped(
@@ -438,6 +487,97 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     assert resumed.streaming.text == "we were half way through"
     state = await chat_store.turn_state(resumed.turn_id)
     assert not state.said_anything, "the message is still open, so nothing has completed"
+
+
+async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """The stream declaration can commit before a roll and its completed copy arrive afterwards."""
+    session = await chat_service.create(operator_id)
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await _folded(
+        chat_store,
+        session_id,
+        started.turn_id,
+        tool_use_start("toolu_01", "Bash", index=1),
+        input_json_delta('{"command": "true"}', index=1),
+        content_block_stop(index=1),
+    )
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    assert resumed.seen_call_ids == frozenset({"toolu_01"})
+
+    client = _FakeCli(
+        [
+            assistant(tool_use_block("toolu_01", "Bash", {"command": "true"})),
+            tool_result("toolu_01", "ok", structured={"stdout": "ok"}),
+            result(text="continued"),
+        ]
+    )
+    client.replay()
+    async with asyncio.timeout(30):
+        await chat_service._run_turn(
+            cast(Any, client), client.frames().__aiter__(), session_id, resumed, abort_event=asyncio.Event()
+        )
+
+    calls = [
+        item for item in (await chat_store.get(operator_id, session_id)).items if item.item_type is ItemType.TOOL_CALL
+    ]
+    assert len(calls) == 1
+    assert (calls[0].call_id, calls[0].text, calls[0].status) == ("toolu_01", "ok", ItemStatus.COMPLETE)
+
+
+async def test_adoption_replays_a_tool_call_composition_from_its_start(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    """No durable item can hold half a JSON value, so a roll replays the composition whole."""
+    session = await chat_service.create(operator_id)
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await _folded(
+        chat_store,
+        session_id,
+        started.turn_id,
+        tool_use_start("toolu_01", "Bash", index=1),
+        input_json_delta('{"command": ', index=1),
+    )
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+    assert resumed is not None
+    assert [frame.payload["type"] for frame in resumed.replay] == ["user", "stream_event", "stream_event"]
+
+    client = _FakeCli(
+        [
+            input_json_delta('"true"}', index=1),
+            content_block_stop(index=1),
+            tool_result("toolu_01", "ok", structured={"stdout": "ok"}),
+            result(text="continued"),
+        ]
+    )
+    client.replay()
+    async with asyncio.timeout(30):
+        await chat_service._run_turn(
+            cast(Any, client),
+            _replaying(resumed.replay, client.frames().__aiter__()),
+            session_id,
+            resumed,
+            abort_event=asyncio.Event(),
+        )
+
+    call = one(
+        item for item in (await chat_store.get(operator_id, session_id)).items if item.item_type is ItemType.TOOL_CALL
+    )
+    assert (call.arguments, call.text, call.status) == ({"command": "true"}, "ok", ItemStatus.COMPLETE)
 
 
 async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it_spoke(

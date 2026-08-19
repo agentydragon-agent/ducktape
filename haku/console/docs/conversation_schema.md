@@ -252,8 +252,11 @@ Constraints state the per-type fields against `item_type`, `status = 'open'` hol
 
 **A tool call's arguments are complete or the call is not started.** Two of three backends stream
 arguments as partial JSON (`response.function_call_arguments.delta`, Claude's `input_json_delta`),
-so `arguments` is written from the `.done`, and "a call is being composed" is deliberately not
-expressible. A channel learns of a call when there is something true to say about it.
+so `arguments` is written from the terminal stream event (`.done` or Claude's block stop), and "a
+call is being composed" is deliberately not expressible. Some Claude Code builds execute and
+answer a call before emitting its completed `assistant` block; the streaming declaration is
+therefore authoritative when it arrives first, and a later completed copy is deduplicated by call
+id. A channel learns of a call only when there is something complete to say about it.
 
 `conversation_turn` is one row per exchange, derived from `turn_started` and `turn_ended`.
 

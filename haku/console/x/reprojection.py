@@ -5,9 +5,10 @@ per-turn disagreement is worth.
 
 **The fold is the write path's own** (`frame_projection.projected`) and each event is spelled by
 the write path's own mapping (`session_events.stored`), so the only thing added here is the
-alignment. That alignment is **by frame**: a frame's rows are written in one transaction and every
-event the write path produces carries `(frame_seq, frame_seq)` as its range, so which rows a frame
-owns is a lookup rather than a guess.
+alignment. That alignment is **by the first frame in the event's provenance**. Most events name one
+frame; a message completion and a streamed tool declaration can span several, and the stored row
+keeps that same inclusive range. Cursor coverage is still decided by the frame whose fold emitted
+the event: a later frame can close an item whose own last content frame came before it.
 
 **What is compared is the kind and the body, not the whole row.** `item_id` is minted and
 `event_seq` allocated as rows are written, so a re-projection cannot reproduce either and does not
@@ -44,7 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ConversationEventKind, EventProvenance, StoredEventKind
 from haku.console.database_schema import ConversationEvent, ConversationItem, ConversationTurn, Session, SessionFrame
 from haku.console.x import frame_projection, session_events
-from haku.console.x.conversation_events import ProjectionState
+from haku.console.x.conversation_events import FrameRange, ProjectionState
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from util.sqlalchemy_types import UnknownValue
 
@@ -55,6 +56,11 @@ class ProjectedRow:
 
     kind: StoredEventKind
     body: dict[str, Any]
+    source_first_frame_seq: int
+    source_last_frame_seq: int
+    # The frame whose fold emitted this row. Distinct from provenance: a new message frame can
+    # close prose whose own last contributing frame came before it.
+    emitted_at_frame_seq: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +275,7 @@ def _outcome(
     """One turn's outcome: the skip first, because an era is not a disagreement."""
     if not within:
         return Skipped(reason=SkipReason.CURSOR_NEVER_REACHED)
+    assert cursor is not None
     findings: list[Finding] = []
     stored: defaultdict[int, list[ConversationEvent]] = defaultdict(list)
     for row in rows:
@@ -276,12 +283,22 @@ def _outcome(
         assert row.source_first_frame_seq is not None
         stored[row.source_first_frame_seq].append(row)
     for frame_seq in sorted(set(projected) | set(stored)):
-        kept = tuple(stored.get(frame_seq, ()))
-        if cursor is None or frame_seq > cursor:
-            if kept:
-                findings.append(RowsBeyondCursor(frame_seq=frame_seq, stored=_kinds(kept)))
+        projected_here = tuple(row for row in projected.get(frame_seq, ()) if row.emitted_at_frame_seq <= cursor)
+        stored_here = tuple(
+            row
+            for row in stored.get(frame_seq, ())
+            if row.source_last_frame_seq is not None and row.source_last_frame_seq <= cursor
+        )
+        beyond = tuple(
+            row
+            for row in stored.get(frame_seq, ())
+            if row.source_last_frame_seq is not None and row.source_last_frame_seq > cursor
+        )
+        if beyond:
+            findings.append(RowsBeyondCursor(frame_seq=frame_seq, stored=_kinds(beyond)))
+        if frame_seq > cursor:
             continue
-        findings.extend(_aligned(frame_seq, projected.get(frame_seq, ()), kept))
+        findings.extend(_aligned(frame_seq, projected_here, stored_here))
     return Drifted(findings=tuple(findings)) if findings else Agrees()
 
 
@@ -296,22 +313,21 @@ def _aligned(frame_seq: int, projected: Sequence[ProjectedRow], stored: Sequence
     return [
         RowMismatch(frame_seq=frame_seq, position=position, event_seq=theirs.event_seq, differences=tuple(differences))
         for position, (mine, theirs) in enumerate(zip(projected, stored, strict=True))
-        if (differences := _differences(frame_seq, mine, theirs))
+        if (differences := _differences(mine, theirs))
     ]
 
 
-def _differences(frame_seq: int, projected: ProjectedRow, stored: ConversationEvent) -> list[FieldDifference]:
+def _differences(projected: ProjectedRow, stored: ConversationEvent) -> list[FieldDifference]:
     """The columns a re-projection can speak for, compared.
 
-    The frame range is checked against the frame this row was grouped under rather than against a
-    projected value: the write path stamps every event of one frame `(frame_seq, frame_seq)`, so a
-    row that disagrees is one the grouping already put in the wrong place.
+    The event carries the exact range it was read from. Comparing both ends matters for composed
+    calls: the row is written only once the terminal stream frame makes its partial JSON complete.
     """
     expected = {
         "kind": projected.kind,
         "provenance": EventProvenance.FRAME_RANGE,
-        "source_first_frame_seq": frame_seq,
-        "source_last_frame_seq": frame_seq,
+        "source_first_frame_seq": projected.source_first_frame_seq,
+        "source_last_frame_seq": projected.source_last_frame_seq,
         "body": projected.body,
     }
     return [
@@ -326,16 +342,28 @@ def _expected(frames: Sequence[SessionFrame]) -> dict[int, tuple[ProjectedRow, .
     functions — folded with one state across the turn, because that is how the writer folds it.
     """
     state = ProjectionState()
-    said: dict[int, tuple[ProjectedRow, ...]] = {}
+    said: defaultdict[int, list[ProjectedRow]] = defaultdict(list)
     for frame in frames:
+        # A frame with no events still belongs in coverage and can have stored rows to disagree
+        # with, so retain an empty bucket for it.
+        said[frame.frame_seq]
         state, events = frame_projection.projected(state, frame_seq=frame.frame_seq, payload=frame.payload)
-        said[frame.frame_seq] = tuple(
-            ProjectedRow(kind=kind, body=body.model_dump(mode="json"))
-            for event in events
-            if (row := session_events.stored(event)) is not None
-            for kind, body in (row,)
-        )
-    return said
+        for event in events:
+            if (row := session_events.stored(event)) is None:
+                continue
+            if not isinstance(provenance := event.provenance, FrameRange):
+                raise AssertionError(f"a projected stored event names no frame range: {event=}")
+            kind, body = row
+            said[provenance.first_frame_seq].append(
+                ProjectedRow(
+                    kind=kind,
+                    body=body.model_dump(mode="json"),
+                    source_first_frame_seq=provenance.first_frame_seq,
+                    source_last_frame_seq=provenance.last_frame_seq,
+                    emitted_at_frame_seq=frame.frame_seq,
+                )
+            )
+    return {frame_seq: tuple(rows) for frame_seq, rows in said.items()}
 
 
 def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:
