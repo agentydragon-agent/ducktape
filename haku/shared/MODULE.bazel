@@ -23,4 +23,4 @@ module(
 # toolchain, and avoids a second pydantic copy crossing the module boundary — so rules_python is
 # needed only for the py_library rule, no pip hub / lockfile.
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
-bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_python", version = "1.9.2")
