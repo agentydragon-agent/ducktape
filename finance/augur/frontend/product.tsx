@@ -80,7 +80,11 @@ function RolloutResultsPanel({
   const activeScenario = fanSeries.find((entry) => entry.isActive) ?? fanSeries[0];
   const chartSeries = focusActive && multipleScenarios ? fanSeries.filter((entry) => entry.isActive) : fanSeries;
   return (
-    <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
+    <section
+      className="augur-panel overflow-hidden"
+      aria-label="Cash projection workspace"
+      data-product-results-ready=""
+    >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="flex items-center gap-3">
           <NativeSelect

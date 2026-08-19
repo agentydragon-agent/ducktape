@@ -141,8 +141,8 @@ def test_product_shell_renders_metric_fan_charts(page: Page, page_errors: list[s
     confirm the matching fan chart renders for each."""
     page.goto(f"{augur_server}/product", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
-    page.wait_for_timeout(1_000)
     assert not page_errors
+    page.locator("[data-product-results-ready]").wait_for(state="visible", timeout=30_000)
     page.get_by_label("Metric to plot").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Metric to plot").select_option("cash")
     page.locator("[data-product-fan-chart='cashQuanta']").wait_for(state="visible", timeout=30_000)
