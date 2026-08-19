@@ -39,8 +39,9 @@ def configure_ca_trust(ca_bundle: Path) -> None:
     ``GIT_SSL_CAINFO``. Without this explicit process-wide setting an HTTPS source can fail with
     ``user rejected certificate`` even when the same image's HTTP clients trust the remote.
 
-    The directory must be ``None`` rather than an empty string: OpenSSL treats ``""`` as a path
-    and rejects it while loading the bundle.
+    This matches the established pygit2 transport setup in
+    ``cluster/rotators/attic_jwt_rotation/rotate.py``. The directory must be ``None`` rather than
+    an empty string: OpenSSL treats ``""`` as a path and rejects it while loading the bundle.
     """
     pygit2.settings.set_ssl_cert_locations(str(ca_bundle), None)
 
