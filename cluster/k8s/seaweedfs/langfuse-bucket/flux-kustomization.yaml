@@ -17,6 +17,8 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-secrets
       namespace: ducktape-flux
+    - name: langfuse-secrets
+      namespace: ducktape-flux
   wait: true
   timeout: 5m
   healthChecks:

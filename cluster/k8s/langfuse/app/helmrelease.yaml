@@ -239,11 +239,11 @@ spec:
       forcePathStyle: true
       accessKeyId:
         secretKeyRef:
-          name: langfuse-secrets
+          name: langfuse-s3-credentials
           key: s3-access-key-id
       secretAccessKey:
         secretKeyRef:
-          name: langfuse-secrets
+          name: langfuse-s3-credentials
           key: s3-secret-access-key
       eventUpload:
         prefix: events/
