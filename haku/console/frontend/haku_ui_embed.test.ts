@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant";
-import { initialFrameSrc, routeFromLocation } from "./haku_ui_embed";
+import { initialFrameSrc, routeFromLocation, shouldCloseAutoOpenedApprovalQueue } from "./haku_ui_embed";
 import { rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH } from "./routing";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 
@@ -24,6 +24,20 @@ describe("initialFrameSrc", () => {
     expect(initialFrameSrc("https://haku-ui.allegedly.works/", "//evil.example/x")).toBe(
       "https://haku-ui.allegedly.works/"
     );
+  });
+});
+
+describe("shouldCloseAutoOpenedApprovalQueue", () => {
+  it("closes an automatically opened drawer when the pending queue drains", () => {
+    expect(shouldCloseAutoOpenedApprovalQueue(true, true, 0)).toBe(true);
+  });
+
+  it("keeps a manually opened drawer open", () => {
+    expect(shouldCloseAutoOpenedApprovalQueue(true, false, 0)).toBe(false);
+  });
+
+  it("keeps an automatically opened drawer open while approvals remain", () => {
+    expect(shouldCloseAutoOpenedApprovalQueue(true, true, 1)).toBe(false);
   });
 });
 
