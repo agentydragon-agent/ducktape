@@ -188,6 +188,7 @@ async def test_index_status_schema_validates_each_index_kind() -> None:
                     "files": 100,
                     "chunks": 200,
                     "embedded_chunks": 200,
+                    "pending_chunks": 0,
                     "superseded_chunks": 3,
                 },
                 {
@@ -199,6 +200,8 @@ async def test_index_status_schema_validates_each_index_kind() -> None:
                     "unindexed_messages": 2,
                     "lag_seconds": 10.5,
                     "last_indexed_at": "2026-08-19T09:59:30Z",
+                    "embedded_chunks": 30,
+                    "pending_chunks": 4,
                     "superseded_chunks": 4,
                 },
             ]

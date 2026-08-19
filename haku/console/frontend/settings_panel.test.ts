@@ -60,6 +60,7 @@ describe("indexStatusDisplay", () => {
     files: 1,
     chunks: 2,
     embedded_chunks: 2,
+    pending_chunks: 0,
     superseded_chunks: 0,
   });
 
@@ -80,6 +81,8 @@ describe("indexStatusDisplay", () => {
         unindexed_messages: 3,
         lag_seconds: 42,
         last_indexed_at: null,
+        embedded_chunks: 27,
+        pending_chunks: 3,
         superseded_chunks: 0,
       }).label
     ).toBe("Catching up");
