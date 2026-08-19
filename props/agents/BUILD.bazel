@@ -61,6 +61,7 @@ py_binary(
 
 py_test(
     name = "test_system_prompts",
+    size = "medium",
     srcs = ["test_system_prompts.py"],
     data = [
         "//props/agents/critic:prompt.md.mako",
