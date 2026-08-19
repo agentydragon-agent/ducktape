@@ -162,17 +162,12 @@ spec:
             # haku-state — nothing here does, but the console now holds it. The cheaper-privilege
             # alternative is the `claude` account, which tf/gitops/haku-state already grants
             # read-only on this repo: same three keys, different secret.
-            - name: HAKU_CONSOLE_HAKU_STATE_GIT__REPO_URL
-              valueFrom:
-                secretKeyRef:
-                  name: haku-forgejo-git
-                  key: repo_url
-            - name: HAKU_CONSOLE_HAKU_STATE_GIT__USERNAME
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: haku-forgejo-git
                   key: username
-            - name: HAKU_CONSOLE_HAKU_STATE_GIT__PASSWORD
+            - name: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: haku-forgejo-git

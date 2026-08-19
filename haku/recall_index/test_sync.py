@@ -16,12 +16,13 @@ from haku.recall_index.content import content_sha
 from haku.recall_index.embedder import EMBED_BATCH
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.query import query_git
-from haku.recall_index.schema import ContentEmbedding
-from haku.recall_index.store import current_git_state, read_indexed_text
+from haku.recall_index.schema import ContentEmbedding, IndexType
+from haku.recall_index.store import current_git_state, read_indexed_text, register_index
 from haku.recall_index.sync import AlreadyCurrent, SyncOutcome, SyncReport, sync
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
+_GIT_INDEX = "test-git"
 
 
 @pytest.fixture
@@ -38,9 +39,15 @@ def commit(repo: pygit2.Repository, files: dict[str, str]) -> str:
 
 
 async def run_sync(
-    session: AsyncSession, repo: pygit2.Repository, commit_sha: str, embedder: FakeEmbedder
+    session: AsyncSession,
+    repo: pygit2.Repository,
+    commit_sha: str,
+    embedder: FakeEmbedder,
+    *,
+    index_id: str = _GIT_INDEX,
 ) -> SyncOutcome:
-    outcome = await sync(session, repo, commit_sha, branch="main", embedder=embedder, now=_NOW)
+    await register_index(session, index_id, index_type=IndexType.GIT, source_id=f"{index_id}-source")
+    outcome = await sync(session, repo, commit_sha, index_id=index_id, branch="main", embedder=embedder, now=_NOW)
     await session.commit()
     return outcome
 
@@ -51,8 +58,15 @@ def as_report(outcome: SyncOutcome) -> SyncReport:
     return outcome
 
 
-async def find(session: AsyncSession, embedder: FakeEmbedder, query: str, **kwargs):
-    return await query_git(session, embedder, query, limit=5, **kwargs)
+async def find(
+    session: AsyncSession,
+    embedder: FakeEmbedder,
+    query: str,
+    *,
+    index_id: str = _GIT_INDEX,
+    path_prefix: str | None = None,
+):
+    return await query_git(session, embedder, query, index_id=index_id, limit=5, path_prefix=path_prefix)
 
 
 async def test_search_returns_the_matching_path(
@@ -78,6 +92,29 @@ async def test_path_prefix_narrows_the_search(
     assert [hit.path for hit in hits] == ["notes/a.md"]
 
 
+async def test_two_git_indexes_share_vectors_but_not_occurrences(
+    session: AsyncSession, tmp_path: Path, embedder: FakeEmbedder
+) -> None:
+    """The future read boundary is real in storage before an API is allowed to expose it."""
+    first = pygit2.init_repository(str(tmp_path / "first.git"), bare=True, initial_head="main")
+    second = pygit2.init_repository(str(tmp_path / "second.git"), bare=True, initial_head="main")
+    await register_index(session, "first", index_type=IndexType.GIT, source_id="first-source")
+    await register_index(session, "second", index_type=IndexType.GIT, source_id="second-source")
+    await session.commit()
+
+    await run_sync(session, first, commit(first, {"a.md": "shared alpha"}), embedder, index_id="first")
+    await run_sync(session, second, commit(second, {"b.md": "shared beta"}), embedder, index_id="second")
+
+    assert [hit.path for hit in await find(session, embedder, "shared", index_id="first")] == ["a.md"]
+    assert [hit.path for hit in await find(session, embedder, "shared", index_id="second")] == ["b.md"]
+    first_state = await current_git_state(session, "first")
+    second_state = await current_git_state(session, "second")
+    assert first_state is not None
+    assert first_state.commit_sha is not None
+    assert second_state is not None
+    assert second_state.commit_sha is not None
+
+
 async def test_deleted_content_becomes_unreachable(
     session: AsyncSession, repo: pygit2.Repository, embedder: FakeEmbedder
 ) -> None:
@@ -85,7 +122,7 @@ async def test_deleted_content_becomes_unreachable(
     await run_sync(session, repo, commit(repo, {"keep.md": "alpha"}), embedder)
 
     assert [hit.path for hit in await find(session, embedder, "zeta")] == ["keep.md"]
-    assert await read_indexed_text(session, "gone.md", model_key="fake-v1") is None
+    assert await read_indexed_text(session, "gone.md", index_id=_GIT_INDEX, model_key="fake-v1") is None
 
 
 async def test_deleted_content_keeps_its_cached_embedding(
@@ -154,13 +191,14 @@ async def test_a_failed_sync_leaves_the_previous_tip_searchable(
             session,
             repo,
             commit(repo, {"a.md": "alpha", "b.md": "beta"}),
+            index_id=_GIT_INDEX,
             branch="main",
             embedder=ExplodingEmbedder(),
             now=_NOW,
         )
     await session.rollback()
 
-    state = await current_git_state(session)
+    state = await current_git_state(session, _GIT_INDEX)
     assert state is not None
     assert state.commit_sha == first
     assert [hit.path for hit in await find(session, embedder, "alpha")] == ["a.md"]
@@ -208,7 +246,9 @@ async def test_a_failed_sync_keeps_the_embeddings_it_already_paid_for(
     head = commit(repo, {f"n{index}.md": f"alpha {index}" for index in range(EMBED_BATCH + 8)})
 
     with pytest.raises(RuntimeError):
-        await sync(session, repo, head, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW)
+        await sync(
+            session, repo, head, index_id=_GIT_INDEX, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW
+        )
     await session.rollback()
 
     kept = await session.execute(select(func.count()).select_from(ContentEmbedding))
@@ -226,10 +266,12 @@ async def test_a_failed_sync_publishes_no_tip(
     head = commit(repo, {f"n{index}.md": f"alpha {index}" for index in range(EMBED_BATCH + 8)})
 
     with pytest.raises(RuntimeError):
-        await sync(session, repo, head, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW)
+        await sync(
+            session, repo, head, index_id=_GIT_INDEX, branch="main", embedder=FailsAfter(embedder, calls=1), now=_NOW
+        )
     await session.rollback()
 
-    assert await current_git_state(session) is None
+    assert await current_git_state(session, _GIT_INDEX) is None
     assert await find(session, embedder, "alpha") == []
 
 

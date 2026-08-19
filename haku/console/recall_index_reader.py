@@ -1,16 +1,7 @@
-"""Binds the haku index to the console's database and embedder for the `haku_index` tools.
+"""Bind configured recall indexes to the console's database and embedder.
 
-The index lives in the console's own Postgres — the conversations corpus is built from
-`session_messages`, so it could not live anywhere else — and this is where that plumbing sits
-rather than in `haku/recall_index`, which stays a library with no opinion about who runs it.
-
-This is also where the tool surface's vocabulary meets the storage's: `haku_state` and
-`conversations` are what a caller asks for, `git` and `chat` are how they are stored, and the
-mapping lives here and nowhere else.
-
-**Embedding is a call to the embedding service**, not work in this process — which is also why a
-search fails loudly when that service is down rather than returning nothing: an empty result reads
-as "never discussed", and that is a different claim from "could not look".
+The deploy configuration is the source registry. This adapter translates configured index types
+into source-specific storage operations without inventing special names for any index.
 """
 
 from __future__ import annotations
@@ -22,14 +13,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface
+from haku.console.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.console.database_schema import ChatAttachment, Session
 from haku.console.tools.recall_index import (
-    ConversationSource,
-    ConversationsStatus,
-    HakuStateSource,
-    HakuStateStatus,
+    ChatIndexStatus,
+    ChatSource,
+    GitIndexStatus,
+    GitSource,
     IndexStatus,
-    SearchCorpus,
     SearchHit,
     SearchResults,
 )
@@ -38,7 +29,7 @@ from haku.recall_index.chat_source import session_shapes
 from haku.recall_index.chat_sync import is_indexed
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.embedder import Embedder
-from haku.recall_index.schema import Corpus
+from haku.recall_index.schema import IndexType
 from haku.recall_index.store import (
     chat_index_summary,
     chat_session_states,
@@ -49,80 +40,88 @@ from haku.recall_index.store import (
     search_git,
 )
 
-# Under this, a corpus is not behind — it is mid-pipeline. The chat sweep runs every minute and
-# holds a session for thirty seconds after its last message, so a lag inside that window is the
-# thing working, and reporting it on every search would train a reader to ignore the field.
 _SETTLED_WITHIN = datetime.timedelta(minutes=2)
 
 
-def _behind(status: IndexStatus, corpus: SearchCorpus) -> bool:
-    """Whether a searched corpus holds less than its source does, by enough to explain a miss."""
-    if corpus in (SearchCorpus.HAKU_STATE, SearchCorpus.ALL) and (
-        status.haku_state.indexed_commit != status.haku_state.remote_commit
-    ):
-        return True
-    lag = status.conversations.lag_seconds
-    return corpus in (SearchCorpus.CONVERSATIONS, SearchCorpus.ALL) and (
-        lag is not None and lag > _SETTLED_WITHIN.total_seconds()
-    )
-
-
 class PostgresIndexSearcher:
-    """`tools.recall_index.IndexSearcher` over the console's database."""
+    """Configured logical-index search over the console's Postgres database."""
 
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
         embedder: Embedder,
         *,
+        indexes: tuple[ConfiguredRecallIndex, ...],
         budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
     ) -> None:
         self._sessions = sessions
         self._embedder = embedder
+        self._indexes = {index.index_id: index for index in indexes}
         self._budget = budget
 
+    def _selected(self, index_ids: tuple[str, ...] | None) -> tuple[ConfiguredRecallIndex, ...]:
+        if index_ids is None:
+            return tuple(self._indexes.values())
+        unknown = sorted(set(index_ids) - self._indexes.keys())
+        if unknown:
+            raise ValueError(f"unknown configured recall indexes: {', '.join(unknown)}")
+        return tuple(self._indexes[index_id] for index_id in dict.fromkeys(index_ids))
+
     async def search(
-        self, query: str, *, corpus: SearchCorpus, limit: int, path_prefix: str | None, session_id: UUID | None
+        self,
+        query: str,
+        *,
+        index_ids: tuple[str, ...] | None,
+        limit: int,
+        path_prefix: str | None,
+        session_id: UUID | None,
     ) -> SearchResults:
+        selected = self._selected(index_ids)
         embedding = await self._embedder.embed_query(query)
         hits: list[SearchHit] = []
         async with self._sessions() as session:
-            if corpus in (SearchCorpus.HAKU_STATE, SearchCorpus.ALL):
-                hits.extend(await self._haku_state(session, embedding, limit=limit, path_prefix=path_prefix))
-            if corpus in (SearchCorpus.CONVERSATIONS, SearchCorpus.ALL):
-                hits.extend(await self._conversations(session, embedding, limit=limit, session_id=session_id))
-        # Both corpora are embedded by the same model, so their cosine scores are comparable and a
-        # single ranking is meaningful. Each corpus was asked for `limit`, so `all` re-cuts here
-        # rather than returning twice as much as the caller asked for.
+            for index in selected:
+                if isinstance(index, GitRecallIndexDefinition):
+                    hits.extend(await self._search_git(session, index, embedding, limit=limit, path_prefix=path_prefix))
+                else:
+                    hits.extend(await self._search_chat(session, index, embedding, limit=limit, session_id=session_id))
         hits.sort(key=lambda hit: hit.score, reverse=True)
-        # Status costs a handful of counts against a search that already paid for an embedding
-        # round trip, and it is only attached when it changes what the result means: a thin answer
-        # from a corpus that is behind is not evidence of absence, and the caller cannot tell the
-        # two apart without the numbers.
         status = await self.status()
-        return SearchResults(hits=hits[:limit], index=status if _behind(status, corpus) else None)
+        selected_ids = {index.index_id for index in selected}
+        return SearchResults(
+            hits=hits[:limit],
+            index=status
+            if any(_is_behind(item) and item.index_id in selected_ids for item in status.indexes)
+            else None,
+        )
 
-    async def _haku_state(
-        self, session: AsyncSession, embedding: list[float], *, limit: int, path_prefix: str | None
+    async def _search_git(
+        self,
+        session: AsyncSession,
+        index: GitRecallIndexDefinition,
+        embedding: list[float],
+        *,
+        limit: int,
+        path_prefix: str | None,
     ) -> list[SearchHit]:
-        state = await current_git_state(session)
+        state = await current_git_state(session, index.index_id)
         if state is None:
             return []
         found = await search_git(
             session,
             embedding,
+            index_id=index.index_id,
             model_key=self._embedder.model_key,
             limit=limit,
             path_prefix=path_prefix,
             budget=self._budget,
         )
-        # `commit_sha` on every hit rather than once alongside them: a hit is a pointer, and a
-        # pointer that needs a second field from its envelope to be resolvable is half a pointer.
         return [
             SearchHit(
                 score=hit.score,
                 snippet=hit.text,
-                source=HakuStateSource(
+                source=GitSource(
+                    index_id=index.index_id,
                     path=hit.path,
                     commit_sha=state.commit_sha,
                     blob_sha=hit.blob_sha,
@@ -131,22 +130,27 @@ class PostgresIndexSearcher:
                 ),
             )
             for hit in found
+            if state.commit_sha is not None
         ]
 
-    async def _conversations(
-        self, session: AsyncSession, embedding: list[float], *, limit: int, session_id: UUID | None
+    async def _search_chat(
+        self,
+        session: AsyncSession,
+        index: ChatRecallIndexDefinition,
+        embedding: list[float],
+        *,
+        limit: int,
+        session_id: UUID | None,
     ) -> list[SearchHit]:
         found = await search_chat(
             session,
             embedding,
+            index_id=index.index_id,
             model_key=self._embedder.model_key,
             limit=limit,
             session_id=session_id,
             budget=self._budget,
         )
-        # The room a hit came from is the console's own binding, not the index's: the index knows
-        # sessions, and the room is where the Matrix channel holds a copy of the thread the
-        # session ran.
         rooms: dict[UUID, str] = {
             row.session_id: row.address
             for row in (
@@ -165,7 +169,8 @@ class PostgresIndexSearcher:
             SearchHit(
                 score=hit.score,
                 snippet=hit.text,
-                source=ConversationSource(
+                source=ChatSource(
+                    index_id=index.index_id,
                     session_id=hit.session_id,
                     room_id=rooms.get(hit.session_id),
                     message_ids=hit.message_ids,
@@ -178,29 +183,45 @@ class PostgresIndexSearcher:
 
     async def status(self) -> IndexStatus:
         model_key = self._embedder.model_key
+        statuses: list[GitIndexStatus | ChatIndexStatus] = []
         async with self._sessions() as session:
-            git_state = await current_git_state(session)
-            summary = await git_index_summary(session, model_key=model_key, budget=self._budget)
-            counts = await chunk_counts(session, Corpus.GIT, model_key=model_key, budget=self._budget)
-            haku_state = HakuStateStatus(
-                indexed_commit=None if git_state is None else git_state.commit_sha,
-                remote_commit=None if git_state is None else git_state.remote_commit,
-                remote_seen_at=None if git_state is None else git_state.remote_seen_at,
-                branch=None if git_state is None else git_state.branch,
-                indexed_at=None if git_state is None else git_state.synced_at,
-                files=summary.files,
-                chunks=summary.chunks,
-                embedded_chunks=counts.current,
-                superseded_chunks=counts.superseded,
-            )
+            for index in self._indexes.values():
+                if isinstance(index, GitRecallIndexDefinition):
+                    state = await current_git_state(session, index.index_id)
+                    summary = await git_index_summary(
+                        session, index_id=index.index_id, model_key=model_key, budget=self._budget
+                    )
+                    counts = await chunk_counts(
+                        session, IndexType.GIT, index_id=index.index_id, model_key=model_key, budget=self._budget
+                    )
+                    statuses.append(
+                        GitIndexStatus(
+                            index_id=index.index_id,
+                            source_id=index.source_id,
+                            indexed_commit=None if state is None else state.commit_sha,
+                            remote_commit=None if state is None else state.remote_commit,
+                            remote_seen_at=None if state is None else state.remote_seen_at,
+                            branch=None if state is None else state.branch,
+                            indexed_at=None if state is None else state.synced_at,
+                            files=summary.files,
+                            chunks=summary.chunks,
+                            embedded_chunks=counts.current,
+                            superseded_chunks=counts.superseded,
+                        )
+                    )
+                else:
+                    statuses.append(await self._chat_status(session, index, model_key))
+        return IndexStatus(indexes=statuses)
 
-            chat_summary = await chat_index_summary(session)
-            chat_counts = await chunk_counts(session, Corpus.CHAT, model_key=model_key, budget=self._budget)
-            # The same two reads `sync_chat` opens with, diffed by its own predicate — so what
-            # this reports as waiting is what a sync run would pick up, by construction rather
-            # than by two spellings agreeing.
-            shapes = await session_shapes(session)
-            states = await chat_session_states(session)
+    async def _chat_status(
+        self, session: AsyncSession, index: ChatRecallIndexDefinition, model_key: str
+    ) -> ChatIndexStatus:
+        summary = await chat_index_summary(session, index.index_id)
+        counts = await chunk_counts(
+            session, IndexType.CHAT, index_id=index.index_id, model_key=model_key, budget=self._budget
+        )
+        shapes = await session_shapes(session)
+        states = await chat_session_states(session, index.index_id)
         stale = [
             shape
             for shape in shapes
@@ -208,26 +229,30 @@ class PostgresIndexSearcher:
         ]
         unindexed = sum(
             shape.message_count - state.message_count
-            # A regime change strands every message in the session, not just the new ones.
             if (state := states.get(shape.session_id)) is not None
             and (state.chunker_key, state.model_key) == (chat_chunker_key(self._budget), model_key)
             else shape.message_count
             for shape in stale
         )
         newest_waiting = max((shape.last_message_at for shape in stale), default=None)
-        return IndexStatus(
-            haku_state=haku_state,
-            conversations=ConversationsStatus(
-                sessions=chat_summary.sessions,
-                chunks=chat_summary.chunks,
-                stale_sessions=len(stale),
-                unindexed_messages=unindexed,
-                lag_seconds=(
-                    None
-                    if newest_waiting is None
-                    else (datetime.datetime.now(datetime.UTC) - newest_waiting).total_seconds()
-                ),
-                last_indexed_at=chat_summary.last_indexed_at,
-                superseded_chunks=chat_counts.superseded,
+        return ChatIndexStatus(
+            index_id=index.index_id,
+            source_id=index.source_id,
+            sessions=summary.sessions,
+            chunks=summary.chunks,
+            stale_sessions=len(stale),
+            unindexed_messages=unindexed,
+            lag_seconds=(
+                None
+                if newest_waiting is None
+                else (datetime.datetime.now(datetime.UTC) - newest_waiting).total_seconds()
             ),
+            last_indexed_at=summary.last_indexed_at,
+            superseded_chunks=counts.superseded,
         )
+
+
+def _is_behind(status: GitIndexStatus | ChatIndexStatus) -> bool:
+    if isinstance(status, GitIndexStatus):
+        return status.indexed_commit != status.remote_commit
+    return status.lag_seconds is not None and status.lag_seconds > _SETTLED_WITHIN.total_seconds()

@@ -1,38 +1,35 @@
-"""Keeping the haku index current, from inside the console.
+"""Keep every configured recall index current from inside the console.
 
-Both corpora are synced by the process that already holds them: `chat` is built from the
-console's own `session_messages`, and `git` from a read-only mirror of haku-state that this
-process fetches. One deployment, no CronJob, and `index_status` stops reporting a backlog that
-nothing drains.
+The deploy-owned recall-index registry says both *what* is indexed and how it is sourced.  A
+logical index is the unit of synchronization, advisory leadership, status, and — later — read
+authorization.  There are no implicit ``haku-state`` or conversations indexes in this module.
 
-**Each corpus gets its own advisory lock and its own task.** Only one replica syncs a corpus at
-a time, and a git fetch that takes a minute must not hold up a chat sweep that takes a second —
-they are unrelated work that happens to share a database.
-
-A sweep never runs on the request path, so a failure here is logged and retried on the next tick
-rather than surfaced: searches keep serving what is already indexed, and `index_status` is what
-says how stale that is.
+A sweep never runs on the request path, so a failure is logged and retried on the next tick while
+search continues to serve the last published source revision.
 """
 
 from __future__ import annotations
 
 import asyncio
 import datetime
+import hashlib
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+import os
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager, suppress
 
 import pygit2
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.config import HakuStateGitConfig
-from haku.recall_index.chat_sync import sync_chat
+from haku.console.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
+from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.embedder import Embedder
 from haku.recall_index.git_tree import fetch_branch, open_mirror, remote_tip
-from haku.recall_index.store import current_git_state, record_remote_tip
-from haku.recall_index.sync import AlreadyCurrent, is_current, sync
+from haku.recall_index.schema import IndexType
+from haku.recall_index.store import current_git_state, record_remote_tip, register_index
+from haku.recall_index.sync import AlreadyCurrent, SyncOutcome, is_current, sync
 
 logger = logging.getLogger(__name__)
 
@@ -41,31 +38,39 @@ DEFAULT_CHAT_INTERVAL = datetime.timedelta(seconds=60)
 # fetching happens only when the tip actually moved.
 DEFAULT_GIT_INTERVAL = datetime.timedelta(seconds=30)
 
-# Public because leader election is a contract a test (and an operator with psql) checks, not an
-# implementation detail of this class.
-CHAT_ADVISORY_LOCK = 0x48414B55494E4443
-GIT_ADVISORY_LOCK = 0x48414B55494E4447
+
+def advisory_lock_for(index_id: str) -> int:
+    """The stable Postgres advisory-lock key for one configured logical index."""
+    return int.from_bytes(
+        hashlib.blake2b(f"recall-index:{index_id}".encode(), digest_size=8).digest(), byteorder="big", signed=True
+    )
 
 
-def _open_and_peek(git: HakuStateGitConfig) -> tuple[pygit2.Repository, str | None]:
-    """The mirror, plus what the remote's branch points at. Blocking; called in a thread.
+def _git_credentials(index: GitRecallIndexDefinition) -> tuple[str | None, str | None]:
+    if index.username_env_var is None:
+        return None, None
+    username = os.environ.get(index.username_env_var)
+    password = os.environ.get(index.password_env_var or "")
+    if username is None or password is None:
+        raise RuntimeError(f"Git recall index {index.index_id!r} is missing configured credentials")
+    return username, password
 
-    Cloning on the first call is the expensive part and unavoidable; every call after it is one
-    `ls-remote`, which is what lets this poll on a short interval.
-    """
-    password = None if git.password is None else git.password.get_secret_value()
-    repository = open_mirror(git.mirror_path, git.repo_url, username=git.username, password=password)
-    return repository, remote_tip(repository, git.branch, username=git.username, password=password)
+
+def _open_and_peek(index: GitRecallIndexDefinition) -> tuple[pygit2.Repository, str | None]:
+    """Open one configured mirror and inspect its remote branch. Blocking; called in a thread."""
+    username, password = _git_credentials(index)
+    repository = open_mirror(index.mirror_path, index.repo_url, username=username, password=password)
+    return repository, remote_tip(repository, index.branch, username=username, password=password)
 
 
-def _fetch(repository: pygit2.Repository, git: HakuStateGitConfig) -> str:
-    """Bring the mirror up to the remote's branch. Blocking; called in a thread."""
-    password = None if git.password is None else git.password.get_secret_value()
-    return fetch_branch(repository, git.branch, username=git.username, password=password)
+def _fetch(repository: pygit2.Repository, index: GitRecallIndexDefinition) -> str:
+    """Bring one configured mirror up to its remote branch. Blocking; called in a thread."""
+    username, password = _git_credentials(index)
+    return fetch_branch(repository, index.branch, username=username, password=password)
 
 
 class RecallIndexMaintenance:
-    """Sync sweeps for the index's two corpora, one leader replica at a time."""
+    """Sync configured logical indexes, with one cross-replica leader per index."""
 
     def __init__(
         self,
@@ -73,18 +78,19 @@ class RecallIndexMaintenance:
         sessions: async_sessionmaker[AsyncSession],
         *,
         embedder: Embedder,
-        git: HakuStateGitConfig | None,
+        indexes: Iterable[ConfiguredRecallIndex],
         budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
         self._embedder = embedder
-        self._git = git
+        self._indexes = tuple(indexes)
         self._budget = budget
 
     @asynccontextmanager
-    async def _leading(self, lock: int) -> AsyncIterator[bool]:
-        """Hold `lock` for the body, or run the body with False if another replica holds it."""
+    async def _leading(self, index_id: str) -> AsyncIterator[bool]:
+        """Hold one index's lock, or yield false when another replica owns its sweep."""
+        lock = advisory_lock_for(index_id)
         async with self._engine.connect() as leader:
             if not await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": lock}):
                 yield False
@@ -93,84 +99,88 @@ class RecallIndexMaintenance:
                 yield True
             finally:
                 if not await leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": lock}):
-                    logger.error("Index sync advisory lock %#x was not held at release", lock)
+                    logger.error("Recall index %s advisory lock %#x was not held at release", index_id, lock)
 
-    async def sync_chat_once(self) -> None:
-        async with self._leading(CHAT_ADVISORY_LOCK) as leading:
+    async def sync_index_once(self, index: ConfiguredRecallIndex) -> SyncOutcome | ChatSyncReport | None:
+        """Synchronize one explicitly configured index, if this replica wins its lock."""
+        async with self._leading(index.index_id) as leading:
             if not leading:
-                return
+                return None
             async with self._sessions() as session:
-                report = await sync_chat(
-                    session, embedder=self._embedder, now=datetime.datetime.now(datetime.UTC), budget=self._budget
+                await register_index(
+                    session, index.index_id, index_type=IndexType(index.index_type), source_id=index.source_id
+                )
+                if isinstance(index, ChatRecallIndexDefinition):
+                    report = await sync_chat(
+                        session,
+                        index_id=index.index_id,
+                        embedder=self._embedder,
+                        now=datetime.datetime.now(datetime.UTC),
+                        budget=self._budget,
+                    )
+                    await session.commit()
+                    if report.sessions_indexed or report.sessions_forgotten:
+                        logger.info(
+                            "Chat index %s: %d sessions indexed, %d forgotten, %d windows written (%d embedded, %d reused)",
+                            index.index_id,
+                            report.sessions_indexed,
+                            report.sessions_forgotten,
+                            report.windows_written,
+                            report.windows_embedded,
+                            report.windows_reused,
+                        )
+                    return report
+
+                repository, tip = await asyncio.to_thread(_open_and_peek, index)
+                if tip is None:
+                    logger.error("Git index %s remote has no branch %r", index.index_id, index.branch)
+                    return None
+                await record_remote_tip(
+                    session, tip, index_id=index.index_id, branch=index.branch, now=datetime.datetime.now(datetime.UTC)
                 )
                 await session.commit()
-        if report.sessions_indexed or report.sessions_forgotten:
-            logger.info(
-                "Chat index: %d sessions indexed, %d forgotten, %d windows written (%d embedded, %d reused)",
-                report.sessions_indexed,
-                report.sessions_forgotten,
-                report.windows_written,
-                report.windows_embedded,
-                report.windows_reused,
-            )
-
-    async def sync_git_once(self) -> None:
-        if (git := self._git) is None:
-            return
-        async with self._leading(GIT_ADVISORY_LOCK) as leading:
-            if not leading:
-                return
-            # libgit2's clone, ls-remote and fetch are all blocking, and the first call on a fresh
-            # pod clones the whole repository — off the event loop, which is also serving the
-            # operator's console.
-            repository, tip = await asyncio.to_thread(_open_and_peek, git)
-            if tip is None:
-                logger.error("haku-state remote has no branch %r", git.branch)
-                return
-            async with self._sessions() as session:
-                # Recorded before the gate, and committed on its own, so `index_status` can say the
-                # sweep is alive and what it saw even on the ticks that decide there is nothing to
-                # do — and before a first sync has ever completed.
-                await record_remote_tip(session, tip, branch=git.branch, now=datetime.datetime.now(datetime.UTC))
-                await session.commit()
-                # The gate is the whole regime, not just the commit: a new embedding model has to
-                # re-index a tip that never moved, and asking `ls-remote` alone would skip it.
                 if is_current(
-                    await current_git_state(session),
+                    await current_git_state(session, index.index_id),
                     tip,
-                    branch=git.branch,
+                    branch=index.branch,
                     model_key=self._embedder.model_key,
                     budget=self._budget,
                 ):
-                    return
-                commit_sha = await asyncio.to_thread(_fetch, repository, git)
+                    return AlreadyCurrent(commit_sha=tip)
+                commit_sha = await asyncio.to_thread(_fetch, repository, index)
                 outcome = await sync(
                     session,
                     repository,
                     commit_sha,
-                    branch=git.branch,
+                    index_id=index.index_id,
+                    branch=index.branch,
                     embedder=self._embedder,
                     now=datetime.datetime.now(datetime.UTC),
                     budget=self._budget,
                 )
                 await session.commit()
-        if isinstance(outcome, AlreadyCurrent):
-            return
-        logger.info(
-            "haku-state index: %s, %d files, %d chunks written (%d blobs embedded, %d reused)",
-            outcome.commit_sha[:12],
-            outcome.tip_files,
-            outcome.chunks_written,
-            outcome.blobs_embedded,
-            outcome.blobs_reused,
-        )
+        if not isinstance(outcome, AlreadyCurrent):
+            logger.info(
+                "Git index %s: %s, %d files, %d chunks written (%d blobs embedded, %d reused)",
+                index.index_id,
+                outcome.commit_sha[:12],
+                outcome.tip_files,
+                outcome.chunks_written,
+                outcome.blobs_embedded,
+                outcome.blobs_reused,
+            )
+        return outcome
 
-    async def _sweep(self, corpus: str, once: Callable[[], Awaitable[None]], interval: datetime.timedelta) -> None:
+    async def sync_all_once(self) -> None:
+        for index in self._indexes:
+            await self.sync_index_once(index)
+
+    async def _sweep(self, index: ConfiguredRecallIndex, interval: datetime.timedelta) -> None:
         while True:
             try:
-                await once()
+                await self.sync_index_once(index)
             except Exception:
-                logger.exception("%s index sync sweep failed", corpus)
+                logger.exception("Recall index %s sync sweep failed", index.index_id)
             await asyncio.sleep(interval.total_seconds())
 
     @asynccontextmanager
@@ -180,12 +190,14 @@ class RecallIndexMaintenance:
         chat_interval: datetime.timedelta = DEFAULT_CHAT_INTERVAL,
         git_interval: datetime.timedelta = DEFAULT_GIT_INTERVAL,
     ) -> AsyncIterator[None]:
-        """Sweep both corpora until application shutdown."""
-        sweeps = [asyncio.create_task(self._sweep("chat", self.sync_chat_once, chat_interval), name="index-sync-chat")]
-        if self._git is not None:
-            sweeps.append(
-                asyncio.create_task(self._sweep("haku-state", self.sync_git_once, git_interval), name="index-sync-git")
+        """Sweep every configured index until application shutdown."""
+        sweeps = [
+            asyncio.create_task(
+                self._sweep(index, chat_interval if isinstance(index, ChatRecallIndexDefinition) else git_interval),
+                name=f"recall-index-sync-{index.index_id}",
             )
+            for index in self._indexes
+        ]
         try:
             yield
         finally:

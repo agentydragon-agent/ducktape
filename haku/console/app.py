@@ -452,7 +452,7 @@ def create_app(
                 db_engine,
                 db_sessions,
                 embedder=_embedder(settings.embedder, timeout=settings.embedder.sync_timeout_seconds),
-                git=settings.haku_state_git,
+                indexes=console_config.recall_indexes,
                 budget=index_budget,
             )
         in_process_servers = build_in_process_servers(

@@ -23,7 +23,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.config import ClaudeRuntimeConfig, HostexecConfig, NodeDaemonsConfig, Settings
+from haku.console.config import ClaudeRuntimeConfig, ConfiguredRecallIndex, HostexecConfig, NodeDaemonsConfig, Settings
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -318,6 +318,10 @@ class ConsoleConfigFile(BaseModel):
     # Authentik token is persisted (nothing would read it).
     hostexec: HostexecConfig | None = None
     node_daemons: NodeDaemonsConfig | None = None
+    # Declared source configuration, not a runtime convention. This is intentionally in the
+    # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
+    # credentials remain environment references on that entry.
+    recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
 
     @property
     def default_agent_auto_approval_policy(self) -> AutoApprovalPolicyId:
@@ -326,6 +330,21 @@ class ConsoleConfigFile(BaseModel):
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
+        index_ids: set[str] = set()
+        source_ids: set[str] = set()
+        mirror_paths: set[str] = set()
+        for index in self.recall_indexes:
+            if index.index_id in index_ids:
+                raise ValueError(f"duplicate recall index id {index.index_id!r}")
+            if index.source_id in source_ids:
+                raise ValueError(f"duplicate recall source id {index.source_id!r}")
+            index_ids.add(index.index_id)
+            source_ids.add(index.source_id)
+            if hasattr(index, "mirror_path"):
+                mirror_path = str(index.mirror_path)
+                if mirror_path in mirror_paths:
+                    raise ValueError(f"multiple Git recall indexes share mirror path {mirror_path!r}")
+                mirror_paths.add(mirror_path)
         server_ids: set[str] = set()
         server_prefixes: set[MCPMountPrefix] = set()
         for server in self.mcp.servers:

@@ -1,7 +1,6 @@
-"""Asking a corpus a question: embed the text, then rank that corpus's chunks against it.
+"""Asking one named index a question: embed the text, then rank its chunks against it.
 
-The pair with `store.search_git`/`search_chat`, which take a vector: a caller searching both
-corpora embeds once and calls those, and everyone else asks in words and calls these. Either
+The pair with `store.search_git`/`search_chat`, which take a vector: a caller searching multiple indexes embeds once and calls those, and everyone else asks in words and calls these. Either
 way the query's regime is derived, never passed — a query embedded by one model or chunked to
 one budget can only be compared against chunks written under the same, and a mismatch returns
 an empty result rather than an error, which reads as "never discussed".
@@ -23,6 +22,7 @@ async def query_git(
     embedder: Embedder,
     text: str,
     *,
+    index_id: str,
     limit: int,
     path_prefix: str | None = None,
     budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
@@ -30,6 +30,7 @@ async def query_git(
     return await search_git(
         session,
         await embedder.embed_query(text),
+        index_id=index_id,
         model_key=embedder.model_key,
         limit=limit,
         path_prefix=path_prefix,
@@ -42,6 +43,7 @@ async def query_chat(
     embedder: Embedder,
     text: str,
     *,
+    index_id: str,
     limit: int,
     session_id: UUID | None = None,
     budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
@@ -49,6 +51,7 @@ async def query_chat(
     return await search_chat(
         session,
         await embedder.embed_query(text),
+        index_id=index_id,
         model_key=embedder.model_key,
         limit=limit,
         session_id=session_id,

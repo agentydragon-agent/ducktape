@@ -1,4 +1,4 @@
-"""Bring the Git corpus up to a branch tip.
+"""Bring one configured Git index up to its branch tip.
 
 Git chunks are source occurrences; globally-addressed content and model-specific embeddings are
 separate durable index layers.  Vectors are committed batch by batch before the tip changes, so a
@@ -83,6 +83,7 @@ async def sync(
     repo: pygit2.Repository,
     commit_sha: str,
     *,
+    index_id: str,
     branch: str,
     embedder: Embedder,
     now: datetime.datetime,
@@ -91,15 +92,19 @@ async def sync(
     """Materialize the tip's source chunks and content embeddings, then publish the tip."""
     regime = git_chunker_key(budget)
     if is_current(
-        await current_git_state(session), commit_sha, branch=branch, model_key=embedder.model_key, budget=budget
+        await current_git_state(session, index_id),
+        commit_sha,
+        branch=branch,
+        model_key=embedder.model_key,
+        budget=budget,
     ):
-        logger.info("haku-state index already at %s", commit_sha)
+        logger.info("Git index %s already at %s", index_id, commit_sha)
         return AlreadyCurrent(commit_sha=commit_sha)
 
     entries = list_tip(repo, commit_sha)
     blob_shas = {entry.blob_sha for entry in entries}
-    chunked_blobs = await git_chunked_blobs(session, blob_shas, chunker_key=regime)
-    known_rows = await git_content_rows(session, chunked_blobs, chunker_key=regime)
+    chunked_blobs = await git_chunked_blobs(session, index_id, blob_shas, chunker_key=regime)
+    known_rows = await git_content_rows(session, index_id, chunked_blobs, chunker_key=regime)
 
     content_by_sha: dict[str, str] = {}
     blob_content_shas: dict[str, set[str]] = defaultdict(set)
@@ -124,7 +129,7 @@ async def sync(
             address = content_sha(chunk.text)
             _record_content(content_by_sha, address, chunk.text)
             blob_content_shas[blob_sha].add(address)
-            new_chunks.append(_git_chunk_row(blob_sha, chunk, address, chunker_key=regime))
+            new_chunks.append(_git_chunk_row(index_id, blob_sha, chunk, address, chunker_key=regime))
 
     already_embedded = await embedded_content(session, content_by_sha, model_key=embedder.model_key)
     missing = [(address, content) for address, content in content_by_sha.items() if address not in already_embedded]
@@ -135,7 +140,8 @@ async def sync(
     }
 
     logger.info(
-        "haku-state %s: %d files, %d new source chunks, %d content values to embed",
+        "Git index %s at %s: %d files, %d new source chunks, %d content values to embed",
+        index_id,
         commit_sha[:12],
         len(entries),
         len(new_chunks),
@@ -164,6 +170,7 @@ async def sync(
     await replace_tip(
         session,
         entries,
+        index_id=index_id,
         commit_sha=commit_sha,
         branch=branch,
         chunker_key=regime,
@@ -179,7 +186,7 @@ async def sync(
         skipped_binary=skipped_binary,
         skipped_large=skipped_large,
     )
-    logger.info("synced haku-state index: %s", report)
+    logger.info("synced Git index %s: %s", index_id, report)
     return report
 
 
@@ -189,8 +196,9 @@ def _record_content(content_by_sha: dict[str, str], address: str, content: str) 
         raise AssertionError(f"content address collision: {address}")
 
 
-def _git_chunk_row(blob_sha: str, chunk: Span, address: str, *, chunker_key: str) -> GitChunkRow:
+def _git_chunk_row(index_id: str, blob_sha: str, chunk: Span, address: str, *, chunker_key: str) -> GitChunkRow:
     return GitChunkRow(
+        index_id=index_id,
         blob_sha=blob_sha,
         chunker_key=chunker_key,
         byte_start=chunk.byte_start,
