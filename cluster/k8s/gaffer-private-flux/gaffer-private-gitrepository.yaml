@@ -1,0 +1,18 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gaffer-private
+  namespace: gaffer-private-flux
+  annotations:
+    description: "Staged namespace-local private source for the later gaffer-private control-plane handoff; no private root consumes it yet."
+spec:
+  interval: 1m
+  provider: github
+  ref:
+    branch: main
+  secretRef:
+    name: ducktape-automation-github-app
+  sparseCheckout:
+    - k8s/
+  timeout: 60s
+  url: https://github.com/agentydragon/gaffer-private.git

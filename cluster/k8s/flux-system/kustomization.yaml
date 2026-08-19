@@ -20,6 +20,28 @@ patches:
       - op: add
         path: /metadata/labels/rbac.ducktape.io~1agent-namespace-diagnostics-reader
         value: "true"
+  # The GitHub App source Secret is SOPS-managed, while its namespace
+  # reflection policy is public cluster wiring. Keep the annotations in this
+  # overlay so no agent needs the SOPS age identity merely to add a new target.
+  # cluster/terraform/main/persistent-auth.tf declares the same desired
+  # reflection policy. The separate Terraform change in persistent-auth.tf
+  # extends the SOPS age-key reflection to this namespace as well.
+  - target:
+      kind: Secret
+      name: ducktape-automation-github-app
+    patch: |
+      - op: add
+        path: /metadata/annotations/reflector.v1.k8s.emberstack.com~1reflection-allowed
+        value: "true"
+      - op: add
+        path: /metadata/annotations/reflector.v1.k8s.emberstack.com~1reflection-allowed-namespaces
+        value: "gaffer-private-flux"
+      - op: add
+        path: /metadata/annotations/reflector.v1.k8s.emberstack.com~1reflection-auto-enabled
+        value: "true"
+      - op: add
+        path: /metadata/annotations/reflector.v1.k8s.emberstack.com~1reflection-auto-namespaces
+        value: "gaffer-private-flux"
   # Keep flux controller disk I/O (git clones, artifacts, image automation — all on
   # emptyDir, i.e. the host disk) off the control-plane nodes, whose etcd lives on slow
   # rotational HDDs. Soft (preferred) so these system-cluster-critical controllers keep a

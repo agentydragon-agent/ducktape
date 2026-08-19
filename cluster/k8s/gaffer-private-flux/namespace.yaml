@@ -1,0 +1,7 @@
+# Dedicated private control-plane namespace. Managed workloads retain their existing namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gaffer-private-flux
+  labels:
+    name: gaffer-private-flux

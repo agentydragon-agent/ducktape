@@ -167,9 +167,9 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
     namespace = "flux-system"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "ducktape-flux"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "ducktape-flux,gaffer-private-flux"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "ducktape-flux"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "ducktape-flux,gaffer-private-flux"
     }
   }
 

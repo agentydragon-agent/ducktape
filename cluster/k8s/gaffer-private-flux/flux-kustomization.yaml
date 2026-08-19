@@ -1,0 +1,26 @@
+# Staged bootstrap only: it creates a private control namespace and a
+# namespace-local GitRepository. The current flux-system bridge remains the
+# sole active reconciler of gaffer-private/k8s until the later handoff.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gaffer-private-flux-namespace
+  namespace: ducktape-flux
+  annotations:
+    description: "Bootstraps gaffer-private-flux and its staged namespace-local private source."
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/gaffer-private-flux
+  # A future change must not accidentally cascade-delete an active private
+  # control plane merely by removing this bootstrap path.
+  prune: false
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: reflector
+      namespace: ducktape-flux
