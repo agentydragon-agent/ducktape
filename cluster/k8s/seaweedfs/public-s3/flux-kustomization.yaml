@@ -12,8 +12,8 @@ spec:
     kind: GitRepository
     name: ducktape
     # Gate on Bucket CRs managed in this repo that the public identities target.
-    # Claude is fully native; DriveFS reader/writer credentials are adopted
-    # natively here while their static public-gateway entries remain temporarily.
+    # Claude and DriveFS identities authenticate through native IAM; static
+    # gateway configuration now contains only the credential-free anonymous read.
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
