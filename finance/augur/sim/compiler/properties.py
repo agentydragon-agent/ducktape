@@ -44,7 +44,6 @@ class PropertyCompileOutput:
     seller_slot: NDArray[np.int64]
     purchase_price: NDArray[np.int64]
     closing_cost: NDArray[np.int64]
-    down_payment: NDArray[np.int64]
     adjusted_basis: NDArray[np.int64]
     stake_contribution: NDArray[np.int64]
     equity_ledger: NDArray[np.int64]
@@ -61,10 +60,8 @@ class LiabilityCompileOutput:
     property_slot: NDArray[np.int64]
     agent: NDArray[np.int64]
     payment_account: NDArray[np.int64]
-    payment_slot: NDArray[np.int64]
     counterparty_agent: NDArray[np.int64]
     counterparty_account: NDArray[np.int64]
-    counterparty_slot: NDArray[np.int64]
     principal: NDArray[np.int64]
     annual_rate: NDArray[np.float64]
     term_months: NDArray[np.int64]
@@ -94,7 +91,6 @@ def compile_properties_and_liabilities(
     seller_slot = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
     purchase_price = np.zeros(max(1, prop_count), dtype=np.int64)
     closing_cost = np.zeros(max(1, prop_count), dtype=np.int64)
-    down_payment = np.zeros(max(1, prop_count), dtype=np.int64)
     adjusted_basis = np.zeros(max(1, prop_count), dtype=np.int64)
     stake_contribution = np.zeros(max(1, prop_count), dtype=np.int64)
     equity_ledger = np.zeros(max(1, prop_count), dtype=np.int64)
@@ -104,10 +100,8 @@ def compile_properties_and_liabilities(
     liability_property_slot: list[int] = []
     liability_agent: list[int] = []
     liability_payment_account: list[int] = []
-    liability_payment_slot: list[int] = []
     liability_counterparty_agent: list[int] = []
     liability_counterparty_account: list[int] = []
-    liability_counterparty_slot: list[int] = []
     liability_principal: list[np.int64] = []
     liability_rate: list[float] = []
     liability_term: list[int] = []
@@ -137,7 +131,6 @@ def compile_properties_and_liabilities(
         mortgage_principal = purchase.mortgage.principal if purchase.mortgage is not None else Decimal(0)
         purchase_price[idx] = currency_amount(purchase.purchase_price)
         closing_cost[idx] = currency_amount(purchase.buyer_closing_cost)
-        down_payment[idx] = currency_amount(purchase.down_payment)
         adjusted_basis[idx] = currency_amount(purchase.purchase_price + purchase.buyer_closing_cost)
         stake_contribution[idx] = currency_amount(purchase.down_payment + purchase.buyer_closing_cost)
         equity_ledger[idx] = currency_amount(purchase.purchase_price - mortgage_principal)
@@ -148,14 +141,11 @@ def compile_properties_and_liabilities(
             liability_property_slot.append(idx)
             liability_agent.append(strings.require(purchase.buyer_agent_id))
             liability_payment_account.append(strings.require(purchase.buyer_account_id))
-            liability_payment_slot.append(
-                account_slot_by_key.resolve(purchase.buyer_agent_id, purchase.buyer_account_id)
-            )
+            # Preserve eager account validation; monthly mortgage obligations resolve these again.
+            account_slot_by_key.resolve(purchase.buyer_agent_id, purchase.buyer_account_id)
             liability_counterparty_agent.append(strings.require(mortgage.lender_agent_id))
             liability_counterparty_account.append(strings.require(mortgage.lender_account_id))
-            liability_counterparty_slot.append(
-                account_slot_by_key.resolve(mortgage.lender_agent_id, mortgage.lender_account_id)
-            )
+            account_slot_by_key.resolve(mortgage.lender_agent_id, mortgage.lender_account_id)
             liability_principal.append(currency_amount(mortgage.principal))
             liability_rate.append(float(mortgage.annual_interest_rate))
             liability_term.append(int(mortgage.term_months))
@@ -187,7 +177,6 @@ def compile_properties_and_liabilities(
             seller_slot=seller_slot,
             purchase_price=purchase_price,
             closing_cost=closing_cost,
-            down_payment=down_payment,
             adjusted_basis=adjusted_basis,
             stake_contribution=stake_contribution,
             equity_ledger=equity_ledger,
@@ -198,10 +187,8 @@ def compile_properties_and_liabilities(
             property_slot=np.asarray(liability_property_slot, dtype=np.int64),
             agent=np.asarray(liability_agent, dtype=np.int64),
             payment_account=np.asarray(liability_payment_account, dtype=np.int64),
-            payment_slot=np.asarray(liability_payment_slot, dtype=np.int64),
             counterparty_agent=np.asarray(liability_counterparty_agent, dtype=np.int64),
             counterparty_account=np.asarray(liability_counterparty_account, dtype=np.int64),
-            counterparty_slot=np.asarray(liability_counterparty_slot, dtype=np.int64),
             principal=np.asarray(liability_principal, dtype=np.int64),
             annual_rate=np.asarray(liability_rate, dtype=np.float64),
             term_months=np.asarray(liability_term, dtype=np.int64),

@@ -283,21 +283,6 @@ class _ScanState(NamedTuple):
     ta_buy_count: jnp.ndarray
 
 
-@dataclass(frozen=True)
-class LiabilityState:
-    """Per-(liability, rollout) mortgage state threaded through the month loop (all R-last `[L, R]`).
-
-    `rental_interest_ytd` is the rented-share slice of `interest_ytd` (Schedule E vs MID split).
-    """
-
-    active: jnp.ndarray
-    principal: jnp.ndarray
-    monthly_payment: jnp.ndarray
-    interest_ytd: jnp.ndarray
-    principal_ytd: jnp.ndarray
-    rental_interest_ytd: jnp.ndarray
-
-
 class _TracedConfig(NamedTuple):
     """JAX-native typed bundle of the swept numeric config the compiled program takes as TRACED inputs
     (a NamedTuple → native JAX pytree, so it passes through `jax.jit` typed). The cores read VALUES from
@@ -1094,7 +1079,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
 
     obligations = _ObligationInputs(
         metadata=_ObligationMetadataInputs(
-            cause=jnp.asarray(ob.metadata.cause),
             agent=jnp.asarray(ob.metadata.agent),
             from_slot=jnp.asarray(ob.metadata.from_slot),
             to_slot=jnp.asarray(ob.metadata.to_slot),
@@ -1171,7 +1155,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
                     )
                     if not ordered.size:
                         continue
-                    sleeve_pools.append(_SalePool(asset_idx=sleeve_idx, ordered_lots=tuple(int(x) for x in ordered)))
+                    sleeve_pools.append(_SalePool(ordered_lots=tuple(int(x) for x in ordered)))
                     # Pools are disjoint by construction — a sleeve is one asset and its pools are
                     # distinct accounts — so appending never repeats a plan lot on the view axis.
                     view_rows.extend(range(len(lot_slots), len(lot_slots) + int(ordered.size)))
@@ -1450,7 +1434,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static]:
             ordinary_count=int(taxc.link_ordinary_count[link]),
             has_ltcg=int(taxc.link_has_ltcg[link]),
             ltcg_count=int(taxc.link_ltcg_count[link]),
-            salt_active=bool(salt_link_active[link]),
         )
         for link in range(link_count)
     )
@@ -1683,15 +1666,6 @@ def _program_impl(
         slabs `(link_count, R)`. For non-December months every output reduces to the inputs / zeros.
         """
         dec = (month % 12 == 11) & active  # (R,)
-        liabs_view = LiabilityState(
-            active=taxliab_active,  # unused by _compute_tax_for_link
-            principal=liab_interest_ytd,  # unused
-            monthly_payment=liab_interest_ytd,  # unused
-            interest_ytd=liab_interest_ytd,
-            principal_ytd=liab_interest_ytd,  # unused
-            rental_interest_ytd=liab_rental_ytd,
-        )
-
         # Schedule E: §168 depreciation + rented-share mortgage interest, deducted from each entity's
         # owner tax profile. Vectorized over the property / liability axis: scatter-add the (December-
         # masked) amounts to their owner-profile rows; entities with no owner profile (index < 0) route
@@ -1737,7 +1711,8 @@ def _program_impl(
                 ordinary,
                 cg_ytd,
                 recapture,
-                liabs_view,
+                liab_interest_ytd,
+                liab_rental_ytd,
                 salt_deduction=salt_deduction,
                 rollout_count=r,
             )
@@ -3740,7 +3715,8 @@ def _compute_tax_for_link(
     ordinary_ytd: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
     recapture_section_1250_ytd: jnp.ndarray,
-    liabilities: LiabilityState,
+    liability_interest_ytd: jnp.ndarray,
+    liability_rental_interest_ytd: jnp.ndarray,
     *,
     salt_deduction: jnp.ndarray,
     rollout_count: int,
@@ -3761,7 +3737,7 @@ def _compute_tax_for_link(
     section_1250_rate = static.section_1250_rate
     standard_deduction = tcfg.link_standard_deduction[link]
     if static.mid_active:
-        owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
+        owner_interest_ytd = liability_interest_ytd - liability_rental_interest_ytd
         mortgage_interest_deduction = _sum_money_with_factors(
             owner_interest_ytd, tcfg.mid_principal_factor[link][:, None], axis=0
         )

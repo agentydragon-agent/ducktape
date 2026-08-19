@@ -109,7 +109,6 @@ class _ObligationOutput(NamedTuple):
 
 
 class _ObligationMetadataInputs(NamedTuple):
-    cause: jax.Array
     agent: jax.Array
     from_slot: jax.Array
     to_slot: jax.Array
@@ -315,7 +314,6 @@ class _FoldedPurchase:
 class _SalePool:
     """One (asset, source-account) FIFO pool a sleeve can sell from."""
 
-    asset_idx: int
     ordered_lots: tuple[int, ...]
 
 
@@ -437,7 +435,6 @@ class _LinkTaxStatic:
     ordinary_count: int
     has_ltcg: int
     ltcg_count: int
-    salt_active: bool
 
 
 @dataclass(frozen=True)

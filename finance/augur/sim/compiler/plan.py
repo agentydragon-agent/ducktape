@@ -85,10 +85,8 @@ class SlotPlan:
     event_months: int
     snapshot_months: int
     rollout_count: int
-    agent_count: int
     cash_count: int
     lot_count: int
-    bond_count: int
     tax_profile_count: int
     # Rows of the YTD income tensor: one per (profile, income source), so a jurisdiction can
     # include a wage dollar and exclude a muni coupon for the same agent.
@@ -538,10 +536,8 @@ def compile_simulation(
         event_months=horizon,
         snapshot_months=horizon + 1,
         rollout_count=rollout_count,
-        agent_count=len(agent_codes),
         cash_count=len(cash_initial_balance),
         lot_count=len(lot_id_codes),
-        bond_count=len(scenario.initial_bonds),
         tax_profile_count=tax.profile_agent.shape[0],
         income_bucket_count=tax.buckets.row_count,
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
