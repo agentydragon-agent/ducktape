@@ -39,7 +39,9 @@ def test_runtime_kind_is_a_read_only_closed_identity_field() -> None:
     runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
     assert published["RuntimeKind"]["enum"] == ["claude_code"]
     for model in ("ConversationSummary", "ConversationView", "SessionFramePage", "SessionProvisioningView"):
-        assert published[model]["properties"]["runtime_kind"] == runtime_ref
+        field = published[model]["properties"]["runtime_kind"]
+        # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.
+        assert field.get("$ref") == runtime_ref["$ref"] or field.get("allOf") == [runtime_ref]
         assert "runtime_kind" in published[model]["required"]
 
 

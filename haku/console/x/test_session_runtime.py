@@ -84,6 +84,7 @@ def _console_config(**overrides: object) -> dict[str, object]:
 
 def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     parsed = ConsoleConfigFile.model_validate(_console_config())
+    assert parsed.chat_runtimes is not None
     assert parsed.chat_runtimes.claude_code == runtime_config()
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
