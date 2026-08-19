@@ -1,7 +1,7 @@
 """The system prompt a Claude chat session is started with.
 
 The template is **deploy config, not code and not haku-state**: it is mounted into the console's
-ConfigMap and named by an absolute path in `claude_runtime.system_prompt_template`. A system prompt
+ConfigMap and named by an absolute path in `chat_runtimes.claude_code.system_prompt_template`. A system prompt
 is the one instruction surface the agent cannot edit at all, so the facts whose whole value is that
 Haku did not choose them belong here; everything Haku authors for itself stays in haku-state (see
 <../../base/README.md>).

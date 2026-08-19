@@ -23,6 +23,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from haku.console.chat_models import RuntimeKind
+
 
 class ChannelAttachment(BaseModel):
     """A channel holding a copy of a conversation, at the address it holds it under.
@@ -51,6 +53,7 @@ class SessionRecord(BaseModel):
     conversation_id: UUID = Field(
         description="The thread this session ran; successive sessions of one thread share it."
     )
+    runtime_kind: RuntimeKind = Field(description="The immutable runner implementation pinned by that conversation.")
     attachments: list[ChannelAttachment] = Field(description="The channels currently holding a copy of that thread.")
     status: str
     created_at: datetime.datetime

@@ -33,6 +33,7 @@ export function prependEarlierPage(page: SessionFramePage, loaded: SessionFrameP
   return {
     frames: [...earlier, ...loaded.frames],
     conversation_id: loaded.conversation_id,
+    runtime_kind: loaded.runtime_kind,
     next_before_seq: page.next_before_seq,
   };
 }

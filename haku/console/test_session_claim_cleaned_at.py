@@ -18,7 +18,9 @@ def _session(
 ) -> UUID:
     session_id, conversation_id = uuid4(), uuid4()
     conn.execute(
-        text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
+        text(
+            "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) VALUES (:id, :o, 'claude_code', :n)"
+        ),
         {"id": conversation_id, "o": operator_id, "n": _NOW},
     )
     columns: dict[str, object] = {

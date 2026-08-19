@@ -11,6 +11,7 @@ from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
+from haku.console.chat_models import RuntimeKind
 from haku.console.tools.conversations import (
     HAKU_CONVERSATIONS_SERVER_ID,
     MAX_PAGE_BYTES,
@@ -69,6 +70,7 @@ def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
     return SessionRecord(
         session_id=session_id,
         conversation_id=CONVERSATION,
+        runtime_kind=RuntimeKind.CLAUDE_CODE,
         attachments=[ChannelAttachment(surface="matrix", address="!room:example.org", attached_at=created_at)],
         status="closed",
         created_at=created_at,
@@ -178,6 +180,7 @@ async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it(
     assert not result.is_error
     page = SessionPage.model_validate(result.structured_content)
     assert page.items[0].conversation_id == CONVERSATION
+    assert page.items[0].runtime_kind == "claude_code"
     assert [attachment.address for attachment in page.items[0].attachments] == ["!room:example.org"]
 
 

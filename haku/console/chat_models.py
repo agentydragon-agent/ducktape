@@ -23,6 +23,17 @@ class SessionStatus(StrEnum):
     FAILED = "failed"
 
 
+class RuntimeKind(StrEnum):
+    """Which concrete runner implementation a conversation is pinned to.
+
+    Stored as text plus an ordinary CHECK rather than as a PostgreSQL enum. The application enum
+    keeps readers closed, while widening the database constraint for the next implementation is a
+    transactional migration instead of a PostgreSQL enum-type lifecycle.
+    """
+
+    CLAUDE_CODE = "claude_code"
+
+
 class ChatSurface(StrEnum):
     """Which front end a session was created for.
 

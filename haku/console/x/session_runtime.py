@@ -271,9 +271,11 @@ class SessionService:
 
         Raises `KeyError` for a session this Operator does not own.
         """
+        identity = await self._store.operator_session_identity(operator_id, session_id)
         return SessionProvisioningView(
             session_id=session_id,
-            status=await self._store.operator_status(operator_id, session_id),
+            runtime_kind=identity.runtime_kind,
+            status=identity.status,
             sandbox=await self._observed(session_id),
         )
 

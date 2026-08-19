@@ -20,7 +20,14 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import OPEN_SESSION_STATUSES, ChatSurface, MatrixOrigin, PromptRejection, SessionStatus
+from haku.console.chat_models import (
+    OPEN_SESSION_STATUSES,
+    ChatSurface,
+    MatrixOrigin,
+    PromptRejection,
+    RuntimeKind,
+    SessionStatus,
+)
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import ChatAttachment, Conversation, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -137,7 +144,14 @@ class MatrixConversationStore:
                 return live
             now = datetime.datetime.now(datetime.UTC)
             conversation_id = uuid4()
-            db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
+            db.add(
+                Conversation(
+                    conversation_id=conversation_id,
+                    operator_id=operator_id,
+                    runtime_kind=RuntimeKind.CLAUDE_CODE,
+                    created_at=now,
+                )
+            )
             # Flushed before the attachment that points at it. The unit of work orders a flush from
             # `relationship()` dependencies and nothing else, so a bare `ForeignKey` between two
             # mappers leaves their inserts in mapper-name order — `chat_attachment` ahead of

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, FrameDirection, ItemType
+from haku.console.chat_models import SPA_ORIGIN, FrameDirection, ItemType, RuntimeKind
 from haku.console.database_schema import SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
@@ -130,7 +130,9 @@ _INSPECTED = [
 def test_the_inspector_says_which_frames_the_fold_had_no_branch_for() -> None:
     """A frame class this release does not map is what a transcript is silently missing, and the key
     is the string to add a branch for."""
-    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4())
+    page = session_views.frame_page(
+        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
+    )
 
     assert {frame.frame_seq: frame.unprojected for frame in page.frames} == {
         1: None,
@@ -145,7 +147,9 @@ def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
     """Per frame is exact rather than an approximation of the session-wide tally: a count keys off
     the frame's own class, never off what the fold accumulated before it. `setup_output` is the
     bridge's own envelope, which the fold refuses, so both sides exclude it."""
-    page = session_views.frame_page(_INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4())
+    page = session_views.frame_page(
+        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
+    )
     whole = projection.project_log(
         projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)
         for row in _INSPECTED

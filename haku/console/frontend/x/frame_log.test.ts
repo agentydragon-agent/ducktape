@@ -20,7 +20,12 @@ function frame(
 }
 
 function page(frames: SessionFrame[], next_before_seq: number | null): SessionFramePage {
-  return { frames, conversation_id: "70000000-0000-4000-8000-000000000001", next_before_seq };
+  return {
+    frames,
+    conversation_id: "70000000-0000-4000-8000-000000000001",
+    runtime_kind: "claude_code",
+    next_before_seq,
+  };
 }
 
 describe("kindsForMode", () => {

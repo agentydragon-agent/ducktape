@@ -24,6 +24,7 @@ from haku.console.chat_models import (
     ItemType,
     MatrixOrigin,
     PromptRejection,
+    RuntimeKind,
     SessionStatus,
     TurnOutcome,
 )
@@ -266,7 +267,10 @@ async def another_thread(sessions: async_sessionmaker[AsyncSession], operator_id
     async with sessions.begin() as db:
         db.add(
             Conversation(
-                conversation_id=conversation_id, operator_id=operator_id, created_at=datetime.datetime.now(datetime.UTC)
+                conversation_id=conversation_id,
+                operator_id=operator_id,
+                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                created_at=datetime.datetime.now(datetime.UTC),
             )
         )
     return conversation_id

@@ -1392,8 +1392,8 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (conversation_id, operator_id, created_at)
-                    VALUES (:conversation_id, :operator_id, :now)
+                    INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at)
+                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
@@ -1458,8 +1458,8 @@ def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) 
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (conversation_id, operator_id, created_at)
-                    VALUES (:conversation_id, :operator_id, :now)
+                    INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at)
+                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},

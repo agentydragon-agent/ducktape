@@ -14,7 +14,7 @@ import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface
+from haku.console.chat_models import ChatSurface, RuntimeKind
 from haku.console.database_schema import ChatAttachment, Conversation
 from haku.console.x.channels.matrix.revisions import RevisionLog
 
@@ -29,7 +29,14 @@ async def attachment_id(migrated_sessions: async_sessionmaker[AsyncSession], ope
     conversation_id, attachment_id = uuid4(), uuid4()
     now = datetime.datetime.now(datetime.UTC)
     async with migrated_sessions() as db, db.begin():
-        db.add(Conversation(conversation_id=conversation_id, operator_id=operator_id, created_at=now))
+        db.add(
+            Conversation(
+                conversation_id=conversation_id,
+                operator_id=operator_id,
+                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                created_at=now,
+            )
+        )
         # Flushed before the row that points at it: the unit of work orders a flush from
         # `relationship()` dependencies and nothing else, so a bare `ForeignKey` leaves these in
         # mapper-name order — `chat_attachment` ahead of `conversation`.

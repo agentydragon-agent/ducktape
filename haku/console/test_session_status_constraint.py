@@ -38,7 +38,9 @@ def _operator(conn: Connection) -> UUID:
 def _insert_session(conn: Connection, status: str) -> None:
     operator_id, conversation_id = _operator(conn), uuid4()
     conn.execute(
-        text("INSERT INTO conversation (conversation_id, operator_id, created_at) VALUES (:id, :o, :n)"),
+        text(
+            "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) VALUES (:id, :o, 'claude_code', :n)"
+        ),
         {"id": conversation_id, "o": operator_id, "n": _NOW},
     )
     conn.execute(

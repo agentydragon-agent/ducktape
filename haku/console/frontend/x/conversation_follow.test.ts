@@ -19,6 +19,7 @@ function message(id: string, text: string, createdAt: string, status: Item["stat
 function conversation(items: Item[]): Conversation {
   return {
     conversation_id: "c1",
+    runtime_kind: "claude_code",
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
     session: {

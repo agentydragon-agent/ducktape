@@ -34,5 +34,14 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
     }
 
 
+def test_runtime_kind_is_a_read_only_closed_identity_field() -> None:
+    published = schemas()
+    runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
+    assert published["RuntimeKind"]["enum"] == ["claude_code"]
+    for model in ("ConversationSummary", "ConversationView", "SessionFramePage", "SessionProvisioningView"):
+        assert published[model]["properties"]["runtime_kind"] == runtime_ref
+        assert "runtime_kind" in published[model]["required"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
