@@ -11,6 +11,16 @@ pod IP. What keeps that safe is not the bind address but networkpolicy.yaml,
 which admits only the outpost's pods -- without it any pod could forge
 x-authentik-username and be trusted as agentydragon.
 
+Trusted-proxy authentication protects browser traffic arriving through the
+Authentik outpost. OpenClaw's own backend clients (including subagent completion
+handoffs) connect directly to the loopback Gateway and therefore have none of
+the proxy's identity headers. `gateway-password-eso.yaml` generates the separate
+local fallback password and the Deployment exposes it as
+`OPENCLAW_GATEWAY_PASSWORD`; OpenClaw deliberately accepts that password only
+for direct local requests after proxy authentication is inapplicable. Do not
+replace this with loopback proxy-header trust or commit the generated value to
+`openclaw.json`.
+
 The agent uses Codex subscription models through one LiteLLM key. Only the 5.6
 group is offered. contextWindow/maxTokens are measured, not
 published: openai_utils/probe_context_window.py binary-searches the live

@@ -141,6 +141,15 @@ spec:
                 secretKeyRef:
                   name: litellm-key-public-coder-agent
                   key: api-key
+            # Authentik authenticates proxied browser traffic. OpenClaw's
+            # subagent completion path calls the local gateway directly and
+            # therefore uses the documented trusted-proxy local-password
+            # fallback instead of proxy identity headers.
+            - name: OPENCLAW_GATEWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-gateway-password
+                  key: password
             # OpenClaw's password login puts this value in the Matrix JSON body.
             # It is a proxy placeholder: iron-proxy replaces it with the real
             # controller-owned password only on the Matrix login endpoint.
