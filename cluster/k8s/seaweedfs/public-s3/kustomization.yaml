@@ -8,6 +8,9 @@ resources:
   #   vm-images:         admin, cluster-secrets
   #   claude-reader:     admin, cluster-secrets, claude-web
   - drivefs-artifacts-credentials.sops.yaml
+  # Adopts the unchanged DriveFS reader/writer pairs into native IAM. Static
+  # public-gateway entries remain during this no-rotation compatibility phase.
+  - drivefs-artifacts-iam.yaml
   # VM-image consumer compatibility values are projected from native IAM.
   - vm-images-credentials-externalsecret.yaml
   - claude-reader-credentials.sops.yaml
