@@ -51,7 +51,7 @@ from haku.console import (
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
-from haku.console.config import MCP_PATH, EmbedderConfig, Settings
+from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import apply_migrations
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
@@ -90,6 +90,7 @@ from haku.console.x.session_live_updates import SessionLiveUpdates
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_store import SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -170,6 +171,11 @@ def create_app(
     # hostexec host map. `hostexec is not None` gates the hostexec in-process server, the login-time
     # offline_access request, and operator-Authentik-token persistence — computed once here.
     console_config = load_console_config(settings)
+    if any(
+        isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
+        for index in console_config.recall_indexes
+    ):
+        configure_ca_trust(console_config.git_ca_bundle)
     hostexec_config = console_config.hostexec
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /

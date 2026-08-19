@@ -3,14 +3,29 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pygit2
 import pytest
 import pytest_bazel
 
-from haku.recall_index.git_tree import fetch_branch, list_tip, open_mirror, read_blob, remote_tip
+from haku.recall_index.git_tree import configure_ca_trust, fetch_branch, list_tip, open_mirror, read_blob, remote_tip
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
+
+
+def test_configures_libgit2_ca_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    configured: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        pygit2,
+        "settings",
+        SimpleNamespace(set_ssl_cert_locations=lambda ca_file, ca_dir: configured.append((ca_file, ca_dir))),
+    )
+
+    ca_bundle = tmp_path / "ca-certificates.crt"
+    configure_ca_trust(ca_bundle)
+
+    assert configured == [(str(ca_bundle), None)]
 
 
 def _commit(repo: pygit2.Repository, files: dict[str, str], *, parents: list[str] | None = None) -> str:

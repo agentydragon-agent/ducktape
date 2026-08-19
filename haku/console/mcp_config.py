@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -323,6 +324,9 @@ class LoadedStaticAgent(BaseModel):
 
 class ConsoleConfigFile(BaseModel):
     mcp: ConsoleMcpConfig = Field(default_factory=ConsoleMcpConfig)
+    # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
+    # trust store explicitly before any HTTPS recall source is cloned or fetched.
+    git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
     # Non-secret deployment wiring for the optional Console-owned Claude runtime.
     # The real OAuth bearer remains solely in the dedicated iron-proxy.
     claude_runtime: ClaudeRuntimeConfig | None = None

@@ -947,6 +947,7 @@ py_library(
         "//haku/console/x/channels/matrix:room_subscription",
         "//haku/console/x/channels/matrix:conversation",
         "//haku/console/x/channels/matrix:sync",
+        "//haku/recall_index:git_tree",
         "//haku/recall_index:openai_embedder",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",

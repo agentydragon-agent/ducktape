@@ -62,6 +62,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert "haku-claude-sandbox" not in general_injection
 
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
+    assert console_config["git_ca_bundle"] == "/etc/ssl/certs/ca-certificates.crt"
     assert console_config["claude_runtime"] == {
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
