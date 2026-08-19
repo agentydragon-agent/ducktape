@@ -1,0 +1,12 @@
+# This ConfigMap is deliberately separate from the API Deployment's pod template.
+# Flux changes it with the static image tag; projected-volume refresh lets the API
+# report the selected frontend revision without a static-only rollout restarting the API.
+# It is deploy desired-state metadata, not an attestation that every static endpoint
+# has already finished rolling to this image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haku-console-static-metadata
+  namespace: haku-console
+data:
+  image-tag: devel-20260819104130-88308b0 # {"$imagepolicy": "flux-system:haku-console-static:tag"}

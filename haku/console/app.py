@@ -649,11 +649,12 @@ def create_app(
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
 
-    deployment_info = build_deployment_info()
-
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:
-        return deployment_info
+        # The static shell is an independent Deployment. Its Flux-selected tag is
+        # read from a projected ConfigMap on every request so a frontend-only roll
+        # does not need to restart this API pod merely to update Settings metadata.
+        return build_deployment_info(static_image_tag_file=settings.static_image_tag_file)
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:

@@ -1,9 +1,11 @@
-# The Haku console: reviewed FastAPI API code plus a baked nginx static frontend.
+# The Haku Console API: reviewed FastAPI code behind the separately deployed static frontend.
 # The console is the trusted outer shell — it serves config + the capability tier
 # (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
 # iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui);
 # it holds Haku's Forgejo credential only to fetch the index's read-only mirror.
-# nginx serves the bundled SPA image and proxies API calls to localhost.
+# The haku-console-static Deployment serves the bundled SPA and proxies public backend requests
+# here through this Service. Keeping it out of this pod means a frontend-only image update does
+# not restart the API, MCP streams, or background workers.
 # The app owns its auth: the operator browser logs in via Authentik OIDC
 # (operator_oidc -> signed session cookie, guarded by OperatorSessionMiddleware) and
 # agents authenticate to /mcp via MultiAuth (OIDCProxy DCR + static bearer). The
@@ -28,8 +30,11 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-console
   annotations:
-    # Roll the pod when the TF-minted OAuth client secrets rotate (haku-console-oidc).
-    reloader.stakater.com/auto: "true"
+    # Restart only for the API's own mounted ConfigMap and credentials. In particular,
+    # do NOT use reloader's blanket auto mode: the projected static-image metadata
+    # changes on every frontend release and must not restart API/MCP/background work.
+    configmap.reloader.stakater.com/reload: haku-console-config
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-matrix-bot-password,haku-console-web-push-vapid,haku-forgejo-git,tana-agentydragon-gmail-com-account-pat,haku-sandbox-mcp-bearer,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials
 spec:
   replicas: 2
   strategy:
@@ -91,8 +96,6 @@ spec:
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
               value: devel-20260819190548-bf43977 # {"$imagepolicy": "flux-system:haku-console:tag"}
-            - name: HAKU_CONSOLE_STATIC_IMAGE_TAG
-              value: devel-20260819104130-88308b0 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
@@ -185,6 +188,11 @@ spec:
               value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
+            # Flux updates the standalone static Deployment and this ConfigMap together. The tag
+            # is projected as a file, so /api/deployment can report the frontend revision without
+            # making a frontend-only image update roll this API Deployment.
+            - name: HAKU_CONSOLE_STATIC_IMAGE_TAG_FILE
+              value: /etc/haku-console/static-metadata/image-tag
             - name: HAKU_CONSOLE_MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
             # Direct tana-rw credential. It is resolved only while Console calls the internal
@@ -422,48 +430,9 @@ spec:
             - name: config
               mountPath: /etc/haku-console/config
               readOnly: true
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-        - name: static
-          image: ghcr.io/agentydragon/haku-console-static:devel-20260819104130-88308b0 # {"$imagepolicy": "flux-system:haku-console-static"}
-          imagePullPolicy: Always
-          env:
-            # The nginx entrypoint renders /etc/nginx/templates/default.conf.template
-            # with these origins at startup, keeping frame-src environment-specific
-            # while the console itself remains unframeable via frame-ancestors 'none'.
-            - name: HAKU_CONSOLE_HAKU_UI_URL
-              value: https://haku-ui.allegedly.works
-            - name: HAKU_CONSOLE_AUTH_ORIGIN
-              value: https://auth.allegedly.works
-          ports:
-            - name: http
-              containerPort: 8081
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 100m
-              memory: 128Mi
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 30
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          volumeMounts:
-            # The SPA is baked into the image, but the nginx entrypoint still writes
-            # the envsubst-rendered runtime config here before nginx starts.
-            - name: nginx-conf
-              mountPath: /etc/nginx/conf.d
+            - name: static-metadata
+              mountPath: /etc/haku-console/static-metadata
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -474,5 +443,6 @@ spec:
         - name: config
           configMap:
             name: haku-console-config
-        - name: nginx-conf
-          emptyDir: {}
+        - name: static-metadata
+          configMap:
+            name: haku-console-static-metadata

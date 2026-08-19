@@ -72,7 +72,7 @@ server {
     add_header Permissions-Policy "geolocation=(self), display-capture=(self)" always;
   }
 
-  # ── Backend surfaces proxied to the FastAPI app (127.0.0.1:8080) ──────────────────────────────
+  # ── Backend surfaces proxied to the API Service ────────────────────────────────────────────────
   # These locations mirror the app's top-level backend prefixes: the app.py routers (/api, /healthz),
   # the /mcp mount, the /auth (operator OIDC) router, and the OAuth discovery docs. INVARIANT: a new
   # top-level backend prefix needs a matching location here, or it falls through to the SPA shell
@@ -80,7 +80,7 @@ server {
   # set no response headers — the app owns its own (see the note above).
 
   location /api/ {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
     # Carry the WebSocket handshake through to FastAPI (/api/events/ws).
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
@@ -90,14 +90,14 @@ server {
   }
 
   location = /healthz {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
   }
 
   # Agent-and-Operator MCP server (streamable HTTP / SSE), plus OIDCProxy OAuth routes FastMCP serves
   # under the /mcp mount. Disable proxy buffering so the event stream flushes, and allow a long read
   # timeout for idle streams and the OAuth dance.
   location /mcp {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
     proxy_buffering off;
     proxy_request_buffering off;
     proxy_read_timeout 3600s;
@@ -105,13 +105,13 @@ server {
 
   # Operator browser OIDC login (operator_auth router: /auth/login,/callback,/logout,/me).
   location /auth/ {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
   }
 
   # OAuth discovery documents the MCP OIDCProxy serves at the root (RFC 8414 / 9728 path-suffix
   # forms), which claude.ai fetches before connecting to /mcp.
   location ~ ^/\.well-known/oauth {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
   }
 
   location / {
