@@ -54,7 +54,7 @@ from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
-from haku.console.database_migrate import apply_migrations, main as migration_main
+from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
@@ -716,9 +716,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = Settings()
     loaded_static_agents = load_static_agents(settings)
-    # Apply DB migrations once before serving — the console owns its schema at startup, decoupled from
-    # constructing any ledger/store (advisory-locked, so concurrent replicas don't race).
-    apply_migrations(settings.database_url.get_secret_value())
+    # DDL belongs to the image-coupled release Job. Before binding a port, prove this image can
+    # read the already-migrated schema so an incompatible rollout never becomes Ready.
+    verify_schema(settings.database_url.get_secret_value())
     app = create_app(settings, loaded_static_agents=loaded_static_agents)
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),

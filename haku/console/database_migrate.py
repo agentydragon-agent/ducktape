@@ -16,10 +16,9 @@ from haku.recall_index.schema import Base as RecallIndexBase
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-# Arbitrary fixed key, unique to this lock's purpose (no meaning beyond that). With more
-# than one haku-console replica, every pod runs migrations at startup — pg_advisory_xact_lock
-# serializes them onto the connection's transaction (auto-released on commit/rollback) so two
-# pods starting at once don't race to apply the same migration.
+# Arbitrary fixed key, unique to this lock's purpose (no meaning beyond that). The release Job
+# normally has one Pod, but the transaction-scoped advisory lock also makes a deliberate retry or
+# a transient overlapping execution safe.
 _MIGRATION_LOCK_KEY = 0x4B41_4B55  # "KAKU" in hex, close enough to "haku" to be memorable
 
 
@@ -31,18 +30,21 @@ def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
     cfg.attributes["target_metadata"] = metadata
     alembic_command.upgrade(cfg, revision)
     if revision == "head":
-        # Alembic revisions are immutable once deployed. If a revision is accidentally edited after
-        # a database has already recorded it, upgrade-to-head is a no-op even though the ORM may now
-        # require columns that are absent. Compile and execute a zero-row read for every owned table
-        # so that schema-incompatible processes fail during startup instead of serving as Ready.
-        #
-        # Both metadatas, because the index declares its own `Base` and its tables are just as
-        # much this database's as the console's own. `.tables` rather than `.sorted_tables`:
-        # creation order is meaningless for a zero-row read, and sorting warns about the mutually
-        # dependent foreign keys in the Agent graph, which are deliberate.
-        for owned in (metadata, RecallIndexBase.metadata):
-            for table in owned.tables.values():
-                conn.execute(select(table).limit(0))
+        verify_schema_for_connection(conn)
+
+
+def verify_schema_for_connection(conn: Any) -> None:
+    """Fail if this image's ORM mappings cannot read the deployed schema.
+
+    Alembic revisions are immutable once deployed. If one is accidentally edited after a database
+    recorded it, upgrade-to-head is a no-op even though the ORM may require absent columns. Compile
+    and execute a zero-row read for every table the Console owns, so a mismatched process never
+    serves as Ready. `.tables` rather than `.sorted_tables`: creation order is irrelevant for these
+    reads and sorting warns about deliberate mutually dependent Agent foreign keys.
+    """
+    for owned in (metadata, RecallIndexBase.metadata):
+        for table in owned.tables.values():
+            conn.execute(select(table).limit(0))
 
 
 def sync_database_url(database_url: str) -> str:
@@ -51,16 +53,21 @@ def sync_database_url(database_url: str) -> str:
 
 
 def apply_migrations(database_url: str, revision: str = "head") -> None:
-    """Upgrade the haku-console database to ``revision``.
-
-    The deployed migration Job will invoke this through the Console image's ``migrate`` command.
-    Application startup still owns the call during the rollout bootstrap; a subsequent manifest-only
-    release can move that ownership to the Job after this image has reached the registry.
-    """
+    """Upgrade the haku-console database to ``revision`` under the release Job's lock."""
     engine = create_engine(sync_database_url(database_url))
     try:
         with engine.begin() as conn:
             run_migrations_for_connection(conn, revision)
+    finally:
+        engine.dispose()
+
+
+def verify_schema(database_url: str) -> None:
+    """Run the application startup's read-only compatibility check without applying DDL."""
+    engine = create_engine(sync_database_url(database_url))
+    try:
+        with engine.connect() as conn:
+            verify_schema_for_connection(conn)
     finally:
         engine.dispose()
 

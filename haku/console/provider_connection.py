@@ -265,7 +265,7 @@ class PostgresProviderConnectionStore:
         provider_clients: dict[str, ProviderOAuthClientConfig],
         operator_connections: dict[str, OperatorConnectionDefinition],
     ) -> None:
-        # Migrations are applied once at startup (database_migrate.apply_migrations), not here. The
+        # Migrations run in the image-coupled release Job (database_migrate.apply_migrations), not here. The
         # engine/sessionmaker is created once in create_app and shared across every store.
         self._sessions = sessions
         self._operator_identity_store = operator_identity_store

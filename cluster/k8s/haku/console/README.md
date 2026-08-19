@@ -36,6 +36,23 @@ on the static content it serves itself; the app owns the headers on everything p
 `_security_headers`), so the two no longer write the same policy twice. The static Deployment has
 no Console secrets, ServiceAccount token, or database access.
 
+## Schema migrations are release work
+
+`haku-console-migration` is a fixed-name Job run by its own Flux Kustomization before the
+Console workloads reconcile. It uses the same Flux-selected `haku-console` image as the API and
+runs `server_bin migrate`; the command consumes only the database URL. The API performs a
+zero-row ORM compatibility check at startup but never applies DDL. This keeps a migration failure
+from replacing serving API replicas.
+
+The Job has no Kubernetes API authority and is recreated only when its desired image or manifest
+changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It intentionally has neither a TTL nor an
+automatic retry loop: a failed release remains inspectable and blocks its dependent workload until
+an operator deletes `haku-console-migration` and reconciles `haku-console-migration` in
+`ducktape-flux`. See `cluster/docs/troubleshooting.md` → “A Failed Job Wedges Its Flux
+Kustomization”. It temporarily uses the existing CNPG application-owner credential; splitting
+DDL ownership from runtime DML must first migrate the externally managed `mcp_oauth_kv` table and
+make a deliberate ownership/grant handoff for the live database.
+
 ## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
 The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
