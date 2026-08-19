@@ -167,6 +167,19 @@ def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
 
 
+def test_haku_console_declares_the_public_ducktape_recall_source(k8s_dir: Path) -> None:
+    """Ducktape is an ordinary public Git source: it must not acquire a deploy credential."""
+    config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
+    ducktape = one(index for index in config["recall_indexes"] if index["index_id"] == "ducktape-public")
+    assert ducktape == {
+        "index_id": "ducktape-public",
+        "index_type": "git",
+        "repo_url": "https://github.com/agentydragon/ducktape.git",
+        "branch": "devel",
+        "mirror_path": "/tmp/haku-recall-index/ducktape.git",
+    }
+
+
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     """The runtime commit stamp must track the actual images, and a bad release must not be an outage."""
     deployment_path = k8s_dir / "haku" / "console" / "deployment.yaml"
