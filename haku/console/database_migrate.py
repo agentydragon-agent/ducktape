@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -50,12 +51,31 @@ def sync_database_url(database_url: str) -> str:
 
 
 def apply_migrations(database_url: str, revision: str = "head") -> None:
-    """Upgrade the haku-console database to head. The explicit startup step (app.main) and the tests
-    call this once against the shared database — migrations are an ownership of the process, not a
-    side effect of constructing a ledger/store."""
+    """Upgrade the haku-console database to ``revision``.
+
+    The deployed migration Job will invoke this through the Console image's ``migrate`` command.
+    Application startup still owns the call during the rollout bootstrap; a subsequent manifest-only
+    release can move that ownership to the Job after this image has reached the registry.
+    """
     engine = create_engine(sync_database_url(database_url))
     try:
         with engine.begin() as conn:
             run_migrations_for_connection(conn, revision)
     finally:
         engine.dispose()
+
+
+def main() -> None:
+    """Run the migration-only process entrypoint from ``HAKU_CONSOLE_DATABASE_URL``.
+
+    This intentionally avoids constructing ``Settings``: migrations need only the database URL and
+    must not require the Console's OIDC, connector, routine, or Kubernetes credentials.
+    """
+    database_url = os.environ.get("HAKU_CONSOLE_DATABASE_URL")
+    if not database_url:
+        raise SystemExit("HAKU_CONSOLE_DATABASE_URL is required for the migration command")
+    apply_migrations(database_url)
+
+
+if __name__ == "__main__":
+    main()

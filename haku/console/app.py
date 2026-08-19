@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -52,7 +53,7 @@ from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
-from haku.console.database_migrate import apply_migrations
+from haku.console.database_migrate import apply_migrations, main as migration_main
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
@@ -723,5 +724,15 @@ def main() -> None:
     uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
 
 
-if __name__ == "__main__":
+def run_command(argv: list[str]) -> None:
+    """Dispatch the image's two process modes without constructing application settings for migrations."""
+    if argv == ["migrate"]:
+        migration_main()
+        return
+    if argv:
+        raise SystemExit(f"usage: {Path(sys.argv[0]).name} [migrate]")
     main()
+
+
+if __name__ == "__main__":
+    run_command(sys.argv[1:])
