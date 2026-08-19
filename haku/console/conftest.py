@@ -58,7 +58,7 @@ _DEFAULT_STATIC_AGENTS = [
         "display_name": "Console Test Agent",
         "token_env_var": _DEFAULT_AGENT_TOKEN_ENV,
         "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV,
-        "auto_approval_policy": "no_auto_approval",
+        "access_profile_id": "no_auto_approval",
     }
 ]
 
@@ -269,6 +269,8 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         {
             "static_agents": _DEFAULT_STATIC_AGENTS,
             "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+            "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
+            "default_access_profile_id": "no_auto_approval",
         },
     )
 

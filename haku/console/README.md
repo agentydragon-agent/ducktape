@@ -156,8 +156,8 @@ fetchers.
 
 Discovery is request-local: either principal sees remote servers connected by its canonical
 Operator, plus shared configured/in-process servers. For Agents, that surface is divided into two
-buckets. Tools the policy **unconditionally** auto-approves — the `auto_approval_policies` graph in
-<../../cluster/k8s/haku/console/config.yaml>, which is the only place that list lives — appear as
+buckets. Tools the caller's access profile **unconditionally** auto-approves — through the policy
+graph in <../../cluster/k8s/haku/console/config.yaml> — appear as
 transparent **pass-throughs** (original schema, real result); everything else keeps the same
 `<server>__<tool>` name but uses an envelope `{input, title?, rationale, wait_for_result_ms?}` that
 returns the real result if approval and execution reach a terminal state within the wait, else a
@@ -263,8 +263,10 @@ lifecycle, and an Agent-originated tool call persists only its exact binding pro
 approval and execution revalidate that binding and queued work cannot transfer to a replacement
 credential. Enrollment is an Operator-authenticated browser ceremony layered over FastMCP's own
 authorize/callback/token path; the runtime caller it produces is `OperatorActor | AgentActor`, and
-an Agent's auto-approval policy is chosen at enrollment with a fail-closed `never` default. Agents
-submit and read only their own calls, and never approve themselves.
+an Agent's config-defined access profile is chosen at enrollment. The profile bundles its
+auto-approval policy and named logical Recall-index grants; the fail-closed default profile uses
+the sole `never` policy and grants no indexes. Agents submit and read only their own calls, and
+never approve themselves.
 
 The durable contract, the eight-step ceremony, the FastMCP version-pinning seam, and the accepted
 credential boundary: <docs/agent_authority.md>.

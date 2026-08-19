@@ -92,7 +92,9 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         if agent["agent_id"] == console_config["claude_runtime"]["mcp_static_agent_id"]
     )
     assert mcp_agent["display_name"] == "Haku"
-    assert mcp_agent["auto_approval_policy"] == "haku_v1"
+    haku_profile = next(profile for profile in console_config["access_profiles"] if profile["id"] == "haku")
+    assert mcp_agent["access_profile_id"] == haku_profile["id"]
+    assert haku_profile["auto_approval_policy"] == "haku_v1"
     env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
 

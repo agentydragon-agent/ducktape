@@ -33,6 +33,10 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
 - An Agent-originated tool call persists only its exact binding provenance. Agent, owning Operator,
   and display name derive through canonical joins, and approval/execution revalidate that binding
   so queued work cannot transfer to a replacement credential.
+- An Agent stores only a nullable `access_profile_id`, naming a reviewed deployment-config entry.
+  The profile owns its auto-approval policy and permitted logical Recall-index IDs. Credential
+  bindings authenticate an Agent; they do not independently select either capability. A null or
+  removed profile is fail-closed.
 
 ## Interactive enrollment
 
@@ -42,10 +46,10 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
    and creates a random `EnrollmentInteraction`.
 3. The browser independently logs into Haku through Authentik. Opening the page binds its verified
    identity and canonical Operator to the interaction exactly once.
-4. The Operator explicitly denies or allows a required name and auto-approval policy for a new
-   Agent, or reconnects an existing owned Agent with a selected policy. This records intent but
-   issues no grant yet. The server chooses the unique configured `never` policy as the fail-closed
-   default; its identifier has no built-in meaning.
+4. The Operator explicitly denies or allows a required name and access profile for a new Agent,
+   or reconnects an existing owned Agent with a selected profile. This records intent but issues
+   no grant yet. The server chooses the configured profile rooted at the unique `never` policy as
+   the fail-closed default; profile and policy identifiers have no built-in meaning.
 5. FastMCP performs its untouched Authentik callback and creates the downstream code.
 6. At exchange, Haku verifies the MCP-side access-token principal and requires the same active
    canonical Operator as the browser interaction. One locked transition creates the draft Agent
@@ -65,12 +69,12 @@ The browser surfaces themselves are in <oauth_browser_surfaces.md> § Agent enro
 ## The runtime actor
 
 The runtime caller is `OperatorActor | AgentActor`. Only the authority constructs an
-`AgentActor(agent_id, operator_id, binding_id, auto_approval_policy)` from durable state. Operators
-may change an OAuth Agent's policy later under Settings; configured static Agent policies remain
+`AgentActor(agent_id, operator_id, binding_id, access_profile_id)` from durable state. Operators
+may change an OAuth Agent's profile later under Settings; configured static Agent profiles remain
 owned by deployment configuration so the manually approved public Coder identity cannot be granted
-standing authority through the UI. Policy selection is required for every new enrollment,
+standing authority through the UI. Profile selection is required for every new enrollment,
 reconnection, Settings mutation, and static-Agent definition. Only pre-migration durable Agents may
-have a null assignment, which fails closed until an Operator selects a policy. Agents can
+have a null assignment, which fails closed until an Operator selects a profile. Agents can
 submit/read only their own calls; Operators can read/decide all and only calls they own; Agents
 never approve themselves. Repository operations have no unscoped or `None` actor mode.
 

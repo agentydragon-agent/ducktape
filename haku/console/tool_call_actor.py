@@ -16,8 +16,8 @@ class AgentActor:
     agent_id: UUID
     operator_id: UUID
     binding_id: UUID
-    # Persisted per-Agent policy selection. ``None`` is the migration-safe, fail-closed default.
-    auto_approval_policy: str | None = None
+    # Persisted config-profile reference. ``None`` is the migration-safe, fail-closed default.
+    access_profile_id: str | None = None
 
 
 type ToolCallActor = OperatorActor | AgentActor

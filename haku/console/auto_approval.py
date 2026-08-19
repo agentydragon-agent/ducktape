@@ -91,25 +91,19 @@ class AutoApprovalEvaluation:
 
 
 class AutoApprovalPolicyRegistry:
-    """Validated policy graph plus static-Agent root assignments.
-
-    Configuration validation has already guaranteed unique ids, valid references, an acyclic graph,
-    and an explicit root for every static Agent. Dynamically enrolled/OAuth Agents absent from the
-    deploy-time static list require manual approval.
-    """
+    """Validated policy graph selected through durable, config-defined Agent access profiles."""
 
     def __init__(self, config: ConsoleConfigFile) -> None:
         self._policies: dict[str, AutoApprovalPolicy] = {policy.id: policy for policy in config.auto_approval_policies}
-        # Retain deploy-time roots as a mixed-version fallback while durable assignments are seeded.
-        self._static_agent_roots = {agent.agent_id: agent.auto_approval_policy for agent in config.static_agents}
+        self._profiles = {profile.id: profile for profile in config.access_profiles}
         # Operators bypass the Agent approval lifecycle, but they share the reflected MCP catalog.
         # Preserve the useful transparent schema for any tool that an assigned Agent policy always
         # auto-approves; this affects presentation only, never Operator authorization.
-        self._assigned_roots = tuple(self._policies)
+        self._assigned_roots = tuple(dict.fromkeys(profile.auto_approval_policy for profile in self._profiles.values()))
 
     def _actor_root(self, actor: AgentActor) -> str | None:
-        root = actor.auto_approval_policy or self._static_agent_roots.get(actor.agent_id)
-        return root if root in self._policies else None
+        profile = self._profiles.get(actor.access_profile_id) if actor.access_profile_id is not None else None
+        return profile.auto_approval_policy if profile is not None else None
 
     def tool_mode(self, actor: ToolCallActor, server_id: str, tool_name: str) -> ToolAutoApprovalMode:
         if isinstance(actor, AgentActor):
@@ -165,7 +159,7 @@ class AutoApprovalPolicyRegistry:
             return None, None
         root = self._actor_root(actor)
         if root is None:
-            return None, f"manual: Agent has no auto-approval policy for {server_id}/{tool_name}"
+            return None, f"manual: Agent has no configured access profile for {server_id}/{tool_name}"
 
         evaluation = AutoApprovalEvaluation()
         await self._evaluate_policy(

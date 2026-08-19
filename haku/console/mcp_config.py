@@ -197,6 +197,7 @@ class ConsoleMcpConfig(BaseModel):
 
 
 type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
+type RecallIndexId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")]
 
 
 class AutoApprovalPolicyBase(BaseModel):
@@ -272,6 +273,31 @@ def _default_auto_approval_policies() -> list[AutoApprovalPolicy]:
     return [NeverAutoApprovalPolicy(id="manual_review")]
 
 
+class AccessProfile(BaseModel):
+    """A deploy-reviewed capability bundle assigned to one durable Agent.
+
+    The profile deliberately gathers all durable Agent authority in one config catalog: its
+    current auto-approval policy and the logical Recall indexes it may later search. Credential
+    bindings authenticate an Agent; they never independently select either capability.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
+    auto_approval_policy: AutoApprovalPolicyId
+    recall_index_ids: set[RecallIndexId] = Field(default_factory=set)
+
+
+def _default_access_profiles() -> list[AccessProfile]:
+    """The config-less profile stays manually approved and grants no additional capability."""
+    return [AccessProfile(id=policy.id, auto_approval_policy=policy.id) for policy in _default_auto_approval_policies()]
+
+
+def _default_access_profile_id() -> str:
+    [profile] = _default_access_profiles()
+    return profile.id
+
+
 class StaticAgentEntry(BaseModel):
     """Controller-owned identity and secret reference for one static Agent slot.
 
@@ -286,9 +312,9 @@ class StaticAgentEntry(BaseModel):
     # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
     # never live request authority.
     operator_subject_env: str
-    # The root of this Agent's deploy-reviewed auto-approval policy graph. Every static Agent must
-    # choose explicitly; dynamically enrolled/OAuth Agents choose during enrollment or reconnect.
-    auto_approval_policy: AutoApprovalPolicyId
+    # Static Agents choose an explicit capability profile. OAuth/DCR Agents select one in the
+    # browser enrollment decision alongside their display name.
+    access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
 
     @field_validator("display_name")
     @classmethod
@@ -307,7 +333,7 @@ class LoadedStaticAgent(BaseModel):
     secret_reference: str
     token: SecretStr
     operator_external_user_key: str
-    auto_approval_policy: AutoApprovalPolicyId
+    access_profile_id: str
 
 
 class ConsoleConfigFile(BaseModel):
@@ -316,6 +342,8 @@ class ConsoleConfigFile(BaseModel):
     # The real OAuth bearer remains solely in the dedicated iron-proxy.
     claude_runtime: ClaudeRuntimeConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=_default_auto_approval_policies)
+    access_profiles: list[AccessProfile] = Field(default_factory=_default_access_profiles)
+    default_access_profile_id: str = Field(default_factory=_default_access_profile_id)
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
@@ -329,11 +357,6 @@ class ConsoleConfigFile(BaseModel):
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.
     recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
-
-    @property
-    def default_agent_auto_approval_policy(self) -> AutoApprovalPolicyId:
-        """The unique fail-closed policy offered as the default for new Agent decisions."""
-        return next(policy.id for policy in self.auto_approval_policies if isinstance(policy, NeverAutoApprovalPolicy))
 
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
@@ -445,11 +468,35 @@ class ConsoleConfigFile(BaseModel):
                 "auto_approval_policies must contain exactly one never policy to use as the fail-closed Agent default"
             )
 
-        for agent in self.static_agents:
-            if agent.auto_approval_policy not in policies:
+        profiles: dict[str, AccessProfile] = {}
+        for profile in self.access_profiles:
+            if profile.id in profiles:
+                raise ValueError(f"duplicate access profile id {profile.id!r}")
+            if profile.auto_approval_policy not in policies:
                 raise ValueError(
-                    f"static Agent {agent.agent_id} references unknown auto-approval policy "
-                    f"{agent.auto_approval_policy!r}"
+                    f"access profile {profile.id!r} references unknown auto-approval policy "
+                    f"{profile.auto_approval_policy!r}"
+                )
+            profiles[profile.id] = profile
+        if self.default_access_profile_id not in profiles:
+            raise ValueError(f"default access profile {self.default_access_profile_id!r} is not configured")
+        default_profile = profiles[self.default_access_profile_id]
+        if not isinstance(policies[default_profile.auto_approval_policy], NeverAutoApprovalPolicy):
+            raise ValueError("default access profile must reference the fail-closed auto-approval policy")
+
+        configured_recall_indexes = {index.index_id for index in self.recall_indexes}
+        for profile in profiles.values():
+            unknown_recall_indexes = set(profile.recall_index_ids) - configured_recall_indexes
+            if unknown_recall_indexes:
+                raise ValueError(
+                    f"access profile {profile.id!r} references unknown Recall indexes "
+                    f"{sorted(unknown_recall_indexes)!r}"
+                )
+
+        for agent in self.static_agents:
+            if agent.access_profile_id not in profiles:
+                raise ValueError(
+                    f"static Agent {agent.agent_id} references unknown access profile {agent.access_profile_id!r}"
                 )
         if self.hostexec is not None:
             if self.node_daemons is None:
@@ -507,7 +554,7 @@ def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
                 secret_reference=entry.token_env_var,
                 token=SecretStr(token),
                 operator_external_user_key=external_user_key,
-                auto_approval_policy=entry.auto_approval_policy,
+                access_profile_id=entry.access_profile_id,
             )
         )
     return loaded

@@ -12,11 +12,11 @@ from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse, Response
 
 from haku.console.agents.enrollment import (
-    AgentAutoApprovalPolicyManagedByDeploymentError,
+    AccessProfileUnavailableError,
+    AgentAccessProfileManagedByDeploymentError,
     AgentEnrollmentService,
     AgentNameUnavailableError,
     AgentNotFoundError,
-    AutoApprovalPolicyUnavailableError,
     CreateAgentDecision,
     DenyEnrollmentDecision,
     EnrollmentAllowed,
@@ -53,22 +53,22 @@ class AgentView(BaseModel):
     created_at: datetime.datetime
     activated_at: datetime.datetime | None
     last_seen_at: datetime.datetime | None
-    auto_approval_policy: str | None
+    access_profile_id: str | None
 
 
 class AgentListResponse(BaseModel):
     agents: list[AgentView]
-    auto_approval_policies: list[str]
+    access_profiles: list[str]
 
 
-class UpdateAgentAutoApprovalPolicyRequest(BaseModel):
-    auto_approval_policy: str = Field(min_length=1)
+class UpdateAgentAccessProfileRequest(BaseModel):
+    access_profile_id: str = Field(min_length=1)
 
 
 class ReconnectableAgentView(BaseModel):
     agent_id: UUID
     display_name: str
-    auto_approval_policy: str | None
+    access_profile_id: str | None
 
 
 class EnrollmentView(BaseModel):
@@ -78,8 +78,8 @@ class EnrollmentView(BaseModel):
     requested_scopes: list[str]
     suggested_agent_name: str
     reconnectable_agents: list[ReconnectableAgentView]
-    auto_approval_policies: list[str]
-    default_auto_approval_policy: str
+    access_profiles: list[str]
+    default_access_profile_id: str
     form_token: str
 
 
@@ -87,14 +87,14 @@ class CreateEnrollmentRequest(BaseModel):
     kind: Literal["create"] = "create"
     form_token: str
     display_name: str
-    auto_approval_policy: str = Field(min_length=1)
+    access_profile_id: str = Field(min_length=1)
 
 
 class ReconnectEnrollmentRequest(BaseModel):
     kind: Literal["reconnect"] = "reconnect"
     form_token: str
     agent_id: UUID
-    auto_approval_policy: str = Field(min_length=1)
+    access_profile_id: str = Field(min_length=1)
 
 
 class DenyEnrollmentRequest(BaseModel):
@@ -212,14 +212,12 @@ def _enrollment_view(page: EnrollmentPage, session: OperatorSession) -> Enrollme
         suggested_agent_name=page.suggested_agent_name,
         reconnectable_agents=[
             ReconnectableAgentView(
-                agent_id=agent.agent_id,
-                display_name=agent.display_name,
-                auto_approval_policy=agent.auto_approval_policy,
+                agent_id=agent.agent_id, display_name=agent.display_name, access_profile_id=agent.access_profile_id
             )
             for agent in page.reconnectable_agents
         ],
-        auto_approval_policies=list(page.auto_approval_policies),
-        default_auto_approval_policy=page.default_auto_approval_policy,
+        access_profiles=list(page.access_profiles),
+        default_access_profile_id=page.default_access_profile_id,
         form_token=page.form_token,
     )
 
@@ -234,7 +232,7 @@ def _agent_view(agent: OperatorAgent) -> AgentView:
         created_at=agent.created_at,
         activated_at=agent.activated_at,
         last_seen_at=agent.last_seen_at,
-        auto_approval_policy=agent.auto_approval_policy,
+        access_profile_id=agent.access_profile_id,
     )
 
 
@@ -261,29 +259,26 @@ async def list_agents(service: EnrollmentServiceDep, session: OperatorSessionDep
     operator = _require_operator(session)
     return AgentListResponse(
         agents=[_agent_view(agent) for agent in await service.list_agents(operator_id=operator.operator_id)],
-        auto_approval_policies=list(service.available_auto_approval_policies()),
+        access_profiles=list(service.available_access_profiles()),
     )
 
 
-@operator_router.put("/agents/{agent_id}/auto-approval-policy", response_model=AgentView)
-async def update_agent_auto_approval_policy(
-    agent_id: UUID,
-    body: UpdateAgentAutoApprovalPolicyRequest,
-    service: EnrollmentServiceDep,
-    session: OperatorSessionDep,
+@operator_router.put("/agents/{agent_id}/access-profile", response_model=AgentView)
+async def update_agent_access_profile(
+    agent_id: UUID, body: UpdateAgentAccessProfileRequest, service: EnrollmentServiceDep, session: OperatorSessionDep
 ) -> AgentView:
     operator = _require_operator(session)
     try:
-        agent = await service.set_auto_approval_policy(
-            operator_id=operator.operator_id, agent_id=agent_id, auto_approval_policy=body.auto_approval_policy
+        agent = await service.set_access_profile(
+            operator_id=operator.operator_id, agent_id=agent_id, access_profile_id=body.access_profile_id
         )
     except AgentNotFoundError as error:
         raise HTTPException(status_code=404, detail="Agent not found") from error
-    except AgentAutoApprovalPolicyManagedByDeploymentError as error:
+    except AgentAccessProfileManagedByDeploymentError as error:
         raise HTTPException(
-            status_code=409, detail="Static Agent policies are managed by deployment configuration"
+            status_code=409, detail="Static Agent access profiles are managed by deployment configuration"
         ) from error
-    except AutoApprovalPolicyUnavailableError as error:
+    except AccessProfileUnavailableError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return _agent_view(agent)
 
@@ -315,16 +310,14 @@ async def decide_enrollment(
     decision: EnrollmentDecision
     match body:
         case CreateEnrollmentRequest(
-            form_token=form_token, display_name=display_name, auto_approval_policy=auto_approval_policy
+            form_token=form_token, display_name=display_name, access_profile_id=access_profile_id
         ):
             decision = CreateAgentDecision(
-                form_token=form_token, display_name=display_name, auto_approval_policy=auto_approval_policy
+                form_token=form_token, display_name=display_name, access_profile_id=access_profile_id
             )
-        case ReconnectEnrollmentRequest(
-            form_token=form_token, agent_id=agent_id, auto_approval_policy=auto_approval_policy
-        ):
+        case ReconnectEnrollmentRequest(form_token=form_token, agent_id=agent_id, access_profile_id=access_profile_id):
             decision = ReconnectAgentDecision(
-                form_token=form_token, agent_id=agent_id, auto_approval_policy=auto_approval_policy
+                form_token=form_token, agent_id=agent_id, access_profile_id=access_profile_id
             )
         case DenyEnrollmentRequest(form_token=form_token):
             decision = DenyEnrollmentDecision(form_token=form_token)
@@ -340,7 +333,7 @@ async def decide_enrollment(
         raise HTTPException(status_code=409, detail=str(error)) from error
     except InvalidAgentNameError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    except AutoApprovalPolicyUnavailableError as error:
+    except AccessProfileUnavailableError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except (
         EnrollmentInteractionNotFoundError,

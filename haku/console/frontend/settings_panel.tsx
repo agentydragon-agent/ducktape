@@ -10,7 +10,7 @@ import {
   fetchDeploymentInfo,
   displayableError,
   listAgents,
-  updateAgentAutoApprovalPolicy,
+  updateAgentAccessProfile,
   type AgentView,
   type DeploymentInfo,
   type OperatorConnectionName,
@@ -274,14 +274,14 @@ const AGENT_STATUS_COLOR: Record<AgentView["status"], string> = {
 
 function AgentCard({
   agent,
-  policies,
+  accessProfiles,
   saving,
-  onPolicyChange,
+  onAccessProfileChange,
 }: {
   agent: AgentView;
-  policies: string[];
+  accessProfiles: string[];
   saving: boolean;
-  onPolicyChange: (agent: AgentView, policy: string) => void;
+  onAccessProfileChange: (agent: AgentView, accessProfileId: string) => void;
 }) {
   const lastSeen = shortDate(agent.last_seen_at);
   const activated = shortDate(agent.activated_at);
@@ -304,22 +304,22 @@ function AgentCard({
       </Group>
       <Select
         mt="sm"
-        label="Auto-approval policy"
+        label="Access profile"
         description={
           agent.credential_kind === "static"
             ? "Managed by deployment configuration."
-            : agent.auto_approval_policy === null
+            : agent.access_profile_id === null
               ? "This preexisting Agent has no assignment; all tool calls require approval until you choose one."
-              : "Tool calls outside this policy still require your approval."
+              : "Tool calls outside this profile still require your approval."
         }
-        data={policies.map((policy) => ({
-          value: policy,
-          label: policy.replaceAll("_", " "),
+        data={accessProfiles.map((profile) => ({
+          value: profile,
+          label: profile.replaceAll("_", " "),
         }))}
-        value={agent.auto_approval_policy}
-        placeholder="Select a policy"
-        onChange={(policy) => {
-          if (policy && policy !== agent.auto_approval_policy) onPolicyChange(agent, policy);
+        value={agent.access_profile_id}
+        placeholder="Select an access profile"
+        onChange={(profile) => {
+          if (profile && profile !== agent.access_profile_id) onAccessProfileChange(agent, profile);
         }}
         allowDeselect={false}
         disabled={saving || agent.credential_kind === "static"}
@@ -468,7 +468,7 @@ function SystemStatusCard({ deployment }: { deployment: DeploymentInfo }) {
 export function SettingsPanel() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [agents, setAgents] = useState<AgentView[] | null>(null);
-  const [agentPolicies, setAgentPolicies] = useState<string[]>([]);
+  const [agentAccessProfiles, setAgentAccessProfiles] = useState<string[]>([]);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerView[] | null>(null);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
@@ -544,7 +544,7 @@ export function SettingsPanel() {
       (response) => {
         if (generation !== agentsGeneration.current) return;
         setAgents(response.agents);
-        setAgentPolicies(response.auto_approval_policies);
+        setAgentAccessProfiles(response.access_profiles);
         setAgentsError(null);
         setAgentsLoading(false);
       },
@@ -698,20 +698,20 @@ export function SettingsPanel() {
     );
   }
 
-  function changeAgentPolicy(agent: AgentView, policy: string) {
+  function changeAgentAccessProfile(agent: AgentView, accessProfileId: string) {
     setSavingAgentId(agent.agent_id);
-    updateAgentAutoApprovalPolicy(agent.agent_id, policy).then(
+    updateAgentAccessProfile(agent.agent_id, accessProfileId).then(
       (updated) => {
         setAgents((current) => current?.map((item) => (item.agent_id === updated.agent_id ? updated : item)) ?? null);
         setSavingAgentId(null);
         toastSuccess(
-          "Agent policy updated",
-          `${updated.display_name} now uses ${updated.auto_approval_policy?.replaceAll("_", " ")}.`
+          "Agent access profile updated",
+          `${updated.display_name} now uses ${updated.access_profile_id?.replaceAll("_", " ")}.`
         );
       },
       (e: unknown) => {
         setSavingAgentId(null);
-        toastError("Couldn't update Agent policy", e);
+        toastError("Couldn't update Agent access profile", e);
       }
     );
   }
@@ -822,9 +822,9 @@ export function SettingsPanel() {
               <AgentCard
                 key={agent.agent_id}
                 agent={agent}
-                policies={agentPolicies}
+                accessProfiles={agentAccessProfiles}
                 saving={savingAgentId !== null}
-                onPolicyChange={changeAgentPolicy}
+                onAccessProfileChange={changeAgentAccessProfile}
               />
             ))}
           </Stack>
