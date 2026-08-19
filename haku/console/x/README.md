@@ -47,10 +47,10 @@ surface's own HTTP routes, which is the older of the two experiments.
 so a method whose job is "these writes commit together or not at all" is in `session_store.py` — the
 outbox write and the turn-state transitions included, because each commits beside the effect it
 describes and moving one out would be the drop it exists to prevent. What is left in
-`session_runtime.py` is what drives one turn against a CLI: the client wiring, the room and status
-plumbing, the sandbox lifecycle, the `ChatFrontend` port and the SPA's own routes. A second channel
-inherits the store unchanged, which is why it stays at the runtime level and imports nothing under
-`channels/`.
+`session_runtime.py` is what drives one turn against a CLI: client wiring, sandbox lifecycle and
+the SPA's own routes. It records setup, answers, silence and turn state without holding a channel;
+subscribers project those facts. A second channel inherits the runtime unchanged, which is why it
+imports nothing under `channels/`.
 
 Session provisioning, setup narration and ending are authored into `conversation_event` in the
 same transactions that make them true. Narration also writes a temporary `setup_output` frame for
@@ -248,11 +248,11 @@ it answers. It is not restated here; what follows is who reads it and what is no
 `SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
 onto the read models in `conversation_records.py`. And the live path reads them too.
 
-**One interpreter, not four.** `_run_turn` projects each frame as it lands and acts on the events,
-so the live path does not know that `assistant`, `stream_event` and `result` exist; `coarse_status`
-reads a run of events rather than a frame, which is what keeps the status driver above the
-interpreters; adoption replays from the cursor rather than reconstructing; and the read path has no
-parser of its own, because the events are rows.
+**One interpreter, with one explicit backend escape hatch.** `_run_turn` projects each frame and
+acts on neutral item events; status folds those rows and adoption replays from the cursor. Turn
+completion still inspects Claude's `result` payload for failure detail and for prose that arrived
+only on that frame. `_CompletedTurn.frame` makes that dependency explicit; a second runner needs a
+sibling completion adapter before this last backend-specific read can move below the runtime.
 
 ### The events, stored — `conversation_event`
 
@@ -396,9 +396,8 @@ the test that reads it, as `test_diverse_session` has.
 - `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku services, and hands
   what the operator types to the session behind it. Holds the only Matrix credential, so everything
   that speaks into the room speaks through it.
-- `conversation.py` — the room's attachment to a conversation, ingress (`MatrixTurns`), the surface
-  a turn reports through (`MatrixSurface`), and the supervisor that keeps a session running under
-  it.
+- `conversation.py` — the room's attachment to a conversation, ingress (`MatrixTurns`), and the
+  supervisor that keeps a session running under it.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `matrix_outbox` rows, and the drain that says them.
 - `revisions.py` — which homeserver event the channel is currently editing for a revisable subject
@@ -409,13 +408,12 @@ the test that reads it, as `test_diverse_session` has.
   (`matrix_ingress_event`).
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
-**The room reads the record; it is not pushed at.** Everything the record holds reaches the room
-through `room_subscription.py`, off one cursor and in one order — an answer, an abort, a refused
-prompt, an unreadable attachment, a session changing hands or losing its lease, and a prompt the
-operator sent through some other surface. What is still pushed is what no row carries: the turn that
-produced nothing to record, the sandbox's setup narration, the session's lifecycle transitions, and a
-room being bound or adopted. The position is kept after the batch, so what a crash costs is a repeat
-rather than a silence — a notice said twice, and a reply the outbox's unique subject refuses.
+**The room reads the record; the turn loop never pushes at it.** `room_subscription.py` projects
+answers, aborts, silence, setup narration, refusals, unreadable input, session handoffs and lease
+losses, plus prompts arriving through another surface, from one cursor and in one order. Only facts
+outside the conversation log — such as binding or adopting a room — are still announced directly.
+The position is kept after the batch, so a crash costs a repeat rather than silence: a notice may be
+said twice, while the outbox's unique subject refuses a duplicate reply.
 
 **A prompt is a conversation fact, so every attached surface shows it.** The prompt item's origin
 names the surface it arrived through, and the room compares it against its own address: a prompt
@@ -512,9 +510,9 @@ identities (`MATRIX_*`), the config they compose into, and the room/session bind
 than restated, because `MATRIX_CONFIG.operator_subject` and the `operator_id` fixture have to name
 the same operator.
 
-The test files divide on the same seam. `test_session_runtime.py` and `test_session_store.py` reach
-a room only through the `ChatFrontend` port and a `chat_attachment` address — never
-`matrix-nio` — so what they cover (the turn loop, the outbox row, provenance, adoption, the abort
+The test files divide on the same seam. `test_session_runtime.py` and `test_session_store.py` use
+only conversation rows and a `chat_attachment` address — never a channel port or `matrix-nio` — so
+what they cover (the turn loop, the outbox row, provenance, adoption, the abort
 drain, prompt fate) is what a second channel inherits. A message _arriving_ from a room and becoming
 a turn is the crossing itself, so `MatrixTurns.offer` is tested in
 `channels/matrix/test_conversation.py`, beside the module that defines it.
@@ -753,10 +751,8 @@ dependency:
 - `Session`, `SessionMessage`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and
   `MatrixSyncWatermark` in <../database_schema.py>, plus their Alembic revisions — migrations are
   one lineage for the whole database.
-- The `ChatFrontend` port is defined next to the service that calls it (`session_runtime.py`);
-  the three methods the status driver drives are `StatusFrontend`, declared beside that driver in
-  `room_status.py`, and a frontend satisfies both by implementing one port. The composition in
-  <../app.py> is what ties a frontend to the sessions it serves.
+- `StatusFrontend` is declared beside the stream fold in `room_status.py`; Matrix's sync service
+  implements those ephemeral operations. The turn runtime has no channel port.
 
 ## Where the reasoning lives
 

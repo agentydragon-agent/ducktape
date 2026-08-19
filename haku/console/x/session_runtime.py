@@ -22,12 +22,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from more_itertools import first
 from pydantic import BaseModel, Field, SecretStr
 
-from haku.console.chat_models import ENDED_SESSION_STATUSES, SPA_ORIGIN, FrameDirection, SessionStatus, TurnOutcome
+from haku.console.chat_models import (
+    ENDED_SESSION_STATUSES,
+    SPA_ORIGIN,
+    FrameDirection,
+    ItemType,
+    SessionStatus,
+    TurnOutcome,
+)
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
 from haku.console.x.claude_code.frames import frame_kind
 from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
+from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.sandbox_claims import (
     ClaudeSandboxProvisioningView,
     ProvisioningStep,
@@ -53,6 +61,7 @@ from haku.console.x.session_views import (
     SessionProvisioningView,
     SessionView,
 )
+from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, RecordedFrame, SentPrompt, cli_over_websocket
 from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
@@ -64,6 +73,10 @@ logger = logging.getLogger(__name__)
 # How long one session's observed provisioning state is reused before the cluster is read again.
 # Bounds what a polling browser costs the Kubernetes API server.
 OBSERVATION_TTL = timedelta(seconds=2)
+
+# The conversation tail a replacement session receives. Counted in finished prompts/answers, not
+# transport events, and read from the console's record rather than any attached channel's copy.
+RE_AWAKENING_MESSAGES = 20
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -152,30 +165,6 @@ class RolloutRecorder:
         )
 
 
-class ChatFrontend(Protocol):
-    """The chat channel a session is attached to, for the parts a turn cannot do itself.
-
-    **Bound to its address at construction**, never asked for one per call: a channel serves one
-    room and a session serves one channel.
-
-    Which sessions it serves is whether a channel holds a copy of the conversation they run
-    (`SessionStore.attached`). The SPA needs none of this — its client follows the conversation, so
-    a finished turn is delivered by being written down. A room has to be spoken to.
-
-    **Replies are not here.** They are rows in `session_outbox`, written where they are produced
-    and drained into the room by whoever holds the outbox lock (<../debug/message_drops.md>).
-    Neither is anything the stream already records: a channel subscribes to the conversation and
-    renders what it reads from its own position (<subscription.py>). What is left is what no row
-    carries — the turn that produced nothing to record, and the sandbox's setup narration.
-    """
-
-    async def system_prompt(self, session_id: UUID) -> str: ...
-
-    async def report_silent_turn(self) -> None: ...
-
-    async def report(self, detail: str) -> None: ...
-
-
 @dataclass(frozen=True)
 class _CompletedTurn:
     """The event that ended a turn, and the frame it was projected from."""
@@ -215,14 +204,16 @@ class SessionService:
         notifications: SessionNotifications,
         *,
         mcp_token: SecretStr,
-        chat_frontend: ChatFrontend | None = None,
+        conversation_history: ConversationHistory | None = None,
+        system_prompt: SystemPromptTemplate | None = None,
     ):
         self._config = config
         self._store = store
         self._claims = claims
         self._notifications = notifications
         self._mcp_token = mcp_token
-        self._chat_frontend = chat_frontend
+        self._conversation_history = conversation_history
+        self._system_prompt = system_prompt
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, ClaudeSandboxProvisioningView] = {}
@@ -346,37 +337,47 @@ class SessionService:
         await self._store.complete_claim_cleanup(session_id)
         return True
 
-    async def _frontend_for(self, session_id: UUID) -> ChatFrontend | None:
-        """The chat frontend this session is attached to, or None for one attached to none.
+    async def _appended_prompt(self, session_id: UUID) -> str | None:
+        """Who this session is, when its conversation has an attached chat surface.
 
-        The frontend is bound to its room, so what is asked here is whether a channel holds a copy
-        of the thread this session runs. Read once per runner connection and carried for the
-        session's life.
+        The conversation decides whether chat context applies; no channel object is handed to the
+        session. `--append-system-prompt` preserves Claude Code's own tool-driving preset.
         """
-        if self._chat_frontend is None:
+        if (
+            self._system_prompt is None
+            or self._conversation_history is None
+            or not await self._store.attached(session_id)
+        ):
             return None
-        return self._chat_frontend if await self._store.attached(session_id) else None
+        try:
+            conversation_id = await self._store.conversation_of(session_id)
+            recorded = await self._conversation_history.recent(
+                conversation_id, before_session=session_id, limit=RE_AWAKENING_MESSAGES
+            )
+        except Exception:
+            logger.exception("Could not read conversation history; starting session %s without it", session_id)
+            recorded = ()
+        return self._system_prompt.render(
+            SessionIntroduction(
+                session_id=session_id,
+                workspace=self._config.cwd,
+                recent_messages=tuple(
+                    HistoryMessage(
+                        sender="operator" if message.item_type is ItemType.PROMPT else "assistant",
+                        body=message.body,
+                        sent_at=message.sent_at,
+                    )
+                    for message in recorded
+                ),
+            )
+        )
 
-    async def _appended_prompt(self, session_id: UUID, frontend: ChatFrontend | None) -> str | None:
-        """Who this session is, appended to Claude Code's own system prompt.
-
-        `--append-system-prompt` and never `--system-prompt`: the built-ins (Read, Bash, Edit) are
-        live in the sandbox and Claude Code's own preset is what tells the model how to drive them.
-        """
-        return None if frontend is None else await frontend.system_prompt(session_id)
-
-    def _progress_reporter(self, session_id: UUID, frontend: ChatFrontend | None) -> Callable[[str], Awaitable[None]]:
-        """Record every sandbox progress report, log it, and show it to the frontend if there is one.
-
-        The rollout is the only durable copy: the pod's log is reaped with the sandbox, and a
-        session that died before its first CLI frame has its whole account here.
-        """
+    def _progress_reporter(self, session_id: UUID) -> Callable[[str], Awaitable[None]]:
+        """Record every sandbox progress report; subscribers decide how attached channels show it."""
 
         async def report(detail: str) -> None:
             logger.info("Claude sandbox %s: %s", session_id, detail)
             await self._store.narrate(session_id, detail)
-            if frontend is not None:
-                await frontend.report(detail)
 
         return report
 
@@ -419,8 +420,7 @@ class SessionService:
         # cleanup below and stranding the claim. Failing is deliberate: a session that silently
         # started without its identity is a generic assistant, and invisibly so.
         try:
-            frontend = await self._frontend_for(session_id)
-            appended = await self._appended_prompt(session_id, frontend)
+            appended = await self._appended_prompt(session_id)
         except Exception as error:
             logger.exception("Claude system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
@@ -444,7 +444,7 @@ class SessionService:
             # adopting a session mid-turn asks for what it is missing rather than being handed the
             # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
             build_claude_launch(session, resume_from=await self._store.highest_runner_seq(session_id)),
-            self._progress_reporter(session_id, frontend),
+            self._progress_reporter(session_id),
             RolloutRecorder(self._store, session_id),
         )
         abort_event = asyncio.Event()
@@ -494,9 +494,7 @@ class SessionService:
                             # kill this turn on arrival.
                             abort_event.clear()
                             try:
-                                await self._run_turn(
-                                    client, frames, session_id, turn, frontend=frontend, abort_event=abort_event
-                                )
+                                await self._run_turn(client, frames, session_id, turn, abort_event=abort_event)
                             except Exception as error:
                                 logger.exception("turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
@@ -599,7 +597,6 @@ class SessionService:
         session_id: UUID,
         turn: TurnStart | ResumedTurn,
         *,
-        frontend: ChatFrontend | None,
         abort_event: asyncio.Event,
     ) -> None:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
@@ -683,7 +680,7 @@ class SessionService:
             # turn that produced text and then failed still produced the text, and the message it
             # is on is closed nowhere else — the ending frame's own events are not applied
             # (<../debug/message_drops.md> E4).
-            said = await self._store.close_answer(
+            await self._store.close_answer(
                 session_id,
                 turn_id,
                 # A failing result's `result` is the failure rather than an answer, so nothing is
@@ -698,10 +695,6 @@ class SessionService:
                 raise RuntimeError(
                     f"the agent's turn failed: {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
                 )
-            if not said and frontend is not None:
-                # Every turn speaks, and there is deliberately no silence token: a turn that only
-                # ran tools is legitimate, but it must not look like the console lost the answer.
-                await frontend.report_silent_turn()
             await self._store.end_turn(
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,

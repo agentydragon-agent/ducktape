@@ -18,14 +18,7 @@ import pytest_bazel
 from pydantic import SecretStr
 from sqlalchemy import select
 
-from haku.console.chat_models import (
-    SPA_ORIGIN,
-    AuthoredEventKind,
-    ItemType,
-    MatrixOrigin,
-    PromptRejection,
-    StoredEventKind,
-)
+from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
 from haku.console.database_schema import ConversationEvent
 from haku.console.x.channels.matrix.client import (
     EventTag,
@@ -43,14 +36,12 @@ from haku.console.x.channels.matrix.conversation import (
     MatrixConversationStore,
     PromptAccepted,
     PromptRejected,
-    RoomTranscript,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
-from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
@@ -158,14 +149,7 @@ def matrix() -> _FakeMatrix:
     return _FakeMatrix(SyncResult("s2", (), ()))
 
 
-@pytest.fixture
-def transcript(migrated_sessions) -> RoomTranscript:
-    return RoomTranscript(migrated_sessions)
-
-
-def _replica(
-    sync_store, conversations, identities, turns, transcript, matrix, migrated_sessions, ledger
-) -> MatrixSyncService:
+def _replica(sync_store, conversations, identities, turns, matrix, migrated_sessions, ledger) -> MatrixSyncService:
     """One console replica's sync service, unthrottled.
 
     The real budget is `test_pacer`'s subject; at the room's true rate each of these would wait
@@ -179,7 +163,6 @@ def _replica(
         conversations=conversations,
         identities=identities,
         turns=cast(Any, turns),
-        transcript=transcript,
         # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
         # pass and assert the narration, which never touches the table (`test_outbox` does).
         outbox=cast(Any, None),
@@ -192,13 +175,9 @@ def _replica(
 
 
 @pytest.fixture
-async def service(
-    sync_store, conversations, migrated_identity_store, turns, transcript, matrix, migrated_sessions, ledger
-):
+async def service(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger):
     """The service with its outbound queue running, because every send goes through it."""
-    service = _replica(
-        sync_store, conversations, migrated_identity_store, turns, transcript, matrix, migrated_sessions, ledger
-    )
+    service = _replica(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger)
     async with service.pacer.run():
         yield service
 
@@ -586,7 +565,7 @@ async def test_a_quiet_batch_advances_the_watermark(service, matrix, sync_store,
 async def test_a_batch_handed_over_is_acknowledged_at_once(service, matrix, turns, sync_store, bound_room):
     """Acceptance is the acknowledgement, and what it costs is that a prompt whose session ends
     before claiming it is not offered again — what answers it is the replacement session being
-    handed the transcript it is already in (`session.RoomTranscript.recent`)."""
+    handed the transcript it is already in (`ConversationHistory.recent`)."""
     matrix.result = SyncResult("s2", (_message("hi"),), ())
 
     await service.sync_once("tok")
@@ -706,16 +685,7 @@ async def test_the_line_is_redacted_when_the_turn_ends(service, matrix, bound_ro
 
 
 async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
-    service,
-    sync_store,
-    conversations,
-    migrated_identity_store,
-    turns,
-    transcript,
-    matrix,
-    migrated_sessions,
-    ledger,
-    bound_room,
+    service, sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger, bound_room
 ) -> None:
     """The status line outlives the process that posted it. Whichever replica holds the session's
     lease drives the line, so one starting with an empty process would post a second line beside
@@ -723,9 +693,7 @@ async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
     await service.show_status("running Bash")
     await settled(service)
 
-    successor = _replica(
-        sync_store, conversations, migrated_identity_store, turns, transcript, matrix, migrated_sessions, ledger
-    )
+    successor = _replica(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger)
     async with successor.pacer.run():
         await successor.show_status("running Read")
         await settled(successor)
@@ -801,46 +769,6 @@ async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room)
     await settled(service)
 
     assert [tag.kind for tag in matrix.tags] == [RoomEventKind.LIFECYCLE, RoomEventKind.NARRATION, RoomEventKind.STATUS]
-
-
-async def test_history_is_read_from_our_record_and_not_from_the_homeserver(
-    service, matrix, chat_store, conversations, operator_id, bound_room
-) -> None:
-    """What a replacement session is told it said, at the seam.
-
-    An item type becomes an MXID here because that is the per-channel half of the answer: the record
-    knows what kind of item it was, and only the channel knows what to call whoever produced it.
-    `matrix` is asserted untouched because "we asked the homeserver" and "we asked ourselves" are
-    otherwise indistinguishable from the outside.
-    """
-    view, token = await chat_store.create(
-        operator_id, conversation_id=(await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
-    )
-    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.enqueue_prompt(operator_id, view.session_id, "hi", SPA_ORIGIN)
-    start = await chat_store.next_prompt(view.session_id)
-    assert start is not None
-    where = FrameRange(1, 1)
-    await chat_store.apply_frame(
-        view.session_id,
-        start.turn_id,
-        1,
-        [
-            MessageStarted(provenance=where),
-            ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text="hello", provenance=where),
-            MessageCompleted(backend_item_id=None, provenance=where),
-        ],
-    )
-
-    said = await service.recent_history(uuid4(), 20)
-
-    assert [(message.sender, message.body) for message in said] == [(MATRIX_OPERATOR, "hi"), (MATRIX_USER, "hello")]
-    assert matrix.since is None, "the homeserver was not asked anything to answer this"
-
-
-async def test_a_room_nothing_has_been_recorded_for_has_no_history(service, bound_room) -> None:
-    """A first-ever session and one whose room was just bound read the same, and both correctly."""
-    assert await service.recent_history(uuid4(), 20) == ()
 
 
 if __name__ == "__main__":

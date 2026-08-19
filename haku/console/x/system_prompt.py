@@ -7,7 +7,7 @@ Haku did not choose them belong here; everything Haku authors for itself stays i
 <../../base/README.md>).
 
 Rendering is Jinja2 rather than `str.format` because the interesting parts are conditional: a fresh
-room has no recent messages, and "here is where the conversation was" has to disappear rather than
+conversation has no recent messages, and "here is where the conversation was" has to disappear rather than
 render as an empty heading.
 
 `StrictUndefined`: a name the template asks for and the renderer does not supply is a deploy-time
@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from jinja2 import Environment, StrictUndefined
@@ -30,14 +31,12 @@ from jinja2 import Environment, StrictUndefined
 class HistoryMessage:
     """One thing already said in this conversation, either side of it, as we recorded it.
 
-    No channel address: this comes from the console's transcript rather than from the room
-    (`channels/matrix/sync.py`'s `recent_history`), and what a prompt was folded from is a field on
-    its `PROMPT_ENQUEUED` event rather than something the text carries. Nothing renders one into a
-    prompt — the agent cannot resolve one until the room read tools land, and until then an
-    address in front of the operator's words is noise it is invited to quote back.
+    No channel address: this comes from the console's conversation record, so a replacement can
+    resume the thread whichever attached chat surface displayed it. The role is neutral too; the
+    template chooses human-readable speaker names.
     """
 
-    sender: str
+    sender: Literal["operator", "assistant"]
     body: str
     sent_at: datetime
 
@@ -47,8 +46,6 @@ class SessionIntroduction:
     """Everything a rendered prompt may name about the session being started."""
 
     session_id: UUID
-    room_id: str
-    operator_user_id: str
     workspace: str
     # Oldest first, so the template renders them in reading order.
     recent_messages: Sequence[HistoryMessage]
@@ -82,8 +79,6 @@ class SystemPromptTemplate:
     def render(self, introduction: SessionIntroduction) -> str:
         return self._template.render(
             session_id=introduction.session_id,
-            room_id=introduction.room_id,
-            operator_user_id=introduction.operator_user_id,
             workspace=introduction.workspace,
             recent_messages=list(introduction.recent_messages),
         ).strip()

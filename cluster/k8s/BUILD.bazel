@@ -72,12 +72,12 @@ filegroup(
         "haku/claude-namespace/networkpolicy.yaml",
         "haku/claude-namespace/resourcequota.yaml",
         "haku/claude-namespace/serviceaccount.yaml",
+        "haku/console/chat_system_prompt.md.j2",
         "haku/console/config.yaml",
         "haku/console/deployment.yaml",
         "haku/console/haku-console-github-mcp-client-credentials.sops.yaml",
         "haku/console/httproute.yaml",
         "haku/console/kustomization.yaml",
-        "haku/console/matrix_system_prompt.md.j2",
         "haku/console/service.yaml",
         "haku/managed-agent/haku-forgejo-tea.sops.yaml",
         "haku/rbac/rolebinding-haku.yaml",
@@ -151,11 +151,11 @@ filegroup(
     visibility = ["//loom/gym:__pkg__"],
 )
 
-# Haku's Matrix system prompt, so the test that renders it exercises the file the
+# Haku's attached-chat system prompt, so the test that renders it exercises the file the
 # console actually mounts rather than a fixture that can drift from it.
 filegroup(
     name = "haku_console_system_prompt",
-    srcs = ["haku/console/matrix_system_prompt.md.j2"],
+    srcs = ["haku/console/chat_system_prompt.md.j2"],
     # `__subpackages__`: the template is rendered by the session runtime and read back by
     # the Matrix channel's full-stack test, which is a package below it.
     visibility = ["//haku/console/x:__subpackages__"],

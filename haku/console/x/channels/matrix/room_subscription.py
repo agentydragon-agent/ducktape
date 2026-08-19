@@ -37,11 +37,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
+    ItemStatus,
     ItemType,
     LeaseExpiryReason,
     MatrixOrigin,
@@ -95,6 +96,10 @@ _NOTICES_ADVISORY_LOCK = 0x4D58_4E54  # "MXNT"
 # and always means the same kind: what this renders spans several, and the kind is what the room
 # event states about itself.
 Notify = Callable[[str, RoomEventKind], Awaitable[None]]
+
+# A completed turn with no finished assistant message is legitimate, but silence looks like a lost
+# answer. The turn loop records the facts; this subscriber supplies Matrix's words for their absence.
+NOTHING_SAID = "the turn finished without saying anything"
 
 # How this room renders a `turn_aborted` event. The words are the channel's own: what is recorded is
 # that the turn was aborted, and every channel gets to say so differently.
@@ -242,6 +247,8 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             )
         case SessionAdoptedBody(holder=holder):
             return Notice(f"another console replica ({holder}) took this session over", RoomEventKind.LIFECYCLE)
+        case SetupNarrationBody(text=text):
+            return Notice(text, RoomEventKind.NARRATION)
         case LeaseExpiredBody(reason=reason):
             return Notice(f"the session ended — {_why_it_lapsed(reason)}", RoomEventKind.LIFECYCLE)
         case PromptStartedBody():
@@ -266,7 +273,6 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             | TurnEndedBody()
             | SessionProvisioningBody()
             | SessionEndedBody()
-            | SetupNarrationBody()
             | UnknownEventBody()
         ):
             return None
@@ -347,6 +353,10 @@ class RoomNotices:
                     assert event.item_id is not None, "an item lifecycle row names its item"
                     if (relayed := await self._relayed(event.item_id, room_id)) is not None:
                         await self._announce(relayed, RoomEventKind.NARRATION)
+                case TurnEndedBody(outcome=TurnOutcome.ANSWERED):
+                    assert event.turn_id is not None, "a turn lifecycle row names its turn"
+                    if await self._silent(event.turn_id):
+                        await self._announce(NOTHING_SAID, RoomEventKind.NARRATION)
                 case _:
                     if (said := notice(event, room_id=room_id)) is not None:
                         await self._announce(said.body, said.kind)
@@ -372,6 +382,22 @@ class RoomNotices:
                 return
             self._live_status.apply(events)
             self._status_through = events[-1].position
+
+    async def _silent(self, turn_id: UUID) -> bool:
+        """Whether *turn_id* ended answered without completing a non-empty assistant message."""
+        async with self._sessions() as db:
+            said = int(
+                await db.scalar(
+                    select(func.count(ConversationItem.item_id)).where(
+                        ConversationItem.turn_id == turn_id,
+                        ConversationItem.item_type == ItemType.MESSAGE,
+                        ConversationItem.status == ItemStatus.COMPLETE,
+                        func.trim(ConversationItem.item_text) != "",
+                    )
+                )
+                or 0
+            )
+        return said == 0
 
     async def _relayed(self, item_id: UUID, room_id: str) -> str | None:
         """A prompt the operator sent somewhere else, as this room should show it.

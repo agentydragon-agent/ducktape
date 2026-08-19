@@ -1,15 +1,15 @@
-"""What `conversation.py` does with a room: keep a session running under it, build the prompt that
-starts one, read back what the room has been told, and take what is said in it into a turn.
+"""What `conversation.py` does with a room: bind its conversation, keep a session running under
+it, and take what is said in it into a turn.
 
 Ingress is here rather than beside the turn loop it feeds: `MatrixTurns.offer` takes homeserver
-events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing. The turn
-loop's own admission rules are <../../test_session_runtime.py>, where no channel appears at all.
+events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing. The turn loop's own admission rules are <../../test_session_runtime.py>, where no channel appears
+at all. The conversation-history tests remain here beside the replacement-session setup that creates
+their cross-session threads; the reader itself is channel-neutral.
 """
 
 from __future__ import annotations
 
 import datetime
-from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -29,21 +29,17 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import ChatAttachment, Conversation, ConversationEvent, ConversationItem, Session
 from haku.console.x import session_events
-from haku.console.x.channels.matrix.client import InboundMessage, RoomEventKind, UnmappableEvent
-from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
+from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import (
-    NOTHING_SAID,
     ConversationFacts,
     MatrixConversationStore,
     MatrixSessionSupervisor,
-    MatrixSurface,
     MatrixTurns,
     PromptAccepted,
     PromptRejected,
-    RoomTranscript,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.x.conftest import runtime_config
 from haku.console.x.conversation_events import (
     ConversationEvent as FoldedEvent,
     FrameRange,
@@ -52,11 +48,11 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenRef,
 )
+from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.session_events import PromptStartedBody
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
-from haku.console.x.system_prompt import HistoryMessage, SystemPromptTemplate
 
 
 async def session_behind_the_room(conversations: MatrixConversationStore) -> UUID | None:
@@ -250,144 +246,8 @@ async def test_does_not_repeat_an_unchanged_status(
 
 
 @pytest.fixture
-async def bound(conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID) -> UUID:
-    """A bound room, and a real session row for the prompt to be built for."""
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-    view, _ = await chat_store.create(operator_id)
-    return view.session_id
-
-
-# What `RoomChannel.recent_history` is, as a callable the fake room can be handed.
-RecentHistory = Callable[[UUID, int], Awaitable[Sequence[HistoryMessage]]]
-
-
-class _RecordingRoom:
-    """A `RoomChannel` that keeps what it was told instead of speaking to a homeserver."""
-
-    def __init__(self, history: RecentHistory) -> None:
-        self._history = history
-        self.room_id: str | None = MATRIX_ROOM
-        self.shown: list[str] = []
-        self.cleared = 0
-        self.typing: list[bool] = []
-        self.announced: list[tuple[str, RoomEventKind]] = []
-
-    async def bound_room(self) -> str | None:
-        return self.room_id
-
-    async def recent_history(self, before_session: UUID, limit: int) -> Sequence[HistoryMessage]:
-        return await self._history(before_session, limit)
-
-    async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
-        self.announced.append((body, kind))
-
-    async def show_status(self, body: str, session_id: UUID | None = None) -> None:
-        self.shown.append(body)
-
-    async def clear_status(self) -> None:
-        self.cleared += 1
-
-    async def set_typing(self, active: bool) -> None:
-        self.typing.append(active)
-
-
-def surface_and_room(history: RecentHistory) -> tuple[MatrixSurface, _RecordingRoom]:
-    room = _RecordingRoom(history)
-    template = SystemPromptTemplate("{{ room_id }} {{ session_id }} {{ recent_messages | length }}")
-    return MatrixSurface(MATRIX_CONFIG, runtime_config(), template, room), room
-
-
-def surface(history: RecentHistory) -> MatrixSurface:
-    return surface_and_room(history)[0]
-
-
-def served(*messages: HistoryMessage) -> RecentHistory:
-    async def _history(before_session: UUID, limit: int) -> tuple[HistoryMessage, ...]:
-        assert limit > 0
-        return messages
-
-    return _history
-
-
-def said(sender: str, body: str) -> HistoryMessage:
-    return HistoryMessage(sender=sender, body=body, sent_at=datetime.datetime.now(datetime.UTC))
-
-
-async def test_prompt_describes_the_room_the_channel_is_bound_to(bound: UUID) -> None:
-    """No session filtering: being called at all says this session serves the room.
-
-    The console selects this surface from the session's own `surface` column, and the room the
-    prompt names comes from the channel, which is the object that knows which room this is.
-    """
-    assert await surface(served()).system_prompt(bound) == f"{MATRIX_ROOM} {bound} 0"
-
-
-async def test_a_prompt_cannot_be_built_before_a_room_is_bound(bound: UUID) -> None:
-    """A session serving this channel while the channel serves no room is a contradiction, not a
-    prompt with the room left out of it."""
-    built, room = surface_and_room(served())
-    room.room_id = None
-
-    with pytest.raises(RuntimeError):
-        await built.system_prompt(bound)
-
-
-async def test_prompt_survives_a_transcript_that_will_not_answer(bound: UUID) -> None:
-    """A read that fails costs the session its context, not its existence."""
-
-    async def unreadable(before_session: UUID, limit: int) -> tuple[HistoryMessage, ...]:
-        raise RuntimeError("the database said no")
-
-    assert await surface(unreadable).system_prompt(bound) == f"{MATRIX_ROOM} {bound} 0"
-
-
-async def test_prompt_carries_both_sides_of_the_conversation(bound: UUID) -> None:
-    history = served(said(MATRIX_OPERATOR, "hi"), said(MATRIX_USER, "hello"))
-
-    assert await surface(history).system_prompt(bound) == f"{MATRIX_ROOM} {bound} 2"
-
-
-async def test_the_history_is_read_for_the_session_being_started(bound: UUID) -> None:
-    """Which session is asking is the whole of what excludes its own re-offered prompt."""
-    asked: list[UUID] = []
-
-    async def recording(before_session: UUID, limit: int) -> tuple[HistoryMessage, ...]:
-        asked.append(before_session)
-        return ()
-
-    await surface(recording).system_prompt(bound)
-
-    assert asked == [bound]
-
-
-async def test_building_a_prompt_says_nothing_into_the_room(bound: UUID) -> None:
-    """Reading the room's history is not a reason to post in it."""
-    built, room = surface_and_room(served())
-
-    await built.system_prompt(bound)
-
-    assert room.announced == []
-
-
-async def test_a_turn_with_nothing_to_say_says_so(bound: UUID) -> None:
-    """Every turn speaks and there is no silence token: a turn that produced no text would otherwise
-    leave the room with nothing at all, which from the operator's side is indistinguishable from a
-    lost answer.
-
-    A notice rather than a reply, because nothing was said. Answers do not come through this
-    surface at all — they are outbox rows, asserted in `test_outbox.py`.
-    """
-    del bound
-    reporting, room = surface_and_room(served())
-
-    await reporting.report_silent_turn()
-
-    assert room.announced == [(NOTHING_SAID, RoomEventKind.NARRATION)]
-
-
-@pytest.fixture
-def transcript(migrated_sessions) -> RoomTranscript:
-    return RoomTranscript(migrated_sessions)
+def transcript(migrated_sessions) -> ConversationHistory:
+    return ConversationHistory(migrated_sessions)
 
 
 @pytest.fixture
@@ -448,7 +308,7 @@ async def say(
     await chat_store.apply_frame(session_id, turn_id, 1, events)
 
 
-async def read(transcript: RoomTranscript, conversation_id: UUID) -> list[tuple[ItemType, str]]:
+async def read(transcript: ConversationHistory, conversation_id: UUID) -> list[tuple[ItemType, str]]:
     """A thread's recent conversation as a replacement session that owns none of it would read it."""
     return [
         (message.item_type, message.body)
@@ -457,7 +317,7 @@ async def read(transcript: RoomTranscript, conversation_id: UUID) -> list[tuple[
 
 
 async def test_the_transcript_is_both_sides_of_the_conversation_in_order(
-    transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     session_id = await serving_session(chat_store, operator_id, thread)
 
@@ -473,7 +333,7 @@ async def test_the_transcript_is_both_sides_of_the_conversation_in_order(
 
 
 async def test_the_transcript_spans_every_session_of_the_thread(
-    transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """The point of reading by conversation: the session that holds the context is the one gone.
 
@@ -495,7 +355,7 @@ async def test_the_transcript_spans_every_session_of_the_thread(
 
 
 async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
-    transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """What answers a message its session never got to: the replacement is handed it as context.
 
@@ -512,7 +372,7 @@ async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
 
 
 async def test_a_session_s_own_rows_are_not_its_history(
-    transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """A prompt this session has already been handed is not also its history; twice is not context.
 
@@ -533,7 +393,7 @@ async def test_a_session_s_own_rows_are_not_its_history(
 
 
 async def test_what_the_room_was_never_told_is_not_in_the_history(
-    transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """Haku's side is here on exactly the condition the room heard it on.
 
@@ -551,7 +411,7 @@ async def test_what_the_room_was_never_told_is_not_in_the_history(
 
 
 async def test_another_thread_is_not_this_thread(
-    transcript: RoomTranscript,
+    transcript: ConversationHistory,
     migrated_sessions: async_sessionmaker[AsyncSession],
     chat_store: SessionStore,
     operator_id: UUID,
@@ -567,7 +427,7 @@ async def test_another_thread_is_not_this_thread(
 
 
 async def test_the_limit_takes_the_tail(
-    transcript: RoomTranscript, chat_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     session_id = await serving_session(chat_store, operator_id, thread)
     await exchange(chat_store, operator_id, session_id, "one", "re: one")

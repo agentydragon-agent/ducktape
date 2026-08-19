@@ -39,19 +39,11 @@ rule leaves this plan with the last step that achieves it.
 
 Every line here is an edge the invariant forbids, in the code today.
 
-**A session that knows a channel.**
-
-- `ChatFrontend`, and `SessionService._frontend_for` selecting one for a session (§ 5).
-- `SessionIntroduction.room_id`: a session's own system prompt is rendered from a room's address.
-- `MatrixSurface`, reached from `_run_turn`: `report`, `report_silent_turn`, `show_status`,
-  `set_typing`.
-
 **A channel that knows a session.**
 
 - `MatrixSessionSupervisor` creates, replaces and tends sessions — `SessionService.create`,
   `expire_stale_leases`, `reconcile_terminal_claims`. A channel owning session lifecycle is the
   deepest of these, and step 1 is what removes the need for it.
-- The room's status line comes from the open turn's row rather than from a fold over the stream.
 - `EventTag.session_id` rides on every event the console posts, so a room's permanent, federated
   copy is addressed by a runner incarnation that a replacement invalidates.
 - **The wake itself is session-keyed.** `pg_notify` carries `{kind, session_id}`, so a subscriber to
@@ -60,9 +52,8 @@ Every line here is an edge the invariant forbids, in the code today.
   `/api/sessions/{session_id}/provisioning`, and takes its setup narration from a query over
   `session_frames`.
 
-Two per-process latches sit beside these and are the same failure in another costume:
-`MatrixSyncService._status_body` and `MatrixSessionSupervisor._last_announced` stand in for state
-that has no row, so a leader handover re-announces. § 3.
+`MatrixSessionSupervisor._last_announced` still stands in for state that has no row, so a leader
+handover can re-announce it. § 3.
 
 ### The edge that still cannot simply be deleted
 
@@ -352,30 +343,10 @@ Matrix queue to know how far Matrix has got.
 
 ### A session has no frontend
 
-**"The frontend this session is attached to" is not a thing** (operator, 2026-08-17: _"what is a
-session's frontend? why would a session care?"_). It is worth stating flatly because the code reads
-as though it were.
-
-What is actually there: `SessionService` holds **one** `ChatFrontend`, the Matrix one, and
-`_frontend_for` is not a lookup but a filter — does a channel hold a copy of this session's
-conversation? The name promises a mapping where there is a global and a guard.
-
-**A session does not care, and nothing about a session should.** What cares is the turn loop, and
-only because the turn loop is doing the channel's job: `report`, `report_silent_turn`, `_speak` and
-`TurnStatus` are § 8's "pushed by the turn loop from inside the process that holds the runner",
-which is why a fact can reach a room and never a tab. Step 3's D deletes all of it — a subscriber
-reads the record and nothing hands a frontend to a turn.
-
-**And the shape is no frontend at all, rather than a better-keyed one.** Selecting by surface says a
-channel owns a set of sessions; selecting by attachment says a session has a channel. The invariant
-forbids both, however the lookup is keyed. `system_prompt` is the one call that looked honestly
-surface-dependent and is not: what the model needs to know is that its conversation is attached to a
-chat channel and should be answered in chat's register, which the conversation can say for itself.
-The address is not a session's business, which is why `SessionIntroduction.room_id` goes with the
-rest.
-
-**Until then, leave it alone.** The right amount of work on `_frontend_for` before step 2 is none:
-it is deleted, not improved, and polishing it buys a rename in exchange for entrenching the concept.
+This boundary is now enforced: the turn runtime records conversation facts and holds no channel
+object. An attachment only selects the shared direct-chat system prompt; channel subscribers render
+setup, answers, silence and live state from the conversation stream. Address and delivery state stay
+inside the channel.
 
 ## 6. The conversation is identity only
 
@@ -416,8 +387,8 @@ version of it is **the point rather than the cost** (§ 7).
 
 - **The SPA is a channel like any other, and differs on exactly one axis** (operator: "the spa
   should mostly use the same affordances/operations/protocol as the matrix channel uses"). Same
-  `ChatFrontend` port, same subscription, same operations, same neutral vocabulary, same provenance
-  pointer on the prompts it sends. The one difference is **whether its position is durable**, and it
+  subscription, same operations, same neutral vocabulary, same provenance pointer on the prompts
+  it sends. The one difference is **whether its position is durable**, and it
   is the reason it gets no `chat_attachment` row: an attachment exists to hold a cursor, a cursor
   exists because a channel holds a copy the console owes work against, and a tab holds no copy.
 
@@ -573,60 +544,30 @@ built. The dependency edges are at the end.
     conversation with no live session becomes a thread that will provision one rather than a refusal
     to record.
 
-2.  **Matrix becomes a subscriber** (§ 2's primitive) for every kind, not just the one
-    `RoomNotices` reads. One loop per `(channel, conversation)`, reading the record from its cursor
-    instead of being handed events by the turn loop, woken by `session_changed` and by inbound
-    events with the 1s poll demoted to a fallback. Here the four elections collapse to one, the
-    three egress mechanisms become one difference calculation, the pacer's bucket stops being an
-    estimate, and the browser stops being the only consumer that reads the record.
-
-    The loop and the replies are there: `RoomNotices` reads the record from `channel_cursor` and
-    writes what the room is owed into `matrix_outbox` itself. Two parts remain, split by which
-    forbidden edge each one removes:
-    - **B — the turn's live state.** The status line and the typing indicator become a fold over the
-      stream instead of `TurnStatus._run` polling inside the turn loop's process. Session
-      provisioning and ending are events now, so the fold has both the pre-turn and terminal facts.
-    - **D — the turn loop stops holding a channel.** `_frontend_for`, `ChatFrontend`, `report`,
-      `report_silent_turn` and `SessionIntroduction.room_id` go. Setup narration is an authored
-      event now, so deleting its push no longer deletes the fact.
-
-    **`_frontend_for` is deleted in D, not improved** (§ 5): the question "which frontend is this
-    session's" stops being asked rather than being answered better. Three things go with it, none
-    obvious from the symbol: a **green test** pinning the surface-matching contract, which deleting
-    the code deletes; **two <../x/README.md> sentences** restating the doctrine; and
-    `SessionIntroduction.room_id`, whose only builder is the Matrix channel and which therefore
-    stops being the thing a system prompt is selected by.
-
-    One correction to make here rather than carry: <../x/README.md> claims "the live path no longer
-    knows that `assistant`, `stream_event` and `result` exist", while `_run_turn` reads `subtype`,
-    `stop_reason` and `result` straight off the payload. The code is honest — `_CompletedTurn.frame`
-    calls itself the escape hatch — so the README is the false half, and a second backend would
-    degrade silently in both directions until it is fixed.
-
-3.  **Notices as spans** (§ 4), once 2 exists: one work notice per turn, one lifecycle notice per
+2.  **Notices as spans** (§ 4): one work notice per turn, one lifecycle notice per
     session, **each body a fold over the subscription stream**, each retired or sealed. This is
     Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
     afford. The fold is not optional; editing already-posted notices is, and a v0 that appends one
     notice per noticeable event is the accepted lesser form. Split the fold from the send path in
     the same PR, because the fold is where this step's tests live.
 
-4.  **Many rooms at once** (§ 7's ruling). `bound_room` stops answering with the one room and
-    `bind_room` stops refusing the second, so an invite mints a conversation; the supervisor fans
-    out over live attachments instead of supervising one binding; `MatrixSurface` takes its address
-    rather than claiming it has one by construction. The `MXSE` advisory lock stays
+3.  **Many rooms at once** (§ 7's ruling). `bound_room` stops answering with the one room and
+    `bind_room` stops refusing the second, so an invite mints a conversation; the supervisor and
+    subscriber fan out over live attachments instead of supervising one binding. The `MXSE`
+    advisory lock stays
     global — one election supervising every attachment is cheaper than a lock per conversation, and
     the thing that must not be global is the _lease_, which is already per session.
 
-    **Depends on 1 and on 2**, both of which the dependency line is easy to get wrong. Ten rooms
-    each holding a sandbox is the failure this would ship without 1. And an audit found **eleven**
-    things that assume one bot serves one room, seven of which are per-bot process state that step 2
-    deletes: `_status_body`, `_last_announced`, the single `RoomPacer`
+    **Depends on 1**; the channel subscription is already in place. Ten rooms
+    each holding a sandbox is the failure this would ship without 1. An audit found **eleven**
+    things that assume one bot serves one room. The turn-local state is gone, but per-bot delivery
+    and supervision state remains: `_status_body`, `_last_announced`, the single `RoomPacer`
     with its one collapsing status slot, `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming
     only `bound_room()`'s rows. Every one fails **silently** with a second room — ingress dropped to
     a `logger.warning`, a status line that never appears in room B, an edit addressed at another
     room's event id, replies that sit unsent forever.
 
-5.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
+4.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
     abort, new session, close — is one missing affordance, not three: a way for a room message to
     mean something other than "talk to Haku". They are **ingress interception, not an agent tool**:
     a command is recognised and consumed by the harness before batching, so it never reaches the
@@ -636,40 +577,40 @@ built. The dependency edges are at the end.
     the _session_, and a Matrix message is never consent for a tool call. Namespace choice is § 7's
     open question. Abort is the one worth having first. Depends on nothing here.
 
-6.  **The session link in the room's startup notice**, and interlinking generally: room notice →
+5.  **The session link in the room's startup notice**, and interlinking generally: room notice →
     console session, console session → the room (a `matrix.to` permalink the client already builds),
     session → its tool calls, tool call → the session that made it. The last has its precedent —
     `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. A Matrix event is permanent
     and federated, so post links under routes chosen to survive, or not at all.
 
-7.  **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
+6.  **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
     step, because they share a cause — the recorder sits _above_ the bridge envelope and
     structurally cannot see one — and therefore share a fix: moving that sink down onto the socket.
     § 13 holds the design and the release schedule.
 
-8.  **`sessions.status` becomes derived timestamps** (§ 10).
+7.  **`sessions.status` becomes derived timestamps** (§ 10).
 
-9.  **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
+8.  **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
     are gone, so all that stands between it and the database is writing it in the ORM as well as
     the migration, once
     `SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent'`
     returns zero. `test_session_claim_cleaned_at.py` and `test_frame_runner_seq_migration.py`
     each assert a nullability the schema has since moved past, and go outright.
 
-10. **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
+9.  **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
     changes, neither of which needs a transport decision.
 
 **Smaller, and each landing with the change that creates it rather than as a standalone reshuffle:**
 
 - **Remove the `asyncio.wait` abort dance in `_run_turn`.** Unmounting the SSE route made it
-  removable and nothing has removed it. It collapses properly at step 2, where an abort becomes an
-  intent the transport writes and the CLI's answer comes back as frames.
+  removable and nothing has removed it. It collapses with step 4, when abort becomes an intent the
+  transport writes and the CLI's answer comes back as frames.
 - **Split `session_runtime.py` further.** `handle_runner`'s admission and finalisation are a
   connection's lifecycle and `_run_turn` is a frame reducer; those are two files' worth of concern
   in one class.
 - **"Surface" names five things and "turn" three.**
-  **Dependencies.** 1 gates 4. 2 gates 3 and 4. Everything else — 5 through 10 and the smaller
-  items — depends on nothing here and can be dispatched in any order.
+  **Dependencies.** 1 gates 3. Everything else — 2 and 4 through 9, plus the smaller items —
+  depends on nothing here and can be dispatched in any order.
 
 ## 10. `sessions.status` is derived, and lossy
 
