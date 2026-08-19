@@ -335,8 +335,8 @@ def test_independent_compiles_of_same_scenario_are_structurally_identical() -> N
     plan_b = _compile(scenario, rollout_count=2, locations=_SF)
 
     # The static jit arg (the compile cache key) must be identical across independent compiles.
-    _, static_a, _, _ = _build_program(plan_a)
-    _, static_b, _, _ = _build_program(plan_b)
+    _, static_a = _build_program(plan_a)
+    _, static_b = _build_program(plan_b)
     assert static_a == static_b
     assert hash(static_a) == hash(static_b)
 

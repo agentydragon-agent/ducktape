@@ -7,7 +7,7 @@ import numpy as np
 
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import CompiledSimulation
-from finance.augur.sim.engine.jax_types import _DenseFinalOutput, _DenseScanOutput, _ScanMeta
+from finance.augur.sim.engine.jax_types import _DenseFinalOutput, _DenseScanOutput, _Static
 
 
 def check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.ndarray) -> None:
@@ -41,7 +41,7 @@ def check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.nd
 def scatter_ys_to_buffers(
     plan: CompiledSimulation,
     buffers: SimulationBuffers,
-    meta: _ScanMeta,
+    structure: _Static,
     ys: _DenseScanOutput,
     final_state: _DenseFinalOutput,
 ) -> None:
@@ -99,7 +99,7 @@ def scatter_ys_to_buffers(
     purchases = ys.property_purchases
     purchase_active = np.asarray(purchases.active)
     purchase_transfer_active = np.asarray(purchases.transfer_active)
-    for position, purchase in enumerate(meta.folded_purchases):
+    for position, purchase in enumerate(structure.folded_purchases):
         buffers.properties.purchase_active[:, purchase.buffer_index] = purchase_active[:, position]
         buffers.properties.transfer_active[:, purchase.buffer_index] = purchase_transfer_active[:, position]
 
@@ -160,10 +160,10 @@ def scatter_ys_to_buffers(
     buffers.private_equity_opportunities.proceeds[:] = np.asarray(opportunities.proceeds)
 
     lifecycle_fired = np.asarray(ys.lifecycle.fired)
-    for position, event in enumerate(meta.folded_lifecycle):
+    for position, event in enumerate(structure.folded_lifecycle):
         buffers.lifecycle.fired[event.event_index] = lifecycle_fired[event.month, position]
     primary_residence_fired = np.asarray(ys.primary_residence_fired)
-    for position, (event_index, event_month) in enumerate(meta.folded_pr):
+    for position, (event_index, event_month) in enumerate(structure.folded_pr):
         buffers.primary_residence.fired[event_index] = primary_residence_fired[event_month, position]
 
     sale_traces = ys.lifecycle.property_sales
@@ -176,7 +176,7 @@ def scatter_ys_to_buffers(
         (buffers.lifecycle.sale_section_121_exclusion, np.asarray(sale_traces.section_121_exclusion)),
         (buffers.lifecycle.sale_long_term_gain, np.asarray(sale_traces.long_term_capital_gain)),
     )
-    for position, (event_index, event_month) in enumerate(meta.folded_sale_events):
+    for position, (event_index, event_month) in enumerate(structure.folded_sale_events):
         for field, values in sale_fields:
             field[event_index] = values[event_month, position]
 
