@@ -242,7 +242,7 @@ class PostgresMcpOperatorOAuthStore:
         token_states: PostgresOAuthTokenStateStore,
         token_timeout_seconds: float = 30.0,
     ) -> None:
-        # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
+        # Migrations run in the image-coupled release Job (haku.console.database_migrate.apply_migrations), not
         # here — constructing the store neither connects nor mutates schema. The engine/sessionmaker is
         # created once in create_app and shared across every store.
         self._sessions = sessions

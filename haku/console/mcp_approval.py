@@ -224,7 +224,7 @@ class PostgresToolCallLedger:
     """Postgres-backed approval ledger for the deployed console."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
-        # Migrations are applied once at startup (haku.console.database_migrate.apply_migrations), not
+        # Migrations run in the image-coupled release Job (haku.console.database_migrate.apply_migrations), not
         # here — constructing a ledger neither connects nor mutates schema. The engine/sessionmaker is
         # created once in create_app and shared across every store.
         self._sessions = sessions

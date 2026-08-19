@@ -208,15 +208,76 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     }
     assert reloaded_secrets == referenced_secrets
 
-    for marker in (
-        '# {"$imagepolicy": "flux-system:haku-console"}',
-        '# {"$imagepolicy": "flux-system:haku-console:tag"}',
-        '# {"$imagepolicy": "flux-system:haku-console-static"}',
-        '# {"$imagepolicy": "flux-system:haku-console-static:tag"}',
+    all_image_policy_text = (
+        raw
+        + static_raw
+        + (console_dir / "static-metadata.yaml").read_text(encoding="utf-8")
+        + (console_dir / "migration" / "job.yaml").read_text(encoding="utf-8")
+    )
+    for marker, expected_count in (
+        ('# {"$imagepolicy": "flux-system:haku-console"}', 2),
+        ('# {"$imagepolicy": "flux-system:haku-console:tag"}', 1),
+        ('# {"$imagepolicy": "flux-system:haku-console-static"}', 1),
+        ('# {"$imagepolicy": "flux-system:haku-console-static:tag"}', 1),
     ):
-        assert (raw + static_raw + (console_dir / "static-metadata.yaml").read_text(encoding="utf-8")).count(
-            marker
-        ) == 1, f"missing or duplicated Flux marker: {marker}"
+        assert all_image_policy_text.count(marker) == expected_count, f"missing or duplicated Flux marker: {marker}"
+
+
+def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
+    """Only the image-coupled, unprivileged Job owns Console DDL in a rollout."""
+    console_dir = k8s_dir / "haku" / "console"
+    deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text(encoding="utf-8"))
+    job = yaml.safe_load((console_dir / "migration" / "job.yaml").read_text(encoding="utf-8"))
+    service_account = yaml.safe_load((console_dir / "migration" / "serviceaccount.yaml").read_text(encoding="utf-8"))
+    migration_flux = yaml.safe_load((console_dir / "migration" / "flux-kustomization.yaml").read_text(encoding="utf-8"))
+    console_flux = yaml.safe_load((console_dir / "flux-kustomization.yaml").read_text(encoding="utf-8"))
+
+    server = one(deployment["spec"]["template"]["spec"]["containers"])
+    migrate = one(job["spec"]["template"]["spec"]["containers"])
+    assert job["metadata"]["name"] == "haku-console-migration"
+    assert job["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/force"] == "enabled"
+    assert "ttlSecondsAfterFinished" not in job["spec"]
+    assert job["spec"]["backoffLimit"] == 0
+    assert job["spec"]["template"]["spec"]["restartPolicy"] == "Never"
+    assert job["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
+    assert job["spec"]["template"]["spec"]["enableServiceLinks"] is False
+    assert service_account["automountServiceAccountToken"] is False
+    assert job["spec"]["template"]["spec"]["serviceAccountName"] == service_account["metadata"]["name"]
+    assert (
+        job["spec"]["template"]["spec"]["serviceAccountName"]
+        != deployment["spec"]["template"]["spec"]["serviceAccountName"]
+    )
+    assert migrate["args"] == ["migrate"]
+    assert migrate["image"] == server["image"]
+    assert migrate["imagePullPolicy"] == "Always"
+    assert migrate["securityContext"] == {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}}
+    assert job["spec"]["template"]["spec"]["securityContext"] == {
+        "runAsNonRoot": True,
+        "runAsUser": 1000,
+        "runAsGroup": 1000,
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    migration_env = {entry["name"]: entry for entry in migrate["env"]}
+    assert set(migration_env) == {
+        "HAKU_CONSOLE_DB_USER",
+        "HAKU_CONSOLE_DB_PASSWORD",
+        "HAKU_CONSOLE_DB_HOST",
+        "HAKU_CONSOLE_DB_PORT",
+        "HAKU_CONSOLE_DB_NAME",
+        "HAKU_CONSOLE_DATABASE_URL",
+    }
+    assert migration_env["HAKU_CONSOLE_DATABASE_URL"]["value"].startswith("postgresql+asyncpg://")
+    assert {entry["valueFrom"]["secretKeyRef"]["name"] for entry in migration_env.values() if "valueFrom" in entry} == {
+        "haku-console-db-app"
+    }
+    assert migration_flux["spec"]["wait"] is True
+    assert migration_flux["spec"]["healthChecks"] == [
+        {"apiVersion": "batch/v1", "kind": "Job", "name": "haku-console-migration", "namespace": "haku-console"}
+    ]
+    assert {entry["name"] for entry in migration_flux["spec"]["dependsOn"]} == {"haku-console-db"}
+    assert "haku-console-migration" in {entry["name"] for entry in console_flux["spec"]["dependsOn"]}
+    root_kustomization = yaml.safe_load((k8s_dir / "kustomization.yaml").read_text(encoding="utf-8"))
+    assert "haku/console/migration/flux-kustomization.yaml" in root_kustomization["resources"]
 
 
 def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:

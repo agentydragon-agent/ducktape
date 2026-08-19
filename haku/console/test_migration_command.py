@@ -36,6 +36,27 @@ def test_image_command_dispatches_migration_without_starting_the_api(monkeypatch
     assert called == ["migrate"]
 
 
+def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DatabaseUrl:
+        @staticmethod
+        def get_secret_value() -> str:
+            return "postgresql+asyncpg://approval_store:secret@db.example/approval_store"
+
+    class TestSettings:
+        database_url = DatabaseUrl()
+
+    checked: list[str] = []
+    monkeypatch.setattr(app, "Settings", TestSettings)
+    monkeypatch.setattr(app, "load_static_agents", lambda settings: [])
+    monkeypatch.setattr(app, "verify_schema", checked.append)
+    monkeypatch.setattr(app, "create_app", lambda settings, loaded_static_agents: object())
+    monkeypatch.setattr(app.uvicorn, "run", lambda *args, **kwargs: None)
+
+    app.main()
+
+    assert checked == ["postgresql+asyncpg://approval_store:secret@db.example/approval_store"]
+
+
 def test_image_command_rejects_unknown_modes() -> None:
     with pytest.raises(SystemExit, match="usage"):
         app.run_command(["unknown"])

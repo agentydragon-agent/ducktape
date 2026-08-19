@@ -23,6 +23,10 @@ spec:
       namespace: ducktape-flux
     - name: haku-console-db # distributed approval ledger
       namespace: ducktape-flux
+    # The fixed-name Job runs Alembic from the exact API image and reports completion before
+    # either API or static workloads in this Kustomization can roll.
+    - name: haku-console-migration
+      namespace: ducktape-flux
     - name: haku-state # provisions the shared haku-ui/backend -> haku-console MCP static-Agent token
       namespace: ducktape-flux
     - name: gateway
