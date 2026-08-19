@@ -854,6 +854,7 @@ py_test(
         ":runtime",
         ":scenario",
         "//finance/augur/product:asset_key",
+        "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

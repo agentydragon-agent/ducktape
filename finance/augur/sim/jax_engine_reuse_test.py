@@ -1,10 +1,10 @@
-"""Engine-level test: swept numeric config flows through the JAX scan program as TRACED input.
+"""Engine-level tests for the registered JAX program PyTree and numeric sweeps.
 
 The tax brackets/rates/standard deduction, MID principal ratio, transfer amounts, per-lot cost basis,
-initial balances, property basis and mortgage principal enter the compiled program as traced inputs
-(see `_TracedConfig`), not as baked constants. Each test perturbs one such value and asserts the JAX
-engine output changes without recompiling. They guard against a swept field being wrongly baked into
-the program or ignored.
+initial balances, property basis and mortgage principal enter the registered `_SimulationProgram` as
+dynamic leaves, not static metadata. Each test perturbs one such value and asserts the JAX engine output
+changes without recompiling. They guard against a swept field being wrongly baked into the program or
+ignored.
 """
 
 from __future__ import annotations
@@ -12,7 +12,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
+from typing import Any, cast
 
+import jax
 import numpy as np
 import pytest_bazel
 from numpy.typing import NDArray
@@ -33,6 +35,7 @@ from finance.augur.sim.scenario import (
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
+    RecurringPropertyCashflow,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
@@ -135,6 +138,10 @@ def _run_jax(plan: CompiledSimulation) -> SimulationBuffers:
     return buffers
 
 
+def _program_cache_size() -> int:
+    return int(cast(Any, _program_impl)._cache_size())
+
+
 def _assert_value_sweep_takes_effect(
     scenario: Scenario,
     perturb: Callable[[CompiledSimulation], CompiledSimulation],
@@ -145,12 +152,12 @@ def _assert_value_sweep_takes_effect(
     """Perturb one traced value into plan B and assert the output moves without recompilation."""
     plan_a = _compile(scenario, rollout_count=2, locations=locations or {})
     out_a = extract(_run_jax(plan_a)).copy()
-    base_cache_size = _program_impl._cache_size()
+    base_cache_size = _program_cache_size()
 
     plan_b = perturb(plan_a)
     out_b_jax = extract(_run_jax(plan_b))
     assert not np.allclose(out_b_jax, out_a)
-    assert _program_impl._cache_size() == base_cache_size
+    assert _program_cache_size() == base_cache_size
 
 
 def test_tax_rate_sweep_takes_effect() -> None:
@@ -222,6 +229,40 @@ def _financed_purchase_scenario() -> Scenario:
     )
 
 
+def _property_cashflow_scenario() -> Scenario:
+    return _financed_purchase_scenario().model_copy(
+        update={
+            "recurring_property_cashflows": [
+                RecurringPropertyCashflow(
+                    start_month=1,
+                    end_month=2,
+                    property_id="home",
+                    cause_id="home_rent",
+                    from_agent_id="seller",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount=Decimal(1000),
+                )
+            ]
+        }
+    )
+
+
+def test_property_cashflow_amount_sweep_takes_effect() -> None:
+    def perturb(p: CompiledSimulation) -> CompiledSimulation:
+        return replace(
+            p,
+            property_cashflows=replace(
+                p.property_cashflows, amount_fixed=p.property_cashflows.amount_fixed + np.int64(100_000)
+            ),
+        )
+
+    _assert_value_sweep_takes_effect(
+        _property_cashflow_scenario(), perturb, lambda b: b.state.cash_state, locations=_SF
+    )
+
+
 def test_property_basis_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _financed_purchase_scenario(),
@@ -245,33 +286,61 @@ def test_mortgage_principal_sweep_takes_effect() -> None:
 
 
 def test_native_cache_reuses_executable_across_structure_and_sweeps() -> None:
-    """JAX's OWN compile cache (`_program_impl._cache_size()`) reuses the compiled executable: an
+    """JAX's OWN compile cache (`_program_cache_size()`) reuses the compiled executable: an
     identical-structure second call adds 0 compiles, a traced value/seed sweep adds 0, and a structural
     change adds exactly 1. This is what makes repeated `run_jax_scan` not recompile the scan program."""
     plan_a = _compile(_tax_scenario(), rollout_count=2, locations={})
 
     _run_jax(plan_a)
-    base = _program_impl._cache_size()
+    base = _program_cache_size()
 
     # Identical structure (same plan): zero additional compiles.
     _run_jax(plan_a)
-    assert _program_impl._cache_size() == base
+    assert _program_cache_size() == base
 
     # Traced value sweep (same structure, perturbed bracket rates): zero additional compiles.
     plan_b = replace(plan_a, tax=replace(plan_a.tax, link_ordinary_rate=plan_a.tax.link_ordinary_rate * 1.3))
     _run_jax(plan_b)
-    assert _program_impl._cache_size() == base
+    assert _program_cache_size() == base
 
     # Seed sweep (same structure, different rollout draws): zero additional compiles.
     plan_seed = _compile(_tax_scenario(), rollout_count=2, locations={})
     plan_seed = replace(plan_seed, external_values=plan_seed.external_values * 1.01)
     _run_jax(plan_seed)
-    assert _program_impl._cache_size() == base
+    assert _program_cache_size() == base
 
     # Structural change (different rollout_count -> different shapes & `SlotPlan`): exactly one more.
     plan_struct = _compile(_tax_scenario(), rollout_count=3, locations={})
     _run_jax(plan_struct)
-    assert _program_impl._cache_size() == base + 1
+    assert _program_cache_size() == base + 1
+
+
+def test_program_pytree_separates_dynamic_leaves_from_static_metadata() -> None:
+    plan = _compile(_tax_scenario(), rollout_count=2, locations={})
+    program = _build_program(plan)
+
+    leaves, tree = jax.tree_util.tree_flatten(program)
+    rebuilt = jax.tree_util.tree_unflatten(tree, leaves)
+
+    assert leaves
+    assert all(isinstance(leaf, jax.Array) for leaf in leaves)
+    assert type(rebuilt) is type(program)
+    assert cast(Any, tree) == jax.tree_util.tree_structure(program)
+    assert rebuilt.static == program.static
+    assert hash(rebuilt.static) == hash(program.static)
+    assert np.array_equal(rebuilt.dynamic.operands.transfers.amount_fixed, plan.transfers.amount_fixed)
+    assert len(jax.tree_util.tree_leaves(rebuilt.dynamic.operands.transfers)) == len(
+        rebuilt.dynamic.operands.transfers._fields
+    )
+    assert not hasattr(rebuilt.dynamic.swept, "transfer_amount_fixed")
+
+    value_sweep = replace(
+        plan, transfers=replace(plan.transfers, amount_fixed=plan.transfers.amount_fixed + np.int64(100_000))
+    )
+    assert cast(Any, jax.tree_util.tree_structure(_build_program(value_sweep))) == tree
+
+    different_shape = _compile(_tax_scenario(), rollout_count=3, locations={})
+    assert cast(Any, jax.tree_util.tree_structure(_build_program(different_shape))) != tree
 
 
 def _multi_series_scenario() -> Scenario:
@@ -334,17 +403,17 @@ def test_independent_compiles_of_same_scenario_are_structurally_identical() -> N
     plan_a = _compile(scenario, rollout_count=2, locations=_SF)
     plan_b = _compile(scenario, rollout_count=2, locations=_SF)
 
-    # The static jit arg (the compile cache key) must be identical across independent compiles.
-    _, static_a = _build_program(plan_a)
-    _, static_b = _build_program(plan_b)
+    # The registered PyTree's static metadata (the compile cache key) must be identical.
+    static_a = _build_program(plan_a).static
+    static_b = _build_program(plan_b).static
     assert static_a == static_b
     assert hash(static_a) == hash(static_b)
 
     # End-to-end: a second independent compile must reuse the cached executable (no recompile).
     _run_jax(plan_a)
-    base = _program_impl._cache_size()
+    base = _program_cache_size()
     _run_jax(plan_b)
-    assert _program_impl._cache_size() == base
+    assert _program_cache_size() == base
 
 
 if __name__ == "__main__":
