@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.tlh_harvest import HarvestYieldParams, monthly_harvest_fraction, split_short_long
+from finance.augur.sim.tlh_harvest import HarvestYieldParams, monthly_harvest_fraction
 
 _PARAMS = HarvestYieldParams(
     peak_annual_yield=0.05,  # ~5%/yr first-year gross harvest, anchored to TY2025 1099-B
@@ -55,14 +55,6 @@ def test_fraction_is_vectorized_over_rollouts() -> None:
     fraction = monthly_harvest_fraction(_arr(-0.2, 0.0), _arr(0.1, 0.9), _PARAMS)
     assert fraction.shape == (2,)
     assert np.all(fraction >= 0.0)
-
-
-def test_split_short_long_conserves_total_and_respects_fraction() -> None:
-    gross = _arr(1000.0, 2000.0)
-    split = split_short_long(gross, _arr(1.0, 0.25))
-    np.testing.assert_allclose(split.short_term_usd + split.long_term_usd, gross)
-    # stf=1.0 -> all short-term (young account); 0.25 -> a quarter short-term.
-    np.testing.assert_allclose(split.short_term_usd, _arr(1000.0, 500.0))
 
 
 def test_floor_above_peak_is_rejected() -> None:

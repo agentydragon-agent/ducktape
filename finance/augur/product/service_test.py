@@ -440,6 +440,14 @@ def test_currency_quantiles_preserve_int64_precision_and_round_half_up() -> None
     assert service._currency_quantiles(np.asarray([0, 1], dtype=np.int64), (50.0,)) == (1,)
 
 
+def test_product_valuation_avoids_overflowing_intermediate_product() -> None:
+    # The direct multiplication overflows int64 even though the scaled result fits.
+    actual = decode._value_quanta_from_quantity(
+        np.asarray([4_800_000_000_000_000_000], dtype=np.int64), np.asarray([2], dtype=np.int64), 3
+    )
+    np.testing.assert_array_equal(actual, np.asarray([3_200_000_000_000_000_000], dtype=np.int64))
+
+
 def test_concurrent_fan_and_terminal_requests_run_serially(
     product: service.ProductService,
     counting_model: CountingModel,

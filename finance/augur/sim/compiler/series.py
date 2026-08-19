@@ -161,6 +161,16 @@ def _add_amount_series_key(amount: Any, add: Any) -> None:
         add(amount.series)
 
 
+def _frame_values(frame: Any, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, ...]:
+    rollout_index = frame.get_column("rollout_index").to_numpy()
+    month_index = frame.get_column("month_index").to_numpy()
+    raw_values = frame.get_column("value").to_numpy()
+    in_bounds = (
+        (rollout_index >= 0) & (rollout_index < rollout_count) & (month_index >= 0) & (month_index <= horizon_months)
+    )
+    return rollout_index, month_index, raw_values, in_bounds
+
+
 def external_values_cube(
     external_series: ExternalSeriesContext,
     *,
@@ -178,15 +188,8 @@ def external_values_cube(
         index = series_index_by_id.get(key)
         if index is None:
             continue
-        rollout_index = frame.get_column("rollout_index").to_numpy()
-        month_index = frame.get_column("month_index").to_numpy()
-        keep = (
-            (rollout_index >= 0)
-            & (rollout_index < rollout_count)
-            & (month_index >= 0)
-            & (month_index <= horizon_months)
-        )
-        values[index, rollout_index[keep], month_index[keep]] = frame.get_column("value").to_numpy()[keep]
+        rollout_index, month_index, raw_values, keep = _frame_values(frame, rollout_count, horizon_months)
+        values[index, rollout_index[keep], month_index[keep]] = raw_values[keep]
     return values
 
 
@@ -215,16 +218,8 @@ def external_money_values_cube(
         index = series_index_by_id.get(key)
         if index is None:
             continue
-        rollout_index = frame.get_column("rollout_index").to_numpy()
-        month_index = frame.get_column("month_index").to_numpy()
-        raw_values = frame.get_column("value").to_numpy()
-        keep = (
-            (rollout_index >= 0)
-            & (rollout_index < rollout_count)
-            & (month_index >= 0)
-            & (month_index <= horizon_months)
-            & np.isfinite(raw_values)
-        )
+        rollout_index, month_index, raw_values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
+        keep = in_bounds & np.isfinite(raw_values)
         if keep.any():
             values[index, rollout_index[keep], month_index[keep]] = sampled_array_to_quanta(
                 raw_values[keep], quantum=currency_quantum

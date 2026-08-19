@@ -11,7 +11,7 @@ from finance.augur.sim.fixed_point import (
     BTC_SATOSHIS,
     DEFAULT_UNIT_QUANTA,
     ETH_GWEI,
-    decimal_to_quanta,
+    currency_amount_to_quanta,
     quanta_array_to_quantity,
     quantity_array_to_quanta,
     quantity_scale_for_asset,
@@ -24,14 +24,14 @@ from finance.augur.sim.fixed_point import (
 
 def test_currency_quantum_accepts_exact_inputs_and_rejects_implicit_float_money() -> None:
     assert validate_currency_quantum("0.01") == Decimal("0.01")
-    assert decimal_to_quanta("687.69", quantum="0.01") == np.int64(68_769)
-    assert decimal_to_quanta(Decimal(123), quantum=Decimal(1)) == np.int64(123)
-    assert decimal_to_quanta("1.25", quantum="0.05") == np.int64(25)
+    assert currency_amount_to_quanta("687.69", quantum="0.01") == np.int64(68_769)
+    assert currency_amount_to_quanta(Decimal(123), quantum=Decimal(1)) == np.int64(123)
+    assert currency_amount_to_quanta("1.25", quantum="0.05") == np.int64(25)
 
     with pytest.raises(TypeError, match="floats are not exact"):
-        decimal_to_quanta(1.0, quantum="0.01")
+        currency_amount_to_quanta(1.0, quantum="0.01")
     with pytest.raises(ValueError, match="not an integer multiple"):
-        decimal_to_quanta("1.01", quantum="0.05")
+        currency_amount_to_quanta("1.01", quantum="0.05")
     with pytest.raises(ValueError, match="positive"):
         validate_currency_quantum("0")
 

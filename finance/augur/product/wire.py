@@ -6,7 +6,6 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import (
-    BeforeValidator,
     Field,
     NonNegativeFloat,
     NonNegativeInt,
@@ -16,10 +15,10 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.api.schemas import ApiModel, Frame, Percentage
+from finance.augur.api.schemas import ApiModel, Frame, NonNegativeCurrencyAmount, Percentage, PositiveCurrencyAmount
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.product.asset_key import AssetKey
-from finance.augur.sim.fixed_point import validate_currency_amount, validate_currency_quantum
+from finance.augur.sim.fixed_point import validate_currency_quantum
 
 SpendIndex = Literal["none", "inflation"]
 PrivateEquityEventKind = Literal[
@@ -49,9 +48,6 @@ MetricName = Literal[
 ]
 # Decimal integer strings keep Int64 money exact across the JSON/JavaScript boundary.
 type CurrencyQuanta = Annotated[str, StringConstraints(pattern=r"^-?(0|[1-9][0-9]*)$")]
-type CurrencyAmount = Annotated[Decimal, BeforeValidator(validate_currency_amount)]
-type NonNegativeCurrencyAmount = Annotated[CurrencyAmount, Field(ge=0)]
-type PositiveCurrencyAmount = Annotated[CurrencyAmount, Field(gt=0)]
 MAX_HORIZON_MONTHS = 100 * 12
 
 

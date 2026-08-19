@@ -55,33 +55,34 @@ def _value_quanta_from_quantity(
 ) -> np.ndarray:
     """Value integer asset quanta using the engine's nearest-half-up policy."""
 
-    numerator = np.asarray(quantity_quanta, dtype=np.int64) * np.asarray(price_quanta, dtype=np.int64)
-    absolute = np.abs(numerator)
-    quotient, remainder = divmod(absolute, quantity_scale)
-    return cast(
-        np.ndarray,
-        np.where(
-            numerator < 0, -(quotient + (2 * remainder >= quantity_scale)), quotient + (2 * remainder >= quantity_scale)
-        ),
-    )
+    return _scale_quanta_by_ratio(quantity_quanta, price_quanta, np.asarray(quantity_scale, dtype=np.int64))
 
 
-def _scale_quanta_by_ratio(amount_quanta: int, numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
-    """Apply a sampled price ratio using integer half-up rounding.
+def _scale_quanta_by_ratio(
+    amount_quanta: int | np.ndarray, numerator: np.ndarray, denominator: np.ndarray
+) -> np.ndarray:
+    """Apply an integer ratio with half-up rounding and no large direct product.
 
-    Property values are anchored to the purchase price and then scaled by the
-    sampled home-value level relative to its purchase-month level.  Those
-    levels are monetary quanta, not floats, so keeping this division integral
-    prevents a large property valuation from losing individual quanta before
-    it reaches the product response.
+    Used both for quantity valuation and for property values indexed from their
+    purchase-month level. Keeping the division integral prevents large values
+    from overflowing or losing individual quanta before the product response.
     """
 
+    amount = np.asarray(amount_quanta, dtype=np.int64)
+    numerator = np.asarray(numerator, dtype=np.int64)
     safe_denominator = np.where(denominator > 0, denominator, 1)
-    product = np.int64(amount_quanta) * np.asarray(numerator, dtype=np.int64)
-    absolute = np.abs(product)
-    quotient, remainder = divmod(absolute, safe_denominator)
-    rounded = quotient + (2 * remainder >= safe_denominator)
-    return cast(np.ndarray, np.where(product < 0, -rounded, rounded).astype(np.int64))
+    sign = np.where((amount < 0) ^ (numerator < 0), -1, 1)
+    absolute_amount = np.abs(amount)
+    absolute_numerator = np.abs(numerator)
+    common_factor = np.gcd(absolute_numerator, safe_denominator)
+    reduced_numerator = absolute_numerator // np.where(common_factor > 0, common_factor, 1)
+    reduced_denominator = safe_denominator // np.where(common_factor > 0, common_factor, 1)
+    amount_quotient, amount_remainder = divmod(absolute_amount, reduced_denominator)
+    whole = amount_quotient * reduced_numerator
+    fractional_product = amount_remainder * reduced_numerator
+    fractional_quotient, fractional_remainder = divmod(fractional_product, reduced_denominator)
+    rounded_fraction = fractional_quotient + (fractional_remainder >= (reduced_denominator + 1) // 2)
+    return cast(np.ndarray, (sign * (whole + rounded_fraction)).astype(np.int64))
 
 
 def monthly_metric_arrays_batch(dense: SimulationRun, *, primary_agent_id: str) -> dict[str, np.ndarray]:

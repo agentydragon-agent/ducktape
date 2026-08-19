@@ -6,10 +6,8 @@ human/API decimal or quantizing a model-owned sampled price path before that
 path enters the simulator.  The JAX engine must receive and produce integer
 money values only.
 
-The legacy USD helpers remain temporarily while the scenario and product
-contracts are migrated.  New code must use the currency-generic helpers
-below; keeping the conversion policy here gives the migration one auditable
-definition rather than several subtly different ``round(value * 100)`` calls.
+Keeping conversion policy here provides one auditable definition rather than
+several subtly different ``round(value * 100)`` calls.
 """
 
 from __future__ import annotations
@@ -70,15 +68,14 @@ def validate_currency_quantum(value: Any) -> Decimal:
     return quantum
 
 
-def decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
-    """Convert an exact currency decimal to an integer count of ``quantum``.
+def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
+    """Validate and convert a configured amount to integer currency quanta.
 
-    Unlike the old USD helper, this is validation rather than rounding: a
-    scenario value that cannot be represented by its declared currency is a
-    malformed contract input, not a request to silently change the amount.
+    Unlike sampled model output, configured money is never rounded: it must be
+    exact and already representable by the scenario's declared quantum.
     """
 
-    amount = _exact_decimal(value)
+    amount = validate_currency_amount(value)
     currency_quantum = validate_currency_quantum(quantum)
     count = amount / currency_quantum
     if count != count.to_integral_value():
@@ -87,16 +84,6 @@ def decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
         return np.int64(int(count))
     except OverflowError as exc:
         raise ValueError(f"currency quantum count {count} does not fit in int64") from exc
-
-
-def currency_amount_to_quanta(value: Any, *, quantum: Any) -> np.int64:
-    """Validate and convert a configured amount to integer currency quanta.
-
-    Unlike sampled model output, configured money is never rounded: it must be
-    exact and already representable by the scenario's declared quantum.
-    """
-
-    return decimal_to_quanta(validate_currency_amount(value), quantum=quantum)
 
 
 def round_currency_amount(value: Any, *, quantum: Any) -> Decimal:
@@ -129,40 +116,25 @@ def ratio_to_money_factor(numerator: int | np.integer[Any], denominator: int | n
         raise ValueError(f"money factor {factor} does not fit in int64") from exc
 
 
-def sampled_decimal_to_quanta(value: Any, *, quantum: Any) -> np.int64:
-    """Quantize one model-produced sampled monetary value at the sim boundary.
-
-    This is intentionally the *only* helper in this module that accepts a
-    float.  It uses decimal half-up rounding, matching the previous cents
-    conversion semantics, and makes the boundary explicit in call sites.
-    """
-
-    currency_quantum = validate_currency_quantum(quantum)
-    try:
-        sampled = Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError) as exc:
-        raise ValueError("sampled monetary value must be numeric") from exc
-    if not sampled.is_finite():
-        raise ValueError("sampled monetary value must be finite")
-    count = (sampled / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-    try:
-        return np.int64(int(count))
-    except OverflowError as exc:
-        raise ValueError(f"sampled currency quantum count {count} does not fit in int64") from exc
-
-
 def sampled_array_to_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
-    """Vectorized model→sim monetary-path quantization with exact int64 output."""
+    """Quantize a model-produced monetary path at the simulator boundary."""
 
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
+    currency_quantum = validate_currency_quantum(quantum)
     for idx in np.ndindex(arr.shape):
-        out[idx] = sampled_decimal_to_quanta(arr[idx], quantum=quantum)
+        try:
+            sampled = Decimal(str(arr[idx]))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("sampled monetary value must be numeric") from exc
+        if not sampled.is_finite():
+            raise ValueError("sampled monetary value must be finite")
+        count = (sampled / currency_quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        try:
+            out[idx] = np.int64(int(count))
+        except OverflowError as exc:
+            raise ValueError(f"sampled currency quantum count {count} does not fit in int64") from exc
     return out
-
-
-def _decimal(value: Any) -> Decimal:
-    return Decimal(str(value))
 
 
 # Quantity quanta by symbol: the smallest fraction of a unit the ledger tracks. BTC and ETH
@@ -179,7 +151,7 @@ def quantity_scale_for_asset(asset: AssetKey) -> int:
 
 
 def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:
-    quanta = (_decimal(value) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    quanta = (Decimal(str(value)) * scale).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     return np.int64(quanta)
 
 

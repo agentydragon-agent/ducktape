@@ -29,8 +29,8 @@ config (`_TracedConfig`) or rollout seeds — reuses the compiled program; only 
 recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries that reuse
 across processes.
 
-Integer accounting note: engine monetary state is migrating to int64 cents / explicit quantity
-quanta. JAX x64 is required so those int64 arrays do not silently truncate to int32.
+Integer accounting note: engine monetary state uses int64 currency quanta and explicit quantity
+quanta. JAX x64 is required so those arrays do not silently truncate to int32.
 
 Double-entry note: every write to `cash` moves money between two rows of the same tensor, never
 into or out of it. A counterparty the scenario does not model is not a hole — it is
@@ -164,22 +164,9 @@ def _scale_money_by_float_ratio(
 def _value_quanta_from_quantity(
     quantity_quanta: jnp.ndarray, unit_price_quanta: jnp.ndarray, quantity_scale: jnp.ndarray
 ) -> jnp.ndarray:
-    """Nearest-half-up money value with no float price/money intermediate.
+    """Nearest-half-up money value with no float or overflowing direct product."""
 
-    The product is still bounded by the int64 plan contract; compile-time
-    inputs that would overflow must be rejected before reaching this JAX path.
-    Keeping the quotient and remainder integral eliminates the former float64
-    FIFO-value snap that could disagree with settlement by a currency quantum.
-    """
-
-    numerator = quantity_quanta * unit_price_quanta
-    denominator = jnp.where(quantity_scale > 0, quantity_scale, 1)
-    sign = jnp.where(numerator < 0, -1, 1)
-    absolute = jnp.abs(numerator)
-    quotient = absolute // denominator
-    remainder = absolute % denominator
-    rounded = quotient + (2 * remainder >= denominator).astype(jnp.int64)
-    return sign * rounded
+    return _scale_quanta_by_ratio(quantity_quanta, unit_price_quanta, quantity_scale)
 
 
 def _ceil_quantity_for_quanta(
@@ -3458,8 +3445,8 @@ def _tlh_harvest_policy_jit(
     drawdown_sensitivity: float,
     short_term_fraction: float,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of one `HarvestPolicy`'s reduced-form monthly harvest (`tlh_harvest.monthly_harvest_fraction`
-    + `split_short_long`), vectorized over rollouts: book a calibrated capital loss as a NEGATIVE in
+    """Apply one `HarvestPolicy`'s reduced-form monthly harvest, vectorized over rollouts:
+    book a calibrated capital loss as a NEGATIVE in
     `capital_gain_ytd` and accumulate it into the give-back ledger `cumulative`. Per-policy params
     are static (the jitted core compiles once per policy)."""
     market_value = _value_quanta_from_quantity(remaining_lots, price_quanta[None, :], quantity_scale_lots[:, None]).sum(

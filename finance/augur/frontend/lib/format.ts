@@ -73,9 +73,9 @@ export function fmtChartCurrency(value, { currencyCode = "USD" } = {}) {
 // Charts are the one allowed Number conversion: SVG coordinates cannot consume
 // BigInt. Labels, tooltips, tables, and event text use fmtQuanta above.
 export function currencyQuantaChartNumber(value, currencyQuantum) {
-  const decimal = currencyQuantaDecimal(value, currencyQuantum);
-  if (decimal == null) return NaN;
-  return Number(decimal.replaceAll(",", ""));
+  const quanta = Number(value);
+  const quantum = Number(currencyQuantum);
+  return Number.isFinite(quanta) && Number.isFinite(quantum) && quantum > 0 ? quanta * quantum : NaN;
 }
 
 export function currencyQuantaIsPositive(value) {

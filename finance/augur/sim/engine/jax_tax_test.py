@@ -2,13 +2,13 @@
 
 `_apply_brackets`, `_apply_ltcg_brackets` and `_net_capital_gains_jnp` are pure and
 branch-free, so they run eagerly on concrete arrays — the same code the `lax.scan` traces
-at year-end. Everything here is int64 cents laid out the way `compile_tax` lays it out
-(cent bracket edges with the int64 sentinel for the open-ended top, float rates, an active
+at year-end. Everything here is int64 currency quanta laid out the way `compile_tax` lays it out
+(quantum-count bracket edges with the int64 sentinel for the open-ended top, float rates, an active
 prefix `count`), because that is what the engine is handed at runtime.
 
-Deviation from a textbook bracket walk: `_round_int64` collapses each walk to whole cents
-(half away from zero), so a schedule whose rate is not representable in binary floating
-point still lands on an exact cent figure.
+Deviation from a textbook bracket walk: each walk rounds half-up to a whole currency quantum,
+so a schedule whose rate is not representable in binary floating point still lands on an exact
+represented amount.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from finance.augur.sim.engine.jax_engine import (
     _scale_money,
     _scale_quanta_by_ratio,
     _sum_money_with_factors,
+    _value_quanta_from_quantity,
 )
 from finance.augur.sim.jurisdictions import TaxBracket, load_jurisdiction
 
@@ -58,11 +59,11 @@ def _quanta(*usd: float) -> jnp.ndarray:
 def test_integer_money_scaling_never_needs_a_float_money_value() -> None:
     assert _scale_money(jnp.asarray([9_007_199_254_740_993], dtype=jnp.int64), 0.5).tolist() == [4_503_599_627_370_497]
     # The direct product overflows int64, while the quotient/remainder result fits.
-    assert _scale_quanta_by_ratio(
-        jnp.asarray([4_800_000_000_000_000_000], dtype=jnp.int64),
-        jnp.asarray(2, dtype=jnp.int64),
-        jnp.asarray(3, dtype=jnp.int64),
-    ).tolist() == [3_200_000_000_000_000_000]
+    amount = jnp.asarray([4_800_000_000_000_000_000], dtype=jnp.int64)
+    numerator = jnp.asarray(2, dtype=jnp.int64)
+    denominator = jnp.asarray(3, dtype=jnp.int64)
+    assert _scale_quanta_by_ratio(amount, numerator, denominator).tolist() == [3_200_000_000_000_000_000]
+    assert _value_quanta_from_quantity(amount, numerator, denominator).tolist() == [3_200_000_000_000_000_000]
     # Signed exact halves round away from zero (Decimal ROUND_HALF_UP semantics).
     assert _scale_quanta_by_ratio(
         jnp.asarray([-1, 1], dtype=jnp.int64), jnp.asarray(1, dtype=jnp.int64), jnp.asarray(2, dtype=jnp.int64)
