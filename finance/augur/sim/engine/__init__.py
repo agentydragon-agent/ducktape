@@ -22,7 +22,7 @@ from finance.augur.sim.buffers import (
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler import CompiledSimulation, compile_simulation
 from finance.augur.sim.compiler.helpers import NO_CODE
-from finance.augur.sim.engine.jax_engine import run_jax_scan
+from finance.augur.sim.engine.jax_engine import ProductMetricArrays, run_jax_scan, run_jax_scan_with_product_metrics
 from finance.augur.sim.enums import PrivateEquityDispositionKind
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
@@ -43,6 +43,28 @@ def run_dense_simulation(
     buffers = _allocate_buffers(plan)
     run_jax_scan(plan, buffers)
     return SimulationRun(plan=plan, buffers=buffers, external_series=external_series)
+
+
+def run_dense_simulation_with_product_metrics(
+    scenario: Scenario,
+    *,
+    rollout_count: int,
+    external_series: ExternalSeriesContext,
+    locations: dict[str, Location],
+    primary_agent_id: str,
+) -> tuple[SimulationRun, ProductMetricArrays]:
+    """Run one dense simulation and emit the selected actor's product metrics with it."""
+
+    plan = compile_simulation(
+        scenario,
+        rollout_count=rollout_count,
+        external_series=external_series,
+        jurisdictions=load_jurisdictions_for(scenario),
+        locations=locations,
+    )
+    buffers = _allocate_buffers(plan)
+    metrics = run_jax_scan_with_product_metrics(plan, buffers, primary_agent_id=primary_agent_id)
+    return SimulationRun(plan=plan, buffers=buffers, external_series=external_series), metrics
 
 
 def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:

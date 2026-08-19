@@ -1,20 +1,17 @@
-"""Decode a `SimulationRun` into product-shaped metrics and events.
+"""Decode a `SimulationRun` into product-shaped event records.
 
-Per-month metric reductions take a `rollout_index` and read that column directly out of a
-(possibly batched) run's dense buffers; event decoding operates on an already-R=1 run.
+Product metric series come directly from the JAX product reducer. This module
+only projects selected-rollout events from the dense buffers.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import polars as pl
 
-from finance.augur.model.series import HomeValueKey, LocationId
-from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey, asset_price_key, parse_asset_key
-from finance.augur.product.metric_composition import DERIVED_METRIC_NAMES, compose_metric
+from finance.augur.product.asset_key import PrivateEquityAssetKey, parse_asset_key
 from finance.augur.product.wire import (
     CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
@@ -36,7 +33,6 @@ from finance.augur.product.wire import (
     SetRentedFractionMarkerEvent,
     TaxAccrualEvent,
     TaxPaymentEvent,
-    TerminalMetrics,
 )
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.scenario import ObligationType
@@ -48,107 +44,6 @@ def _quanta(value: int | np.integer[Any]) -> str:
     """Serialize one authoritative integer count without a JS-number boundary."""
 
     return str(value)
-
-
-def _value_quanta_from_quantity(
-    quantity_quanta: np.ndarray, price_quanta: np.ndarray, quantity_scale: int
-) -> np.ndarray:
-    """Value integer asset quanta using the engine's nearest-half-up policy."""
-
-    return _scale_quanta_by_ratio(quantity_quanta, price_quanta, np.asarray(quantity_scale, dtype=np.int64))
-
-
-def _scale_quanta_by_ratio(
-    amount_quanta: int | np.ndarray, numerator: np.ndarray, denominator: np.ndarray
-) -> np.ndarray:
-    """Apply an integer ratio with half-up rounding and no large direct product.
-
-    Used both for quantity valuation and for property values indexed from their
-    purchase-month level. Keeping the division integral prevents large values
-    from overflowing or losing individual quanta before the product response.
-    """
-
-    amount = np.asarray(amount_quanta, dtype=np.int64)
-    numerator = np.asarray(numerator, dtype=np.int64)
-    safe_denominator = np.where(denominator > 0, denominator, 1)
-    sign = np.where((amount < 0) ^ (numerator < 0), -1, 1)
-    absolute_amount = np.abs(amount)
-    absolute_numerator = np.abs(numerator)
-    common_factor = np.gcd(absolute_numerator, safe_denominator)
-    reduced_numerator = absolute_numerator // np.where(common_factor > 0, common_factor, 1)
-    reduced_denominator = safe_denominator // np.where(common_factor > 0, common_factor, 1)
-    amount_quotient, amount_remainder = divmod(absolute_amount, reduced_denominator)
-    whole = amount_quotient * reduced_numerator
-    fractional_product = amount_remainder * reduced_numerator
-    fractional_quotient, fractional_remainder = divmod(fractional_product, reduced_denominator)
-    rounded_fraction = fractional_quotient + (fractional_remainder >= (reduced_denominator + 1) // 2)
-    return cast(np.ndarray, (sign * (whole + rounded_fraction)).astype(np.int64))
-
-
-def monthly_metric_arrays_batch(dense: SimulationRun, *, primary_agent_id: str) -> dict[str, np.ndarray]:
-    """Per-month product metrics for **every** rollout of a batched result as `{name: (H+1, R)}`.
-
-    Each metric is reduced over the whole `(…, R)` batch in one vectorized pass. `month_index` is
-    the shared `(H+1,)` axis (no rollout dimension).
-    """
-
-    plan = dense.plan
-    primary_agent_code = _required_string_code(plan.strings, primary_agent_id)
-    cash_quanta = _cash_by_month(dense, primary_agent_code=primary_agent_code)
-    holding_value_quanta = _holding_value_by_month(dense, primary_agent_code=primary_agent_code)
-    private_equity_value_quanta = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
-    property_value_quanta = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
-    mortgage_balance_quanta = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
-    bond_value_quanta = _bond_value_by_month(dense, primary_agent_code=primary_agent_code)
-    base = {
-        "cash_quanta": cash_quanta,
-        "holding_value_quanta": holding_value_quanta,
-        "private_equity_value_quanta": private_equity_value_quanta,
-        "property_value_quanta": property_value_quanta,
-        "mortgage_balance_quanta": mortgage_balance_quanta,
-        "bond_value_quanta": bond_value_quanta,
-        "shortfall_quanta": _shortfall_by_month(dense, primary_agent_code=primary_agent_code),
-    }
-    # The derived sums come from `metric_composition` — the same definitions the engine's
-    # on-device path composes — so the two cannot disagree about what net worth is.
-    return {
-        "month_index": np.arange(plan.horizon_months + 1, dtype=np.int64),
-        **base,
-        **{name: compose_metric(name, base.__getitem__) for name in DERIVED_METRIC_NAMES},
-    }
-
-
-def monthly_metric_arrays(
-    dense: SimulationRun, *, primary_agent_id: str, rollout_index: int = 0
-) -> dict[str, np.ndarray]:
-    """Per-month product metrics for one rollout (column `rollout_index`) as `{name: (H+1,)}`."""
-    batch = monthly_metric_arrays_batch(dense, primary_agent_id=primary_agent_id)
-    return {name: (values if name == "month_index" else values[:, rollout_index]) for name, values in batch.items()}
-
-
-def terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_index: int | None) -> TerminalMetrics:
-    """Numpy-direct terminal-metrics extraction from `monthly_metric_arrays`."""
-
-    if arrays["month_index"].size == 0:
-        raise ValueError("rollout produced no monthly metrics")
-    return TerminalMetrics(
-        cash_quanta=_quanta(arrays["cash_quanta"][-1]),
-        holding_value_quanta=_quanta(arrays["holding_value_quanta"][-1]),
-        private_equity_value_quanta=_quanta(arrays["private_equity_value_quanta"][-1]),
-        property_value_quanta=_quanta(arrays["property_value_quanta"][-1]),
-        mortgage_balance_quanta=_quanta(arrays["mortgage_balance_quanta"][-1]),
-        bond_value_quanta=_quanta(arrays["bond_value_quanta"][-1]),
-        home_equity_quanta=_quanta(arrays["home_equity_quanta"][-1]),
-        liquid_net_worth_quanta=_quanta(arrays["liquid_net_worth_quanta"][-1]),
-        net_worth_quanta=_quanta(arrays["net_worth_quanta"][-1]),
-        shortfall_quanta=_quanta(arrays["shortfall_quanta"].sum()),
-        failed_month_index=failed_month_index,
-    )
-
-
-def failed_month_index_batch(dense: SimulationRun) -> np.ndarray:
-    """Per-rollout failure month at the final snapshot; `NO_CODE` (-1) = never failed. Shape `(R,)`."""
-    return cast(np.ndarray, dense.buffers.state.rollout_failed_month_state[-1, :])
 
 
 def rollout_events_from(
@@ -196,80 +91,6 @@ def rollout_events_from(
         "failure": 18,
     }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
-
-
-def _cash_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    cash_slots = np.flatnonzero(dense.plan.cash_agent_codes == primary_agent_code)
-    return np.asarray(dense.buffers.state.cash_state[:, cash_slots, :].sum(axis=1), dtype=np.int64)
-
-
-def _holding_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    """Sum of liquid-holding lots (stocks + crypto) priced at sampled series.
-
-    Excludes private-equity lots: PE is illiquid (saleable only at tender events) so it
-    doesn't count toward liquid net worth. PE valuation surfaces separately via
-    `_private_equity_value_by_month`.
-    """
-
-    return _lot_value_by_month(
-        dense, primary_agent_code=primary_agent_code, include=lambda asset: not isinstance(asset, PrivateEquityAssetKey)
-    )
-
-
-def _private_equity_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    """Sum of private-equity lots priced at the latest sampled mark for each issuer."""
-
-    return _lot_value_by_month(
-        dense, primary_agent_code=primary_agent_code, include=lambda asset: isinstance(asset, PrivateEquityAssetKey)
-    )
-
-
-def _lot_value_by_month(
-    dense: SimulationRun, *, primary_agent_code: int, include: Callable[[AssetKey], bool]
-) -> np.ndarray:
-    plan = dense.plan
-    values = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.int64)
-    series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
-    pe_issuer_index = {str(issuer_id): idx for idx, issuer_id in enumerate(plan.pe_issuers.issuer_ids)}
-    for lot in range(plan.lot_id_codes.shape[0]):
-        if int(plan.lot_agent_codes[lot]) != primary_agent_code:
-            continue
-        asset = plan.assets[int(plan.lot_asset_codes[lot])]
-        if not include(asset):
-            continue
-        quantity = dense.buffers.state.lot_state[:, lot, :]  # integer quantity quanta, (H+1, R)
-        # Price inputs are integer scenario-currency quantum counts. Both source
-        # arrays are stored R-major `(…, R, months)`, so transpose to the
-        # `(months, R)` metric layout.
-        if isinstance(asset, PrivateEquityAssetKey):
-            issuer_idx = pe_issuer_index.get(str(asset.issuer_id))
-            if issuer_idx is None:
-                raise ValueError(f"holding asset {asset.wire_id!r} has no compiled PE channels")
-            price = plan.pe_channels.mark_quanta[issuer_idx, :, :].T
-        else:
-            series_index = series_index_by_id.get(asset_price_key(asset))
-            if series_index is None:
-                raise ValueError(
-                    f"holding asset {asset.wire_id!r} has no modeled price series in the compiled simulation"
-                )
-            price = plan.external_money_values[series_index, :, :].T
-        values += _value_quanta_from_quantity(quantity, price, int(plan.lot_quantity_scale[lot]))
-    return np.maximum(values, 0)
-
-
-def _shortfall_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    plan = dense.plan
-    shortfall = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.int64)
-    primary_obligations = plan.obligations.agent == primary_agent_code  # [H, O]
-    shortfall[1:] = (dense.buffers.obligations.shortfall * primary_obligations[:, :, None].astype(np.int64)).sum(axis=1)
-    return shortfall
-
-
-def _required_string_code(strings: tuple[str, ...], value: str) -> int:
-    try:
-        return strings.index(value)
-    except ValueError as exc:
-        raise ValueError(f"compiled simulation string table does not contain {value!r}") from exc
 
 
 def _holding_sale_events(
@@ -495,75 +316,6 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
         )
         for row in failure_rows.iter_rows(named=True)
     )
-
-
-def _property_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    plan = dense.plan
-    values = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.int64)
-    series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
-    for prop in range(plan.properties.id.shape[0]):
-        if int(plan.properties.buyer_agent[prop]) != primary_agent_code:
-            continue
-        active = dense.buffers.state.property_active_state[:, prop, :]  # (H+1, R) bool
-        purchase_month = int(plan.properties.month[prop])
-        if purchase_month < 0:
-            continue
-        location_id = plan.strings[int(plan.properties.location_id[prop])]
-        series_index = series_index_by_id.get(HomeValueKey(location_id=LocationId(location_id)))
-        if series_index is None:
-            continue
-        levels = plan.external_money_values[series_index, :, :].T  # (H+1, R)
-        # State snapshots are H+1 rows: index 0 = pre-month-0 opening, index s = end of month s-1.
-        # The property is active starting at snapshot index `purchase_month + 1` (end of purchase month).
-        base_level = levels[purchase_month]  # (R,) per-rollout base value at the purchase month
-        purchase_price = int(plan.properties.purchase_price[prop])
-        # Per rollout: market = purchase_price × level / base_level. Rollouts whose base level never
-        # resolved (0) contribute nothing for this property (the R=1 path skipped it via `continue`).
-        market = _scale_quanta_by_ratio(purchase_price, levels, base_level[None, :])
-        values += np.where(active & (base_level[None, :] > 0), market, 0)
-    return values
-
-
-def _bond_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    """Face still on the books each month, for the primary agent's bonds.
-
-    A par bond held to maturity is never marked, so its value is its face and the whole
-    series is a compile-time constant — identical across rollouts. Failed rollouts are
-    zeroed to match every other term, which the engine does via its own failure mask; this
-    has to reproduce it because bonds carry no state for the failure freeze to act on.
-    """
-
-    plan = dense.plan
-    face = np.where(plan.bonds.agent == primary_agent_code, plan.bonds.face, 0)
-    if plan.bonds.indexed.any():
-        # A TIPS is carried at CPI-scaled principal, not par — otherwise net worth understates
-        # it in exactly the inflationary scenarios the ladder is held for. Rollout-varying, so
-        # this branch cannot use the constant broadcast below.
-        levels = plan.external_values[np.maximum(plan.bonds.cpi_series, 0)]  # (bond, R, month)
-        base = np.take_along_axis(levels, plan.bonds.index_base_month[:, None, None], axis=2)
-        principal = np.round(face[:, None, None] * levels / np.where(base > 0, base, 1.0))
-        carried = np.where((plan.bonds.indexed > 0)[:, None, None], principal, face[:, None, None])
-        value = np.asarray(np.einsum("mb,brm->mr", plan.bonds.on_books, carried), dtype=np.int64)
-    else:
-        per_month = np.asarray(plan.bonds.on_books @ face, dtype=np.int64)  # (H+1,)
-        value = np.broadcast_to(per_month[:, None], (plan.horizon_months + 1, plan.rollout_count)).copy()
-    failed_month = failed_month_index_batch(dense)
-    months = np.arange(plan.horizon_months + 1)[:, None]
-    # Strictly greater, matching every other term. Snapshot `i` is the state ENTERING month `i`,
-    # so a rollout that fails DURING month `m` still has a real snapshot at `m` — cash and
-    # holdings both keep theirs. `>=` zeroed the opening snapshot too, which showed a portfolio
-    # losing its ladder one month before it lost anything else.
-    return np.where((failed_month[None, :] >= 0) & (months > failed_month[None, :]), 0, value).astype(np.int64)
-
-
-def _mortgage_balance_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
-    plan = dense.plan
-    balance = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.int64)
-    for lia in range(plan.liabilities.codes.shape[0]):
-        if int(plan.liabilities.agent[lia]) != primary_agent_code:
-            continue
-        balance += np.asarray(dense.buffers.state.liability_principal_state[:, lia, :], dtype=np.int64)
-    return balance
 
 
 def _property_purchase_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:

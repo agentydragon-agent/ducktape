@@ -37,7 +37,7 @@ from finance.augur.model.testing import (
     int_matrix_with_step,
     level_matrix_with_step,
 )
-from finance.augur.product import decode, service
+from finance.augur.product import service
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.quantiles import currency_quantiles
@@ -75,7 +75,7 @@ from finance.augur.product.wire import (
 from finance.augur.sim.engine.jax_engine import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
-from finance.augur.sim.simulate import simulate_with_external_series
+from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
 
 
 @dataclass
@@ -261,7 +261,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
         product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
 
-def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> None:
+def test_jax_product_metrics_fail_when_holding_price_series_is_missing() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="agent_a")],
         initial_cash=[InitialAccountBalance(agent_id="agent_a", account_id="checking", balance=0)],
@@ -278,12 +278,10 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         tax_profiles=[],
         horizon_months=1,
     )
-    dense = simulate_with_external_series(
-        scenario, rollout_count=1, external_series=ExternalSeriesContext(), locations={}
-    )
-
     with pytest.raises(ValueError, match=r"holding asset 'security:missing' has no modeled price series"):
-        decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
+        simulate_with_external_series_and_product_metrics(
+            scenario, rollout_count=1, external_series=ExternalSeriesContext(), locations={}, primary_agent_id="agent_a"
+        )
 
 
 def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
@@ -408,13 +406,13 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
-def test_reduced_product_summary_matches_dense_metric_decode(
+def test_fan_and_selected_rollout_metrics_share_the_jax_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    dense, _model_id = product._simulate_dense(scenario_key, seeds)
-    expected_metrics = decode.monthly_metric_arrays_batch(dense, primary_agent_id=product._primary_agent_id)
-    expected_failed = decode.failed_month_index_batch(dense)
+    _dense, metrics, _model_id = product._simulate_dense(scenario_key, seeds)
+    expected_metrics = metrics.metric_arrays()
+    expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
 
     # The reduced product projection emits the same exact Int64 quanta as the full dense decode.
@@ -444,14 +442,6 @@ def test_currency_quantiles_preserve_int64_precision_and_round_half_up() -> None
     samples = np.asarray([9_007_199_254_740_993, 9_007_199_254_740_995], dtype=np.int64)
     assert currency_quantiles(samples, (50.0,)) == (9_007_199_254_740_994,)
     assert currency_quantiles(np.asarray([0, 1], dtype=np.int64), (50.0,)) == (1,)
-
-
-def test_product_valuation_avoids_overflowing_intermediate_product() -> None:
-    # The direct multiplication overflows int64 even though the scaled result fits.
-    actual = decode._value_quanta_from_quantity(
-        np.asarray([4_800_000_000_000_000_000], dtype=np.int64), np.asarray([2], dtype=np.int64), 3
-    )
-    np.testing.assert_array_equal(actual, np.asarray([3_200_000_000_000_000_000], dtype=np.int64))
 
 
 def test_concurrent_fan_and_terminal_requests_run_serially(

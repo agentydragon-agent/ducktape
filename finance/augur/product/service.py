@@ -24,12 +24,7 @@ from finance.augur.model.exogenous import (
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
-from finance.augur.product.decode import (
-    failed_month_index_batch,
-    monthly_metric_arrays,
-    rollout_events_from,
-    terminal_metrics_from_arrays,
-)
+from finance.augur.product.decode import rollout_events_from
 from finance.augur.product.quantiles import currency_quantiles
 from finance.augur.product.scenarios import (
     asset_label_by_series_id,
@@ -48,16 +43,22 @@ from finance.augur.product.wire import (
     ScenarioKey,
     TerminalDistributionRequest,
     TerminalDistributionResponse,
+    TerminalMetrics,
 )
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler import compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.engine.jax_engine import ProductMetricFanSummary, ProductTerminalSummary, run_jax_product_summary
+from finance.augur.sim.engine.jax_engine import (
+    ProductMetricArrays,
+    ProductMetricFanSummary,
+    ProductTerminalSummary,
+    run_jax_product_summary,
+)
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
-from finance.augur.sim.simulate import simulate_with_external_series
+from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
 
 
 class ProductService:
@@ -143,10 +144,12 @@ class ProductService:
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         self._validate_scenario_key(scenario)
         horizon_months = int(scenario.horizon_months)
-        dense, model_id = self._simulate_dense(scenario, (seed,))
-        monthly_arrays = monthly_metric_arrays(dense, primary_agent_id=self._primary_agent_id)
-        failed_month = int(failed_month_index_batch(dense)[0])
-        terminal = terminal_metrics_from_arrays(
+        dense, metrics, model_id = self._simulate_dense(scenario, (seed,))
+        monthly_arrays = {
+            name: values if name == "month_index" else values[:, 0] for name, values in metrics.metric_arrays().items()
+        }
+        failed_month = int(metrics.failed_month[0])
+        terminal = _terminal_metrics_from_arrays(
             monthly_arrays, failed_month_index=None if failed_month < 0 else failed_month
         )
         events = tuple(
@@ -222,15 +225,18 @@ class ProductService:
         )
         return summary, model_id
 
-    def _simulate_dense(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[SimulationRun, str]:
+    def _simulate_dense(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
+    ) -> tuple[SimulationRun, ProductMetricArrays, str]:
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        dense = simulate_with_external_series(
+        dense, metrics = simulate_with_external_series_and_product_metrics(
             scenario,
             rollout_count=len(seeds),
             external_series=materialize_sampled_exogenous(sampled),
             locations=self._locations,
+            primary_agent_id=self._primary_agent_id,
         )
-        return dense, model_id
+        return dense, metrics, model_id
 
     def _scenario_and_sample(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
@@ -299,3 +305,21 @@ def _quanta(value: int | np.integer[Any]) -> str:
     """Serialize an integer quantum count without a lossy JSON number."""
 
     return str(value)
+
+
+def _terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_index: int | None) -> TerminalMetrics:
+    """Build the rollout wire's terminal snapshot from JAX-emitted metric series."""
+
+    return TerminalMetrics(
+        cash_quanta=_quanta(arrays["cash_quanta"][-1]),
+        holding_value_quanta=_quanta(arrays["holding_value_quanta"][-1]),
+        private_equity_value_quanta=_quanta(arrays["private_equity_value_quanta"][-1]),
+        property_value_quanta=_quanta(arrays["property_value_quanta"][-1]),
+        mortgage_balance_quanta=_quanta(arrays["mortgage_balance_quanta"][-1]),
+        bond_value_quanta=_quanta(arrays["bond_value_quanta"][-1]),
+        home_equity_quanta=_quanta(arrays["home_equity_quanta"][-1]),
+        liquid_net_worth_quanta=_quanta(arrays["liquid_net_worth_quanta"][-1]),
+        net_worth_quanta=_quanta(arrays["net_worth_quanta"][-1]),
+        shortfall_quanta=_quanta(arrays["shortfall_quanta"].sum()),
+        failed_month_index=failed_month_index,
+    )

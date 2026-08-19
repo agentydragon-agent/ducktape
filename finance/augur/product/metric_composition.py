@@ -1,18 +1,13 @@
 """How the derived product metrics are built out of the base ones. The only place.
 
-Two things compute product metrics, for a real reason: the engine reduces them on-device
-straight out of the scan carry (so a single-metric fan never materializes nine histories),
-while `product/decode.py` reads them back out of the dense buffers. Those are genuinely
-different jobs.
+The engine emits the base series directly from the scan carry. Product fan routes use
+those device arrays to select one metric, while selected-rollout detail copies all base
+series after the same reducer runs. The host only composes derived sums; it never
+re-values lots, properties, or bonds from dense buffers.
 
-The *arithmetic relating the metrics to each other* is not. Net worth is the same sum
-either way, and having it written twice meant a new asset class had to be added to both --
-which is how it was noticed. A test asserting the two agree is not a fix for that; it only
-reports the drift after someone causes it.
-
-So the base series stay per-backend and the composition lives here, written once against
-whatever `base` returns. `numpy` arrays, `jnp` arrays and plain floats all support the
-operators used, so one definition serves every caller.
+The arithmetic relating metrics is defined once here. `numpy` arrays, `jnp` arrays and
+plain floats all support the operators used, so one definition serves the device fan
+selection and the selected-rollout host projection.
 
 `base` is a callable rather than a mapping to keep the engine's laziness: only the base
 series a requested metric actually needs get materialized.

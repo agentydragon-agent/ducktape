@@ -19,8 +19,8 @@ from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.level_series_groups import IndexSeriesGroups
 from finance.augur.model.series import InflationKey
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.product.decode import monthly_metric_arrays
 from finance.augur.sim.compiler.series import scenario_level_series_keys
+from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
 
@@ -204,7 +204,8 @@ def test_net_worth_carries_a_tips_at_indexed_principal() -> None:
 
     def bond_value(indexed: bool) -> list[int]:
         run = simulate(_scenario(indexed=indexed, cpi=_CPI_DOUBLING, maturity=120), rollout_count=1, locations={})
-        return [int(v) for v in monthly_metric_arrays(run, primary_agent_id="alice")["bond_value_quanta"]]
+        arrays = run_jax_product_metric_arrays(run.plan, primary_agent_id="alice").metric_arrays()
+        return [int(v) for v in arrays["bond_value_quanta"][:, 0]]
 
     assert bond_value(indexed=True)[-1] == _quanta(2 * _FACE)
     assert bond_value(indexed=False)[-1] == _quanta(_FACE)
