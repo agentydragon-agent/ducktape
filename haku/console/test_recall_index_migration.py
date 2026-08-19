@@ -20,7 +20,7 @@ from haku.recall_index.schema import SCHEMA, Base
 
 
 def _only_the_index_schema(name: str | None, type_: str, parent_names: dict[str, str | None]) -> bool:
-    """Keep the comparison to `state_index`.
+    """Keep the comparison to the recall-index schema.
 
     `include_schemas` is what makes Alembic look outside `public` at all, and it looks at *every*
     schema — so without this the console's own tables all read as "not in this metadata" and the
@@ -53,10 +53,33 @@ def test_startup_refuses_a_database_whose_stamped_schema_drifted(db_url: str) ->
     engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
     try:
         with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE state_index.chat_chunks RENAME COLUMN window_no TO chunk_no"))
+            connection.execute(text(f"ALTER TABLE {SCHEMA}.chat_chunks RENAME COLUMN window_no TO chunk_no"))
 
         with pytest.raises(ProgrammingError):
             apply_migrations(db_url)
+    finally:
+        engine.dispose()
+
+
+def test_the_schema_rename_preserves_the_derived_index(db_url: str) -> None:
+    """A database stamped before 0083 keeps its existing content under ``recall_index``."""
+    apply_migrations(db_url, "0082")
+    engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO state_index.contents (content_sha, content) VALUES ('before-0083', 'preserved')")
+            )
+
+        apply_migrations(db_url)
+
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT to_regnamespace('state_index')")) is None
+            assert connection.scalar(text("SELECT to_regnamespace('recall_index')")) == "recall_index"
+            content = connection.scalar(
+                text("SELECT content FROM recall_index.contents WHERE content_sha = 'before-0083'")
+            )
+            assert content == "preserved"
     finally:
         engine.dispose()
 

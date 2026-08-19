@@ -39,7 +39,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from haku.recall_index.vector_type import HalfVector
 
-SCHEMA = "state_index"
+SCHEMA = "recall_index"
 
 
 class Corpus(StrEnum):
