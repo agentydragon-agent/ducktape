@@ -107,9 +107,7 @@ class RecallIndexMaintenance:
             if not leading:
                 return None
             async with self._sessions() as session:
-                await register_index(
-                    session, index.index_id, index_type=IndexType(index.index_type), source_id=index.source_id
-                )
+                await register_index(session, index.index_id, index_type=IndexType(index.index_type))
                 if isinstance(index, ChatRecallIndexDefinition):
                     report = await sync_chat(
                         session,

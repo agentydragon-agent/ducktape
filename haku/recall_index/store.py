@@ -30,7 +30,6 @@ from haku.recall_index.schema import (
     GitChunk,
     GitSyncState,
     GitTipEntry,
-    IndexSource,
     IndexType,
     RecallIndex,
 )
@@ -167,28 +166,15 @@ async def ensure_schema(engine: AsyncEngine) -> None:
         await connection.run_sync(Base.metadata.create_all)
 
 
-async def register_index(session: AsyncSession, index_id: str, *, index_type: IndexType, source_id: str) -> None:
+async def register_index(session: AsyncSession, index_id: str, *, index_type: IndexType) -> None:
     """Register one explicitly configured index before reading or writing its occurrences."""
     existing_index = await session.get(RecallIndex, index_id)
     if existing_index is not None and existing_index.index_type != index_type.value:
         raise ValueError(
             f"configured index {index_id!r} is {index_type.value!r}, but storage records {existing_index.index_type!r}"
         )
-    existing_source = await session.get(IndexSource, index_id)
-    if existing_source is not None and existing_source.source_id != source_id:
-        raise ValueError(
-            f"configured index {index_id!r} has source {source_id!r}, but storage records {existing_source.source_id!r}"
-        )
-    source_owner = await session.scalar(select(IndexSource.index_id).where(IndexSource.source_id == source_id))
-    if source_owner is not None and source_owner != index_id:
-        raise ValueError(f"configured source {source_id!r} already belongs to index {source_owner!r}")
     await session.execute(
         pg_insert(RecallIndex).values(index_id=index_id, index_type=index_type.value).on_conflict_do_nothing()
-    )
-    await session.execute(
-        pg_insert(IndexSource)
-        .values(index_id=index_id, source_id=source_id)
-        .on_conflict_do_nothing(index_elements=["index_id"])
     )
 
 

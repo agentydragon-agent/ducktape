@@ -3,10 +3,10 @@
 Semantic search over the things a Haku runtime should be able to recall, for runtimes that have
 no OpenClaw-style workspace index — and no checkout at all, in the case of the console.
 
-A **logical index** is the durable source-occurrence and future authorization boundary. Each
-configured index has an `index_id`, a `source_id`, and an `index_type`; it never obtains identity
-from a Python default or a conventional name. `git` and `chat` are index types — storage and
-provenance shapes — rather than permissions or query scopes:
+A **logical index** is the durable occurrence and future authorization boundary. Each configured
+index has an `index_id` and an `index_type`; it never obtains identity from a Python default or a
+conventional name. `git` and `chat` are index types — storage and provenance shapes — rather than
+permissions or query scopes:
 
 | index type | source shape                                     | a hit points at               |
 | ---------- | ------------------------------------------------ | ----------------------------- |
@@ -15,18 +15,17 @@ provenance shapes — rather than permissions or query scopes:
 
 The deployment registry in `cluster/k8s/haku/console/config.yaml` currently declares
 `haku-state` as a Git index over Haku's Forgejo remote and `haku-conversations` as a chat index.
-Adding another source is a reviewed configuration change; it is not an unscoped runtime default.
+Adding another index is a reviewed configuration change; it is not an unscoped runtime default.
 
 The index is derived state: it can be thrown away and rebuilt from git and Postgres at any time.
 
 ## Design
 
-The index has globally-addressed semantic content plus source-specific occurrences:
+The index has globally-addressed semantic content plus index-type-specific occurrences:
 
 | table                 | keyed by                                        | holds                                                       |
 | --------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
 | `indexes`             | `index_id`                                      | one boundary plus its `index_type` (`git` or `chat`)        |
-| `index_sources`       | `index_id`                                      | the initial index's configured source                       |
 | `contents`            | `content_sha`                                   | the exact normalized string sent to an embedder             |
 | `content_embeddings`  | `(content_sha, model_key)`                      | that content's vector in one model's vector space           |
 | `git_chunks`          | `(index_id, blob_sha, chunker_key, byte_start)` | a Git blob span and its referenced global content           |
@@ -36,19 +35,19 @@ The index has globally-addressed semantic content plus source-specific occurrenc
 | `chat_chunk_messages` | index + window + ordinal                        | **which messages each window intersects**                   |
 | `chat_sessions`       | `(index_id, session_id)`                        | each session's shape and regime as last indexed             |
 
-### Logical indexes bound source occurrences
+### Logical indexes bound occurrences
 
 `contents` and `content_embeddings` are global deduplication layers, but they are not a recall
 authority. Every Git and chat occurrence belongs to one durable `index_id`; `indexes` names that
-boundary and carries its `index_type`, while `index_sources` records its one configured initial
-source. The deployed registrations are `haku-state` (Git) and `haku-conversations` (chat). A second
-Git index may reuse an identical content vector, but its tip, revision state, and matches remain a
-separate set of occurrences.
+boundary and carries its `index_type`. The deployed registrations are `haku-state` (Git) and
+`haku-conversations` (chat). A second Git index may reuse an identical content vector, but its tip,
+revision state, and matches remain a separate set of occurrences.
 
-The first model deliberately has one source per index. It gives every hit an unambiguous source
-and revision without inventing a policy for ranking or atomically publishing a merge of several
-source snapshots. Flux artifact ingestion can extend source configuration later; reader grants and
-RLS will bind callers to `index_id`, never to the global content cache.
+An index is its upstream collection: a Git index's configured remote and branch or the Console chat
+index's `session_messages` collection are part of that index's type-specific deployment
+configuration, not a second durable database identity. Future Flux artifact ingestion adds an
+index type/configuration shape; it does not add a generic source layer. Reader grants and RLS bind
+callers to `index_id`, never to the global content cache.
 
 `contents.content_sha` is the SHA-256 of the exact UTF-8 encoding of `contents.content`.
 It has one namespace across index types: the same rendered content appearing in either configured

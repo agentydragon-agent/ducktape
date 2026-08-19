@@ -134,6 +134,11 @@ def test_logical_index_migration_backfills_existing_occurrences(db_url: str) -> 
         apply_migrations(db_url)
 
         with engine.connect() as connection:
+            assert connection.scalar(text("SELECT to_regclass('recall_index.index_sources')")) is None
+            assert (
+                connection.scalar(text("SELECT index_type FROM recall_index.indexes WHERE index_id = 'haku-state'"))
+                == "git"
+            )
             assert connection.scalar(text("SELECT index_id FROM recall_index.git_sync_state")) == "haku-state"
             assert connection.scalar(text("SELECT index_id FROM recall_index.git_tip")) == "haku-state"
             assert connection.scalar(text("SELECT index_id FROM recall_index.chat_sessions")) == "haku-conversations"

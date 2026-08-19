@@ -103,16 +103,14 @@ class RecallIndexSettings(BaseModel):
 
 
 class RecallIndexDefinition(BaseModel):
-    """One configured logical index and its durable source identity.
+    """One configured logical index.
 
-    The configuration, rather than an implicit source-name convention, is the authority for
-    what this deployment indexes. ``index_id`` is the future grant boundary; ``source_id`` is a
-    stable identity for the configured upstream and must change when a different upstream takes
-    its place.
+    The configuration, rather than an implicit name convention, is the authority for what this
+    deployment indexes. ``index_id`` is the durable retrieval and future grant boundary; the
+    index type's configuration describes its upstream directly.
     """
 
     index_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
-    source_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
 
 
 class GitRecallIndexDefinition(RecallIndexDefinition):

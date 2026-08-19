@@ -42,29 +42,11 @@ def upgrade() -> None:
         sa.CheckConstraint("index_type IN ('git', 'chat')", name="ck_indexes_index_type"),
         schema=SCHEMA,
     )
-    op.create_table(
-        "index_sources",
-        sa.Column("index_id", sa.Text(), nullable=False),
-        sa.Column("source_id", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("index_id", name="index_sources_pkey"),
-        sa.UniqueConstraint("source_id", name="index_sources_source_id_key"),
-        sa.ForeignKeyConstraint(["index_id"], [_table("indexes.index_id")], name="index_sources_index_id_fkey"),
-        schema=SCHEMA,
-    )
     op.execute(
         sa.text(
             f"""
             INSERT INTO {_table("indexes")} (index_id, index_type)
             VALUES ('{_HAKU_STATE}', 'git'), ('{_CONVERSATIONS}', 'chat')
-            """
-        )
-    )
-    op.execute(
-        sa.text(
-            f"""
-            INSERT INTO {_table("index_sources")} (index_id, source_id)
-            VALUES ('{_HAKU_STATE}', 'haku-state-git'),
-                   ('{_CONVERSATIONS}', 'console-session-messages')
             """
         )
     )
@@ -184,5 +166,4 @@ def downgrade() -> None:
     op.create_primary_key("git_chunks_pkey", "git_chunks", ["blob_sha", "chunker_key", "byte_start"], schema=SCHEMA)
     for table in ("git_chunks", "git_tip", "git_sync_state", "chat_chunks", "chat_chunk_messages", "chat_sessions"):
         op.drop_column(table, "index_id", schema=SCHEMA)
-    op.drop_table("index_sources", schema=SCHEMA)
     op.drop_table("indexes", schema=SCHEMA)

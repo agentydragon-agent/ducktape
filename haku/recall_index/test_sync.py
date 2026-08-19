@@ -46,7 +46,7 @@ async def run_sync(
     *,
     index_id: str = _GIT_INDEX,
 ) -> SyncOutcome:
-    await register_index(session, index_id, index_type=IndexType.GIT, source_id=f"{index_id}-source")
+    await register_index(session, index_id, index_type=IndexType.GIT)
     outcome = await sync(session, repo, commit_sha, index_id=index_id, branch="main", embedder=embedder, now=_NOW)
     await session.commit()
     return outcome
@@ -98,8 +98,8 @@ async def test_two_git_indexes_share_vectors_but_not_occurrences(
     """The future read boundary is real in storage before an API is allowed to expose it."""
     first = pygit2.init_repository(str(tmp_path / "first.git"), bare=True, initial_head="main")
     second = pygit2.init_repository(str(tmp_path / "second.git"), bare=True, initial_head="main")
-    await register_index(session, "first", index_type=IndexType.GIT, source_id="first-source")
-    await register_index(session, "second", index_type=IndexType.GIT, source_id="second-source")
+    await register_index(session, "first", index_type=IndexType.GIT)
+    await register_index(session, "second", index_type=IndexType.GIT)
     await session.commit()
 
     await run_sync(session, first, commit(first, {"a.md": "shared alpha"}), embedder, index_id="first")

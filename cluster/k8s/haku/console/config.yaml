@@ -8,7 +8,6 @@ recall_indexes:
   # Git rather than being inferred from an environment-variable name; only the Git credential is
   # secret and therefore remains an env reference.
   - index_id: haku-state
-    source_id: haku-state-git
     index_type: git
     repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
     branch: main
@@ -16,7 +15,6 @@ recall_indexes:
     username_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
     password_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
   - index_id: haku-conversations
-    source_id: console-session-messages
     index_type: chat
 
 claude_runtime:

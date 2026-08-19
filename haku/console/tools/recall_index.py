@@ -58,7 +58,6 @@ class SearchHit(BaseModel):
 class GitIndexStatus(BaseModel):
     index_type: Literal["git"] = "git"
     index_id: str
-    source_id: str
     indexed_commit: str | None = None
     remote_commit: str | None = None
     remote_seen_at: datetime.datetime | None = None
@@ -73,7 +72,6 @@ class GitIndexStatus(BaseModel):
 class ChatIndexStatus(BaseModel):
     index_type: Literal["chat"] = "chat"
     index_id: str
-    source_id: str
     sessions: int
     chunks: int
     stale_sessions: int

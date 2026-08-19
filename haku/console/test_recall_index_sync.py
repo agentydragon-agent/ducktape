@@ -26,7 +26,7 @@ from haku.recall_index.schema import ContentEmbedding
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
 _NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
-_CHAT = ChatRecallIndexDefinition(index_id="console-chat", source_id="test-console-session-messages")
+_CHAT = ChatRecallIndexDefinition(index_id="console-chat")
 
 
 def test_recall_index_settings_contains_the_shared_chunk_budget() -> None:
@@ -34,19 +34,18 @@ def test_recall_index_settings_contains_the_shared_chunk_budget() -> None:
     assert config.chunk_budget.overlap_codepoints == 48
 
 
-def test_deploy_config_declares_each_index_and_source_explicitly() -> None:
+def test_deploy_config_declares_each_index_explicitly() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             "recall_indexes": [
                 {
                     "index_id": "haku-state",
-                    "source_id": "haku-state-git",
                     "index_type": "git",
                     "repo_url": "https://forge.example/haku-state.git",
                     "username_env_var": "HAKU_STATE_GIT_USERNAME",
                     "password_env_var": "HAKU_STATE_GIT_PASSWORD",
                 },
-                {"index_id": "haku-conversations", "source_id": "console-session-messages", "index_type": "chat"},
+                {"index_id": "haku-conversations", "index_type": "chat"},
             ]
         }
     )
@@ -70,10 +69,7 @@ def haku_state(tmp_path: Path) -> GitRecallIndexDefinition:
     index.add(pygit2.IndexEntry("notes/alpha.md", blob, pygit2.enums.FileMode.BLOB))
     origin.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "seed", index.write_tree(origin), [])
     return GitRecallIndexDefinition(
-        index_id="haku-state",
-        source_id="haku-state-git",
-        repo_url=str(tmp_path / "origin.git"),
-        mirror_path=tmp_path / "mirror.git",
+        index_id="haku-state", repo_url=str(tmp_path / "origin.git"), mirror_path=tmp_path / "mirror.git"
     )
 
 
@@ -221,7 +217,6 @@ def test_git_index_credential_references_are_explicit_and_paired() -> None:
     with pytest.raises(ValueError, match="credentials"):
         GitRecallIndexDefinition(
             index_id="private-notes",
-            source_id="private-notes-git",
             repo_url="https://example.invalid/private-notes.git",
             username_env_var="PRIVATE_NOTES_USERNAME",
         )

@@ -7,14 +7,14 @@ The semantic index has three layers:
 - ``content_embeddings`` is the vector produced when one such string is embedded by one model.
   It is durable index data, not an evictable cache: a model migration adds rows here while
   retaining the input content.
-- index-type tables describe occurrences of that content.  Git chunk occurrences identify a span in
-  a blob; chat windows identify a span in a conversation and the messages it covers.
+- index-type tables describe occurrences of that content. Git chunk occurrences identify a span in
+  a blob; chat windows identify a span in a conversation and the messages they cover.
 
-Keeping those identities separate is what lets identical input text share a vector across Git
-and conversations, across source revisions, and across chunker layouts.  The source rows still
-hold the provenance a result needs to cite; only the content and its embedding are global.  Every
-occurrence belongs to a durable logical index: callers will eventually be granted an index, never
-the unscoped collection of source rows.
+Keeping content identity separate from occurrences lets identical input text share a vector across
+Git and conversations, across revisions, and across chunker layouts. Git and chat rows hold the
+provenance a result needs to cite; only the content and its embedding are global. Every occurrence
+belongs to a durable logical index: callers will eventually be granted an index, never an unscoped
+collection of occurrences.
 """
 
 from __future__ import annotations
@@ -65,19 +65,6 @@ class RecallIndex(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-
-
-class IndexSource(Base):
-    """The sole configured source of an initial logical index.
-
-    The initial model deliberately permits one source per index.  It makes an occurrence's
-    ``index_id`` sufficient to find the configured source and its revision while avoiding an
-    unprincipled multi-source merge policy before source-specific ingestion exists.
-    """
-
-    __tablename__ = "index_sources"
-    index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
-    source_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
 
 
 class Content(Base):

@@ -70,7 +70,6 @@ def _embedder() -> OpenAIEmbedder:
 async def _index_git(
     database_url: str,
     index_id: str,
-    source_id: str,
     repo_url: str,
     branch: str,
     mirror: Path,
@@ -84,7 +83,7 @@ async def _index_git(
         repository = open_mirror(mirror, repo_url, username=username, password=password)
         commit_sha = fetch_branch(repository, branch, username=username, password=password)
         async with async_sessionmaker(engine)() as session:
-            await register_index(session, index_id, index_type=IndexType.GIT, source_id=source_id)
+            await register_index(session, index_id, index_type=IndexType.GIT)
             outcome = await sync(
                 session,
                 repository,
@@ -111,7 +110,6 @@ async def _index_git(
 @app.command("index-git")
 def index_git(
     index_id: Annotated[str, typer.Argument()],
-    source_id: Annotated[str, typer.Argument()],
     repo_url: Annotated[str, typer.Argument()],
     database_url: DatabaseUrl,
     branch: str = "main",
@@ -120,16 +118,16 @@ def index_git(
     password: Annotated[str | None, typer.Option(envvar="HAKU_STATE_INDEX_GIT_PASSWORD")] = None,
 ) -> None:
     """Fetch `branch` into the mirror and swap the git index to its tip."""
-    asyncio.run(_index_git(database_url, index_id, source_id, repo_url, branch, mirror, username, password))
+    asyncio.run(_index_git(database_url, index_id, repo_url, branch, mirror, username, password))
 
 
-async def _index_chat(database_url: str, index_id: str, source_id: str) -> None:
+async def _index_chat(database_url: str, index_id: str) -> None:
     engine = create_async_engine(database_url)
     embedder = _embedder()
     try:
         await ensure_schema(engine)
         async with async_sessionmaker(engine)() as session:
-            await register_index(session, index_id, index_type=IndexType.CHAT, source_id=source_id)
+            await register_index(session, index_id, index_type=IndexType.CHAT)
             report = await sync_chat(
                 session, index_id=index_id, embedder=embedder, now=datetime.datetime.now(datetime.UTC), budget=_budget()
             )
@@ -144,14 +142,12 @@ async def _index_chat(database_url: str, index_id: str, source_id: str) -> None:
 
 
 @app.command("index-chat")
-def index_chat(
-    index_id: Annotated[str, typer.Argument()], source_id: Annotated[str, typer.Argument()], database_url: DatabaseUrl
-) -> None:
+def index_chat(index_id: Annotated[str, typer.Argument()], database_url: DatabaseUrl) -> None:
     """Index every chat session that has changed since it was last indexed.
 
     The database must be the console's own: the corpus is its `session_messages` table.
     """
-    asyncio.run(_index_chat(database_url, index_id, source_id))
+    asyncio.run(_index_chat(database_url, index_id))
 
 
 async def _query_git(database_url: str, index_id: str, query: str, limit: int, path_prefix: str | None) -> None:

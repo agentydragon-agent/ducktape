@@ -197,7 +197,6 @@ class PostgresIndexSearcher:
                     statuses.append(
                         GitIndexStatus(
                             index_id=index.index_id,
-                            source_id=index.source_id,
                             indexed_commit=None if state is None else state.commit_sha,
                             remote_commit=None if state is None else state.remote_commit,
                             remote_seen_at=None if state is None else state.remote_seen_at,
@@ -237,7 +236,6 @@ class PostgresIndexSearcher:
         newest_waiting = max((shape.last_message_at for shape in stale), default=None)
         return ChatIndexStatus(
             index_id=index.index_id,
-            source_id=index.source_id,
             sessions=summary.sessions,
             chunks=summary.chunks,
             stale_sessions=len(stale),

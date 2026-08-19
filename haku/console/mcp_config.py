@@ -331,15 +331,11 @@ class ConsoleConfigFile(BaseModel):
     @model_validator(mode="after")
     def _require_unique_identity(self) -> ConsoleConfigFile:
         index_ids: set[str] = set()
-        source_ids: set[str] = set()
         mirror_paths: set[str] = set()
         for index in self.recall_indexes:
             if index.index_id in index_ids:
                 raise ValueError(f"duplicate recall index id {index.index_id!r}")
-            if index.source_id in source_ids:
-                raise ValueError(f"duplicate recall source id {index.source_id!r}")
             index_ids.add(index.index_id)
-            source_ids.add(index.source_id)
             if hasattr(index, "mirror_path"):
                 mirror_path = str(index.mirror_path)
                 if mirror_path in mirror_paths:

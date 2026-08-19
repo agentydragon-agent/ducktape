@@ -117,7 +117,7 @@ _CHAT_INDEX = "test-chat"
 async def run_sync(
     session: AsyncSession, embedder: FakeEmbedder, *, index_id: str = _CHAT_INDEX, now: datetime.datetime = _SETTLED
 ) -> ChatSyncReport:
-    await register_index(session, index_id, index_type=IndexType.CHAT, source_id=f"{index_id}-source")
+    await register_index(session, index_id, index_type=IndexType.CHAT)
     report = await sync_chat(session, index_id=index_id, embedder=embedder, now=now)
     await session.commit()
     return report
@@ -152,9 +152,7 @@ async def test_a_second_conversation_index_has_its_own_windows(
 ) -> None:
     session_id = await new_session(chat_source, operator_id)
     await say(chat_source, session_id, "separate conversation index", minute=0)
-    await register_index(
-        chat_source, "second-conversations", index_type=IndexType.CHAT, source_id="second-conversations-source"
-    )
+    await register_index(chat_source, "second-conversations", index_type=IndexType.CHAT)
     await chat_source.commit()
 
     await run_sync(chat_source, embedder)

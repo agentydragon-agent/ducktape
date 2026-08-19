@@ -86,7 +86,6 @@ class _Searcher:
             indexes=[
                 GitIndexStatus(
                     index_id="haku-state",
-                    source_id="haku-state-git",
                     indexed_commit="abc123",
                     remote_commit="abc123",
                     remote_seen_at=NOW,
@@ -99,7 +98,6 @@ class _Searcher:
                 ),
                 ChatIndexStatus(
                     index_id="haku-conversations",
-                    source_id="console-session-messages",
                     sessions=3,
                     chunks=9,
                     stale_sessions=1,
