@@ -143,6 +143,14 @@ spec:
               value: /home/openclaw/.cache/npm
             - name: OPENCLAW_LOG_LEVEL
               value: debug
+            # Authentik authenticates proxied browser traffic. Local backend
+            # clients have no proxy identity headers, so use OpenClaw's
+            # documented trusted-proxy local-password fallback.
+            - name: OPENCLAW_GATEWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-openclaw-spike-gateway-password
+                  key: password
             # All four are non-secret placeholders. The dedicated iron-proxy
             # replaces them only in matching Authorization headers for their
             # exact destination hosts.
