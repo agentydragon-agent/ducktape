@@ -118,7 +118,6 @@ resources:
   - agents/public-coder-agent/proxy/flux-kustomization.yaml
   - agents/public-coder-agent/app/flux-kustomization.yaml
   - agents/public-coder-agent/backup/flux-kustomization.yaml
-  - agents/public-coder-agent/archive-restore/flux-kustomization.yaml
   - agents/public-coder-agent/devbox/flux-kustomization.yaml
   - agents/public-coder-agent/k8s-reader/flux-kustomization.yaml
   # CLEANUP(added 2026-07-29): remove after 2026-07-31 (time-boxed debug grant).
@@ -401,7 +400,6 @@ resources:
   - seaweedfs/loom-gym-bucket/flux-kustomization.yaml
   - seaweedfs/pr-visuals-bucket/flux-kustomization.yaml
   - seaweedfs/wayback-archive-bucket/flux-kustomization.yaml
-  - seaweedfs/public-coder-agent-archive-bucket/flux-kustomization.yaml
   - seaweedfs/public-coder-agent-backups-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
