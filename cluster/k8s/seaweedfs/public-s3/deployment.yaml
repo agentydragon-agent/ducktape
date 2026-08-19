@@ -87,5 +87,5 @@ spec:
               readOnly: true
       volumes:
         - name: s3-config
-          secret:
-            secretName: public-s3-config
+          configMap:
+            name: public-s3-bootstrap-config
