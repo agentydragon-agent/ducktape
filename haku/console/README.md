@@ -309,29 +309,29 @@ MCP servers from `@mcp.tool`-decorated functions:
   `list_event_instances` return focused recurrence-aware event models and auto-approve for
   authenticated Agents as transparent read tools. Deferred Calendar API affordances are inventoried
   in `TODO.md`.
-- **`haku_index`** (`haku.console.tools.recall_index`): `search` is semantic recall over two
-  corpora — the files at haku-state's indexed tip and the console's own record of past chat
-  sessions — selected by a `corpus` argument and ranked together. It returns **pointers, not
-  content**: a path, commit and blob sha to read from a haku-state clone, or a session, room and
-  message ids to read through `haku_conversations`. `index_status` is the companion an empty
-  result needs, since an index that has fallen behind is indistinguishable from a subject that
-  never came up — and a `search` whose corpus is behind attaches that status to its own result
+- **`haku_index`** (`haku.console.tools.recall_index`): `search` is semantic recall over the
+  configured logical indexes: Git source at the indexed tips of `haku-state` and public
+  `ducktape-public`, plus the console's own record of past chat sessions. An optional `index_ids`
+  argument narrows the configured set; omitted, all configured indexes compete in one ranking. It
+  returns **pointers, not content**: a Git index id, path, commit, and blob sha, or a session, room,
+  and message ids to read through `haku_conversations`. `index_status` is the companion an empty
+  result needs, since an index that has fallen behind is indistinguishable from a subject that never
+  came up — and a `search` whose selected index is behind attaches that status to its own result
   rather than waiting to be asked, since a caller that would think to check is not the one that
-  needed telling. It reports the haku-state corpus even before a first index exists — what the
-  last sweep saw on the remote, what is indexed, and how many chunks are embedded so far — so
-  "not indexed yet", "indexing now" and "cannot reach the repository" are different answers
-  rather than one absent object. Both auto-approve for Haku (`haku_recall_reads`, the same atom that grants the `haku_conversations` reads); both are unscoped across rooms
-  and operators, which is a decision recorded in <../recall_index/README.md> § Read scoping rather
-  than an oversight. Listing the server in `config.yaml` is what builds it, and the console refuses
-  to start if it is listed without an embedder configured — search embeds its query, so a search
-  tool with nowhere to embed is a tool that can only fail. Credential-free: the corpus is the
-  console's own database, and embeddings come from Ollama. **Both corpora are kept current by this
-  process** (`recall_index_sync.py`): a chat sweep every minute over the console's own tables, and a
-  haku-state poll every thirty seconds against a bare mirror on the pod's `/tmp` — an `ls-remote`
-  that pulls objects only when the tip actually moved. Each corpus has its
-  own Postgres advisory lock, so one replica syncs it and a long git fetch never delays a chat
-  sweep. The git half runs only when `haku_state_git` is configured; without it the console serves
-  the conversations corpus alone.
+  needed telling. It reports every configured index even before a first index exists — what the last
+  sweep saw on each remote, what is indexed, and how many chunks are embedded so far — so "not
+  indexed yet", "indexing now", and "cannot reach the repository" are different answers rather than
+  one absent object. Both tools auto-approve for Haku (`haku_recall_reads`, the same atom that grants
+  the `haku_conversations` reads); they are currently unscoped across rooms and operators, a decision
+  recorded in <../recall_index/README.md> § Read scoping rather than an oversight. Listing the server
+  in `config.yaml` is what builds it, and the console refuses to start if it is listed without an
+  embedder configured — search embeds its query, so a search tool with nowhere to embed is a tool
+  that can only fail. The chat corpus is the console's own database; `haku-state` uses its configured
+  Forgejo credential, while the public Ducktape clone is anonymous. **All configured corpora are kept
+  current by this process** (`recall_index_sync.py`): a chat sweep every minute over the console's own
+  tables and one Git poll every thirty seconds per bare mirror on the pod's `/tmp` — an `ls-remote`
+  that pulls objects only when its tip actually moved. Each corpus has its own Postgres advisory lock,
+  so one replica syncs it and a long git fetch never delays another sweep.
 - **`haku_routine`** (`haku.console.tools.routine`): `launch_routine` fires the Haku
   claude-code-web routine (optionally with per-run instruction `text`), so a launch is an
   ordinary approval-gated tool call rather than a bespoke capability. It uses the
@@ -488,8 +488,8 @@ Two operational notes:
 | `mcp_config.py`                    | Connected-MCP-server catalog plus in-process/remote transport and static bearer resolution, shared by the application service, `McpServerDispatcher`, and operator OAuth linkage.                                                                                            |
 | `mcp_reflection_cache.py`          | Short-lived reuse of reflected upstream tool catalogs: a TTL plus single-flight, keyed so a catalog never outlives the credential that read it.                                                                                                                              |
 | `in_process_servers.py`            | Canonical builder catalog for the Gmail, Google Calendar, routine, conversations, index, and hostexec FastMCP servers, shared by the production app and schema exporter.                                                                                                     |
-| `recall_index_reader.py`           | Binds the `haku_index` tools to the console's database and embedder; the one place the tool surface's `haku_state`/`conversations` vocabulary maps to the index's own `git`/`chat`.                                                                                          |
-| `recall_index_sync.py`             | The sweeps that keep both index corpora current: chat from the console's own tables, haku-state from a bare mirror it fetches. One Postgres advisory lock per corpus, so one replica syncs each.                                                                             |
+| `recall_index_reader.py`           | Binds the `haku_index` tools to the console's database and embedder; it resolves configured logical index ids to their `git`/`chat` source shapes.                                                                                                                           |
+| `recall_index_sync.py`             | The sweeps that keep every configured index current: chat from the console's own tables and Git sources from their bare mirrors. One Postgres advisory lock per index, so one replica syncs each.                                                                            |
 | `mcp_operator_oauth.py`            | Operator OAuth account linkage for servers that execute as the operator's own account: the DCR/PKCE flow, association-specific client metadata, and the `/api/mcp/operator-auth/*` connect/disconnect/callback endpoints.                                                    |
 | `provider_connection.py`           | Deploy-named per-Operator connections to well-known external OAuth providers: fixed-client authorization-code + PKCE flow, connection-specific metadata, and the `/api/operator-connections/*` endpoints. Provider catalog: `provider_connection_registry.py`.               |
 | `oauth_token_state.py`             | Shared current-token persistence and refresh state machine for remote-server, provider, and Operator-login OAuth associations. A short database claim deduplicates foreground and background refreshes across replicas.                                                      |

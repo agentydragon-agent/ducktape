@@ -16,6 +16,14 @@ recall_indexes:
     password_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
   - index_id: haku-conversations
     index_type: chat
+  # Public upstream source for code and deployment-context recall. It intentionally has no
+  # credential references: the console clones the canonical public repository over HTTPS.
+  # The Git reducer skips binary blobs and blobs larger than 1 MiB.
+  - index_id: ducktape-public
+    index_type: git
+    repo_url: https://github.com/agentydragon/ducktape.git
+    branch: devel
+    mirror_path: /tmp/haku-recall-index/ducktape.git
 
 claude_runtime:
   namespace: haku-claude-sandbox
@@ -517,12 +525,14 @@ mcp:
         kind: in_process
         credential:
           kind: none
-    # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state's files
-    # and Haku's own past conversations. Listing it here is what builds the searcher, and the
+    # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state,
+    # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
+    # the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
     # Ollama) — search embeds its query. The same process keeps both corpora current
-    # (haku/console/recall_index_sync.py): the conversations corpus from its own tables, and
-    # haku-state through a read-only mirror it fetches with `HAKU_CONSOLE_HAKU_STATE_GIT__*`.
+    # (haku/console/recall_index_sync.py): the conversations corpus from its own tables,
+    # haku-state through a read-only mirror it fetches with `HAKU_CONSOLE_HAKU_STATE_GIT__*`,
+    # and Ducktape from GitHub without a credential.
     - id: haku_index
       backend:
         kind: in_process

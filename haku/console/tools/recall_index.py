@@ -2,8 +2,8 @@
 
 Configured logical indexes are the retrieval and future authorization boundary. A search defaults
 to every configured index, never to a conventionally named source; callers may narrow it with
-``index_ids``. The current deployment config supplies a Git index for haku-state and a chat index
-over the console's completed messages.
+``index_ids``. The current deployment config supplies Git indexes for haku-state and public
+Ducktape, plus a chat index over the console's completed messages.
 
 Search returns pointers, not authoritative source content. A Git hit names its indexed commit and
 blob; a chat hit names its session and messages. Read them through the source-specific tools.
