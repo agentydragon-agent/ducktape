@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - jwt-token.sops.yaml
   - bucket.yaml
+  - iam.yaml
+  - s3-credentials.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
