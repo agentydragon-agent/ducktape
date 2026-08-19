@@ -54,7 +54,7 @@ spec:
               # Initial placeholder matching the ImagePolicy filterTags regex
               # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field after CI
               # publishes ghcr.io/agentydragon/forgejo-token-rotation.
-              image: ghcr.io/agentydragon/forgejo-token-rotation:devel-20260805222916-e6da93a # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
+              image: ghcr.io/agentydragon/forgejo-token-rotation:devel-20260819221105-4375f37 # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
               args: ["--config", "/config/tokens.yaml"]
               securityContext:
                 allowPrivilegeEscalation: false
