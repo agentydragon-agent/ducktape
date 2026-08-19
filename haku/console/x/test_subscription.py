@@ -19,7 +19,7 @@ from more_itertools import one
 from sqlalchemy import text
 
 from haku.console.chat_models import SPA_ORIGIN, TurnOutcome
-from haku.console.x.session_events import PromptStartedBody, SegmentBody, UnknownEventBody
+from haku.console.x.session_events import PromptStartedBody, SegmentBody, SessionProvisioningBody, UnknownEventBody
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import (
     START,
@@ -206,14 +206,15 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
     assert [type(event.body) for event in read.events].count(PromptStartedBody) == 2
 
 
-async def test_the_head_of_a_conversation_nothing_has_been_said_in_is_the_start(
-    chat_store, operator_id, stream
-) -> None:
-    """Zero is a position no row can carry, so "nothing recorded yet" and "read everything" are one
-    number rather than two states."""
+async def test_a_new_conversation_already_records_its_session_provisioning(chat_store, operator_id, stream) -> None:
+    """Starting the session is the first durable fact, before an operator or runner says anything."""
     view, _ = await chat_store.create(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
 
-    assert await stream.head(await chat_store.conversation_of(view.session_id)) == START
+    read = await stream.read(conversation_id, after=START)
+
+    assert [type(event.body) for event in read.events] == [SessionProvisioningBody]
+    assert await stream.head(conversation_id) == read.position
 
 
 async def test_the_head_is_where_a_caught_up_reader_would_be(chat_store, operator_id, stream) -> None:

@@ -25,9 +25,7 @@ async def _detail(chat_store, operator_id, session_id):
 async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
     for line in ("Cloning into 'haku-state'...", "done.", "Starting Claude Code."):
-        await chat_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame(line)
-        )
+        await chat_store.narrate(session.session_id, line)
 
     detail = await _detail(chat_store, operator_id, session.session_id)
 
@@ -46,9 +44,7 @@ async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_
     bootstrap that says "retrying" twice retried twice."""
     session, _ = await chat_store.create(operator_id)
     for _ in range(2):
-        await chat_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("retrying")
-        )
+        await chat_store.narrate(session.session_id, "retrying")
 
     detail = await _detail(chat_store, operator_id, session.session_id)
 
@@ -59,12 +55,8 @@ async def test_two_identical_narration_lines_are_two_lines(chat_store, operator_
 async def test_narration_carries_only_this_session_and_only_setup_output(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
     other, _ = await chat_store.create(operator_id)
-    await chat_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("mine")
-    )
-    await chat_store.record_frame(
-        other.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("theirs")
-    )
+    await chat_store.narrate(session.session_id, "mine")
+    await chat_store.narrate(other.session_id, "theirs")
     await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "uuid": "r1"}
     )
