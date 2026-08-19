@@ -87,12 +87,6 @@ class RoomChannel(Protocol):
 
     async def announce(self, body: str, kind: RoomEventKind = ...) -> None: ...
 
-    async def show_status(self, body: str, session_id: UUID | None = ...) -> None: ...
-
-    async def set_typing(self, active: bool) -> None: ...
-
-    async def clear_status(self) -> None: ...
-
 
 # How much of the conversation a replacement session is handed. Enough to pick up a thread
 # mid-topic, not enough to be a transcript — anything older is indexed, and the prompt points the
@@ -531,18 +525,6 @@ class MatrixSurface:
     async def report(self, detail: str) -> None:
         """Narrate the sandbox's setup into the room."""
         await self._room.announce(detail, RoomEventKind.NARRATION)
-
-    async def show_status(self, text: str) -> None:
-        """Say what the turn is doing now, on the room's one status line."""
-        await self._room.show_status(text)
-
-    async def clear_status(self) -> None:
-        """Retire that line once the turn is over, however it ended."""
-        await self._room.clear_status()
-
-    async def set_typing(self, active: bool) -> None:
-        """Show a turn in progress without the agent doing anything about it."""
-        await self._room.set_typing(active)
 
     async def _recent(self, session_id: UUID) -> Sequence[HistoryMessage]:
         """The tail of the conversation, or none of it if our own record would not answer.

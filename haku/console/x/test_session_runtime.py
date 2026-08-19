@@ -727,15 +727,6 @@ class _RecordingFrontend:
     async def report(self, detail: str) -> None:
         return None
 
-    async def show_status(self, text: str) -> None:
-        return None
-
-    async def clear_status(self) -> None:
-        return None
-
-    async def set_typing(self, active: bool) -> None:
-        return None
-
 
 class _InterruptedCli(_FakeCli):
     """Aborts once its script has run out, and answers `interrupt` with a `result` frame, as a real

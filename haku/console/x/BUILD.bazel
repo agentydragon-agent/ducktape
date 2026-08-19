@@ -45,7 +45,6 @@ py_library(
     deps = [
         ":conversation_events",
         ":frame_projection",
-        ":room_status",
         ":sandbox_claims",
         ":session_notifications",
         ":session_store",
@@ -165,7 +164,8 @@ py_library(
     name = "room_status",
     srcs = ["room_status.py"],
     deps = [
-        ":conversation_events",
+        ":session_events",
+        ":subscription",
         "//haku/console:chat_models",
     ],
 )
@@ -521,12 +521,11 @@ py_test(
     name = "test_room_status",
     srcs = ["test_room_status.py"],
     deps = [
-        ":conversation_events",
         ":room_status",
+        ":session_events",
+        ":subscription",
         "//:conftest",
         "//haku/console:chat_models",
-        "//haku/console/x/claude_code:projection",
-        "//haku/console/x/claude_code/testing:wire",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

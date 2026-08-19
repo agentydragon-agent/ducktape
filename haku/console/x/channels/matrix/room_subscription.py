@@ -54,6 +54,7 @@ from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
+from haku.console.x.room_status import LiveStatus, StatusFrontend
 from haku.console.x.session_events import (
     LeaseExpiredBody,
     MessageCompletedBody,
@@ -76,7 +77,14 @@ from haku.console.x.session_events import (
     UnreadableInputBody,
 )
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
-from haku.console.x.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
+from haku.console.x.subscription import (
+    START,
+    ConversationStream,
+    StreamedEvent,
+    StreamPosition,
+    Subscription,
+    Unstarted,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +288,7 @@ class RoomNotices:
         conversations: MatrixConversationStore,
         notifications: SessionNotifications,
         announce: Notify,
+        status: StatusFrontend,
         room: BoundRoom,
         outbox: RoomOutbox,
     ) -> None:
@@ -289,9 +298,13 @@ class RoomNotices:
         self._conversations = conversations
         self._notifications = notifications
         self._announce = announce
+        self._status_frontend = status
         self._room = room
         self._outbox = outbox
         self._changed = asyncio.Event()
+        self._live_status = LiveStatus()
+        self._status_conversation: UUID | None = None
+        self._status_through = START
 
     async def reconcile_once(self) -> bool:
         """Say or queue what the room is owed. True when the read stopped at its limit.
@@ -307,13 +320,22 @@ class RoomNotices:
             # there is nothing recorded to be behind on.
             return False
         conversation_id, attachment_id = bound
+        await self._ensure_status(conversation_id)
         subscription = Subscription(self._stream, RoomCursor(self._sessions, attachment_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)
         if isinstance(read, Unstarted):
             # Taken silently: the room already shows what was said in it for as long as it has been
-            # bound, so rendering the stream from the start would repeat all of it.
+            # bound, so rendering the stream from the start would repeat all of it. The live-state
+            # fold still catches up to that head, because status and typing are present-tense rather
+            # than a replay into the timeline.
+            await self._catch_status(conversation_id, read.head)
+            await self._live_status.reconcile(self._status_frontend)
             await subscription.keep(read.head)
             return False
+        fresh = tuple(event for event in read.events if event.position > self._status_through)
+        self._live_status.apply(fresh)
+        if fresh:
+            self._status_through = fresh[-1].position
         for event in read.events:
             match event.body:
                 case MessageCompletedBody():
@@ -328,8 +350,28 @@ class RoomNotices:
                 case _:
                     if (said := notice(event, room_id=room_id)) is not None:
                         await self._announce(said.body, said.kind)
+        await self._live_status.reconcile(self._status_frontend)
         await subscription.keep(read.position)
         return read.more
+
+    async def _ensure_status(self, conversation_id: UUID) -> None:
+        """Rebuild present-tense state once per leader/room from the durable stream."""
+        if self._status_conversation == conversation_id:
+            return
+        self._live_status = LiveStatus()
+        self._status_conversation = conversation_id
+        self._status_through = START
+        await self._catch_status(conversation_id, await self._stream.head(conversation_id))
+
+    async def _catch_status(self, conversation_id: UUID, through: StreamPosition) -> None:
+        """Fold every row through *through*, without rendering historical notices."""
+        while self._status_through < through:
+            batch = await self._stream.read(conversation_id, after=self._status_through)
+            events = tuple(event for event in batch.events if event.position <= through)
+            if not events:
+                return
+            self._live_status.apply(events)
+            self._status_through = events[-1].position
 
     async def _relayed(self, item_id: UUID, room_id: str) -> str | None:
         """A prompt the operator sent somewhere else, as this room should show it.
@@ -357,8 +399,9 @@ class RoomNotices:
                 # instead of being cleared away after it was already missed.
                 self._changed.clear()
                 if not await self.reconcile_once():
+                    delay = self._live_status.tick_seconds or POLL_INTERVAL.total_seconds()
                     with contextlib.suppress(TimeoutError):
-                        async with asyncio.timeout(POLL_INTERVAL.total_seconds()):
+                        async with asyncio.timeout(delay):
                             await self._changed.wait()
             except Exception:
                 logger.exception("Matrix: reconciling the room's notices failed")

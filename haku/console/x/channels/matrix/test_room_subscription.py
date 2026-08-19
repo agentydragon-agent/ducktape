@@ -37,10 +37,22 @@ class Room:
     def __init__(self) -> None:
         self.said: list[str] = []
         self.kinds: list[RoomEventKind] = []
+        self.statuses: list[tuple[str, UUID | None]] = []
+        self.cleared = 0
+        self.typing: list[bool] = []
 
     async def announce(self, body: str, kind: RoomEventKind) -> None:
         self.said.append(body)
         self.kinds.append(kind)
+
+    async def show_status(self, text: str, session_id: UUID | None = None) -> None:
+        self.statuses.append((text, session_id))
+
+    async def clear_status(self) -> None:
+        self.cleared += 1
+
+    async def set_typing(self, active: bool) -> None:
+        self.typing.append(active)
 
     async def bound(self) -> str | None:
         return MATRIX_ROOM
@@ -72,7 +84,15 @@ def notices(
     outbox: RoomOutbox,
 ) -> RoomNotices:
     return RoomNotices(
-        migrated_engine, migrated_sessions, stream, conversations, notifications, room.announce, room.bound, outbox
+        migrated_engine,
+        migrated_sessions,
+        stream,
+        conversations,
+        notifications,
+        room.announce,
+        room,
+        room.bound,
+        outbox,
     )
 
 
@@ -125,6 +145,59 @@ async def test_an_abort_recorded_after_the_room_started_reading_becomes_a_notice
     assert room.said == [ABORTED_BY_OPERATOR]
 
 
+async def test_turn_typing_is_derived_by_the_room_subscriber(chat_store, operator_id, served, notices, room) -> None:
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
+    turn = await chat_store.next_prompt(served)
+    assert turn is not None
+
+    await notices.reconcile_once()
+    assert room.typing[-1] is True
+
+    await chat_store.end_turn(turn.turn_id, TurnOutcome.ANSWERED)
+    await notices.reconcile_once()
+    assert room.typing[-1] is False
+
+
+async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
+    chat_store,
+    operator_id,
+    served,
+    notices,
+    room,
+    migrated_engine,
+    migrated_sessions,
+    stream,
+    conversations,
+    notifications,
+    outbox,
+) -> None:
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
+    assert await chat_store.next_prompt(served) is not None
+    await notices.reconcile_once()
+
+    successor_room = Room()
+    successor = RoomNotices(
+        migrated_engine,
+        migrated_sessions,
+        stream,
+        conversations,
+        notifications,
+        successor_room.announce,
+        successor_room,
+        successor_room.bound,
+        outbox,
+    )
+    await successor.reconcile_once()
+
+    assert successor_room.typing[-1] is True
+
+
 async def test_what_the_room_has_been_told_is_not_told_again(chat_store, operator_id, served, notices, room) -> None:
     await notices.reconcile_once()
     await abort_a_turn(chat_store, operator_id, served)
@@ -163,6 +236,7 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
         conversations,
         notifications,
         successor_room.announce,
+        successor_room,
         successor_room.bound,
         outbox,
     )

@@ -28,7 +28,6 @@ from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
 from haku.console.x.claude_code.frames import frame_kind
 from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
-from haku.console.x.room_status import StatusFrontend, TurnStatus
 from haku.console.x.sandbox_claims import (
     ClaudeSandboxProvisioningView,
     ProvisioningStep,
@@ -153,13 +152,11 @@ class RolloutRecorder:
         )
 
 
-class ChatFrontend(StatusFrontend, Protocol):
+class ChatFrontend(Protocol):
     """The chat channel a session is attached to, for the parts a turn cannot do itself.
 
     **Bound to its address at construction**, never asked for one per call: a channel serves one
-    room and a session serves one channel. The three methods a running turn's status line and
-    typing indicator need are `StatusFrontend`, declared beside the driver that calls them
-    (<room_status.py>).
+    room and a session serves one channel.
 
     Which sessions it serves is whether a channel holds a copy of the conversation they run
     (`SessionStore.attached`). The SPA needs none of this — its client follows the conversation, so
@@ -637,8 +634,6 @@ class SessionService:
         # that finishes the answer is not stored on top of the half of it already there.
         folding = _inherited(turn)
         completed: _CompletedTurn | None = None
-        status = TurnStatus(frontend)
-        status.start()
         aborted = asyncio.ensure_future(abort_event.wait())
         # Set once the abort has been seen and the CLI interrupted, from which point this loop
         # stops racing the abort event and drains what is left of the turn to its `result`.
@@ -666,9 +661,6 @@ class SessionService:
                 received = await next_frame
                 frame_seq = received.frame_seq
                 folding, events = frame_projection.projected(folding, frame_seq=frame_seq, payload=received.payload)
-                # One frame's worth at a time, which is the granularity `coarse_status` reads a run
-                # of events at: a tool call starting and its message completing arrive together.
-                status.note(events)
                 # The frame that ends the turn goes no further: what is left of the exchange is
                 # written below and `end_turn` is the transaction that closes it and carries the
                 # cursor past this frame, so projecting it into `apply_frame` would advance the
@@ -729,9 +721,6 @@ class SessionService:
         finally:
             # The event outlives the turn (it is the session's), so only this turn's waiter goes.
             aborted.cancel()
-            # Every terminal path, failure included: a line still saying "running Bash" after the
-            # turn died is the stuck-indicator bug in another form.
-            await status.finish()
 
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back in one statement
