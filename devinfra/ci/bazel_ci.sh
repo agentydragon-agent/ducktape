@@ -144,6 +144,11 @@ if [ -n "$PR_HEAD_SHA" ]; then
   # it") -- harmless but noisy. Filter them out up front so the
   # affected set passed to build/test only contains rules.
   #
+  # Explicit labels do not get Bazel's normal wildcard semantics:
+  # unlike `//...`, an explicit manual target is still selected.
+  # Exclude manual-tagged targets here so the affected target file
+  # has the same behavior as the normal wildcard target expansion.
+  #
   # Each label is double-quoted inside set(...): aspect_rules_js
   # node_modules targets for scoped pnpm packages are named with
   # a '+' (e.g. //:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir),
@@ -160,6 +165,8 @@ if [ -n "$PR_HEAD_SHA" ]; then
     printf 'set('
     quote /tmp/affected-raw.txt
     printf ') except kind("source file", set('
+    quote /tmp/affected-raw.txt
+    printf ')) except attr("tags", "manual", set('
     quote /tmp/affected-raw.txt
     printf '))\n'
   } \
