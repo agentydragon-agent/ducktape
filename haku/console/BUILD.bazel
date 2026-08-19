@@ -85,6 +85,7 @@ py_library(
     name = "recall_index_reader",
     srcs = ["recall_index_reader.py"],
     deps = [
+        ":config",
         ":database_schema",
         "//haku/console/tools:recall_index",
         "//haku/recall_index:chat_corpus",
@@ -178,6 +179,7 @@ py_library(
     srcs = ["operator_identity_store.py"],
     deps = [
         ":database_schema",
+        ":mcp_config",
         ":operator_identity",
         "@pypi//sqlalchemy",
     ],

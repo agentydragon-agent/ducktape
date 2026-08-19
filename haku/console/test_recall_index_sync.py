@@ -1,9 +1,4 @@
-"""The sweeps that fill the index, against the console's real schema.
-
-What matters here is the wiring rather than the chunking: that a sweep reads the console's own
-tables and a real git remote, writes chunks the search tools then find, and that a replica which
-loses the advisory lock leaves the work to the one holding it.
-"""
+"""Configured-index maintenance and reader integration tests."""
 
 from __future__ import annotations
 
@@ -18,25 +13,46 @@ import pytest_bazel
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console import recall_index_sync
-from haku.console.chat_models import ChatSurface, ItemStatus, ItemType, SessionStatus
-from haku.console.config import HakuStateGitConfig, RecallIndexConfig
-from haku.console.database_schema import ChatAttachment, Conversation, ConversationItem, Operator, Session
+from haku.console.chat_models import ItemStatus, ItemType, SessionStatus
+from haku.console.config import ChatRecallIndexDefinition, GitRecallIndexDefinition, RecallIndexSettings
+from haku.console.database_schema import Conversation, ConversationItem, Operator, Session
+from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.recall_index_sync import CHAT_ADVISORY_LOCK, RecallIndexMaintenance
-from haku.console.tools.recall_index import ConversationSource, HakuStateSource, SearchCorpus
+from haku.console.recall_index_sync import RecallIndexMaintenance, advisory_lock_for
+from haku.console.tools.recall_index import ChatIndexStatus, ChatSource, GitIndexStatus
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.schema import ContentEmbedding
 
+_AUTHOR = pygit2.Signature("Test", "test@example.com")
+_NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
+_CHAT = ChatRecallIndexDefinition(index_id="console-chat")
 
-def test_recall_index_config_contains_the_shared_chunk_budget() -> None:
-    config = RecallIndexConfig(chunk_budget={"target_bytes": 400, "max_bytes": 800, "overlap_codepoints": 48})
+
+def test_recall_index_settings_contains_the_shared_chunk_budget() -> None:
+    config = RecallIndexSettings(chunk_budget={"target_bytes": 400, "max_bytes": 800, "overlap_codepoints": 48})
     assert config.chunk_budget.overlap_codepoints == 48
 
 
-_AUTHOR = pygit2.Signature("Test", "test@example.com")
-_NOW = datetime.datetime(2026, 8, 15, tzinfo=datetime.UTC)
+def test_deploy_config_declares_each_index_explicitly() -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            "recall_indexes": [
+                {
+                    "index_id": "haku-state",
+                    "index_type": "git",
+                    "repo_url": "https://forge.example/haku-state.git",
+                    "username_env_var": "HAKU_STATE_GIT_USERNAME",
+                    "password_env_var": "HAKU_STATE_GIT_PASSWORD",
+                },
+                {"index_id": "haku-conversations", "index_type": "chat"},
+            ]
+        }
+    )
+    assert [(index.index_id, index.index_type) for index in config.recall_indexes] == [
+        ("haku-state", "git"),
+        ("haku-conversations", "chat"),
+    ]
 
 
 @pytest.fixture
@@ -45,16 +61,16 @@ def embedder() -> FakeEmbedder:
 
 
 @pytest.fixture
-def haku_state(tmp_path: Path) -> HakuStateGitConfig:
-    """A bare repository standing in for haku-state, with one commit on `main`."""
+def haku_state(tmp_path: Path) -> GitRecallIndexDefinition:
+    """A configured Git index backed by a bare repository with one main-branch commit."""
     origin = pygit2.init_repository(str(tmp_path / "origin.git"), bare=True, initial_head="main")
     index = pygit2.Index()
-    # This is exactly the document form of the matching chat message below. It proves that the
-    # global content layer crosses corpus boundaries rather than merely de-duplicating each one.
     blob = origin.create_blob(b"user: the egress fence keys on haku-sandbox\n")
     index.add(pygit2.IndexEntry("notes/alpha.md", blob, pygit2.enums.FileMode.BLOB))
     origin.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "seed", index.write_tree(origin), [])
-    return HakuStateGitConfig(repo_url=str(tmp_path / "origin.git"), mirror_path=tmp_path / "mirror.git")
+    return GitRecallIndexDefinition(
+        index_id="haku-state", repo_url=str(tmp_path / "origin.git"), mirror_path=tmp_path / "mirror.git"
+    )
 
 
 @pytest.fixture
@@ -104,184 +120,106 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
     return session_id
 
 
-async def test_a_chat_sweep_makes_a_session_searchable(
+def maintenance(
+    engine: AsyncEngine,
+    sessions: async_sessionmaker[AsyncSession],
+    embedder: FakeEmbedder,
+    *indexes: GitRecallIndexDefinition | ChatRecallIndexDefinition,
+) -> RecallIndexMaintenance:
+    return RecallIndexMaintenance(engine, sessions, embedder=embedder, indexes=indexes)
+
+
+async def test_every_configured_index_is_synchronized_and_searchable(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
+    haku_state: GitRecallIndexDefinition,
     operator_id: UUID,
     embedder: FakeEmbedder,
 ) -> None:
     session_id = await say(migrated_sessions, operator_id, "we decided to keep the egress fence")
+    indexes = (haku_state, _CHAT)
+    await maintenance(migrated_engine, migrated_sessions, embedder, *indexes).sync_all_once()
 
-    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
-
-    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
-        "egress", corpus=SearchCorpus.CONVERSATIONS, limit=5, path_prefix=None, session_id=None
+    results = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).search(
+        "egress", index_ids=None, limit=5, path_prefix=None, session_id=None
     )
-    assert [hit.source.session_id for hit in results.hits if isinstance(hit.source, ConversationSource)] == [session_id]
-    # Nothing is waiting, so an empty result here would have been evidence of absence.
-    assert results.index is None
+    assert {hit.source.kind for hit in results.hits} == {"git", "chat"}
+    assert {hit.source.index_id for hit in results.hits} == {"haku-state", "console-chat"}
+    assert any(isinstance(hit.source, ChatSource) and hit.source.session_id == session_id for hit in results.hits)
 
 
-async def test_a_hit_names_the_room_holding_a_copy_of_its_thread(
+async def test_identical_content_across_configured_indexes_shares_one_embedding(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
-    operator_id: UUID,
-    embedder: FakeEmbedder,
-) -> None:
-    """The room is where a channel holds a copy of the conversation, not something the session
-    records — so every session of one thread reports the same room, replacements included."""
-    first = await say(migrated_sessions, operator_id, "we decided to keep the egress fence")
-    async with migrated_sessions.begin() as session:
-        conversation_id = await session.scalar(select(Session.conversation_id).where(Session.session_id == first))
-        session.add(
-            ChatAttachment(
-                attachment_id=uuid.uuid4(),
-                conversation_id=conversation_id,
-                surface=ChatSurface.MATRIX,
-                address="!room:allegedly.works",
-                attached_at=_NOW,
-            )
-        )
-
-    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
-
-    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
-        "egress", corpus=SearchCorpus.CONVERSATIONS, limit=5, path_prefix=None, session_id=None
-    )
-    assert [hit.source.room_id for hit in results.hits if isinstance(hit.source, ConversationSource)] == [
-        "!room:allegedly.works"
-    ]
-
-
-async def test_a_git_sweep_makes_the_tip_searchable(
-    migrated_engine: AsyncEngine,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    haku_state: HakuStateGitConfig,
-    embedder: FakeEmbedder,
-) -> None:
-    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
-
-    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
-        "egress", corpus=SearchCorpus.HAKU_STATE, limit=5, path_prefix=None, session_id=None
-    )
-    assert [hit.source.path for hit in results.hits if isinstance(hit.source, HakuStateSource)] == ["notes/alpha.md"]
-    assert results.index is None
-
-
-async def test_identical_git_and_chat_content_share_one_embedding(
-    migrated_engine: AsyncEngine,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    haku_state: HakuStateGitConfig,
+    haku_state: GitRecallIndexDefinition,
     operator_id: UUID,
     embedder: FakeEmbedder,
 ) -> None:
     await say(migrated_sessions, operator_id, "the egress fence keys on haku-sandbox")
-    maintenance = RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state)
-
-    await maintenance.sync_git_once()
-    await maintenance.sync_chat_once()
-
+    await maintenance(migrated_engine, migrated_sessions, embedder, haku_state, _CHAT).sync_all_once()
     async with migrated_sessions() as session:
         assert await session.scalar(select(func.count()).select_from(ContentEmbedding)) == 1
 
 
-async def test_an_unmoved_remote_is_never_fetched(
+async def test_status_reads_all_configured_indexes_not_fixed_names(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
-    haku_state: HakuStateGitConfig,
+    haku_state: GitRecallIndexDefinition,
+    operator_id: UUID,
     embedder: FakeEmbedder,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The point of the `ls-remote` gate: polling often must not mean pulling objects often."""
-    maintenance = RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state)
-    await maintenance.sync_git_once()
+    await say(migrated_sessions, operator_id, "status source")
+    indexes = (haku_state, _CHAT)
+    await maintenance(migrated_engine, migrated_sessions, embedder, *indexes).sync_all_once()
+    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).status()
+    assert [(entry.index_id, entry.index_type) for entry in status.indexes] == [
+        ("haku-state", "git"),
+        ("console-chat", "chat"),
+    ]
 
-    def never(*args: object, **kwargs: object) -> str:
-        raise AssertionError("fetched a remote whose tip had not moved")
 
-    monkeypatch.setattr(recall_index_sync, "_fetch", never)
-    await maintenance.sync_git_once()
-
-
-async def test_status_reports_the_remote_before_anything_is_indexed(
+async def test_failed_configured_git_index_reports_the_remote_tip(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
-    haku_state: HakuStateGitConfig,
+    haku_state: GitRecallIndexDefinition,
     embedder: FakeEmbedder,
 ) -> None:
-    """A sweep that cannot finish still has to leave evidence that it looked."""
+    indexes = (haku_state,)
     with pytest.raises(RuntimeError):
-        await RecallIndexMaintenance(
-            migrated_engine, migrated_sessions, embedder=ExplodingEmbedder(), git=haku_state
-        ).sync_git_once()
-
-    status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
-    assert status.indexed_commit is None
-    assert status.remote_commit is not None
-    assert status.branch == "main"
-
-
-async def test_a_search_against_a_corpus_that_is_behind_carries_its_status(
-    migrated_engine: AsyncEngine,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    haku_state: HakuStateGitConfig,
-    embedder: FakeEmbedder,
-) -> None:
-    """The reason the field exists: this search returns nothing, and that is not an answer."""
-    with pytest.raises(RuntimeError):
-        await RecallIndexMaintenance(
-            migrated_engine, migrated_sessions, embedder=ExplodingEmbedder(), git=haku_state
-        ).sync_git_once()
-
-    results = await PostgresIndexSearcher(migrated_sessions, embedder).search(
-        "egress", corpus=SearchCorpus.HAKU_STATE, limit=5, path_prefix=None, session_id=None
-    )
-    assert results.hits == []
-    assert results.index is not None
-    # Not a flag: the caller is told which commit it is missing, not merely that it is missing one.
-    assert results.index.haku_state.indexed_commit is None
-    assert results.index.haku_state.remote_commit is not None
+        await maintenance(migrated_engine, migrated_sessions, ExplodingEmbedder(), *indexes).sync_index_once(haku_state)
+    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).status()
+    (git,) = status.indexes
+    assert isinstance(git, GitIndexStatus)
+    assert git.indexed_commit is None
+    assert git.remote_commit is not None
+    assert git.branch == "main"
 
 
-async def test_status_reports_the_indexed_commit_once_a_sync_lands(
-    migrated_engine: AsyncEngine,
-    migrated_sessions: async_sessionmaker[AsyncSession],
-    haku_state: HakuStateGitConfig,
-    embedder: FakeEmbedder,
-) -> None:
-    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=haku_state).sync_git_once()
-
-    status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
-    assert status.indexed_commit == status.remote_commit
-    assert (status.files, status.embedded_chunks) == (1, 1)
-
-
-async def test_without_git_configured_the_git_sweep_is_a_no_op(
-    migrated_engine: AsyncEngine, migrated_sessions: async_sessionmaker[AsyncSession], embedder: FakeEmbedder
-) -> None:
-    """The console serves the chat corpus alone until it is given a way to read haku-state."""
-    await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_git_once()
-
-    # Reported as empty rather than absent: a caller cannot tell "unconfigured" from "not yet
-    # indexed" from the corpus's own status, and `remote_commit` is what says nothing has looked.
-    status = (await PostgresIndexSearcher(migrated_sessions, embedder).status()).haku_state
-    assert (status.indexed_commit, status.remote_commit, status.embedded_chunks) == (None, None, 0)
-
-
-async def test_a_replica_that_loses_the_lock_leaves_the_work_alone(
+async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
     operator_id: UUID,
     embedder: FakeEmbedder,
 ) -> None:
-    """The advisory lock is what keeps two replicas from embedding the same backlog twice."""
     await say(migrated_sessions, operator_id, "the leader indexes this one")
-
     async with migrated_engine.connect() as leader:
-        assert await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": CHAT_ADVISORY_LOCK})
-        await RecallIndexMaintenance(migrated_engine, migrated_sessions, embedder=embedder, git=None).sync_chat_once()
+        lock = advisory_lock_for(_CHAT.index_id)
+        assert await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": lock})
+        assert await maintenance(migrated_engine, migrated_sessions, embedder, _CHAT).sync_index_once(_CHAT) is None
 
-    assert (await PostgresIndexSearcher(migrated_sessions, embedder).status()).conversations.sessions == 0
+    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=(_CHAT,)).status()
+    (chat,) = status.indexes
+    assert isinstance(chat, ChatIndexStatus)
+    assert chat.sessions == 0
+
+
+def test_git_index_credential_references_are_explicit_and_paired() -> None:
+    with pytest.raises(ValueError, match="credentials"):
+        GitRecallIndexDefinition(
+            index_id="private-notes",
+            repo_url="https://example.invalid/private-notes.git",
+            username_env_var="PRIVATE_NOTES_USERNAME",
+        )
 
 
 if __name__ == "__main__":

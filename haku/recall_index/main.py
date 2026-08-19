@@ -1,9 +1,9 @@
-"""CLI for the haku index: build each corpus, query it, report what it holds.
+"""CLI for named recall indexes: build one, query one, and report one.
 
 Point it at a clone of haku-state or at a copy of the console's database and it builds and
 searches the index against any Postgres with pgvector, including a throwaway one.
 
-The two corpora are named in every command rather than defaulted: a query that silently searched
+Every command takes an explicit index id rather than defaulting: a query that silently searched
 the wrong one would look like a retrieval quality problem.
 """
 
@@ -26,7 +26,8 @@ from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from haku.recall_index.git_tree import fetch_branch, open_mirror
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.recall_index.query import query_chat, query_git
-from haku.recall_index.store import chat_index_summary, current_git_state, ensure_schema
+from haku.recall_index.schema import IndexType
+from haku.recall_index.store import chat_index_summary, current_git_state, ensure_schema, register_index
 from haku.recall_index.sync import AlreadyCurrent, sync
 
 app = typer.Typer(help=__doc__)
@@ -67,7 +68,13 @@ def _embedder() -> OpenAIEmbedder:
 
 
 async def _index_git(
-    database_url: str, repo_url: str, branch: str, mirror: Path, username: str | None, password: str | None
+    database_url: str,
+    index_id: str,
+    repo_url: str,
+    branch: str,
+    mirror: Path,
+    username: str | None,
+    password: str | None,
 ) -> None:
     engine = create_async_engine(database_url)
     embedder = _embedder()
@@ -76,10 +83,12 @@ async def _index_git(
         repository = open_mirror(mirror, repo_url, username=username, password=password)
         commit_sha = fetch_branch(repository, branch, username=username, password=password)
         async with async_sessionmaker(engine)() as session:
+            await register_index(session, index_id, index_type=IndexType.GIT)
             outcome = await sync(
                 session,
                 repository,
                 commit_sha,
+                index_id=index_id,
                 branch=branch,
                 embedder=embedder,
                 now=datetime.datetime.now(datetime.UTC),
@@ -100,6 +109,7 @@ async def _index_git(
 
 @app.command("index-git")
 def index_git(
+    index_id: Annotated[str, typer.Argument()],
     repo_url: Annotated[str, typer.Argument()],
     database_url: DatabaseUrl,
     branch: str = "main",
@@ -108,17 +118,18 @@ def index_git(
     password: Annotated[str | None, typer.Option(envvar="HAKU_STATE_INDEX_GIT_PASSWORD")] = None,
 ) -> None:
     """Fetch `branch` into the mirror and swap the git index to its tip."""
-    asyncio.run(_index_git(database_url, repo_url, branch, mirror, username, password))
+    asyncio.run(_index_git(database_url, index_id, repo_url, branch, mirror, username, password))
 
 
-async def _index_chat(database_url: str) -> None:
+async def _index_chat(database_url: str, index_id: str) -> None:
     engine = create_async_engine(database_url)
     embedder = _embedder()
     try:
         await ensure_schema(engine)
         async with async_sessionmaker(engine)() as session:
+            await register_index(session, index_id, index_type=IndexType.CHAT)
             report = await sync_chat(
-                session, embedder=embedder, now=datetime.datetime.now(datetime.UTC), budget=_budget()
+                session, index_id=index_id, embedder=embedder, now=datetime.datetime.now(datetime.UTC), budget=_budget()
             )
             await session.commit()
     finally:
@@ -131,19 +142,21 @@ async def _index_chat(database_url: str) -> None:
 
 
 @app.command("index-chat")
-def index_chat(database_url: DatabaseUrl) -> None:
+def index_chat(index_id: Annotated[str, typer.Argument()], database_url: DatabaseUrl) -> None:
     """Index every chat session that has changed since it was last indexed.
 
-    The database must be the console's own: the corpus is its `session_messages` table.
+    The database must be the console's own: the corpus is its `conversation_item` table.
     """
-    asyncio.run(_index_chat(database_url))
+    asyncio.run(_index_chat(database_url, index_id))
 
 
-async def _query_git(database_url: str, query: str, limit: int, path_prefix: str | None) -> None:
+async def _query_git(database_url: str, index_id: str, query: str, limit: int, path_prefix: str | None) -> None:
     engine = create_async_engine(database_url)
     try:
         async with async_sessionmaker(engine)() as session:
-            hits = await query_git(session, _embedder(), query, limit=limit, path_prefix=path_prefix, budget=_budget())
+            hits = await query_git(
+                session, _embedder(), query, index_id=index_id, limit=limit, path_prefix=path_prefix, budget=_budget()
+            )
     finally:
         await engine.dispose()
     for hit in hits:
@@ -153,17 +166,23 @@ async def _query_git(database_url: str, query: str, limit: int, path_prefix: str
 
 @app.command("query-git")
 def query_git_command(
-    text: Annotated[str, typer.Argument()], database_url: DatabaseUrl, limit: int = 10, path_prefix: str | None = None
+    index_id: Annotated[str, typer.Argument()],
+    text: Annotated[str, typer.Argument()],
+    database_url: DatabaseUrl,
+    limit: int = 10,
+    path_prefix: str | None = None,
 ) -> None:
     """Search the indexed git tip."""
-    asyncio.run(_query_git(database_url, text, limit, path_prefix))
+    asyncio.run(_query_git(database_url, index_id, text, limit, path_prefix))
 
 
-async def _query_chat(database_url: str, query: str, limit: int, session_id: UUID | None) -> None:
+async def _query_chat(database_url: str, index_id: str, query: str, limit: int, session_id: UUID | None) -> None:
     engine = create_async_engine(database_url)
     try:
         async with async_sessionmaker(engine)() as session:
-            hits = await query_chat(session, _embedder(), query, limit=limit, session_id=session_id, budget=_budget())
+            hits = await query_chat(
+                session, _embedder(), query, index_id=index_id, limit=limit, session_id=session_id, budget=_budget()
+            )
     finally:
         await engine.dispose()
     for hit in hits:
@@ -176,46 +195,54 @@ async def _query_chat(database_url: str, query: str, limit: int, session_id: UUI
 
 @app.command("query-chat")
 def query_chat_command(
+    index_id: Annotated[str, typer.Argument()],
     text: Annotated[str, typer.Argument()],
     database_url: DatabaseUrl,
     limit: int = 10,
     session_id: Annotated[UUID | None, typer.Option()] = None,
 ) -> None:
     """Search the indexed chat sessions."""
-    asyncio.run(_query_chat(database_url, text, limit, session_id))
+    asyncio.run(_query_chat(database_url, index_id, text, limit, session_id))
 
 
-async def _status(database_url: str) -> None:
+async def _status(database_url: str, index_id: str, index_type: str) -> None:
     engine = create_async_engine(database_url)
     try:
         async with async_sessionmaker(engine)() as session:
-            git = await current_git_state(session)
-            chat = await chat_index_summary(session)
+            git = await current_git_state(session, index_id) if index_type == "git" else None
+            chat = await chat_index_summary(session, index_id) if index_type == "chat" else None
     finally:
         await engine.dispose()
-    if git is None:
-        typer.echo("git: empty — no sweep has looked at the remote yet")
-    elif git.commit_sha is None:
-        typer.echo(
-            f"git: {git.branch}@{git.remote_commit[:12] if git.remote_commit else '?'} seen, nothing indexed yet"
-        )
-    else:
-        typer.echo(
-            f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat() if git.synced_at else '?'} "
-            f"(chunker v{git.chunker_key}, model {git.model_key})"
-        )
-    if chat.last_indexed_at is None:
+    if index_type == "git":
+        if git is None:
+            typer.echo("git: empty — no sweep has looked at the remote yet")
+        elif git.commit_sha is None:
+            typer.echo(
+                f"git: {git.branch}@{git.remote_commit[:12] if git.remote_commit else '?'} seen, nothing indexed yet"
+            )
+        else:
+            typer.echo(
+                f"git: {git.branch}@{git.commit_sha[:12]} synced {git.synced_at.isoformat() if git.synced_at else '?'} "
+                f"(chunker v{git.chunker_key}, model {git.model_key})"
+            )
+        return
+
+    if chat is None or chat.last_indexed_at is None:
         typer.echo("chat: empty — nothing synced yet")
-    else:
-        typer.echo(
-            f"chat: {chat.sessions} sessions, {chat.chunks} windows, last indexed {chat.last_indexed_at.isoformat()}"
-        )
+        return
+    typer.echo(
+        f"chat: {chat.sessions} sessions, {chat.chunks} windows, last indexed {chat.last_indexed_at.isoformat()}"
+    )
 
 
 @app.command()
-def status(database_url: DatabaseUrl) -> None:
-    """What each corpus's searchable set currently holds."""
-    asyncio.run(_status(database_url))
+def status(
+    index_id: Annotated[str, typer.Argument()], index_type: Annotated[str, typer.Argument()], database_url: DatabaseUrl
+) -> None:
+    """What one named index's searchable set currently holds."""
+    if index_type not in {"git", "chat"}:
+        raise typer.BadParameter("index_type must be 'git' or 'chat'")
+    asyncio.run(_status(database_url, index_id, index_type))
 
 
 def main() -> None:

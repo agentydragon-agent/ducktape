@@ -84,5 +84,70 @@ def test_the_schema_rename_preserves_the_derived_index(db_url: str) -> None:
         engine.dispose()
 
 
+def test_logical_index_migration_backfills_existing_occurrences(db_url: str) -> None:
+    """0085 changes every occurrence key without re-embedding or dropping the published tip."""
+    apply_migrations(db_url, "0083")
+    engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
+    session_id = "00000000-0000-0000-0000-000000000001"
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("INSERT INTO recall_index.contents (content_sha, content) VALUES ('sha', 'preserved')")
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO recall_index.git_chunks (blob_sha, chunker_key, byte_start, byte_end, content_sha)
+                    VALUES ('blob', 'chunker', 0, 9, 'sha')
+                    """
+                )
+            )
+            connection.execute(text("INSERT INTO recall_index.git_tip (path, blob_sha) VALUES ('note.md', 'blob')"))
+            connection.execute(text("INSERT INTO recall_index.git_sync_state (id, branch) VALUES (1, 'main')"))
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO recall_index.chat_sessions
+                        (session_id, message_count, last_message_at, chunker_key, model_key, indexed_at)
+                    VALUES ('{session_id}', 1, now(), 'chunker', 'model', now())
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO recall_index.chat_chunks
+                        (session_id, window_no, content_sha, first_message_at, last_message_at)
+                    VALUES ('{session_id}', 0, 'sha', now(), now())
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO recall_index.chat_chunk_messages (session_id, window_no, ordinal, message_id)
+                    VALUES ('{session_id}', 0, 0, '{session_id}')
+                    """
+                )
+            )
+
+        apply_migrations(db_url)
+
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT to_regclass('recall_index.index_sources')")) is None
+            assert (
+                connection.scalar(text("SELECT index_type FROM recall_index.indexes WHERE index_id = 'haku-state'"))
+                == "git"
+            )
+            assert connection.scalar(text("SELECT index_id FROM recall_index.git_sync_state")) == "haku-state"
+            assert connection.scalar(text("SELECT index_id FROM recall_index.git_tip")) == "haku-state"
+            assert connection.scalar(text("SELECT index_id FROM recall_index.chat_sessions")) == "haku-conversations"
+            assert (
+                connection.scalar(text("SELECT index_id FROM recall_index.chat_chunk_messages")) == "haku-conversations"
+            )
+    finally:
+        engine.dispose()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

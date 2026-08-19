@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Self
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -92,7 +92,7 @@ class EmbedderConfig(BaseModel):
     sync_timeout_seconds: float = Field(default=300.0, gt=0.0)
 
 
-class RecallIndexConfig(BaseModel):
+class RecallIndexSettings(BaseModel):
     """Retrieval-unit sizing shared by the console's index writers and readers.
 
     The same complete budget must reach both paths: it is serialized into ``chunker_key``, so a
@@ -102,23 +102,45 @@ class RecallIndexConfig(BaseModel):
     chunk_budget: ChunkBudget = Field(default=DEFAULT_CHUNK_BUDGET)
 
 
-class HakuStateGitConfig(BaseModel):
-    """The read side of haku-state, for the index's `git` corpus.
+class RecallIndexDefinition(BaseModel):
+    """One configured logical index.
 
-    Configured means the console syncs that corpus; unset means it serves whatever the `chat`
-    corpus holds and nothing else. The credential is Haku's own Forgejo account (operator,
-    2026-08-15), reflected into this namespace — so the console now holds a credential that can
-    also *write* haku-state, which `haku/console/README.md` records. Nothing here writes: the
-    mirror is fetched, never pushed to.
+    The configuration, rather than an implicit name convention, is the authority for what this
+    deployment indexes. ``index_id`` is the durable retrieval and future grant boundary; the
+    index type's configuration describes its upstream directly.
     """
 
+    index_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
+
+
+class GitRecallIndexDefinition(RecallIndexDefinition):
+    """A Git logical index, fetched into an untrusted disposable bare mirror."""
+
+    index_type: Literal["git"] = "git"
     repo_url: str
     branch: str = "main"
-    username: str | None = None
-    password: SecretStr | None = None
+    username_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    password_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
     # A bare mirror, on ephemeral pod storage by default: losing it costs a clone, not an
     # embedding, since the chunk cache is content-addressed and lives in Postgres.
     mirror_path: Path = Path("/tmp/haku-recall-index/mirror.git")
+
+    @model_validator(mode="after")
+    def _require_complete_credentials(self) -> GitRecallIndexDefinition:
+        if (self.username_env_var is None) != (self.password_env_var is None):
+            raise ValueError("Git recall index credentials require both username_env_var and password_env_var")
+        return self
+
+
+class ChatRecallIndexDefinition(RecallIndexDefinition):
+    """A logical index over this console's completed chat-message source."""
+
+    index_type: Literal["chat"] = "chat"
+
+
+type ConfiguredRecallIndex = Annotated[
+    GitRecallIndexDefinition | ChatRecallIndexDefinition, Field(discriminator="index_type")
+]
 
 
 class LaunchRoutineConfig(BaseModel):
@@ -441,10 +463,7 @@ class Settings(BaseSettings):
     # console refuses to start with search configured and nowhere to embed a query.
     embedder: EmbedderConfig | None = None
     # One configuration feeds every index reader and writer; HAKU_CONSOLE_RECALL_INDEX__CHUNK_BUDGET__*.
-    recall_index: RecallIndexConfig = Field(default_factory=RecallIndexConfig)
-    # Where the index's `git` corpus comes from. Unset leaves that corpus empty and only the
-    # `chat` corpus — which the console builds from its own tables — searchable.
-    haku_state_git: HakuStateGitConfig | None = None
+    recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via

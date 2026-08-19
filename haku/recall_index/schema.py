@@ -7,12 +7,14 @@ The semantic index has three layers:
 - ``content_embeddings`` is the vector produced when one such string is embedded by one model.
   It is durable index data, not an evictable cache: a model migration adds rows here while
   retaining the input content.
-- corpus tables describe occurrences of that content.  Git chunk occurrences identify a span in
-  a blob; chat windows identify a span in a conversation and the messages it covers.
+- index-type tables describe occurrences of that content. Git chunk occurrences identify a span in
+  a blob; chat windows identify a span in a conversation and the messages they cover.
 
-Keeping those identities separate is what lets identical input text share a vector across Git
-and conversations, across source revisions, and across chunker layouts.  The source rows still
-hold the provenance a result needs to cite; only the content and its embedding are global.
+Keeping content identity separate from occurrences lets identical input text share a vector across
+Git and conversations, across revisions, and across chunker layouts. Git and chat rows hold the
+provenance a result needs to cite; only the content and its embedding are global. Every occurrence
+belongs to a durable logical index: callers will eventually be granted an index, never an unscoped
+collection of occurrences.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
-    SmallInteger,
     Text,
     func,
 )
@@ -42,8 +43,8 @@ from haku.recall_index.vector_type import HalfVector
 SCHEMA = "recall_index"
 
 
-class Corpus(StrEnum):
-    """A source-specific occurrence table in the semantic index."""
+class IndexType(StrEnum):
+    """The storage and provenance shape of one logical index."""
 
     GIT = "git"
     CHAT = "chat"
@@ -51,6 +52,19 @@ class Corpus(StrEnum):
 
 class Base(DeclarativeBase):
     metadata = MetaData(schema=SCHEMA)
+
+
+class RecallIndex(Base):
+    """One logical recall boundary, independent of the content-addressed embedding cache."""
+
+    __tablename__ = "indexes"
+    __table_args__ = (CheckConstraint("index_type IN ('git', 'chat')", name="ck_indexes_index_type"),)
+
+    index_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    index_type: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class Content(Base):
@@ -87,10 +101,11 @@ class ContentEmbedding(Base):
 
 
 class GitChunk(Base):
-    """A chunk occurrence in one Git blob under one Git chunker regime."""
+    """A chunk occurrence in one index's Git blob under one chunker regime."""
 
     __tablename__ = "git_chunks"
 
+    index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
     blob_sha: Mapped[str] = mapped_column(Text, primary_key=True)
     chunker_key: Mapped[str] = mapped_column(Text, primary_key=True)
     byte_start: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -99,20 +114,20 @@ class GitChunk(Base):
 
 
 class GitTipEntry(Base):
-    """One path at the indexed commit. Replaced wholesale every sync."""
+    """One path at one index's indexed commit. Replaced wholesale every sync."""
 
     __tablename__ = "git_tip"
 
+    index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
     path: Mapped[str] = mapped_column(Text, primary_key=True)
     blob_sha: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class GitSyncState(Base):
-    """What the branch holds and what ``git_tip`` holds. One row; ``id`` is pinned to 1."""
+    """What one index's Git branch holds and what its ``git_tip`` holds."""
 
     __tablename__ = "git_sync_state"
     __table_args__ = (
-        CheckConstraint("id = 1", name="ck_git_sync_state_singleton"),
         CheckConstraint(
             "(commit_sha IS NULL) = (chunker_key IS NULL)"
             " AND (commit_sha IS NULL) = (model_key IS NULL)"
@@ -121,7 +136,7 @@ class GitSyncState(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, autoincrement=False)
+    index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
     branch: Mapped[str] = mapped_column(Text, nullable=False)
     remote_commit: Mapped[str | None] = mapped_column(Text, nullable=True)
     remote_seen_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -132,10 +147,11 @@ class GitSyncState(Base):
 
 
 class ChatChunk(Base):
-    """One searchable window of a chat session, pointing to globally-addressed content."""
+    """One index's searchable window of a chat session, pointing to global content."""
 
     __tablename__ = "chat_chunks"
 
+    index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     window_no: Mapped[int] = mapped_column(Integer, primary_key=True)
     content_sha: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.contents.content_sha"), nullable=False)
@@ -149,13 +165,14 @@ class ChatChunkMessage(Base):
     __tablename__ = "chat_chunk_messages"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["session_id", "window_no"],
-            [f"{SCHEMA}.chat_chunks.session_id", f"{SCHEMA}.chat_chunks.window_no"],
+            ["index_id", "session_id", "window_no"],
+            [f"{SCHEMA}.chat_chunks.index_id", f"{SCHEMA}.chat_chunks.session_id", f"{SCHEMA}.chat_chunks.window_no"],
             ondelete="CASCADE",
         ),
         Index("idx_chat_chunk_messages_message", "message_id"),
     )
 
+    index_id: Mapped[str] = mapped_column(Text, primary_key=True)
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     window_no: Mapped[int] = mapped_column(Integer, primary_key=True)
     ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -167,6 +184,7 @@ class ChatSessionState(Base):
 
     __tablename__ = "chat_sessions"
 
+    index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

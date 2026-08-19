@@ -17,8 +17,8 @@ from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.query import query_chat
-from haku.recall_index.schema import ChatChunk, ContentEmbedding
-from haku.recall_index.store import ChatSearchHit
+from haku.recall_index.schema import ChatChunk, ContentEmbedding, IndexType
+from haku.recall_index.store import ChatSearchHit, register_index
 
 _NOW = datetime.datetime(2026, 8, 11, tzinfo=datetime.UTC)
 
@@ -111,20 +111,27 @@ async def operator_id(chat_source: AsyncSession) -> UUID:
 # Past every test session's quiet window, so a sync indexes what it finds. The window itself is
 # the subject of its own tests below.
 _SETTLED = _NOW + datetime.timedelta(hours=1)
+_CHAT_INDEX = "test-chat"
 
 
 async def run_sync(
-    session: AsyncSession, embedder: FakeEmbedder, *, now: datetime.datetime = _SETTLED
+    session: AsyncSession, embedder: FakeEmbedder, *, index_id: str = _CHAT_INDEX, now: datetime.datetime = _SETTLED
 ) -> ChatSyncReport:
-    report = await sync_chat(session, embedder=embedder, now=now)
+    await register_index(session, index_id, index_type=IndexType.CHAT)
+    report = await sync_chat(session, index_id=index_id, embedder=embedder, now=now)
     await session.commit()
     return report
 
 
 async def find(
-    session: AsyncSession, embedder: FakeEmbedder, query: str, *, session_id: UUID | None = None
+    session: AsyncSession,
+    embedder: FakeEmbedder,
+    query: str,
+    *,
+    index_id: str = _CHAT_INDEX,
+    session_id: UUID | None = None,
 ) -> list[ChatSearchHit]:
-    return await query_chat(session, embedder, query, limit=5, session_id=session_id)
+    return await query_chat(session, embedder, query, index_id=index_id, limit=5, session_id=session_id)
 
 
 async def test_a_hit_names_the_session_and_the_messages_it_holds(
@@ -138,6 +145,27 @@ async def test_a_hit_names_the_session_and_the_messages_it_holds(
     (hit,) = await find(chat_source, embedder, "alpha")
     assert hit.session_id == session_id
     assert hit.message_ids == [asked, answered]
+
+
+async def test_a_second_conversation_index_has_its_own_windows(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
+    session_id = await new_session(chat_source, operator_id)
+    await say(chat_source, session_id, "separate conversation index", minute=0)
+    await register_index(chat_source, "second-conversations", index_type=IndexType.CHAT)
+    await chat_source.commit()
+
+    await run_sync(chat_source, embedder)
+    await run_sync(chat_source, embedder, index_id="second-conversations")
+
+    assert [hit.session_id for hit in await find(chat_source, embedder, "separate")] == [session_id]
+    assert [
+        hit.session_id for hit in await find(chat_source, embedder, "separate", index_id="second-conversations")
+    ] == [session_id]
+    rows = await chat_source.execute(
+        select(func.count()).select_from(ChatChunk).where(ChatChunk.session_id == session_id)
+    )
+    assert rows.scalar_one() == 2
 
 
 async def test_only_complete_items_are_indexed(

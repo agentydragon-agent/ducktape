@@ -1,11 +1,11 @@
-"""Bring the chat corpus up to what the console has recorded.
+"""Bring one configured chat index up to what the console has recorded.
 
 The unit of work is a window of messages; the unit of skipping is a session. A session whose
 message count and newest message are unchanged under the same regime is never read, so a run
-over an unchanged corpus costs two queries and no embedding.
+over an unchanged source costs two queries and no embedding.
 
 Unlike the git sync there is no repository to fetch and no mirror to keep: the index lives in
-the console's own database, which is where the messages already are, so the corpus is one query
+the console's own database, which is where the messages already are, so the source is one query
 away and the whole sync lands in the caller's transaction.
 """
 
@@ -72,6 +72,7 @@ def is_indexed(
 async def sync_chat(
     session: AsyncSession,
     *,
+    index_id: str,
     embedder: Embedder,
     now: datetime.datetime,
     budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
@@ -80,12 +81,12 @@ async def sync_chat(
     """Index every chat session that has changed since it was last indexed and has gone quiet."""
     regime = chat_chunker_key(budget)
     shapes = await session_shapes(session)
-    states = await chat_session_states(session)
+    states = await chat_session_states(session, index_id)
 
     # A session the console has dropped would otherwise stay searchable forever: chat windows are
     # reachable until deleted, where a git blob stops being reachable when it leaves the tip.
     forgotten = sorted(set(states) - {shape.session_id for shape in shapes})
-    await forget_chat_sessions(session, forgotten)
+    await forget_chat_sessions(session, forgotten, index_id=index_id)
 
     indexed = 0
     unchanged = 0
@@ -131,6 +132,7 @@ async def sync_chat(
             session,
             shape.session_id,
             chunks,
+            index_id=index_id,
             message_count=shape.message_count,
             last_message_at=shape.last_message_at,
             chunker_key=regime,

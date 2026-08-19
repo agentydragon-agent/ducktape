@@ -3,6 +3,20 @@
 # Console-owned Claude Agent Sandbox runtime. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+recall_indexes:
+  # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
+  # Git rather than being inferred from an environment-variable name; only the Git credential is
+  # secret and therefore remains an env reference.
+  - index_id: haku-state
+    index_type: git
+    repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
+    branch: main
+    mirror_path: /tmp/haku-recall-index/haku-state.git
+    username_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
+    password_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
+  - index_id: haku-conversations
+    index_type: chat
+
 claude_runtime:
   namespace: haku-claude-sandbox
   warm_pool: haku-claude

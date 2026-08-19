@@ -3,35 +3,55 @@
 Semantic search over the things a Haku runtime should be able to recall, for runtimes that have
 no OpenClaw-style workspace index — and no checkout at all, in the case of the console.
 
-Two corpora, named explicitly everywhere. They answer different questions and are built from
-different sources, and a query that silently searched the wrong one would look like a retrieval
-quality problem:
+A **logical index** is the durable occurrence and future authorization boundary. Each configured
+index has an `index_id` and an `index_type`; it never obtains identity from a Python default or a
+conventional name. `git` and `chat` are index types — storage and provenance shapes — rather than
+permissions or query scopes:
 
-| corpus | source                                                           | a hit points at            |
-| ------ | ---------------------------------------------------------------- | -------------------------- |
-| `git`  | the files at a branch tip of a git repository (haku-state)       | a path and a byte range    |
-| `chat` | the console's `conversation_item` — Matrix and SPA conversations | a session and its item ids |
+| index type | source shape                                     | a hit points at            |
+| ---------- | ------------------------------------------------ | -------------------------- |
+| `git`      | files at a branch tip of a configured Git remote | a path and a byte range    |
+| `chat`     | configured console `conversation_item` source    | a session and its item ids |
+
+The deployment registry in `cluster/k8s/haku/console/config.yaml` currently declares
+`haku-state` as a Git index over Haku's Forgejo remote and `haku-conversations` as a chat index.
+Adding another index is a reviewed configuration change; it is not an unscoped runtime default.
 
 The index is derived state: it can be thrown away and rebuilt from git and Postgres at any time.
 
 ## Design
 
-The index has globally-addressed semantic content plus source-specific occurrences:
+The index has globally-addressed semantic content plus index-type-specific occurrences:
 
-| table                 | keyed by                              | holds                                                       |
-| --------------------- | ------------------------------------- | ----------------------------------------------------------- |
-| `contents`            | `content_sha`                         | the exact normalized string sent to an embedder             |
-| `content_embeddings`  | `(content_sha, model_key)`            | that content's vector in one model's vector space           |
-| `git_chunks`          | `(blob_sha, chunker_key, byte_start)` | a Git blob span and its referenced global content           |
-| `git_tip`             | `path`                                | the tree at the indexed commit, replaced wholesale per sync |
-| `git_sync_state`      | singleton                             | what the branch points at, and which commit `git_tip` holds |
-| `chat_chunks`         | `(session_id, window_no)`             | a searchable chat window and its referenced global content  |
-| `chat_chunk_messages` | window + ordinal                      | **which messages each window intersects**                   |
-| `chat_sessions`       | `session_id`                          | each session's shape and regime as last indexed             |
+| table                 | keyed by                                        | holds                                                       |
+| --------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| `indexes`             | `index_id`                                      | one boundary plus its `index_type` (`git` or `chat`)        |
+| `contents`            | `content_sha`                                   | the exact normalized string sent to an embedder             |
+| `content_embeddings`  | `(content_sha, model_key)`                      | that content's vector in one model's vector space           |
+| `git_chunks`          | `(index_id, blob_sha, chunker_key, byte_start)` | a Git blob span and its referenced global content           |
+| `git_tip`             | `(index_id, path)`                              | the tree at the indexed commit, replaced wholesale per sync |
+| `git_sync_state`      | `index_id`                                      | what the branch points at, and which commit `git_tip` holds |
+| `chat_chunks`         | `(index_id, session_id, window_no)`             | a searchable chat window and its referenced global content  |
+| `chat_chunk_messages` | index + window + ordinal                        | **which messages each window intersects**                   |
+| `chat_sessions`       | `(index_id, session_id)`                        | each session's shape and regime as last indexed             |
+
+### Logical indexes bound occurrences
+
+`contents` and `content_embeddings` are global deduplication layers, but they are not a recall
+authority. Every Git and chat occurrence belongs to one durable `index_id`; `indexes` names that
+boundary and carries its `index_type`. The deployed registrations are `haku-state` (Git) and
+`haku-conversations` (chat). A second Git index may reuse an identical content vector, but its tip,
+revision state, and matches remain a separate set of occurrences.
+
+An index is its upstream collection: a Git index's configured remote and branch or the Console chat
+index's `conversation_item` collection are part of that index's type-specific deployment
+configuration, not a second durable database identity. Future Flux artifact ingestion adds an
+index type/configuration shape; it does not add a generic source layer. Reader grants and RLS bind
+callers to `index_id`, never to the global content cache.
 
 `contents.content_sha` is the SHA-256 of the exact UTF-8 encoding of `contents.content`.
-It has one namespace across Git and chat: the same rendered content appearing in either corpus,
-or again in another revision or session, is the same content row. `content_embeddings` then adds
+It has one namespace across index types: the same rendered content appearing in either configured
+index, or again in another revision or session, is the same content row. `content_embeddings` then adds
 the model identity, because the same content can legitimately have vectors in more than one
 vector space. These are durable semantic-index tables, not an evictable cache.
 
@@ -44,12 +64,11 @@ position in a session.
 **Chunk size and overlap are configurable, and they live inside `chunker_key`** — canonical JSON,
 `{"max_bytes":3000,"overlap_codepoints":128,"target_bytes":1500,"version":2}` — rather than beside it. The same blob chunked to a different size or overlap is a different retrieval layout, so a re-tune has to select a distinct regime automatically rather than relying on someone to remember it. Size is in bytes rather than tokens because chunking must not depend on a tokenizer now that the model is behind an HTTP endpoint; English prose runs about four bytes to the token, so a budget approximates the model's window on purpose. Overlap is Unicode code points, so no boundary ever splits UTF-8. The default was chosen for a 512-token model and is conservative for the one in use; raising it is a retrieval question — bigger chunks match more broadly and cite less precisely — which is why it is a knob and not a constant. Index and query must use the same budget: a query under a different one searches a regime nothing was written under.
 
-**Reads take the budget, never the key.** `store.chunker_key_for` derives it from the corpus,
-because the two corpora's keys are the same string whenever their chunkers are at the same version
-under the same budget — as they are today. A reader that passed the other corpus's key would
-therefore work until one of the two versions moved, and then match nothing, which is
+**Reads take the budget, never the key.** `store.chunker_key_for` derives it from the index type,
+because `git` and `chat` keys may be the same string under the same budget. A reader that passed
+the other index type's key would work until one version moved, and then match nothing, which is
 indistinguishable from a subject that never came up. Writers still pass theirs explicitly: they
-record it in the corpus's sync state as well as on the chunk.
+record it in the index's sync state as well as on the chunk.
 
 The key is serialized from the budget rather than formatted by hand, and is one column rather
 than several, for the same reason in both cases: **a regime filter cannot be under-specified.**
@@ -187,36 +206,37 @@ comparable thing in reach and has had far more exposure to real sessions than th
 ## Evaluating it locally
 
 Everything here is runnable against a clone and a throwaway Postgres, which is the point: whether
-semantic retrieval over these corpora beats ripgrep and `list_sessions` is an empirical
+semantic retrieval over these configured indexes beats ripgrep and `list_sessions` is an empirical
 question, and the answer wants measuring rather than arguing.
 
 The CLI needs an embedder as well as a database — it defaults to `http://localhost:11434/v1` and
 `qwen3-embedding:4b`, so either run Ollama locally or port-forward `ollama.ollama:11434`.
 `HAKU_STATE_INDEX_EMBEDDER_{URL,MODEL}` override both, and the model must be the one the server
 actually reports, since the client fails closed on a mismatch rather than writing a second vector
-space into the corpus.
+space into the configured index.
 
 ```bash
 docker run -d --rm -e POSTGRES_PASSWORD=x -p 5432:5432 pgvector/pgvector:pg18
 export HAKU_STATE_INDEX_DATABASE_URL=postgresql+asyncpg://postgres:x@localhost:5432/postgres
 
-bb run //haku/recall_index:main -- index-git https://git.allegedly.works/haku/haku-state \
+bb run //haku/recall_index:main -- index-git haku-state haku-state-git \
+    https://git.allegedly.works/haku/haku-state \
     --mirror /tmp/haku-state.git --username haku --password "$FORGEJO_TOKEN"
-bb run //haku/recall_index:main -- query-git "how do I file an intake item"
-bb run //haku/recall_index:main -- status
+bb run //haku/recall_index:main -- query-git haku-state "how do I file an intake item"
+bb run //haku/recall_index:main -- status haku-state git
 ```
 
 `index-git` is idempotent and incremental: re-running it after new commits embeds only blobs it
 has never seen.
 
-The chat corpus reads the console's own tables, so `index-chat` wants a database that has them —
-the console's, or a restored copy of it. There is no repository to clone and no credential to
-pass:
+A configured chat index reads the console's own tables, so `index-chat` wants a database that has
+them — the console's, or a restored copy of it. There is no repository to clone and no credential
+to pass:
 
 ```bash
-bb run //haku/recall_index:main -- index-chat
-bb run //haku/recall_index:main -- query-chat "what did we decide about the egress fence"
-bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
+bb run //haku/recall_index:main -- index-chat haku-conversations console-session-messages
+bb run //haku/recall_index:main -- query-chat haku-conversations "what did we decide about the egress fence"
+bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --session-id 0e4b…
 ```
 
 ## Deployed, in the console
@@ -226,8 +246,8 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
   baseline — the console's CNPG cluster is the home because the chat corpus's source tables are
   already there.
 - **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process
-  FastMCP server in haku-console: one `search` with a `corpus` argument (`haku_state`,
-  `conversations`, or both), plus `index_status`.
+  FastMCP server in haku-console: one `search` with optional `index_ids` (omitted means every
+  configured index), plus `index_status`.
 
   **`index_status` answers before there is anything to search.** It reports `remote_commit` —
   what the last sweep saw on the branch, recorded on every tick including the ones that decide
@@ -243,13 +263,13 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
   within a row. The indexed half is nullable because it becomes true later, and a check keeps it
   all-or-nothing so a commit can never be recorded without the regime it was indexed under.
 
-  **A search over a corpus that is behind carries the status back with it**, in `SearchResults.index`,
+  **A search over an index that is behind carries the status back with it**, in `SearchResults.index`,
   rather than relying on the caller to go ask. Being told to check a second tool before
   believing an empty result only works on a caller that reads an empty result as suspicious,
   which is exactly the caller that does not need telling. What rides along is the whole status
   object and not a `stale: true` flag, because the useful question is _by how much_: four
   messages waiting is a different answer from a tip that is nine commits behind. It is attached
-  only when a searched corpus is actually behind — a chat lag inside the sweep's own window
+  only when a selected index is actually behind — a chat lag inside the sweep's own window
   (`_SETTLED_WITHIN`, two minutes) is the pipeline working, and a field present on every search
   is a field a reader learns to skip.
 
@@ -277,10 +297,11 @@ bb run //haku/recall_index:main -- query-chat "intake" --session-id 0e4b…
   migration fails, the new replica never becomes Ready, and `maxUnavailable: 0` leaves the running
   version serving — so a change to either side wants the `Database` CR reconciled first.
 
-- **Sync.** `haku/console/recall_index_sync.py` sweeps both corpora from the console process:
-  chat every minute over its own tables, haku-state every thirty seconds against a bare mirror on
-  the pod's `/tmp`. Each corpus takes its own Postgres advisory lock, so
-  exactly one replica syncs it and a slow fetch never delays the other.
+- **Sync.** `haku/console/recall_index_sync.py` sweeps every configured index from the console
+  process. The current chat index runs every minute over the console's own tables; the configured
+  haku-state Git index runs every thirty seconds against a bare mirror on the pod's `/tmp`. Each
+  logical index takes its own Postgres advisory lock, so exactly one replica syncs it and a slow
+  fetch never delays another index.
 
   **The git tick is an `ls-remote`, not a fetch.** One round trip returns refs and no objects, so
   the common case — nothing moved — costs almost nothing and can be asked often. The gate is
@@ -338,7 +359,7 @@ exposing the corpus through `/mcp` to a **second** agent.
 
 **The trigger condition has since arrived, and the intended answer is not a filter.** Several
 agent kinds at several information trust levels (<../plans/information_trust_tiers.md>) is exactly
-the "a room Haku should not see" case above. The direction chosen there: `Corpus` stays the
+the "a room Haku should not see" case above. The direction chosen there: `IndexType` is the
 **type** (`git`/`chat` — how content is chunked and addressed) and gains named **instances**
 configured per repo and per tier, so the gate is which indexes a caller may search rather than a
 predicate every read path has to remember.
@@ -390,9 +411,9 @@ rather than argued:
   said, folded out of the frames by the console. If recall over that is not useful, recall over the
   frames underneath it will not rescue it.
 
-When they are added, they are a **third corpus** (`Corpus.FRAMES`), not a widening of this one:
-different unit, different chunker version line, and a `corpus=` filter is what lets a caller ask
-for conversation without getting tool output. The likely shape is frames filtered by `kind`
+When they are added, they are a **third index type** (`IndexType.FRAMES`), not a widening of
+this one: different unit, different chunker version line, and explicit index selection is what
+lets a caller ask for conversation without getting tool output. The likely shape is frames filtered by `kind`
 (assistant/user text, and tool calls by name and arguments) with `tool_result` bodies truncated
 hard or excluded — which is a decision to make with measurements from the message corpus in hand.
 
