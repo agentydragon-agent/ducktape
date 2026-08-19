@@ -459,7 +459,7 @@ def _build_gmail_shaped_mcp() -> FastMCP:
 
 def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
     return InProcessServerRegistration(
-        builder=lambda _token: mcp, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+        builder=lambda _context: mcp, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
     )
 
 
@@ -1817,7 +1817,7 @@ async def test_config_rejects_incompatible_registered_credential_kind() -> None:
         }
     )
     registration = InProcessServerRegistration(
-        builder=lambda _token: _build_test_mcp_server(), credential_kind=InProcessCredentialKind.NONE
+        builder=lambda _context: _build_test_mcp_server(), credential_kind=InProcessCredentialKind.NONE
     )
 
     with pytest.raises(ValueError, match="requires 'none' credential, got 'operator_connection'"):

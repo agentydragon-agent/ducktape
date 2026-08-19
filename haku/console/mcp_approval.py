@@ -60,6 +60,7 @@ from haku.console.tool_call_service import (
     BackendAccountNotConnectedError,
     ProviderConnectionTokenStore,
     ToolCallApplicationService,
+    ToolCallExecutionAuthorization,
     ToolCallNotFoundError,
     ToolCallPageCursor,
     ToolCallStateConflictError,
@@ -244,7 +245,7 @@ class PostgresToolCallLedger:
             tool_call_id = f"tc_{secrets.token_hex(12)}"
             match actor:
                 case AgentActor():
-                    display_name = await self._require_active_agent_binding(session, actor)
+                    display_name, _ = await self._require_active_agent_binding(session, actor)
                     caller: ToolCallCaller = AgentToolCallCaller(agent_id=actor.agent_id, display_name=display_name)
                     principal = McpToolCallPrincipal(
                         tool_call_id=tool_call_id, operator_id=None, binding_id=actor.binding_id
@@ -395,7 +396,7 @@ class PostgresToolCallLedger:
             row.error = error
             return self._record_from_principal(row, principal)
 
-    async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID:
+    async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallExecutionAuthorization:
         """Revalidate the exact durable principal immediately before external execution."""
         async with self._sessions.begin() as session:
             row = await self._row_by_tool_call_id(session, tool_call_id, actor)
@@ -406,8 +407,16 @@ class PostgresToolCallLedger:
                 case AgentActor():
                     if not isinstance(principal, _AgentToolCallPrincipal) or principal.binding_id != actor.binding_id:
                         raise ToolCallStateConflictError("tool call was not submitted by this credential binding")
-                    await self._require_active_agent_binding(session, actor)
-                    return actor.operator_id
+                    _, access_profile_id = await self._require_active_agent_binding(session, actor)
+                    return ToolCallExecutionAuthorization(
+                        operator_id=actor.operator_id,
+                        caller=AgentActor(
+                            agent_id=actor.agent_id,
+                            operator_id=actor.operator_id,
+                            binding_id=actor.binding_id,
+                            access_profile_id=access_profile_id,
+                        ),
+                    )
                 case OperatorActor():
                     return await self._require_executable_principal(session, principal, actor.operator_id)
                 case _:
@@ -617,9 +626,9 @@ class PostgresToolCallLedger:
             raise ToolCallStateConflictError("operator is not active")
 
     @staticmethod
-    async def _require_active_agent_binding(session: AsyncSession, actor: AgentActor) -> str:
-        display_name = await session.scalar(
-            select(AgentNameReservation.display_name)
+    async def _require_active_agent_binding(session: AsyncSession, actor: AgentActor) -> tuple[str, str | None]:
+        identity = await session.execute(
+            select(AgentNameReservation.display_name, Agent.access_profile_id)
             .select_from(CredentialBinding)
             .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
             .join(Operator, Operator.operator_id == Agent.owner_operator_id)
@@ -642,25 +651,33 @@ class PostgresToolCallLedger:
             )
             .with_for_update()
         )
-        if display_name is None:
+        if (identity_row := identity.one_or_none()) is None:
             raise ToolCallStateConflictError("agent credential binding is not active")
-        return display_name
+        return identity_row[0], identity_row[1]
 
     async def _require_executable_principal(
         self, session: AsyncSession, principal: _ResolvedToolCallPrincipal, operator_id: UUID
-    ) -> UUID:
+    ) -> ToolCallExecutionAuthorization:
         if isinstance(principal, _OperatorToolCallPrincipal):
             if principal.operator_id != operator_id:
                 raise ToolCallNotFoundError("tool call not found")
             await self._require_active_operator(session, operator_id)
-            return operator_id
+            return ToolCallExecutionAuthorization(
+                operator_id=operator_id, caller=OperatorActor(operator_id=operator_id)
+            )
         if principal.operator_id != operator_id:
             raise ToolCallNotFoundError("tool call not found")
-        await self._require_active_agent_binding(
-            session,
-            AgentActor(agent_id=principal.agent_id, operator_id=principal.operator_id, binding_id=principal.binding_id),
+        caller = AgentActor(
+            agent_id=principal.agent_id, operator_id=principal.operator_id, binding_id=principal.binding_id
         )
-        return operator_id
+        _, access_profile_id = await self._require_active_agent_binding(session, caller)
+        caller = AgentActor(
+            agent_id=caller.agent_id,
+            operator_id=caller.operator_id,
+            binding_id=caller.binding_id,
+            access_profile_id=access_profile_id,
+        )
+        return ToolCallExecutionAuthorization(operator_id=operator_id, caller=caller)
 
 
 class McpServerDispatcher:

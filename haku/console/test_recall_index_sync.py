@@ -72,6 +72,54 @@ def test_deploy_config_declares_each_index_explicitly() -> None:
     assert (ducktape.branch, ducktape.username_env_var, ducktape.password_env_var) == ("devel", None, None)
 
 
+def test_recall_profile_grants_require_declared_indexes() -> None:
+    config = ConsoleConfigFile.model_validate(
+        {
+            **_MANUAL_AUTHORITY_CONFIG,
+            "recall_indexes": [{"index_id": "ducktape-public", "index_type": "git", "repo_url": "https://example"}],
+            "access_profiles": [
+                {"id": "manual", "auto_approval_policy": "manual", "recall_index_ids": ["ducktape-public"]}
+            ],
+        }
+    )
+    assert config.access_profiles[0].recall_index_ids == {"ducktape-public"}
+
+    with pytest.raises(ValueError, match="unknown Recall indexes"):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "recall_indexes": [{"index_id": "ducktape-public", "index_type": "git", "repo_url": "https://example"}],
+                "access_profiles": [
+                    {"id": "manual", "auto_approval_policy": "manual", "recall_index_ids": ["haku-state"]}
+                ],
+            }
+        )
+
+
+def test_profile_in_process_server_grants_require_configured_in_process_servers() -> None:
+    configured = {
+        **_MANUAL_AUTHORITY_CONFIG,
+        "mcp": {
+            "servers": [{"id": "haku_conversations", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]
+        },
+        "access_profiles": [
+            {"id": "manual", "auto_approval_policy": "manual", "in_process_server_ids": ["haku_conversations"]}
+        ],
+    }
+    config = ConsoleConfigFile.model_validate(configured)
+    assert config.access_profiles[0].in_process_server_ids == {"haku_conversations"}
+
+    with pytest.raises(ValueError, match="unknown in-process MCP servers"):
+        ConsoleConfigFile.model_validate(
+            {
+                **configured,
+                "access_profiles": [
+                    {"id": "manual", "auto_approval_policy": "manual", "in_process_server_ids": ["missing"]}
+                ],
+            }
+        )
+
+
 @pytest.fixture
 def embedder() -> FakeEmbedder:
     return FakeEmbedder()
@@ -164,7 +212,7 @@ async def synchronize_and_embed(
         pass
 
 
-async def test_every_configured_index_is_synchronized_and_searchable(
+async def test_every_configured_index_is_synchronized_and_individually_searchable(
     migrated_engine: AsyncEngine,
     migrated_sessions: async_sessionmaker[AsyncSession],
     haku_state: GitRecallIndexDefinition,
@@ -175,12 +223,14 @@ async def test_every_configured_index_is_synchronized_and_searchable(
     indexes = (haku_state, _CHAT)
     await synchronize_and_embed(migrated_engine, migrated_sessions, embedder, *indexes)
 
-    results = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).search(
-        "egress", index_ids=None, limit=5, path_prefix=None, session_id=None
-    )
-    assert {hit.source.kind for hit in results.hits} == {"git", "chat"}
-    assert {hit.source.index_id for hit in results.hits} == {"haku-state", "console-chat"}
-    assert any(isinstance(hit.source, ChatSource) and hit.source.session_id == session_id for hit in results.hits)
+    searcher = PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes)
+    git_results = await searcher.search("egress", index_id="haku-state", limit=5, session_id=None)
+    chat_results = await searcher.search("egress", index_id="console-chat", limit=5, session_id=None)
+    assert {hit.source.kind for hit in git_results.hits} == {"git"}
+    assert {hit.source.index_id for hit in git_results.hits} == {"haku-state"}
+    assert {hit.source.kind for hit in chat_results.hits} == {"chat"}
+    assert {hit.source.index_id for hit in chat_results.hits} == {"console-chat"}
+    assert any(isinstance(hit.source, ChatSource) and hit.source.session_id == session_id for hit in chat_results.hits)
 
 
 async def test_identical_content_across_configured_indexes_shares_one_embedding(
@@ -206,7 +256,9 @@ async def test_status_reads_all_configured_indexes_not_fixed_names(
     await say(migrated_sessions, operator_id, "status source")
     indexes = (haku_state, _CHAT)
     await synchronize_and_embed(migrated_engine, migrated_sessions, embedder, *indexes)
-    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).status()
+    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes).status(
+        index_ids=("haku-state", "console-chat")
+    )
     assert [(entry.index_id, entry.index_type) for entry in status.indexes] == [
         ("haku-state", "git"),
         ("console-chat", "chat"),
@@ -226,15 +278,13 @@ async def test_source_current_but_embedding_pending_reports_the_remote_tip_and_p
         await worker.embed_once()
 
     searcher = PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes)
-    status = await searcher.status()
+    status = await searcher.status(index_ids=("haku-state",))
     (git,) = status.indexes
     assert isinstance(git, GitIndexStatus)
     assert git.indexed_commit == git.remote_commit
     assert git.branch == "main"
     assert git.pending_chunks == 1
-    results = await searcher.search(
-        "egress", index_ids=(haku_state.index_id,), limit=5, path_prefix=None, session_id=None
-    )
+    results = await searcher.search("egress", index_id=haku_state.index_id, limit=5, session_id=None)
     assert results.hits == []
     assert results.index is not None
 
@@ -251,7 +301,9 @@ async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
         assert await leader.scalar(text("SELECT pg_try_advisory_lock(:lock)"), {"lock": lock})
         assert await maintenance(migrated_engine, migrated_sessions, _CHAT).sync_index_once(_CHAT) is None
 
-    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=(_CHAT,)).status()
+    status = await PostgresIndexSearcher(migrated_sessions, embedder, indexes=(_CHAT,)).status(
+        index_ids=("console-chat",)
+    )
     (chat,) = status.indexes
     assert isinstance(chat, ChatIndexStatus)
     assert chat.sessions == 0

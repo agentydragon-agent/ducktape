@@ -1,9 +1,8 @@
 """haku-console's in-process ``haku_index`` MCP server — configured semantic recall.
 
-Configured logical indexes are the retrieval and future authorization boundary. A search defaults
-to every configured index, never to a conventionally named source; callers may narrow it with
-``index_ids``. The current deployment config supplies Git indexes for haku-state and public
-Ducktape, plus a chat index over the console's completed messages.
+Configured logical indexes are the retrieval and authorization boundary. Each request names one
+index and the Console resolves the caller's durable Agent identity before this server is built.
+Only deployment-configured grants can make an index searchable or visible in status output.
 
 Search returns indexed chunk content by default, plus source pointers. Callers that only need
 provenance can suppress the content payload. A Git hit names its indexed commit and blob; a chat
@@ -17,11 +16,17 @@ from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
+
+from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
+from haku.console.recall_index_access import RecallIndexAccessPolicy
 
 HAKU_INDEX_SERVER_ID = "haku_index"
 MAX_RESULTS = 25
 DEFAULT_RESULTS = 8
+_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 
 class GitSource(BaseModel):
@@ -109,35 +114,21 @@ class SearchResults(BaseModel):
 
 
 class IndexSearcher(Protocol):
-    async def search(
-        self,
-        query: str,
-        *,
-        index_ids: tuple[str, ...] | None,
-        limit: int,
-        path_prefix: str | None,
-        session_id: UUID | None,
-    ) -> SearchResults: ...
+    async def search(self, query: str, *, index_id: str, limit: int, session_id: UUID | None) -> SearchResults: ...
 
-    async def status(self) -> IndexStatus: ...
+    async def status(self, *, index_ids: tuple[str, ...]) -> IndexStatus: ...
 
 
-def build_mcp(searcher: IndexSearcher) -> FastMCP:
+def build_mcp(searcher: IndexSearcher, *, access: RecallIndexAccessPolicy) -> FastMCP:
     mcp: FastMCP = FastMCP(name=HAKU_INDEX_SERVER_ID, instructions="Semantic recall over configured logical indexes.")
 
     @mcp.tool
     async def search(
         query: Annotated[str, Field(description="Natural language. This is semantic search, not grep.")],
-        index_ids: Annotated[
-            list[str] | None,
-            Field(
-                default=None, description="Configured logical indexes to search. Omit to search every configured index."
-            ),
-        ] = None,
+        index_id: Annotated[
+            str, Field(description="One configured logical index that this caller is allowed to read.")
+        ],
         limit: Annotated[int, Field(default=DEFAULT_RESULTS, ge=1, le=MAX_RESULTS)] = DEFAULT_RESULTS,
-        path_prefix: Annotated[
-            str | None, Field(default=None, description="Restrict matching paths in selected Git indexes.")
-        ] = None,
         session_id: Annotated[
             UUID | None, Field(default=None, description="Restrict matching windows in selected chat indexes.")
         ] = None,
@@ -148,25 +139,24 @@ def build_mcp(searcher: IndexSearcher) -> FastMCP:
                 description="Include matching indexed chunk text. Defaults to true; set false for provenance only.",
             ),
         ] = True,
+        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SearchResults:
-        """Search configured indexes for recall.
+        """Search one configured logical index for recall.
 
         **Recall step, not an optional one.** Run this before answering about prior work,
         decisions, dates, people, preferences, commitments, or anything the operator asked for
-        earlier. Results compete in one ranking across the selected indexes.
+        earlier.
         """
-        results = await searcher.search(
-            query,
-            index_ids=None if index_ids is None else tuple(index_ids),
-            limit=limit,
-            path_prefix=path_prefix,
-            session_id=session_id,
-        )
+        if not access.allows(execution.caller, index_id):
+            raise ToolError("recall index access denied")
+        results = await searcher.search(query, index_id=index_id, limit=limit, session_id=session_id)
         return results if include_content else results.without_content()
 
     @mcp.tool
-    async def index_status() -> IndexStatus:
-        """How current every configured logical index is."""
-        return await searcher.status()
+    async def index_status(execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> IndexStatus:
+        """How current the caller's authorized logical indexes are."""
+        if not (index_ids := access.allowed_indexes(execution.caller)):
+            raise ToolError("recall index access denied")
+        return await searcher.status(index_ids=index_ids)
 
     return mcp

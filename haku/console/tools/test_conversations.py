@@ -6,12 +6,22 @@ import datetime
 from collections.abc import Sequence
 from uuid import UUID
 
+import pytest
 import pytest_bazel
 from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp_config import AccessProfile
+from haku.console.mcp_execution import (
+    AgentMcpExecutionCaller,
+    McpExecutionContext,
+    OperatorMcpExecutionCaller,
+    mcp_execution_request_meta,
+)
+from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tools.conversations import (
     HAKU_CONVERSATIONS_SERVER_ID,
     MAX_PAGE_BYTES,
@@ -41,6 +51,21 @@ CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")
 OLDER_SESSION = UUID("33333333-3333-3333-3333-333333333333")
 TURN = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime.datetime(2026, 8, 12, 9, 0, tzinfo=datetime.UTC)
+HAKU = AgentActor(
+    agent_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    operator_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+    binding_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+    access_profile_id="haku",
+)
+CODER = AgentActor(
+    agent_id=UUID("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+    operator_id=HAKU.operator_id,
+    binding_id=UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+    access_profile_id="public-coder",
+)
+ACCESS = InProcessServerAccessPolicy(
+    (AccessProfile(id="haku", auto_approval_policy="manual", in_process_server_ids={"haku_conversations"}),)
+)
 
 # Every tool that pages, and how a page of it is asked for. The point of the surface is that this
 # list can be walked with one loop, so the tests below walk it.
@@ -151,12 +176,55 @@ class _Reader:
         return TranscriptSlice(entries=self._transcript[start : start + limit], unreadable=None)
 
 
+def _mcp(reader: _Reader):
+    return build_mcp(reader, access=ACCESS)
+
+
+def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
+    caller = (
+        AgentMcpExecutionCaller(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id)
+        if isinstance(actor, AgentActor)
+        else OperatorMcpExecutionCaller(operator_id=actor.operator_id)
+    )
+    return mcp_execution_request_meta(McpExecutionContext(caller=caller, tool_call_id="tc_test"))
+
+
+async def _call(client: Client, tool: str, arguments: dict, *, actor: ToolCallActor = HAKU, **kwargs):
+    return await client.call_tool(tool, arguments, meta=_meta(actor), **kwargs)
+
+
 async def test_tool_surface() -> None:
-    async with Client(build_mcp(_Reader())) as client:
+    async with Client(_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
     assert tools == {"list_sessions", "list_turns", "read_transcript", "read_rollout", "read_frame"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
+
+
+async def test_ungranted_actor_cannot_read_conversations() -> None:
+    reader = _Reader()
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "list_sessions", {}, actor=CODER, raise_on_error=False)
+    assert result.is_error
+    assert reader.session_cursors == []
+
+
+@pytest.mark.parametrize(
+    "actor",
+    [
+        AgentActor(agent_id=UUID(int=1), operator_id=HAKU.operator_id, binding_id=UUID(int=2)),
+        AgentActor(
+            agent_id=UUID(int=3), operator_id=HAKU.operator_id, binding_id=UUID(int=4), access_profile_id="missing"
+        ),
+        OperatorActor(operator_id=HAKU.operator_id),
+    ],
+)
+async def test_unprofiled_unknown_and_operator_actors_cannot_read_conversations(actor: ToolCallActor) -> None:
+    reader = _Reader()
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "list_sessions", {}, actor=actor, raise_on_error=False)
+    assert result.is_error
+    assert reader.session_cursors == []
 
 
 async def test_every_listing_answers_in_the_same_shape() -> None:
@@ -164,9 +232,9 @@ async def test_every_listing_answers_in_the_same_shape() -> None:
     would pass its own test and still break that."""
     reader = _Reader(_frame(1), transcript=[_message(0, first_frame_seq=1)])
 
-    async with Client(build_mcp(reader)) as client:
+    async with Client(_mcp(reader)) as client:
         for tool, arguments in PAGED_TOOLS:
-            result = await client.call_tool(tool, arguments)
+            result = await _call(client, tool, arguments)
             assert result.data.items, tool
             assert hasattr(result.data, "next_cursor"), tool
 
@@ -174,8 +242,8 @@ async def test_every_listing_answers_in_the_same_shape() -> None:
 async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it() -> None:
     """The thread rather than a surface enum: what a reader groups sessions by, and what tells it
     where the same conversation is also being read."""
-    async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("list_sessions", {})
+    async with Client(_mcp(_Reader())) as client:
+        result = await _call(client, "list_sessions", {})
 
     assert not result.is_error
     page = SessionPage.model_validate(result.structured_content)
@@ -187,8 +255,8 @@ async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it(
 async def test_a_full_page_of_sessions_names_both_halves_of_the_key_in_its_cursor() -> None:
     """`created_at` alone does not order the corpus — two sessions can start in one instant — so
     the cursor has to carry the tiebreak rather than pretend one column suffices."""
-    async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("list_sessions", {"limit": 1})
+    async with Client(_mcp(_Reader())) as client:
+        result = await _call(client, "list_sessions", {"limit": 1})
 
     page = SessionPage.model_validate(result.structured_content)
     assert [session.session_id for session in page.items] == [SESSION]
@@ -201,8 +269,8 @@ async def test_the_session_cursor_reaches_the_store_and_the_last_page_offers_non
     reader = _Reader()
     cursor = SessionCursor.of(_session(OLDER_SESSION, NOW - datetime.timedelta(hours=1)))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("list_sessions", {"limit": 1, "cursor": cursor.model_dump(mode="json")})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "list_sessions", {"limit": 1, "cursor": cursor.model_dump(mode="json")})
 
     assert reader.session_cursors == [cursor]
     page = SessionPage.model_validate(result.structured_content)
@@ -215,8 +283,8 @@ async def test_a_cursor_names_the_first_row_the_page_did_not_return() -> None:
     which is what makes a transcript entry's `first_frame_seq` a cursor as it stands."""
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3, 4)))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 2})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 2})
 
     assert [frame.frame_seq for frame in result.data.items] == [1, 2]
     assert result.data.next_cursor.frame_seq == 3
@@ -226,8 +294,8 @@ async def test_a_short_page_is_the_last_one() -> None:
     """Otherwise a reader pages forever, asking for rows that do not exist."""
     reader = _Reader(_frame(1), _frame(2))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
 
     assert result.data.next_cursor is None
 
@@ -237,9 +305,9 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     fewer rows than asked for and read as the end of the log."""
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3)))
 
-    async with Client(build_mcp(reader)) as client:
-        await client.call_tool(
-            "read_rollout", {"session_id": str(SESSION), "cursor": {"frame_seq": 2}, "kinds": ["assistant"]}
+    async with Client(_mcp(reader)) as client:
+        await _call(
+            client, "read_rollout", {"session_id": str(SESSION), "cursor": {"frame_seq": 2}, "kinds": ["assistant"]}
         )
 
     # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
@@ -253,8 +321,8 @@ async def test_a_page_stops_on_its_byte_budget_and_says_where() -> None:
     frame that would overrun starts the next page rather than being dropped from this one."""
     reader = _Reader(_big_frame(1), _big_frame(2), _frame(3))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
 
     assert [frame.frame_seq for frame in result.data.items] == [1]
     assert result.data.next_cursor.frame_seq == 2, "the overrunning frame is where the reader resumes"
@@ -266,8 +334,8 @@ async def test_a_frame_larger_than_a_whole_page_is_clipped_rather_than_wedging_t
     same page forever. It goes out with its size instead, for `read_frame` to fetch."""
     reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}), _frame(2))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
 
     [only] = result.data.items
     assert only.payload is None
@@ -280,8 +348,8 @@ async def test_an_oversized_last_frame_ends_the_walk() -> None:
     the cursor would send the reader back for a page it has already seen."""
     reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": str(SESSION), "limit": 25})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
 
     assert result.data.items[0].clipped_bytes > MAX_PAGE_BYTES
     assert result.data.next_cursor is None
@@ -292,8 +360,8 @@ async def test_one_named_frame_comes_back_whole_however_large() -> None:
     big = _frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)})
     reader = _Reader(big, _frame(2))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_frame", {"session_id": str(SESSION), "frame_seq": 1})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 1})
 
     assert result.data.payload == big.payload
     assert result.data.clipped_bytes is None
@@ -304,8 +372,8 @@ async def test_a_named_frame_is_read_including_the_kinds_a_page_leaves_out() -> 
     already chosen its row — so the filter must not decide for it."""
     reader = _Reader(_frame(7, kind="stream_event"))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_frame", {"session_id": str(SESSION), "frame_seq": 7})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 7})
 
     assert result.data.kind == "stream_event"
 
@@ -315,10 +383,8 @@ async def test_a_frame_seq_that_does_not_exist_is_an_error_not_the_next_frame() 
     with frame 6 — the wrong frame, indistinguishable from the right one."""
     reader = _Reader(_frame(4), _frame(6))
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool(
-            "read_frame", {"session_id": str(SESSION), "frame_seq": 5}, raise_on_error=False
-        )
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 5}, raise_on_error=False)
 
     assert result.is_error
 
@@ -326,8 +392,8 @@ async def test_a_frame_seq_that_does_not_exist_is_an_error_not_the_next_frame() 
 async def test_a_turn_carries_the_range_to_read() -> None:
     """The point of listing exchanges is to pick one and then read its frames, so the bracket is
     what a listing has to come back with."""
-    async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool("list_turns", {"session_id": str(SESSION)})
+    async with Client(_mcp(_Reader())) as client:
+        result = await _call(client, "list_turns", {"session_id": str(SESSION)})
 
     [turn] = result.data.items
     assert (turn.first_frame_seq, turn.last_frame_seq) == (1, 4)
@@ -338,8 +404,8 @@ async def test_a_transcript_entry_reads_as_the_conversation_rather_than_the_prot
     """Nothing an MCP caller sees here is `assistant`, a content block or a `tool_use_result`."""
     reader = _Reader(transcript=[_message(0, first_frame_seq=3, last_frame_seq=5)])
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_transcript", {"session_id": str(SESSION)})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_transcript", {"session_id": str(SESSION)})
 
     entry = one(_transcript(result).items)
     assert isinstance(entry, MessageEntry)
@@ -353,14 +419,16 @@ async def test_an_entrys_provenance_is_a_frame_cursor_with_no_arithmetic() -> No
     looking right."""
     reader = _Reader(_frame(3), _frame(4), transcript=[_message(0, first_frame_seq=3, last_frame_seq=4)])
 
-    async with Client(build_mcp(reader)) as client:
-        entry = one(_transcript(await client.call_tool("read_transcript", {"session_id": str(SESSION)})).items)
+    async with Client(_mcp(reader)) as client:
+        entry = one(_transcript(await _call(client, "read_transcript", {"session_id": str(SESSION)})).items)
         assert isinstance(entry.provenance, FromFrames)
-        named = await client.call_tool(
-            "read_frame", {"session_id": str(SESSION), "frame_seq": entry.provenance.first_frame_seq}
+        named = await _call(
+            client, "read_frame", {"session_id": str(SESSION), "frame_seq": entry.provenance.first_frame_seq}
         )
-        span = await client.call_tool(
-            "read_rollout", {"session_id": str(SESSION), "cursor": {"frame_seq": entry.provenance.first_frame_seq}}
+        span = await _call(
+            client,
+            "read_rollout",
+            {"session_id": str(SESSION), "cursor": {"frame_seq": entry.provenance.first_frame_seq}},
         )
 
     assert named.data.frame_seq == 3
@@ -370,10 +438,10 @@ async def test_an_entrys_provenance_is_a_frame_cursor_with_no_arithmetic() -> No
 async def test_a_transcript_cursor_resumes_where_the_page_stopped() -> None:
     reader = _Reader(transcript=[_message(index, first_frame_seq=index + 1) for index in range(4)])
 
-    async with Client(build_mcp(reader)) as client:
-        first = await client.call_tool("read_transcript", {"session_id": str(SESSION), "limit": 2})
-        second = await client.call_tool(
-            "read_transcript", {"session_id": str(SESSION), "limit": 2, "cursor": {"index": 2}}
+    async with Client(_mcp(reader)) as client:
+        first = await _call(client, "read_transcript", {"session_id": str(SESSION), "limit": 2})
+        second = await _call(
+            client, "read_transcript", {"session_id": str(SESSION), "limit": 2, "cursor": {"index": 2}}
         )
 
     assert [entry.index for entry in _transcript(first).items] == [0, 1]
@@ -387,8 +455,8 @@ async def test_an_oversized_tool_result_loses_its_structured_half_not_its_proven
     the frames it came from — readable, which a page that simply refused it would not."""
     reader = _Reader(transcript=[_tool_result(0, structured={"stdout": "x" * (MAX_PAGE_BYTES * 2)})])
 
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_transcript", {"session_id": str(SESSION)})
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_transcript", {"session_id": str(SESSION)})
 
     entry = one(_transcript(result).items)
     assert isinstance(entry, ToolResultEntry)
@@ -400,9 +468,9 @@ async def test_an_oversized_tool_result_loses_its_structured_half_not_its_proven
 
 async def test_a_page_size_above_the_cap_is_refused() -> None:
     """The cap is the only thing keeping a read from being a dump."""
-    async with Client(build_mcp(_Reader())) as client:
-        result = await client.call_tool(
-            "read_rollout", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False
+    async with Client(_mcp(_Reader())) as client:
+        result = await _call(
+            client, "read_rollout", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False
         )
 
     assert result.is_error
@@ -412,8 +480,8 @@ async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
     """The parameter is a `UUID`, so the schema refuses this before any code runs and the store
     is never handed something it would have to validate."""
     reader = _Reader()
-    async with Client(build_mcp(reader)) as client:
-        result = await client.call_tool("read_rollout", {"session_id": "not-an-id"}, raise_on_error=False)
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": "not-an-id"}, raise_on_error=False)
 
     assert result.is_error
     assert reader.queries == []

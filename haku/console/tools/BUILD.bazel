@@ -77,6 +77,9 @@ py_library(
     srcs = ["conversations.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:in_process_server_access",
+        "//haku/console:mcp_execution",
+        "//haku/console:tool_call_actor",
         "//haku/console/x:conversation_records",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
@@ -88,6 +91,10 @@ py_library(
     srcs = ["recall_index.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:mcp_config",
+        "//haku/console:mcp_execution",
+        "//haku/console:recall_index_access",
+        "//haku/console:tool_call_actor",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -99,6 +106,10 @@ py_test(
     deps = [
         ":recall_index",
         "//:conftest",
+        "//haku/console:mcp_config",
+        "//haku/console:mcp_execution",
+        "//haku/console:recall_index_access",
+        "//haku/console:tool_call_actor",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -112,9 +123,14 @@ py_test(
     deps = [
         ":conversations",
         "//:conftest",
+        "//haku/console:in_process_server_access",
+        "//haku/console:mcp_config",
+        "//haku/console:mcp_execution",
+        "//haku/console:tool_call_actor",
         "//haku/console/x:conversation_records",
         "@pypi//fastmcp_slim",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

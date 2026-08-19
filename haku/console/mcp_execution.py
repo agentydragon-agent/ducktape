@@ -24,6 +24,9 @@ class AgentMcpExecutionCaller(BaseModel):
 
     kind: Literal["agent"] = "agent"
     agent_id: UUID
+    # Re-read from the durable Agent immediately before an approved call executes. ``None`` is
+    # the migration-safe, fail-closed value for profile-scoped in-process servers.
+    access_profile_id: str | None = None
 
 
 class OperatorMcpExecutionCaller(BaseModel):

@@ -311,25 +311,24 @@ MCP servers from `@mcp.tool`-decorated functions:
   `list_event_instances` return focused recurrence-aware event models and auto-approve for
   authenticated Agents as transparent read tools. Deferred Calendar API affordances are inventoried
   in `TODO.md`.
-- **`haku_index`** (`haku.console.tools.recall_index`): `search` is semantic recall over the
-  configured logical indexes: Git source at the indexed tips of `haku-state` and public
-  `ducktape-public`, plus the console's own record of past chat sessions. An optional `index_ids`
-  argument narrows the configured set; omitted, all configured indexes compete in one ranking. It
-  returns each matching indexed chunk by default, plus a Git index id, path, commit, and blob sha,
-  or a session, room, and message ids to read through `haku_conversations`. Set
-  `include_content=false` for provenance without chunk text; returned chunks remain retrieval
-  context rather than an authoritative whole-source read. `index_status` is the companion an empty
-  result needs, since an index that has fallen behind is indistinguishable from a subject that never
-  came up — and a `search` whose selected index is behind attaches that status to its own result
-  rather than waiting to be asked, since a caller that would think to check is not the one that
-  needed telling. It reports every configured index even before a first index exists — what the last
-  sweep saw on each remote, what is indexed, and how many chunks are embedded so far — so "not
-  indexed yet", "indexing now", and "cannot reach the repository" are different answers rather than
-  one absent object. Both tools auto-approve for Haku (`haku_recall_reads`, the same atom that grants
-  the `haku_conversations` reads); they are currently unscoped across rooms and operators, a decision
-  recorded in <../recall_index/README.md> § Read scoping rather than an oversight. Listing the server
-  in `config.yaml` is what builds it, and the console refuses to start if it is listed without an
-  embedder configured — search embeds its query, so a search tool with nowhere to embed is a tool
+- **`haku_index`** (`haku.console.tools.recall_index`): `search` is semantic recall over one
+  explicit configured logical index: Git source at the indexed tips of `haku-state` and public
+  `ducktape-public`, or the console's own record of past chat sessions. The authenticated durable
+  Agent's configured access profile is the authority boundary: its `recall_index_ids` grant is
+  checked before embedding or querying, and no MCP argument can expand that grant. Missing or unknown
+  profiles fail closed. `index_status` reports only the same permitted logical indexes. The separate
+  `haku_conversations` server is instead governed by its profile's explicit
+  `in_process_server_ids` grant: server access is not an index grant and is not an auto-approval
+  decision. Direct `OperatorActor` calls do not inherit an Agent profile and are denied on these
+  profile-scoped surfaces. Search returns each
+  matching indexed chunk by default, plus a Git index id, path, commit, and blob sha, or a session,
+  room, and message ids to read through `haku_conversations`. Set `include_content=false` for
+  provenance without chunk text; returned chunks remain retrieval context rather than an authoritative
+  whole-source read. A search whose selected index is behind attaches that index's status to its own
+  result; `index_status` distinguishes "not indexed yet", "indexing now", and "cannot reach the
+  repository". Listing the server in `config.yaml` is what builds it, and the console refuses to
+  start if it is listed without an embedder configured — search embeds its query, so a search tool
+  with nowhere to embed is a tool
   that can only fail. The chat corpus is the console's own database; `haku-state` uses its configured
   Forgejo credential, while the public Ducktape clone is anonymous. **Source materialization and
   embedding run as separate maintenance stages** (`recall_index_sync.py`): a chat sweep every minute

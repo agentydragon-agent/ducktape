@@ -54,9 +54,8 @@ that produces it (`haku/console/x/conversation_records.py`). What is here is how
 are handed out: the `Page` envelope, the byte budget a page spends, and the clipping that budget
 forces.
 
-**Reads are unscoped**: any session, whichever room it served. Deliberate for now —
-the eventual policy about which Haku may read which past conversation is not settled, and
-guessing at one here would be a scoping rule nobody stated.
+**Reads require the configured in-process-server grant.** The outer Console MCP boundary places
+the revalidated caller in trusted request metadata; it is never supplied by tool arguments.
 """
 
 from __future__ import annotations
@@ -67,8 +66,12 @@ from typing import Annotated, Literal, Protocol, get_args
 from uuid import UUID
 
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
+from haku.console.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
 from haku.console.x.conversation_records import (
     FrameCursor,
     RolloutFrame,
@@ -83,6 +86,7 @@ from haku.console.x.conversation_records import (
 )
 
 HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
+_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 # Rows per page. Small on purpose: a frame carries a whole tool result, and the console's
 # past-tool-calls page already learned that asking for hundreds of such rows means a
@@ -251,7 +255,7 @@ def take_page[ItemT](
     return split_page(rows, limit=limit)
 
 
-def build_mcp(reader: ConversationReader) -> FastMCP:
+def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions="Read Haku's own past sessions. `list_sessions` finds one and `list_turns` finds an "
@@ -263,6 +267,10 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         "as `cursor`. Read-only.",
     )
 
+    def require_conversation_access(execution: McpExecutionContext) -> None:
+        if not access.allows(execution.caller, HAKU_CONVERSATIONS_SERVER_ID):
+            raise ToolError("in-process server access denied")
+
     @mcp.tool
     async def list_sessions(
         cursor: Annotated[
@@ -270,6 +278,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
             Field(default=None, description="From a previous page's `next_cursor`; omit for the newest sessions."),
         ] = None,
         limit: Annotated[int, Field(default=20, ge=1, le=MAX_PAGE, description="Most recent sessions first.")] = 20,
+        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SessionPage:
         """List Haku's past chat sessions, newest first, a page at a time.
 
@@ -281,6 +290,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         at the top of this order while a reader walks it, so a page counted from the start would
         skip sessions or repeat them as new ones land.
         """
+        require_conversation_access(execution)
         sessions, more = split_page(await reader.list_sessions(cursor=cursor, limit=limit + 1), limit=limit)
         return SessionPage(items=sessions, next_cursor=SessionCursor.of(more) if more is not None else None)
 
@@ -294,12 +304,14 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE, description="Newest exchange first.")] = (
             DEFAULT_PAGE
         ),
+        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TurnPage:
         """List a session's exchanges — what each cost, how long it took, how it ended.
 
         Each carries the frame range it produced, so this is the cheap way to find the exchange
         worth reading before reading it.
         """
+        require_conversation_access(execution)
         turns, more = split_page(await reader.list_turns(session_id, cursor=cursor, limit=limit + 1), limit=limit)
         return TurnPage(items=turns, next_cursor=TurnCursor.of(more) if more is not None else None)
 
@@ -311,6 +323,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
             Field(default=None, description="From a previous page's `next_cursor`; omit to start at the beginning."),
         ] = None,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
+        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TranscriptPage:
         """Read what a conversation meant: messages, reasoning, tool calls and their results.
 
@@ -328,6 +341,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         answer folded in: the call is real while it is still running, and a page that waited for
         the result would have to look arbitrarily far ahead or stop where it did not mean to.
         """
+        require_conversation_access(execution)
         slice_ = await reader.read_transcript(session_id, cursor=cursor, limit=limit + 1)
         entries, more = take_page(slice_.entries, limit=limit, size=entry_bytes, clip=clip_entry)
         return TranscriptPage(
@@ -347,6 +361,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
                 "transcript entry's `first_frame_seq`. Omit to start at the beginning of the log.",
             ),
         ] = None,
+        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         kinds: Annotated[
             list[FrameKind] | None,
@@ -365,6 +380,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         `read_transcript` is the same conversation already read, in the vocabulary that names no
         backend; this is what to check it against.
         """
+        require_conversation_access(execution)
         frames, more = take_page(
             await reader.read_frames(session_id, cursor=cursor, limit=limit + 1, kinds=kinds),
             limit=limit,
@@ -379,6 +395,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         frame_seq: Annotated[
             int, Field(description="From `read_rollout`, or from a transcript entry's `provenance.first_frame_seq`.")
         ],
+        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> RolloutFrame:
         """One of Claude Code's frames in full, however large — including one too big for any page.
 
@@ -390,6 +407,7 @@ def build_mcp(reader: ConversationReader) -> FastMCP:
         Deltas (`stream_event`) are readable here too, but never need to be — one is a few
         characters of an answer.
         """
+        require_conversation_access(execution)
         # `kinds=None` would drop deltas from the query, and a caller naming a `frame_seq` has
         # already chosen its row.
         frames = await reader.read_frames(

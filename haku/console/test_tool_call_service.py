@@ -7,9 +7,10 @@ import contextlib
 import datetime
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Never
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,11 +22,21 @@ from haku.console.authentik_operator_token import PostgresAuthentikOperatorToken
 from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
-from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, NoCredential, RemoteMcpBackend
+from haku.console.mcp_config import (
+    AccessProfile,
+    InProcessCredentialKind,
+    InProcessServerRegistration,
+    InProcessServers,
+    McpServerEntry,
+    McpServerNotFoundError,
+    NoCredential,
+    RemoteMcpBackend,
+)
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore
+from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_call_service import (
     AgentActorRequiredError,
@@ -301,6 +312,8 @@ def _service(
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
     notifier: _RecordingApprovalNotifier,
+    servers: list[dict[str, Any]] | None = None,
+    in_process_servers: InProcessServers | None = None,
 ) -> ToolCallApplicationService:
     token_states = PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store)
     config_file = write_config(
@@ -310,7 +323,8 @@ def _service(
             "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
             "default_access_profile_id": "manual",
             "mcp": {
-                "servers": [
+                "servers": servers
+                or [
                     {
                         "id": "operator-backend",
                         "backend": {
@@ -332,7 +346,7 @@ def _service(
         invalidation_publisher=publisher,
         executor=executor,
         oauth_store=tokens,
-        in_process_servers={},
+        in_process_servers=in_process_servers or {},
         provider_store=PostgresProviderConnectionStore(
             sessions,
             operator_identity_store=identity_store,
@@ -416,6 +430,66 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
 
     with pytest.raises(OperatorActorRequiredError, match="operator actor required"):
         await service.execute_direct(req=_request(owner="agent"), actor=actors["aa1"])
+
+
+async def test_recall_index_authorizer_denies_argument_escalation_before_submission(
+    *,
+    actors: dict[str, ToolCallActor],
+    executor: _RecordingExecutor,
+    ledger: _RecordingLedger,
+    migrated_db_url: str,
+    migrated_identity_store: PostgresOperatorIdentityStore,
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    notifier: _RecordingApprovalNotifier,
+    publisher: _RecordingInvalidationPublisher,
+    tmp_path: Path,
+    tokens: _OperatorTokens,
+) -> None:
+    """The caller identity is trusted; an MCP argument can never add another logical index."""
+    stored_agent = actors["aa1"]
+    assert isinstance(stored_agent, AgentActor)
+    actor = replace(stored_agent, access_profile_id="public-coder")
+    access = RecallIndexAccessPolicy(
+        (AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),)
+    )
+
+    def unexpected_builder(_: str | None) -> Never:
+        raise AssertionError("an unauthorized request must not build an MCP server")
+
+    service = _service(
+        database_url=migrated_db_url,
+        tmp_path=tmp_path,
+        sessions=migrated_sessions,
+        identity_store=migrated_identity_store,
+        ledger=ledger,
+        publisher=publisher,
+        executor=executor,
+        tokens=tokens,
+        notifier=notifier,
+        servers=[{"id": "haku_index", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}],
+        in_process_servers={
+            "haku_index": InProcessServerRegistration(
+                builder=unexpected_builder,
+                credential_kind=InProcessCredentialKind.NONE,
+                authorizer=access.authorize_index_tool,
+            )
+        },
+    )
+
+    record = await service.submit_and_wait(
+        req=SubmitToolCallRequest(
+            server_id="haku_index",
+            tool_name="search",
+            arguments={"query": "private state", "index_id": "haku-state"},
+            rationale="attempted index escalation",
+            wait_for_ms=0,
+        ),
+        actor=actor,
+    )
+
+    assert (record.status, record.denial_reason) == (ToolCallStatus.DENIED, "recall index access denied")
+    assert executor.executions == []
+    assert notifier.pending == []
 
 
 async def test_two_operator_two_agent_authorization_matrix(
@@ -526,6 +600,14 @@ async def test_two_operator_two_agent_authorization_matrix(
     # Operator's token — the ordering intent is already covered by the `tokens.lookups` assertion
     # above, which is deterministic because auth resolves synchronously inside `decide()`.
     assert sorted(execution[3] or "" for execution in executor.executions) == ["token-a", "token-b"]
+    # Approval belongs to an Operator, but actor-scoped in-process tools must execute as the
+    # original Agent rather than gaining the approving Operator's broader access.
+    expected_agent_ids = {actor.agent_id for actor in (actors["aa1"], actors["ab1"]) if isinstance(actor, AgentActor)}
+    assert {
+        execution[4].caller.agent_id
+        for execution in executor.executions
+        if isinstance(execution[4].caller, AgentMcpExecutionCaller)
+    } == expected_agent_ids
     assert [
         (await service.get(records["aa1"].tool_call_id, actor=actors["oa"])).status,
         (await service.get(records["ab1"].tool_call_id, actor=actors["ob"])).status,
@@ -1029,6 +1111,33 @@ async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor
         await ledger.finish(record.tool_call_id, actor=operator, result={"again": True}, error=None)
 
 
+async def test_execution_authorization_reloads_profile_changed_after_operator_approval(
+    migrated_sessions, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
+) -> None:
+    agent = actors["aa1"]
+    operator = actors["oa"]
+    assert isinstance(agent, AgentActor)
+    assert isinstance(operator, OperatorActor)
+    record = await ledger.submit(
+        server=McpServerEntry(
+            id="operator-backend", backend=RemoteMcpBackend(url="https://backend.invalid/mcp", auth=NoCredential())
+        ),
+        req=_request(owner="profile-changed-after-approval"),
+        actor=agent,
+    )
+    await ledger.mark_running(record.tool_call_id, actor=operator)
+
+    async with migrated_sessions.begin() as session:
+        durable_agent = await session.get(Agent, agent.agent_id)
+        assert durable_agent is not None
+        durable_agent.access_profile_id = "profile-after-approval"
+
+    authorization = await ledger.authorize_execution(record.tool_call_id, actor=operator)
+
+    assert authorization.operator_id == operator.operator_id
+    assert authorization.caller == replace(agent, access_profile_id="profile-after-approval")
+
+
 async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(
     migrated_sessions, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
 ) -> None:
@@ -1043,7 +1152,9 @@ async def test_binding_revoked_after_execution_authorization_does_not_strand_run
         auto_approval_policy_id="policy:test",
     )
 
-    assert await ledger.authorize_execution(record.tool_call_id, actor=agent) == agent.operator_id
+    authorization = await ledger.authorize_execution(record.tool_call_id, actor=agent)
+    assert authorization.operator_id == agent.operator_id
+    assert authorization.caller == agent
     async with migrated_sessions.begin() as session:
         binding = await session.get(CredentialBinding, agent.binding_id)
         assert binding is not None
