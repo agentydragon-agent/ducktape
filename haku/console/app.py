@@ -325,6 +325,7 @@ def create_app(
             matrix_conversation_store,
             session_notifications,
             matrix_sync_service.announce,
+            matrix_sync_service,
             matrix_sync_service.bound_room,
             matrix_room_outbox,
         )

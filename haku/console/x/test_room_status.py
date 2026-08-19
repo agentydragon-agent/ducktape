@@ -1,53 +1,49 @@
-"""What the room is shown while a turn runs."""
+"""The conversation-stream fold that drives Matrix live state."""
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest_bazel
 
-from haku.console.chat_models import ItemType, TurnOutcome
-from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, project_log
-from haku.console.x.claude_code.testing.wire import (
-    assistant,
-    result,
-    system,
-    text_block,
-    text_delta,
-    thinking_block,
-    tool_result,
-    tool_use_block,
-)
-from haku.console.x.conversation_events import (
-    ConversationEvent,
-    FrameRange,
-    ItemSegment,
-    MessageCompleted,
-    OpenRef,
-    ReasoningStarted,
-    ToolCallStarted,
-    TurnCompleted,
-)
+from haku.console.chat_models import SessionStatus, ToolOutcome, TurnOutcome
 from haku.console.x.room_status import (
-    STATUS_AFTER_SECONDS,
-    STATUS_EDIT_INTERVAL_SECONDS,
-    TYPING_REFRESH_SECONDS,
-    TurnStatus,
+    PROVISIONING_STATUS,
+    STATUS_AFTER,
+    STATUS_EDIT_INTERVAL,
+    LiveStatus,
     coarse_status,
 )
+from haku.console.x.session_events import (
+    MessageCompletedBody,
+    MessageStartedBody,
+    SegmentBody,
+    SessionAdoptedBody,
+    SessionEndedBody,
+    SessionProvisioningBody,
+    ToolCallCompletedBody,
+    ToolCallStartedBody,
+    TurnEndedBody,
+    TurnStartedBody,
+)
+from haku.console.x.subscription import StreamedEvent, StreamPosition
+
+SESSION = UUID("11111111-1111-4111-8111-111111111111")
+TURN = UUID("22222222-2222-4222-8222-222222222222")
+MESSAGE = UUID("33333333-3333-4333-8333-333333333333")
+TOOL = UUID("44444444-4444-4444-8444-444444444444")
+STARTED = datetime(2026, 8, 19, tzinfo=UTC)
 
 
 class _RecordingFrontend:
-    """A frontend that keeps what the driver told it, in place of a room."""
-
     def __init__(self) -> None:
-        self.shown: list[str] = []
+        self.shown: list[tuple[str, UUID | None]] = []
         self.cleared = 0
         self.typed: list[bool] = []
 
-    async def show_status(self, text: str) -> None:
-        self.shown.append(text)
+    async def show_status(self, text: str, session_id: UUID | None = None) -> None:
+        self.shown.append((text, session_id))
 
     async def clear_status(self) -> None:
         self.cleared += 1
@@ -56,189 +52,130 @@ class _RecordingFrontend:
         self.typed.append(active)
 
 
-_WHERE = FrameRange(1, 1)
-_MESSAGE = OpenRef(item_type=ItemType.MESSAGE)
+def _event(
+    body,
+    *,
+    seq: int,
+    at: datetime = STARTED,
+    session_id: UUID | None = SESSION,
+    turn_id: UUID | None = TURN,
+    item_id: UUID | None = None,
+) -> StreamedEvent:
+    return StreamedEvent(
+        position=StreamPosition(seq), session_id=session_id, turn_id=turn_id, item_id=item_id, created_at=at, body=body
+    )
 
 
-def _tool_call(name: str) -> ToolCallStarted:
-    return ToolCallStarted(call_id=f"call-{name}", tool_name=name, arguments={}, provenance=_WHERE)
+def _tool(name: str, *, seq: int, at: datetime = STARTED) -> StreamedEvent:
+    return _event(
+        ToolCallStartedBody(call_id=f"call-{name}", tool_name=name, arguments={}), seq=seq, at=at, item_id=TOOL
+    )
 
 
-def _message_completed() -> MessageCompleted:
-    return MessageCompleted(backend_item_id="msg-1", provenance=_WHERE)
+def test_a_tool_call_wins_over_the_message_completion_beside_it() -> None:
+    events = (_tool("Bash", seq=1), _event(MessageCompletedBody(backend_item_id="msg"), seq=2, item_id=MESSAGE))
+
+    assert coarse_status(events, {}) == "running Bash"
 
 
-def test_a_tool_call_becomes_a_status_naming_the_tool_verbatim() -> None:
-    """The backend's own identifier, with no per-tool copy to maintain."""
-    assert coarse_status([_tool_call("Bash")]) == "running Bash"
+def test_only_message_prose_is_writing() -> None:
+    message_segment = _event(SegmentBody(text="hello"), seq=1, item_id=MESSAGE)
+    tool_segment = _event(SegmentBody(text="stdout"), seq=2, item_id=TOOL)
 
-
-def test_a_message_completing_beside_its_tool_call_does_not_bury_the_tool() -> None:
-    """One frame's events, and the more specific of them wins — otherwise the room reads "writing"
-    for the whole of a turn that is running tools."""
-    assert coarse_status([_tool_call("Bash"), _message_completed()]) == "running Bash"
-
-
-def test_prose_and_thinking_are_both_just_writing() -> None:
-    """A session that streams no deltas produces only the completed message, and one that streams
-    produces the deltas — the room is told the same thing either way."""
-    assert coarse_status([ItemSegment(item=_MESSAGE, text="hel", provenance=_WHERE)]) == "writing"
-    assert coarse_status([ReasoningStarted(provenance=_WHERE)]) == "writing"
-    assert coarse_status([_message_completed()]) == "writing"
-
-
-def test_events_the_room_has_no_use_for_produce_no_status() -> None:
-    finished: list[ConversationEvent] = [TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=_WHERE)]
-
-    assert coarse_status(finished) is None
-    assert coarse_status([]) is None
-
-
-def test_a_claude_turn_still_reads_the_way_it_did_off_the_frames() -> None:
-    """The one test here that names a backend, and the only place the claim can be made.
-
-    The frames are the census's shapes (<../debug/frame_shape_census.md>: one content block per
-    `assistant` frame), and the cut is `_run_turn`'s — one frame, `STREAM_EVENTS`, fresh state — so
-    this asserts exactly the sequence a room sees.
-
-    `task_started` says nothing: the harness's prose for a step in flight is one provider's concept,
-    so the frame is unprojected and the line stays on whatever it last said.
-    """
-    frames: list[tuple[dict[str, Any], str | None]] = [
-        (assistant(thinking_block("hm"), message_id="msg_A"), "writing"),
-        (assistant(text_block("Looking."), message_id="msg_A"), "writing"),
-        (assistant(tool_use_block("toolu_1", "Bash", {"command": "ls"}), message_id="msg_A"), "running Bash"),
-        (system("task_started", task_id="task_9", tool_use_id="toolu_1", description="npm run build"), None),
-        # The result's rendered output is a segment like any other prose, and saying "writing"
-        # while a command's output comes back would describe the wrong party.
-        (tool_result("toolu_1", "ok"), None),
-        (text_delta("A"), "writing"),
-        (result(), None),
-    ]
-
-    assert [
+    assert coarse_status((message_segment,), {MESSAGE: MessageStartedBody().item_type}) == "writing"
+    assert (
         coarse_status(
-            project_log([RecordedFrame(frame_seq=seq, payload=payload)], delta_source=DeltaSource.STREAM_EVENTS).events
+            (tool_segment,), {TOOL: ToolCallStartedBody(call_id="c", tool_name="Bash", arguments={}).item_type}
         )
-        for seq, (payload, _) in enumerate(frames)
-    ] == [expected for _, expected in frames]
+        is None
+    )
 
 
-async def test_a_short_turn_leaves_no_status_behind() -> None:
-    """Below the threshold the answer is the status, and a pair of them is clutter."""
+async def test_provisioning_is_present_tense_state_and_adoption_retires_it() -> None:
     frontend = _RecordingFrontend()
-    status = TurnStatus(frontend)
-    status.start()
-    status.note([_tool_call("Bash")])
-    await asyncio.sleep(1.2)
-    await status.finish()
+    status = LiveStatus()
+    status.apply((_event(SessionProvisioningBody(), seq=1, turn_id=None),))
+
+    await status.reconcile(frontend, now=STARTED)
+    assert frontend.shown == [(PROVISIONING_STATUS, SESSION)]
+    assert frontend.typed == [False]
+
+    status.apply((_event(SessionAdoptedBody(previous_holder=None, holder="console-1"), seq=2, turn_id=None),))
+    await status.reconcile(frontend, now=STARTED + timedelta(seconds=1))
+
+    assert frontend.cleared == 1
+    assert status.tick_seconds is None
+
+
+async def test_a_short_turn_types_but_never_creates_a_status_line() -> None:
+    frontend = _RecordingFrontend()
+    status = LiveStatus()
+    status.apply((_event(TurnStartedBody(), seq=1), _tool("Bash", seq=2)))
+
+    await status.reconcile(frontend, now=STARTED + STATUS_AFTER - timedelta(seconds=1))
+    assert (frontend.typed, frontend.shown) == ([True], [])
+
+    status.apply((_event(TurnEndedBody(outcome=TurnOutcome.ANSWERED), seq=3, at=STARTED + STATUS_AFTER),))
+    await status.reconcile(frontend, now=STARTED + STATUS_AFTER)
+
+    assert frontend.typed == [True, False]
+    assert frontend.cleared == 1
+
+
+async def test_a_slow_turn_shows_the_latest_coarse_state() -> None:
+    frontend = _RecordingFrontend()
+    status = LiveStatus()
+    status.apply((_event(TurnStartedBody(), seq=1), _tool("Bash", seq=2)))
+
+    await status.reconcile(frontend, now=STARTED + STATUS_AFTER)
+
+    assert frontend.shown == [("running Bash", SESSION)]
+    assert status.tick_seconds == 1.0
+
+
+async def test_a_change_inside_the_edit_floor_is_deferred_not_lost() -> None:
+    frontend = _RecordingFrontend()
+    status = LiveStatus()
+    status.apply((_event(TurnStartedBody(), seq=1), _tool("Read", seq=2)))
+    await status.reconcile(frontend, now=STARTED + STATUS_AFTER)
+
+    changed_at = STARTED + STATUS_AFTER + timedelta(seconds=1)
+    status.apply(
+        (
+            _event(
+                ToolCallCompletedBody(structured={}, outcome=ToolOutcome.SUCCEEDED), seq=3, at=changed_at, item_id=TOOL
+            ),
+            _tool("Bash", seq=4, at=changed_at),
+        )
+    )
+    await status.reconcile(frontend, now=changed_at)
+    assert frontend.shown == [("running Read", SESSION)]
+
+    await status.reconcile(frontend, now=STARTED + STATUS_AFTER + STATUS_EDIT_INTERVAL)
+    assert frontend.shown == [("running Read", SESSION), ("running Bash", SESSION)]
+
+
+async def test_a_terminal_session_clears_state_rebuilt_from_the_stream() -> None:
+    frontend = _RecordingFrontend()
+    status = LiveStatus()
+    status.apply(
+        (
+            _event(TurnStartedBody(), seq=1),
+            _tool("Bash", seq=2),
+            _event(
+                SessionEndedBody(status=SessionStatus.FAILED, error="runner vanished"),
+                seq=3,
+                at=STARTED + timedelta(seconds=20),
+                turn_id=None,
+            ),
+        )
+    )
+
+    await status.reconcile(frontend, now=STARTED + timedelta(seconds=20))
 
     assert frontend.shown == []
-
-
-async def test_a_turn_with_no_frontend_drives_nothing_and_still_finishes() -> None:
-    """The turn loop does not learn which surface it is on: a session attached to no chat frontend
-    gets this same driver, with nothing to drive and nothing to take back at the end."""
-    status = TurnStatus(None)
-    status.start()
-    status.note([_tool_call("Bash")])
-    await asyncio.sleep(1.2)
-    await status.finish()
-
-    assert status._task is None, "nothing to poll, so nothing polls"
-
-
-async def test_a_slow_turn_says_what_it_is_doing_and_then_retires_the_line() -> None:
-    frontend = _RecordingFrontend()
-
-    status = TurnStatus(frontend)
-    status._started -= STATUS_AFTER_SECONDS  # the turn has already been running a while
-    status.start()
-    status.note([_tool_call("Bash")])
-    await asyncio.sleep(1.2)
-    await status.finish()
-
-    assert frontend.shown == ["running Bash"]
+    assert frontend.typed == [False]
     assert frontend.cleared == 1
-
-
-async def test_a_state_that_changes_inside_the_floor_is_deferred_rather_than_lost() -> None:
-    """The floor may delay what the room is told; it may not decide the room is never told it. A
-    sink that declined silently inside its own edit interval would leave a turn that changed tools
-    twice in five seconds reading the first of them until the *next* change — which on a turn
-    settling into one long tool call is the rest of the turn.
-    """
-    frontend = _RecordingFrontend()
-
-    status = TurnStatus(frontend)
-    status._started -= STATUS_AFTER_SECONDS  # the turn has already been running a while
-    status.start()
-    status.note([_tool_call("Read")])
-    await asyncio.sleep(1.2)
-    status.note([_tool_call("Bash")])
-    await asyncio.sleep(1.2)
-
-    assert frontend.shown == ["running Read"], "the second change lands inside the floor"
-
-    status._shown_at -= STATUS_EDIT_INTERVAL_SECONDS  # the floor passes
-    await asyncio.sleep(1.2)
-    await status.finish()
-
-    assert frontend.shown == ["running Read", "running Bash"], "and is still waiting when it does"
-
-
-async def test_the_line_is_retired_even_when_the_turn_fails() -> None:
-    """A line still saying \"running Bash\" after the turn died is the stuck-indicator bug."""
-    frontend = _RecordingFrontend()
-
-    status = TurnStatus(frontend)
-    status.start()
-    await status.finish()
-
-    assert frontend.cleared == 1
-
-
-async def test_typing_starts_with_the_turn_rather_than_waiting_for_the_status_threshold() -> None:
-    """Typing is worth nothing after the fact, so unlike the status line it does not wait — a turn
-    shorter than `STATUS_AFTER_SECONDS` still shows it."""
-    frontend = _RecordingFrontend()
-
-    status = TurnStatus(frontend)
-    status.start()
-    await asyncio.sleep(1.2)
-    await status.finish()
-
-    assert (frontend.typed, frontend.shown) == ([True, False], []), "on at the start, off at the end"
-
-
-async def test_typing_is_refreshed_for_the_length_of_the_turn() -> None:
-    """The homeserver expires the notice on its own — which is what keeps a dead console from
-    leaving one stuck on — so a live turn has to keep saying it."""
-    frontend = _RecordingFrontend()
-
-    status = TurnStatus(frontend)
-    status._typed_at -= TYPING_REFRESH_SECONDS  # the last notice is already due for renewal
-    status.start()
-    await asyncio.sleep(1.2)
-
-    assert frontend.typed == [True]
-    status._typed_at -= TYPING_REFRESH_SECONDS
-    await asyncio.sleep(1.2)
-    await status.finish()
-
-    assert frontend.typed == [True, True, False]
-
-
-async def test_typing_is_taken_back_even_when_the_turn_fails() -> None:
-    """Every terminal path clears it, failure included, and `finish()` is the one hook all of them
-    run."""
-    frontend = _RecordingFrontend()
-
-    status = TurnStatus(frontend)
-    status.start()
-    await status.finish()
-
-    assert frontend.typed[-1] is False
 
 
 if __name__ == "__main__":

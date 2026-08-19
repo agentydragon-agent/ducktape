@@ -89,6 +89,7 @@ py_library(
         ":outbox",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/x:room_status",
         "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
         "//haku/console/x:subscription",
