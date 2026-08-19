@@ -60,7 +60,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from finance.augur.model.series import PrivateEquityRegimeCode
-from finance.augur.product.metric_composition import BASE_METRIC_NAMES, compose_metric
+from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.quantiles import currency_quantile_plan, interpolate_currency_quantiles
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
@@ -441,6 +441,34 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     scatter_ys_to_buffers(plan, buffers, meta, ys, final_state)
 
 
+def run_jax_scan_with_product_metrics(
+    plan: CompiledSimulation, buffers: SimulationBuffers, *, primary_agent_id: str
+) -> ProductMetricArrays:
+    """Fill dense buffers and return the selected actor's metrics from the same scan."""
+
+    validate_seed_dependent_inputs(plan)
+    baked, structure, p, meta = _build_program(plan)
+    product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
+    external, money, pe, cfg = _program_inputs(plan)
+    outputs, final_state = _program_impl(
+        external,
+        money,
+        pe,
+        cfg,
+        baked,
+        p,
+        structure,
+        product_summary=product_static,
+        product_inputs=product_inputs,
+        emit_dense=True,
+    )
+    dense_ys, product_ys = outputs
+    *dense_final_state, final_failed_month = final_state
+    scatter_ys_to_buffers(plan, buffers, meta, dense_ys, tuple(dense_final_state))
+    initial_ys, monthly_ys = product_ys
+    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_failed_month)
+
+
 @dataclass(frozen=True)
 class ProductMetricFanSummary:
     """Exact percentile reductions for one product metric."""
@@ -462,6 +490,25 @@ class ProductTerminalSummary:
     currency_code: str
     currency_quantum: str
     terminal_samples: np.ndarray  # (R,) requested metric's int64 currency quantum count per rollout
+
+
+@dataclass(frozen=True)
+class ProductMetricArrays:
+    """Base product series emitted by JAX for selected-rollout detail."""
+
+    month_index: np.ndarray
+    failed_month: np.ndarray
+    currency_code: str
+    currency_quantum: str
+    base_series: tuple[np.ndarray, ...]
+
+    def metric_arrays(self) -> dict[str, np.ndarray]:
+        base = dict(zip(_PRODUCT_BASE_METRICS, self.base_series, strict=True))
+        return {
+            "month_index": self.month_index,
+            **base,
+            **{name: compose_metric(name, base.__getitem__) for name in DERIVED_METRIC_NAMES},
+        }
 
 
 # The base metrics the scan emits per month, in the order `product_metrics` returns them.
@@ -486,6 +533,54 @@ def _product_metric_series(
         return jnp.concatenate([jnp.asarray(initial_ys[index])[None, :], jnp.asarray(monthly_ys[index])], axis=0)
 
     return compose_metric(metric, base)
+
+
+def _product_metric_arrays_from_device(
+    plan: CompiledSimulation,
+    initial_ys: tuple[jnp.ndarray, ...],
+    monthly_ys: tuple[jnp.ndarray, ...],
+    final_failed_month: jnp.ndarray,
+) -> ProductMetricArrays:
+    """Copy JAX-emitted base series into the selected-rollout host read model."""
+
+    base_series = tuple(
+        jnp.concatenate([jnp.asarray(initial)[None, :], jnp.asarray(monthly)], axis=0)
+        for initial, monthly in zip(initial_ys, monthly_ys, strict=True)
+    )
+    *base_series_host, failed_month = jax.device_get((*base_series, final_failed_month))
+    return ProductMetricArrays(
+        month_index=np.arange(plan.horizon_months + 1, dtype=np.int64),
+        failed_month=np.asarray(failed_month, dtype=np.int64),
+        currency_code=plan.currency_code,
+        currency_quantum=format(plan.currency_quantum, "f"),
+        base_series=tuple(np.asarray(series, dtype=np.int64) for series in base_series_host),
+    )
+
+
+def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id: str) -> ProductMetricArrays:
+    """Return every base metric directly from the JAX reducer without dense buffers."""
+
+    validate_seed_dependent_inputs(plan)
+    baked, structure, p, _meta = _build_program(plan)
+    product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
+    external, money, pe, cfg = _program_inputs(plan)
+    product_ys, product_tail = _program_impl(
+        external,
+        money,
+        pe,
+        cfg,
+        baked,
+        p,
+        structure,
+        product_summary=product_static,
+        product_inputs=product_inputs,
+        emit_dense=False,
+    )
+    oversell, final_failed_month, ta_buy_count = product_tail
+    oversell_host, buy_count_host = jax.device_get((oversell, ta_buy_count))
+    _validate_product_tail(plan, oversell_host, buy_count_host)
+    initial_ys, monthly_ys = product_ys
+    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_failed_month)
 
 
 @overload
@@ -516,7 +611,16 @@ def run_jax_product_summary(
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
     external, money, pe, cfg = _program_inputs(plan)
     product_ys, product_tail = _program_impl(
-        external, money, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
+        external,
+        money,
+        pe,
+        cfg,
+        baked,
+        p,
+        structure,
+        product_summary=product_static,
+        product_inputs=product_inputs,
+        emit_dense=False,
     )
     oversell, final_failed_month, ta_buy_count = product_tail
     initial_ys, monthly_ys = product_ys
@@ -1395,7 +1499,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
     return baked, structure, p, meta
 
 
-@partial(jax.jit, static_argnames=("p", "structure", "product_summary"))
+@partial(jax.jit, static_argnames=("p", "structure", "product_summary", "emit_dense"))
 def _program_impl(
     external_values: jnp.ndarray,
     external_money_values: jnp.ndarray,
@@ -1406,6 +1510,7 @@ def _program_impl(
     structure: _Static,
     product_summary: _ProductSummaryStatic | None = None,
     product_inputs: _ProductSummaryInputs | None = None,
+    emit_dense: bool = True,
 ) -> tuple:
     """Module-level, natively-cached scan program. `external_values` / `pe_ch` / `cfg` are TRACED
     (seed-varying series + swept numeric config); `baked` is a TRACED pytree of every device array the
@@ -2648,15 +2753,18 @@ def _program_impl(
             sale_oversell=sale_oversell,
             ta_buy_count=ta_buy_count,
         )
+        product_output = None
         if product_summary is not None:
             product_inputs_local = product_inputs
             assert product_inputs_local is not None
-            return carry, product_metrics(
+            product_output = product_metrics(
                 carry,
                 snapshot_month=month + 1,
                 obligation_shortfall=shortfall,
                 obligation_mask=product_inputs_local.primary_obligation_mask[month],
             )
+            if not emit_dense:
+                return carry, product_output
         base_ys = (
             cash,
             ordinary,
@@ -2742,7 +2850,7 @@ def _program_impl(
             *([jnp.stack(pr_fired)] if folded_pr else []),
             *([jnp.stack([st[f] for st in sale_traces]) for f in range(7)] if folded_sale_events else []),
         )
-        return carry, (
+        dense_output = (
             *base_ys,
             *sale_ys,
             *purchase_ys,
@@ -2752,6 +2860,7 @@ def _program_impl(
             *pe_ys,
             *lifecycle_ys,
         )
+        return carry, (dense_output, product_output) if product_output is not None else dense_output
 
     init = _ScanState(
         cash=cash0,
@@ -2809,7 +2918,19 @@ def _program_impl(
             obligation_mask=jnp.zeros(product_inputs_local.primary_obligation_mask.shape[1], dtype=bool),
         )
         final_carry, ys = jax.lax.scan(step, init, months)
-        return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month, final_carry.ta_buy_count)
+        if not emit_dense:
+            return (initial_ys, ys), (final_carry.sale_oversell, final_carry.failed_month, final_carry.ta_buy_count)
+        dense_ys, product_ys = ys
+        return (dense_ys, (initial_ys, product_ys)), (
+            final_carry.cost_basis_per_unit,
+            final_carry.lot_purchase_month,
+            final_carry.sale_disp_units,
+            final_carry.sale_disp_basis,
+            final_carry.sale_disp_proceeds,
+            final_carry.sale_oversell,
+            final_carry.ta_buy_count,
+            final_carry.failed_month,
+        )
     final_carry, ys = jax.lax.scan(step, init, months)
     # Horizon-collapsed outputs, read off the final carry rather than emitted per month: the
     # scheduled-sale dispositions (accumulated at each sale's firing month) and the per-lot cost

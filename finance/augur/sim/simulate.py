@@ -10,7 +10,11 @@ from __future__ import annotations
 import polars as pl
 
 from finance.augur.sim.codec.plan import SimulationRun
-from finance.augur.sim.engine import run_dense_simulation
+from finance.augur.sim.engine import (
+    ProductMetricArrays,
+    run_dense_simulation,
+    run_dense_simulation_with_product_metrics,
+)
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
@@ -37,6 +41,29 @@ def simulate_with_external_series(
     _validate_series_indexed_amounts(scenario, rollout_count=rollout_count, external_series=external_series)
     return run_dense_simulation(
         scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
+    )
+
+
+def simulate_with_external_series_and_product_metrics(
+    scenario: Scenario,
+    *,
+    rollout_count: int,
+    external_series: ExternalSeriesContext,
+    locations: dict[str, Location],
+    primary_agent_id: str,
+) -> tuple[SimulationRun, ProductMetricArrays]:
+    """Run dense/event and selected-product projections in one engine dispatch."""
+
+    if rollout_count <= 0:
+        msg = f"rollout_count must be positive; got {rollout_count}"
+        raise ValueError(msg)
+    _validate_series_indexed_amounts(scenario, rollout_count=rollout_count, external_series=external_series)
+    return run_dense_simulation_with_product_metrics(
+        scenario,
+        rollout_count=rollout_count,
+        external_series=external_series,
+        locations=locations,
+        primary_agent_id=primary_agent_id,
     )
 
 

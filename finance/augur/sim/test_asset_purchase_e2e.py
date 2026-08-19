@@ -24,7 +24,7 @@ from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import SecurityKey
-from finance.augur.product.decode import monthly_metric_arrays
+from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.scenario import (
     Agent,
     FilingStatus,
@@ -221,12 +221,9 @@ def test_a_purchased_lot_is_markable_even_when_its_execution_price_was_fixed() -
             )
         }
     )
-    net_worth = [
-        int(v)
-        for v in monthly_metric_arrays(simulate(scenario, rollout_count=1, locations={}), primary_agent_id="alice")[
-            "net_worth_quanta"
-        ]
-    ]
+    run = simulate(scenario, rollout_count=1, locations={})
+    arrays = run_jax_product_metric_arrays(run.plan, primary_agent_id="alice").metric_arrays()
+    net_worth = [int(v) for v in arrays["net_worth_quanta"][:, 0]]
 
     # Cash is opening minus the spend; the lot is 5,000 units marked at the doubled price.
     assert net_worth[-1] == _quanta(_OPENING_CASH - _SPEND + _UNITS * 2 * _PRICE)
