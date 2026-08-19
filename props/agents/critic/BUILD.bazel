@@ -119,6 +119,7 @@ py_test(
 
 py_test(
     name = "test_reported_issues_constraints",
+    size = "medium",
     srcs = ["test_reported_issues_constraints.py"],
     requires_docker = True,
     deps = [
