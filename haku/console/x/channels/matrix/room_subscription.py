@@ -10,19 +10,18 @@ instead of being handed events by whoever happens to be running the turn.
 - **`RoomNotices`** is the subscriber. It wakes on `session_changed`, reads what the room has not
   been told, says it, and keeps the position it reached.
 
-**Notices only, and not replies.** An answer is a `session_outbox` row the drain says into the room
-with a transaction id, a retry budget and an ordering guarantee against other answers; a notice is
-a rendering of a recorded fact and needs none of that. Moving the outbox is the reconciler's work
-(<../../../plans/conversation_layers.md> § 5) and is deliberately not this.
+**Replies and notices, from one position.** A completed message becomes a `matrix_outbox` row the
+drain says into the room — with a transaction id, a retry budget and an ordering guarantee against
+other answers, none of which a notice needs — and everything else is said straight from here. Both
+come off the same cursor, so a notice can no longer overtake the answer it was about; what the turn
+loop used to write inside its own transaction is now something the channel decides for itself.
 
 **Every kind the stream carries — which is not every kind the room shows.** What `notice` reads is
-what `session_events` records, and several things the room says have no row at all: a session's
-lifecycle transitions, the supervisor's setup narration, a room being bound or adopted. Those still
-reach the room by being pushed at it, and giving each a row is a CHECK-constraint migration plus a
-vocabulary decision rather than an arm here.
+what `conversation_event` records, and several things the room says have no row at all: a room being
+bound or adopted, an invite refused. Those still reach the room by being pushed at it.
 
 **The position is kept after the notice, never before.** A crash in that window says the notice
-again on the next pass — the same trade `delivery_log.retire` takes, and the right way round: a
+again on the next pass — the same trade `revisions.retire` takes, and the right way round: a
 room told twice is odd, a room never told is a message silently dropped. What is left unguarded is
 the pacer's in-process queue, exactly as every other notice already is.
 """
@@ -42,24 +41,35 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptOrigin, PromptRejection, SpaOrigin
-from haku.console.database_schema import MatrixRoomCursor
+from haku.console.chat_models import (
+    ItemType,
+    LeaseExpiryReason,
+    MatrixOrigin,
+    PromptOrigin,
+    PromptRejection,
+    SpaOrigin,
+    TurnOutcome,
+)
+from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
-from haku.console.x.channels.matrix.outbox import BoundRoom
+from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
 from haku.console.x.session_events import (
     LeaseExpiredBody,
-    MessageBody,
-    PromptBody,
+    MessageCompletedBody,
+    MessageStartedBody,
+    PromptCompletedBody,
     PromptRejectedBody,
-    ReasoningBody,
+    PromptStartedBody,
+    ReasoningCompletedBody,
+    ReasoningStartedBody,
+    SegmentBody,
     SessionAdoptedBody,
     SessionEndedBody,
     SessionProvisioningBody,
     SetupNarrationBody,
-    ToolCallBody,
-    ToolResultBody,
-    TurnAbortedBody,
+    ToolCallCompletedBody,
+    ToolCallStartedBody,
     TurnEndedBody,
     TurnStartedBody,
     UnknownEventBody,
@@ -105,20 +115,25 @@ ERROR_BACKOFF = datetime.timedelta(seconds=10)
 class RoomCursor:
     """Where this room's copy has been brought up to — `subscription.Cursor`, made durable.
 
+    **Keyed by the attachment**, which is the one piece of channel state the conversation layer
+    keeps generic: a position in the log is the resume contract every attached channel owes it, and
+    the same integer answers it for every channel. Keying by room id instead made a channel join its
+    position to its deliveries through its own public address.
+
     Absent means *never read*, not *at the start*, which is the distinction the reader needs: a
     room the console has been servicing since before this table existed already shows everything
     said in it, so replaying from zero would repeat the whole conversation into it.
     """
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], room_id: str) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], attachment_id: UUID) -> None:
         self._sessions = sessions
-        self._room_id = room_id
+        self._attachment_id = attachment_id
 
     async def position(self) -> StreamPosition | None:
         async with self._sessions() as db:
             # Annotated because `AsyncSession.scalar` is typed `Any`, which `warn_return_any` refuses.
             reached: int | None = await db.scalar(
-                select(MatrixRoomCursor.event_seq).where(MatrixRoomCursor.room_id == self._room_id)
+                select(ChannelCursor.event_seq).where(ChannelCursor.attachment_id == self._attachment_id)
             )
             return None if reached is None else StreamPosition(event_seq=reached)
 
@@ -131,9 +146,9 @@ class RoomCursor:
         """
         async with self._sessions() as db, db.begin():
             await db.execute(
-                insert(MatrixRoomCursor)
-                .values(room_id=self._room_id, event_seq=position.event_seq)
-                .on_conflict_do_update(index_elements=["room_id"], set_={"event_seq": position.event_seq})
+                insert(ChannelCursor)
+                .values(attachment_id=self._attachment_id, event_seq=position.event_seq)
+                .on_conflict_do_update(index_elements=["attachment_id"], set_={"event_seq": position.event_seq})
             )
 
 
@@ -145,14 +160,11 @@ class Notice:
     kind: RoomEventKind
 
 
-def why_not(reason: PromptRejection) -> str:
+def _why_not(reason: PromptRejection) -> str:
     """What a rejection says the operator is waiting for.
 
     The channel's own rendering of `PromptRejection`, hence here rather than beside the enum. A
     match rather than a lookup, so a member added later fails the type check instead of the send.
-
-    Shared with `sync.py`, which still says this itself for the one rejection that reaches no row
-    (`conversation.PromptRejected.event`): one fact spoken two ways would read as two facts.
     """
     match reason:
         case PromptRejection.NO_SESSION:
@@ -200,10 +212,10 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     left to a wildcard, so a shape added to the stream lands here as a type error instead of being
     silently ignored.
 
-    The shapes with a `None` arm are the ones the room shows some other way: an assistant message
-    is an answer the outbox says with a transaction id and a retry budget, reasoning and tool calls
-    are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4) rather
-    than a line each, and the lifecycle shapes have no writer yet.
+    The shapes with a `None` arm are the ones the room shows some other way: an assistant message is
+    an answer `reconcile_once` queues on the outbox rather than announces, and reasoning and tool
+    calls are what the work notice will summarise (<../../../plans/conversation_layers.md> § 4)
+    rather than a line each.
 
     `UnknownEventBody` is on that arm too, and it is a different statement: a kind a **newer**
     release wrote, which this one has no words for. The room says nothing about it and the cursor
@@ -212,10 +224,8 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     silent for the whole roll, since this replica holds the notices election while it waits.
     """
     match event.body:
-        case TurnAbortedBody():
-            return Notice(ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE)
         case PromptRejectedBody(reason=reason):
-            return Notice(f"not delivered — {why_not(reason)}; send it again", RoomEventKind.REJECTED)
+            return Notice(f"not delivered — {_why_not(reason)}; send it again", RoomEventKind.REJECTED)
         case UnreadableInputBody(media_type=media_type):
             return Notice(
                 f"received a message Haku cannot read ({media_type}) — it reads text only; "
@@ -226,16 +236,24 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             return Notice(f"another console replica ({holder}) took this session over", RoomEventKind.LIFECYCLE)
         case LeaseExpiredBody(reason=reason):
             return Notice(f"the session ended — {_why_it_lapsed(reason)}", RoomEventKind.LIFECYCLE)
-        case PromptBody(text=text, origin=origin):
-            # The reader `origin` shipped without (#4289). A prompt the operator sent from the SPA
-            # or from a sibling room is a conversation fact this room is not showing yet; one sent
-            # here is already in the timeline above, and posting it again would duplicate it.
-            return None if _arrived_here(origin, room_id) else Notice(RELAYED_PROMPT + text, RoomEventKind.NARRATION)
+        case PromptStartedBody():
+            # **The text is not on this row.** A prompt is an item and its prose is the segments
+            # that follow, so the relay is said at the item's completion, where the whole of it is
+            # readable — `reconcile_once`, beside the answer it is the mirror image of.
+            return None
+        case TurnEndedBody(outcome=TurnOutcome.ABORTED):
+            # An abort is a turn outcome now rather than an event of its own, so the room's line for
+            # it is said here — on the one outcome of three that the operator caused.
+            return Notice(ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE)
         case (
-            MessageBody()
-            | ReasoningBody()
-            | ToolCallBody()
-            | ToolResultBody()
+            MessageStartedBody()
+            | ReasoningStartedBody()
+            | ToolCallStartedBody()
+            | SegmentBody()
+            | MessageCompletedBody()
+            | ReasoningCompletedBody()
+            | ToolCallCompletedBody()
+            | PromptCompletedBody()
             | TurnStartedBody()
             | TurnEndedBody()
             | SessionProvisioningBody()
@@ -247,7 +265,12 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
 
 
 class RoomNotices:
-    """Says what the record has recorded and the room has not been told, from the room's position."""
+    """Says what the record has recorded and the room has not been told, from the room's position.
+
+    Answers included: a completed message is queued on the outbox rather than said from here, so it
+    goes out under a transaction id with a retry budget, but the decision that the room is owed it
+    is made here, in this order, off this cursor.
+    """
 
     def __init__(
         self,
@@ -258,6 +281,7 @@ class RoomNotices:
         notifications: SessionNotifications,
         announce: Notify,
         room: BoundRoom,
+        outbox: RoomOutbox,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
@@ -266,17 +290,24 @@ class RoomNotices:
         self._notifications = notifications
         self._announce = announce
         self._room = room
+        self._outbox = outbox
         self._changed = asyncio.Event()
 
     async def reconcile_once(self) -> bool:
-        """Say what the room is owed. True when the read stopped at its limit and there is more."""
+        """Say or queue what the room is owed. True when the read stopped at its limit.
+
+        **The position is kept after the whole batch, never during it.** A crash part-way replays
+        the batch: a notice is said again, and a reply is refused by the outbox's unique subject —
+        which is the trade this reader is built around.
+        """
         if (room_id := await self._room()) is None:
             return False
-        if (conversation_id := await self._conversations.conversation_of_room(room_id)) is None:
+        if (bound := await self._conversations.attachment_of_room(room_id)) is None:
             # A room this console holds no conversation for — never bound, or detached since — so
             # there is nothing recorded to be behind on.
             return False
-        subscription = Subscription(self._stream, RoomCursor(self._sessions, room_id), conversation_id)
+        conversation_id, attachment_id = bound
+        subscription = Subscription(self._stream, RoomCursor(self._sessions, attachment_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)
         if isinstance(read, Unstarted):
             # Taken silently: the room already shows what was said in it for as long as it has been
@@ -284,10 +315,35 @@ class RoomNotices:
             await subscription.keep(read.head)
             return False
         for event in read.events:
-            if (said := notice(event, room_id=room_id)) is not None:
-                await self._announce(said.body, said.kind)
+            match event.body:
+                case MessageCompletedBody():
+                    # The item's own text, read by the outbox: what the room is owed is the whole
+                    # message, and this event deliberately carries none of it.
+                    assert event.item_id is not None, "an item lifecycle row names its item"
+                    await self._outbox.enqueue(attachment_id, event.item_id)
+                case PromptCompletedBody():
+                    assert event.item_id is not None, "an item lifecycle row names its item"
+                    if (relayed := await self._relayed(event.item_id, room_id)) is not None:
+                        await self._announce(relayed, RoomEventKind.NARRATION)
+                case _:
+                    if (said := notice(event, room_id=room_id)) is not None:
+                        await self._announce(said.body, said.kind)
         await subscription.keep(read.position)
         return read.more
+
+    async def _relayed(self, item_id: UUID, room_id: str) -> str | None:
+        """A prompt the operator sent somewhere else, as this room should show it.
+
+        The reader `origin` shipped without (#4289). A prompt is a conversation fact, so every
+        attached surface shows it — but one typed here is already in the timeline above, and posting
+        it again would show the operator their own sentence twice.
+        """
+        async with self._sessions() as db:
+            item = await db.get(ConversationItem, item_id)
+            if item is None or item.origin is None:
+                return None
+            origin = PromptStartedBody.model_validate({"item_type": ItemType.PROMPT, "origin": item.origin}).origin
+            return None if _arrived_here(origin, room_id) else RELAYED_PROMPT + item.item_text
 
     def _wake(self, _session_id: UUID) -> None:
         """Note that some session's rows moved. Runs on the listener's reader task: no awaiting."""

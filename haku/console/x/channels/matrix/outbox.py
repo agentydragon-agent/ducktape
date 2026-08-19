@@ -1,10 +1,9 @@
 """The room's outbox: replies as rows, and the one task that says them.
 
-A turn writes the row in the same transaction as the assistant message it copies — which also
-covers a turn raising between producing text and speaking it — and this drains it. `sent_at` is
-written only once `room_send` has returned, so every other outcome, the replica disappearing
-mid-send included, leaves the row claimable by whoever comes next
-(<../../../debug/message_drops.md> E1, E4, E6, E7).
+**The channel writes the row, reading the log forward from its own cursor**
+(`room_subscription.RoomNotices`), and this drains it. `sent_at` is written only once `room_send`
+has returned, so every other outcome, the replica disappearing mid-send included, leaves the row
+claimable by whoever comes next (<../../../debug/message_drops.md> E1, E4, E6, E7).
 
 **`pacer` owns when.** The drain does not send; it queues one reply into the pacer and waits for
 that closure to settle before claiming the next. So replies keep the room's rate budget, their
@@ -26,13 +25,14 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import SessionOutbox
-from haku.console.x import delivery_log
+from haku.console.chat_models import ItemStatus, ItemType
+from haku.console.database_schema import ConversationItem, MatrixOutbox
 from haku.console.x.channels.matrix.client import EventTag, RoomEventKind
 from haku.console.x.channels.matrix.conversation import live_attachment
 from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
@@ -78,62 +78,33 @@ class PendingReply:
     """One row, as the thing that sends it needs to see it."""
 
     outbox_id: UUID
-    session_id: UUID
+    attachment_id: UUID
     room_id: str
+    subject: str
     body: str
-    message_id: UUID | None
-    agent_message_id: str | None
-    turn_id: UUID | None
     attempts: int
 
-    def subject(self) -> str:
-        """What the room shows here, as `chat_delivery` keys it.
-
-        **The record's identity, never the outbox row's**, because the queue is the channel's
-        private implementation and a reconciler re-deriving this reply from the transcript has to
-        arrive at the same subject after the table is gone.
-        """
-        match self.message_id, self.turn_id:
-            case UUID() as message_id, _:
-                return f"message:{message_id.hex}"
-            case _, UUID() as turn_id:
-                return f"turn:{turn_id.hex}"
-            case _:
-                raise ValueError(f"outbox row carries neither identity: {self.outbox_id=}")
-
     def tag(self) -> EventTag:
-        """What the room event states about itself.
-
-        Rebuilt from the row rather than stored beside it: a reply's tag is exactly these columns,
-        so a JSON copy would be the same facts twice with two ways to disagree.
-        """
-        return EventTag(
-            kind=RoomEventKind.REPLY,
-            session_id=self.session_id,
-            message_id=self.message_id,
-            agent_message_id=self.agent_message_id,
-        )
+        """What the room event states about itself."""
+        return EventTag(kind=RoomEventKind.REPLY)
 
     def transaction_id(self) -> str:
         """What this reply is sent under, on every attempt.
 
-        **The row's own id, not `EventTag.transaction_id`'s.** That mints a fresh uuid4 where the
-        event names no transcript row, so a redrive of the one reply naming none (`result.result`
-        on a turn whose completed messages were all empty) would post a second message instead of
-        being refused. The row id is stable for exactly as long as redelivery can happen.
+        **The row's own id, not `EventTag.transaction_id`'s**, which mints a fresh uuid4 every call
+        — under which a redrive would post a second message instead of being refused. The row id is
+        stable for exactly as long as redelivery can happen.
         """
         return self.outbox_id.hex
 
 
-def _pending(row: SessionOutbox) -> PendingReply:
+def _pending(row: MatrixOutbox, *, room_id: str) -> PendingReply:
     return PendingReply(
         outbox_id=row.outbox_id,
-        session_id=row.session_id,
-        room_id=row.room_id,
+        attachment_id=row.attachment_id,
+        room_id=room_id,
+        subject=row.subject,
         body=row.body,
-        message_id=row.message_id,
-        agent_message_id=row.agent_message_id,
-        turn_id=row.turn_id,
         attempts=row.attempts,
     )
 
@@ -144,10 +115,60 @@ def _backoff(attempts: int) -> datetime.timedelta:
 
 
 class RoomOutbox:
-    """Reads and writes over `session_outbox`. Says nothing about rooms or credentials."""
+    """Reads and writes over `matrix_outbox`. Says nothing about credentials.
+
+    **Keyed by the attachment**, because what owes a room is the channel holding the copy rather
+    than whichever session produced the words. A replacement session under the same thread inherits
+    the queue instead of starting a new one.
+
+    **`subject` is the row's own column now**, not derived from which of two identities it carried.
+    Its predecessor needed that fork because a turn could produce a reply no transcript row held;
+    prose is only ever segments of an item, so that case is gone and the idempotence key is stored
+    once where the unique index can see it. For a reply that subject is the item's id.
+    """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
+
+    async def enqueue(self, attachment_id: UUID, item_id: UUID) -> bool:
+        """Owe the room this item's prose. False where there was nothing to owe it.
+
+        **The text is read here, not passed in.** A subscriber queues an item because it saw the
+        item complete, and a complete item's `text` is final — so taking it from the caller would be
+        the same prose in two places with two ways to disagree.
+
+        **Queued once per subject.** A subscriber that crashed between sending and keeping its
+        position sees the same completion again, and so does a runner replaying its rollout into a
+        replacement replica; the room must not hear the answer twice, and the unique index is what
+        says so rather than the caller remembering.
+
+        An item that finished with nothing in it is not a reply: a turn that only ran tools said
+        nothing, and an empty room event would be the console reporting that as an answer.
+        """
+        now = datetime.datetime.now(datetime.UTC)
+        async with self._sessions() as db, db.begin():
+            item = await db.get(ConversationItem, item_id)
+            if item is None or item.item_type is not ItemType.MESSAGE or item.status is not ItemStatus.COMPLETE:
+                return False
+            if not (body := item.item_text.strip()):
+                return False
+            queued = await db.scalar(
+                insert(MatrixOutbox)
+                .values(
+                    outbox_id=uuid4(),
+                    attachment_id=attachment_id,
+                    subject=item_id.hex,
+                    body=body,
+                    created_at=now,
+                    attempts=0,
+                    next_attempt_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["attachment_id", "subject"])
+                # What says whether the row is ours or one a previous pass already queued. A
+                # conflict returns nothing, which is the answer rather than an error.
+                .returning(MatrixOutbox.outbox_id)
+            )
+            return queued is not None
 
     async def claim_next(self, room_id: str) -> PendingReply | None:
         """Take this room's oldest live reply if it is due, counting the attempt as spent.
@@ -167,14 +188,16 @@ class RoomOutbox:
         """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():
+            if (attachment_id := await live_attachment(db, room_id)) is None:
+                return None
             row = await db.scalar(
-                select(SessionOutbox)
+                select(MatrixOutbox)
                 .where(
-                    SessionOutbox.room_id == room_id,
-                    SessionOutbox.sent_at.is_(None),
-                    SessionOutbox.attempts < MAX_SEND_ATTEMPTS,
+                    MatrixOutbox.attachment_id == attachment_id,
+                    MatrixOutbox.sent_at.is_(None),
+                    MatrixOutbox.attempts < MAX_SEND_ATTEMPTS,
                 )
-                .order_by(SessionOutbox.created_at)
+                .order_by(MatrixOutbox.created_at)
                 .limit(1)
                 .with_for_update()
             )
@@ -182,30 +205,27 @@ class RoomOutbox:
                 return None
             row.attempts += 1
             row.next_attempt_at = now + _backoff(row.attempts)
-            return _pending(row)
+            return _pending(row, room_id=room_id)
 
-    async def mark_sent(self, outbox_id: UUID, subject: str, sent_ref: str) -> None:
-        """Record that the room has this reply, and which event of the room's it is.
+    async def mark_sent(self, outbox_id: UUID) -> None:
+        """Record that the room has this reply.
 
-        One transaction, so `sent_at` and the correspondence cannot come apart: a reply the room
-        accepted whose event we did not write down is one a reconciler could only find by reading
-        the room back.
+        **No correspondence row.** Its predecessor wrote one per delivered message, which is a
+        flushed-up-to position materialised one row at a time; `channel_cursor` holds that
+        properly. What still earns a row is a subject the channel can go back and *edit*, and that
+        is `revisions.py`.
         """
         now = datetime.datetime.now(datetime.UTC)
         async with self._sessions() as db, db.begin():
-            if (row := await db.get(SessionOutbox, outbox_id)) is None:
+            if (row := await db.get(MatrixOutbox, outbox_id)) is None:
                 return
             row.sent_at = now
             row.last_error = None
-            if (attachment_id := await live_attachment(db, row.room_id)) is None:
-                logger.warning("Matrix: %s has no live attachment, not recording what was sent there", row.room_id)
-                return
-            db.add(delivery_log.sent(attachment_id=attachment_id, subject=subject, sent_ref=sent_ref, now=now))
 
     async def record_failure(self, outbox_id: UUID, error: str) -> None:
         """Keep why the room refused this reply, and say so once it is out of attempts."""
         async with self._sessions() as db, db.begin():
-            if (row := await db.get(SessionOutbox, outbox_id)) is None:
+            if (row := await db.get(MatrixOutbox, outbox_id)) is None:
                 return
             row.last_error = error
             if row.attempts >= MAX_SEND_ATTEMPTS:
@@ -248,7 +268,8 @@ class RoomOutboxDrain:
 
         async def post() -> None:
             try:
-                await self._outbox.mark_sent(reply.outbox_id, reply.subject(), await self._post(reply))
+                await self._post(reply)
+                await self._outbox.mark_sent(reply.outbox_id)
             except Exception as error:
                 # Recorded and re-raised rather than handled: `pacer` logs it and learns a
                 # 429's `retry_after_ms` from it, and only the row can carry it past this process.

@@ -73,7 +73,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallIndexMaintenance
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import conversation_follow, delivery_log, sandbox_claims, session_runtime, subscription
+from haku.console.x import conversation_follow, sandbox_claims, session_runtime, subscription
 
 # Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
 # already talks about (the console's own conversation record, the index sweeps, the push queue).
@@ -81,6 +81,7 @@ from haku.console.x.channels.matrix import (
     conversation as matrix_conversation,
     ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
+    revisions as matrix_revisions,
     room_subscription as matrix_room_subscription,
     sync as matrix_sync,
 )
@@ -296,6 +297,9 @@ def create_app(
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
+        # One object, because the two halves of the queue are two ends of it: the notice reader
+        # writes rows off the conversation's log and the sync service's drain says them.
+        matrix_room_outbox = matrix_outbox.RoomOutbox(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
@@ -307,8 +311,8 @@ def create_app(
                 matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
             ),
             matrix_conversation.RoomTranscript(db_sessions),
-            matrix_outbox.RoomOutbox(db_sessions),
-            delivery_log.DeliveryLog(db_sessions),
+            matrix_room_outbox,
+            matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
         )
         # The room as a subscriber to the conversation: it reads the record from a position it keeps
@@ -322,6 +326,7 @@ def create_app(
             session_notifications,
             matrix_sync_service.announce,
             matrix_sync_service.bound_room,
+            matrix_room_outbox,
         )
         if claude_runtime is not None:
             # The template is parsed here, at construction, so a broken one is a pod that never
