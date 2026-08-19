@@ -33,6 +33,7 @@ from haku.console import (
     capabilities,
     connection_metrics,
     console_events,
+    kube_proxy_authorization,
     mcp_agent_auth,
     mcp_approval,
     mcp_mount,
@@ -650,6 +651,9 @@ def create_app(
     app.include_router(node_daemons.machine_router)
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
+    # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
+    # endpoint currently fails closed until temporary grant lookup is implemented.
+    app.include_router(kube_proxy_authorization.router)
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:
