@@ -85,12 +85,17 @@ from finance.augur.sim.engine.jax_types import (
     _LifecycleOutput,
     _LinkTaxStatic,
     _MortgageOutput,
+    _ObligationInputs,
+    _ObligationMetadataInputs,
     _ObligationOutput,
+    _PaymentBatch,
+    _PriorYearTaxObligationInputs,
     _PrivateEquityOpportunityOutput,
     _PrivateEquityOutput,
     _ProductTailOutput,
     _PropertyPurchaseOutput,
     _PropertySaleTraceOutput,
+    _PropertyTaxObligationInputs,
     _SalePool,
     _ScanMeta,
     _StateOutput,
@@ -98,13 +103,15 @@ from finance.augur.sim.engine.jax_types import (
     _TargetAllocationOutput,
     _TaxOutput,
     _TransferOutput,
+    _ConfiguredObligationInputs,
+    _EstimatedTaxObligationInputs,
+    _MortgageObligationInputs,
 )
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.engine.jax_validation import validate_seed_dependent_inputs
 from finance.augur.sim.enums import (
     CapitalGainClassification,
     LifecycleKind,
-    ObligationSource,
     PrivateEquityDispositionKind,
     PrivateEquityOpportunityOutcome,
 )
@@ -399,8 +406,7 @@ class _Operands(NamedTuple):
     pc: dict[str, jnp.ndarray]
     bond: dict[str, jnp.ndarray]
     distribution: dict[str, jnp.ndarray]
-    og: dict[str, jnp.ndarray]
-    acc: dict[str, jnp.ndarray]
+    obligations: _ObligationInputs
     # Scheduled-sale stacked static data.
     sale_months_t: jnp.ndarray
     sale_qty_t: jnp.ndarray
@@ -767,7 +773,7 @@ def _product_summary_inputs(
         property_purchase_price=jnp.asarray(plan.properties.purchase_price),
         property_home_value_series=jnp.asarray(plan.property_home_value_series_index.astype(np.int32)),
         liability_mask=jnp.asarray(plan.liabilities.agent == primary_agent_code),
-        primary_obligation_mask=jnp.asarray(plan.obligations.agent == primary_agent_code),
+        primary_obligation_mask=jnp.asarray(plan.obligations.metadata.agent == primary_agent_code),
         bond_face=jnp.asarray(np.where(bond_mask, plan.bonds.face, 0)),
         bond_on_books=jnp.asarray(plan.bonds.on_books),
         bond_indexed=jnp.asarray(plan.bonds.indexed),
@@ -1052,75 +1058,82 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         "income_row": jnp.asarray(dist.income_row),
     }
     ob = plan.obligations
-    og = {
-        "cause": jnp.asarray(ob.cause),
-        "source_kind": jnp.asarray(ob.source_kind),
-        "amount_kind": jnp.asarray(ob.amount_kind),
-        "amount_fixed": jnp.asarray(ob.amount_fixed),
-        "amount_base": jnp.asarray(ob.amount_base),
-        "amount_series": jnp.asarray(ob.amount_series),
-        "amount_base_month": jnp.asarray(ob.amount_base_month),
-        "amount_period": jnp.asarray(ob.amount_period),
-        "agent": jnp.asarray(ob.agent),
-        "from_slot": jnp.asarray(ob.from_slot),
-        "to_slot": jnp.asarray(ob.to_slot),
-        "deduction_profile": jnp.asarray(ob.deduction_profile),
-        "deductible_fraction": jnp.asarray(ob.deductible_fraction),
-        "property_tax_profile": jnp.asarray(ob.property_tax_profile),
-        "property_slot": jnp.asarray(ob.property_slot),
-    }
-    # Per-(month, slot) static obligation-accrual tables — the host-side precompute of
-    # `_apply_obligation_accruals`, vectorized over the whole horizon at once (everything here is a
-    # function of the static plan only). The scan indexes these by the traced month and runs the
-    # branch-free `_obligation_accruals_jit` core against the live property/liability/tax-liability
-    # state. Covers every source kind; kinds with no backing entity are masked off inside the core.
     liabs = plan.liabilities
-    acc_kind = ob.source_kind
-    acc = {
-        "kind": jnp.asarray(acc_kind),
-        "valid": jnp.asarray((ob.cause >= 0) & (acc_kind >= 0)),
-        "configured_prop_idx": jnp.asarray(np.where(ob.property_slot >= 0, ob.property_slot, 0)),
-        "configured_has_prop": jnp.asarray(ob.property_slot >= 0),
-        "prop_idx": jnp.asarray(np.where(acc_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)),
-        "liab_idx": jnp.asarray(np.where(acc_kind == ObligationSource.MORTGAGE_PAYMENT, ob.source_index, 0)),
-    }
-    acc_prop_idx_np = np.where(acc_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)
-    acc_pt_rate = np.where(
-        np.isnan(ob.property_tax_annual_rate),
-        _np_gather(props.location_tax_rate, acc_prop_idx_np, 0.0),
-        ob.property_tax_annual_rate,
+    property_tax = ob.property_tax
+    property_tax_slot = property_tax.property_slot
+    property_tax_rate = np.where(
+        np.isnan(property_tax.annual_rate),
+        _np_gather(props.location_tax_rate, property_tax_slot, 0.0),
+        property_tax.annual_rate,
     )
-    raw_pt_amount = (
-        _np_gather(props.initial_assessed_value, acc_prop_idx_np, 0) * acc_pt_rate / 12.0
-        + _np_gather(props.special_assessment_annual, acc_prop_idx_np, 0) / 12.0
+    raw_property_tax_amount = (
+        _np_gather(props.initial_assessed_value, property_tax_slot, 0) * property_tax_rate / 12.0
+        + _np_gather(props.special_assessment_annual, property_tax_slot, 0) / 12.0
     )
-    acc["pt_amount"] = jnp.asarray(np.sign(raw_pt_amount) * np.floor(np.abs(raw_pt_amount) + 0.5), dtype=jnp.int64)
-    acc["pt_prop_month"] = jnp.asarray(_np_gather(props.month, acc_prop_idx_np, 0))
-    acc_liab_idx_np = np.where(acc_kind == ObligationSource.MORTGAGE_PAYMENT, ob.source_index, 0)
-    acc_liab_prop_slot = _np_gather(liabs.property_slot, acc_liab_idx_np, -1)
-    acc["mort_prop_month"] = jnp.asarray(
-        _np_gather(props.month, np.where(acc_liab_prop_slot >= 0, acc_liab_prop_slot, 0), 0)
-    )
-    acc["mort_rate"] = jnp.asarray(_np_gather(liabs.annual_rate, acc_liab_idx_np, 0.0))
-    # Property slot of each mortgage obligation's liability (for the Schedule-E rented-share of interest).
-    acc["mort_prop_idx"] = jnp.asarray(np.where(acc_liab_prop_slot >= 0, acc_liab_prop_slot, 0))
-    acc_prof_idx = np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, 0)
-    acc_est_prior = _np_gather(plan.tax.profile_prior_year_tax, acc_prof_idx, 0)
-    acc["est_prior"] = jnp.asarray(acc_est_prior)
-    acc["est_quarterly"] = jnp.asarray(
-        np.sign(acc_est_prior / 4.0) * np.floor(np.abs(acc_est_prior / 4.0) + 0.5), dtype=jnp.int64
-    )
-    tax_year_end = (np.arange(horizon) // 12 - 1) * 12 + 11
-    acc["trueup_sel"] = jnp.asarray(
-        (
-            (plan.tax_liabilities.profile_index[None, None, :] == acc_prof_idx[:, :, None])
-            & (plan.tax_liabilities.year_end_month[None, None, :] == tax_year_end[:, None, None])
+    property_tax_amount = np.sign(raw_property_tax_amount) * np.floor(np.abs(raw_property_tax_amount) + 0.5)
+
+    mortgage = ob.mortgage
+    mortgage_liability_slot = mortgage.liability_slot
+    mortgage_property_slot = _np_gather(liabs.property_slot, mortgage_liability_slot, -1)
+    mortgage_property_slot = np.where(mortgage_property_slot >= 0, mortgage_property_slot, 0)
+
+    estimated_prior = ob.estimated_tax.prior_year_tax
+    estimated_quarterly = np.sign(estimated_prior / 4.0) * np.floor(np.abs(estimated_prior / 4.0) + 0.5)
+
+    def prior_year_tax_inputs(source) -> _PriorYearTaxObligationInputs:
+        selector = (
+            (plan.tax_liabilities.profile_index[None, None, :] == source.profile_index[:, :, None])
+            & (plan.tax_liabilities.year_end_month[None, None, :] == source.tax_year_end_month[:, :, None])
         ).astype(np.int64)
+        return _PriorYearTaxObligationInputs(
+            active=jnp.asarray(source.active),
+            profile_index=jnp.asarray(source.profile_index),
+            prior_year_tax=jnp.asarray(source.prior_year_tax),
+            tax_liability_selector=jnp.asarray(selector),
+            tax_year_end_month=jnp.asarray(source.tax_year_end_month),
+        )
+
+    obligations = _ObligationInputs(
+        metadata=_ObligationMetadataInputs(
+            cause=jnp.asarray(ob.metadata.cause),
+            agent=jnp.asarray(ob.metadata.agent),
+            from_slot=jnp.asarray(ob.metadata.from_slot),
+            to_slot=jnp.asarray(ob.metadata.to_slot),
+            deduction_profile=jnp.asarray(ob.metadata.deduction_profile),
+            deductible_fraction=jnp.asarray(ob.metadata.deductible_fraction),
+            property_tax_profile=jnp.asarray(ob.metadata.property_tax_profile),
+            property_slot=jnp.asarray(ob.metadata.property_slot),
+        ),
+        configured=_ConfiguredObligationInputs(
+            active=jnp.asarray(ob.configured.active),
+            amount_kind=jnp.asarray(ob.configured.amount_kind),
+            amount_fixed=jnp.asarray(ob.configured.amount_fixed),
+            amount_base=jnp.asarray(ob.configured.amount_base),
+            amount_series=jnp.asarray(ob.configured.amount_series),
+            amount_base_month=jnp.asarray(ob.configured.amount_base_month),
+            amount_period=jnp.asarray(ob.configured.amount_period),
+        ),
+        property_tax=_PropertyTaxObligationInputs(
+            active=jnp.asarray(property_tax.active),
+            property_slot=jnp.asarray(property_tax_slot),
+            amount=jnp.asarray(property_tax_amount, dtype=jnp.int64),
+            property_purchase_month=jnp.asarray(_np_gather(props.month, property_tax_slot, 0)),
+        ),
+        mortgage=_MortgageObligationInputs(
+            active=jnp.asarray(mortgage.active),
+            liability_slot=jnp.asarray(mortgage_liability_slot),
+            property_slot=jnp.asarray(mortgage_property_slot),
+            annual_rate=jnp.asarray(_np_gather(liabs.annual_rate, mortgage_liability_slot, 0.0)),
+            property_purchase_month=jnp.asarray(_np_gather(props.month, mortgage_property_slot, 0)),
+        ),
+        estimated_tax=_EstimatedTaxObligationInputs(
+            active=jnp.asarray(ob.estimated_tax.active),
+            profile_index=jnp.asarray(ob.estimated_tax.profile_index),
+            quarterly_amount=jnp.asarray(estimated_quarterly, dtype=jnp.int64),
+        ),
+        q4_estimated_tax=prior_year_tax_inputs(ob.q4_estimated_tax),
+        tax_true_up=prior_year_tax_inputs(ob.tax_true_up),
     )
-    # Tax-profile index per estimated/true-up obligation slot (for settlement scatter to profile rows);
-    # and the (static, per-month) prior year-end being settled.
-    acc["prof_idx"] = jnp.asarray(np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, -1))
-    acc["tax_year_end"] = jnp.asarray(tax_year_end)
 
     ta_policies = plan.target_allocation_policies
     lot_axis = max(1, p.lot_count)
@@ -1382,8 +1395,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
         pc=pc,
         bond=bond,
         distribution=distribution,
-        og=og,
-        acc=acc,
+        obligations=obligations,
         sale_months_t=sale_months_t,
         sale_qty_t=sale_qty_t,
         sale_prior_t=sale_prior_t,
@@ -1594,8 +1606,7 @@ def _program_impl(
     pc = dict(baked.pc)
     bond = baked.bond
     distribution = baked.distribution
-    og = baked.og
-    acc = baked.acc
+    obligation_inputs = baked.obligations
     sale_months_t = baked.sale_months_t
     sale_qty_t = baked.sale_qty_t
     sale_prior_t = baked.sale_prior_t
@@ -2141,29 +2152,9 @@ def _program_impl(
             sale_disp_proceeds = sale_disp_proceeds.at[disp_sale, disp_lot].add(proceeds)
             sale_oversell = sale_oversell | oversell.any()
 
-        # Obligation accrual — every source kind, branch-free. Static per-(month,slot) data is sliced
-        # from the precomputed `acc` tables; the live property/liability/tax-liability state comes from
-        # the carry. Kinds with no backing entity (e.g. mortgages with no liability) mask to inactive.
-        slot_active, accrual_due = _obligation_accruals_jit(
-            acc["kind"][month],
-            acc["valid"][month],
-            og["amount_kind"][month],
-            og["amount_fixed"][month],
-            og["amount_base"][month],
-            og["amount_series"][month],
-            og["amount_base_month"][month],
-            og["amount_period"][month],
-            acc["configured_prop_idx"][month],
-            acc["configured_has_prop"][month],
-            acc["prop_idx"][month],
-            acc["pt_amount"][month],
-            acc["pt_prop_month"][month],
-            acc["liab_idx"][month],
-            acc["mort_rate"][month],
-            acc["mort_prop_month"][month],
-            acc["est_quarterly"][month],
-            acc["est_prior"][month],
-            acc["trueup_sel"][month],
+        month_obligations = jax.tree.map(lambda value: value[month], obligation_inputs)
+        payment_batch = _obligation_accruals_jit(
+            month_obligations,
             property_active,
             liab_principal,
             liab_monthly,
@@ -2174,6 +2165,9 @@ def _program_impl(
             external_values,
             month,
         )
+        slot_active = payment_batch.active
+        accrual_due = payment_batch.due
+        payment_metadata = payment_batch.metadata
 
         # Obligations are environment facts. The current clock policy turns every due invoice
         # into a concrete, full `Pay` action; its compile-time slot already fixes the actor and
@@ -2210,7 +2204,7 @@ def _program_impl(
             lot_value_all = _value_quanta_from_quantity(lot_remaining, ta_lot_price, lot_quantity_scale[:, None])
 
         for ti, tp in enumerate(folded_target_allocation):
-            matching = (og["agent"][month] == tp.agent) & (og["from_slot"][month] == tp.cash_slot)  # (slots,)
+            matching = (payment_metadata.agent == tp.agent) & (payment_metadata.from_slot == tp.cash_slot)
             # What the month is already committed to paying from this account. The band decides
             # against the balance the month will END at, which is what lets funding happen once.
             hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0).sum(axis=0)  # (R,)
@@ -2295,24 +2289,25 @@ def _program_impl(
                     ta_disp_proceeds = ta_disp_proceeds.at[tp.policy_index, sleeve.sleeve_idx].add(proceeds.T)
                     remaining = jnp.maximum(remaining - sold_units.sum(axis=1), 0)
 
-        agent_row, from_row = og["agent"][month], og["from_slot"][month]
+        agent_row = payment_metadata.agent
+        from_row = payment_metadata.from_slot
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
         funded = _obligation_group_funded_jit(
             group_matrix, from_row, cash, pay_actions.active, pay_actions.amount_quanta
         )
 
-        property_slot = og["property_slot"][month]
+        property_slot = payment_metadata.property_slot
         paid, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
             _settlement_core_jit(
                 from_row,
-                og["to_slot"][month],
-                og["deduction_profile"][month],
-                og["deductible_fraction"][month],
-                og["property_tax_profile"][month],
+                payment_metadata.to_slot,
+                payment_metadata.deduction_profile,
+                payment_metadata.deductible_fraction,
+                payment_metadata.property_tax_profile,
                 jnp.where(property_slot < 0, 0, property_slot),
                 property_slot >= 0,
-                og["property_tax_profile"][month] >= 0,
-                og["deduction_profile"][month] >= 0,
+                payment_metadata.property_tax_profile >= 0,
+                payment_metadata.deduction_profile >= 0,
                 pay_actions.active,
                 pay_actions.amount_quanta,
                 funded,
@@ -2414,16 +2409,17 @@ def _program_impl(
         # Mortgage payments: split each paid mortgage bill into interest (rate/12 on the outstanding
         # principal, capped at the payment) and principal (the remainder, capped at the balance), then
         # pay down the liability and accrue the YTD interest/principal (+ the rented share for Sch E).
-        # Non-mortgage slots route to the sentinel index -1, so `_scatter_rows` ignores them.
-        is_mortgage = (og["source_kind"][month] == ObligationSource.MORTGAGE_PAYMENT) & (og["cause"][month] >= 0)
-        mort_liab_idx = jnp.where(is_mortgage, acc["liab_idx"][month], -1)
-        principal_before = _gather_rows(liab_principal, jnp.where(is_mortgage, acc["liab_idx"][month], 0))
-        interest = jnp.minimum(_scale_money(principal_before, acc["mort_rate"][month][:, None] / 12.0), paid_buffer)
+        # Non-mortgage rows route to the sentinel index -1, so `_scatter_rows` ignores them.
+        mortgage_source = month_obligations.mortgage
+        is_mortgage = mortgage_source.active
+        mort_liab_idx = jnp.where(is_mortgage, mortgage_source.liability_slot, -1)
+        principal_before = _gather_rows(liab_principal, jnp.where(is_mortgage, mortgage_source.liability_slot, 0))
+        interest = jnp.minimum(_scale_money(principal_before, mortgage_source.annual_rate[:, None] / 12.0), paid_buffer)
         principal_paid = jnp.minimum(jnp.maximum(paid_buffer - interest, 0), principal_before)
         mort_paid = is_mortgage[:, None] & paid
         interest_m = jnp.where(mort_paid, interest, 0)
         principal_m = jnp.where(mort_paid, principal_paid, 0)
-        rented_per_slot = _gather_rows(property_rented_fraction, acc["mort_prop_idx"][month])
+        rented_per_slot = _gather_rows(property_rented_fraction, mortgage_source.property_slot)
         liab_principal = _scatter_rows(liab_principal, mort_liab_idx, -principal_m)
         liab_interest_ytd = _scatter_rows(liab_interest_ytd, mort_liab_idx, interest_m)
         liab_principal_ytd = _scatter_rows(liab_principal_ytd, mort_liab_idx, principal_m)
@@ -2439,22 +2435,28 @@ def _program_impl(
         # Tax-liability settlement: a paid TAX_TRUE_UP fully clears its profile-year's liability (the
         # estimated prepayments covered the rest). `trueup_sel` maps each true-up obligation slot to
         # the tax-liability slots of the year it settles; `paid` (active & funded) gates it.
-        trueup_sel_m = acc["trueup_sel"][month]  # (slots, taxliab)
-        is_trueup = (og["source_kind"][month] == ObligationSource.TAX_TRUE_UP) & (og["cause"][month] >= 0)
+        true_up_source = month_obligations.tax_true_up
+        trueup_sel_m = true_up_source.tax_liability_selector  # (slots, taxliab)
+        is_trueup = true_up_source.active
         trueup_paid = is_trueup[:, None] & paid  # (slots, R)
         eligible = jnp.where(taxliab_active, taxliab_amount, 0)  # (taxliab, R)
         actual_per_trueup = trueup_sel_m @ eligible  # (slots, R): full year tax owed
         settle_k = (trueup_sel_m.astype(bool)[:, :, None] & trueup_paid[:, None, :]).any(axis=0)  # (taxliab, R)
         taxliab_amount = jnp.where(settle_k, 0, taxliab_amount)
         # Settlement event buffers, scattered to tax-profile rows (one true-up per profile per month).
-        settle_prof_idx = jnp.where(is_trueup, acc["prof_idx"][month], -1)
+        settle_prof_idx = jnp.where(is_trueup, true_up_source.profile_index, -1)
         settle_amount = _scatter_rows(
             _zeros_i64((profile_count, r)), settle_prof_idx, jnp.where(trueup_paid, actual_per_trueup, 0)
         )
         settle_active = (
             _scatter_rows(_zeros_i64((profile_count, r)), settle_prof_idx, trueup_paid.astype(jnp.int64)) > 0
         )
-        settle_year_end = jnp.where(settle_active, acc["tax_year_end"][month], NO_CODE)
+        settled_year_end = _scatter_rows(
+            _zeros_i64((profile_count, r)),
+            settle_prof_idx,
+            jnp.where(trueup_paid, true_up_source.tax_year_end_month[:, None], 0),
+        )
+        settle_year_end = jnp.where(settle_active, settled_year_end, NO_CODE)
 
         # TLH harvest (after settlement, before PE): book a calibrated capital loss per policy. The
         # prior price clamps to month 0 (max(0, month-1)), giving a flat period return there — so the
@@ -3450,25 +3452,7 @@ def _record_capital_gains(
 
 @jax.jit
 def _obligation_accruals_jit(
-    kind: jnp.ndarray,
-    valid_slot: jnp.ndarray,
-    amount_kind: jnp.ndarray,
-    amount_fixed: jnp.ndarray,
-    amount_base: jnp.ndarray,
-    amount_series: jnp.ndarray,
-    amount_base_month: jnp.ndarray,
-    amount_period: jnp.ndarray,
-    configured_prop_idx: jnp.ndarray,
-    configured_has_prop: jnp.ndarray,
-    prop_idx: jnp.ndarray,
-    pt_amount: jnp.ndarray,
-    pt_prop_month: jnp.ndarray,
-    liab_idx: jnp.ndarray,
-    mort_rate: jnp.ndarray,
-    mort_prop_month: jnp.ndarray,
-    est_quarterly: jnp.ndarray,
-    est_prior: jnp.ndarray,
-    trueup_sel: jnp.ndarray,
+    inputs: _ObligationInputs,
     property_active: jnp.ndarray,
     liab_principal: jnp.ndarray,
     liab_monthly: jnp.ndarray,
@@ -3478,62 +3462,77 @@ def _obligation_accruals_jit(
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Branch-free obligation accrual: every source kind's `(slots, rollouts)` due amount is computed,
-    then selected by `kind`. Per-slot static data (rates, indices, the true-up selection matrix) is
-    precomputed host-side; only the runtime state gathers (`property_active`, liability principal,
-    tax-liability balances) are traced."""
+) -> _PaymentBatch:
+    """Compute one typed payment batch per source, then merge the disjoint slot rows."""
+
     rollout_count = active.shape[0]
-    k = kind[:, None]
-    configured = _amount_values_vec(
-        amount_kind,
-        amount_fixed,
-        amount_base,
-        amount_series,
-        amount_base_month,
-        amount_period,
+
+    def batch(source_active: jnp.ndarray, due: jnp.ndarray, source_mask: jnp.ndarray) -> _PaymentBatch:
+        payment_active = source_active[:, None] & active[None, :] & source_mask & (due > 0)
+        return _PaymentBatch(active=payment_active, due=jnp.where(payment_active, due, 0), metadata=inputs.metadata)
+
+    configured = inputs.configured
+    configured_due = _amount_values_vec(
+        configured.amount_kind,
+        configured.amount_fixed,
+        configured.amount_base,
+        configured.amount_series,
+        configured.amount_base_month,
+        configured.amount_period,
         external_values,
         month,
         rollout_count,
     )
+    configured_property_slot = inputs.metadata.property_slot
     configured_property_mask = jnp.where(
-        configured_has_prop[:, None], _gather_rows(property_active, configured_prop_idx), True
+        configured_property_slot[:, None] >= 0,
+        _gather_rows(property_active, jnp.maximum(configured_property_slot, 0)),
+        True,
     )
-    property_tax = jnp.broadcast_to(pt_amount[:, None], configured.shape)
-    property_mask = _gather_rows(property_active, prop_idx) & (pt_prop_month[:, None] < month)
-    principal = _gather_rows(liab_principal, liab_idx)
-    mortgage_interest = _scale_money(principal, mort_rate[:, None] / 12.0)
-    mortgage = jnp.minimum(_gather_rows(liab_monthly, liab_idx), principal + mortgage_interest)
-    mortgage_mask = _gather_rows(liab_active, liab_idx) & (principal > 0) & (mort_prop_month[:, None] < month)
-    estimated = jnp.broadcast_to(est_quarterly[:, None], configured.shape)
-    actual = trueup_sel @ jnp.where(taxliab_active, taxliab_amount, 0)  # (slots, rollouts)
-    safe_harbor = jnp.minimum(est_prior[:, None], actual)
-    q4 = jnp.maximum(safe_harbor - _scale_money(est_prior[:, None], 0.75), 0)
-    true_up = jnp.maximum(actual - safe_harbor, 0)
+    configured_batch = batch(configured.active, configured_due, configured_property_mask)
 
-    amount = jnp.select(
-        [
-            k == ObligationSource.CONFIGURED_OBLIGATION,
-            k == ObligationSource.PROPERTY_TAX,
-            k == ObligationSource.MORTGAGE_PAYMENT,
-            k == ObligationSource.ESTIMATED_TAX,
-            k == ObligationSource.ESTIMATED_TAX_Q4,
-            k == ObligationSource.TAX_TRUE_UP,
-        ],
-        [configured, property_tax, mortgage, estimated, q4, true_up],
-        default=0,
+    property_tax = inputs.property_tax
+    property_tax_due = jnp.broadcast_to(property_tax.amount[:, None], configured_due.shape)
+    property_tax_mask = _gather_rows(property_active, property_tax.property_slot) & (
+        property_tax.property_purchase_month[:, None] < month
     )
-    kind_mask = jnp.select(
-        [
-            k == ObligationSource.CONFIGURED_OBLIGATION,
-            k == ObligationSource.PROPERTY_TAX,
-            k == ObligationSource.MORTGAGE_PAYMENT,
-        ],
-        [configured_property_mask, property_mask, mortgage_mask],
-        default=True,
+    property_tax_batch = batch(property_tax.active, property_tax_due, property_tax_mask)
+
+    mortgage = inputs.mortgage
+    principal = _gather_rows(liab_principal, mortgage.liability_slot)
+    mortgage_interest = _scale_money(principal, mortgage.annual_rate[:, None] / 12.0)
+    mortgage_due = jnp.minimum(_gather_rows(liab_monthly, mortgage.liability_slot), principal + mortgage_interest)
+    mortgage_mask = (
+        _gather_rows(liab_active, mortgage.liability_slot)
+        & (principal > 0)
+        & (mortgage.property_purchase_month[:, None] < month)
     )
-    slot_active = valid_slot[:, None] & active[None, :] & kind_mask & (amount > 0)
-    return slot_active, jnp.where(slot_active, amount, 0)
+    mortgage_batch = batch(mortgage.active, mortgage_due, mortgage_mask)
+
+    estimated_tax = inputs.estimated_tax
+    estimated_due = jnp.broadcast_to(estimated_tax.quarterly_amount[:, None], configured_due.shape)
+    estimated_batch = batch(estimated_tax.active, estimated_due, jnp.ones_like(estimated_due, dtype=bool))
+
+    eligible_tax = jnp.where(taxliab_active, taxliab_amount, 0)
+
+    q4 = inputs.q4_estimated_tax
+    q4_actual = q4.tax_liability_selector @ eligible_tax
+    q4_safe_harbor = jnp.minimum(q4.prior_year_tax[:, None], q4_actual)
+    q4_due = jnp.maximum(q4_safe_harbor - _scale_money(q4.prior_year_tax[:, None], 0.75), 0)
+    q4_batch = batch(q4.active, q4_due, jnp.ones_like(q4_due, dtype=bool))
+
+    true_up = inputs.tax_true_up
+    true_up_actual = true_up.tax_liability_selector @ eligible_tax
+    true_up_safe_harbor = jnp.minimum(true_up.prior_year_tax[:, None], true_up_actual)
+    true_up_due = jnp.maximum(true_up_actual - true_up_safe_harbor, 0)
+    true_up_batch = batch(true_up.active, true_up_due, jnp.ones_like(true_up_due, dtype=bool))
+
+    batches = (configured_batch, property_tax_batch, mortgage_batch, estimated_batch, q4_batch, true_up_batch)
+    return _PaymentBatch(
+        active=jnp.stack([source.active for source in batches]).any(axis=0),
+        due=jnp.stack([source.due for source in batches]).sum(axis=0),
+        metadata=inputs.metadata,
+    )
 
 
 @jax.jit
@@ -3555,9 +3554,6 @@ def _obligation_group_funded_jit(
     cash_padded = jnp.concatenate([cash, jnp.zeros((1, cash.shape[1]), cash.dtype)], axis=0)
     available = cash_padded[jnp.where(from_slot < 0, cash.shape[0], from_slot)]  # (slots, rollouts), -1 -> 0
     return payment_active & (available >= group_due - 1e-9)
-
-
-_ESTIMATED_TAX_KINDS = (ObligationSource.ESTIMATED_TAX, ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP)
 
 
 @partial(jax.jit, static_argnames=("row_of_world",))

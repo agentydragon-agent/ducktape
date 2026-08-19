@@ -1,15 +1,13 @@
-"""Obligation compile output. Pairs with `codec/obligations.py`.
+"""Typed obligation-source compilation.
 
-Obligations cover a heterogeneous union of scenario-level obligations + mortgage
-payments + property-tax accruals + estimated-tax quarterly payments + tax true-ups.
-The `source_kind`/`source_index` discriminator drives the engine's dispatch and is
-re-purposed across kinds — see the per-kind dispatch in `engine.jax_engine` and the
-B5 follow-up that tracks bundling this into typed views."""
+Each obligation source owns a narrow plan. The plans share one dense payment-slot
+axis so the engine can merge their typed payment batches and run one common
+funding/settlement operation without a source discriminator union.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,15 +28,8 @@ from finance.augur.sim.scenario import RecurringObligation, Scenario, ScheduledO
 
 
 @dataclass(frozen=True)
-class ObligationCompileOutput:
-    """Per-(month, slot) obligation plumbing covering scheduled/recurring
-    obligations + mortgage payments + property-tax accruals + estimated-tax/
-    true-up payments. `source_kind`/`source_index` discriminate which subsystem
-    drives this slot (kind 0 = scenario obligation, 1 = mortgage, 2 = property
-    tax, 3 = quarterly estimated tax, 4 = Q4 estimate, 5 = year-end true-up).
-    `property_tax_profile` + `property_slot` are populated for kind==2 only
-    (NO_CODE elsewhere). `deduction_profile`/`deductible_fraction` route
-    Schedule-E deductions for obligations whose `deduction_category` was set."""
+class ObligationPaymentMetadata:
+    """Wire/scatter metadata and shared settlement routing for payment slots."""
 
     cause: NDArray[np.int64]
     id: NDArray[np.int64]
@@ -49,19 +40,70 @@ class ObligationCompileOutput:
     to_agent: NDArray[np.int64]
     to_account: NDArray[np.int64]
     to_slot: NDArray[np.int64]
+    property_tax_profile: NDArray[np.int64]
+    property_slot: NDArray[np.int64]
+    deduction_profile: NDArray[np.int64]
+    deductible_fraction: NDArray[np.float64]
+
+
+@dataclass(frozen=True)
+class ConfiguredObligationPlan:
+    active: NDArray[np.bool_]
     amount_kind: NDArray[np.int64]
     amount_fixed: NDArray[np.int64]
     amount_base: NDArray[np.int64]
     amount_series: NDArray[np.int64]
     amount_base_month: NDArray[np.int64]
     amount_period: NDArray[np.int64]
-    property_tax_annual_rate: NDArray[np.float64]
-    source_kind: NDArray[np.int64]
-    source_index: NDArray[np.int64]
-    property_tax_profile: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class PropertyTaxObligationPlan:
+    active: NDArray[np.bool_]
     property_slot: NDArray[np.int64]
-    deduction_profile: NDArray[np.int64]
-    deductible_fraction: NDArray[np.float64]
+    annual_rate: NDArray[np.float64]
+
+
+@dataclass(frozen=True)
+class MortgageObligationPlan:
+    active: NDArray[np.bool_]
+    liability_slot: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class EstimatedTaxObligationPlan:
+    active: NDArray[np.bool_]
+    profile_index: NDArray[np.int64]
+    prior_year_tax: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class Q4EstimatedTaxObligationPlan:
+    active: NDArray[np.bool_]
+    profile_index: NDArray[np.int64]
+    prior_year_tax: NDArray[np.int64]
+    tax_year_end_month: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class TaxTrueUpObligationPlan:
+    active: NDArray[np.bool_]
+    profile_index: NDArray[np.int64]
+    prior_year_tax: NDArray[np.int64]
+    tax_year_end_month: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class ObligationCompileOutput:
+    """Common payment metadata plus one narrow plan per obligation source."""
+
+    metadata: ObligationPaymentMetadata
+    configured: ConfiguredObligationPlan
+    property_tax: PropertyTaxObligationPlan
+    mortgage: MortgageObligationPlan
+    estimated_tax: EstimatedTaxObligationPlan
+    q4_estimated_tax: Q4EstimatedTaxObligationPlan
+    tax_true_up: TaxTrueUpObligationPlan
 
 
 def estimated_tax_quarter(month: int) -> int | None:
@@ -88,230 +130,292 @@ def compile_obligation_slots(
     tax: TaxCompileOutput,
 ) -> ObligationCompileOutput:
     horizon = int(scenario.horizon_months)
-    monthly_specs: list[list[dict[str, Any]]] = [[] for _ in range(horizon)]
+    profile_count = len(tax.profile_prior_year_tax)
 
+    configured_by_month: list[list[ScheduledObligation | RecurringObligation]] = [[] for _ in range(horizon)]
     for scheduled in scenario.scheduled_obligations:
         if 0 <= scheduled.month < horizon:
-            monthly_specs[scheduled.month].append({"kind": 0, "source": NO_CODE, "config": scheduled})
+            configured_by_month[scheduled.month].append(scheduled)
     for month in range(horizon):
-        for recurring in scenario.recurring_obligations:
-            if recurring.is_active_at(month):
-                monthly_specs[month].append({"kind": 0, "source": NO_CODE, "config": recurring})
+        configured_by_month[month].extend(
+            recurring for recurring in scenario.recurring_obligations if recurring.is_active_at(month)
+        )
 
+    slot_counts: list[int] = []
     for month in range(horizon):
-        for liability_slot, liability_code in enumerate(liabilities.codes.tolist()):
-            prop_slot = int(liabilities.property_slot[liability_slot])
-            monthly_specs[month].append(
-                {"kind": 1, "source": liability_slot, "liability_code": liability_code, "prop_slot": prop_slot}
-            )
-
-    for month in range(horizon):
-        for prop_slot, prop_code in enumerate(properties.id.tolist()):
-            if prop_slot < properties.month.shape[0]:
-                monthly_specs[month].append({"kind": 2, "source": prop_slot, "property_code": prop_code})
-
-    for month in range(horizon):
+        tax_slots = 0
         quarter = estimated_tax_quarter(month)
         if quarter in {1, 2, 3}:
-            for profile_index, prior_year_tax in enumerate(tax.profile_prior_year_tax.tolist()):
-                if prior_year_tax > 0:
-                    monthly_specs[month].append({"kind": 3, "source": profile_index, "quarter": quarter})
-        elif quarter == 4:
-            tax_year = month // 12 - 1
-            if tax_year >= 0:
-                for profile_index in range(len(tax.profile_prior_year_tax)):
-                    monthly_specs[month].append({"kind": 4, "source": profile_index, "tax_year": tax_year})
-                    monthly_specs[month].append({"kind": 5, "source": profile_index, "tax_year": tax_year})
+            tax_slots = sum(int(prior_year_tax > 0) for prior_year_tax in tax.profile_prior_year_tax.tolist())
+        elif quarter == 4 and month // 12 - 1 >= 0:
+            tax_slots = profile_count * 2
+        slot_counts.append(len(configured_by_month[month]) + len(liabilities.codes) + len(properties.id) + tax_slots)
+    max_slots = max(1, max(slot_counts, default=0))
 
-    max_slots = max(1, max((len(specs) for specs in monthly_specs), default=0))
-    cause = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    obligation_id = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    obligation_type = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_kind = empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
-    amount_fixed = empty_month_matrix(horizon, max_slots, np.int64, 0)
-    amount_base = empty_month_matrix(horizon, max_slots, np.int64, 0)
-    amount_series = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_base_month = empty_month_matrix(horizon, max_slots, np.int64, 0)
-    amount_period = empty_month_matrix(horizon, max_slots, np.int64, 1)
-    property_tax_annual_rate = empty_month_matrix(horizon, max_slots, np.float64, np.nan)
-    source_kind = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    source_index = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
-    property_tax_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    # Property slot for property-tax obligations. NO_CODE elsewhere.
-    property_slot_matrix = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    # Schedule E deduction wiring: NO_CODE / 0.0 unless the obligation declares
-    # deduction_category. Engine decrements ordinary_ytd by amount × deductible_fraction
-    # at settlement time when deduction_profile >= 0.
-    deduction_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    deductible_fraction = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    agent_to_profile_index: dict[int, int] = {
-        strings.require(p.agent_id): i for i, p in enumerate(scenario.tax_profiles)
+    def ints(fill: int = NO_CODE) -> NDArray[np.int64]:
+        return empty_month_matrix(horizon, max_slots, np.int64, fill)
+
+    def floats(fill: float = 0.0) -> NDArray[np.float64]:
+        return empty_month_matrix(horizon, max_slots, np.float64, fill)
+
+    def bools() -> NDArray[np.bool_]:
+        return empty_month_matrix(horizon, max_slots, np.bool_, False)
+
+    cause = ints()
+    obligation_id = ints()
+    obligation_type = ints()
+    agent = ints()
+    from_account = ints()
+    from_slot = ints()
+    to_agent = ints()
+    to_account = ints()
+    to_slot = ints()
+    property_tax_profile = ints()
+    property_slot_matrix = ints()
+    deduction_profile = ints()
+    deductible_fraction = floats()
+
+    configured_active = bools()
+    amount_kind = ints(AMOUNT_FIXED)
+    amount_fixed = ints(0)
+    amount_base = ints(0)
+    amount_series = ints()
+    amount_base_month = ints(0)
+    amount_period = ints(1)
+
+    property_tax_active = bools()
+    property_tax_slot = ints(0)
+    property_tax_annual_rate = floats(np.nan)
+
+    mortgage_active = bools()
+    mortgage_liability_slot = ints(0)
+
+    estimated_active = bools()
+    estimated_profile = ints(0)
+    estimated_prior = ints(0)
+
+    q4_active = bools()
+    q4_profile = ints(0)
+    q4_prior = ints(0)
+    q4_year_end = ints(0)
+
+    true_up_active = bools()
+    true_up_profile = ints(0)
+    true_up_prior = ints(0)
+    true_up_year_end = ints(0)
+
+    agent_to_profile_index = {
+        strings.require(profile.agent_id): index for index, profile in enumerate(scenario.tax_profiles)
     }
 
-    profile_by_index = scenario.tax_profiles
-    for month, specs in enumerate(monthly_specs):
-        for idx, spec in enumerate(specs):
-            source_kind[month, idx] = int(spec["kind"])
-            source_index[month, idx] = int(spec["source"])
-            if spec["kind"] == 0:
-                config = spec["config"]
-                assert isinstance(config, ScheduledObligation | RecurringObligation)
-                cause_text = f"{config.obligation_id}_m{month}"
-                cause[month, idx] = strings.require(cause_text)
-                obligation_id[month, idx] = strings.require(cause_text)
-                obligation_type[month, idx] = strings.require(config.obligation_type)
-                agent[month, idx] = strings.require(config.agent_id)
-                from_account[month, idx] = strings.require(config.from_account_id)
-                from_slot[month, idx] = account_slot_by_key.resolve(config.agent_id, config.from_account_id)
-                to_agent[month, idx] = strings.require(config.to_agent_id)
-                to_account[month, idx] = strings.require(config.to_account_id)
-                to_slot[month, idx] = account_slot_by_key.resolve(config.to_agent_id, config.to_account_id)
-                kind, fixed, base, series, base_month, period = amount_arrays_quanta(
-                    config.amount_due, series_index_by_id, currency_quantum=scenario.currency.quantum
-                )
-                amount_kind[month, idx] = kind
-                amount_fixed[month, idx] = fixed
-                amount_base[month, idx] = base
-                amount_series[month, idx] = series
-                amount_base_month[month, idx] = base_month
-                amount_period[month, idx] = period
-                if config.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
-                    profile = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
-                    deduction_profile[month, idx] = profile
-                    deductible_fraction[month, idx] = float(config.deductible_fraction)
-                # Tie the obligation to a property if requested so the engine reads runtime
-                # rented_fraction at settlement time instead of the compile-time fraction.
-                if config.property_id is not None:
-                    if config.property_id not in property_slot_by_id:
-                        raise ValueError(
-                            f"Obligation {config.obligation_id!r} references unknown property_id {config.property_id!r}"
-                        )
-                    property_slot_matrix[month, idx] = property_slot_by_id[config.property_id]
-            elif spec["kind"] in {1, 2, 3, 4, 5}:
-                # The dynamic source fields are decoded later from source_kind/source_index.
-                continue
+    def set_payment_metadata(
+        month: int,
+        slot: int,
+        *,
+        cause_text: str,
+        type_text: str,
+        agent_id: str,
+        payer_account_id: str,
+        payee_agent_id: str,
+        payee_account_id: str,
+    ) -> None:
+        cause_code = strings.require(cause_text)
+        cause[month, slot] = cause_code
+        obligation_id[month, slot] = cause_code
+        obligation_type[month, slot] = strings.require(type_text)
+        agent[month, slot] = strings.require(agent_id)
+        from_account[month, slot] = strings.require(payer_account_id)
+        from_slot[month, slot] = account_slot_by_key.resolve(agent_id, payer_account_id)
+        to_agent[month, slot] = strings.require(payee_agent_id)
+        to_account[month, slot] = strings.require(payee_account_id)
+        to_slot[month, slot] = account_slot_by_key.resolve(payee_agent_id, payee_account_id)
 
-    # Fill dynamic source metadata after all strings that profiles/properties need are interned.
-    for month, specs in enumerate(monthly_specs):
-        for idx, spec in enumerate(specs):
-            kind = int(spec["kind"])
-            if kind == 1:
-                liability_slot = int(spec["source"])
-                if liability_slot >= liabilities.property_slot.shape[0]:
-                    continue
-                purchase = scenario.scheduled_property_purchases[int(liabilities.property_slot[liability_slot])]
-                if purchase.mortgage is None:
-                    continue
-                cause_text = f"{purchase.mortgage.liability_id}_payment_m{month}"
-                cause[month, idx] = strings.require(cause_text)
-                obligation_id[month, idx] = strings.require(cause_text)
-                obligation_type[month, idx] = strings.require("mortgage_payment")
-                agent[month, idx] = strings.require(purchase.buyer_agent_id)
-                from_account[month, idx] = strings.require(purchase.buyer_account_id)
-                from_slot[month, idx] = account_slot_by_key.resolve(purchase.buyer_agent_id, purchase.buyer_account_id)
-                to_agent[month, idx] = strings.require(purchase.mortgage.lender_agent_id)
-                to_account[month, idx] = strings.require(purchase.mortgage.lender_account_id)
-                to_slot[month, idx] = account_slot_by_key.resolve(
-                    purchase.mortgage.lender_agent_id, purchase.mortgage.lender_account_id
-                )
-            elif kind == 2:
-                prop_slot = int(spec["source"])
-                if prop_slot >= len(scenario.scheduled_property_purchases):
-                    continue
-                purchase = scenario.scheduled_property_purchases[prop_slot]
+    for month in range(horizon):
+        slot = 0
+        for config in configured_by_month[month]:
+            cause_text = f"{config.obligation_id}_m{month}"
+            set_payment_metadata(
+                month,
+                slot,
+                cause_text=cause_text,
+                type_text=config.obligation_type,
+                agent_id=config.agent_id,
+                payer_account_id=config.from_account_id,
+                payee_agent_id=config.to_agent_id,
+                payee_account_id=config.to_account_id,
+            )
+            configured_active[month, slot] = True
+            kind, fixed, base, series, base_month, period = amount_arrays_quanta(
+                config.amount_due, series_index_by_id, currency_quantum=scenario.currency.quantum
+            )
+            amount_kind[month, slot] = kind
+            amount_fixed[month, slot] = fixed
+            amount_base[month, slot] = base
+            amount_series[month, slot] = series
+            amount_base_month[month, slot] = base_month
+            amount_period[month, slot] = period
+            if config.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
+                deduction_profile[month, slot] = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
+                deductible_fraction[month, slot] = float(config.deductible_fraction)
+            if config.property_id is not None:
+                if config.property_id not in property_slot_by_id:
+                    raise ValueError(
+                        f"Obligation {config.obligation_id!r} references unknown property_id {config.property_id!r}"
+                    )
+                property_slot_matrix[month, slot] = property_slot_by_id[config.property_id]
+            slot += 1
+
+        for liability_slot in range(len(liabilities.codes)):
+            property_slot = int(liabilities.property_slot[liability_slot])
+            if property_slot < len(scenario.scheduled_property_purchases):
+                purchase = scenario.scheduled_property_purchases[property_slot]
+                if purchase.mortgage is not None:
+                    set_payment_metadata(
+                        month,
+                        slot,
+                        cause_text=f"{purchase.mortgage.liability_id}_payment_m{month}",
+                        type_text="mortgage_payment",
+                        agent_id=purchase.buyer_agent_id,
+                        payer_account_id=purchase.buyer_account_id,
+                        payee_agent_id=purchase.mortgage.lender_agent_id,
+                        payee_account_id=purchase.mortgage.lender_account_id,
+                    )
+                    mortgage_active[month, slot] = True
+                    mortgage_liability_slot[month, slot] = liability_slot
+            slot += 1
+
+        for property_slot, _property_code in enumerate(properties.id.tolist()):
+            if property_slot < len(scenario.scheduled_property_purchases):
+                purchase = scenario.scheduled_property_purchases[property_slot]
                 policy = next(
                     (
-                        p
-                        for p in scenario.property_tax_policies
-                        if p.property_id == purchase.property_id and p.is_active_at(month)
+                        candidate
+                        for candidate in scenario.property_tax_policies
+                        if candidate.property_id == purchase.property_id and candidate.is_active_at(month)
                     ),
                     None,
                 )
-                if policy is None:
-                    source_kind[month, idx] = NO_CODE
+                if policy is not None:
+                    set_payment_metadata(
+                        month,
+                        slot,
+                        cause_text=f"{policy.property_id}_property_tax_m{month}",
+                        type_text="property_tax",
+                        agent_id=policy.owner_agent_id,
+                        payer_account_id=policy.from_account_id,
+                        payee_agent_id=policy.tax_authority_agent_id,
+                        payee_account_id=policy.tax_authority_account_id,
+                    )
+                    property_tax_active[month, slot] = True
+                    property_tax_slot[month, slot] = property_slot
+                    property_tax_annual_rate[month, slot] = (
+                        float(policy.annual_tax_rate) if policy.annual_tax_rate is not None else np.nan
+                    )
+                    owner_profile = agent_to_profile_index.get(strings.require(policy.owner_agent_id), NO_CODE)
+                    property_tax_profile[month, slot] = owner_profile
+                    property_slot_matrix[month, slot] = property_slot
+                    if owner_profile >= 0:
+                        deduction_profile[month, slot] = owner_profile
+                        deductible_fraction[month, slot] = float(purchase.rented_fraction)
+            slot += 1
+
+        quarter = estimated_tax_quarter(month)
+        if quarter in {1, 2, 3}:
+            for profile_index, prior_year_tax in enumerate(tax.profile_prior_year_tax.tolist()):
+                if prior_year_tax <= 0:
                     continue
-                cause_text = f"{policy.property_id}_property_tax_m{month}"
-                cause[month, idx] = strings.require(cause_text)
-                obligation_id[month, idx] = strings.require(cause_text)
-                obligation_type[month, idx] = strings.require("property_tax")
-                agent[month, idx] = strings.require(policy.owner_agent_id)
-                from_account[month, idx] = strings.require(policy.from_account_id)
-                from_slot[month, idx] = account_slot_by_key.resolve(policy.owner_agent_id, policy.from_account_id)
-                to_agent[month, idx] = strings.require(policy.tax_authority_agent_id)
-                to_account[month, idx] = strings.require(policy.tax_authority_account_id)
-                to_slot[month, idx] = account_slot_by_key.resolve(
-                    policy.tax_authority_agent_id, policy.tax_authority_account_id
+                profile = scenario.tax_profiles[profile_index]
+                set_payment_metadata(
+                    month,
+                    slot,
+                    cause_text=f"{profile.agent_id}_estimated_tax_q{quarter}_y{month // 12}",
+                    type_text="estimated_tax",
+                    agent_id=profile.agent_id,
+                    payer_account_id=profile.payment_account_id,
+                    payee_agent_id=profile.tax_authority_agent_id,
+                    payee_account_id=profile.tax_authority_account_id,
                 )
-                property_tax_annual_rate[month, idx] = (
-                    float(policy.annual_tax_rate) if policy.annual_tax_rate is not None else np.nan
-                )
-                owner_code = strings.require(policy.owner_agent_id)
-                owner_profile = agent_to_profile_index.get(owner_code, NO_CODE)
-                property_tax_profile[month, idx] = owner_profile
-                # Wire the property slot so the engine can look up runtime rented_fraction at
-                # settlement time. SALT/Schedule E split moves with mid-horizon lifecycle events.
-                property_slot_matrix[month, idx] = prop_slot
-                rented_fraction_val = float(purchase.rented_fraction)
-                if owner_profile >= 0:
-                    deduction_profile[month, idx] = owner_profile
-                    deductible_fraction[month, idx] = rented_fraction_val
-            elif kind in {3, 4, 5}:
-                profile_index = int(spec["source"])
-                tax_profile = profile_by_index[profile_index]
-                if kind == 3:
-                    quarter = int(spec["quarter"])
-                    tax_year = month // 12
-                    cause_text = f"{tax_profile.agent_id}_estimated_tax_q{quarter}_y{tax_year}"
-                    obligation_type_text = "estimated_tax"
-                elif kind == 4:
-                    tax_year = int(spec["tax_year"])
-                    cause_text = f"{tax_profile.agent_id}_estimated_tax_q4_y{tax_year}"
-                    obligation_type_text = "estimated_tax"
-                else:
-                    tax_year = int(spec["tax_year"])
-                    cause_text = f"{tax_profile.agent_id}_tax_true_up_y{tax_year}"
-                    obligation_type_text = "tax_true_up"
-                cause[month, idx] = strings.require(cause_text)
-                obligation_id[month, idx] = strings.require(cause_text)
-                obligation_type[month, idx] = strings.require(obligation_type_text)
-                agent[month, idx] = strings.require(tax_profile.agent_id)
-                from_account[month, idx] = strings.require(tax_profile.payment_account_id)
-                from_slot[month, idx] = account_slot_by_key.resolve(
-                    tax_profile.agent_id, tax_profile.payment_account_id
-                )
-                to_agent[month, idx] = strings.require(tax_profile.tax_authority_agent_id)
-                to_account[month, idx] = strings.require(tax_profile.tax_authority_account_id)
-                to_slot[month, idx] = account_slot_by_key.resolve(
-                    tax_profile.tax_authority_agent_id, tax_profile.tax_authority_account_id
-                )
+                estimated_active[month, slot] = True
+                estimated_profile[month, slot] = profile_index
+                estimated_prior[month, slot] = prior_year_tax
+                slot += 1
+        elif quarter == 4:
+            tax_year = month // 12 - 1
+            if tax_year >= 0:
+                year_end_month = tax_year * 12 + 11
+                for profile_index, profile in enumerate(scenario.tax_profiles):
+                    prior_year_tax = int(tax.profile_prior_year_tax[profile_index])
+                    set_payment_metadata(
+                        month,
+                        slot,
+                        cause_text=f"{profile.agent_id}_estimated_tax_q4_y{tax_year}",
+                        type_text="estimated_tax",
+                        agent_id=profile.agent_id,
+                        payer_account_id=profile.payment_account_id,
+                        payee_agent_id=profile.tax_authority_agent_id,
+                        payee_account_id=profile.tax_authority_account_id,
+                    )
+                    q4_active[month, slot] = True
+                    q4_profile[month, slot] = profile_index
+                    q4_prior[month, slot] = prior_year_tax
+                    q4_year_end[month, slot] = year_end_month
+                    slot += 1
+
+                    set_payment_metadata(
+                        month,
+                        slot,
+                        cause_text=f"{profile.agent_id}_tax_true_up_y{tax_year}",
+                        type_text="tax_true_up",
+                        agent_id=profile.agent_id,
+                        payer_account_id=profile.payment_account_id,
+                        payee_agent_id=profile.tax_authority_agent_id,
+                        payee_account_id=profile.tax_authority_account_id,
+                    )
+                    true_up_active[month, slot] = True
+                    true_up_profile[month, slot] = profile_index
+                    true_up_prior[month, slot] = prior_year_tax
+                    true_up_year_end[month, slot] = year_end_month
+                    slot += 1
+
     return ObligationCompileOutput(
-        cause=cause,
-        id=obligation_id,
-        type=obligation_type,
-        agent=agent,
-        from_account=from_account,
-        from_slot=from_slot,
-        to_agent=to_agent,
-        to_account=to_account,
-        to_slot=to_slot,
-        amount_kind=amount_kind,
-        amount_fixed=amount_fixed,
-        amount_base=amount_base,
-        amount_series=amount_series,
-        amount_base_month=amount_base_month,
-        amount_period=amount_period,
-        property_tax_annual_rate=property_tax_annual_rate,
-        source_kind=source_kind,
-        source_index=source_index,
-        property_tax_profile=property_tax_profile,
-        property_slot=property_slot_matrix,
-        deduction_profile=deduction_profile,
-        deductible_fraction=deductible_fraction,
+        metadata=ObligationPaymentMetadata(
+            cause=cause,
+            id=obligation_id,
+            type=obligation_type,
+            agent=agent,
+            from_account=from_account,
+            from_slot=from_slot,
+            to_agent=to_agent,
+            to_account=to_account,
+            to_slot=to_slot,
+            property_tax_profile=property_tax_profile,
+            property_slot=property_slot_matrix,
+            deduction_profile=deduction_profile,
+            deductible_fraction=deductible_fraction,
+        ),
+        configured=ConfiguredObligationPlan(
+            active=configured_active,
+            amount_kind=amount_kind,
+            amount_fixed=amount_fixed,
+            amount_base=amount_base,
+            amount_series=amount_series,
+            amount_base_month=amount_base_month,
+            amount_period=amount_period,
+        ),
+        property_tax=PropertyTaxObligationPlan(
+            active=property_tax_active, property_slot=property_tax_slot, annual_rate=property_tax_annual_rate
+        ),
+        mortgage=MortgageObligationPlan(active=mortgage_active, liability_slot=mortgage_liability_slot),
+        estimated_tax=EstimatedTaxObligationPlan(
+            active=estimated_active, profile_index=estimated_profile, prior_year_tax=estimated_prior
+        ),
+        q4_estimated_tax=Q4EstimatedTaxObligationPlan(
+            active=q4_active, profile_index=q4_profile, prior_year_tax=q4_prior, tax_year_end_month=q4_year_end
+        ),
+        tax_true_up=TaxTrueUpObligationPlan(
+            active=true_up_active,
+            profile_index=true_up_profile,
+            prior_year_tax=true_up_prior,
+            tax_year_end_month=true_up_year_end,
+        ),
     )

@@ -28,13 +28,13 @@ def decode_obligations(
     else:
         months = slots = rollouts = np.array([], dtype=np.int64)
     # Per-event integer code arrays (lifted to strings lazily via CodeColumn dict-gather).
-    cause_codes = plan.obligations.cause[months, slots]
-    obligation_id_codes = plan.obligations.id[months, slots]
-    type_codes = plan.obligations.type[months, slots]
-    agent_codes = plan.obligations.agent[months, slots]
-    from_account_codes = plan.obligations.from_account[months, slots]
-    to_agent_codes = plan.obligations.to_agent[months, slots]
-    to_account_codes = plan.obligations.to_account[months, slots]
+    cause_codes = plan.obligations.metadata.cause[months, slots]
+    obligation_id_codes = plan.obligations.metadata.id[months, slots]
+    type_codes = plan.obligations.metadata.type[months, slots]
+    agent_codes = plan.obligations.metadata.agent[months, slots]
+    from_account_codes = plan.obligations.metadata.from_account[months, slots]
+    to_agent_codes = plan.obligations.metadata.to_agent[months, slots]
+    to_account_codes = plan.obligations.metadata.to_account[months, slots]
     amount_due_quanta = buffers.obligations.due[months, slots, rollouts]
     amount_paid_quanta = buffers.obligations.paid[months, slots, rollouts]
     shortfall_quanta = buffers.obligations.shortfall[months, slots, rollouts]
