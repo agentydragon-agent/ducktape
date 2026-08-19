@@ -1020,8 +1020,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/text",
-    sum = "h1:B3njUFyqtHDUI5jMn1YIr5B0IE2U0qck04r6d4KPAxE=",
-    version = "v0.33.0",
+    sum = "h1:JfKh3XmcRPqZPKevfXVpI1wXPTqbkE5f7JA92a55Yxg=",
+    version = "v0.36.0",
 )
 go_deps.module(
     path = "github.com/google/uuid",
@@ -1117,23 +1117,23 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/prometheus/client_golang",
-    sum = "h1:rb93p9lokFEsctTys46VnV1kLCDpVZ0a/Y92Vm0Zc6Q=",
-    version = "v1.22.0",
+    sum = "h1:Je96obch5RDVy3FDMndoUsjAhG5Edi49h0RJWRi/o0o=",
+    version = "v1.23.2",
 )
 go_deps.module(
     path = "github.com/prometheus/client_model",
-    sum = "h1:ZKSh/rekM+n3CeS952MLRAdFwIKqeY8b62p8ais2e9E=",
-    version = "v0.6.1",
+    sum = "h1:oBsgwpGs7iVziMvrGhE53c/GrLUsZdHnqNwqPLxwZyk=",
+    version = "v0.6.2",
 )
 go_deps.module(
     path = "github.com/prometheus/common",
-    sum = "h1:xasJaQlnWAeyHdUBeGjXmutelfJHWMRr+Fg4QszZ2Io=",
-    version = "v0.62.0",
+    sum = "h1:h5E0h5/Y8niHc5DlaLlWLArTQI7tMrsfQjHV+d9ZoGs=",
+    version = "v0.66.1",
 )
 go_deps.module(
     path = "github.com/prometheus/procfs",
-    sum = "h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=",
-    version = "v0.15.1",
+    sum = "h1:FuLQ+05u4ZI+SS/w9+BWEM2TXiHKsUQ9TADiRH7DuK0=",
+    version = "v0.17.0",
 )
 go_deps.module(
     path = "github.com/beorn7/perks",
@@ -1215,6 +1215,8 @@ use_repo(
     "com_github_spf13_pflag",
     "com_github_tcm1911_r2g2",
     "com_github_yosida95_uritemplate_v3",
+    "io_k8s_apimachinery",
+    "io_k8s_apiserver",
     "io_opentelemetry_go_auto_sdk",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlptrace",

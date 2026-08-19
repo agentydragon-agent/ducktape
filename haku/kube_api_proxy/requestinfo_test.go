@@ -25,7 +25,7 @@ func TestRequestInfoMatchesKubernetesResourceShapes(t *testing.T) {
 		{http.MethodHead, "/api/v1/nodes/worker-1", "get", "", "", "nodes", "", "worker-1"},
 	}
 
-	resolver := &RequestInfoFactory{}
+	resolver := newRequestInfoResolver()
 	for _, test := range tests {
 		request, err := http.NewRequest(test.method, "https://proxy.test"+test.path, nil)
 		if err != nil {
@@ -42,7 +42,7 @@ func TestRequestInfoMatchesKubernetesResourceShapes(t *testing.T) {
 }
 
 func TestRequestInfoTreatsDiscoveryAsNonResource(t *testing.T) {
-	resolver := &RequestInfoFactory{}
+	resolver := newRequestInfoResolver()
 	for _, path := range []string{"/", "/api", "/apis", "/apis/apps/v1", "/version", "/openapi/v3"} {
 		request, _ := http.NewRequest(http.MethodGet, "https://proxy.test"+path, nil)
 		got, err := resolver.NewRequestInfo(request)
@@ -59,15 +59,15 @@ func TestRequestInfoTreatsDiscoveryAsNonResource(t *testing.T) {
 	}
 }
 
-func TestAmbiguousWatchValuesFailConservativelyAsWatch(t *testing.T) {
+func TestAmbiguousWatchValuesFailConservatively(t *testing.T) {
 	for _, query := range []string{"watch=", "watch=garbage", "watch=on", "watch=false&watch=true"} {
 		request, _ := http.NewRequest(http.MethodGet, "https://proxy.test/api/v1/pods?"+query, nil)
-		got, err := (&RequestInfoFactory{}).NewRequestInfo(request)
+		got, err := newRequestInfoResolver().NewRequestInfo(request)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Verb != "watch" {
-			t.Errorf("%s: verb = %q, want watch", query, got.Verb)
+		if reason := unsupportedAttributes(attributesFrom(got), request); reason == "" {
+			t.Errorf("%s: request was not rejected (classified verb %q)", query, got.Verb)
 		}
 	}
 }

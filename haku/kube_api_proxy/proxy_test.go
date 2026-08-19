@@ -236,7 +236,7 @@ func TestListRequestProducesListRule(t *testing.T) {
 	}
 }
 
-func TestNameFieldSelectorConservativelyRequiresList(t *testing.T) {
+func TestNameFieldSelectorUsesKubernetesResourceName(t *testing.T) {
 	authority := &recordingAuthority{decision: allowedDecision()}
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"kind": "PodList"})
@@ -249,11 +249,11 @@ func TestNameFieldSelectorConservativelyRequiresList(t *testing.T) {
 	authority.mu.Lock()
 	defer authority.mu.Unlock()
 	got := authority.requests[0]
-	if got.Attributes.Verb != "list" || got.Attributes.Name != "" || got.Attributes.FieldSelector != "metadata.name=web" {
+	if got.Attributes.Verb != "list" || got.Attributes.Name != "web" || got.Attributes.FieldSelector != "metadata.name=web" {
 		t.Errorf("attributes = %#v", got.Attributes)
 	}
-	if len(got.RequiredRules[0].ResourceNames) != 0 {
-		t.Errorf("field-selected list unexpectedly narrowed resourceNames: %#v", got.RequiredRules[0])
+	if strings.Join(got.RequiredRules[0].ResourceNames, ",") != "web" {
+		t.Errorf("field-selected list rule = %#v", got.RequiredRules[0])
 	}
 }
 

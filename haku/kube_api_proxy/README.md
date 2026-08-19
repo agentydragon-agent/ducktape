@@ -25,10 +25,10 @@ expiry reaper stopped.
 
 ## Implemented
 
-- The request classifier maps Kubernetes' conventional `/api` and `/apis`
-  method/path/query forms to API group, resource, subresource, namespace,
-  object name and verb. Field-selected list requests remain conservatively
-  classified as `list` rather than approximating Kubernetes' selector parser.
+- Kubernetes apiserver's `RequestInfoFactory` maps method/path/query to API
+  group, resource, subresource, namespace, object name and verb. Depending on
+  the real implementation avoids maintaining a security-sensitive parallel
+  parser and keeps selector behavior aligned with kube-apiserver.
 - The proxy derives the minimal equivalent resource or non-resource `PolicyRule`
   and sends it to Console with the original bearer in the `Authorization`
   header. The credential is never copied into JSON or logs.

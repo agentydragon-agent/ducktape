@@ -1,7 +1,7 @@
 // Package kubeapiproxy implements an approval-aware reverse proxy for the
-// Kubernetes API. Request parsing uses the local, pinned adaptation of the
-// upstream apiserver RequestInfoFactory so authorization follows Kubernetes'
-// resource/verb interpretation without importing the whole apiserver graph.
+// Kubernetes API. Request parsing uses Kubernetes apiserver's
+// RequestInfoFactory so authorization follows kube-apiserver's own
+// resource/verb interpretation.
 package kubeapiproxy
 
 import (
@@ -117,7 +117,7 @@ func NewHandler(config Config) (http.Handler, error) {
 		config.Logger = slog.Default()
 	}
 
-	resolver := &RequestInfoFactory{}
+	resolver := newRequestInfoResolver()
 
 	upstream := *config.Upstream
 	reverseProxy := &httputil.ReverseProxy{
