@@ -12,9 +12,8 @@ spec:
     kind: GitRepository
     name: ducktape
     # Gate on Bucket CRs managed in this repo that the public identities target.
-    # claude-reader retains its remaining cross-bucket static policy for
-    # external/public-gateway compatibility; its eventual native-policy migration
-    # is tracked separately.
+    # Claude's static gateway entry is a temporary no-rotation compatibility
+    # path; its identity, credential, and policy now reconcile natively here.
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
@@ -39,4 +38,20 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: public-s3
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Identity
+      name: claude-reader
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: claude-reader
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Policy
+      name: claude-reader-buckets
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3PolicyBinding
+      name: claude-reader-buckets
       namespace: seaweedfs

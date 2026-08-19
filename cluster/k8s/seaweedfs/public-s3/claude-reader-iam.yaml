@@ -1,0 +1,87 @@
+# Adopt the existing Claude web-session credential rather than rotating it.
+# The SOPS Secret remains the delivery mechanism until external sessions have
+# a supported alternative; S3Credentials registers that same key pair with
+# filer-backed IAM, while the policy below becomes the authorization SSOT.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: claude-reader
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: claude-reader
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: claude-reader
+  # Both fields already exist in this SOPS-managed Secret. The operator adopts
+  # the pair exactly as-is instead of generating a replacement credential.
+  secretRef:
+    name: claude-reader-s3-credentials
+    accessKeyField: claudeReaderAccessKey
+    secretKeyField: claudeReaderSecretKey
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Policy
+metadata:
+  name: claude-reader-buckets
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+  statements:
+    - sid: ListReadableBuckets
+      effect: Allow
+      actions:
+        - s3:ListBucket
+      resources:
+        - attic
+        - drivefs-artifacts
+        - vm-images
+        - wayback-archive
+        - loom-gym
+    - sid: ReadBucketObjects
+      effect: Allow
+      actions:
+        - s3:GetObject
+      resources:
+        - attic/*
+        - drivefs-artifacts/*
+        - vm-images/*
+        - wayback-archive/*
+        - loom-gym/*
+    - sid: WriteAndTagLoomGymObjects
+      effect: Allow
+      actions:
+        - s3:PutObject
+        - s3:DeleteObject
+        - s3:GetObjectTagging
+        - s3:PutObjectTagging
+        - s3:DeleteObjectTagging
+      resources:
+        - loom-gym/*
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3PolicyBinding
+metadata:
+  name: claude-reader-buckets
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  policyRef:
+    name: claude-reader-buckets
+  subjects:
+    - kind: S3Identity
+      name: claude-reader
+  reclaimPolicy: Retain
