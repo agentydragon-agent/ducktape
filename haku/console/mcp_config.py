@@ -23,7 +23,14 @@ from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.config import ClaudeRuntimeConfig, ConfiguredRecallIndex, HostexecConfig, NodeDaemonsConfig, Settings
+from haku.console.config import (
+    ClaudeRuntimeConfig,
+    ConfiguredRecallIndex,
+    GitRecallIndexDefinition,
+    HostexecConfig,
+    NodeDaemonsConfig,
+    Settings,
+)
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -336,7 +343,7 @@ class ConsoleConfigFile(BaseModel):
             if index.index_id in index_ids:
                 raise ValueError(f"duplicate recall index id {index.index_id!r}")
             index_ids.add(index.index_id)
-            if hasattr(index, "mirror_path"):
+            if isinstance(index, GitRecallIndexDefinition):
                 mirror_path = str(index.mirror_path)
                 if mirror_path in mirror_paths:
                     raise ValueError(f"multiple Git recall indexes share mirror path {mirror_path!r}")
