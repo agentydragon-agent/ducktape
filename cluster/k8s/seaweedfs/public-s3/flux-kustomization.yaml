@@ -12,8 +12,8 @@ spec:
     kind: GitRepository
     name: ducktape
     # Gate on Bucket CRs managed in this repo that the public identities target.
-    # Claude's identity, unchanged SOPS-delivered credential, and policy all
-    # reconcile natively here; its static gateway entry has been removed.
+    # Claude is fully native; DriveFS reader/writer credentials are adopted
+    # natively here while their static public-gateway entries remain temporarily.
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
@@ -44,8 +44,24 @@ spec:
       name: claude-reader
       namespace: seaweedfs
     - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Identity
+      name: drivefs-artifacts-writer
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Identity
+      name: drivefs-artifacts-reader
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
       kind: S3Credentials
       name: claude-reader
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: drivefs-artifacts-writer
+      namespace: seaweedfs
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: drivefs-artifacts-reader
       namespace: seaweedfs
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: S3Policy
