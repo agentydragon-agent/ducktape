@@ -1,0 +1,86 @@
+"""Dormant Codex app-server protocol adapter and capture tooling."""
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console/x:__pkg__"])
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+)
+
+py_library(
+    name = "projection",
+    srcs = ["projection.py"],
+    deps = [
+        ":protocol",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+    ],
+)
+
+py_library(
+    name = "capture",
+    srcs = ["capture.py"],
+    visibility = ["//visibility:public"],
+    deps = [":protocol"],
+)
+
+py_binary(
+    name = "capture_bin",
+    srcs = ["capture_main.py"],
+    main_module = "haku.console.x.codex_app_server.capture_main",
+    visibility = ["//visibility:public"],
+    deps = [":capture"],
+)
+
+py_test(
+    name = "test_protocol",
+    srcs = ["test_protocol.py"],
+    deps = [
+        ":protocol",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_capture",
+    srcs = ["test_capture.py"],
+    deps = [
+        ":capture",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_projection",
+    srcs = ["test_projection.py"],
+    data = ["testdata/schema_derived_turn.synthetic.jsonl"],
+    deps = [
+        ":projection",
+        ":protocol",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_real_fixture",
+    srcs = ["test_real_fixture.py"],
+    data = ["testdata/real_text_command.sanitized.jsonl"],
+    deps = [
+        ":projection",
+        ":protocol",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
