@@ -1556,3 +1556,14 @@ build_test(
         ":static_image.digest",
     ],
 )
+
+py_test(
+    name = "test_migration_command",
+    srcs = ["test_migration_command.py"],
+    deps = [
+        ":app",
+        ":database_migrate",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
