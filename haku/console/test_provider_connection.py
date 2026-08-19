@@ -38,6 +38,11 @@ MAIL_CLIENT_ID = "mail-client"
 CALENDAR_CLIENT_ID = "calendar-client"
 GMAIL_SCOPES = ("https://www.googleapis.com/auth/gmail.modify",)
 CALENDAR_SCOPES = ("https://www.googleapis.com/auth/calendar.events",)
+_MANUAL_AUTHORITY_CONFIG = {
+    "auto_approval_policies": [{"id": "manual", "type": "never"}],
+    "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+    "default_access_profile_id": "manual",
+}
 _CALLBACK = "https://haku.test/api/provider-connections/callback"
 
 
@@ -232,13 +237,14 @@ async def test_access_token_for_unconnected_is_none(store: PostgresProviderConne
 async def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_MANUAL_AUTHORITY_CONFIG,
             "operator_connection_providers": {
                 GOOGLE_MAIL: {
                     "kind": "google",
                     "client_id_env_var": "MAIL_CLIENT_ID",
                     "client_secret_env_var": "MAIL_CLIENT_SECRET",
                 }
-            }
+            },
         }
     )
     monkeypatch.delenv("MAIL_CLIENT_ID", raising=False)
@@ -249,13 +255,14 @@ async def test_load_provider_clients_skips_absent_optional_client(monkeypatch: p
 async def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_MANUAL_AUTHORITY_CONFIG,
             "operator_connection_providers": {
                 GOOGLE_MAIL: {
                     "kind": "google",
                     "client_id_env_var": "MAIL_CLIENT_ID",
                     "client_secret_env_var": "MAIL_CLIENT_SECRET",
                 }
-            }
+            },
         }
     )
     monkeypatch.setenv("MAIL_CLIENT_ID", MAIL_CLIENT_ID)

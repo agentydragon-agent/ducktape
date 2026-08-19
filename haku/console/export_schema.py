@@ -17,6 +17,8 @@ generates it like any response body.
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import UUID
 
@@ -33,8 +35,18 @@ FOLLOW_MESSAGE_SCHEMA = "ConversationFollowMessage"
 
 _REF_TEMPLATE = "#/components/schemas/{model}"
 
+_SCHEMA_CONSOLE_CONFIG = """\
+auto_approval_policies:
+  - id: schema-manual-review
+    type: never
+access_profiles:
+  - id: schema
+    auto_approval_policy: schema-manual-review
+default_access_profile_id: schema
+"""
 
-def _placeholder_settings() -> Settings:
+
+def _placeholder_settings(*, config_file: Path) -> Settings:
     # haku_ui_url and database_url are required; placeholders suffice — only routes/models shape the
     # schema, and create_app never connects to the database.
     return Settings(
@@ -48,6 +60,7 @@ def _placeholder_settings() -> Settings:
             session_secret=SecretStr("placeholder-session-secret"),
         ),
         operator_identity=OperatorIdentityConfig(trust_domain="schema.invalid/authentik-user-id/v1"),
+        config_file=config_file,
     )
 
 
@@ -74,19 +87,22 @@ def _publish_follow_messages(document: dict[str, Any]) -> None:
 
 def console_openapi_document() -> dict[str, Any]:
     """The document the frontend's types are generated from: the routes, plus the socket messages."""
-    document: dict[str, Any] = create_app(
-        _placeholder_settings(),
-        static_agent_definitions=(
-            StaticAgentDefinition(
-                agent_id=UUID("00000000-0000-4000-8000-000000000001"),
-                display_name="Schema Agent",
-                operator_id=UUID("00000000-0000-0000-0000-000000000001"),
-                secret_reference="schema-placeholder",
-                token_fingerprint=fingerprint_static_token("placeholder-token"),
-                access_profile_id="manual_review",
+    with TemporaryDirectory(prefix="haku-console-schema-") as directory:
+        config_file = Path(directory) / "console.yaml"
+        config_file.write_text(_SCHEMA_CONSOLE_CONFIG, encoding="utf-8")
+        document: dict[str, Any] = create_app(
+            _placeholder_settings(config_file=config_file),
+            static_agent_definitions=(
+                StaticAgentDefinition(
+                    agent_id=UUID("00000000-0000-4000-8000-000000000001"),
+                    display_name="Schema Agent",
+                    operator_id=UUID("00000000-0000-0000-0000-000000000001"),
+                    secret_reference="schema-placeholder",
+                    token_fingerprint=fingerprint_static_token("placeholder-token"),
+                    access_profile_id="schema",
+                ),
             ),
-        ),
-    ).openapi()
+        ).openapi()
     _publish_follow_messages(document)
     return document
 

@@ -430,12 +430,12 @@ class Settings(BaseSettings):
     # WebSocket origin checks. Required: there is no unauthenticated runtime mode.
     public_base_url: str
 
-    # Optional YAML file for deploy-time console configuration that does not belong
+    # YAML file for required deploy-time console configuration that does not belong
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file
     # names connected MCP servers, their env-backed credential slots, composable auto-approval
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
     # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
-    config_file: Path | None = None
+    config_file: Path
 
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
     # ledger and the operator OAuth token store — the console does not run without them. Both

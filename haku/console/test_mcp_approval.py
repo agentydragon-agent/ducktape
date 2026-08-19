@@ -1743,9 +1743,10 @@ async def test_config_rejects_unknown_operator_connection() -> None:
     with pytest.raises(ValidationError, match="unknown operator connection 'missing'"):
         ConsoleConfigFile.model_validate(
             {
+                **_config([]),
                 "mcp": {
                     "servers": [_in_process_server("google", {"kind": "operator_connection", "connection": "missing"})]
-                }
+                },
             }
         )
 
@@ -1753,6 +1754,7 @@ async def test_config_rejects_unknown_operator_connection() -> None:
 async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_config([]),
             "operator_connection_providers": {
                 "google_mail": {
                     "kind": "google",
@@ -1781,6 +1783,7 @@ async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
 async def test_config_rejects_incompatible_registered_credential_kind() -> None:
     config = ConsoleConfigFile.model_validate(
         {
+            **_config([]),
             "operator_connection_providers": {
                 "google": {
                     "kind": "google",

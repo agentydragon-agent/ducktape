@@ -268,11 +268,6 @@ type AutoApprovalPolicy = Annotated[
 ]
 
 
-def _default_auto_approval_policies() -> list[AutoApprovalPolicy]:
-    """A fail-closed root for config-less development and schema generation."""
-    return [NeverAutoApprovalPolicy(id="manual_review")]
-
-
 class AccessProfile(BaseModel):
     """A deploy-reviewed capability bundle assigned to one durable Agent.
 
@@ -286,16 +281,6 @@ class AccessProfile(BaseModel):
     id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     auto_approval_policy: AutoApprovalPolicyId
     recall_index_ids: set[RecallIndexId] = Field(default_factory=set)
-
-
-def _default_access_profiles() -> list[AccessProfile]:
-    """The config-less profile stays manually approved and grants no additional capability."""
-    return [AccessProfile(id=policy.id, auto_approval_policy=policy.id) for policy in _default_auto_approval_policies()]
-
-
-def _default_access_profile_id() -> str:
-    [profile] = _default_access_profiles()
-    return profile.id
 
 
 class StaticAgentEntry(BaseModel):
@@ -341,9 +326,9 @@ class ConsoleConfigFile(BaseModel):
     # Non-secret deployment wiring for the optional Console-owned Claude runtime.
     # The real OAuth bearer remains solely in the dedicated iron-proxy.
     claude_runtime: ClaudeRuntimeConfig | None = None
-    auto_approval_policies: list[AutoApprovalPolicy] = Field(default_factory=_default_auto_approval_policies)
-    access_profiles: list[AccessProfile] = Field(default_factory=_default_access_profiles)
-    default_access_profile_id: str = Field(default_factory=_default_access_profile_id)
+    auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
+    access_profiles: list[AccessProfile] = Field(min_length=1)
+    default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
@@ -518,8 +503,8 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
 
 def load_console_config(settings: Settings) -> ConsoleConfigFile:
     path = settings.config_file
-    if path is None or not path.exists():
-        return ConsoleConfigFile()
+    if not path.is_file():
+        raise RuntimeError(f"haku-console config file does not exist: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return ConsoleConfigFile.model_validate(raw)
 

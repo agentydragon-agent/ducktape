@@ -61,6 +61,11 @@ _GITHUB_TOOLS = [
     "list_pull_requests",
     "pull_request_read",
 ]
+_MANUAL_AUTHORITY_CONFIG = {
+    "auto_approval_policies": [{"id": "manual", "type": "never"}],
+    "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
+    "default_access_profile_id": "manual",
+}
 _POLICIES = AutoApprovalPolicyRegistry(
     ConsoleConfigFile.model_validate(
         {
@@ -324,10 +329,12 @@ def test_policy_config_rejects_cycles() -> None:
     with pytest.raises(ValidationError, match="contains a cycle"):
         ConsoleConfigFile.model_validate(
             {
+                **_MANUAL_AUTHORITY_CONFIG,
                 "auto_approval_policies": [
                     {"id": "one", "type": "any_of", "policies": ["two"]},
                     {"id": "two", "type": "any_of", "policies": ["one"]},
-                ]
+                    {"id": "manual", "type": "never"},
+                ],
             }
         )
 
@@ -336,6 +343,7 @@ def test_profile_config_rejects_unknown_static_agent_profile() -> None:
     with pytest.raises(ValidationError, match="unknown access profile"):
         ConsoleConfigFile.model_validate(
             {
+                **_MANUAL_AUTHORITY_CONFIG,
                 "static_agents": [
                     {
                         "agent_id": str(AGENT_ACTOR.agent_id),
@@ -344,7 +352,7 @@ def test_profile_config_rejects_unknown_static_agent_profile() -> None:
                         "operator_subject_env": "TEST_AGENT_OPERATOR",
                         "access_profile_id": "missing",
                     }
-                ]
+                ],
             }
         )
 
@@ -353,6 +361,7 @@ def test_static_agent_access_profile_assignment_is_required() -> None:
     with pytest.raises(ValidationError, match="access_profile_id"):
         ConsoleConfigFile.model_validate(
             {
+                **_MANUAL_AUTHORITY_CONFIG,
                 "static_agents": [
                     {
                         "agent_id": str(AGENT_ACTOR.agent_id),
@@ -360,7 +369,7 @@ def test_static_agent_access_profile_assignment_is_required() -> None:
                         "token_env_var": "TEST_AGENT_TOKEN",
                         "operator_subject_env": "TEST_AGENT_OPERATOR",
                     }
-                ]
+                ],
             }
         )
 
