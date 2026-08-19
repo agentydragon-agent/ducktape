@@ -341,25 +341,14 @@ export function productScenario(input, bootstrap, modelId, horizonMonths, sellab
 // passed in `shared` rather than read from `input`, since the app shell owns them
 // (see `?n=`/`?x=`/`?h=`). `sellable` rides along for the same reason: it comes from the fetched
 // portfolio the shell owns, and an unedited target allocation is seeded from it.
-export function productMetricFanRequest(input, bootstrap, metric, shared) {
+export function productProjectionSamplingRequest(input, bootstrap, metric, shared, percentiles) {
   const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
   return {
     scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
     firstSeed: clampFirstSeed(firstSeed),
     rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
-    percentiles: FAN_PERCENTILES,
-  };
-}
-
-export function productTerminalDistributionRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, firstSeed, model, horizonMonths, sellable } = shared;
-  return {
-    scenario: productScenario(input, bootstrap, model, horizonMonths, sellable),
-    firstSeed: clampFirstSeed(firstSeed),
-    rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
-    metric: metric.value,
-    percentiles: TERMINAL_DISTRIBUTION_PERCENTILES,
+    percentiles,
   };
 }
 

@@ -26,7 +26,7 @@ from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.series import IssuerId
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import FundingPolicy, ScenarioKey, SleeveWeight, TerminalDistributionRequest
+from finance.augur.product.wire import FundingPolicy, ProjectionSamplingRequest, ScenarioKey, SleeveWeight
 from finance.evidence.markets import Platform
 
 # One market, deadline six months after the catalog's model anchor. Its YES price is the whole
@@ -102,7 +102,7 @@ def _private_equity_spread(product: ProductService) -> tuple[int, int]:
     """Terminal PE value's p10-to-p90 spread, plus the failure count."""
 
     response = product.terminal_distribution(
-        TerminalDistributionRequest(
+        ProjectionSamplingRequest(
             scenario=_SCENARIO, first_seed=0, rollout_count=64, metric="private_equity_value", percentiles=(10.0, 90.0)
         )
     )

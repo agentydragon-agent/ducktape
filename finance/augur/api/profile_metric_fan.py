@@ -19,7 +19,7 @@ from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.model.exogenous import Sampler
 from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import MetricFanRequest, MetricName, ScenarioKey
+from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey
 from util.bazel.runfiles import get_required_path
 
 DEFAULT_CONFIG_RUNFILE = "_main/finance/augur/api/testdata/config.yaml"
@@ -51,7 +51,7 @@ def main() -> int:
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=config.max_horizon_months,
     )
-    request = MetricFanRequest(
+    request = ProjectionSamplingRequest(
         scenario=ScenarioKey(
             model_id=config.default_model_id,
             horizon_months=args.horizon_months,

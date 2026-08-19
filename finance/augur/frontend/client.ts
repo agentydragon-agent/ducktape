@@ -9,13 +9,12 @@ import {
   zCalibrationRunResponse,
   zCatalogResponse,
   zDeploymentInfo,
-  zMetricFanRequest,
   zMetricFanResponse,
   zProductPortfolioResponse,
+  zProjectionSamplingRequest,
   zRolloutRequest,
   zRolloutResponse,
   zSettingsResponse,
-  zTerminalDistributionRequest,
   zTerminalDistributionResponse,
 } from "./lib/api/schema.zod";
 
@@ -123,7 +122,7 @@ export function fetchProductPortfolio({ signal }: FetchOptions = {}) {
 export function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions = {}) {
   return apiPost(
     "/api/product/projections/metric_fan",
-    zMetricFanRequest,
+    zProjectionSamplingRequest,
     zMetricFanResponse,
     metricFanRequest,
     signal
@@ -133,7 +132,7 @@ export function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions
 export function fetchProductTerminalDistribution(terminalDistributionRequest, { signal }: FetchOptions = {}) {
   return apiPost(
     "/api/product/projections/terminal_distribution",
-    zTerminalDistributionRequest,
+    zProjectionSamplingRequest,
     zTerminalDistributionResponse,
     terminalDistributionRequest,
     signal

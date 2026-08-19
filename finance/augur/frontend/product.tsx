@@ -20,11 +20,12 @@ import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } fro
 import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton";
 import { useVisibleEventKinds, useEventSelection } from "./hooks";
 import {
+  FAN_PERCENTILES,
   METRIC_OPTIONS,
   MAX_VARIANTS,
+  TERMINAL_DISTRIBUTION_PERCENTILES,
   productInputDefaults,
-  productMetricFanRequest,
-  productTerminalDistributionRequest,
+  productProjectionSamplingRequest,
   scenarioSetToSearch,
   scenarioSetFromSearch,
   makeVariant,
@@ -310,13 +311,19 @@ export function ProductProjectionWorkspace({
       chartScenarios.map((entry) => ({
         id: entry.id,
         label: entry.label,
-        request: productMetricFanRequest(entry.input, bootstrap, selectedMetric, {
-          rolloutCount,
-          firstSeed,
-          model,
-          horizonMonths,
-          sellable: sellable ?? [],
-        }),
+        request: productProjectionSamplingRequest(
+          entry.input,
+          bootstrap,
+          selectedMetric,
+          {
+            rolloutCount,
+            firstSeed,
+            model,
+            horizonMonths,
+            sellable: sellable ?? [],
+          },
+          FAN_PERCENTILES
+        ),
       })),
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
   );
@@ -325,13 +332,19 @@ export function ProductProjectionWorkspace({
       chartScenarios.map((entry) => ({
         id: entry.id,
         label: entry.label,
-        request: productTerminalDistributionRequest(entry.input, bootstrap, selectedMetric, {
-          rolloutCount,
-          firstSeed,
-          model,
-          horizonMonths,
-          sellable: sellable ?? [],
-        }),
+        request: productProjectionSamplingRequest(
+          entry.input,
+          bootstrap,
+          selectedMetric,
+          {
+            rolloutCount,
+            firstSeed,
+            model,
+            horizonMonths,
+            sellable: sellable ?? [],
+          },
+          TERMINAL_DISTRIBUTION_PERCENTILES
+        ),
       })),
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
   );

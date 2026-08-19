@@ -50,13 +50,13 @@ from finance.augur.product.wire import (
     HoaDuesPaymentEvent,
     HoldingSaleEvent,
     HomeownersInsurancePaymentEvent,
-    MetricFanRequest,
     MonthlyExpenseEvent,
     MortgageFinancing,
     MortgagePaymentEvent,
     OutsideRentPaymentEvent,
     PrivateEquityMarkerEvent,
     PrivateEquityOpportunityEvent,
+    ProjectionSamplingRequest,
     PropertyMaintenancePaymentEvent,
     PropertyPurchase,
     PropertyPurchaseEvent,
@@ -70,7 +70,6 @@ from finance.augur.product.wire import (
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
     SleeveWeight,
-    TerminalDistributionRequest,
 )
 from finance.augur.sim.engine.jax_engine import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -164,8 +163,8 @@ def scenario_key() -> ScenarioKey:
 def test_metric_fan_simulates_requested_horizon(product: service.ProductService, counting_model: CountingModel) -> None:
     """Product projections run at the requested horizon, not the server max horizon."""
 
-    def fan_request(horizon_months: int) -> MetricFanRequest:
-        return MetricFanRequest(
+    def fan_request(horizon_months: int) -> ProjectionSamplingRequest:
+        return ProjectionSamplingRequest(
             scenario=ScenarioKey(
                 model_id="current_model", horizon_months=horizon_months, monthly_spend=1_000, spend_index="none"
             ),
@@ -192,7 +191,7 @@ def test_metric_fan_simulates_requested_horizon(product: service.ProductService,
 
 
 def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductService, augur_config: Config) -> None:
-    request = MetricFanRequest(
+    request = ProjectionSamplingRequest(
         scenario=ScenarioKey(
             model_id="current_model",
             horizon_months=augur_config.max_horizon_months + 1,
@@ -288,7 +287,9 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100))
+        ProjectionSamplingRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100)
+        )
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
@@ -338,7 +339,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     }
 
     terminal_distribution = product.terminal_distribution(
-        TerminalDistributionRequest(
+        ProjectionSamplingRequest(
             scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 1, 2, 50, 100)
         )
     )
@@ -384,7 +385,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     ]
 
     holding_fan = product.metric_fan(
-        MetricFanRequest(
+        ProjectionSamplingRequest(
             scenario=scenario_key, first_seed=7, rollout_count=2, metric="holding_value", percentiles=(50,)
         )
     )
@@ -393,7 +394,9 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert holding_fan.monthly_metric_fan["value_quanta"][0] == _usd_quanta(835_500.0)
 
     fan_with_one_new_seed = product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash", percentiles=(50,))
+        ProjectionSamplingRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash", percentiles=(50,)
+        )
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [
@@ -474,10 +477,10 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     monkeypatch.setattr(product, "_simulate_product_summary", slow_simulate_product_summary)
 
-    fan_request = MetricFanRequest(
+    fan_request = ProjectionSamplingRequest(
         scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(5, 50, 95)
     )
-    terminal_request = TerminalDistributionRequest(
+    terminal_request = ProjectionSamplingRequest(
         scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100)
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -518,7 +521,7 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     )
 
     distribution = product.terminal_distribution(
-        TerminalDistributionRequest(
+        ProjectionSamplingRequest(
             scenario=scenario, first_seed=101, rollout_count=3, metric="private_equity_value", percentiles=(0, 50, 100)
         )
     )
@@ -550,7 +553,9 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     monkeypatch.setattr(service, "run_jax_product_summary", counted)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,))
+        ProjectionSamplingRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)
+        )
     )
 
     # All four seeds share one simulated batch, so the reduced product projection runs once.
@@ -566,7 +571,9 @@ def test_metric_fan_does_not_materialize_rollout_events(
     monkeypatch.setattr(service, "project_product_rollout", fail_rollout_projection)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,))
+        ProjectionSamplingRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)
+        )
     )
 
 
@@ -580,7 +587,9 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     )
 
     fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario, first_seed=7, rollout_count=1, metric="net_worth", percentiles=(50,))
+        ProjectionSamplingRequest(
+            scenario=scenario, first_seed=7, rollout_count=1, metric="net_worth", percentiles=(50,)
+        )
     )
 
     assert fan.failed_count == 1
@@ -1010,7 +1019,9 @@ def test_outside_rent_zero_omits_rent_series_requirement(
 ) -> None:
     # scenario_key carries no rent.
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=1, metric="cash", percentiles=(50,))
+        ProjectionSamplingRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=1, metric="cash", percentiles=(50,)
+        )
     )
 
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)

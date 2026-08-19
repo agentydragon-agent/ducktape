@@ -37,6 +37,14 @@ def test_export_schema_emits_openapi_with_components() -> None:
     assert {"/api/catalog", "/api/settings", "/api/calibration"} <= paths
     assert "/api/bootstrap" not in paths
 
+    request_schema_refs = {
+        doc["paths"][path]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+        for path in ("/api/product/projections/metric_fan", "/api/product/projections/terminal_distribution")
+    }
+    assert request_schema_refs == {"#/components/schemas/ProjectionSamplingRequest"}
+    assert "MetricFanRequest" not in doc["components"]["schemas"]
+    assert "TerminalDistributionRequest" not in doc["components"]["schemas"]
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
