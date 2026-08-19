@@ -53,12 +53,11 @@ class SearchHit(BaseModel):
 
     score: float
     source: GitSource | ChatSource = Field(discriminator="kind")
-
-
-class ContentSearchHit(SearchHit):
-    """A matching indexed chunk returned with its text."""
-
-    content: str = Field(description="The matching indexed chunk text.")
+    content: str | None = Field(
+        default=None,
+        description="The matching indexed chunk text, omitted when `include_content` is false.",
+        exclude_if=lambda value: value is None,
+    )
 
 
 class GitIndexStatus(BaseModel):
@@ -94,13 +93,9 @@ class IndexStatus(BaseModel):
 
 
 class SearchResults(BaseModel):
-    """Hits plus status only when a selected configured index was behind.
+    """Hits plus status only when a selected configured index was behind."""
 
-    ``ContentSearchHit`` is emitted by default. ``SearchHit`` without ``content`` is emitted
-    when a caller opts out of returning indexed text.
-    """
-
-    hits: list[ContentSearchHit | SearchHit]
+    hits: list[SearchHit]
     index: IndexStatus | None = None
 
     def without_content(self) -> SearchResults:
@@ -125,15 +120,7 @@ class IndexSearcher(Protocol):
 
 
 def build_mcp(searcher: IndexSearcher) -> FastMCP:
-    mcp: FastMCP = FastMCP(
-        name=HAKU_INDEX_SERVER_ID,
-        instructions=(
-            "Semantic recall over configured logical indexes. `search` returns matching chunk content by default "
-            "and source pointers; set `include_content=false` for pointers only. Use Git or conversation readers "
-            "for authoritative whole-source content. If a search is thin, check "
-            "`index_status` before concluding the subject was never recorded."
-        ),
-    )
+    mcp: FastMCP = FastMCP(name=HAKU_INDEX_SERVER_ID, instructions="Semantic recall over configured logical indexes.")
 
     @mcp.tool
     async def search(

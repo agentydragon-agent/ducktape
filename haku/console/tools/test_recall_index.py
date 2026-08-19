@@ -12,10 +12,10 @@ from haku.console.tools.recall_index import (
     HAKU_INDEX_SERVER_ID,
     ChatIndexStatus,
     ChatSource,
-    ContentSearchHit,
     GitIndexStatus,
     GitSource,
     IndexStatus,
+    SearchHit,
     SearchResults,
     build_mcp,
 )
@@ -25,8 +25,8 @@ SESSION = UUID("11111111-1111-1111-1111-111111111111")
 MESSAGES = [UUID("22222222-2222-2222-2222-222222222222"), UUID("33333333-3333-3333-3333-333333333333")]
 
 
-def _git_hit(score: float) -> ContentSearchHit:
-    return ContentSearchHit(
+def _git_hit(score: float) -> SearchHit:
+    return SearchHit(
         score=score,
         content="how to file an intake item",
         source=GitSource(
@@ -40,8 +40,8 @@ def _git_hit(score: float) -> ContentSearchHit:
     )
 
 
-def _chat_hit(score: float) -> ContentSearchHit:
-    return ContentSearchHit(
+def _chat_hit(score: float) -> SearchHit:
+    return SearchHit(
         score=score,
         content="user: what about the egress fence",
         source=ChatSource(
@@ -56,7 +56,7 @@ def _chat_hit(score: float) -> ContentSearchHit:
 
 
 class _Searcher:
-    def __init__(self, *hits: ContentSearchHit, behind: bool = False) -> None:
+    def __init__(self, *hits: SearchHit, behind: bool = False) -> None:
         self.hits = list(hits)
         self.behind = behind
         self.queries: list[dict] = []

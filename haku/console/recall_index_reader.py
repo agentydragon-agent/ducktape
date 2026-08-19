@@ -18,10 +18,10 @@ from haku.console.database_schema import ChatAttachment, Session
 from haku.console.tools.recall_index import (
     ChatIndexStatus,
     ChatSource,
-    ContentSearchHit,
     GitIndexStatus,
     GitSource,
     IndexStatus,
+    SearchHit,
     SearchResults,
 )
 from haku.recall_index.chat_corpus import chat_chunker_key
@@ -78,7 +78,7 @@ class PostgresIndexSearcher:
     ) -> SearchResults:
         selected = self._selected(index_ids)
         embedding = await self._embedder.embed_query(query)
-        hits: list[ContentSearchHit] = []
+        hits: list[SearchHit] = []
         async with self._sessions() as session:
             for index in selected:
                 if isinstance(index, GitRecallIndexDefinition):
@@ -103,7 +103,7 @@ class PostgresIndexSearcher:
         *,
         limit: int,
         path_prefix: str | None,
-    ) -> list[ContentSearchHit]:
+    ) -> list[SearchHit]:
         state = await current_git_state(session, index.index_id)
         if state is None:
             return []
@@ -117,7 +117,7 @@ class PostgresIndexSearcher:
             budget=self._budget,
         )
         return [
-            ContentSearchHit(
+            SearchHit(
                 score=hit.score,
                 content=hit.text,
                 source=GitSource(
@@ -141,7 +141,7 @@ class PostgresIndexSearcher:
         *,
         limit: int,
         session_id: UUID | None,
-    ) -> list[ContentSearchHit]:
+    ) -> list[SearchHit]:
         found = await search_chat(
             session,
             embedding,
@@ -166,7 +166,7 @@ class PostgresIndexSearcher:
             ).all()
         }
         return [
-            ContentSearchHit(
+            SearchHit(
                 score=hit.score,
                 content=hit.text,
                 source=ChatSource(
