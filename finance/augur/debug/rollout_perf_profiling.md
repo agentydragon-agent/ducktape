@@ -229,9 +229,10 @@ event log) is a `cached_property` decoded on first access, so `decode()` is free
 only pays to materialize the frames it reads. Public attribute surface unchanged — every
 consumer and test is untouched.
 
-This makes the existing "stats on dense arrays" path (`metric_fan`, `monthly_metric_arrays`)
-pay **zero** decode, and the single-rollout detail view (`rollout_events_from`, which reads
-only `events_log` + `asset_lots`) skip the other ~10 frames it never used. 1000 × 1200:
+This made the existing "stats on dense arrays" path (`metric_fan`, `monthly_metric_arrays`)
+pay **zero** decode. The later `project_product_rollout` path goes further: it reads one
+trajectory directly from the plan and dense buffers, so rollout detail materializes no
+long-form Polars frames. The fourth-pass measurements below predate that final projection change:
 
 | caller pattern                                    | before | lazy   |
 | ------------------------------------------------- | ------ | ------ |

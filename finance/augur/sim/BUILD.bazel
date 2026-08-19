@@ -463,7 +463,9 @@ py_library(
     name = "simulate",
     srcs = ["simulate.py"],
     deps = [
+        ":buffers",
         ":codec",
+        ":compiler",
         ":engine",
         ":external_series",
         ":scenario",

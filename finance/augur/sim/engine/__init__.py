@@ -52,8 +52,12 @@ def run_dense_simulation_with_product_metrics(
     external_series: ExternalSeriesContext,
     locations: dict[str, Location],
     primary_agent_id: str,
-) -> tuple[SimulationRun, ProductMetricArrays]:
-    """Run one dense simulation and emit the selected actor's product metrics with it."""
+) -> tuple[CompiledSimulation, SimulationBuffers, ProductMetricArrays]:
+    """Return raw dense outputs + selected-actor metrics from one engine dispatch.
+
+    Product projection consumes the compiled plan and buffers directly; only analytics
+    consumers need the ``SimulationRun`` Polars-codec facade.
+    """
 
     plan = compile_simulation(
         scenario,
@@ -64,7 +68,7 @@ def run_dense_simulation_with_product_metrics(
     )
     buffers = _allocate_buffers(plan)
     metrics = run_jax_scan_with_product_metrics(plan, buffers, primary_agent_id=primary_agent_id)
-    return SimulationRun(plan=plan, buffers=buffers, external_series=external_series), metrics
+    return plan, buffers, metrics
 
 
 def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:

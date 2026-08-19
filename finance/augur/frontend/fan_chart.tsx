@@ -63,7 +63,7 @@ function FanEventMarker({
   const isActive = isSelected || isHovered;
   const markerX = x(row);
   // Stack the dots vertically *above* the rollout line, in the order the events arrive
-  // (which `decode.py:rollout_events_from` already sorts by `priority[kind]`). The vertical
+  // (which `product/projection.py:project_product_rollout` sorts by `priority[kind]`). The vertical
   // guide line still anchors at the row's value so the user can read the month at a glance.
   const stackOffset = EVENT_MARKER_STACK_BASE_OFFSET_PX - stackIndex * EVENT_MARKER_STACK_PITCH_PX;
   const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + stackOffset));

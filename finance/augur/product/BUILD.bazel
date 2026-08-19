@@ -43,18 +43,18 @@ py_library(
 )
 
 py_library(
-    name = "decode",
-    srcs = ["decode.py"],
+    name = "projection",
+    srcs = ["projection.py"],
     deps = [
         ":asset_key",
-        ":metric_composition",
         ":wire",
         "//finance/augur/model:series",
-        "//finance/augur/sim:codec",
+        "//finance/augur/sim:buffers",
+        "//finance/augur/sim:compiler",
         "//finance/augur/sim:engine",
+        "//finance/augur/sim:enums",
         "//finance/augur/sim:scenario",
         "@pypi//numpy",
-        "@pypi//polars",
     ],
 )
 
@@ -62,7 +62,7 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
-        ":decode",
+        ":projection",
         ":quantiles",
         ":scenarios",
         ":wire",
@@ -70,7 +70,7 @@ py_library(
         "//finance/augur/api:schemas",
         "//finance/augur/api:wire",
         "//finance/augur/model:exogenous",
-        "//finance/augur/sim:codec",
+        "//finance/augur/sim:buffers",
         "//finance/augur/sim:compiler",
         "//finance/augur/sim:engine",
         "//finance/augur/sim:external_series",
@@ -173,7 +173,7 @@ py_test(
     deps = [
         ":asset_key",
         ":conftest",
-        ":decode",
+        ":projection",
         ":quantiles",
         ":scenarios",
         ":service",
