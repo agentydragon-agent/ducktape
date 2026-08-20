@@ -20,23 +20,20 @@ def resource_rule(**kwargs: object) -> KubernetesRule:
     return KubernetesRule(verbs=("get",), api_groups=("",), resources=("pods",), **kwargs)
 
 
-def test_resource_rule_accepts_wire_aliases_and_canonicalizes_values() -> None:
+def test_resource_rule_canonicalizes_values() -> None:
     rule = KubernetesRule.model_validate(
-        {"apiGroups": [""], "resources": ["pods"], "verbs": ["get"], "resourceNames": ["pod-a"]}
+        {"api_groups": [""], "resources": ["pods"], "verbs": ["get"], "resource_names": ["pod-a"]}
     )
 
     assert rule.api_groups == frozenset({""})
     assert rule.resources == frozenset({"pods"})
     assert rule.resource_names == frozenset({"pod-a"})
     assert rule.model_dump(mode="json")["resource_names"] == ["pod-a"]
-    assert rule.model_dump(mode="json", by_alias=True)["resourceNames"] == ["pod-a"]
 
 
-def test_rule_alias_generator_preserves_kubernetes_url_initialism() -> None:
-    rule = KubernetesRule.model_validate({"verbs": ["get"], "nonResourceURLs": ["/healthz"]})
-
-    assert rule.non_resource_urls == frozenset({"/healthz"})
-    assert rule.model_dump(mode="json", by_alias=True)["nonResourceURLs"] == ["/healthz"]
+def test_rule_rejects_kubernetes_wire_names_inside_the_domain() -> None:
+    with pytest.raises(ValidationError, match="apiGroups"):
+        KubernetesRule.model_validate({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]})
 
 
 def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:

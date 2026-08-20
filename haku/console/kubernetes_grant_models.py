@@ -14,7 +14,6 @@ from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_serializer, field_validator, model_validator
-from pydantic.alias_generators import to_camel
 
 
 class KubernetesGrantStatus(StrEnum):
@@ -34,22 +33,16 @@ def _clean_values(value: Iterable[str], field_name: str, *, allow_empty: bool = 
     return frozenset(values)
 
 
-def _kubernetes_alias(field_name: str) -> str:
-    """Camel-case a PolicyRule field while preserving Kubernetes' URL initialism."""
-
-    alias = to_camel(field_name)
-    return f"{alias[:-4]}URLs" if alias.endswith("Urls") else alias
-
-
 class KubernetesRule(BaseModel):
     """One conservative Kubernetes RBAC-like rule.
 
     Resource rules use ``api_groups``/``resources``/``verbs`` and optionally
     ``resource_names``.  Non-resource rules use ``non_resource_urls`` and ``verbs``.  The shape
-    mirrors the proxy's PolicyRule wire contract while remaining independent of that transport.
+    uses the same concepts as Kubernetes PolicyRule while remaining independent of that transport.
+    Any Kubernetes wire-format translation belongs at the transport boundary.
     """
 
-    model_config = ConfigDict(alias_generator=_kubernetes_alias, populate_by_name=True, extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     api_groups: frozenset[str] = Field(default_factory=frozenset)
     resources: frozenset[str] = Field(default_factory=frozenset)
