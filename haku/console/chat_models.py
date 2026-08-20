@@ -11,8 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(StrEnum):
-    # Where every session starts: one is created only once a sandbox is being provisioned for it,
-    # the conversation holding an incoming prompt until then.
+    # Rollout half of lazy sandbox allocation: this release admits and parses `idle`, but no writer
+    # assigns it yet. `sessions.status` is parsed rather than treated as an open string, and old and
+    # new replicas serve together during a roll, so the writer must land only after this enum and
+    # migration have reached every replica. The follow-up makes a newly created session `idle` until
+    # its first prompt starts provisioning a sandbox, then deletes this comment.
+    IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"
     # Derived, never stored: `session_views.session_view` reports it for a live session with an
@@ -319,13 +323,13 @@ class EventProvenance(StrEnum):
 
 # Whether the session is worth keeping: nothing has ended it, so a supervisor must not replace it
 # and the claim sweep must not clean up after it.
-OPEN_SESSION_STATUSES = frozenset({SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING})
+OPEN_SESSION_STATUSES = frozenset(
+    {SessionStatus.IDLE, SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING}
+)
 # Derived rather than spelled out: the two sets partition the enum, and a status added to one
 # without the other is the bug this shape makes unrepresentable.
 ENDED_SESSION_STATUSES = frozenset(SessionStatus) - OPEN_SESSION_STATUSES
-# Whether something holds this session and is renewing its lease, which is a different question from
-# whether it has ended even though every status answers both the same way today. Spelled out rather
-# than derived from the set above, so an open status nothing holds is not swept by default: the
-# sweep fails a session whose lease lapsed, and a status that renews no lease would be failed on
-# sight.
+# Whether something holds this session and is renewing its lease. An idle session is open but has
+# no sandbox or lease holder, so deriving this from `OPEN_SESSION_STATUSES` would make the stale
+# lease sweep fail healthy empty sessions.
 LEASED_SESSION_STATUSES = frozenset({SessionStatus.PROVISIONING, SessionStatus.READY, SessionStatus.RESPONDING})

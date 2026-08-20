@@ -1,4 +1,4 @@
-"""What `ck_sessions_status` admits: every status a replica writes, and not `idle`."""
+"""The lazy-allocation status widens safely before any session writes it."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from haku.console.database_migrate import apply_migrations, sync_database_url
 
 _NOW = datetime.datetime(2026, 8, 18, tzinfo=datetime.UTC)
-_STATUSES = ("provisioning", "ready", "responding", "closing", "closed", "failed")
+_PREVIOUS_STATUSES = ("provisioning", "ready", "responding", "closing", "closed", "failed")
 
 
 @pytest.fixture
@@ -60,13 +60,17 @@ def _insert_session(conn: Connection, status: str) -> None:
     )
 
 
-def test_idle_is_what_the_narrowing_takes_away(db_url: str, engine: Engine) -> None:
-    apply_migrations(db_url)
+def test_idle_is_admitted_only_after_the_rollout_migration(db_url: str, engine: Engine) -> None:
+    apply_migrations(db_url, "0088")
     with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_status"):
         _insert_session(conn, "idle")
 
+    apply_migrations(db_url)
+    with engine.begin() as conn:
+        _insert_session(conn, "idle")
 
-@pytest.mark.parametrize("status", _STATUSES)
+
+@pytest.mark.parametrize("status", _PREVIOUS_STATUSES)
 def test_a_replica_on_the_previous_image_still_writes_every_status_it_knows(
     db_url: str, engine: Engine, status: str
 ) -> None:
@@ -75,6 +79,12 @@ def test_a_replica_on_the_previous_image_still_writes_every_status_it_knows(
     apply_migrations(db_url)
     with engine.begin() as conn:
         _insert_session(conn, status)
+
+
+def test_the_widening_does_not_admit_unknown_statuses(db_url: str, engine: Engine) -> None:
+    apply_migrations(db_url)
+    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_status"):
+        _insert_session(conn, "sleeping")
 
 
 if __name__ == "__main__":

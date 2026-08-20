@@ -1022,7 +1022,8 @@ class Session(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('provisioning','ready','responding','closing','closed','failed')", name="ck_sessions_status"
+            "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
+            name="ck_sessions_status",
         ),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
