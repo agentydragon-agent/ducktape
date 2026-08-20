@@ -42,10 +42,24 @@ from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import BridgeFrameKind, ConversationEventKind, EventProvenance, StoredEventKind
-from haku.console.database_schema import ConversationEvent, ConversationItem, ConversationTurn, Session, SessionFrame
+from haku.console.chat_models import (
+    BridgeFrameKind,
+    ConversationEventKind,
+    EventProvenance,
+    RuntimeKind,
+    StoredEventKind,
+)
+from haku.console.database_schema import (
+    Conversation,
+    ConversationEvent,
+    ConversationItem,
+    ConversationTurn,
+    Session,
+    SessionFrame,
+)
 from haku.console.x import frame_projection, session_events
 from haku.console.x.conversation_events import FrameRange, ProjectionState
+from haku.console.x.runtime import RuntimeRegistry
 from util.sqlalchemy_types import UnknownValue
 
 
@@ -184,11 +198,21 @@ class SessionReport:
     items: tuple[ItemTextMismatch, ...]
 
 
-async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
+async def check_session(
+    db: AsyncSession, session_id: UUID, *, runtimes: RuntimeRegistry | None = None
+) -> SessionReport:
     """Every turn of one session, re-projected and aligned against its rows."""
-    chat = await db.get(Session, session_id)
-    if chat is None:
+    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
+    row = (
+        await db.execute(
+            select(Session, Conversation.runtime_kind)
+            .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+            .where(Session.session_id == session_id)
+        )
+    ).one_or_none()
+    if row is None:
         raise KeyError(session_id)
+    chat, runtime_kind = row
     turns = (
         await db.scalars(
             select(ConversationTurn)
@@ -203,7 +227,14 @@ async def check_session(db: AsyncSession, session_id: UUID) -> SessionReport:
         projected_frame_seq=chat.projected_frame_seq,
         turns=tuple(
             [
-                await _check_turn(db, turn, cursor=chat.projected_frame_seq, ends_before=upper)
+                await _check_turn(
+                    db,
+                    turn,
+                    cursor=chat.projected_frame_seq,
+                    ends_before=upper,
+                    runtime_kind=runtime_kind,
+                    runtimes=registry,
+                )
                 for turn, upper in zip(turns, ends_before, strict=True)
             ]
         ),
@@ -243,7 +274,13 @@ async def check_item_text(db: AsyncSession, session_id: UUID) -> tuple[ItemTextM
 
 
 async def _check_turn(
-    db: AsyncSession, turn: ConversationTurn, *, cursor: int | None, ends_before: int | None
+    db: AsyncSession,
+    turn: ConversationTurn,
+    *,
+    cursor: int | None,
+    ends_before: int | None,
+    runtime_kind: RuntimeKind,
+    runtimes: RuntimeRegistry,
 ) -> TurnReport:
     frames = await _turn_frames(db, turn, ends_before=ends_before)
     # The fold's own output and nothing else. An authored row may name a turn (`turn_started` and
@@ -258,7 +295,7 @@ async def _check_turn(
             .order_by(ConversationEvent.event_seq)
         )
     ).all()
-    projected = _expected(frames)
+    projected = _expected(frames, runtime_kind=runtime_kind, runtimes=runtimes)
     within = [seq for seq in projected if cursor is not None and seq <= cursor]
     return TurnReport(
         turn_id=turn.turn_id,
@@ -343,18 +380,28 @@ def _differences(projected: ProjectedRow, stored: ConversationEvent) -> list[Fie
     ]
 
 
-def _expected(frames: Sequence[SessionFrame]) -> dict[int, tuple[ProjectedRow, ...]]:
+def _expected(
+    frames: Sequence[SessionFrame],
+    *,
+    runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
+    runtimes: RuntimeRegistry | None = None,
+) -> dict[int, tuple[ProjectedRow, ...]]:
     """What each of a turn's recorded frames would be written as, through the writer's own two
     functions — folded with one state across the turn, because that is how the writer folds it.
     """
     state = ProjectionState()
+    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
     said: defaultdict[int, list[ProjectedRow]] = defaultdict(list)
     for frame in frames:
         # A frame with no events still belongs in coverage and can have stored rows to disagree
         # with, so retain an empty bucket for it.
         said[frame.frame_seq]
         state, events = frame_projection.projected(
-            state, frame_seq=frame.frame_seq, payload=_native_payload(frame.payload)
+            state,
+            frame_seq=frame.frame_seq,
+            payload=_native_payload(frame.payload),
+            runtime_kind=runtime_kind,
+            runtimes=registry,
         )
         for event in events:
             if (row := session_events.stored(event)) is None:

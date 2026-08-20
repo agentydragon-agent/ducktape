@@ -7,7 +7,34 @@ py_library(
     srcs = ["frame_projection.py"],
     deps = [
         ":conversation_events",
+        ":runtime",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":conversation_events",
+        ":sandbox_claims",
+        ":system_prompt",
+        "//haku/console:chat_models",
+        "//haku/console/x/claude_code:runtime",
+        "//haku/runtime/x/bridge:cli_client",
+        "//haku/runtime/x/bridge:protocol",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        ":runtime",
+        "//:conftest",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code/testing:wire",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -46,6 +73,7 @@ py_library(
         ":conversation_events",
         ":conversation_history",
         ":frame_projection",
+        ":runtime",
         ":sandbox_claims",
         ":session_notifications",
         ":session_store",
@@ -56,8 +84,6 @@ py_library(
         "//haku/console:config",
         "//haku/console:operator_auth",
         "//haku/console/x/claude_code:frames",
-        "//haku/runtime/x/bridge:cli_client",
-        "//haku/runtime/x/bridge:options",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
         "@pypi//more_itertools",
@@ -130,6 +156,7 @@ py_library(
         ":conversation_events",
         ":conversation_log",
         ":conversation_records",
+        ":runtime",
         ":session_events",
         ":session_notifications",
         ":session_views",
@@ -140,7 +167,6 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x/claude_code:frames",
-        "//haku/console/x/claude_code:projection",
         "//haku/runtime/x/bridge:cli_client",
         "@pypi//sqlalchemy",
     ],
@@ -192,12 +218,12 @@ py_library(
     deps = [
         ":conversation_events",
         ":conversation_records",
+        ":runtime",
         ":sandbox_claims",
         ":session_events",
         ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//haku/console/x/claude_code:projection",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -415,6 +441,7 @@ py_test(
         ":conftest",
         ":frame_projection",
         ":reprojection",
+        ":runtime",
         ":session_store",
         "//:conftest",
         "//haku/console:chat_models",
@@ -456,6 +483,7 @@ py_test(
         ":conftest",
         ":conversation_events",
         ":conversation_records",
+        ":runtime",
         ":session_events",
         ":session_notifications",
         ":session_store",

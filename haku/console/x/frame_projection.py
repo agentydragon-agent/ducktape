@@ -34,12 +34,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from haku.console.x.claude_code import projection
+from haku.console.chat_models import RuntimeKind
 from haku.console.x.conversation_events import ConversationEvent, ProjectionState
+from haku.console.x.runtime import RuntimeRegistry
 
 
 def projected(
-    state: ProjectionState, *, frame_seq: int, payload: dict[str, Any]
+    state: ProjectionState,
+    *,
+    frame_seq: int,
+    payload: dict[str, Any],
+    runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
+    runtimes: RuntimeRegistry | None = None,
 ) -> tuple[ProjectionState, tuple[ConversationEvent, ...]]:
     """What one frame means, in the vocabulary every surface and every backend shares.
 
@@ -47,9 +53,5 @@ def projected(
     block completes. The completed block then adds only what the deltas did not deliver, which is
     the whole of it wherever a backend streams nothing.
     """
-    folded, said = projection.project(
-        state,
-        [projection.RecordedFrame(frame_seq=frame_seq, payload=payload)],
-        delta_source=projection.DeltaSource.STREAM_EVENTS,
-    )
-    return folded, said.events
+    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
+    return registry[runtime_kind].project_frame(state, frame_seq=frame_seq, payload=payload)

@@ -33,6 +33,23 @@ py_library(
 )
 
 py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":projection",
+        "//haku/console:chat_models",
+        "//haku/console:config",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:sandbox_claims",
+        "//haku/console/x:system_prompt",
+        "//haku/runtime/x/bridge:cli_client",
+        "//haku/runtime/x/bridge:options",
+        "//haku/runtime/x/bridge:protocol",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "redaction",
     srcs = ["redaction.py"],
 )
