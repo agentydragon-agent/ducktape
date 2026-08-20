@@ -990,7 +990,10 @@ class Session(Base):
     # The verifier for this session's rendezvous credential — SHA-256 of a bearer minted once at
     # creation and never stored. It answers only "does this redialling runner hold this session's
     # token"; admissibility is the status's business, and the sandbox claim is `claim_cleaned_at`'s.
-    bridge_token_fingerprint: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # Absent when the session has never owned a sandbox: initially while idle, and still absent if
+    # that session closes or fails before allocation. Allocation mints the bridge credential and
+    # stores its fingerprint in the same transaction that starts provisioning.
+    bridge_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
     # what puts an ended session in `SessionStore.claim_cleanup_candidates` and what takes it back
@@ -1024,6 +1027,11 @@ class Session(Base):
         CheckConstraint(
             "status IN ('idle','provisioning','ready','responding','closing','closed','failed')",
             name="ck_sessions_status",
+        ),
+        CheckConstraint(
+            "(status = 'idle' AND bridge_token_fingerprint IS NULL) OR "
+            "(status <> 'idle' AND (bridge_token_fingerprint IS NOT NULL OR status IN ('closing','closed','failed')))",
+            name="ck_sessions_idle_bridge_token",
         ),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),

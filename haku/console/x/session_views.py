@@ -312,10 +312,10 @@ class SessionProvisioningView(BaseModel):
         description="The session's stored status. `responding` never appears here: it is derived "
         "from an open turn by `session_view` and is not on the row."
     )
-    sandbox: ClaudeSandboxProvisioningView = Field(
-        description="The cluster's account of this session's sandbox. Always present: a session "
-        "exists because a sandbox was claimed for it, so there is always something to read — "
-        "`claim_absent` once cleanup deleted the claim."
+    sandbox: ClaudeSandboxProvisioningView | None = Field(
+        description="The cluster's account of this session's sandbox. Null only while the session "
+        "is idle and has never asked for one; `claim_absent` means one was requested but Kubernetes "
+        "does not have it now."
     )
 
 

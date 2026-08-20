@@ -255,11 +255,12 @@ type Admission = PromptAccepted | PromptRejected
 class MatrixTurns:
     """Ingress: offers the operator's messages to the conversation the room is attached to.
 
-    Refusal is a first-class answer and a terminal one. `enqueue_prompt` accepts a prompt only on a
-    `ready` session with nothing already queued, so a message arriving mid-turn, mid-provision, or
-    between a session dying and its replacement is rejected rather than held: the operator is told
-    so and sends it again. What the caller does with a rejection is acknowledge it, recording the
-    row this hands back in the same transaction (`sync.MatrixSyncStore.advance`).
+    Refusal is a first-class answer and a terminal one. `enqueue_prompt` accepts a prompt on an
+    idle session (creating demand) or a ready session, provided nothing is already queued. A message
+    arriving mid-turn, mid-provision, or between a session dying and its replacement is rejected
+    rather than held: the operator is told so and sends it again. What the caller does with a
+    rejection is acknowledge it, recording the row this hands back in the same transaction
+    (`sync.MatrixSyncStore.advance`).
 
     A prompt this accepts is the conversation's, not the accepting session's, so a session that dies
     before claiming it strands nothing: its replacement finds the same queued row. What the record
@@ -373,11 +374,11 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
 
 
 class MatrixSessionSupervisor:
-    """Provisions and replaces the session running under the room's conversation.
+    """Allocates and replaces the session running under the room's conversation.
 
-    The console's other chat surface is driven by an operator browser gesture: a `POST` creates a
-    session, mints a bridge token and provisions a SandboxClaim. Matrix has no gesture, so something
-    has to own *"this conversation has a session and it has a live sandbox"* — this.
+    An idle room keeps its session row and no sandbox. Once ingress queues the first prompt, this
+    supervisor competes with the browser request to move that row to provisioning; the store's row
+    lock makes one of them the SandboxClaim creator. It also replaces sessions that have ended.
     """
 
     def __init__(
@@ -436,6 +437,14 @@ class MatrixSessionSupervisor:
         session_id = await self._conversations.session_serving()
         outcome = await self._chat_store.outcome(session_id) if session_id is not None else None
         status = outcome.status if outcome is not None else None
+        if status == SessionStatus.IDLE:
+            assert session_id is not None
+            if await self._chat.allocate(await self._operator_id(), session_id):
+                self._last_announced = SessionStatus.PROVISIONING
+                await self._announce(f"provisioning a sandbox · session {session_id}")
+            else:
+                await self._report(str(status), f"session {session_id} is {status}")
+            return
         if status in OPEN_SESSION_STATUSES:
             await self._report(str(status), f"session {session_id} is {status}")
             return

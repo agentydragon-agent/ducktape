@@ -51,7 +51,7 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
     tool_use_start,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, runtime_config
+from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, make_idle, runtime_config
 from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.frame_projection import projected
@@ -439,6 +439,35 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     }
     assert "--strict-mcp-config" in launch.arguments
     assert "haku-static-bearer" not in launch.environment.values()
+
+
+async def test_the_first_idle_prompt_creates_the_claim_once(
+    chat_store, chat_service, recording_claims, migrated_sessions, operator_id
+) -> None:
+    session, _ = await chat_store.create(operator_id)
+    await make_idle(migrated_sessions, session.session_id)
+
+    item_id = await chat_service.enqueue_prompt(operator_id, session.session_id, "start now", SPA_ORIGIN)
+    allocated_again = await chat_service.allocate(operator_id, session.session_id)
+
+    assert item_id is not None
+    assert allocated_again is False
+    assert recording_claims.created == [session.session_id]
+    assert session.session_id in recording_claims.tokens
+    assert await chat_store.status(session.session_id) == SessionStatus.PROVISIONING
+
+
+async def test_idle_provisioning_details_do_not_read_kubernetes(
+    chat_store, chat_service, recording_claims, migrated_sessions, operator_id
+) -> None:
+    session, _ = await chat_store.create(operator_id)
+    await make_idle(migrated_sessions, session.session_id)
+
+    view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
+
+    assert view.status == SessionStatus.IDLE
+    assert view.sandbox is None
+    assert recording_claims.inspected == []
 
 
 class _RollingClaudeClient(_LifecycleClaudeClient):

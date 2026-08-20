@@ -35,7 +35,7 @@ def _operator(conn: Connection) -> UUID:
     return operator_id
 
 
-def _insert_session(conn: Connection, status: str) -> None:
+def _insert_session(conn: Connection, status: str, *, fingerprint: bytes | None = b"fingerprint") -> None:
     operator_id, conversation_id = _operator(conn), uuid4()
     conn.execute(
         text(
@@ -54,7 +54,7 @@ def _insert_session(conn: Connection, status: str) -> None:
             "operator_id": operator_id,
             "conversation_id": conversation_id,
             "status": status,
-            "fingerprint": b"fingerprint",
+            "fingerprint": fingerprint,
             "n": _NOW,
         },
     )
@@ -67,7 +67,7 @@ def test_idle_is_admitted_only_after_the_rollout_migration(db_url: str, engine: 
 
     apply_migrations(db_url)
     with engine.begin() as conn:
-        _insert_session(conn, "idle")
+        _insert_session(conn, "idle", fingerprint=None)
 
 
 @pytest.mark.parametrize("status", _PREVIOUS_STATUSES)
@@ -85,6 +85,22 @@ def test_the_widening_does_not_admit_unknown_statuses(db_url: str, engine: Engin
     apply_migrations(db_url)
     with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_status"):
         _insert_session(conn, "sleeping")
+
+
+@pytest.mark.parametrize(("status", "fingerprint"), [("idle", b"credential"), ("provisioning", None), ("ready", None)])
+def test_only_an_idle_session_lacks_a_bridge_credential(
+    db_url: str, engine: Engine, status: str, fingerprint: bytes | None
+) -> None:
+    apply_migrations(db_url)
+    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_idle_bridge_token"):
+        _insert_session(conn, status, fingerprint=fingerprint)
+
+
+@pytest.mark.parametrize("status", ["closing", "closed", "failed"])
+def test_an_unallocated_session_may_end_without_a_credential(db_url: str, engine: Engine, status: str) -> None:
+    apply_migrations(db_url)
+    with engine.begin() as conn:
+        _insert_session(conn, status, fingerprint=None)
 
 
 if __name__ == "__main__":

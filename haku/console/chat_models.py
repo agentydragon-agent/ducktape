@@ -14,8 +14,8 @@ class SessionStatus(StrEnum):
     # Rollout half of lazy sandbox allocation: this release admits and parses `idle`, but no writer
     # assigns it yet. `sessions.status` is parsed rather than treated as an open string, and old and
     # new replicas serve together during a roll, so the writer must land only after this enum and
-    # migration have reached every replica. The follow-up makes a newly created session `idle` until
-    # its first prompt starts provisioning a sandbox, then deletes this comment.
+    # migration have reached every replica. Admission and allocation already understand the value;
+    # the follow-up makes newly created sessions `idle`, then deletes this comment.
     IDLE = "idle"
     PROVISIONING = "provisioning"
     READY = "ready"

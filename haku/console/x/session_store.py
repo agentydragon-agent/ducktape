@@ -340,6 +340,14 @@ class OperatorSessionIdentity:
     runtime_kind: RuntimeKind
 
 
+@dataclass(frozen=True, slots=True)
+class SessionAllocation:
+    """The one-use credential minted by the transaction that starts provisioning."""
+
+    session_id: UUID
+    bridge_token: str
+
+
 class PositionUnusableError(Exception):
     """An update cannot be served from a follower's position; it must be sent the conversation whole.
 
@@ -440,6 +448,40 @@ class SessionStore:
             writer.authored(session_events.SessionProvisioningBody())
         view = await self.get(operator_id, session_id)
         return view, bridge_token
+
+    async def allocate(self, operator_id: UUID, session_id: UUID) -> SessionAllocation | None:
+        """Start provisioning an idle session once its conversation has work queued.
+
+        The row lock is the allocation mutex. A browser request and the Matrix supervisor may both
+        observe the same accepted prompt, but exactly one moves ``idle`` to ``provisioning`` and
+        receives a credential with which to create the SandboxClaim. The prompt, status, bridge
+        fingerprint, provisioning lease and lifecycle event are therefore durable before the
+        external Kubernetes write begins.
+
+        Returns ``None`` when the session is already allocated or no prompt has created demand yet.
+        """
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            chat = await db.scalar(
+                select(Session)
+                .where(Session.session_id == session_id, Session.operator_id == operator_id)
+                .with_for_update()
+            )
+            if chat is None:
+                raise KeyError(session_id)
+            if chat.status != SessionStatus.IDLE or await _queued_prompt(db, chat.conversation_id) is None:
+                return None
+            bridge_token = secrets.token_urlsafe(32)
+            chat.status = SessionStatus.PROVISIONING
+            chat.bridge_token_fingerprint = self._fingerprint(bridge_token)
+            chat.lease_expires_at = now + PROVISION_LEASE
+            chat.updated_at = now
+            writer = await conversation_log.writer_for(
+                db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
+            )
+            writer.authored(session_events.SessionProvisioningBody())
+            await notify(db, SessionEventKind.UPDATE, session_id)
+            return SessionAllocation(session_id=session_id, bridge_token=bridge_token)
 
     async def get(self, operator_id: UUID, session_id: UUID) -> SessionView:
         async with self._sessions() as db:
@@ -694,7 +736,11 @@ class SessionStore:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
             record = await db.get(Session, session_id, with_for_update=True)
-            if record is None or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token)):
+            if (
+                record is None
+                or record.bridge_token_fingerprint is None
+                or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token))
+            ):
                 return BridgeAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
                 return BridgeAuthentication.TERMINAL
@@ -820,10 +866,9 @@ class SessionStore:
     async def complete_claim_cleanup(self, session_id: UUID) -> None:
         """Record that this session's claim is gone, which is what takes it out of the sweep.
 
-        The rendezvous fingerprint is deliberately left alone: it verifies a bearer that was never
-        stored, and a cleaned-up session cannot be admitted anyway (`authenticate_bridge` answers
-        `TERMINAL` for any ended status), so blanking it would only cost the redialling runner a
-        truthful answer.
+        An allocated session's rendezvous fingerprint is deliberately left alone: it verifies a
+        bearer that was never stored, and a cleaned-up session cannot be admitted anyway. Keeping it
+        lets a redialling runner with the right bearer receive the truthful `TERMINAL` answer.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
@@ -867,11 +912,11 @@ class SessionStore:
             )
             if chat is None:
                 raise KeyError(session_id)
-            if chat.status != SessionStatus.READY:
+            if chat.status not in {SessionStatus.IDLE, SessionStatus.READY}:
                 raise PromptRefusedError(PromptRejection.SESSION_NOT_READY)
-            # Admission asks about the turn, not the session's status: gating on `READY` alone
-            # would accept a prompt mid-turn, which is mid-turn steering arriving by accident with
-            # no fold path wired. Asked of the conversation, because that is where the rule lives.
+            # Admission asks about the turn as well as the session's state: `READY` may have an
+            # exchange in flight, while `IDLE` has no runner yet and this prompt is what buys one.
+            # Asked of the conversation, because that is where the rule lives.
             if await _open_turn(db, chat.conversation_id) is not None:
                 raise PromptRefusedError(PromptRejection.TURN_IN_FLIGHT)
             if await _queued_prompt(db, chat.conversation_id) is not None:
