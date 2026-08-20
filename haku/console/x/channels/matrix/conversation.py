@@ -463,9 +463,9 @@ class MatrixSessionSupervisor:
         # The replacement joins the conversation the room is already attached to, so the attachment
         # is not touched and the thread survives the session that was running it.
         session = await self._chat.create(await self._operator_id(), conversation_id=binding.conversation_id)
-        self._last_announced = SessionStatus.PROVISIONING
-        await self._announce(f"provisioning a sandbox · session {session.session_id}")
-        logger.info("Matrix: provisioned session %s for room %s", session.session_id, binding.room_id)
+        self._last_announced = SessionStatus.IDLE
+        await self._announce(f"waiting for the first prompt · session {session.session_id}")
+        logger.info("Matrix: opened idle session %s for room %s", session.session_id, binding.room_id)
 
     async def _supervise_as_leader(self) -> None:
         """Supervise until cancelled. Only ever entered holding the advisory lock."""

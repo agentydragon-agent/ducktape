@@ -234,8 +234,9 @@ class SessionService:
         return await self._store.request_abort(session_id)
 
     async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> SessionView:
-        view, token = await self._store.create(operator_id, conversation_id=conversation_id)
-        await self._create_claim(view.session_id, token)
+        """Open a session without allocating a sandbox until its first accepted prompt."""
+        view, token = await self._store.create_idle(operator_id, conversation_id=conversation_id)
+        assert not token, "an idle session must not expose a runner credential"
         return view
 
     async def enqueue_prompt(

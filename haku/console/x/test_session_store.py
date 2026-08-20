@@ -1098,6 +1098,7 @@ async def accepted_prompt(chat_store: SessionStore, operator_id: UUID) -> tuple[
     attachment address here, not a homeserver.
     """
     view, token = await chat_store.create(operator_id)
+    assert token is not None
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     prompt = await chat_store.enqueue_prompt(
         operator_id, view.session_id, "what were we doing", MatrixOrigin(address=ROOM, refs=("$asked",))
