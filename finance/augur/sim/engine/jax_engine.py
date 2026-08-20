@@ -73,6 +73,7 @@ from finance.augur.sim.compiler.plan import lot_order_for_pool
 from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
     _AssetPurchaseProgram,
+    _AssetSaleProgram,
     _BondInputs,
     _CapitalGainTarget,
     _DenseFinalOutput,
@@ -84,7 +85,6 @@ from finance.augur.sim.engine.jax_types import (
     _FoldedLifecycleEvent,
     _FoldedPE,
     _FoldedPurchase,
-    _FoldedSale,
     _FoldedSleeve,
     _FoldedTargetAllocation,
     _LifecycleOutput,
@@ -381,6 +381,62 @@ def _asset_purchase_program(plan: CompiledSimulation) -> _AssetPurchaseProgram:
     )
 
 
+def _asset_sale_program(plan: CompiledSimulation) -> _AssetSaleProgram:
+    """Pack scheduled sales with their host-resolved FIFO topology."""
+    sales = plan.sales
+    sale_rows = [sale for sale in range(sales.month.shape[0]) if int(sales.month[sale]) >= 0]
+    ordered_lot_rows = [
+        tuple(
+            int(lot)
+            for lot in lot_order_for_pool(
+                lot_agent_codes=plan.lot_agent_codes,
+                lot_account_codes=plan.lot_account_codes,
+                lot_asset_codes=plan.lot_asset_codes,
+                lot_fifo_rank=plan.lot_fifo_rank,
+                lot_id_codes=plan.lot_id_codes,
+                agent_code=int(sales.agent[sale]),
+                account_code=int(sales.source_account[sale]),
+                asset_code=int(sales.asset[sale]),
+            )
+        )
+        for sale in sale_rows
+    ]
+    count = len(sale_rows)
+    pool_width = max((len(row) for row in ordered_lot_rows), default=1)
+    ordered_lots = np.full((count, pool_width), plan.slot_plan.lot_count, dtype=np.int64)
+    for row_index, row in enumerate(ordered_lot_rows):
+        ordered_lots[row_index, : len(row)] = np.asarray(row, dtype=np.int64)
+
+    pool_keys = [
+        (int(sales.agent[sale]), int(sales.source_account[sale]), int(sales.asset[sale])) for sale in sale_rows
+    ]
+    same_pool_prior = np.zeros((count, count), dtype=np.int64)
+    for current in range(count):
+        for prior in range(current):
+            if pool_keys[prior] == pool_keys[current]:
+                same_pool_prior[current, prior] = 1
+
+    capital_gain_map = np.array(
+        [(plan.capital_gain_agent_codes == int(sales.agent[sale])) for sale in sale_rows], dtype=np.int64
+    ).reshape(count, plan.slot_plan.capital_gain_agent_count)
+    harvest_policies = plan.harvest_policies
+    active_harvest_policy = (harvest_policies.gain_profile_index >= 0)[:, None]
+    tlh_policy_lot_mask = (harvest_policies.lot_mask & active_harvest_policy).astype(np.int64)
+
+    return _AssetSaleProgram(
+        month=jnp.asarray([int(sales.month[sale]) for sale in sale_rows], dtype=jnp.int32),
+        quantity=jnp.asarray([int(sales.quantity[sale]) for sale in sale_rows], dtype=jnp.int64),
+        same_pool_prior=jnp.asarray(same_pool_prior),
+        capital_gain_map=jnp.asarray(capital_gain_map),
+        tlh_policy_lot_mask=jnp.asarray(tlh_policy_lot_mask),
+        price_fixed=jnp.asarray([int(sales.price_fixed[sale]) for sale in sale_rows], dtype=jnp.int64),
+        price_series=jnp.asarray([int(sales.price_series[sale]) for sale in sale_rows], dtype=jnp.int64),
+        proceeds_slot=tuple(int(sales.proceeds_slot[sale]) for sale in sale_rows),
+        buffer_index=tuple(sale_rows),
+        ordered_lots=tuple(tuple(int(lot) for lot in row) for row in ordered_lots),
+    )
+
+
 class _Operands(NamedTuple):
     """Device arrays the scan closes over, nested in `_SimulationProgram.dynamic`.
 
@@ -404,14 +460,6 @@ class _Operands(NamedTuple):
     bonds: _BondInputs
     distributions: _DistributionInputs
     obligations: _ObligationInputs
-    # Scheduled-sale stacked static data.
-    sale_months_t: jnp.ndarray
-    sale_qty_t: jnp.ndarray
-    sale_prior_t: jnp.ndarray
-    sale_cg_map_t: jnp.ndarray
-    sale_policy_mask_t: jnp.ndarray
-    sale_price_fixed_t: jnp.ndarray
-    sale_price_series: jnp.ndarray  # scheduled-sale price-series row indices (traced, dynamic gather)
     # Year-end / property tables.
     property_is_primary_table: jnp.ndarray
     tax_slot_table: jnp.ndarray
@@ -449,6 +497,7 @@ class _ProgramDynamic(NamedTuple):
     pe_channels: _PEChannelInputs
     swept: _TracedConfig
     asset_purchases: _AssetPurchaseProgram
+    asset_sales: _AssetSaleProgram
     operands: _Operands
     product_inputs: _ProductSummaryInputs | None
 
@@ -979,80 +1028,11 @@ def _build_program(
     folded_pr = [(i, int(pr_event_month[i])) for i in range(pr_events.agent_slot.shape[0]) if pr_event_month[i] >= 0]
     folded_sale_events = [(ev.event_index, ev.month) for ev in folded_lifecycle if ev.kind == LifecycleKind.SALE]
 
-    # Scheduled asset sales: resolve each real sale's static FIFO data once (host-side); the step
-    # applies all firing sales (masked by the traced month). No sales -> the whole block is skipped.
-    sales = plan.sales
-    folded_sales = [
-        _FoldedSale(
-            buffer_index=s,
-            month=int(sales.month[s]),
-            ordered_lots=tuple(
-                int(lot)
-                for lot in lot_order_for_pool(
-                    lot_agent_codes=plan.lot_agent_codes,
-                    lot_account_codes=plan.lot_account_codes,
-                    lot_asset_codes=plan.lot_asset_codes,
-                    lot_fifo_rank=plan.lot_fifo_rank,
-                    lot_id_codes=plan.lot_id_codes,
-                    agent_code=int(sales.agent[s]),
-                    account_code=int(sales.source_account[s]),
-                    asset_code=int(sales.asset[s]),
-                )
-            ),
-            quantity=int(sales.quantity[s]),
-            proceeds_slot=int(sales.proceeds_slot[s]),
-            agent_code=int(sales.agent[s]),
-        )
-        for s in range(sales.month.shape[0])
-        if int(sales.month[s]) >= 0
-    ]
-    # Stacked per-sale static data for the loop-free scheduled-sale FIFO. The across-sales FIFO is one
-    # cumulative-supply x cumulative-demand interval overlap (generalizing `_fifo_sell` from one
-    # sale to all): supply prefix over each pool's lots, demand prefix over each pool's sales (via the
-    # `same_pool_prior` lower-triangular mask), so shared pools need no sequential loop.
-    n_sales = len(folded_sales)
-    sale_max_pool = max((len(fs.ordered_lots) for fs in folded_sales), default=1)
-    sale_months_t = jnp.asarray([fs.month for fs in folded_sales], dtype=jnp.int32)
-    sale_qty_t = jnp.asarray([fs.quantity for fs in folded_sales], dtype=jnp.int64)
-    sale_pslot = np.array([fs.proceeds_slot for fs in folded_sales], dtype=np.int64).reshape(n_sales)
-    sale_bufidx = np.array([fs.buffer_index for fs in folded_sales], dtype=np.int64).reshape(n_sales)
-    sale_olots = np.full((n_sales, sale_max_pool), p.lot_count, dtype=np.int64)  # pad with the dummy lot
-    for _i, _fs in enumerate(folded_sales):
-        sale_olots[_i, : len(_fs.ordered_lots)] = np.asarray(_fs.ordered_lots, dtype=np.int64)
-    sale_price_fixed_t = jnp.asarray([int(sales.price_fixed[fs.buffer_index]) for fs in folded_sales], dtype=jnp.int64)
-    sale_price_series = np.array(
-        [int(sales.price_series[fs.buffer_index]) for fs in folded_sales], dtype=np.int64
-    ).reshape(n_sales)
+    # Scheduled asset sales own both their traced values and host-resolved FIFO topology.
+    asset_sales = _asset_sale_program(plan)
     # Scheduled asset purchases need no fold: each fills its own dedicated lot slot, so their
     # compiler rows are already the loop-free representation consumed by the scan.
     asset_purchases = _asset_purchase_program(plan)
-    # Same-pool ((agent, account, asset)) earlier-sale mask -> cumulative prior demand on each pool.
-    _pool_key = [
-        (
-            int(sales.agent[fs.buffer_index]),
-            int(sales.source_account[fs.buffer_index]),
-            int(sales.asset[fs.buffer_index]),
-        )
-        for fs in folded_sales
-    ]
-    _prior = np.zeros((n_sales, n_sales), dtype=np.int64)
-    for _j in range(n_sales):
-        for _k in range(_j):
-            if _pool_key[_k] == _pool_key[_j]:
-                _prior[_j, _k] = 1
-    sale_prior_t = jnp.asarray(_prior)
-    # Per-sale -> capital-gain-agent accrual map (the sale's agent's cg buckets).
-    sale_cg_map_t = jnp.asarray(
-        np.array([(plan.capital_gain_agent_codes == fs.agent_code) for fs in folded_sales], dtype=np.int64).reshape(
-            n_sales, p.capital_gain_agent_count
-        )
-    )
-    # TLH give-back: active harvest policies' lot masks (others zeroed). Used to drain each policy's
-    # cumulative harvested loss proportionally to units sold (the per-sale telescoping reduces to a
-    # per-policy rate `tlh0 / pre_sale_units`).
-    _hp = plan.harvest_policies
-    _hp_active = (_hp.gain_profile_index >= 0)[:, None]
-    sale_policy_mask_t = jnp.asarray((_hp.lot_mask & _hp_active).astype(np.int64))  # (policy, L)
     folded_purchases = [
         _FoldedPurchase(
             buffer_index=prop,
@@ -1468,13 +1448,6 @@ def _build_program(
         bonds=bonds,
         distributions=distributions,
         obligations=obligations,
-        sale_months_t=sale_months_t,
-        sale_qty_t=sale_qty_t,
-        sale_prior_t=sale_prior_t,
-        sale_cg_map_t=sale_cg_map_t,
-        sale_policy_mask_t=sale_policy_mask_t,
-        sale_price_fixed_t=sale_price_fixed_t,
-        sale_price_series=jnp.asarray(sale_price_series),
         property_is_primary_table=property_is_primary_table,
         tax_slot_table=tax_slot_table,
         salt_cap_table=salt_cap_table,
@@ -1524,8 +1497,6 @@ def _build_program(
     )
     structure = _Static(
         slot_plan=p,
-        n_sales=n_sales,
-        sale_max_pool=sale_max_pool,
         lot_axis=lot_axis,
         ta_policy_count=int(ta_policies.sleeve_assets.shape[0]),
         ta_max_sleeves=int(ta_policies.sleeve_assets.shape[1]),
@@ -1539,9 +1510,6 @@ def _build_program(
         folded_pe=tuple(folded_pe),
         folded_harvest=tuple(folded_harvest),
         salt_link_active=tuple(bool(salt_link_active[link]) for link in range(link_count)),
-        sale_pslot=tuple(int(x) for x in sale_pslot),
-        sale_bufidx=tuple(int(x) for x in sale_bufidx),
-        sale_olots=tuple(tuple(int(x) for x in row) for row in sale_olots),
         pur_buf=tuple(int(x) for x in pur_buf),
         pur_month=tuple(int(x) for x in pur_month),
         pur_stake=tuple(int(x) for x in pur_stake),
@@ -1550,7 +1518,6 @@ def _build_program(
         pur_mort_rows=tuple(int(x) for x in pur_mort_rows),
         pur_mort_idx=tuple(int(x) for x in pur_mort_idx),
         folded_purchases_present=bool(folded_purchases),
-        folded_sales_present=bool(folded_sales),
         external_cash_slot=int(plan.external_cash_slot),
         cg_targets=cg_targets,
         link_tax_static=link_tax_static,
@@ -1569,6 +1536,7 @@ def _build_program(
             pe_channels=_pe_channel_inputs(plan),
             swept=_traced_config(plan),
             asset_purchases=asset_purchases,
+            asset_sales=asset_sales,
             operands=baked,
             product_inputs=product_inputs,
         ),
@@ -1586,6 +1554,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     pe_ch = dynamic.pe_channels
     cfg = dynamic.swept
     asset_purchases = dynamic.asset_purchases
+    asset_sales = dynamic.asset_sales
     baked = dynamic.operands
     product_inputs = dynamic.product_inputs
     structure = static.structure
@@ -1598,8 +1567,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     link_count = len(structure.link_tax_static)
     profile_count = p.tax_profile_count
     taxliab_count = p.tax_liability_count
-    n_sales = structure.n_sales
-    sale_max_pool = structure.sale_max_pool
     lot_axis = structure.lot_axis
     ta_policy_count = structure.ta_policy_count
     ta_max_sleeves = structure.ta_max_sleeves
@@ -1619,10 +1586,13 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     n_asset_purchases = len(asset_purchases.lot_slot)
     asset_purchase_lot_slot = np.asarray(asset_purchases.lot_slot, dtype=np.int64).reshape(n_asset_purchases)
     asset_purchase_cash_slot = np.asarray(asset_purchases.cash_slot, dtype=np.int64).reshape(n_asset_purchases)
-    sale_pslot = np.asarray(structure.sale_pslot, dtype=np.int64).reshape(n_sales)
-    sale_bufidx = np.asarray(structure.sale_bufidx, dtype=np.int64).reshape(n_sales)
-    sale_olots = np.asarray(structure.sale_olots, dtype=np.int64).reshape(n_sales, sale_max_pool)
-    sale_price_series = baked.sale_price_series  # traced (n_sales,) row indices — dynamic gather
+    n_asset_sales = len(asset_sales.proceeds_slot)
+    asset_sale_pool_width = len(asset_sales.ordered_lots[0]) if asset_sales.ordered_lots else 1
+    asset_sale_proceeds_slot = np.asarray(asset_sales.proceeds_slot, dtype=np.int64).reshape(n_asset_sales)
+    asset_sale_buffer_index = np.asarray(asset_sales.buffer_index, dtype=np.int64).reshape(n_asset_sales)
+    asset_sale_ordered_lots = np.asarray(asset_sales.ordered_lots, dtype=np.int64).reshape(
+        n_asset_sales, asset_sale_pool_width
+    )
     pur_buf = np.asarray(structure.pur_buf, dtype=np.int64)
     pur_month = np.asarray(structure.pur_month, dtype=np.int64)
     pur_stake = np.asarray(structure.pur_stake, dtype=np.int64)
@@ -1631,7 +1601,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     pur_mort_rows = np.asarray(structure.pur_mort_rows, dtype=np.int64)
     pur_mort_idx = np.asarray(structure.pur_mort_idx, dtype=np.int64)
     folded_purchases = structure.folded_purchases_present
-    folded_sales = structure.folded_sales_present
     # Device arrays unpacked from the baked pytree (SAME names the bodies use).
     ordinary0 = baked.ordinary0
     property_tax_ytd0 = baked.property_tax_ytd0
@@ -1647,12 +1616,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     bonds = baked.bonds
     distributions = baked.distributions
     obligation_inputs = baked.obligations
-    sale_months_t = baked.sale_months_t
-    sale_qty_t = baked.sale_qty_t
-    sale_prior_t = baked.sale_prior_t
-    sale_cg_map_t = baked.sale_cg_map_t
-    sale_policy_mask_t = baked.sale_policy_mask_t
-    sale_price_fixed_t = baked.sale_price_fixed_t
     property_is_primary_table = baked.property_is_primary_table
     tax_slot_table = baked.tax_slot_table
     salt_cap_table = baked.salt_cap_table
@@ -2091,18 +2054,20 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # Scheduled asset sales (before obligations: proceeds can fund the month's obligations).
         # Vectorized over ALL sales at once — no Python loop. The across-sales FIFO is one
         # cumulative-supply (over each pool's lots) x cumulative-demand (over each pool's sales,
-        # `sale_prior_t`) interval overlap, so shared pools fall out without sequencing. Each sale's
-        # disposition `(sale, lot, R)` accumulates into the carry at its slot (fires once -> horizon
-        # collapsed). `L` is padded with a zero dummy lot so the ragged pools share one shape.
-        if folded_sales:
+        # `same_pool_prior`) interval overlap, so shared pools fall out without sequencing. Each
+        # sale's disposition `(sale, lot, R)` accumulates into the carry at its slot (fires once ->
+        # horizon collapsed). `L` is padded with a zero dummy lot so the ragged pools share one shape.
+        if n_asset_sales:
             ld = lot_count
             lot_rem_pad = jnp.concatenate([lot_remaining, _zeros_i64((1, r))], axis=0)  # (L+1, R)
             cost_pad = jnp.concatenate([cost_basis_per_unit, _zeros_i64((1, r))], axis=0)  # (L+1, R)
             scale_pad = jnp.concatenate([lot_quantity_scale, jnp.ones(1, dtype=jnp.int64)])  # (L+1,)
             lpm_pad = jnp.concatenate([lot_purchase_month.astype(jnp.int32), _zeros_i64((1, r)).astype(jnp.int32)])
-            pool_qty = lot_rem_pad[sale_olots]  # (N, P, R) supply per pool lot
-            target = jnp.where((active[None, :]) & (month == sale_months_t)[:, None], sale_qty_t[:, None], 0)  # (N, R)
-            prior = sale_prior_t @ target  # (N, R) demand already claimed by earlier same-pool sales
+            pool_qty = lot_rem_pad[asset_sale_ordered_lots]  # (N, P, R) supply per pool lot
+            target = jnp.where(
+                (active[None, :]) & (month == asset_sales.month)[:, None], asset_sales.quantity[:, None], 0
+            )  # (N, R)
+            prior = asset_sales.same_pool_prior @ target  # demand claimed by earlier same-pool sales
             oversell = target > (pool_qty.sum(axis=1) - prior)  # (N, R)
             d_lo = prior  # demand interval (D_{j-1}, D_j], with oversold sales selling nothing
             d_hi = prior + jnp.where(oversell, 0, target)
@@ -2113,39 +2078,45 @@ def _program_impl(program: _SimulationProgram) -> tuple:
 
             # TLH give-back: allocate each policy's money-quanta ledger directly by the integer
             # fraction of its pre-sale quantity sold. Money never becomes a per-unit float rate.
-            t_policy = sale_policy_mask_t @ lot_remaining  # (policy, R) pre-sale units
-            lot_gb_total_pad = jnp.concatenate([sale_policy_mask_t.T @ tlh, jnp.zeros((1, r), dtype=jnp.int64)], axis=0)
+            t_policy = asset_sales.tlh_policy_lot_mask @ lot_remaining  # (policy, R) pre-sale units
+            lot_gb_total_pad = jnp.concatenate(
+                [asset_sales.tlh_policy_lot_mask.T @ tlh, jnp.zeros((1, r), dtype=jnp.int64)], axis=0
+            )
             lot_policy_units_pad = jnp.concatenate(
-                [sale_policy_mask_t.T @ t_policy, jnp.ones((1, r), dtype=jnp.int64)], axis=0
+                [asset_sales.tlh_policy_lot_mask.T @ t_policy, jnp.ones((1, r), dtype=jnp.int64)], axis=0
             )
 
             # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
             # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
             if external_money_values.shape[0] > 0:
-                safe_series = jnp.where(sale_price_series >= 0, sale_price_series, 0)
+                safe_series = jnp.where(asset_sales.price_series >= 0, asset_sales.price_series, 0)
                 unit_price = jnp.where(
-                    (sale_price_series >= 0)[:, None],
+                    (asset_sales.price_series >= 0)[:, None],
                     external_money_values[safe_series, :, month],
-                    sale_price_fixed_t[:, None],
+                    asset_sales.price_fixed[:, None],
                 )  # (N, R)
             else:
-                unit_price = jnp.broadcast_to(sale_price_fixed_t[:, None], (n_sales, r))
+                unit_price = jnp.broadcast_to(asset_sales.price_fixed[:, None], (n_asset_sales, r))
             proceeds = _value_quanta_from_quantity(
-                sold, unit_price[:, None, :], scale_pad[sale_olots][:, :, None]
+                sold, unit_price[:, None, :], scale_pad[asset_sale_ordered_lots][:, :, None]
             )  # (N, P, R)
-            basis = _value_quanta_from_quantity(sold, cost_pad[sale_olots], scale_pad[sale_olots][:, :, None])
-            give_back = _scale_quanta_by_ratio(lot_gb_total_pad[sale_olots], sold, lot_policy_units_pad[sale_olots])
+            basis = _value_quanta_from_quantity(
+                sold, cost_pad[asset_sale_ordered_lots], scale_pad[asset_sale_ordered_lots][:, :, None]
+            )
+            give_back = _scale_quanta_by_ratio(
+                lot_gb_total_pad[asset_sale_ordered_lots], sold, lot_policy_units_pad[asset_sale_ordered_lots]
+            )
             gains = proceeds - basis + give_back
 
-            total_sold = _zeros_i64((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
+            total_sold = _zeros_i64((ld + 1, r)).at[asset_sale_ordered_lots].add(sold)  # (L+1, R)
             lot_remaining = lot_remaining - total_sold[:ld]
-            give_back_by_lot = _zeros_i64((ld + 1, r)).at[sale_olots].add(give_back)
-            tlh = tlh - sale_policy_mask_t @ give_back_by_lot[:ld]
+            give_back_by_lot = _zeros_i64((ld + 1, r)).at[asset_sale_ordered_lots].add(give_back)
+            tlh = tlh - asset_sales.tlh_policy_lot_mask @ give_back_by_lot[:ld]
             # The cash comes from whoever bought the lot, which is `rest_of_world`.
             cash = _move_cash(
                 cash,
                 debit=structure.external_cash_slot,
-                credit=sale_pslot,
+                credit=asset_sale_proceeds_slot,
                 amount=proceeds.sum(axis=1),  # (N, R)
                 row_of_world=structure.external_cash_slot,
             )
@@ -2153,26 +2124,30 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             # Capital gains: classify each pool lot long/short, accrue per sale's cg agents via cg_map.
             # `(N, P, R)`: the purchase month is per-rollout, so one rollout's long-term gain
             # on a pool lot is another's short-term.
-            long_m = (month - lpm_pad[sale_olots]) >= 12
+            long_m = (month - lpm_pad[asset_sale_ordered_lots]) >= 12
             gains_long = (gains * long_m).sum(axis=1)  # (N, R)
             gains_short = (gains * ~long_m).sum(axis=1)
             sold_pos = sold > 0
             act_long = (sold_pos & long_m).any(axis=1)  # (N, R)
             act_short = (sold_pos & ~long_m).any(axis=1)
-            cg_ytd = cg_ytd.at[:, CapitalGainClassification.LONG_TERM, :].add(sale_cg_map_t.T @ gains_long)
-            cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].add(sale_cg_map_t.T @ gains_short)
+            cg_ytd = cg_ytd.at[:, CapitalGainClassification.LONG_TERM, :].add(
+                asset_sales.capital_gain_map.T @ gains_long
+            )
+            cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].add(
+                asset_sales.capital_gain_map.T @ gains_short
+            )
             cg_active = cg_active.at[:, CapitalGainClassification.LONG_TERM, :].set(
                 cg_active[:, CapitalGainClassification.LONG_TERM, :]
-                | ((sale_cg_map_t.T @ act_long.astype(jnp.int64)) > 0)
+                | ((asset_sales.capital_gain_map.T @ act_long.astype(jnp.int64)) > 0)
             )
             cg_active = cg_active.at[:, CapitalGainClassification.SHORT_TERM, :].set(
                 cg_active[:, CapitalGainClassification.SHORT_TERM, :]
-                | ((sale_cg_map_t.T @ act_short.astype(jnp.int64)) > 0)
+                | ((asset_sales.capital_gain_map.T @ act_short.astype(jnp.int64)) > 0)
             )
 
             # Dispositions: scatter sold/basis/proceeds into each sale's slot (dummy lot clamped; sold 0).
-            disp_sale = np.broadcast_to(sale_bufidx[:, None], sale_olots.shape)
-            disp_lot = np.minimum(sale_olots, ld - 1)
+            disp_sale = np.broadcast_to(asset_sale_buffer_index[:, None], asset_sale_ordered_lots.shape)
+            disp_lot = np.minimum(asset_sale_ordered_lots, ld - 1)
             sale_disp_units = sale_disp_units.at[disp_sale, disp_lot].add(sold)
             sale_disp_basis = sale_disp_basis.at[disp_sale, disp_lot].add(basis)
             sale_disp_proceeds = sale_disp_proceeds.at[disp_sale, disp_lot].add(proceeds)

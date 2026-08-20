@@ -84,6 +84,35 @@ class _AssetPurchaseProgram:
     cash_slot: tuple[int, ...]
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=(
+        "month",
+        "quantity",
+        "same_pool_prior",
+        "capital_gain_map",
+        "tlh_policy_lot_mask",
+        "price_fixed",
+        "price_series",
+    ),
+    meta_fields=("proceeds_slot", "buffer_index", "ordered_lots"),
+)
+@dataclass(frozen=True)
+class _AssetSaleProgram:
+    """Scheduled asset-sale values and the static FIFO topology that interprets them."""
+
+    month: jax.Array
+    quantity: jax.Array
+    same_pool_prior: jax.Array
+    capital_gain_map: jax.Array
+    tlh_policy_lot_mask: jax.Array
+    price_fixed: jax.Array
+    price_series: jax.Array
+    proceeds_slot: tuple[int, ...]
+    buffer_index: tuple[int, ...]
+    ordered_lots: tuple[tuple[int, ...], ...]
+
+
 class _BondInputs(NamedTuple):
     coupon: jax.Array
     redemption: jax.Array
@@ -306,18 +335,6 @@ class _DenseProductTailOutput(NamedTuple):
 
 
 @dataclass(frozen=True)
-class _FoldedSale:
-    """One real scheduled sale, with its static FIFO data resolved host-side for the scan fold."""
-
-    buffer_index: int
-    month: int
-    ordered_lots: tuple[int, ...]
-    quantity: int
-    proceeds_slot: int
-    agent_code: int
-
-
-@dataclass(frozen=True)
 class _FoldedPurchase:
     """One real cash property purchase, static data resolved host-side for the scan fold."""
 
@@ -461,8 +478,6 @@ class _Static:
     """One hashable structural contract shared by the scan and host scatter."""
 
     slot_plan: SlotPlan
-    n_sales: int
-    sale_max_pool: int
     lot_axis: int
     ta_policy_count: int
     ta_max_sleeves: int
@@ -476,9 +491,6 @@ class _Static:
     folded_pe: tuple[_FoldedPE, ...]
     folded_harvest: tuple[_FoldedHarvest, ...]
     salt_link_active: tuple[bool, ...]
-    sale_pslot: tuple[int, ...]
-    sale_bufidx: tuple[int, ...]
-    sale_olots: tuple[tuple[int, ...], ...]
     pur_buf: tuple[int, ...]
     pur_month: tuple[int, ...]
     pur_stake: tuple[int, ...]
@@ -487,7 +499,6 @@ class _Static:
     pur_mort_rows: tuple[int, ...]
     pur_mort_idx: tuple[int, ...]
     folded_purchases_present: bool
-    folded_sales_present: bool
     # Contra row every asset purchase pays into — the market is outside the modeled world.
     external_cash_slot: int
     cg_targets: tuple[_CapitalGainTarget, ...]
