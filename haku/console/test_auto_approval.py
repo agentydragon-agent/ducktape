@@ -57,17 +57,18 @@ _SERVER_CONFIGS = [
     }
     for server_id in _EXACT_TOOLS
 ] + [{"id": "github", "backend": {"kind": "remote_mcp", "url": "https://github.test/mcp", "auth": {"kind": "none"}}}]
-_GITHUB_TOOLS = [
-    "actions_get",
-    "actions_list",
-    "get_file_contents",
-    "get_job_logs",
-    "issue_read",
-    "list_issues",
-    "list_pull_requests",
-    "pull_request_read",
-    "search_pull_requests",
-]
+_GITHUB_TOOL_ARGUMENTS: dict[str, dict[str, object]] = {
+    "actions_get": {"method": "list_workflow_runs"},
+    "actions_list": {"method": "list_workflow_runs"},
+    "get_file_contents": {"path": "README.md"},
+    "get_job_logs": {"run_id": 789, "failed_only": True},
+    "issue_read": {"issue_number": 123},
+    "list_issues": {},
+    "list_pull_requests": {},
+    "pull_request_read": {"pullNumber": 456, "method": "get"},
+    "search_pull_requests": {"query": "is:open"},
+}
+_GITHUB_TOOLS = list(_GITHUB_TOOL_ARGUMENTS)
 _MANUAL_AUTHORITY_CONFIG = {
     "auto_approval_policies": [{"id": "manual", "type": "never"}],
     "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
@@ -464,22 +465,9 @@ async def test_public_ducktape_reads_auto_approve(tool_name: str, arguments: dic
     assert "reviewed read targets repository agentydragon/ducktape" in evaluation
 
 
-@pytest.mark.parametrize("tool_name", _GITHUB_TOOLS)
-async def test_private_gaffer_reads_auto_approve(tool_name: str) -> None:
-    arguments: dict[str, object] = {"owner": "agentydragon", "repo": "gaffer-private"}
-    if tool_name in {"actions_get", "actions_list"}:
-        arguments["method"] = "list_workflow_runs"
-    elif tool_name == "get_job_logs":
-        arguments["run_id"] = 789
-        arguments["failed_only"] = True
-    elif tool_name == "issue_read":
-        arguments["issue_number"] = 123
-    elif tool_name == "pull_request_read":
-        arguments.update({"pullNumber": 456, "method": "get"})
-    elif tool_name == "get_file_contents":
-        arguments["path"] = "README.md"
-    elif tool_name == "search_pull_requests":
-        arguments["query"] = "is:open"
+@pytest.mark.parametrize(("tool_name", "tool_arguments"), list(_GITHUB_TOOL_ARGUMENTS.items()))
+async def test_private_gaffer_reads_auto_approve(tool_name: str, tool_arguments: dict[str, object]) -> None:
+    arguments = {"owner": "agentydragon", "repo": "gaffer-private", **tool_arguments}
     policy_id, evaluation = await _remote_decision("github", tool_name, arguments)
     assert policy_id == AGENT_AUTO_APPROVAL_ID
     assert evaluation is not None
