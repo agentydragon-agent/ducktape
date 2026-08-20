@@ -95,9 +95,6 @@ The labels are namespace-level access grants for the approved agent identities; 
 ClusterRoles remain the permission source of truth. Adding an agent identity means updating
 the generated subjects once, rather than changing every opted-in Namespace.
 
-The experimental `agent-lab` and `public-coder-agent` debug grants remain OIDC-group-only;
-they are not part of the durable ServiceAccount parity set.
-
 The separate `oidc-ksbx-groups:kubectl-sandbox-users` group belongs to the interactive Claude
 Code Web/kubectl sandbox environment. It is not a parent group of Haku and is granted access
 independently by its Namespace labels or explicit RoleBindings.

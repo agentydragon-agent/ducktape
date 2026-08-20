@@ -139,46 +139,6 @@ resource "kubernetes_secret" "codex_pod" {
 }
 
 # ============================================================================
-# openclaw — Codex subscription through LiteLLM and CLIProxyAPI
-# ============================================================================
-# OpenClaw owns the agent loop and talks Anthropic Messages to the main LiteLLM
-# proxy's `codex-*` models. LiteLLM forwards those requests to CLIProxyAPI,
-# which owns the ChatGPT/Codex OAuth session and translates tool calls. This
-# avoids OpenClaw selecting its Codex app-server runtime. (It also avoided the
-# separate litellm-chatgpt Responses provider's independently managed OAuth state,
-# retired 2026-08-06.)
-
-resource "litellm_key" "openclaw" {
-  key_alias = "openclaw"
-  models    = concat(local.codex_client_models, local.embedding_client_models)
-  metadata = {
-    consumer = "openclaw"
-  }
-}
-
-# CLEANUP(added 2026-07-29): drop agent-lab from both reflection namespace lists
-#   after 2026-07-30, together with cluster/k8s/agents/agent-lab. The lab drives
-#   experiment agents through this same Codex-subscription lane rather than
-#   minting a second virtual key for a namespace that is about to be deleted.
-resource "kubernetes_secret" "openclaw" {
-  metadata {
-    name      = "litellm-key-openclaw"
-    namespace = "litellm"
-    annotations = {
-      description                                                     = "Legacy OpenClaw LiteLLM virtual key retained for agent-lab experiments"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-lab"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "agent-lab"
-    }
-  }
-
-  data = {
-    api-key = litellm_key.openclaw.key
-  }
-}
-
-# ============================================================================
 # public-coder-agent — second OpenClaw agent, same Codex-subscription lane
 # ============================================================================
 # The coder agent at public-coder-agent.allegedly.works runs the same harness
