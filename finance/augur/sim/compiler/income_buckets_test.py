@@ -44,7 +44,8 @@ def test_rows_are_unique_across_every_profile_and_source() -> None:
 def test_split_rows_inverts_bucket(profile_count: int) -> None:
     buckets = _buckets(_TREASURY, _CORPORATE, profile_count=profile_count)
     rows = np.asarray(
-        [buckets.bucket(profile, source) for profile in range(profile_count) for source in buckets.source_ids]
+        [buckets.bucket(profile, source) for profile in range(profile_count) for source in buckets.source_ids],
+        dtype=np.int64,
     )
 
     profiles, sources = buckets.split_rows(rows)
@@ -63,7 +64,10 @@ def test_untaxed_recipient_stays_untaxed() -> None:
 
     assert buckets.bucket(NO_CODE, _TREASURY) == NO_CODE
     assert buckets.ordinary_bucket(NO_CODE) == NO_CODE
-    assert buckets.ordinary_rows(np.asarray([NO_CODE, 1])).tolist() == [NO_CODE, buckets.ordinary_bucket(1)]
+    assert buckets.ordinary_rows(np.asarray([NO_CODE, 1], dtype=np.int64)).tolist() == [
+        NO_CODE,
+        buckets.ordinary_bucket(1),
+    ]
 
 
 def test_ordinary_rows_matches_ordinary_bucket() -> None:

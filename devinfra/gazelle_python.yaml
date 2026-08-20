@@ -108,7 +108,6 @@ manifest:
     dns: dnspython
     docker: docker
     docstring_parser: docstring_parser
-    docutils: docutils
     dotenv: python_dotenv
     durationpy: durationpy
     e2e-tests: splitwise
@@ -666,4 +665,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: a0b5e96c58561a3a22cadb57146638e256bce2e2f7f2c167fb9da49e5b53cb7d
+integrity: 7e22a179166abc8de3e5836d8240398034b3cf1e6329df9f984207920afc53f4

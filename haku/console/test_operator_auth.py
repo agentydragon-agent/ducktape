@@ -20,7 +20,7 @@ import httpx
 import pytest
 import pytest_bazel
 import yaml
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import func, select
 
@@ -41,7 +41,7 @@ _OPERATOR_USERNAME = "agentydragon"
 _UNSAFE_HTTP_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-def _dependency_calls(route: APIRoute) -> set[object]:
+def _dependency_calls(route: RouteContext) -> set[object]:
     pending = list(route.dependant.dependencies)
     calls: set[object] = set()
     while pending:
@@ -240,24 +240,26 @@ def test_guards_reject_anonymous_requests_with_test_oidc(make_client) -> None:
 def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) -> None:
     """Adding an unsafe browser route cannot silently omit exact-Origin admission."""
     with make_client() as client:
-        unsafe_routes = [
+        unsafe_routes: list[RouteContext] = [
             route
-            for route in client.app.routes
-            if isinstance(route, APIRoute) and _UNSAFE_HTTP_METHODS.intersection(route.methods)
+            for route in iter_route_contexts(client.app.routes)
+            if isinstance(route.original_route, APIRoute) and _UNSAFE_HTTP_METHODS.intersection(route.methods or ())
         ]
 
     assert unsafe_routes
     for route in unsafe_routes:
+        path = route.path
+        assert path is not None
         calls = _dependency_calls(route)
-        if route.path.startswith("/api/node-daemons/v1/"):
+        if path.startswith("/api/node-daemons/v1/"):
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin not in calls, route.path
-        elif route.path == "/api/internal/kubernetes/authorize":
+        elif path == "/api/internal/kubernetes/authorize":
             # This deny-only, bearer-authenticated machine route is covered by
             # test_kube_proxy_authorization; browser session / Origin guards do not apply.
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin not in calls, route.path
-        elif route.path == "/auth/logout":
+        elif path == "/auth/logout":
             assert operator_auth.require_operator not in calls, route.path
             assert operator_auth.require_operator_mutation_origin in calls, route.path
         else:
