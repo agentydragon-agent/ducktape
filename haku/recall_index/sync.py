@@ -23,7 +23,6 @@ from haku.recall_index.store import (
     GitChunkRow,
     current_git_state,
     git_chunked_blobs,
-    git_content_rows,
     insert_contents,
     insert_git_chunks,
     replace_tip,
@@ -84,12 +83,7 @@ async def sync(
     entries = list_tip(repo, commit_sha)
     blob_shas = {entry.blob_sha for entry in entries}
     chunked_blobs = await git_chunked_blobs(session, index_id, blob_shas, chunker_key=regime)
-    known_rows = await git_content_rows(session, index_id, chunked_blobs, chunker_key=regime)
-
     content_by_sha: dict[str, str] = {}
-    for _, address, content in known_rows:
-        _record_content(content_by_sha, address, content)
-
     new_chunks: list[GitChunkRow] = []
     skipped_binary = 0
     skipped_large = 0

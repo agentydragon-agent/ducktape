@@ -16,8 +16,8 @@ from haku.recall_index.embedder import EMBED_BATCH
 from haku.recall_index.embedding_sync import embed_pending
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.query import query_git
-from haku.recall_index.schema import ContentEmbedding, IndexType
-from haku.recall_index.store import current_git_state, read_indexed_text, register_index
+from haku.recall_index.schema import Content, ContentEmbedding, IndexType
+from haku.recall_index.store import ContentRow, current_git_state, insert_contents, read_indexed_text, register_index
 from haku.recall_index.sync import AlreadyCurrent, SyncOutcome, SyncReport, sync
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
@@ -160,7 +160,8 @@ async def test_restoring_deleted_content_costs_no_embedding(
         await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "back.md": "zeta zeta"}), embedder)
     )
 
-    assert report.contents_materialized == 2
+    # Both blobs reuse their existing chunk rows; restoring a known blob writes no source content.
+    assert report.contents_materialized == 0
     assert next(hit.path for hit in await find(session, embedder, "zeta")) == "back.md"
 
 
@@ -242,6 +243,19 @@ async def test_shared_embedding_worker_drains_source_material_in_bounded_batches
     second = await embed_pending(session, embedder=embedder)
 
     assert (first.contents_embedded, second.contents_embedded) == (EMBED_BATCH, 1)
+
+
+async def test_materializing_more_than_asyncpg_parameter_limit_batches_content_queries(session: AsyncSession) -> None:
+    """A large Git tip must not make one ``IN`` query exceed asyncpg's 32,767-argument limit."""
+    count = 33_000
+
+    await insert_contents(
+        session, (ContentRow(content_sha=f"{number:064x}", content=f"content {number}") for number in range(count))
+    )
+    await session.commit()
+
+    result = await session.execute(select(func.count()).select_from(Content))
+    assert result.scalar_one() == count
 
 
 if __name__ == "__main__":

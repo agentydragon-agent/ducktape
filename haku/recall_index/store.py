@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from itertools import batched
 from uuid import UUID
 
 from sqlalchemy import delete, func, insert, select, text
@@ -36,6 +37,8 @@ from haku.recall_index.schema import (
 
 # Materializing candidate rows before applying the distance operator is load-bearing: embeddings
 # for different model keys may have different dimensions, and pgvector refuses to compare them.
+_MAX_IN_VALUES = 10_000
+
 _GIT_SEARCH_SQL = text(f"""
     WITH candidates AS MATERIALIZED (
         SELECT t.path, t.blob_sha, g.byte_start, g.byte_end, c.content AS text, e.embedding
@@ -186,19 +189,6 @@ async def register_index(session: AsyncSession, index_id: str, *, index_type: In
     )
 
 
-async def embedded_content(session: AsyncSession, content_shas: Iterable[str], *, model_key: str) -> set[str]:
-    """Which globally-addressed content values already have a vector for ``model_key``."""
-    addresses = sorted(set(content_shas))
-    if not addresses:
-        return set()
-    result = await session.execute(
-        select(ContentEmbedding.content_sha)
-        .where(ContentEmbedding.content_sha.in_(addresses))
-        .where(ContentEmbedding.model_key == model_key)
-    )
-    return set(result.scalars())
-
-
 async def pending_content(session: AsyncSession, *, model_key: str, limit: int) -> list[ContentRow]:
     """Return globally queued content with no vector for ``model_key`` yet.
 
@@ -227,31 +217,17 @@ async def git_chunked_blobs(
     addresses = sorted(set(blob_shas))
     if not addresses:
         return set()
-    result = await session.execute(
-        select(GitChunk.blob_sha)
-        .where(GitChunk.index_id == index_id)
-        .where(GitChunk.blob_sha.in_(addresses))
-        .where(GitChunk.chunker_key == chunker_key)
-        .distinct()
-    )
-    return set(result.scalars())
-
-
-async def git_content_rows(
-    session: AsyncSession, index_id: str, blob_shas: Iterable[str], *, chunker_key: str
-) -> list[tuple[str, str, str]]:
-    """Existing Git source occurrences paired with their exact global content."""
-    addresses = sorted(set(blob_shas))
-    if not addresses:
-        return []
-    result = await session.execute(
-        select(GitChunk.blob_sha, Content.content_sha, Content.content)
-        .join(Content, Content.content_sha == GitChunk.content_sha)
-        .where(GitChunk.index_id == index_id)
-        .where(GitChunk.blob_sha.in_(addresses))
-        .where(GitChunk.chunker_key == chunker_key)
-    )
-    return list(result.tuples())
+    chunked: set[str] = set()
+    for addresses_batch in batched(addresses, _MAX_IN_VALUES, strict=False):
+        result = await session.execute(
+            select(GitChunk.blob_sha)
+            .where(GitChunk.index_id == index_id)
+            .where(GitChunk.blob_sha.in_(addresses_batch))
+            .where(GitChunk.chunker_key == chunker_key)
+            .distinct()
+        )
+        chunked.update(result.scalars())
+    return chunked
 
 
 def _content_map(rows: Iterable[tuple[str, str]]) -> dict[str, str]:
@@ -273,16 +249,17 @@ async def insert_contents(session: AsyncSession, rows: Iterable[ContentRow]) -> 
     content_by_sha = _content_map((row.content_sha, row.content) for row in rows)
     if not content_by_sha:
         return
-    existing = await session.execute(
-        select(Content.content_sha, Content.content).where(Content.content_sha.in_(content_by_sha))
-    )
-    for address, content in existing:
-        if content_by_sha[address] != content:
-            raise AssertionError(f"content address collision: {address}")
-    await session.execute(
-        pg_insert(Content).on_conflict_do_nothing(index_elements=["content_sha"]),
-        [{"content_sha": address, "content": content} for address, content in content_by_sha.items()],
-    )
+    for addresses_batch in batched(content_by_sha, _MAX_IN_VALUES, strict=False):
+        existing = await session.execute(
+            select(Content.content_sha, Content.content).where(Content.content_sha.in_(addresses_batch))
+        )
+        for address, content in existing:
+            if content_by_sha[address] != content:
+                raise AssertionError(f"content address collision: {address}")
+        await session.execute(
+            pg_insert(Content).on_conflict_do_nothing(index_elements=["content_sha"]),
+            [{"content_sha": address, "content": content_by_sha[address]} for address in addresses_batch],
+        )
 
 
 async def insert_content_embeddings(session: AsyncSession, rows: Sequence[ContentEmbeddingRow]) -> None:
