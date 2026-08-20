@@ -23,6 +23,13 @@ class KubernetesGrantStatus(StrEnum):
     EXPIRED = "expired"
 
 
+class KubernetesGrantScopeKind(StrEnum):
+    NAMESPACES = "namespaces"
+    ALL_NAMESPACES = "all_namespaces"
+    CLUSTER = "cluster"
+    NON_RESOURCE = "non_resource"
+
+
 _NON_EMPTY = Annotated[str, Field(min_length=1)]
 
 
@@ -75,6 +82,51 @@ class KubernetesRule(BaseModel):
         return self
 
 
+class KubernetesGrantScope(BaseModel):
+    """Where every rule in one grant may apply.
+
+    ``all_namespaces`` covers namespaced requests only; it never includes cluster-scoped
+    resources. Cluster resources and non-resource URLs require their own explicit scope kinds.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: KubernetesGrantScopeKind
+    namespaces: frozenset[_NON_EMPTY] = Field(default_factory=frozenset)
+
+    @field_validator("namespaces")
+    @classmethod
+    def normalize_namespaces(cls, value: frozenset[str]) -> frozenset[str]:
+        namespaces = _clean_values(value, "namespaces")
+        if "*" in namespaces:
+            raise ValueError("use all_namespaces instead of a namespace wildcard")
+        return namespaces
+
+    @field_serializer("namespaces")
+    def serialize_namespaces(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
+    @model_validator(mode="after")
+    def validate_kind(self) -> KubernetesGrantScope:
+        if self.kind is KubernetesGrantScopeKind.NAMESPACES:
+            if not self.namespaces:
+                raise ValueError("namespaces scope requires at least one namespace")
+        elif self.namespaces:
+            raise ValueError(f"{self.kind.value} scope cannot contain namespaces")
+        return self
+
+
+def validate_grant_scope_rules(scope: KubernetesGrantScope, rules: Iterable[KubernetesRule]) -> None:
+    """Reject scope/rule combinations that Kubernetes cannot interpret consistently."""
+
+    non_resource = tuple(bool(rule.non_resource_urls) for rule in rules)
+    if scope.kind is KubernetesGrantScopeKind.NON_RESOURCE:
+        if not non_resource or not all(non_resource):
+            raise ValueError("non_resource scope requires only non-resource URL rules")
+    elif any(non_resource):
+        raise ValueError(f"{scope.kind.value} scope requires only resource rules")
+
+
 class KubernetesGrant(BaseModel):
     """Durable grant returned by the service."""
 
@@ -83,6 +135,7 @@ class KubernetesGrant(BaseModel):
     grant_id: UUID
     agent_id: UUID
     source_tool_call_id: _NON_EMPTY
+    scope: KubernetesGrantScope
     rules: tuple[KubernetesRule, ...] = Field(min_length=1)
     status: KubernetesGrantStatus
     created_at: datetime.datetime
@@ -92,6 +145,7 @@ class KubernetesGrant(BaseModel):
 
     @model_validator(mode="after")
     def validate_timestamps(self) -> KubernetesGrant:
+        validate_grant_scope_rules(self.scope, self.rules)
         if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
             raise ValueError("created_at must be timezone-aware")
         if self.expires_at.tzinfo is None or self.expires_at.utcoffset() is None:

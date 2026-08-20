@@ -6,8 +6,13 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.kubernetes_grant_models import KubernetesRule
-from haku.console.kubernetes_grant_service import rule_covers, rules_cover
+from haku.console.kubernetes_grant_models import (
+    KubernetesGrantScope,
+    KubernetesGrantScopeKind,
+    KubernetesRule,
+    validate_grant_scope_rules,
+)
+from haku.console.kubernetes_grant_service import rule_covers, rules_cover, scope_covers
 
 
 def resource_rule(**kwargs: object) -> KubernetesRule:
@@ -56,6 +61,32 @@ def test_rule_rejects_mixed_or_empty_shape() -> None:
         KubernetesRule(api_groups=("",), resources=("pods",), verbs=())
     with pytest.raises(ValidationError, match="cannot mix"):
         KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",), non_resource_urls=("/healthz",))
+
+
+def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope() -> None:
+    exact = KubernetesGrantScope(
+        kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("diagnostics", "public-coder-agent")
+    )
+    requested = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("diagnostics",))
+    other = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("default",))
+    all_namespaces = KubernetesGrantScope(kind=KubernetesGrantScopeKind.ALL_NAMESPACES)
+    cluster = KubernetesGrantScope(kind=KubernetesGrantScopeKind.CLUSTER)
+
+    assert scope_covers(exact, requested)
+    assert not scope_covers(exact, other)
+    assert scope_covers(all_namespaces, requested)
+    assert not scope_covers(all_namespaces, cluster)
+
+
+def test_scope_is_explicit_and_consistent_with_rule_kind() -> None:
+    with pytest.raises(ValidationError, match="requires at least one namespace"):
+        KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES)
+    with pytest.raises(ValidationError, match="cannot contain namespaces"):
+        KubernetesGrantScope(kind=KubernetesGrantScopeKind.CLUSTER, namespaces=("default",))
+    with pytest.raises(ValidationError, match="use all_namespaces"):
+        KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("*",))
+    with pytest.raises(ValueError, match="requires only non-resource"):
+        validate_grant_scope_rules(KubernetesGrantScope(kind=KubernetesGrantScopeKind.NON_RESOURCE), (resource_rule(),))
 
 
 def test_matching_is_conservative_about_resource_names() -> None:

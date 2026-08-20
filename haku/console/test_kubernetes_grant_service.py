@@ -8,12 +8,20 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.kubernetes_grant_models import KubernetesGrant, KubernetesGrantStatus, KubernetesRule
+from haku.console.kubernetes_grant_models import (
+    KubernetesGrant,
+    KubernetesGrantScope,
+    KubernetesGrantScopeKind,
+    KubernetesGrantStatus,
+    KubernetesRule,
+)
 from haku.console.kubernetes_grant_service import KubernetesGrantService
 
 _NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_AGENT = UUID("10000000-0000-4000-8000-000000000002")
+_SCOPE = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("default", "diagnostics"))
+_DEFAULT_SCOPE = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("default",))
 
 
 def _rule(verb: str = "get") -> KubernetesRule:
@@ -25,11 +33,12 @@ class FakeRepository:
         self.grants: dict[UUID, KubernetesGrant] = {}
         self.expire_calls: list[tuple[UUID | None, datetime]] = []
 
-    async def create(self, *, agent_id, source_tool_call_id, rules, created_at, expires_at):
+    async def create(self, *, agent_id, source_tool_call_id, scope, rules, created_at, expires_at):
         grant = KubernetesGrant(
             grant_id=uuid4(),
             agent_id=agent_id,
             source_tool_call_id=source_tool_call_id,
+            scope=scope,
             rules=tuple(rules),
             status=KubernetesGrantStatus.ACTIVE,
             created_at=created_at,
@@ -80,12 +89,20 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
     repo = FakeRepository()
     service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     grant = await service.create_grant(
-        agent_id=_AGENT, source_tool_call_id="tool-call-1", rules=(_rule(),), expires_at=_NOW + timedelta(minutes=5)
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=_NOW + timedelta(minutes=5),
     )
 
     assert grant.agent_id == _AGENT
-    assert (await service.match_request(agent_id=_AGENT, required_rules=(_rule(),))).allowed
-    assert not (await service.match_request(agent_id=_OTHER_AGENT, required_rules=(_rule(),))).allowed
+    assert (
+        await service.match_request(agent_id=_AGENT, required_scope=_DEFAULT_SCOPE, required_rules=(_rule(),))
+    ).allowed
+    assert not (
+        await service.match_request(agent_id=_OTHER_AGENT, required_scope=_DEFAULT_SCOPE, required_rules=(_rule(),))
+    ).allowed
     assert repo.expire_calls == []
 
 
@@ -105,7 +122,7 @@ async def test_create_rejects_invalid_input(source_tool_call_id, rules, expires_
 
     with pytest.raises(ValueError, match=message):
         await service.create_grant(
-            agent_id=_AGENT, source_tool_call_id=source_tool_call_id, rules=rules, expires_at=expires_at
+            agent_id=_AGENT, source_tool_call_id=source_tool_call_id, scope=_SCOPE, rules=rules, expires_at=expires_at
         )
 
 
@@ -116,6 +133,7 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
         grant_id=uuid4(),
         agent_id=_AGENT,
         source_tool_call_id="tool-call-1",
+        scope=_SCOPE,
         rules=(_rule(),),
         status=KubernetesGrantStatus.ACTIVE,
         created_at=_NOW - timedelta(minutes=10),
@@ -124,7 +142,9 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
     repo.grants[grant.grant_id] = grant
     service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
-    assert not (await service.match_request(agent_id=_AGENT, required_rules=(_rule(),))).allowed
+    assert not (
+        await service.match_request(agent_id=_AGENT, required_scope=_DEFAULT_SCOPE, required_rules=(_rule(),))
+    ).allowed
     assert repo.expire_calls == []
 
 
@@ -135,6 +155,7 @@ async def test_get_uses_one_timestamp_when_expiring_a_grant() -> None:
         grant_id=uuid4(),
         agent_id=_AGENT,
         source_tool_call_id="tool-call-1",
+        scope=_SCOPE,
         rules=(_rule(),),
         status=KubernetesGrantStatus.ACTIVE,
         created_at=_NOW - timedelta(minutes=10),
@@ -162,13 +183,21 @@ async def test_match_returns_the_earliest_expiration_bound() -> None:
     repo = FakeRepository()
     service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     first = await service.create_grant(
-        agent_id=_AGENT, source_tool_call_id="tool-call-1", rules=(_rule(),), expires_at=_NOW + timedelta(minutes=10)
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=_NOW + timedelta(minutes=10),
     )
     second = await service.create_grant(
-        agent_id=_AGENT, source_tool_call_id="tool-call-2", rules=(_rule(),), expires_at=_NOW + timedelta(minutes=2)
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-2",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=_NOW + timedelta(minutes=2),
     )
 
-    decision = await service.match_request(agent_id=_AGENT, required_rules=(_rule(),))
+    decision = await service.match_request(agent_id=_AGENT, required_scope=_DEFAULT_SCOPE, required_rules=(_rule(),))
 
     assert decision.allowed
     assert decision.grant_id == second.grant_id

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, cast
@@ -10,7 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -23,12 +24,21 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     StaticCredential,
 )
-from haku.console.kubernetes_grant_models import KubernetesGrantSourceError, KubernetesGrantStatus, KubernetesRule
+from haku.console.kubernetes_grant_models import (
+    KubernetesGrantScope,
+    KubernetesGrantScopeKind,
+    KubernetesGrantSourceError,
+    KubernetesGrantStatus,
+    KubernetesRule,
+)
 from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
 from haku.console.tool_calls import ToolCallStatus
 
 _NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
+_SCOPE = KubernetesGrantScope(
+    kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("diagnostics", "public-coder-agent")
+)
 
 
 async def _default_agent(sessions: async_sessionmaker[AsyncSession]) -> tuple[UUID, UUID]:
@@ -89,6 +99,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
             grant = await repository.create(
                 agent_id=agent_id,
                 source_tool_call_id=source_tool_call_id,
+                scope=_SCOPE,
                 rules=(_RULE,),
                 created_at=_NOW,
                 expires_at=_NOW + timedelta(minutes=5),
@@ -126,6 +137,7 @@ def test_repository_rejects_wrong_or_auto_approved_source(make_client: Any) -> N
                 await repository.create(
                     agent_id=agent_id,
                     source_tool_call_id=source_tool_call_id,
+                    scope=_SCOPE,
                     rules=(_RULE,),
                     created_at=_NOW,
                     expires_at=_NOW + timedelta(minutes=5),
@@ -151,6 +163,7 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
                             grant_id=uuid4(),
                             agent_id=agent_id,
                             source_tool_call_id=wrong_tool,
+                            scope=_SCOPE,
                             rules=[_RULE],
                             status=KubernetesGrantStatus.ACTIVE,
                             created_at=_NOW,
@@ -158,6 +171,43 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
                             ended_at=None,
                             end_reason=None,
                         )
+                    )
+
+        client.portal.call(rejected)
+
+
+def test_database_rejects_invalid_scope_shape(make_client: Any) -> None:
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(_default_agent, sessions)
+        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+
+        async def rejected() -> None:
+            with pytest.raises(IntegrityError, match="ck_kubernetes_grants_scope_shape"):
+                async with sessions.begin() as session:
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO kubernetes_grants (
+                                grant_id, agent_id, source_tool_call_id, scope, rules, status,
+                                created_at, expires_at, ended_at, end_reason
+                            ) VALUES (
+                                :grant_id, :agent_id, :source_tool_call_id, CAST(:scope AS jsonb),
+                                CAST(:rules AS jsonb), 'active', :created_at, :expires_at, NULL, NULL
+                            )
+                            """
+                        ),
+                        {
+                            "grant_id": uuid4(),
+                            "agent_id": agent_id,
+                            "source_tool_call_id": source_tool_call_id,
+                            "scope": json.dumps({"kind": "namespaces", "namespaces": []}),
+                            "rules": json.dumps([_RULE.model_dump(mode="json")]),
+                            "created_at": _NOW,
+                            "expires_at": _NOW + timedelta(minutes=5),
+                        },
                     )
 
         client.portal.call(rejected)

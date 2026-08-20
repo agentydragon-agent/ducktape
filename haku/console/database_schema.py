@@ -49,7 +49,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesRule
+from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -501,9 +501,10 @@ class AuthorizationGrant(Base):
 class KubernetesGrantRow(Base):
     """One Agent-owned, time-bounded Kubernetes capability lease.
 
-    The rule document is intentionally JSONB: Kubernetes evolves its resource vocabulary, while
-    the domain validates the stable RBAC-like shape before writing. ``source_tool_call_id`` is
-    retained as immutable provenance and must refer to the Agent-authenticated source call.
+    Scope and rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while
+    the domain validates the stable namespace and RBAC-like shapes before writing.
+    ``source_tool_call_id`` is retained as immutable provenance and must refer to the
+    Agent-authenticated source call.
     """
 
     __tablename__ = "kubernetes_grants"
@@ -513,6 +514,15 @@ class KubernetesGrantRow(Base):
         CheckConstraint(
             "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
             name="ck_kubernetes_grants_rules_nonempty",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(scope) = 'object' "
+            "AND scope ? 'kind' AND scope ? 'namespaces' "
+            "AND scope->>'kind' IN ('namespaces', 'all_namespaces', 'cluster', 'non_resource') "
+            "AND jsonb_typeof(scope->'namespaces') = 'array' "
+            "AND ((scope->>'kind' = 'namespaces' AND jsonb_array_length(scope->'namespaces') > 0) "
+            "OR (scope->>'kind' <> 'namespaces' AND jsonb_array_length(scope->'namespaces') = 0))",
+            name="ck_kubernetes_grants_scope_shape",
         ),
         CheckConstraint("expires_at > created_at", name="ck_kubernetes_grants_expiration_after_creation"),
         CheckConstraint(
@@ -531,6 +541,7 @@ class KubernetesGrantRow(Base):
     source_tool_call_id: Mapped[str] = mapped_column(
         Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
     )
+    scope: Mapped[KubernetesGrantScope] = mapped_column(PydanticColumn(KubernetesGrantScope), nullable=False)
     rules: Mapped[list[KubernetesRule]] = mapped_column(PydanticColumn(list[KubernetesRule]), nullable=False)
     status: Mapped[KubernetesGrantStatus] = mapped_column(
         TextBackedStrEnumColumn(KubernetesGrantStatus), nullable=False

@@ -10,8 +10,11 @@ from uuid import UUID
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
     KubernetesGrantDecision,
+    KubernetesGrantScope,
+    KubernetesGrantScopeKind,
     KubernetesGrantStatus,
     KubernetesRule,
+    validate_grant_scope_rules,
 )
 
 
@@ -21,6 +24,7 @@ class KubernetesGrantRepository(Protocol):
         *,
         agent_id: UUID,
         source_tool_call_id: str,
+        scope: KubernetesGrantScope,
         rules: Sequence[KubernetesRule],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
@@ -103,6 +107,16 @@ def rules_cover(granted: Sequence[KubernetesRule], required: Sequence[Kubernetes
     return bool(required) and all(any(rule_covers(candidate, needed) for candidate in granted) for needed in required)
 
 
+def scope_covers(granted: KubernetesGrantScope, required: KubernetesGrantScope) -> bool:
+    """Whether one grant scope covers the complete required request scope."""
+
+    if required.kind is KubernetesGrantScopeKind.NAMESPACES:
+        if granted.kind is KubernetesGrantScopeKind.ALL_NAMESPACES:
+            return True
+        return granted.kind is KubernetesGrantScopeKind.NAMESPACES and required.namespaces <= granted.namespaces
+    return granted.kind is required.kind
+
+
 class KubernetesGrantService:
     """Own grant lifecycle and matching for one explicit Agent identity.
 
@@ -128,6 +142,7 @@ class KubernetesGrantService:
         *,
         agent_id: UUID,
         source_tool_call_id: str,
+        scope: KubernetesGrantScope,
         rules: Sequence[KubernetesRule],
         expires_at: datetime.datetime,
     ) -> KubernetesGrant:
@@ -141,6 +156,7 @@ class KubernetesGrantService:
         rules = tuple(rules)
         if not rules:
             raise ValueError("rules must not be empty")
+        validate_grant_scope_rules(scope, rules)
         if expires_at.tzinfo is None or expires_at.utcoffset() is None:
             raise ValueError("expires_at must be timezone-aware")
         if expires_at <= now:
@@ -150,6 +166,7 @@ class KubernetesGrantService:
         return await self._repository.create(
             agent_id=agent_id,
             source_tool_call_id=source_tool_call_id,
+            scope=scope,
             rules=rules,
             created_at=now,
             expires_at=expires_at,
@@ -181,7 +198,7 @@ class KubernetesGrantService:
         return await self._repository.expire(agent_id=agent_id, now=self._clock())
 
     async def match_request(
-        self, *, agent_id: UUID, required_rules: Sequence[KubernetesRule]
+        self, *, agent_id: UUID, required_scope: KubernetesGrantScope, required_rules: Sequence[KubernetesRule]
     ) -> KubernetesGrantDecision:
         """Match one request against active grants and return the earliest expiry bound."""
 
@@ -189,10 +206,11 @@ class KubernetesGrantService:
         required = tuple(required_rules)
         if not required:
             raise ValueError("required_rules must not be empty")
+        validate_grant_scope_rules(required_scope, required)
         matching = [
             grant
             for grant in await self._repository.active_for_agent(agent_id=agent_id, now=now)
-            if rules_cover(grant.rules, required)
+            if scope_covers(grant.scope, required_scope) and rules_cover(grant.rules, required)
         ]
         if matching:
             grant = min(matching, key=lambda item: item.expires_at)

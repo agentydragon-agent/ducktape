@@ -1,8 +1,8 @@
 """Persist explicit-Agent temporary Kubernetes grants and their provenance.
 
-Grant rules stay in JSONB because the Kubernetes API resource vocabulary is open-ended. The
-application domain validates the RBAC-like rule shape before insertion; PostgreSQL enforces the
-lifecycle and provenance invariants here.
+Grant scope and rules stay in JSONB because the Kubernetes API resource vocabulary is open-ended.
+The application domain validates the namespace scope and RBAC-like rule shape before insertion;
+PostgreSQL enforces their basic shape plus the lifecycle and provenance invariants here.
 
 Revision ID: 0089
 Revises: 0088
@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column("grant_id", UUID(as_uuid=True), nullable=False),
         sa.Column("agent_id", UUID(as_uuid=True), nullable=False),
         sa.Column("source_tool_call_id", sa.Text(), nullable=False),
+        sa.Column("scope", JSONB(), nullable=False),
         sa.Column("rules", JSONB(), nullable=False),
         sa.Column("status", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -50,6 +51,15 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
             name="ck_kubernetes_grants_rules_nonempty",
+        ),
+        sa.CheckConstraint(
+            "jsonb_typeof(scope) = 'object' "
+            "AND scope ? 'kind' AND scope ? 'namespaces' "
+            "AND scope->>'kind' IN ('namespaces', 'all_namespaces', 'cluster', 'non_resource') "
+            "AND jsonb_typeof(scope->'namespaces') = 'array' "
+            "AND ((scope->>'kind' = 'namespaces' AND jsonb_array_length(scope->'namespaces') > 0) "
+            "OR (scope->>'kind' <> 'namespaces' AND jsonb_array_length(scope->'namespaces') = 0))",
+            name="ck_kubernetes_grants_scope_shape",
         ),
         sa.CheckConstraint("expires_at > created_at", name="ck_kubernetes_grants_expiration_after_creation"),
         sa.CheckConstraint(
