@@ -199,12 +199,13 @@ async def test_binary_and_oversized_blobs_stay_out_of_the_index(
     index = pygit2.Index()
     index.add(pygit2.IndexEntry("a.md", repo.create_blob(b"alpha"), pygit2.enums.FileMode.BLOB))
     index.add(pygit2.IndexEntry("logo.png", repo.create_blob(b"\x89PNG\x00\xff\xfe"), pygit2.enums.FileMode.BLOB))
+    index.add(pygit2.IndexEntry("drawing.svg", repo.create_blob(b"<svg>\x00</svg>"), pygit2.enums.FileMode.BLOB))
     head = str(repo.create_commit("refs/heads/main", _AUTHOR, _AUTHOR, "c", index.write_tree(repo), []))
 
     report = as_report(await run_sync(session, repo, head, embedder))
 
-    assert (report.tip_files, report.skipped_binary) == (2, 1)
-    assert all(hit.path != "logo.png" for hit in await find(session, embedder, "alpha"))
+    assert (report.tip_files, report.skipped_binary) == (3, 2)
+    assert {hit.path for hit in await find(session, embedder, "alpha")} == {"a.md"}
 
 
 async def test_a_failed_embedding_worker_leaves_the_source_tip_published(
