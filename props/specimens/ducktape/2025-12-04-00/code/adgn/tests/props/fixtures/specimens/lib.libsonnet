@@ -1,1 +1,0 @@
-../../../../src/adgn/props/specimens/lib.libsonnet
