@@ -189,22 +189,6 @@ async def register_index(session: AsyncSession, index_id: str, *, index_type: In
     )
 
 
-async def embedded_content(session: AsyncSession, content_shas: Iterable[str], *, model_key: str) -> set[str]:
-    """Which globally-addressed content values already have a vector for ``model_key``."""
-    addresses = sorted(set(content_shas))
-    if not addresses:
-        return set()
-    embedded: set[str] = set()
-    for addresses_batch in batched(addresses, _MAX_IN_VALUES, strict=False):
-        result = await session.execute(
-            select(ContentEmbedding.content_sha)
-            .where(ContentEmbedding.content_sha.in_(addresses_batch))
-            .where(ContentEmbedding.model_key == model_key)
-        )
-        embedded.update(result.scalars())
-    return embedded
-
-
 async def pending_content(session: AsyncSession, *, model_key: str, limit: int) -> list[ContentRow]:
     """Return globally queued content with no vector for ``model_key`` yet.
 
