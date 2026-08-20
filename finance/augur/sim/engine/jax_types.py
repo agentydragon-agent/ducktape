@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import NamedTuple
 
 import jax
@@ -63,6 +64,24 @@ class _PropertyCashflowInputs(NamedTuple):
     property_slot: jax.Array
     income_profile: jax.Array
     deduction_profile: jax.Array
+
+
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=("month", "amount_quanta", "price_fixed", "price_series", "quantity_scale"),
+    meta_fields=("lot_slot", "cash_slot"),
+)
+@dataclass(frozen=True)
+class _AssetPurchaseProgram:
+    """Scheduled asset-purchase values and the static slots that interpret them."""
+
+    month: jax.Array
+    amount_quanta: jax.Array
+    price_fixed: jax.Array
+    price_series: jax.Array
+    quantity_scale: jax.Array
+    lot_slot: tuple[int, ...]
+    cash_slot: tuple[int, ...]
 
 
 class _BondInputs(NamedTuple):
@@ -469,11 +488,6 @@ class _Static:
     pur_mort_idx: tuple[int, ...]
     folded_purchases_present: bool
     folded_sales_present: bool
-    # Scheduled ASSET purchases (`pur_*` above is real property). One dedicated lot slot each,
-    # so unlike sales there is no shared-pool ordering to fold.
-    buy_lot_slot: tuple[int, ...]
-    buy_cash_slot: tuple[int, ...]
-    asset_buys_present: bool
     # Contra row every asset purchase pays into — the market is outside the modeled world.
     external_cash_slot: int
     cg_targets: tuple[_CapitalGainTarget, ...]
