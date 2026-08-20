@@ -88,6 +88,7 @@ filegroup(
         "haku/console/static-metadata.yaml",
         "haku/console/static-service.yaml",
         "haku/managed-agent/haku-forgejo-tea.sops.yaml",
+        "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
         "haku/workspaces/app/sandboxtemplate-haku.yaml",
         "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",

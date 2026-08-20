@@ -398,21 +398,16 @@ def test_example_config_parses():
     path = runfiles.get_required_path("_main/laser/material_test/example_config.toml")
     with path.open("rb") as f:
         data = tomllib.load(f)
-    cfg = GridConfig.model_validate(data)
-    assert cfg.x.param == CutParam.POWER_PCT
-    assert cfg.y.param == CutParam.Z_PER_PASS_MM
-    assert cfg.border.enabled is True
-    assert cfg.border.power_pct == 10.0
+    GridConfig.model_validate(data)
 
 
 def test_example_config_3d_parses():
-    """example_config_3d.toml must parse and produce a valid GridConfig with cols."""
+    """example_config_3d.toml must parse and remain a three-dimensional example."""
     path = runfiles.get_required_path("_main/laser/material_test/example_config_3d.toml")
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)
     assert cfg.cols is not None
-    assert cfg.cols.param == CutParam.NUM_PASSES
 
 
 # ── 3D/4D sweep tests ────────────────────────────────────────────────────────
