@@ -70,7 +70,6 @@ resources:
   - agents/alloy-otlp-bearer/flux-kustomization.yaml
   - agents/codex-pod/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
-  - agents/airlock-oidc-proxy-tf/flux-kustomization.yaml
   - x/google-workspace-mcp/flux-kustomization.yaml
   - agents/tana-mcp/flux-kustomization.yaml
   - agents/tana-mcp-facade/flux-kustomization.yaml
