@@ -218,49 +218,10 @@ to prevent, and it is also why a behind corpus attaches its status to the result
 The wording is deliberately close to OpenClaw's `memory-core` prompt section, which is the one
 comparable thing in reach and has had far more exposure to real sessions than this has.
 
-## Evaluating it locally
-
-Everything here is runnable against a clone and a throwaway Postgres, which is the point: whether
-semantic retrieval over these configured indexes beats ripgrep and `list_sessions` is an empirical
-question, and the answer wants measuring rather than arguing.
-
-The CLI needs an embedder as well as a database — it defaults to `http://localhost:11434/v1` and
-`qwen3-embedding:4b`, so either run Ollama locally or port-forward `ollama.ollama:11434`.
-`HAKU_STATE_INDEX_EMBEDDER_{URL,MODEL}` override both, and the model must be the one the server
-actually reports, since the client fails closed on a mismatch rather than writing a second vector
-space into the configured index.
-
-```bash
-docker run -d --rm -e POSTGRES_PASSWORD=x -p 5432:5432 pgvector/pgvector:pg18
-export HAKU_STATE_INDEX_DATABASE_URL=postgresql+asyncpg://postgres:x@localhost:5432/postgres
-
-bb run //haku/recall_index:main -- index-git haku-state haku-state-git \
-    https://git.allegedly.works/haku/haku-state \
-    --mirror /tmp/haku-state.git --username haku --password "$FORGEJO_TOKEN"
-bb run //haku/recall_index:main -- embed
-bb run //haku/recall_index:main -- query-git haku-state "how do I file an intake item"
-bb run //haku/recall_index:main -- status haku-state git
-```
-
-`index-git` is idempotent and incremental: re-running it after new commits materializes only
-previously unseen source blobs. `embed` then drains the shared content queue for the selected
-model.
-
-A configured chat index reads the console's own tables, so `index-chat` wants a database that has
-them — the console's, or a restored copy of it. There is no repository to clone and no credential
-to pass:
-
-```bash
-bb run //haku/recall_index:main -- index-chat haku-conversations console-session-messages
-bb run //haku/recall_index:main -- embed
-bb run //haku/recall_index:main -- query-chat haku-conversations "what did we decide about the egress fence"
-bb run //haku/recall_index:main -- query-chat haku-conversations "intake" --session-id 0e4b…
-```
-
 ## Deployed, in the console
 
 - **Schema ownership.** `store.ensure_schema` creates the extension, schema, and tables for the
-  CLI and the tests, which own their whole database. The deployed index gets them from the console's Alembic
+  tests, which own their whole database. The deployed index gets them from the console's Alembic
   baseline — the console's CNPG cluster is the home because the chat corpus's source tables are
   already there.
 - **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "chunking",
@@ -147,32 +147,6 @@ py_library(
         ":store",
         "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "main_lib",
-    srcs = ["main.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":chat_sync",
-        ":chunking",
-        ":embedding_sync",
-        ":git_tree",
-        ":openai_embedder",
-        ":query",
-        ":store",
-        ":sync",
-        "@pypi//openai",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_binary(
-    name = "main",
-    main_module = "haku.recall_index.main",
-    visibility = ["//visibility:public"],
-    deps = [":main_lib"],
 )
 
 py_library(

@@ -3,7 +3,7 @@
 Shared by both corpora's sync tests: what they assert is the index's bookkeeping (what got
 embedded, what got re-used, what stayed reachable), and a real embedder would make those tests
 slow and flaky without making them stronger. Nothing in this package exercises the real one; the
-CLI is how `OpenAIEmbedder` gets pointed at a live endpoint.
+console configures the real embedder for production use.
 """
 
 from __future__ import annotations
