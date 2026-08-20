@@ -137,15 +137,15 @@ tf.download(
         # advertises modus-agendi/anthropic-claude-managed-agents v1.1.0, but
         # its GitHub repo/release assets currently 404. Keeping it here makes
         # unrelated Terraform/image jobs fail while mirroring providers.
-        "external": "hashicorp/external:2.3.5",
-        "flux": "fluxcd/flux:1.7.6",
+        "external": "hashicorp/external:2.4.0",
+        "flux": "fluxcd/flux:1.9.0",
         "forgejo": "svalabs/forgejo:1.5.0",
         "github": "integrations/github:6.6.0",
         "grafana": "grafana/grafana:3.22.2",
-        "harbor": "goharbor/harbor:3.11.3",
+        "harbor": "goharbor/harbor:3.12.0",
         "hcloud": "hetznercloud/hcloud:1.60.0",
         "headscale": "awlsring/headscale:0.5.0",
-        "helm": "hashicorp/helm:3.1.1",
+        "helm": "hashicorp/helm:3.2.0",
         "http": "hashicorp/http:3.6.0",
         "kubernetes": "hashicorp/kubernetes:2.38.0",
         "libvirt": "dmacvicar/libvirt:0.9.3",
@@ -155,14 +155,14 @@ tf.download(
         # request construction/egress and release workflow) BEFORE updating.
         # Do not auto-merge Renovate/update_deps bumps.
         "litellm": "ncecere/litellm:2.0.1",
-        "local": "hashicorp/local:2.5.3",
-        "null": "hashicorp/null:3.2.4",
+        "local": "hashicorp/local:2.9.0",
+        "null": "hashicorp/null:3.3.0",
         "ovh": "ovh/ovh:2.13.1",
-        "proxmox": "bpg/proxmox:0.93.0",
-        "random": "hashicorp/random:3.7.2",
+        "proxmox": "bpg/proxmox:0.111.0",
+        "random": "hashicorp/random:3.9.0",
         "sops": "carlpett/sops:1.4.1",
-        "talos": "siderolabs/talos:0.10.1",
-        "tls": "hashicorp/tls:4.1.0",
+        "talos": "siderolabs/talos:0.11.0",
+        "tls": "hashicorp/tls:4.3.0",
         "vault": "hashicorp/vault:5.7.0",
     },
     tfdoc_version = "0.19.0",
@@ -197,7 +197,7 @@ oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 # The hermetic Python toolchain is bundled in the interpreter layer.
 oci.pull(
     name = "debian_trixie_slim",
-    digest = "sha256:4ffb3a1511099754cddc70eb1b12e50ffdb67619aa0ab6c13fcd800a78ef7c7a",
+    digest = "sha256:38a76d01668772e381ad2826d876627c89e7133e2f8a0f5d567306798b0f2a16",
     image = "mirror.gcr.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "trixie-slim",
@@ -206,7 +206,7 @@ oci.pull(
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
     name = "postgres_18",
-    digest = "sha256:a9abf4275f9e99bff8e6aed712b3b7dfec9cac1341bba01c1ffdfce9ff9fc34a",
+    digest = "sha256:cd78ca58eb75f929698e117a589488ccb2bd45107247fe02400b50ff6c418324",
     image = "mirror.gcr.io/library/postgres",
     platforms = ["linux/amd64"],
     tag = "18",
@@ -217,7 +217,7 @@ oci.pull(
 # the only thing that makes content searchable) is only testable against the real operator.
 oci.pull(
     name = "pgvector_pg18",
-    digest = "sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62",
+    digest = "sha256:1d50c689b0a6511b9ea0a15615281c81a59fd04a08eb35057ec8646fb3a2118a",
     image = "mirror.gcr.io/pgvector/pgvector",
     platforms = ["linux/amd64"],
     tag = "pg18",
@@ -254,7 +254,7 @@ oci.pull(
 # Debian 12 (Bookworm) ships glibc 2.36.
 oci.pull(
     name = "distroless_cc_debian12",
-    digest = "sha256:329e54034ce498f9c6b345044e8f530c6691f99e94a92446f68c0adf9baa8464",
+    digest = "sha256:633c48ef17ed6f68966f71a2da76515ce907528c8ba0b8dc60daf42e841321ed",
     image = "gcr.io/distroless/cc-debian12",
     platforms = ["linux/amd64"],
     tag = "latest",
@@ -264,7 +264,7 @@ oci.pull(
 # To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
 oci.pull(
     name = "inventree_stable",
-    digest = "sha256:56adc4e50a7300daeb0ba5d6246f8c252b8bf2f43903e48808e097a2e730c9b1",
+    digest = "sha256:8e943a0e3450f269c44ffde875afe3f0dfa26f66877d46058a22b65f3eab2ce7",
     image = "mirror.gcr.io/inventree/inventree",
     platforms = ["linux/amd64"],
     tag = "stable",
@@ -285,7 +285,7 @@ oci.pull(
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
     name = "python_3_13_slim",
-    digest = "sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d",
+    digest = "sha256:8fef26df932191825664e4957ff488c96dfe64918327634a357a55facbc994d3",
     image = "mirror.gcr.io/library/python",
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
@@ -315,10 +315,10 @@ oci.pull(
 #   crane digest --platform linux/amd64 docker.io/stalwartlabs/stalwart:<tag>
 oci.pull(
     name = "stalwart",
-    digest = "sha256:d928787a9089575245c7f1c8811e49ac301b0c2a6d86fdd3e84835b45794f7ef",
+    digest = "sha256:457b4333748f4d67010bc1c2f2bcd607aab8c54af09fcab6509b8c1816385028",
     image = "mirror.gcr.io/stalwartlabs/stalwart",
     platforms = ["linux/amd64"],
-    tag = "v0.16.11",
+    tag = "v0.16.16",
 )
 
 # Test infrastructure: a real Matrix homeserver for //haku/console/x's Matrix e2e tests. The
@@ -809,8 +809,8 @@ http_archive(
 http_archive(
     name = "stalwart_server",
     build_file_content = 'exports_files(["stalwart"])',
-    sha256 = "2ef28f93bff0fa22eae7c5e7bd7c234eb958cb46393a7542fda45486b889a7bf",
-    urls = ["https://github.com/stalwartlabs/stalwart/releases/download/v0.16.11/stalwart-x86_64-unknown-linux-musl.tar.gz"],
+    sha256 = "4a92cac3e8791ccbc0e47eaa2bdc3745b7718b314e4fcee94b3bb3dd4c8437c1",
+    urls = ["https://github.com/stalwartlabs/stalwart/releases/download/v0.16.16/stalwart-x86_64-unknown-linux-musl.tar.gz"],
 )
 
 # Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.

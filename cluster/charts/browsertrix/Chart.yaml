@@ -5,12 +5,12 @@ type: application
 icon: https://webrecorder.net/assets/icon.png
 
 # Browsertrix and Chart Version
-version: 1.24.2-ducktape.1
+version: 1.24.2-ducktape.2
 
 dependencies:
   - name: btrix-crds
     version: 0.2.0
     repository: file://./btrix-crds
   - name: metacontroller-helm
-    version: 4.16.5
+    version: 4.17.2
     repository: "oci://ghcr.io/metacontroller"

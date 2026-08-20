@@ -16,27 +16,27 @@ terraform {
     }
     proxmox = {
       source  = "bpg/proxmox"
-      version = "~> 0.86.0" # Latest: v0.86.0 (major improvement from 0.70)
+      version = "~> 0.111.0" # Latest: v0.111.0
     }
     external = {
       source  = "hashicorp/external"
-      version = "~> 2.3.0" # Latest: v2.3.5
+      version = "~> 2.4.0" # Latest: v2.4.0
     }
     talos = {
       source  = "siderolabs/talos"
-      version = "~> 0.9.0" # Latest: v0.9.0 (major version bump)
+      version = "~> 0.11.0" # Latest: v0.11.0
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "~> 3.1.0" # Latest: v3.1.0 (major version bump from 2.x)
+      version = "~> 3.2.0" # Latest: v3.2.0
     }
     random = {
       source  = "hashicorp/random"
-      version = "~> 3.7.0" # Latest: v3.7.2
+      version = "~> 3.9.0" # Latest: v3.9.0
     }
     harbor = {
       source  = "goharbor/harbor"
-      version = "~> 3.11.0" # Latest: v3.11.2
+      version = "~> 3.12.0" # Latest: v3.12.0
     }
     powerdns = {
       source  = "pan-net/powerdns"
@@ -44,19 +44,19 @@ terraform {
     }
     local = {
       source  = "hashicorp/local"
-      version = "~> 2.5.0" # Latest: v2.5.3 - Local file operations
+      version = "~> 2.9.0" # Latest: v2.9.0 - Local file operations
     }
     null = {
       source  = "hashicorp/null"
-      version = "~> 3.2.0" # Latest: v3.2.4 - Null provider for triggers
+      version = "~> 3.3.0" # Latest: v3.3.0 - Null provider for triggers
     }
     tls = {
       source  = "hashicorp/tls"
-      version = "~> 4.1.0" # Latest: v4.1.0 - TLS certificate generation
+      version = "~> 4.3.0" # Latest: v4.3.0 - TLS certificate generation
     }
     flux = {
       source  = "fluxcd/flux"
-      version = "~> 1.7.0" # Latest: v1.7.4 - FluxCD GitOps provider
+      version = "~> 1.9.0" # Latest: v1.9.0 - FluxCD GitOps provider
     }
   }
 }
