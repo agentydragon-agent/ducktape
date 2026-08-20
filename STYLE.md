@@ -246,12 +246,29 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
-- **No pure change-detector tests**: don't assert a checked-in literal equals itself
-  copied into the test. Test semantics — invalid values rejected, invariants hold,
-  behavior differs by mode. Example: asserting the Alembic head revision
-  (`version_num == "0011"`) breaks on every migration for no behavioral reason; assert
-  instead that migrating a fresh DB matches the ORM metadata and that re-applying at
-  head is idempotent.
+- **No pure change-detector tests**: a test must add executable information that the artifact
+  does not already state. Reading line X from a checked-in YAML/JSON/XML file and asserting it
+  equals literal Y only forces edits to X and Y in lockstep; it detects change but cannot
+  distinguish a correct change from an incorrect one. Moving Y into a fixture or test constant
+  does not help.
+  - Ask: **if this test disappeared, would any constraint be lost?** If the artifact itself still
+    says everything the assertion says, the test is redundant. This includes copied values,
+    shapes, rosters, whole manifests, and exact revision/count pins.
+  - Independence is **semantic, not physical**. Relations add information even within one file:
+    two LiteLLM routes must name the same downstream model and key. Cross-artifact wiring, schemas
+    or invariants that admit many valid inputs, and logic/runtime behavior are also useful.
+  - Do not use a test to annotate a configuration literal. If `1234` is the only working value for
+    non-obvious operational reasons, put that reason beside the value in a config comment or
+    nearby documentation. When possible, test the underlying behavior or an independent external
+    contract; a second `== 1234` assertion is not proof of either.
+  - Generated-output snapshots are valid when the test runs the generator. Exact wire-format
+    expectations are valid when the test exercises the serializer and the expectation comes from
+    an external protocol or live consumer — not when it merely rereads a checked-in artifact.
+  - Delete or rewrite assertions such as `config["session_ttl_seconds"] == 7200`, a copied
+    manifest dict, a copied enum/roster, or `version_num == "0011"`. Prefer, respectively, a
+    timeout behavior test, semantic correspondence within or across manifests, behavior for
+    each mode, or migrating a fresh database to ORM parity and proving head re-application
+    idempotent.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
