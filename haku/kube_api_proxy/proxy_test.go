@@ -183,6 +183,9 @@ func TestNamedPodLogRequestIsAuthorizedAndForwarded(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
+	if got := response.Header.Get("X-Haku-Kubernetes-Decision-ID"); got != decision.DecisionID {
+		t.Errorf("decision header = %q, want %q", got, decision.DecisionID)
+	}
 
 	authority.mu.Lock()
 	defer authority.mu.Unlock()

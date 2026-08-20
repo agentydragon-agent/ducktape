@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -28,6 +29,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.tool_call_actor import AgentActor
+
+logger = logging.getLogger(__name__)
 
 
 class KubernetesAuthorizationUnavailableError(RuntimeError):
@@ -225,7 +228,23 @@ class KubernetesAuthorizationService:
                 result = await client.review(subject=subject, attributes=request.attributes)
         except TimeoutError as error:
             raise KubernetesAuthorizationUnavailableError("Kubernetes authorization timed out") from error
-        return AuthorizationResponse(allowed=result.allowed, reason=result.reason, decision_id=f"sar:{uuid4()}")
+        decision_id = f"sar:{uuid4()}"
+        logger.info(
+            "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+            "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s path=%s",
+            actor.agent_id,
+            actor.access_profile_id,
+            subject.username,
+            decision_id,
+            result.allowed,
+            request.attributes.verb,
+            request.attributes.namespace,
+            request.attributes.resource,
+            request.attributes.subresource,
+            request.attributes.name,
+            request.attributes.path,
+        )
+        return AuthorizationResponse(allowed=result.allowed, reason=result.reason, decision_id=decision_id)
 
     async def aclose(self) -> None:
         if self._sar_client is not None:
