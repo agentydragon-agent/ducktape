@@ -188,9 +188,36 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 		if reason == "" {
 			reason = "Kubernetes standing policy denied this request"
 		}
+		config.Logger.Warn(
+			"Kubernetes request denied",
+			"decision_id", decision.DecisionID,
+			"verb", attributes.Verb,
+			"resource_request", attributes.ResourceRequest,
+			"api_group", attributes.APIGroup,
+			"namespace", attributes.Namespace,
+			"resource", attributes.Resource,
+			"subresource", attributes.Subresource,
+			"name", attributes.Name,
+			"path", attributes.Path,
+			"reason", reason,
+		)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": reason})
 		return
 	}
+	config.Logger.Info(
+		"Kubernetes request authorized",
+		"decision_id", decision.DecisionID,
+		"valid_until", decision.ValidUntil,
+		"verb", attributes.Verb,
+		"resource_request", attributes.ResourceRequest,
+		"api_group", attributes.APIGroup,
+		"namespace", attributes.Namespace,
+		"resource", attributes.Resource,
+		"subresource", attributes.Subresource,
+		"name", attributes.Name,
+		"path", attributes.Path,
+	)
+	w.Header().Set("X-Haku-Kubernetes-Decision-ID", decision.DecisionID)
 
 	deadline := time.Now().Add(config.RequestTimeout)
 	if decision.ValidUntil != nil && decision.ValidUntil.Before(deadline) {
