@@ -160,7 +160,8 @@ async def test_restoring_deleted_content_costs_no_embedding(
         await run_sync(session, repo, commit(repo, {"keep.md": "alpha", "back.md": "zeta zeta"}), embedder)
     )
 
-    assert report.contents_materialized == 2
+    # Both blobs reuse their existing chunk rows; restoring a known blob writes no source content.
+    assert report.contents_materialized == 0
     assert next(hit.path for hit in await find(session, embedder, "zeta")) == "back.md"
 
 

@@ -230,26 +230,6 @@ async def git_chunked_blobs(
     return chunked
 
 
-async def git_content_rows(
-    session: AsyncSession, index_id: str, blob_shas: Iterable[str], *, chunker_key: str
-) -> list[tuple[str, str, str]]:
-    """Existing Git source occurrences paired with their exact global content."""
-    addresses = sorted(set(blob_shas))
-    if not addresses:
-        return []
-    rows: list[tuple[str, str, str]] = []
-    for addresses_batch in batched(addresses, _MAX_IN_VALUES, strict=False):
-        result = await session.execute(
-            select(GitChunk.blob_sha, Content.content_sha, Content.content)
-            .join(Content, Content.content_sha == GitChunk.content_sha)
-            .where(GitChunk.index_id == index_id)
-            .where(GitChunk.blob_sha.in_(addresses_batch))
-            .where(GitChunk.chunker_key == chunker_key)
-        )
-        rows.extend(result.tuples())
-    return rows
-
-
 def _content_map(rows: Iterable[tuple[str, str]]) -> dict[str, str]:
     content_by_sha: dict[str, str] = {}
     for address, content in rows:
