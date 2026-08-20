@@ -3,12 +3,16 @@ kind: Kustomization
 metadata:
   name: public-coder-agent-proxy
   namespace: ducktape-flux
+  labels:
+    haku.allegedly.works/kubernetes-cutover: proxy-v1
   annotations:
     description: Egress proxy and interception CA for the public-coder-agent OpenClaw instance.
 spec:
   interval: 1h
+  retryInterval: 1m
   path: ./cluster/k8s/agents/public-coder-agent/proxy
   prune: true
+  wait: true
   sourceRef:
     kind: GitRepository
     name: ducktape
@@ -27,8 +31,34 @@ spec:
     # Generates the proxy-held Haku Console static-Agent bearer after the target namespace exists.
     - name: agent-machine-access-tf
       namespace: ducktape-flux
-    # The KUBERNETES_READER_TOKEN env comes from the reader SA's token Secret.
+    # The fixed reader subject and the complete proxy execution ceiling must reach this cutover
+    # generation before kubectl is rerouted. The rollback token remains inert but available during
+    # live verification. The expression includes Flux's normal Ready and
+    # observed-generation checks because a custom readyExpr replaces the built-in dependency test.
     - name: public-coder-agent-k8s-reader
+      readyExpr: >-
+        dep.metadata.labels['haku.allegedly.works/kubernetes-cutover'] ==
+        self.metadata.labels['haku.allegedly.works/kubernetes-cutover'] &&
+        dep.status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True') &&
+        dep.metadata.generation == dep.status.observedGeneration
+    # Likewise wait for Console to apply the SAR configuration and for the authorization proxy,
+    # route, compatible image, and NetworkPolicy to become healthy at this cutover generation.
+    - name: haku-console
+      namespace: ducktape-flux
+      readyExpr: >-
+        dep.metadata.labels['haku.allegedly.works/kubernetes-cutover'] ==
+        self.metadata.labels['haku.allegedly.works/kubernetes-cutover'] &&
+        dep.status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True') &&
+        dep.metadata.generation == dep.status.observedGeneration
     # The proxy reads the reflected Matrix bot password from its namespace.
     - name: matrix-secrets
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: public-coder-agent-proxy
+      namespace: public-coder-agent
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: public-coder-agent-proxy-root-ca
+      namespace: public-coder-agent

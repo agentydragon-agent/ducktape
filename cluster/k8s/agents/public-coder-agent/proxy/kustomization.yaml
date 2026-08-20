@@ -8,6 +8,7 @@ resources:
   - trust-bundle.yaml
   - deployment.yaml
   - service.yaml
+  - cnp-ingress.yaml
   - cnp-egress.yaml
 configMapGenerator:
   - name: public-coder-agent-proxy-config

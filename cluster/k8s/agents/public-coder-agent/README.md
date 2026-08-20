@@ -1,5 +1,28 @@
 # public-coder-agent
 
+## Kubernetes authorization path
+
+The Agent's kubeconfig points at `haku-kubeapi.allegedly.works` through its mandatory iron-proxy.
+The Agent presents a non-secret placeholder; iron substitutes the Agent's Haku bearer only for
+that hostname. The standalone Haku Kubernetes proxy authenticates the bearer with Console,
+evaluates the deploy-owned `public-coder` standing SAR subject, strips all caller credentials, and
+uses its own rotating projected ServiceAccount token upstream.
+
+The `public-coder-agent-reader` ServiceAccount is only the fixed standing-policy SAR identity.
+`haku-kube-api-proxy` has an independent execution ceiling, initially bound to the same diagnostic
+roles. The proxy deliberately continues to reject long-running `watch`/log-follow and upgrade
+protocols, so the neutral baseline here means bounded read-only diagnostics without any new
+authority. The reader identity's legacy bearer is temporarily retained inside iron-proxy for
+staged rollback, but no transform can attach it to Agent traffic; a cleanup PR removes that Secret
+and env reference after live verification.
+
+Flux uses a lockstep cutover label and dependency readiness expressions: the Console SAR config,
+compatible proxy image/route, and all baseline execution bindings must reach their new observed
+generation before iron-proxy changes the Agent request path. Validate the ordinary `get`/`list`,
+non-following logs, metrics, Flux, node, and VM-image metadata matrix after rollout. For rollback,
+restore and verify the old reader-token substitution and kubeconfig first; remove the Haku proxy
+and ceiling only in a later reconciliation.
+
 A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate
 from the personal agent at `openclaw.allegedly.works`. Its job is opening pull
 requests against **public** repositories as `agentydragon-agent`, which has its

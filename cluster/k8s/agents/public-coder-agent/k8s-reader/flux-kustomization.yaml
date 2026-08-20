@@ -3,6 +3,8 @@ kind: Kustomization
 metadata:
   name: public-coder-agent-k8s-reader
   namespace: ducktape-flux
+  labels:
+    haku.allegedly.works/kubernetes-cutover: proxy-v1
   annotations:
     description: Read-only ServiceAccount and RBAC for agent-mediated cluster diagnostics.
 spec:
@@ -17,3 +19,8 @@ spec:
   retryInterval: 1m
   dependsOn:
     - name: public-coder-agent-namespace
+    # The proxy-specific ceiling includes a RoleBinding to the secret-free metadata Role managed
+    # by this Kustomization. Existing public-coder traffic remains on the reader-token path while
+    # this dependency or any new ceiling binding is unavailable.
+    - name: vm-images-publisher
+      namespace: ducktape-flux

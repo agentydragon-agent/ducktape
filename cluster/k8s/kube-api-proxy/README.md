@@ -5,6 +5,12 @@ Two Gateway API routes exposing the in-cluster Kubernetes API on `*.allegedly.wo
 - `api.allegedly.works` — TLS **passthrough** (legacy, preserves end-to-end client-cert auth)
 - `kubeapi.allegedly.works` — TLS **terminate** (new, for callers behind a TLS-inspecting proxy; bearer-JWT auth only)
 
+The separately reviewed Haku Agent boundary is **not** either route above. It lives with Haku
+Console and uses `haku-kubeapi.allegedly.works`; every request is authenticated and authorized by
+Haku before a proxy-owned projected ServiceAccount credential reaches Kubernetes. See
+`../haku/console/kube-api-proxy.yaml`. Keeping the hostname separate avoids changing the existing
+OIDC/client-certificate APIs for other users.
+
 ## Why two routes?
 
 Claude Code web sandboxes reach the internet through Anthropic's egress proxy,

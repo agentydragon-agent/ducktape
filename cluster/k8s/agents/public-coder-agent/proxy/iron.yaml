@@ -85,19 +85,11 @@ transforms:
             match_headers: ["Authorization"]
           rules:
             - host: "haku.allegedly.works"
-        - source:
-            type: env
-            var: KUBERNETES_READER_TOKEN
-          replace:
-            # Read-only diagnostic SA token. The agent's kubectl presents the
-            # placeholder bearer; iron-proxy swaps it for the real token only on
-            # requests to kubeapi.allegedly.works — the existing HTTPRoute that
-            # terminates TLS with a public LE cert and forwards to the apiserver.
-            # See cluster/k8s/kube-api-proxy/ for the route and nginx bridge.
-            proxy_value: "proxy-k8s-reader-placeholder"
-            match_headers: ["Authorization"]
-          rules:
-            - host: "kubeapi.allegedly.works"
+            # kubectl presents the same non-secret placeholder to the dedicated Haku proxy.
+            # The proxy authenticates this original Agent bearer with Console, then uses its own
+            # short-lived projected ServiceAccount credential upstream. No transform selects the
+            # temporarily retained reader token; it exists only for staged rollback.
+            - host: "haku-kubeapi.allegedly.works"
         - source:
             type: env
             var: MATRIX_BOT_PASSWORD

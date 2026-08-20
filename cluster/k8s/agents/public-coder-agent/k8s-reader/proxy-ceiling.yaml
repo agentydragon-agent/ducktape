@@ -1,0 +1,68 @@
+# Capability-neutral execution ceiling for the Haku Kubernetes proxy.
+#
+# Keep these bindings separate from the standing SAR subject. The public-coder proxy
+# cutover depends on this Kustomization reaching its new generation, so all baseline bindings are
+# present before the Agent starts using the Haku request path. Future temporary capabilities widen
+# only this execution identity and remain separately constrained by Haku grants.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-kube-api-proxy-public-coder-agent-reader
+  namespace: public-coder-agent
+  annotations:
+    description: Gives the Haku proxy the existing namespace-local diagnostic ceiling.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: haku-kube-api-proxy
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: haku-kube-api-proxy-node-reader
+  annotations:
+    description: Gives the Haku proxy the existing read-only node inventory ceiling.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: public-coder-agent-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: haku-kube-api-proxy
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-kube-api-proxy-ducktape-flux-reader
+  namespace: ducktape-flux
+  annotations:
+    description: Gives the Haku proxy the existing public Flux diagnostic ceiling.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ducktape-flux-reader
+subjects:
+  - kind: ServiceAccount
+    name: haku-kube-api-proxy
+    namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: haku-kube-api-proxy-vm-images-metadata-reader
+  namespace: vm-images-publisher
+  annotations:
+    description: Gives the Haku proxy the existing secret-free image publisher metadata ceiling.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: public-coder-agent-metadata-reader
+subjects:
+  - kind: ServiceAccount
+    name: haku-kube-api-proxy
+    namespace: haku-console
