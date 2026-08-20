@@ -24,7 +24,6 @@ llm/instruct-logseq/**
 
 # Archived directories - complex formatting that doesn't survive prettier
 claude_commands_old/**
-x/k8s_old/**
 
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**
