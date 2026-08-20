@@ -312,6 +312,20 @@ py_test(
 )
 
 py_library(
+    name = "product_service",
+    srcs = ["product_service.py"],
+    deps = [
+        ":catalog",
+        ":config",
+        ":portfolio_sources",
+        ":wire",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/product:scenarios",
+        "//finance/augur/product:service",
+    ],
+)
+
+py_library(
     name = "server_lib",
     srcs = ["server.py"],
     deps = [
@@ -321,6 +335,7 @@ py_library(
         ":config",
         ":deployment",
         ":portfolio_sources",
+        ":product_service",
         ":wire",
         "//finance/augur/budget:service",
         "//finance/augur/budget:wire",
@@ -332,8 +347,6 @@ py_library(
         "//finance/augur/model:sample_sanity",
         "//finance/augur/model:series",
         "//finance/augur/product:portfolio",
-        "//finance/augur/product:scenarios",
-        "//finance/augur/product:service",
         "//finance/augur/product:wire",
         "@pypi//fastapi",
         "@pypi//pydantic",

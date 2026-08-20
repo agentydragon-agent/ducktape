@@ -50,6 +50,7 @@ from finance.augur.product.wire import (
     HoaDuesPaymentEvent,
     HoldingSaleEvent,
     HomeownersInsurancePaymentEvent,
+    MetricName,
     MonthlyExpenseEvent,
     MortgageFinancing,
     MortgagePaymentEvent,
@@ -158,22 +159,45 @@ def _with_fixed_cash(config: Config, cash: Decimal | int | str) -> Config:
 
 @pytest.fixture
 def scenario_key() -> ScenarioKey:
-    return ScenarioKey(model_id="current_model", horizon_months=3, monthly_spend=1_000, spend_index="none")
+    return _scenario_key()
+
+
+def _scenario_key(
+    *, model_id: str = "current_model", horizon_months: int = 3, monthly_spend: int = 1_000, spend_index: str = "none"
+) -> ScenarioKey:
+    """Build the ordinary product-test scenario; policy/rent/property cases stay explicit."""
+
+    return ScenarioKey(
+        model_id=model_id, horizon_months=horizon_months, monthly_spend=monthly_spend, spend_index=spend_index
+    )
+
+
+def _sampling_request(
+    scenario: ScenarioKey,
+    *,
+    first_seed: int = 7,
+    rollout_count: int = 1,
+    metric: MetricName = "net_worth",
+    percentiles: tuple[float, ...] = (50.0,),
+) -> ProjectionSamplingRequest:
+    """Build a product fan request while keeping seed/batch/metric overrides visible."""
+
+    return ProjectionSamplingRequest(
+        scenario=scenario, first_seed=first_seed, rollout_count=rollout_count, metric=metric, percentiles=percentiles
+    )
+
+
+def _rollout_request(scenario: ScenarioKey, *, seed: int = 7) -> RolloutRequest:
+    """Build the ordinary selected-rollout request; tests override the seed when it matters."""
+
+    return RolloutRequest(scenario=scenario, seed=seed)
 
 
 def test_metric_fan_simulates_requested_horizon(product: service.ProductService, counting_model: CountingModel) -> None:
     """Product projections run at the requested horizon, not the server max horizon."""
 
     def fan_request(horizon_months: int) -> ProjectionSamplingRequest:
-        return ProjectionSamplingRequest(
-            scenario=ScenarioKey(
-                model_id="current_model", horizon_months=horizon_months, monthly_spend=1_000, spend_index="none"
-            ),
-            first_seed=7,
-            rollout_count=1,
-            metric="net_worth",
-            percentiles=(50.0,),
-        )
+        return _sampling_request(_scenario_key(horizon_months=horizon_months))
 
     short = product.metric_fan(fan_request(2))
     long = product.metric_fan(fan_request(5))
@@ -192,18 +216,7 @@ def test_metric_fan_simulates_requested_horizon(product: service.ProductService,
 
 
 def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductService, augur_config: Config) -> None:
-    request = ProjectionSamplingRequest(
-        scenario=ScenarioKey(
-            model_id="current_model",
-            horizon_months=augur_config.max_horizon_months + 1,
-            monthly_spend=1_000,
-            spend_index="none",
-        ),
-        first_seed=7,
-        rollout_count=1,
-        metric="net_worth",
-        percentiles=(50.0,),
-    )
+    request = _sampling_request(_scenario_key(horizon_months=augur_config.max_horizon_months + 1))
     with pytest.raises(ValueError, match=f"exceeds server max {augur_config.max_horizon_months}"):
         product.metric_fan(request)
 
@@ -219,7 +232,7 @@ def test_product_fails_when_sample_is_missing_required_series(
     with pytest.raises(
         ValueError, match=f"missing required level series: .*{SecurityKey(symbol=SecuritySymbol('VOO')).wire_id}"
     ):
-        product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
+        product.rollout(_rollout_request(scenario_key))
 
     assert model.sample_requests[0].required_level_series
 
@@ -258,7 +271,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
     product = make_product_service(model, config=augur_config)
 
     with pytest.raises(ValueError, match=r"missing required level series: .*security:btc"):
-        product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
+        product.rollout(_rollout_request(scenario_key))
 
 
 def test_jax_product_metrics_fail_when_holding_price_series_is_missing() -> None:
@@ -288,9 +301,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     fan = product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100)
-        )
+        _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
@@ -340,9 +351,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     }
 
     terminal_distribution = product.terminal_distribution(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 1, 2, 50, 100)
-        )
+        _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 1, 2, 50, 100))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8)]
@@ -362,7 +371,7 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
         "failed": [False, False],
     }
 
-    detail = product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
+    detail = product.rollout(_rollout_request(scenario_key))
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,)]
     assert detail.model_id == "composite"
@@ -386,18 +395,14 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     ]
 
     holding_fan = product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="holding_value", percentiles=(50,)
-        )
+        _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="holding_value", percentiles=(50,))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (7, 8), (7,), (7, 8)]
     assert holding_fan.monthly_metric_fan["value_quanta"][0] == _usd_quanta(835_500.0)
 
     fan_with_one_new_seed = product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash", percentiles=(50,)
-        )
+        _sampling_request(scenario_key, first_seed=7, rollout_count=3, metric="cash", percentiles=(50,))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [
@@ -478,11 +483,9 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
 
     monkeypatch.setattr(product, "_simulate_product_summary", slow_simulate_product_summary)
 
-    fan_request = ProjectionSamplingRequest(
-        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(5, 50, 95)
-    )
-    terminal_request = ProjectionSamplingRequest(
-        scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100)
+    fan_request = _sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(5, 50, 95))
+    terminal_request = _sampling_request(
+        scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(0, 50, 100)
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
         fan_future = executor.submit(product.metric_fan, fan_request)
@@ -522,8 +525,8 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
     )
 
     distribution = product.terminal_distribution(
-        ProjectionSamplingRequest(
-            scenario=scenario, first_seed=101, rollout_count=3, metric="private_equity_value", percentiles=(0, 50, 100)
+        _sampling_request(
+            scenario, first_seed=101, rollout_count=3, metric="private_equity_value", percentiles=(0, 50, 100)
         )
     )
 
@@ -587,11 +590,7 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
 
     monkeypatch.setattr(service, "run_jax_product_summary", counted)
 
-    product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)
-        )
-    )
+    product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=4, metric="cash", percentiles=(50,)))
 
     # All four seeds share one simulated batch, so the reduced product projection runs once.
     assert calls == 1
@@ -605,11 +604,7 @@ def test_metric_fan_does_not_materialize_rollout_events(
 
     monkeypatch.setattr(service, "project_product_rollout", fail_rollout_projection)
 
-    product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)
-        )
-    )
+    product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=2, metric="cash", percentiles=(50,)))
 
 
 def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.ProductService) -> None:
@@ -622,9 +617,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     )
 
     fan = product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario, first_seed=7, rollout_count=1, metric="net_worth", percentiles=(50,)
-        )
+        _sampling_request(scenario, first_seed=7, rollout_count=1, metric="net_worth", percentiles=(50,))
     )
 
     assert fan.failed_count == 1
@@ -635,7 +628,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     assert fan.monthly_metric_fan["value_quanta"] == [_usd_quanta(value) for value in [1_260_500.0, 0.0, 0.0, 0.0]]
     assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value_quanta": [_usd_quanta(0.0)]}
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is True
     assert detail.rollout.terminal_metrics.failed_month_index == 0
@@ -669,9 +662,9 @@ def test_a_scenario_with_no_target_allocation_never_sells_and_fails_the_month(pr
     used to work starts failing.
     """
 
-    scenario = ScenarioKey(model_id="current_model", horizon_months=1, monthly_spend=300_000, spend_index="none")
+    scenario = _scenario_key(horizon_months=1, monthly_spend=300_000)
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is True
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
@@ -706,7 +699,7 @@ def test_a_zero_width_band_sells_exactly_what_the_month_needs(product: service.P
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is False
     columns = detail.rollout.monthly_metrics
@@ -742,15 +735,14 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     product = make_product_service(forced_private_equity_event_model)
 
     detail = product.rollout(
-        RolloutRequest(
-            scenario=ScenarioKey(
+        _rollout_request(
+            ScenarioKey(
                 model_id="current_model",
                 horizon_months=2,
                 monthly_spend=1_000,
                 spend_index="none",
                 funding_policy=FundingPolicy(sleeve_weights=()),
-            ),
-            seed=7,
+            )
         )
     )
 
@@ -801,15 +793,14 @@ def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_se
     )
 
     detail = product.rollout(
-        RolloutRequest(
-            scenario=ScenarioKey(
+        _rollout_request(
+            ScenarioKey(
                 model_id="current_model",
                 horizon_months=2,
                 monthly_spend=1_000,
                 spend_index="none",
                 funding_policy=FundingPolicy(sleeve_weights=()),
-            ),
-            seed=7,
+            )
         )
     )
 
@@ -851,15 +842,14 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     )
 
     detail = product.rollout(
-        RolloutRequest(
-            scenario=ScenarioKey(
+        _rollout_request(
+            ScenarioKey(
                 model_id="current_model",
                 horizon_months=2,
                 monthly_spend=1_000,
                 spend_index="none",
                 funding_policy=FundingPolicy(sleeve_weights=()),
-            ),
-            seed=7,
+            )
         )
     )
 
@@ -901,7 +891,7 @@ def test_product_cash_band_refills_to_the_ceiling_from_the_overweight_sleeve(pro
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is False
     assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 280_000.0]]
@@ -934,7 +924,7 @@ def test_product_cash_band_sells_nothing_while_cash_sits_inside_it(product: serv
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"]
     assert detail.rollout.monthly_metrics["cash_quanta"] == [_usd_quanta(value) for value in [250_000.0, 250_875.0]]
@@ -951,7 +941,7 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
         funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     tax_accruals = [event for event in detail.rollout.events if event.kind == "tax_accrual"]
     assert {event.jurisdiction_id for event in tax_accruals} == {"federal_us", "california"}
@@ -978,7 +968,7 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     events = detail.rollout.events
     tax_accruals = [event for event in events if event.kind == "tax_accrual"]
@@ -1016,7 +1006,7 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
         funding_policy=FundingPolicy(sleeve_weights=()),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     rent_events = [event for event in detail.rollout.events if event.kind == "outside_rent"]
     # 14 monthly rent payments — one per event month.
@@ -1053,11 +1043,7 @@ def test_outside_rent_zero_omits_rent_series_requirement(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     # scenario_key carries no rent.
-    product.metric_fan(
-        ProjectionSamplingRequest(
-            scenario=scenario_key, first_seed=7, rollout_count=1, metric="cash", percentiles=(50,)
-        )
-    )
+    product.metric_fan(_sampling_request(scenario_key, first_seed=7, rollout_count=1, metric="cash", percentiles=(50,)))
 
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
@@ -1073,7 +1059,7 @@ def test_outside_rent_rejects_unknown_location(product: service.ProductService) 
     )
 
     with pytest.raises(ValueError, match=r"unknown rental_location_id"):
-        product.rollout(RolloutRequest(scenario=scenario, seed=7))
+        product.rollout(_rollout_request(scenario))
 
 
 def test_scenario_key_rejects_rent_without_location() -> None:
@@ -1113,7 +1099,7 @@ def mortgage_purchase_scenario() -> ScenarioKey:
 def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
     product: service.ProductService, mortgage_purchase_scenario: ScenarioKey
 ) -> None:
-    detail = product.rollout(RolloutRequest(scenario=mortgage_purchase_scenario, seed=7))
+    detail = product.rollout(_rollout_request(mortgage_purchase_scenario))
 
     [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
     assert isinstance(purchase, PropertyPurchaseEvent)
@@ -1376,7 +1362,7 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert detail.rollout.failed is False
     assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
@@ -1401,7 +1387,7 @@ def test_primary_residence_event_emits_rollout_marker(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     [event] = [event for event in detail.rollout.events if event.kind == "set_primary_residence"]
     assert isinstance(event, SetPrimaryResidenceMarkerEvent)
@@ -1414,7 +1400,7 @@ def test_primary_residence_event_emits_rollout_marker(
 def test_property_purchase_metrics_track_value_balance_and_equity(
     product: service.ProductService, counting_model: CountingModel, mortgage_purchase_scenario: ScenarioKey
 ) -> None:
-    detail = product.rollout(RolloutRequest(scenario=mortgage_purchase_scenario, seed=7))
+    detail = product.rollout(_rollout_request(mortgage_purchase_scenario))
 
     # month_index=0 is the pre-purchase opening snapshot; the property activates at index 1
     # (end of purchase month). Values mark-to-market against the home_value series so the index-1
@@ -1458,7 +1444,7 @@ def test_cash_property_purchase_omits_mortgage_payments(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
     assert isinstance(purchase, PropertyPurchaseEvent)
@@ -1488,7 +1474,7 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     hoa_events = [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"]
     assert hoa_events
@@ -1517,7 +1503,7 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: s
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
@@ -1588,7 +1574,7 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: se
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     insurance_events = [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"]
     assert insurance_events
@@ -1613,7 +1599,7 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(product: serv
         annual_insurance_pct=0.0,
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"] == []
 
@@ -1633,7 +1619,7 @@ def test_property_purchase_emits_maintenance_at_default_pct(product: service.Pro
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     maintenance_events = [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"]
     assert maintenance_events
@@ -1658,7 +1644,7 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(product: 
         annual_maintenance_pct=0.0,
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     assert [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"] == []
 
@@ -1675,7 +1661,7 @@ def test_property_purchase_rejects_unknown_property(product: service.ProductServ
     )
 
     with pytest.raises(ValueError, match=r"unknown property_id"):
-        product.rollout(RolloutRequest(scenario=scenario, seed=7))
+        product.rollout(_rollout_request(scenario))
 
 
 def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
@@ -1698,7 +1684,7 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     accruals = [event for event in detail.rollout.events if event.kind == "tax_accrual"]
     federal_accrual = one(event for event in accruals if event.jurisdiction_id == "federal_us")
@@ -1727,7 +1713,7 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     federal_accrual = one(
         event
@@ -1756,7 +1742,7 @@ def test_cash_property_purchase_omits_mortgage_interest_deduction(
         ),
     )
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(_rollout_request(scenario))
 
     federal_accrual = one(
         event
