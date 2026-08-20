@@ -33,6 +33,25 @@ def test_trace_reader_reports_the_bad_source_line(tmp_path: Path):
         read_trace(path)
 
 
+def test_trace_reader_rejects_a_non_string_direction(tmp_path: Path):
+    path = tmp_path / "bad-direction.jsonl"
+    path.write_text(json.dumps({"seq": 1, "direction": 1, "message": {}}) + "\n")
+    with pytest.raises(ValueError, match=r"bad-direction\.jsonl:1: malformed trace record"):
+        read_trace(path)
+
+
+def test_trace_reader_rejects_non_monotonic_sequences(tmp_path: Path):
+    path = tmp_path / "bad-sequence.jsonl"
+    path.write_text(
+        json.dumps({"seq": 2, "direction": "server_to_client", "message": {}})
+        + "\n"
+        + json.dumps({"seq": 2, "direction": "server_to_client", "message": {}})
+        + "\n"
+    )
+    with pytest.raises(ValueError, match=r"bad-sequence\.jsonl:2: malformed trace record"):
+        read_trace(path)
+
+
 def test_trace_reader_accepts_reviewed_payload_wrapper(tmp_path: Path):
     path = tmp_path / "staged.jsonl"
     path.write_text(

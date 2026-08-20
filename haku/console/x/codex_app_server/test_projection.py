@@ -119,5 +119,34 @@ def test_malformed_and_unknown_notifications_fail_softly():
     assert projection.unprojected == {"item/started/identity": 1, "item/agentMessage/delta/params": 1, "brand/new": 1}
 
 
+def test_nonterminal_and_duplicate_tool_completions_fail_softly():
+    item: dict[str, object] = {
+        "type": "commandExecution",
+        "id": "call-1",
+        "command": "printf ok",
+        "cwd": "<WORKSPACE>",
+        "processId": None,
+        "source": "agent",
+        "commandActions": [],
+        "aggregatedOutput": None,
+        "exitCode": 0,
+        "durationMs": 5,
+    }
+    projection = project_log(
+        (
+            RecordedFrame(1, {"method": "item/started", "params": {"item": {**item, "status": "inProgress"}}}),
+            RecordedFrame(2, {"method": "item/completed", "params": {"item": {**item, "status": "inProgress"}}}),
+            RecordedFrame(3, {"method": "item/completed", "params": {"item": {**item, "status": "completed"}}}),
+            RecordedFrame(4, {"method": "item/completed", "params": {"item": {**item, "status": "completed"}}}),
+        )
+    )
+
+    assert [type(event) for event in projection.events] == [ToolCallStarted, ToolCallCompleted]
+    assert projection.unprojected == {
+        "item/completed/commandExecution/status": 1,
+        "item/completed/commandExecution/duplicate": 1,
+    }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

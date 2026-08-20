@@ -45,14 +45,14 @@ def test_real_capture_projects_both_observed_turn_lifecycles():
         ToolCallStarted(
             call_id="exec-<protocol-id-8>",
             tool_name="commandExecution",
-            arguments={"command": "/bin/bash -c 'printf TRACE_CMD_OK'", "cwd": "/workspace"},
+            arguments={"command": "<ABSOLUTE_PATH> -c 'printf TRACE_CMD_OK'", "cwd": "<WORKSPACE>"},
             provenance=FrameRange(25, 25),
         ),
         ToolCallCompleted(
             item=CallRef(call_id="exec-<protocol-id-8>"),
             structured={
-                "command": "/bin/bash -c 'printf TRACE_CMD_OK'",
-                "cwd": "/workspace",
+                "command": "<ABSOLUTE_PATH> -c 'printf TRACE_CMD_OK'",
+                "cwd": "<WORKSPACE>",
                 "processId": "<process-id>",
                 "source": "unifiedExecStartup",
                 "status": "completed",

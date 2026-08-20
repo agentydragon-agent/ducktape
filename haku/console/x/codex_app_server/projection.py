@@ -76,7 +76,10 @@ class RecordedFrame:
 def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[ProjectionState, Projection]:
     """Fold server messages into neutral events, preserving state across arbitrary batches."""
     projector = _Projector(
-        open_message=state.open_message, open_reasoning=state.open_reasoning, seen_call_ids=set(state.seen_call_ids)
+        open_message=state.open_message,
+        open_reasoning=state.open_reasoning,
+        seen_call_ids=set(state.seen_call_ids),
+        completed_call_ids=set(),
     )
     for frame in frames:
         projector.fold(frame)
@@ -116,6 +119,7 @@ class _Projector:
     open_message: OpenItem | None
     open_reasoning: OpenItem | None
     seen_call_ids: set[str]
+    completed_call_ids: set[str]
     events: list[ConversationEvent] = field(default_factory=list)
     unprojected: dict[str, int] = field(default_factory=dict)
 
@@ -328,9 +332,12 @@ class _Projector:
         assert isinstance(item_id, str)
         if item_id not in self.seen_call_ids:
             return
+        if item_id in self.completed_call_ids:
+            self._unprojected(f"item/completed/{item_type}/duplicate")
+            return
         if item_type == "commandExecution":
             status = item.get("status")
-            if status not in {"inProgress", "completed", "failed", "declined"}:
+            if status not in {"completed", "failed", "declined"}:
                 self._unprojected("item/completed/commandExecution/status")
                 return
             structured: Json = {
@@ -342,11 +349,10 @@ class _Projector:
                 "completed": ToolOutcome.SUCCEEDED,
                 "failed": ToolOutcome.FAILED,
                 "declined": ToolOutcome.FAILED,
-                "inProgress": ToolOutcome.UNKNOWN,
             }[status]
         else:
             status = item.get("status")
-            if status not in {"inProgress", "completed", "failed"}:
+            if status not in {"completed", "failed"}:
                 self._unprojected("item/completed/mcpToolCall/status")
                 return
             result = item.get("result")
@@ -368,8 +374,7 @@ class _Projector:
                 key: value for key, value in item.items() if key not in {"type", "id", "arguments"} and _is_json(value)
             }
             outcome = ToolOutcome.SUCCEEDED if status == "completed" else ToolOutcome.FAILED
-            if status == "inProgress":
-                outcome = ToolOutcome.UNKNOWN
+        self.completed_call_ids.add(item_id)
         self.events.append(
             ToolCallCompleted(
                 item=CallRef(call_id=item_id),
@@ -390,6 +395,7 @@ class _Projector:
         self._close_reasoning()
         self.events.append(TurnCompleted(outcome=outcomes[status], provenance=FrameRange(frame_seq, frame_seq)))
         self.seen_call_ids.clear()
+        self.completed_call_ids.clear()
 
     def _close_message(self) -> None:
         if self.open_message is None:

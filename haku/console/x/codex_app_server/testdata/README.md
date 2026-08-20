@@ -10,8 +10,9 @@ as a real capture.
 - `real_text_command.sanitized.jsonl` is a **real** `codex app-server` stdio exchange captured on
   2026-08-19 UTC from the pinned agent-workspace image (`codex-cli 0.144.1`). It contains two real
   turns: a text-only `TRACE_TEXT_OK` answer, then a shell `printf TRACE_CMD_OK` command followed by
-  `TRACE_COMMAND_DONE`. It was staged at `.openclaw/codex-trace-4431/` and is copied here
-  verbatim; the raw trace remains in the ephemeral sandbox and is not part of this PR.
+  `TRACE_COMMAND_DONE`. It was staged at `.openclaw/codex-trace-4431/`; before commit, fixed
+  prompts and remaining absolute paths were replaced with explicit placeholders. The raw trace
+  remains in the ephemeral sandbox and is not part of this PR.
 
   The capture used the existing in-cluster LiteLLM Responses provider and an injected credential,
   but no credential was read, copied, printed, or serialized. Prompts forbade file, environment,

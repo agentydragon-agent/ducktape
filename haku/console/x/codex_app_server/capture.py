@@ -21,11 +21,15 @@ from typing import Any
 from haku.console.x.codex_app_server.protocol import Direction
 
 _SENSITIVE_KEY = re.compile(
-    r"(?:authorization|credential|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)", re.IGNORECASE
+    r"^(?:.*(?:authorization|credential|password|secret|api[_-]?key|token|cookie|jwt|signature)|sig)$", re.IGNORECASE
 )
 _ABSOLUTE_UNIX_PATH = re.compile(r"(?<![A-Za-z0-9_.-])/(?:[^\s\"'<>]+/)*[^\s\"'<>]*")
 _BEARER = re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+")
 _OPENAI_KEY = re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")
+_JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
+_COOKIE_HEADER = re.compile(r"(?i)\b(?:set-cookie|cookie)\s*:\s*[^\r\n]+")
+_QUERY_SECRET = re.compile(r"(?i)([?&][^=&#\s\"'<>]*(?:api[_-]?key|token|jwt|signature|sig)=)[^&#\s\"'<>]+")
+_DEFAULT_MAX_BYTES = 8 * 1024 * 1024
 
 
 @dataclass(slots=True)
@@ -104,8 +108,11 @@ class Sanitizer:
         for environment_value in self.environment_values:
             if environment_value in text:
                 text = text.replace(environment_value, "<REDACTED_ENV_VALUE>")
+        text = _COOKIE_HEADER.sub("Cookie: <REDACTED>", text)
+        text = _QUERY_SECRET.sub(r"\1<REDACTED>", text)
         text = _BEARER.sub("Bearer <REDACTED>", text)
         text = _OPENAI_KEY.sub("<REDACTED>", text)
+        text = _JWT.sub("<REDACTED>", text)
         return _ABSOLUTE_UNIX_PATH.sub("<ABSOLUTE_PATH>", text)
 
 
@@ -116,8 +123,10 @@ class Capture:
     sanitizer: Sanitizer
     timeout_seconds: float
     max_messages: int
+    max_bytes: int = _DEFAULT_MAX_BYTES
     next_seq: int = 1
     messages: int = 0
+    bytes_written: int = 0
 
     async def send(self, message: dict[str, Any]) -> None:
         assert self.process.stdin is not None
@@ -151,12 +160,18 @@ class Capture:
                 return message
 
     def _record(self, direction: Direction, message: dict[str, Any]) -> None:
-        self.messages += 1
+        if self.messages >= self.max_messages:
+            raise RuntimeError(f"capture exceeded --max-messages={self.max_messages}")
         record = {"seq": self.next_seq, "direction": direction.value, "message": self.sanitizer.sanitize(message)}
+        serialized = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+        encoded_size = len(serialized.encode())
+        if self.bytes_written + encoded_size > self.max_bytes:
+            raise RuntimeError(f"capture exceeded --max-bytes={self.max_bytes}")
+        self.messages += 1
         self.next_seq += 1
+        self.bytes_written += encoded_size
         with self.output.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
-            stream.write("\n")
+            stream.write(serialized)
 
 
 async def capture(args: argparse.Namespace) -> None:
@@ -181,6 +196,7 @@ async def capture(args: argparse.Namespace) -> None:
         sanitizer=Sanitizer.from_process(workspace=workspace, prompt=args.prompt),
         timeout_seconds=args.timeout_seconds,
         max_messages=args.max_messages,
+        max_bytes=args.max_bytes,
     )
     try:
         await recorder.send(
@@ -278,6 +294,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--model", help="optional model override")
     result.add_argument("--timeout-seconds", type=float, default=60.0)
     result.add_argument("--max-messages", type=int, default=2000)
+    result.add_argument("--max-bytes", type=int, default=_DEFAULT_MAX_BYTES)
     return result
 
 

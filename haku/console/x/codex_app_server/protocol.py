@@ -97,6 +97,7 @@ def read_trace(path: Path) -> tuple[TraceRecord, ...]:
     than wire additions, so they raise ``ValueError`` with the source line number.
     """
     records: list[TraceRecord] = []
+    previous_seq = 0
     for line_number, line in enumerate(path.read_text().splitlines(), start=1):
         if not line.strip():
             continue
@@ -113,13 +114,20 @@ def read_trace(path: Path) -> tuple[TraceRecord, ...]:
         seq = value.get("seq", line_number)
         message = value.get("message", value.get("payload"))
         direction = value.get("direction")
-        if not isinstance(seq, int) or isinstance(seq, bool) or not isinstance(message, dict):
+        if (
+            not isinstance(seq, int)
+            or isinstance(seq, bool)
+            or seq <= previous_seq
+            or not isinstance(message, dict)
+            or not isinstance(direction, str)
+        ):
             raise ValueError(f"{path}:{line_number}: malformed trace record")
         try:
             parsed_direction = Direction(direction)
         except ValueError as exc:
             raise ValueError(f"{path}:{line_number}: unknown direction {direction!r}") from exc
         records.append(TraceRecord(seq=seq, direction=parsed_direction, message=message))
+        previous_seq = seq
     return tuple(records)
 
 
