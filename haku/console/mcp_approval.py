@@ -49,6 +49,7 @@ from haku.console.mcp_config import (
     _credential_token,
     _transport,
 )
+from haku.console.mcp_execution import McpExecutionContext, mcp_execution_request_meta
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.operator_auth import OperatorActorDep
@@ -684,11 +685,22 @@ class McpServerDispatcher:
         self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(
-        self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+        self,
+        server: McpServerEntry,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth_token: str | None,
+        execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
         transport, transport_auth = _transport(server, self._in_process, auth_token)
         async with Client(transport, auth=transport_auth) as client:
-            result = await client.call_tool_mcp(tool_name, arguments)
+            result = await client.call_tool_mcp(
+                tool_name,
+                arguments,
+                meta=mcp_execution_request_meta(execution_context)
+                if isinstance(server.backend, InProcessBackend)
+                else None,
+            )
         if result.isError:
             raise RuntimeError(_mcp_error_message(result))
         return _mcp_result_to_json(result)
