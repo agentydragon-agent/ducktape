@@ -27,6 +27,7 @@ from haku.console.chat_models import (
     SPA_ORIGIN,
     FrameDirection,
     ItemType,
+    PromptOrigin,
     SessionStatus,
     TurnOutcome,
 )
@@ -46,6 +47,7 @@ from haku.console.x.session_notifications import SessionEventKind, SessionNotifi
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
+    PromptRecords,
     PromptRefusedError,
     ResumedTurn,
     SessionStore,
@@ -233,20 +235,44 @@ class SessionService:
 
     async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> SessionView:
         view, token = await self._store.create(operator_id, conversation_id=conversation_id)
+        await self._create_claim(view.session_id, token)
+        return view
+
+    async def enqueue_prompt(
+        self,
+        operator_id: UUID,
+        session_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin,
+        records: PromptRecords | None = None,
+    ) -> UUID:
+        """Accept a prompt and allocate its idle session, if this is the first demand."""
+        item_id = await self._store.enqueue_prompt(operator_id, session_id, prompt_text, origin, records)
+        await self.allocate(operator_id, session_id)
+        return item_id
+
+    async def allocate(self, operator_id: UUID, session_id: UUID) -> bool:
+        """Create the SandboxClaim for queued work exactly once across competing replicas."""
+        allocation = await self._store.allocate(operator_id, session_id)
+        if allocation is None:
+            return False
+        await self._create_claim(allocation.session_id, allocation.bridge_token)
+        return True
+
+    async def _create_claim(self, session_id: UUID, bridge_token: str) -> None:
         try:
             await self._claims.create(
-                session_id=view.session_id,
-                bridge_token=token,
+                session_id=session_id,
+                bridge_token=bridge_token,
                 expires_at=datetime.now(UTC) + timedelta(seconds=self._config.session_ttl_seconds),
             )
         except Exception as error:
-            await self._store.fail(view.session_id, f"sandbox provisioning failed: {error}")
+            await self._store.fail(session_id, f"sandbox provisioning failed: {error}")
             # If claim creation reached Kubernetes before its response failed, remove the partial
             # resource now. A failed delete leaves `claim_cleaned_at` NULL, which is the durable
             # retry marker.
-            await self._cleanup_terminal_claim(view.session_id)
+            await self._cleanup_terminal_claim(session_id)
             raise
-        return view
 
     async def create_conversation(self, operator_id: UUID) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
@@ -276,7 +302,7 @@ class SessionService:
             session_id=session_id,
             runtime_kind=identity.runtime_kind,
             status=identity.status,
-            sandbox=await self._observed(session_id),
+            sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
 
     async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> ClaudeSandboxProvisioningView | None:
@@ -859,7 +885,7 @@ async def read_session_frames(
 async def read_session_provisioning(
     session_id: UUID, actor: OperatorActorDep, service: SessionServiceDep
 ) -> SessionProvisioningView:
-    """What Kubernetes says about the sandbox this session asked for, read live off the cluster.
+    """What Kubernetes says about this session's sandbox, or no sandbox while it is idle.
 
     Addressed at a session rather than a conversation because a conversation runs several over its
     life, each with its own sandbox to account for. `GET /api/conversations/{conversation_id}`
@@ -885,16 +911,20 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Sess
 
 @router.post("/api/sessions/{session_id}/messages")
 async def send_message(
-    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, store: SessionStoreDep
+    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
 ) -> PromptAccepted:
     try:
         # Named rather than left to the default: the console's own surface is a channel like any
         # other, and a prompt typed here is one every attached room is owed a copy of.
-        return PromptAccepted(item_id=await store.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN))
+        return PromptAccepted(
+            item_id=await service.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
+        )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
     except PromptRefusedError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @router.delete("/api/sessions/{session_id}", status_code=204)

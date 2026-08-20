@@ -41,6 +41,7 @@ from haku.console.x.channels.matrix.conversation import (
     PromptRejected,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
+from haku.console.x.conftest import make_idle
 from haku.console.x.conversation_events import (
     ConversationEvent as FoldedEvent,
     FrameRange,
@@ -121,6 +122,24 @@ async def test_leaves_a_live_session_alone(supervisor, conversations, operator_i
     await supervisor.supervise_once()
 
     assert recording_claims.created == [live], "a live session was replaced"
+
+
+async def test_an_idle_session_allocates_only_after_matrix_accepts_a_prompt(
+    supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
+) -> None:
+    binding = await conversations.bind_room(MATRIX_ROOM, operator_id)
+    session, _ = await chat_store.create(operator_id, conversation_id=binding.conversation_id)
+    await make_idle(migrated_sessions, session.session_id)
+
+    await supervisor.supervise_once()
+    assert recording_claims.created == [], "an empty room owns no sandbox"
+
+    admitted = await turns.offer([operator_message("wake up", event_id="$wake", at=1)])
+    assert isinstance(admitted, PromptAccepted)
+    await supervisor.supervise_once()
+
+    assert recording_claims.created == [session.session_id]
+    assert await chat_store.status(session.session_id) == SessionStatus.PROVISIONING
 
 
 async def test_replaces_a_failed_session(

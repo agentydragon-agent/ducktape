@@ -40,7 +40,7 @@ from haku.console.chat_models import (
 from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, ConversationPrompt, Session
 from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
-from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of
+from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.x.conversation_events import (
     CallRef,
     FrameRange,
@@ -86,6 +86,57 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
     await chat_store.fail(session_id, "runner failed")
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.TERMINAL
     assert await chat_store.authenticate_bridge(session_id, "wrong") == BridgeAuthentication.REJECTED
+
+
+async def test_an_idle_session_has_no_bridge_credential_to_authenticate(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    view, _ = await chat_store.create(operator_id)
+    await make_idle(migrated_sessions, view.session_id)
+
+    assert await chat_store.authenticate_bridge(view.session_id, "anything") == BridgeAuthentication.REJECTED
+
+
+async def test_the_first_idle_prompt_mints_exactly_one_allocation(chat_store, operator_id, migrated_sessions) -> None:
+    view, _ = await chat_store.create(operator_id)
+    await make_idle(migrated_sessions, view.session_id)
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "wake up", SPA_ORIGIN)
+
+    first, second = await asyncio.gather(
+        chat_store.allocate(operator_id, view.session_id), chat_store.allocate(operator_id, view.session_id)
+    )
+
+    allocation = one(candidate for candidate in (first, second) if candidate is not None)
+    assert allocation.session_id == view.session_id
+    assert await chat_store.status(view.session_id) == SessionStatus.PROVISIONING
+    async with migrated_sessions() as db:
+        record = await db.get(Session, view.session_id)
+        assert record is not None
+        assert record.bridge_token_fingerprint == SessionStore._fingerprint(allocation.bridge_token)
+    assert (
+        len(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_PROVISIONING))
+        == 2
+    ), "the test's eager predecessor event plus the allocation transition"
+
+
+async def test_idle_without_work_does_not_allocate(chat_store, operator_id, migrated_sessions) -> None:
+    view, _ = await chat_store.create(operator_id)
+    await make_idle(migrated_sessions, view.session_id)
+
+    assert await chat_store.allocate(operator_id, view.session_id) is None
+    assert await chat_store.status(view.session_id) == SessionStatus.IDLE
+
+
+async def test_an_idle_session_can_close_without_ever_minting_a_credential(
+    chat_store, operator_id, migrated_sessions
+) -> None:
+    view, _ = await chat_store.create(operator_id)
+    await make_idle(migrated_sessions, view.session_id)
+
+    await chat_store.request_close(operator_id, view.session_id)
+    await chat_store.complete_claim_cleanup(view.session_id)
+
+    assert await chat_store.status(view.session_id) == SessionStatus.CLOSED
 
 
 async def test_deliberate_close_is_not_reclassified_as_runner_failure(
@@ -1185,6 +1236,7 @@ async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, mi
     for view, _ in held:
         holder, expires_at = await lease_of(migrated_sessions, view.session_id)
         assert holder is None
+        assert expires_at is not None
         assert expires_at <= datetime.now(UTC), "the lease is expired, so any runner may adopt it"
         assert await chat_store.status(view.session_id) in OPEN_SESSION_STATUSES, "adoptable, not failed"
     assert await chat_store.expire_stale_leases() == 0, "within the grace, so no sweep fails it yet"

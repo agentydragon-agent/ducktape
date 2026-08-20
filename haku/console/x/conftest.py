@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface, ItemStatus, ItemType
@@ -88,6 +88,20 @@ async def operator_id(migrated_identity_store: PostgresOperatorIdentityStore) ->
     return await migrated_identity_store.resolve_configured_external_user_key(OPERATOR_SUBJECT)
 
 
+async def make_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> None:
+    """Put a test session in the writer state the next rollout will create.
+
+    Production deliberately has no idle writer in this compatibility release. Tests use a direct
+    row transition so the readers and allocation paths can be proven before that writer lands.
+    """
+    async with sessions.begin() as db:
+        await db.execute(
+            update(Session)
+            .where(Session.session_id == session_id)
+            .values(status="idle", bridge_token_fingerprint=None, lease_expires_at=None)
+        )
+
+
 async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id: UUID, address: str) -> None:
     """Give the conversation this session runs a channel holding a copy of it, at *address*.
 
@@ -137,7 +151,7 @@ async def age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID
         chat.lease_expires_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
 
 
-async def lease_of(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime]:
+async def lease_of(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime | None]:
     async with sessions() as db:
         chat = await db.get(Session, session_id)
         assert chat is not None
