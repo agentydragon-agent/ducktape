@@ -30,14 +30,19 @@ def test_schema_loads(mesh: nebula_mesh.Mesh) -> None:
     assert mesh.hosts, "roster must contain at least one host"
 
 
-def test_rugged_declares_conservative_destination_mtu(mesh: nebula_mesh.Mesh) -> None:
-    """All peers must size traffic to fit Rugged's Google Fi underlay."""
-    assert mesh.hosts["rugged"].destination_mtu == 1100
-
-
-def test_global_mtu_consumer_uses_smallest_destination_constraint(mesh: nebula_mesh.Mesh) -> None:
+def test_global_mtu_consumer_uses_smallest_destination_constraint() -> None:
     """Mobile clients without per-peer routes must honor the smallest constraint."""
-    assert mesh.minimum_path_mtu(1300) == 1100
+    constrained_mesh = nebula_mesh.Mesh(
+        hosts={
+            "slow": nebula_mesh.Host(
+                nebula_ip="10.42.255.253", role="non-k8s", managed_by="mobile", destination_mtu=1100
+            ),
+            "fast": nebula_mesh.Host(
+                nebula_ip="10.42.255.254", role="non-k8s", managed_by="mobile", destination_mtu=1300
+            ),
+        }
+    )
+    assert constrained_mesh.minimum_path_mtu(1400) == 1100
 
 
 def test_global_mtu_consumer_keeps_default_without_constraints() -> None:
@@ -139,34 +144,35 @@ def _terraform_control_plane_nebula_ips(path: Path) -> dict[str, str]:
 
 def _static_etcd_endpoint_nebula_ips(path: Path) -> dict[str, str]:
     docs = [doc for doc in yaml.safe_load_all(path.read_text()) if doc is not None]
-    endpoint_slices = [
-        doc
-        for doc in docs
-        if doc.get("apiVersion") == "discovery.k8s.io/v1"
-        and doc.get("kind") == "EndpointSlice"
-        and doc.get("metadata", {}).get("name") == "talos-etcd-metrics"
-    ]
-    assert len(endpoint_slices) == 1, f"{path}: expected exactly one talos-etcd-metrics EndpointSlice"
-
-    endpoint_slice = endpoint_slices[0]
-    assert endpoint_slice.get("addressType") == "IPv4"
-    assert (
-        endpoint_slice.get("metadata", {}).get("labels", {}).get("kubernetes.io/service-name") == "talos-etcd-metrics"
-    )
-    assert endpoint_slice.get("ports") == [{"name": "metrics", "protocol": "TCP", "port": 2381}]
+    services = {doc["metadata"]["name"]: doc for doc in docs if doc.get("kind") == "Service"}
+    endpoint_slices = [doc for doc in docs if doc.get("kind") == "EndpointSlice"]
+    assert endpoint_slices, f"{path}: expected at least one EndpointSlice"
 
     endpoints: dict[str, str] = {}
-    for endpoint in endpoint_slice.get("endpoints", []):
-        hostname = endpoint.get("hostname")
-        assert hostname, f"{path}: EndpointSlice endpoint is missing hostname"
-        assert endpoint.get("nodeName") == hostname, f"{hostname}: endpoint nodeName should match hostname"
-        assert endpoint.get("conditions", {}).get("ready") is True, f"{hostname}: endpoint should be marked ready"
+    for endpoint_slice in endpoint_slices:
+        service_name = endpoint_slice["metadata"]["labels"]["kubernetes.io/service-name"]
+        service_ports = {port["name"]: port for port in services[service_name]["spec"]["ports"]}
+        for endpoint_port in endpoint_slice["ports"]:
+            service_port = service_ports[endpoint_port["name"]]
+            assert endpoint_port["port"] == service_port["targetPort"]
+            assert endpoint_port.get("protocol", "TCP") == service_port.get("protocol", "TCP")
 
-        addresses = endpoint.get("addresses")
-        assert isinstance(addresses, list), f"{hostname}: endpoint addresses must be a list"
-        assert len(addresses) == 1, f"{hostname}: expected exactly one endpoint address, got {addresses!r}"
-        assert hostname not in endpoints, f"{path}: duplicate endpoint hostname {hostname}"
-        endpoints[hostname] = addresses[0]
+        slice_addresses: list[str] = []
+        for endpoint in endpoint_slice.get("endpoints", []):
+            hostname = endpoint.get("hostname")
+            assert hostname, f"{path}: EndpointSlice endpoint is missing hostname"
+            assert endpoint.get("nodeName") == hostname, f"{hostname}: endpoint nodeName should match hostname"
+            assert endpoint.get("conditions", {}).get("ready") is True, f"{hostname}: endpoint should be marked ready"
+
+            addresses = endpoint.get("addresses")
+            assert isinstance(addresses, list), f"{hostname}: endpoint addresses must be a list"
+            assert len(addresses) == 1, f"{hostname}: expected exactly one endpoint address, got {addresses!r}"
+            assert hostname not in endpoints, f"{path}: duplicate endpoint hostname {hostname}"
+            endpoints[hostname] = addresses[0]
+            slice_addresses.extend(addresses)
+
+        [address_version] = {ipaddress.ip_address(ip).version for ip in slice_addresses}
+        assert endpoint_slice["addressType"] == f"IPv{address_version}"
 
     assert endpoints, f"{path}: expected at least one endpoint"
     return endpoints

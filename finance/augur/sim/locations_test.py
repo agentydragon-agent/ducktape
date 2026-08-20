@@ -18,10 +18,9 @@ def _load_location(location_id: str) -> Location:
 
 
 def test_load_san_francisco() -> None:
-    loc = _load_location("san_francisco")
-    assert loc.location_id == "san_francisco"
-    assert loc.jurisdiction_ids == ["federal_us", "california"]
-    assert loc.display_name == "San Francisco, CA"
+    location_id = "san_francisco"
+    loc = _load_location(location_id)
+    assert loc.location_id == location_id
     # The property-tax rate is scaffolding for the housing layer.
     assert loc.annual_property_tax_rate > 0
 

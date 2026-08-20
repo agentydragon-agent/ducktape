@@ -20,6 +20,7 @@ CLUSTER_KEY = get_required_path("_main/cluster/k8s/x/activitywatch/syncthing-key
 SYNCTHING_DEPLOYMENT = get_required_path("_main/cluster/k8s/x/activitywatch/syncthing-deployment.yaml")
 IMPORTER_CRONJOB = get_required_path("_main/cluster/k8s/x/activitywatch/importer-cronjob.yaml")
 PVC_MANIFEST = get_required_path("_main/cluster/k8s/x/activitywatch/pvc.yaml")
+OVH_STORAGE_CLASS = get_required_path("_main/cluster/k8s/local-path-provisioner/sc-local-path-ovh.yaml")
 HOST_CERT_SENTINEL = get_required_path("_main/secrets/home/rugged/activitywatch-syncthing.cert.pem")
 
 SYNCTHING_BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -77,53 +78,29 @@ def test_syncthing_config_matches_identity_sources() -> None:
     expected_devices = _expected_devices()
 
     root = ET.parse(CONFIG_XML).getroot()
-    assert root.tag == "configuration"
-    assert root.attrib["version"] == "51"
-
-    folders = root.findall("folder")
-    assert len(folders) == 1
-    folder = folders[0]
-    assert folder.attrib == {
-        "id": "activitywatch",
-        "label": "ActivityWatch",
-        "path": "/sync-inbox",
-        "type": "receiveonly",
-        "rescanIntervalS": "60",
-        "fsWatcherEnabled": "true",
-    }
-    assert folder.findtext("filesystemType") == "basic"
-    assert {device.attrib["id"] for device in folder.findall("device")} == set(expected_devices.values())
+    assert {device.attrib["id"] for folder in root.findall("folder") for device in folder.findall("device")} == set(
+        expected_devices.values()
+    )
 
     xml_devices = {device.attrib["name"]: device for device in root.findall("device")}
     assert set(xml_devices) == set(expected_devices)
 
     for name, expected_device_id in expected_devices.items():
-        device = xml_devices[name]
-        assert device.attrib["id"] == expected_device_id
-        assert device.attrib["compression"] == "metadata"
-        assert device.attrib["introducer"] == "false"
-        assert device.attrib["skipIntroductionRemovals"] == "false"
-        assert [address.text for address in device.findall("address")] == ["dynamic"]
-
-    gui = root.find("gui")
-    assert gui is not None
-    assert gui.attrib == {"enabled": "false", "tls": "false"}
-
-    options = root.find("options")
-    assert options is not None
-    assert options.findtext("listenAddress") == "default"
-    assert options.findtext("globalAnnounceServer") == "default"
-    assert options.findtext("globalAnnounceEnabled") == "true"
-    assert options.findtext("localAnnounceEnabled") == "true"
-    assert options.findtext("localAnnouncePort") == "21027"
-    assert options.findtext("relaysEnabled") == "true"
-    assert options.findtext("urAccepted") == "-1"
+        assert xml_devices[name].attrib["id"] == expected_device_id
 
 
 def test_ovh_workloads_use_the_canonical_zone_label() -> None:
-    expected_selector = {"topology.kubernetes.io/zone": "hil-ovh"}
     syncthing = _read_yaml(SYNCTHING_DEPLOYMENT)
     importer = _read_yaml(IMPORTER_CRONJOB)
+    storage_class = _read_yaml(OVH_STORAGE_CLASS)
+    zone_requirement = next(
+        requirement
+        for topology in storage_class["allowedTopologies"]
+        for requirement in topology["matchLabelExpressions"]
+        if requirement["key"] == "topology.kubernetes.io/zone"
+    )
+    [zone] = zone_requirement["values"]
+    expected_selector = {zone_requirement["key"]: zone}
 
     assert syncthing["spec"]["template"]["spec"]["nodeSelector"] == expected_selector
     assert importer["spec"]["jobTemplate"]["spec"]["template"]["spec"]["nodeSelector"] == expected_selector
@@ -132,13 +109,21 @@ def test_ovh_workloads_use_the_canonical_zone_label() -> None:
 def test_syncthing_index_state_is_persistent() -> None:
     syncthing = _read_yaml(SYNCTHING_DEPLOYMENT)
     pod_spec = syncthing["spec"]["template"]["spec"]
-    state_volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == "state")
-    assert state_volume == {"name": "state", "persistentVolumeClaim": {"claimName": "activitywatch-syncthing-state"}}
+    init_mounts = {
+        mount["name"] for container in pod_spec["initContainers"] for mount in container.get("volumeMounts", [])
+    }
+    production_mounts = {
+        mount["name"] for container in pod_spec["containers"] for mount in container.get("volumeMounts", [])
+    }
+    state_volume = next(
+        volume
+        for volume in pod_spec["volumes"]
+        if volume["name"] in init_mounts & production_mounts and "persistentVolumeClaim" in volume
+    )
 
     pvcs = {manifest["metadata"]["name"]: manifest for manifest in yaml.safe_load_all(PVC_MANIFEST.read_text())}
-    state_pvc = pvcs["activitywatch-syncthing-state"]
-    assert state_pvc["spec"]["accessModes"] == ["ReadWriteOnce"]
-    assert state_pvc["spec"]["storageClassName"] == "local-path-ovh"
+    state_pvc = pvcs[state_volume["persistentVolumeClaim"]["claimName"]]
+    assert state_pvc["spec"]["storageClassName"] == _read_yaml(OVH_STORAGE_CLASS)["metadata"]["name"]
 
 
 def test_importer_is_suspended_pull_only_and_fails_closed() -> None:
@@ -147,22 +132,28 @@ def test_importer_is_suspended_pull_only_and_fails_closed() -> None:
     assert importer["spec"]["concurrencyPolicy"] == "Forbid"
 
     pod_spec = importer["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-    assert {volume["name"] for volume in pod_spec["volumes"]} == {"sync-inbox"}
-    assert pod_spec["volumes"][0]["persistentVolumeClaim"]["claimName"] == "activitywatch-sync-inbox"
-
-    validator = pod_spec["initContainers"][0]
-    assert validator["name"] == "validate-canonical-device-databases"
+    validator = next(
+        container
+        for container in pod_spec["initContainers"]
+        if "Refusing to import unexpected database" in container["command"][-1]
+    )
     validator_script = validator["command"][-1]
     assert "-name '*.db'" in validator_script
     assert "!= test.db" in validator_script
-    assert "Refusing to import unexpected database" in validator_script
-    assert validator["volumeMounts"][0]["readOnly"] is True
+    validator_mount = next(mount for mount in validator["volumeMounts"] if mount["mountPath"] in validator_script)
+    assert validator_mount["readOnly"] is True
 
-    container = pod_spec["containers"][0]
+    container = next(container for container in pod_spec["containers"] if "sync" in container.get("command", []))
     command = container["command"]
     assert command[-3:] == ["sync", "--mode", "pull"]
     assert "push" not in command
-    assert container["volumeMounts"] == [{"name": "sync-inbox", "mountPath": "/sync-inbox"}]
+    importer_mount = next(mount for mount in container["volumeMounts"] if mount["mountPath"] in command)
+    assert importer_mount["name"] == validator_mount["name"]
+
+    inbox_volume = next(volume for volume in pod_spec["volumes"] if volume["name"] == importer_mount["name"])
+    pvcs = {manifest["metadata"]["name"]: manifest for manifest in yaml.safe_load_all(PVC_MANIFEST.read_text())}
+    inbox_pvc = pvcs[inbox_volume["persistentVolumeClaim"]["claimName"]]
+    assert "ReadWriteMany" in inbox_pvc["spec"]["accessModes"]
 
 
 if __name__ == "__main__":

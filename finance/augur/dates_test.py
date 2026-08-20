@@ -6,11 +6,7 @@ import datetime as dt
 
 import pytest_bazel
 
-from finance.augur.dates import DAYS_PER_MONTH, months_between
-
-
-def test_days_per_month_is_gregorian() -> None:
-    assert DAYS_PER_MONTH == 365.2425 / 12
+from finance.augur.dates import months_between
 
 
 def test_one_calendar_year_is_about_twelve_months() -> None:

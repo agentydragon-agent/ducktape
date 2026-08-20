@@ -1,4 +1,5 @@
 <configuration version="51">
+    <!-- The cluster imports host data; receiveonly prevents it from publishing edits back. -->
     <folder id="activitywatch" label="ActivityWatch" path="/sync-inbox" type="receiveonly" rescanIntervalS="60" fsWatcherEnabled="true">
         <filesystemType>basic</filesystemType>
         <device id="PATWINW-6VZGFXN-GFP24UN-CEAF4TB-YDBFV25-WDYEFC7-672W5RB-OQGGNQT" introducedBy="">
@@ -32,6 +33,7 @@
     <device id="CXD63NS-6NVOEFY-AISQIJR-JOBNTDZ-3SCQPWP-K6PN3RN-KMHAIT4-RXYOBAR" name="activitywatch-cluster" compression="metadata" introducer="false" skipIntroductionRemovals="false" introducedBy="">
         <address>dynamic</address>
     </device>
+    <!-- No administrative UI is exposed from this unattended cluster peer. -->
     <gui enabled="false" tls="false"></gui>
     <options>
         <listenAddress>default</listenAddress>

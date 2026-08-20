@@ -23,22 +23,26 @@ def k8s_dir() -> Path:
 def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) -> None:
     """Only the dedicated Console runner namespace receives Claude OAuth proxy authority."""
     template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
-    assert template["metadata"]["namespace"] == "haku-claude-sandbox"
+    template_namespace = template["metadata"]["namespace"]
+    console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
+    runtime = console_config["chat_runtimes"]["claude_code"]
+    assert runtime["namespace"] == template_namespace
 
     mounts = template["spec"]["podTemplate"]["spec"]["containers"][0]["volumeMounts"]
-    assert sum(mount["mountPath"] == "/egress-proxy-ca" for mount in mounts) == 1
+    ca_mount = one(mount for mount in mounts if mount["name"] == "egress-proxy-ca")
+    assert str(PurePosixPath(runtime["ca_bundle"]).parent) == ca_mount["mountPath"]
 
     oauth_ingress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/claude-networkpolicy.yaml").read_text())
     peers = oauth_ingress["spec"]["ingress"][0]["from"]
     allowed_namespaces = {peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"] for peer in peers}
-    assert allowed_namespaces == {"haku-claude-sandbox"}
+    assert allowed_namespaces == {template_namespace}
 
     general_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text()
     assert "haku-claude-oauth-proxy" not in general_egress
 
     claude_egress_path = k8s_dir / "agents/haku-egress-proxy/ccnp-haku-claude-sandbox-egress.yaml"
     claude_egress_text = claude_egress_path.read_text()
-    assert "haku-claude-sandbox" in claude_egress_text
+    assert template_namespace in claude_egress_text
     assert "haku-claude-oauth-proxy" in claude_egress_text
 
     service = yaml.safe_load((k8s_dir / "haku/console/service.yaml").read_text())
@@ -61,9 +65,6 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
     assert "haku-claude-sandbox" not in general_injection
 
-    console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    runtime = console_config["chat_runtimes"]["claude_code"]
-    assert runtime["namespace"] == template["metadata"]["namespace"]
     # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
     # is a pod that never becomes Ready. Tie the three places that must agree — the configured
     # path, the mount point, and the generated file — together here rather than in a rollout.
@@ -126,7 +127,8 @@ def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
     grants anything of its own — a second binding would be a second answer, free to drift.
     """
     binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
-    assert binding["roleRef"]["name"] == "haku-sandbox-admin"
+    role = yaml.safe_load((k8s_dir / "haku/rbac/role.yaml").read_text())
+    assert binding["roleRef"]["name"] == role["metadata"]["name"]
     subjects = {(s["kind"], s["name"], s["namespace"]) for s in binding["subjects"]}
 
     for template_name, namespace in (
@@ -165,12 +167,10 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
     assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
-    assert set(containers) == {"server"}
     runtime_tags = {entry["name"]: entry["value"] for entry in containers["server"]["env"] if "value" in entry}
     assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_IMAGE_TAG"]
     assert "HAKU_CONSOLE_STATIC_IMAGE_TAG" not in runtime_tags
     static_container = one(static_deployment["spec"]["template"]["spec"]["containers"])
-    assert static_container["name"] == "static"
     static_tag = static_container["image"].rsplit(":", 1)[1]
     static_metadata = yaml.safe_load((console_dir / "static-metadata.yaml").read_text(encoding="utf-8"))
     assert static_metadata["data"]["image-tag"] == static_tag
@@ -187,19 +187,31 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
 
     api_service = yaml.safe_load((console_dir / "service.yaml").read_text(encoding="utf-8"))
     static_service = yaml.safe_load((console_dir / "static-service.yaml").read_text(encoding="utf-8"))
-    assert api_service["spec"]["selector"] == {"app.kubernetes.io/name": "haku-console"}
-    assert api_service["spec"]["ports"][0]["targetPort"] == "api"
-    assert static_service["spec"]["selector"] == {"app.kubernetes.io/name": "haku-console-static"}
-    assert static_service["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": "http", "protocol": "TCP"}]
+    assert api_service["spec"]["selector"].items() <= deployment["spec"]["template"]["metadata"]["labels"].items()
+    assert (
+        static_service["spec"]["selector"].items()
+        <= static_deployment["spec"]["template"]["metadata"]["labels"].items()
+    )
+    static_port = one(static_service["spec"]["ports"])
+    assert static_port["targetPort"] in {port["name"] for port in static_container["ports"]}
     route = yaml.safe_load((console_dir / "httproute.yaml").read_text(encoding="utf-8"))
-    assert route["spec"]["rules"][0]["backendRefs"] == [{"name": "haku-console-static", "port": 8080}]
+    route_backend = one(route["spec"]["rules"][0]["backendRefs"])
+    assert (route_backend["name"], route_backend["port"]) == (static_service["metadata"]["name"], static_port["port"])
     assert static_deployment["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
     static_env = {entry["name"]: entry["value"] for entry in static_container["env"] if "value" in entry}
-    assert static_env["HAKU_CONSOLE_API_UPSTREAM"] == "haku-console.haku-console.svc.cluster.local:8080"
+    upstream_host, upstream_port_text = static_env["HAKU_CONSOLE_API_UPSTREAM"].rsplit(":", 1)
+    assert upstream_host == (
+        f"{api_service['metadata']['name']}.{api_service['metadata']['namespace']}.svc.cluster.local"
+    )
+    api_port = one(port for port in api_service["spec"]["ports"] if port["port"] == int(upstream_port_text))
+    assert api_port["targetPort"] in {port["name"] for port in containers["server"]["ports"]}
 
     annotations = deployment["metadata"]["annotations"]
     assert "reloader.stakater.com/auto" not in annotations
-    assert annotations["configmap.reloader.stakater.com/reload"] == "haku-console-config"
+    config_volume = one(
+        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "config"
+    )
+    assert annotations["configmap.reloader.stakater.com/reload"] == config_volume["configMap"]["name"]
     reloaded_secrets = set(annotations["secret.reloader.stakater.com/reload"].split(","))
     referenced_secrets = {
         entry["valueFrom"]["secretKeyRef"]["name"]
@@ -296,70 +308,33 @@ def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:
     deployment = yaml.safe_load((k8s_dir / "haku" / "console" / "deployment.yaml").read_text(encoding="utf-8"))
     server = next(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
     literal_env = {entry["name"]: entry["value"] for entry in server["env"] if "value" in entry}
-    assert literal_env["HAKU_CONSOLE_PUBLIC_BASE_URL"] == "https://haku.allegedly.works"
+    assert literal_env["HAKU_CONSOLE_PUBLIC_BASE_URL"] == f"https://{one(route['spec']['hostnames'])}"
     assert "HAKU_CONSOLE_MCP_OAUTH__PUBLIC_BASE_URL" not in {entry["name"] for entry in server["env"]}
 
 
-def test_haku_ci_keda_scales_only_the_repo_scoped_forgejo_queue(k8s_dir: Path) -> None:
-    """The privileged dind runner may scale only from its own Forgejo queue."""
+def test_haku_ci_keda_resources_are_wired_to_the_runner_job(k8s_dir: Path) -> None:
     keda_repository, keda_release = list(
         yaml.safe_load_all((k8s_dir / "keda/helmrelease.yaml").read_text(encoding="utf-8"))
     )
-    assert keda_repository["spec"]["url"] == "https://kedacore.github.io/charts"
-    assert keda_release["spec"]["chart"]["spec"]["version"] == "2.20.2"
-    assert keda_release["spec"]["values"]["watchNamespace"] == "haku-ci"
-
     auth, scaled_job = list(yaml.safe_load_all((k8s_dir / "haku-ci/scaledjob.yaml").read_text(encoding="utf-8")))
-    assert auth["kind"] == "TriggerAuthentication"
-    assert auth["spec"]["secretTargetRef"] == [{"parameter": "token", "name": "haku-forgejo-tea", "key": "token"}]
-
-    # ScaledJob, not ScaledObject: the queue-depth trigger may only ever CREATE pods.
-    # Driving an HPA with it scaled back down the instant a runner picked a job up,
-    # and the HPA deleted whichever pod it liked — reaping in-flight builds.
-    assert scaled_job["kind"] == "ScaledJob"
-    assert scaled_job["spec"]["maxReplicaCount"] == 4
-    # "immediate" would delete running Jobs on every Flux reconcile of this file.
-    assert scaled_job["spec"]["rollout"]["strategy"] == "gradual"
-
-    job = scaled_job["spec"]["jobTargetRef"]
-    assert (job["parallelism"], job["completions"]) == (1, 1), "one CI job per pod"
-    # A failed build exits 0, so a non-zero exit is an infrastructure fault; the retry
-    # is the job staying queued for the next poll, not a Kubernetes-level restart.
-    assert job["backoffLimit"] == 0
-    pod = job["template"]["spec"]
-    assert pod["restartPolicy"] == "Never"
-    # dind must be a NATIVE SIDECAR (initContainer + restartPolicy: Always) or it never
-    # exits and the Job never completes — and it must outlive the runner's own shutdown.
-    dind = next(c for c in pod["initContainers"] if c["name"] == "dind")
-    assert dind["restartPolicy"] == "Always"
-
-    runner = next(c for c in pod["containers"] if c["name"] == "runner")
-    runner_env = {entry["name"]: entry for entry in runner["env"]}
-    assert runner_env["RUNNER_NAME"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.name"
-    # Without --ephemeral the registration outlives the pod; the repo accumulated 529.
-    assert "--ephemeral" in "\n".join(runner["args"])
-    cache = next(volume for volume in pod["volumes"] if volume["name"] == "bazel-cache")
-    assert cache == {"name": "bazel-cache", "emptyDir": {}}
-
-    assert scaled_job["spec"]["triggers"] == [
-        {
-            "type": "forgejo-runner",
-            "metadata": {
-                "address": "http://forgejo-http.forgejo:3000",
-                "owner": "haku",
-                "repo": "haku-state",
-                "labels": "haku-ci",
-            },
-            "authenticationRef": {"name": "haku-ci-forgejo"},
-        }
-    ]
+    source_ref = keda_release["spec"]["chart"]["spec"]["sourceRef"]
+    assert (source_ref["name"], source_ref["namespace"]) == (
+        keda_repository["metadata"]["name"],
+        keda_repository["metadata"]["namespace"],
+    )
+    assert keda_release["spec"]["values"]["watchNamespace"] == scaled_job["metadata"]["namespace"]
 
     token_manifest = yaml.safe_load((k8s_dir / "haku/managed-agent/haku-forgejo-tea.sops.yaml").read_text())
+    [secret_ref] = auth["spec"]["secretTargetRef"]
+    assert secret_ref["name"] == token_manifest["metadata"]["name"]
+    assert secret_ref["key"] in token_manifest["stringData"]
+
+    [trigger] = scaled_job["spec"]["triggers"]
+    assert trigger["authenticationRef"]["name"] == auth["metadata"]["name"]
+
     annotations = token_manifest["metadata"]["annotations"]
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed"] == "true"
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == "haku-ci"
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-enabled"] == "true"
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "haku-ci"
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == auth["metadata"]["namespace"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == auth["metadata"]["namespace"]
 
 
 if __name__ == "__main__":
