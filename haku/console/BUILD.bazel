@@ -116,6 +116,7 @@ py_library(
     srcs = ["recall_index_access.py"],
     deps = [
         ":mcp_config",
+        ":mcp_execution",
         ":tool_call_actor",
     ],
 )
@@ -125,6 +126,7 @@ py_library(
     srcs = ["in_process_server_access.py"],
     deps = [
         ":mcp_config",
+        ":mcp_execution",
         ":tool_call_actor",
     ],
 )
