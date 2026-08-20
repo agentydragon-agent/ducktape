@@ -33,6 +33,13 @@ GMAIL_LABEL_NAMESPACE_TOOLS = frozenset({"threads_modify_labels", "labels_patch"
 # arguments only when the query contains no repository qualifier. Do not allow a caller to bypass
 # a repository policy by supplying an approved owner/repo pair alongside a query for another repo.
 _GITHUB_SEARCH_REPOSITORY_QUALIFIER = re.compile(r"(?:^|[^\w])repo:", re.IGNORECASE)
+# search_code has no separate owner/repo parameters. Its one repository boundary must therefore be
+# an unquoted, whitespace-delimited ``repo:owner/repo`` search qualifier. Keep the recognizer
+# deliberately narrow: a syntax GitHub may instead interpret as free text cannot establish standing
+# authority.
+_GITHUB_CODE_SEARCH_REPOSITORY_QUALIFIER = re.compile(
+    r"(?<!\S)repo:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?=$|\s)", re.IGNORECASE
+)
 
 
 class ToolAutoApprovalMode(IntEnum):
@@ -236,6 +243,9 @@ class AutoApprovalPolicyRegistry:
 def _evaluate_github_repository(
     tool_name: str, arguments: dict[str, Any], owner: str, repository: str
 ) -> AutoApprovalDecision:
+    if tool_name == "search_code":
+        return _evaluate_github_code_search(arguments, owner, repository)
+
     actual_owner = arguments.get("owner")
     actual_repository = arguments.get("repo")
     if not isinstance(actual_owner, str) or not isinstance(actual_repository, str):
@@ -251,6 +261,27 @@ def _evaluate_github_repository(
                 "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
             )
     return AutoApproved(f"reviewed read targets repository {owner}/{repository}")
+
+
+def _evaluate_github_code_search(arguments: dict[str, Any], owner: str, repository: str) -> AutoApprovalDecision:
+    query = arguments.get("query")
+    if not isinstance(query, str):
+        return NotAutoApproved("code search requires a string query")
+
+    # Every syntactic occurrence of `repo:` must be the single, deliberately narrow qualifier
+    # below. This rejects quoted, negated, duplicate, and malformed qualifiers rather than
+    # guessing how GitHub Search will interpret them.
+    if len(_GITHUB_SEARCH_REPOSITORY_QUALIFIER.findall(query)) != 1:
+        return NotAutoApproved("code search requires exactly one repository qualifier")
+    matches = _GITHUB_CODE_SEARCH_REPOSITORY_QUALIFIER.findall(query)
+    if len(matches) != 1:
+        return NotAutoApproved("code search requires one unquoted repo:owner/repo qualifier")
+
+    actual_repository = matches[0]
+    expected_repository = f"{owner}/{repository}"
+    if actual_repository.casefold() != expected_repository.casefold():
+        return NotAutoApproved(f"repository {actual_repository} is outside {expected_repository}")
+    return AutoApproved(f"reviewed code search targets repository {expected_repository}")
 
 
 async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> SchemaDenial | str | None:

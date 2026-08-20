@@ -68,7 +68,7 @@ _GITHUB_TOOL_ARGUMENTS: dict[str, dict[str, object]] = {
     "pull_request_read": {"pullNumber": 456, "method": "get"},
     "search_pull_requests": {"query": "is:open"},
 }
-_GITHUB_TOOLS = list(_GITHUB_TOOL_ARGUMENTS)
+_GITHUB_TOOLS = [*_GITHUB_TOOL_ARGUMENTS, "search_code"]
 _MANUAL_AUTHORITY_CONFIG = {
     "auto_approval_policies": [{"id": "manual", "type": "never"}],
     "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
@@ -502,6 +502,17 @@ async def test_approved_agents_can_search_pull_requests_in_reviewed_repositories
     assert f"reviewed read targets repository agentydragon/{repository}" in evaluation
 
 
+@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
+@pytest.mark.parametrize("repository", ["ducktape", "gaffer-private"])
+async def test_approved_agents_can_search_code_in_reviewed_repositories(actor: AgentActor, repository: str) -> None:
+    policy_id, evaluation = await _remote_decision(
+        "github", "search_code", {"query": f"repo:agentydragon/{repository} language:python authorization"}, actor=actor
+    )
+    assert policy_id == AGENT_AUTO_APPROVAL_ID
+    assert evaluation is not None
+    assert f"reviewed code search targets repository agentydragon/{repository}" in evaluation
+
+
 @pytest.mark.parametrize(
     "query", ["repo:agentydragon/other is:open", "-repo:agentydragon/other is:open", "Repo:agentydragon/other is:open"]
 )
@@ -518,12 +529,28 @@ async def test_public_coder_pr_search_with_repository_qualifier_stays_manual(que
 
 
 @pytest.mark.parametrize(
+    "query",
+    [
+        "authorization",
+        "repo:agentydragon/other authorization",
+        "repo:agentydragon/ducktape repo:agentydragon/other authorization",
+        '"repo:agentydragon/ducktape" authorization',
+        "-repo:agentydragon/ducktape authorization",
+    ],
+)
+async def test_public_coder_code_search_without_exact_repository_scope_stays_manual(query: str) -> None:
+    policy_id, evaluation = await _remote_decision("github", "search_code", {"query": query}, actor=PUBLIC_CODER_ACTOR)
+    assert policy_id is None
+    assert evaluation is not None
+    assert "code search" in evaluation or "repository agentydragon/other is outside" in evaluation
+
+
+@pytest.mark.parametrize(
     ("tool_name", "arguments"),
     [
         ("issue_read", {"owner": "agentydragon", "repo": "private", "issue_number": 123}),
         ("get_job_logs", {"owner": "someone", "repo": "ducktape", "run_id": 789}),
         ("get_file_contents", {"owner": "agentydragon", "path": "README.md"}),
-        ("search_code", {"query": "repo:agentydragon/ducktape policy"}),
     ],
 )
 async def test_other_or_unprovable_github_reads_stay_manual(tool_name: str, arguments: dict) -> None:
