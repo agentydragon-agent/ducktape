@@ -16,6 +16,7 @@ import numpy as np
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.product.wire import (
+    ROLLOUT_EVENT_KIND_ORDER,
     CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
     HoaDuesPaymentEvent,
@@ -44,27 +45,7 @@ from finance.augur.sim.enums import LifecycleKind, PrivateEquityOpportunityOutco
 from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))
-_EVENT_PRIORITY = {
-    "property_purchase": 0,
-    "closing_cost_payment": 1,
-    "set_primary_residence": 2,
-    "set_rented_fraction": 3,
-    "capital_improvement": 4,
-    "property_sale": 5,
-    "private_equity_event": 6,
-    "private_equity_opportunity": 7,
-    "holding_sale": 8,
-    "tax_accrual": 9,
-    "tax_payment": 10,
-    "property_tax_payment": 11,
-    "hoa_dues_payment": 12,
-    "homeowners_insurance_payment": 13,
-    "property_maintenance_payment": 14,
-    "mortgage_payment": 15,
-    "monthly_expense": 16,
-    "outside_rent": 17,
-    "failure": 18,
-}
+_EVENT_PRIORITY = {kind: priority for priority, kind in enumerate(ROLLOUT_EVENT_KIND_ORDER)}
 
 
 @dataclass(frozen=True)
