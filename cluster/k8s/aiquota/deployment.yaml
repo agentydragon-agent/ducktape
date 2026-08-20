@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiquota-api
+  namespace: cli-proxy-api
+  labels:
+    app.kubernetes.io/name: aiquota
+  annotations:
+    description: Claude subscription quota API. Codex support is intentionally deferred.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aiquota
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aiquota
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: aiquota-api
+          image: ghcr.io/agentydragon/aiquota-api:devel-20260820043600-ac69f91 # {"$imagepolicy": "flux-system:aiquota-api"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: AIQUOTA_API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-api-bearer
+                  key: bearer-token
+            - name: AIQUOTA_CLAUDE_PROXY
+              value: http://haku-claude-oauth-proxy.haku-egress-proxy.svc:8180
+            - name: AIQUOTA_CLAUDE_PROXY_CA
+              value: /egress-proxy-ca/ca-certificates.crt
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aiquota
+              readOnly: true
+            - name: haku-egress-proxy-ca
+              mountPath: /egress-proxy-ca
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: aiquota-api-config
+        - name: haku-egress-proxy-ca
+          configMap:
+            name: haku-egress-proxy-ca-cert

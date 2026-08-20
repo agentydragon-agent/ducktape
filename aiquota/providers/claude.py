@@ -1,7 +1,10 @@
 """Claude subscription usage provider.
 
-Fetches 5-hour and 7-day utilization from the undocumented Claude OAuth usage API,
-with automatic token refresh via the platform token endpoint.
+The default local credential source is Claude Code's
+``~/.claude/.credentials.json``. When that access token expires, this provider
+refreshes it and writes the rotated credential back to the same file. That
+makes aiquota a concurrent writer alongside Claude Code; callers that require
+an external credential owner must use a non-file credential source instead.
 """
 
 import logging
@@ -9,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
 from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
@@ -32,6 +35,11 @@ LONG_WINDOW_SECS = 7 * 86400
 class ClaudeSettings(BaseModel):
     enabled: bool = True
     credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
+    # An explicit token selects an externally owned, static credential source.
+    # A trusted credential-substitution proxy can replace a non-secret sentinel
+    # on the exact upstream Authorization header. This source is never
+    # refreshed or written by aiquota.
+    access_token: SecretStr | None = None
 
 
 # Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that
@@ -156,13 +164,17 @@ class ClaudeProvider(Provider):
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
         path = self.settings.credentials_path
-        creds, token = _read_credentials(path)
+        creds, stored_token = _read_credentials(path)
+        configured_token = self.settings.access_token.get_secret_value() if self.settings.access_token else None
+        token = configured_token or stored_token
         if not token:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
             async with self.client_factory(self.name, {USAGE_URL}, API_TIMEOUT_SECS) as client:
-                if _token_expired(creds):
+                # An explicitly supplied token belongs to a proxy or another
+                # credential owner; never refresh or write it from this process.
+                if configured_token is None and _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))

@@ -21,7 +21,7 @@ def k8s_dir() -> Path:
 
 
 def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) -> None:
-    """Only the dedicated Console runner namespace receives Claude OAuth proxy authority."""
+    """Only the Console runner and the dedicated aiquota Pod receive proxy authority."""
     template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
     template_namespace = template["metadata"]["namespace"]
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
@@ -34,8 +34,11 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
 
     oauth_ingress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/claude-networkpolicy.yaml").read_text())
     peers = oauth_ingress["spec"]["ingress"][0]["from"]
-    allowed_namespaces = {peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"] for peer in peers}
-    assert allowed_namespaces == {template_namespace}
+    namespace_by_peer = {
+        peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]: peer for peer in peers
+    }
+    assert set(namespace_by_peer) == {template_namespace, "cli-proxy-api"}
+    assert namespace_by_peer["cli-proxy-api"]["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": "aiquota"}}
 
     general_egress = (k8s_dir / "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml").read_text()
     assert "haku-claude-oauth-proxy" not in general_egress
