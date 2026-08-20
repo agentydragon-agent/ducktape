@@ -1,6 +1,6 @@
 # `.#devtools` Nix Closure Size Breakdown
 
-Generated 2026-03-24. Total closure: **543.5 MiB**.
+Generated 2026-03-24. Total closure: **538.4 MiB**.
 
 Regenerate with: `devinfra/claude/docs/devtools-closure-size.sh`
 
@@ -8,40 +8,39 @@ Regenerate with: `devinfra/claude/docs/devtools-closure-size.sh`
 
 |      Size | Cumul% | Store path                        |
 | --------: | -----: | --------------------------------- |
-| 106.7 MiB |  19.6% | `python3-3.13.12`                 |
-|  52.7 MiB |  29.3% | `gh-2.83.2`                       |
-|  50.2 MiB |  38.6% | `git-minimal-2.51.2`              |
-|  45.7 MiB |  47.0% | `python3.13-kubernetes-33.1.0`    |
-|  42.3 MiB |  54.7% | `grpc-1.76.0`                     |
-|  38.2 MiB |  61.8% | `icu4c-76.1`                      |
-|  28.8 MiB |  67.1% | `glibc-2.40-218`                  |
-|  18.4 MiB |  70.4% | `gettext-0.25.1`                  |
-|  17.9 MiB |  73.7% | `protobuf-32.1`                   |
-|  17.3 MiB |  76.9% | `bbapi-latest`                    |
-|  11.8 MiB |  79.1% | `python3.13-pygments-2.19.2`      |
-|   9.5 MiB |  80.8% | `gcc-14.3.0-lib`                  |
-|   8.9 MiB |  82.5% | `openssl-3.6.1`                   |
-|   7.2 MiB |  83.8% | `abseil-cpp-20250814.1`           |
-|   7.1 MiB |  85.1% | `bash-interactive-5.3p3`          |
-|   7.0 MiB |  86.4% | `python3.13-virtualenv-20.33.1`   |
-|   5.7 MiB |  87.5% | `icu4c-76.1-dev`                  |
-|   5.5 MiB |  88.5% | `python3.13-cryptography-46.0.5`  |
-|   5.4 MiB |  89.5% | `python3.13-supervisor-4.3.0`     |
-|   5.3 MiB |  90.4% | `python3.13-pydantic-core-2.33.2` |
-|   5.3 MiB |  91.4% | `python3.13-pydantic-2.11.7`      |
-|   4.2 MiB |  92.2% | `python3.13-pytest-8.4.2`         |
-|   3.8 MiB |  92.9% | `sqlite-3.50.4`                   |
-|   3.6 MiB |  93.5% | `ncurses-6.5`                     |
+| 106.7 MiB |  19.8% | `python3-3.13.12`                 |
+|  52.7 MiB |  29.6% | `gh-2.83.2`                       |
+|  50.2 MiB |  38.9% | `git-minimal-2.51.2`              |
+|  45.7 MiB |  47.4% | `python3.13-kubernetes-33.1.0`    |
+|  42.3 MiB |  55.3% | `grpc-1.76.0`                     |
+|  38.2 MiB |  62.4% | `icu4c-76.1`                      |
+|  28.8 MiB |  67.7% | `glibc-2.40-218`                  |
+|  18.4 MiB |  71.1% | `gettext-0.25.1`                  |
+|  17.9 MiB |  74.5% | `protobuf-32.1`                   |
+|  17.3 MiB |  77.7% | `bbapi-latest`                    |
+|  11.8 MiB |  79.9% | `python3.13-pygments-2.19.2`      |
+|   9.5 MiB |  81.6% | `gcc-14.3.0-lib`                  |
+|   8.9 MiB |  83.3% | `openssl-3.6.1`                   |
+|   7.2 MiB |  84.6% | `abseil-cpp-20250814.1`           |
+|   7.1 MiB |  85.9% | `bash-interactive-5.3p3`          |
+|   7.0 MiB |  87.2% | `python3.13-virtualenv-20.33.1`   |
+|   5.7 MiB |  88.3% | `icu4c-76.1-dev`                  |
+|   5.5 MiB |  89.3% | `python3.13-cryptography-46.0.5`  |
+|   5.3 MiB |  90.3% | `python3.13-pydantic-core-2.33.2` |
+|   5.3 MiB |  91.3% | `python3.13-pydantic-2.11.7`      |
+|   4.2 MiB |  92.1% | `python3.13-pytest-8.4.2`         |
+|   3.8 MiB |  92.8% | `sqlite-3.50.4`                   |
+|   3.6 MiB |  93.4% | `ncurses-6.5`                     |
 |   3.3 MiB |  94.1% | `python3.13-protobuf-6.33.1`      |
 |   3.2 MiB |  94.7% | `python3.13-rich-14.1.0`          |
-|   2.9 MiB |  95.3% | `python3.13-psutil-7.1.2`         |
-|   2.9 MiB |  95.8% | `python3.13-pyasn1-modules-0.4.2` |
-|   2.7 MiB |  96.3% | `krb5-1.22.1-lib`                 |
+|   2.9 MiB |  95.2% | `python3.13-psutil-7.1.2`         |
+|   2.9 MiB |  95.7% | `python3.13-pyasn1-modules-0.4.2` |
+|   2.7 MiB |  96.2% | `krb5-1.22.1-lib`                 |
 |   2.3 MiB |  96.7% | `python3.13-google-auth-2.41.1`   |
-|   2.0 MiB |  97.1% | `tzdata-2025c`                    |
+|   2.0 MiB |  97.0% | `tzdata-2025c`                    |
 |   2.0 MiB |  97.4% | `libunistring-1.4.1`              |
 |   2.0 MiB |  97.8% | `pcre2-10.46`                     |
-|   1.9 MiB |  98.2% | `util-linux-minimal-2.41.3-lib`   |
+|   1.9 MiB |  98.1% | `util-linux-minimal-2.41.3-lib`   |
 |   1.8 MiB |  98.5% | `bash-5.3p3`                      |
 |   1.8 MiB |  98.8% | `python3.13-pygit2-1.18.2`        |
 |   1.7 MiB |  99.1% | `python3.13-pycparser-2.23`       |
@@ -63,7 +62,7 @@ devtools (symlinkJoin)
 │   │   ├── pytest (4.2 MiB)
 │   │   ├── virtualenv (7.0 MiB)
 │   │   └── pygments (11.8 MiB, also via rich + identify)
-│   └── [other python deps: pydantic, rich, cryptography, supervisor, ...]
+│   └── [other python deps: pydantic, rich, cryptography, ...]
 ├── bbapi (17.3 MiB Go binary, already stripped)
 ├── gh (52.7 MiB Go binary, already stripped)
 │   └── git-minimal (50.2 MiB)
@@ -140,7 +139,6 @@ support and 5.6 MiB of locale data. Pulled by `git-minimal`.
 
 |    Size | Path                           |
 | ------: | ------------------------------ |
-| 2.5 MiB | `supervisor/tests/`            |
 | 2.4 MiB | `python3/lib/python3.13/test/` |
 | 1.9 MiB | `psutil/tests/`                |
 

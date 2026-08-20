@@ -18,9 +18,7 @@ The `bb` CLI is open source at <https://github.com/buildbuddy-io/buildbuddy>. Re
 - **Rust hook daemon logs** (includes session start): `/tmp/claude-hd/<session_id>/daemon.log`
 - **Rust hook daemon stderr log** (check this first for SessionStart crashes): `/tmp/claude-hd/<session_id>/daemon.err.log`
 - **Hook daemon startup failure marker** (written when the dispatcher couldn't reach the daemon at all): `/tmp/claude-hd/<session_id>/startup_failure.json`
-- **Supervisor logs**: `~/.claude/session-env/<session_id>/supervisor/supervisord.log` (retired Python container-runtime path only)
 - **Platform detection**: Claude Code sessions (web and CLI-managed remote) run on Firecracker microVMs (ext4 root, real Linux kernel; `--firecracker-init` on the PID 1 cmdline). The Rust session start hook detects Firecracker only to size Bazel's JVM heap. See <web_env/docs/container_spec.md> for specs and IO benchmarks. If that Firecracker marker is absent in a live web/remote session, stop and report platform drift instead of applying old container-runtime workarounds.
-- **Supervisor uses TCP**: `127.0.0.1:19001` instead of Unix socket for the retired Python container-runtime profile's existing client config.
 
 ## Container Lifecycle — Reverse-Engineered Source
 
@@ -86,9 +84,6 @@ tail -100 "/tmp/claude-hd/$LIVE/daemon.err.log"
 
 # Check session bazelrc
 cat "$HOME/.claude/session-env/$LIVE/bazelrc"
-
-# Historical Python container-runtime path only:
-# python -m supervisor.supervisorctl -c "$HOME/.claude/session-env/$LIVE/supervisor/supervisord.conf" status
 
 # Check installed claude-hooks vs the pin — git= shows the commit the wheel was built from
 claude-hook --version

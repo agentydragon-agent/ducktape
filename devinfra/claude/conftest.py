@@ -17,7 +17,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.fixture
 def session_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionPaths:
-    """Minimal SessionPaths for tests that don't need supervisor/proxy infrastructure."""
+    """Minimal SessionPaths for tests that don't need proxy infrastructure."""
     home = tmp_path / "session-home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -30,7 +30,7 @@ def session_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionPat
 
 @pytest.fixture
 def hook_settings() -> HookSettings:
-    """Minimal HookSettings for tests that don't need supervisor/proxy infrastructure."""
+    """Minimal HookSettings for tests that don't need proxy infrastructure."""
     return HookSettings()
 
 

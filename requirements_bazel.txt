@@ -6987,10 +6987,6 @@ structlog==25.5.0 \
     --hash=sha256:098522a3bebed9153d4570c6d0288abf80a031dfdb2048d59a49e9dc2190fc98 \
     --hash=sha256:a8453e9b9e636ec59bd9e79bbd4a72f025981b3ba0f5837aebf48f02f37a7f9f
     # via ducktape (pyproject.toml)
-supervisor==4.3.0 \
-    --hash=sha256:0bcb763fddafba410f35cbde226aa7f8514b9fb82eb05a0c85f6588d1c13f8db \
-    --hash=sha256:4a2bf149adf42997e1bb44b70c43b613275ec9852c3edacca86a9166b27e945e
-    # via ducktape (pyproject.toml)
 svg-py==1.10.0 \
     --hash=sha256:2e1391411a205220a0e72ca303f3c2d11dbd564cb1dbc445406c5e11421bcc4b \
     --hash=sha256:54c7470347d5d79b30d059584a4f449da08b462903e8ce262981338bab755560

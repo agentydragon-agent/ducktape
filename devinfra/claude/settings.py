@@ -29,7 +29,6 @@ def _env_name(field: str) -> str:
 
 
 # Environment variable names (used by tests and env_file.py)
-ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_SESSION_DIR = _env_name("session_dir")
 
 
@@ -41,9 +40,6 @@ class HookSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(env_prefix="DUCKTAPE_CLAUDE_HOOKS_", env_file_encoding="utf-8")
-
-    # Port overrides (used by tests for free-port isolation)
-    supervisor_port: int = Field(default=19001, description="Supervisor TCP port")
 
     # Profile YAML file path (repo-relative, e.g. devinfra/claude/claude_hook/profiles/cli/profile.yaml)
     profile: str | None = Field(default=None, description="Profile YAML file path (repo-relative)")

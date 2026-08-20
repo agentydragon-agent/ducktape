@@ -27,17 +27,3 @@ py_library(
         "@pypi//pytest",
     ],
 )
-
-py_library(
-    name = "fixtures",
-    testonly = True,
-    srcs = ["fixtures.py"],
-    deps = [
-        "//devinfra/claude:session_paths",
-        "//devinfra/claude:settings",
-        "//devinfra/claude/supervisor:client",
-        "//util:net",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-    ],
-)

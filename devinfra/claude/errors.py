@@ -5,10 +5,6 @@ class AuthProxyError(Exception):
     """Base exception for auth proxy errors."""
 
 
-class SupervisorError(AuthProxyError):
-    """Failed to start/communicate with supervisor."""
-
-
 class ProxyServiceError(AuthProxyError):
     """Failed to start/restart proxy service."""
 
