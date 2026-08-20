@@ -14,6 +14,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic.alias_generators import to_camel
 
 
 class KubernetesGrantStatus(StrEnum):
@@ -33,6 +34,13 @@ def _clean_values(value: Iterable[str], field_name: str, *, allow_empty: bool = 
     return frozenset(values)
 
 
+def _kubernetes_alias(field_name: str) -> str:
+    """Camel-case a PolicyRule field while preserving Kubernetes' URL initialism."""
+
+    alias = to_camel(field_name)
+    return f"{alias[:-4]}URLs" if alias.endswith("Urls") else alias
+
+
 class KubernetesRule(BaseModel):
     """One conservative Kubernetes RBAC-like rule.
 
@@ -41,13 +49,13 @@ class KubernetesRule(BaseModel):
     mirrors the proxy's PolicyRule wire contract while remaining independent of that transport.
     """
 
-    model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
+    model_config = ConfigDict(alias_generator=_kubernetes_alias, populate_by_name=True, extra="forbid", frozen=True)
 
-    api_groups: frozenset[str] = Field(default_factory=frozenset, alias="apiGroups")
+    api_groups: frozenset[str] = Field(default_factory=frozenset)
     resources: frozenset[str] = Field(default_factory=frozenset)
     verbs: frozenset[_NON_EMPTY]
-    resource_names: frozenset[str] = Field(default_factory=frozenset, alias="resourceNames")
-    non_resource_urls: frozenset[str] = Field(default_factory=frozenset, alias="nonResourceURLs")
+    resource_names: frozenset[str] = Field(default_factory=frozenset)
+    non_resource_urls: frozenset[str] = Field(default_factory=frozenset)
 
     @field_validator("api_groups", "resources", "resource_names", "non_resource_urls", mode="before")
     @classmethod

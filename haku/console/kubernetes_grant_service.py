@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Collection, Sequence
-from typing import Any, Protocol
+from collections.abc import Callable, Sequence, Set
+from typing import Protocol
 from uuid import UUID
 
 from haku.console.kubernetes_grant_models import (
@@ -30,9 +30,13 @@ class KubernetesGrantRepository(Protocol):
 
     async def get(self, *, agent_id: UUID, grant_id: UUID) -> KubernetesGrant: ...
 
-    async def release(self, *, agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant: ...
+    async def release(
+        self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
+    ) -> KubernetesGrant: ...
 
-    async def revoke(self, *, agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant: ...
+    async def revoke(
+        self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
+    ) -> KubernetesGrant: ...
 
     async def expire(self, *, now: datetime.datetime, agent_id: UUID | None = None) -> int: ...
 
@@ -43,7 +47,7 @@ def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-def _wildcard_covers(granted: Collection[str], requested: Collection[str]) -> bool:
+def _wildcard_covers(granted: Set[str], requested: Set[str]) -> bool:
     """Whether a grant's values cover all values in the request.
 
     ``*`` is the only wildcard accepted here.  Empty requested values are treated as the
@@ -52,16 +56,16 @@ def _wildcard_covers(granted: Collection[str], requested: Collection[str]) -> bo
 
     if "*" in granted:
         return True
-    return set(requested).issubset(granted)
+    return requested <= granted
 
 
-def _resource_names_cover(granted: Collection[str], requested: Collection[str]) -> bool:
+def _resource_names_cover(granted: Set[str], requested: Set[str]) -> bool:
     # Kubernetes RBAC's empty resourceNames means all names. A named request cannot be covered by
     # a grant listing only a different subset. Conversely, a list/watch request has no finite name
     # set and therefore requires an all-names grant.
     if not requested:
         return not granted
-    return not granted or set(requested).issubset(granted)
+    return not granted or requested <= granted
 
 
 def _non_resource_url_covers(granted: str, requested: str) -> bool:
@@ -107,7 +111,11 @@ class KubernetesGrantService:
     """
 
     def __init__(
-        self, repository: KubernetesGrantRepository, *, max_lifetime: datetime.timedelta, clock: Any = _utcnow
+        self,
+        repository: KubernetesGrantRepository,
+        *,
+        max_lifetime: datetime.timedelta,
+        clock: Callable[[], datetime.datetime] = _utcnow,
     ) -> None:
         self._repository = repository
         self._clock = clock
@@ -155,10 +163,14 @@ class KubernetesGrantService:
         return grant
 
     async def release_grant(self, *, agent_id: UUID, grant_id: UUID, reason: str = "released") -> KubernetesGrant:
-        return await self._repository.release(agent_id=agent_id, grant_id=grant_id, reason=reason)
+        return await self._repository.release(
+            agent_id=agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
+        )
 
     async def revoke_grant(self, *, agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
-        return await self._repository.revoke(agent_id=agent_id, grant_id=grant_id, reason=reason)
+        return await self._repository.revoke(
+            agent_id=agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
+        )
 
     async def expire_grants(self, *, agent_id: UUID | None = None) -> int:
         return await self._repository.expire(agent_id=agent_id, now=self._clock())

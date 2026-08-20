@@ -23,9 +23,7 @@ from sqlalchemy import (
     text as sql_text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.types import TypeDecorator
 
 from haku.console.agents.models import (
     MAX_AGENT_DISPLAY_NAME_LENGTH,
@@ -55,6 +53,7 @@ from haku.console.kubernetes_grant_models import KubernetesGrantStatus, Kubernet
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
 from util.sqlalchemy_types import (
     StrEnumColumn,
@@ -67,25 +66,6 @@ from util.sqlalchemy_types import (
 
 class Base(DeclarativeBase):
     pass
-
-
-class _KubernetesRulesColumn(TypeDecorator[list[KubernetesRule]]):
-    """Persist validated Kubernetes rules as their stable JSON representation."""
-
-    impl = JSONB
-    cache_ok = True
-
-    def process_bind_param(
-        self, value: list[KubernetesRule] | None, dialect: Dialect
-    ) -> list[dict[str, list[str]]] | None:
-        del dialect
-        return None if value is None else [rule.model_dump(mode="json") for rule in value]
-
-    def process_result_value(
-        self, value: list[dict[str, list[str]]] | None, dialect: Dialect
-    ) -> list[KubernetesRule] | None:
-        del dialect
-        return None if value is None else [KubernetesRule.model_validate(rule) for rule in value]
 
 
 class Operator(Base):
@@ -551,7 +531,7 @@ class KubernetesGrantRow(Base):
     source_tool_call_id: Mapped[str] = mapped_column(
         Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
     )
-    rules: Mapped[list[KubernetesRule]] = mapped_column(_KubernetesRulesColumn(), nullable=False)
+    rules: Mapped[list[KubernetesRule]] = mapped_column(PydanticColumn(list[KubernetesRule]), nullable=False)
     status: Mapped[KubernetesGrantStatus] = mapped_column(
         TextBackedStrEnumColumn(KubernetesGrantStatus), nullable=False
     )

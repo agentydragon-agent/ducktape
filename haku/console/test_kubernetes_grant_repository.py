@@ -11,10 +11,18 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import fingerprint_static_token
-from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, StaticCredential
+from haku.console.database_schema import (
+    Agent,
+    CredentialBinding,
+    KubernetesGrantRow,
+    McpToolCall,
+    McpToolCallPrincipal,
+    StaticCredential,
+)
 from haku.console.kubernetes_grant_models import KubernetesGrantSourceError, KubernetesGrantStatus, KubernetesRule
 from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
 from haku.console.tool_calls import ToolCallStatus
@@ -75,7 +83,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
         assert client.portal is not None
         agent_id, binding_id = client.portal.call(_default_agent, sessions)
         source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
-        repository = PostgresKubernetesGrantRepository(sessions, clock=lambda: _NOW)
+        repository = PostgresKubernetesGrantRepository(sessions)
 
         async def exercise() -> None:
             grant = await repository.create(
@@ -111,7 +119,7 @@ def test_repository_rejects_wrong_or_auto_approved_source(make_client: Any) -> N
         auto_approved = client.portal.call(
             partial(_source_call, sessions, binding_id=binding_id, approval_policy_id="unsafe-test-policy")
         )
-        repository = PostgresKubernetesGrantRepository(sessions, clock=lambda: _NOW)
+        repository = PostgresKubernetesGrantRepository(sessions)
 
         async def rejected(source_tool_call_id: str) -> None:
             with pytest.raises(KubernetesGrantSourceError):
@@ -125,6 +133,34 @@ def test_repository_rejects_wrong_or_auto_approved_source(make_client: Any) -> N
 
         client.portal.call(rejected, wrong_tool)
         client.portal.call(rejected, auto_approved)
+
+
+def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any) -> None:
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(_default_agent, sessions)
+        wrong_tool = client.portal.call(partial(_source_call, sessions, binding_id=binding_id, tool_name="list_grants"))
+
+        async def rejected() -> None:
+            with pytest.raises(IntegrityError, match="invalid Kubernetes grant source provenance"):
+                async with sessions.begin() as session:
+                    session.add(
+                        KubernetesGrantRow(
+                            grant_id=uuid4(),
+                            agent_id=agent_id,
+                            source_tool_call_id=wrong_tool,
+                            rules=[_RULE],
+                            status=KubernetesGrantStatus.ACTIVE,
+                            created_at=_NOW,
+                            expires_at=_NOW + timedelta(minutes=5),
+                            ended_at=None,
+                            end_reason=None,
+                        )
+                    )
+
+        client.portal.call(rejected)
 
 
 if __name__ == "__main__":

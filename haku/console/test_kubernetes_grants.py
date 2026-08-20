@@ -29,6 +29,14 @@ def test_resource_rule_accepts_wire_aliases_and_canonicalizes_values() -> None:
     assert rule.resources == frozenset({"pods"})
     assert rule.resource_names == frozenset({"pod-a"})
     assert rule.model_dump(mode="json")["resource_names"] == ["pod-a"]
+    assert rule.model_dump(mode="json", by_alias=True)["resourceNames"] == ["pod-a"]
+
+
+def test_rule_alias_generator_preserves_kubernetes_url_initialism() -> None:
+    rule = KubernetesRule.model_validate({"verbs": ["get"], "nonResourceURLs": ["/healthz"]})
+
+    assert rule.non_resource_urls == frozenset({"/healthz"})
+    assert rule.model_dump(mode="json", by_alias=True)["nonResourceURLs"] == ["/healthz"]
 
 
 def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:

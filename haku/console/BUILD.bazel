@@ -170,6 +170,25 @@ py_library(
 )
 
 py_library(
+    name = "pydantic_column",
+    srcs = ["pydantic_column.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_pydantic_column",
+    srcs = ["test_pydantic_column.py"],
+    deps = [
+        ":pydantic_column",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
@@ -178,6 +197,7 @@ py_library(
         ":node_daemon_models",
         ":operator_identity",
         ":provider_connection_registry",
+        ":pydantic_column",
         "//haku/console/agents:models",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",

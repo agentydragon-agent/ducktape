@@ -23,16 +23,11 @@ from haku.console.kubernetes_grant_models import (
 from haku.console.tool_calls import ToolCallStatus
 
 
-def _utcnow() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC)
-
-
 class PostgresKubernetesGrantRepository:
     """Small transactional repository; all operations require an explicit Agent UUID."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], *, clock: Any = _utcnow) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
-        self._clock = clock
 
     @staticmethod
     def _row_to_model(row: KubernetesGrantRow) -> KubernetesGrant:
@@ -144,29 +139,24 @@ class PostgresKubernetesGrantRepository:
             return self._row_to_model(row)
 
     async def release(
-        self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime | None = None
+        self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
     ) -> KubernetesGrant:
         return await self._end(
             agent_id=agent_id,
             grant_id=grant_id,
             status=KubernetesGrantStatus.RELEASED,
             reason=reason,
-            ended_at=ended_at or self._clock(),
+            ended_at=ended_at,
         )
 
     async def revoke(
-        self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime | None = None
+        self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
     ) -> KubernetesGrant:
         return await self._end(
-            agent_id=agent_id,
-            grant_id=grant_id,
-            status=KubernetesGrantStatus.REVOKED,
-            reason=reason,
-            ended_at=ended_at or self._clock(),
+            agent_id=agent_id, grant_id=grant_id, status=KubernetesGrantStatus.REVOKED, reason=reason, ended_at=ended_at
         )
 
-    async def expire(self, *, now: datetime.datetime | None = None, agent_id: UUID | None = None) -> int:
-        now = now or self._clock()
+    async def expire(self, *, now: datetime.datetime, agent_id: UUID | None = None) -> int:
         where = [KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE, KubernetesGrantRow.expires_at <= now]
         if agent_id is not None:
             where.append(KubernetesGrantRow.agent_id == agent_id)

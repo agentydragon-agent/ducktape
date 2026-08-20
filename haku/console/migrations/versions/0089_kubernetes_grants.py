@@ -62,8 +62,51 @@ def upgrade() -> None:
     op.create_index(
         "idx_kubernetes_grants_agent_status_expiry", "kubernetes_grants", ["agent_id", "status", "expires_at"]
     )
+    op.execute(
+        """
+        CREATE FUNCTION public.haku_0089_kubernetes_grant_source_invariants()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM public.mcp_tool_calls AS call
+                JOIN public.mcp_tool_call_principals AS principal
+                  ON principal.tool_call_id = call.tool_call_id
+                JOIN public.credential_bindings AS binding
+                  ON binding.binding_id = principal.binding_id
+                JOIN public.agents AS agent
+                  ON agent.agent_id = binding.agent_id
+                WHERE call.tool_call_id = NEW.source_tool_call_id
+                  AND binding.agent_id = NEW.agent_id
+                  AND agent.status NOT IN ('abandoned', 'deleted')
+                  AND call.server_id = 'kubernetes'
+                  AND call.tool_name = 'create_grant'
+                  AND call.status IN ('running', 'ok')
+                  AND call.approved_at IS NOT NULL
+                  AND call.approval_policy_id IS NULL
+            ) THEN
+                RAISE EXCEPTION 'invalid Kubernetes grant source provenance'
+                    USING ERRCODE = 'check_violation',
+                          CONSTRAINT = 'ck_kubernetes_grants_source_provenance';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_haku_0089_kubernetes_grant_source_invariants
+        BEFORE INSERT OR UPDATE OF agent_id, source_tool_call_id ON public.kubernetes_grants
+        FOR EACH ROW EXECUTE FUNCTION public.haku_0089_kubernetes_grant_source_invariants()
+        """
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER trg_haku_0089_kubernetes_grant_source_invariants ON public.kubernetes_grants")
+    op.execute("DROP FUNCTION public.haku_0089_kubernetes_grant_source_invariants()")
     op.drop_index("idx_kubernetes_grants_agent_status_expiry", table_name="kubernetes_grants")
     op.drop_table("kubernetes_grants")
