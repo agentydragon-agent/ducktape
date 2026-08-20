@@ -310,99 +310,16 @@ def build_scenario(
                 end_month=end_month,
             )
         )
-        initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(scenario_key.property_purchase)
-        # Schedule E for property expenses: the rented fraction of HOA / insurance / maintenance /
-        # property tax is deductible against rental income. When these obligations carry
-        # `property_id`, the sim reads the runtime rented fraction at settlement time so
-        # mid-horizon stop/restart events resize the Schedule E share.
-        property_deduction_category, property_deductible_fraction = _schedule_e_split(initial_rented_fraction)
-        if property_.hoa_monthly > 0:
-            agents.append(Agent(agent_id=HOA_AGENT_ID))
-            initial_balances.append(InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance=0))
-            recurring_obligations.append(
-                RecurringObligation(
-                    start_month=0,
-                    end_month=end_month,
-                    obligation_id=HOA_OBLIGATION_ID,
-                    obligation_type=ObligationType.HOA_DUES,
-                    agent_id=primary_agent_id,
-                    from_account_id=PRIMARY_ACCOUNT_ID,
-                    to_agent_id=HOA_AGENT_ID,
-                    to_account_id=HOA_ACCOUNT_ID,
-                    amount_due=SeriesIndexedAmount(
-                        base_amount=_amount(property_.hoa_monthly), series=InflationKey(), adjustment_period_months=1
-                    ),
-                    deduction_category=property_deduction_category,
-                    deductible_fraction=property_deductible_fraction,
-                    property_id=property_.id,
-                )
-            )
-        if scenario_key.annual_insurance_pct > 0:
-            agents.append(Agent(agent_id=INSURER_AGENT_ID))
-            initial_balances.append(
-                InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance=0)
-            )
-            effective_insurance_pct = insurance_rate(
-                base_annual_pct=float(scenario_key.annual_insurance_pct),
-                occupancy_mode=initial_occupancy_mode,
-                rented_fraction=initial_rented_fraction,
-            )
-            monthly_insurance = round_currency_amount(
-                _amount(property_.price) * _amount(effective_insurance_pct) / Decimal(100 * 12),
-                quantum=currency_quantum,
-            )
-            recurring_obligations.append(
-                RecurringObligation(
-                    start_month=0,
-                    end_month=end_month,
-                    obligation_id=INSURANCE_OBLIGATION_ID,
-                    obligation_type=ObligationType.HOMEOWNERS_INSURANCE,
-                    agent_id=primary_agent_id,
-                    from_account_id=PRIMARY_ACCOUNT_ID,
-                    to_agent_id=INSURER_AGENT_ID,
-                    to_account_id=INSURER_ACCOUNT_ID,
-                    amount_due=SeriesIndexedAmount(
-                        base_amount=monthly_insurance, series=InflationKey(), adjustment_period_months=1
-                    ),
-                    deduction_category=property_deduction_category,
-                    deductible_fraction=property_deductible_fraction,
-                    property_id=property_.id,
-                )
-            )
-        if scenario_key.annual_maintenance_pct > 0:
-            agents.append(Agent(agent_id=MAINTENANCE_VENDOR_AGENT_ID))
-            initial_balances.append(
-                InitialAccountBalance(
-                    agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance=0
-                )
-            )
-            effective_maintenance_pct = maintenance_rate(
-                base_annual_pct=float(scenario_key.annual_maintenance_pct),
-                occupancy_mode=initial_occupancy_mode,
-                rented_fraction=initial_rented_fraction,
-            )
-            monthly_maintenance = round_currency_amount(
-                _amount(property_.price) * _amount(effective_maintenance_pct) / Decimal(100 * 12),
-                quantum=currency_quantum,
-            )
-            recurring_obligations.append(
-                RecurringObligation(
-                    start_month=0,
-                    end_month=end_month,
-                    obligation_id=MAINTENANCE_OBLIGATION_ID,
-                    obligation_type=ObligationType.PROPERTY_MAINTENANCE,
-                    agent_id=primary_agent_id,
-                    from_account_id=PRIMARY_ACCOUNT_ID,
-                    to_agent_id=MAINTENANCE_VENDOR_AGENT_ID,
-                    to_account_id=MAINTENANCE_VENDOR_ACCOUNT_ID,
-                    amount_due=SeriesIndexedAmount(
-                        base_amount=monthly_maintenance, series=InflationKey(), adjustment_period_months=1
-                    ),
-                    deduction_category=property_deduction_category,
-                    deductible_fraction=property_deductible_fraction,
-                    property_id=property_.id,
-                )
-            )
+        expense_wiring = _wire_property_expenses(
+            scenario_key,
+            property_=property_,
+            primary_agent_id=primary_agent_id,
+            horizon_months=horizon_months,
+            currency_quantum=currency_quantum,
+        )
+        agents.extend(expense_wiring.agents)
+        initial_balances.extend(expense_wiring.initial_cash)
+        recurring_obligations.extend(expense_wiring.recurring_obligations)
         rental_wiring = _wire_landlord_rental(
             scenario_key.property_purchase,
             property_=property_,
@@ -527,6 +444,128 @@ def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float
     if fraction >= 1.0:
         return OccupancyMode.RENTED_FULL, 1.0
     return OccupancyMode.RENTED_PARTIAL, fraction
+
+
+@dataclass(frozen=True)
+class PropertyExpenseWiring:
+    """Payees and obligations for recurring property expenses."""
+
+    agents: tuple[Agent, ...]
+    initial_cash: tuple[InitialAccountBalance, ...]
+    recurring_obligations: tuple[RecurringObligation, ...]
+
+
+def _wire_property_expenses(
+    scenario_key: ScenarioKey,
+    *,
+    property_: Property,
+    primary_agent_id: str,
+    horizon_months: int,
+    currency_quantum: Decimal,
+) -> PropertyExpenseWiring:
+    """Wire HOA, insurance, and maintenance payees for one purchased property.
+
+    The returned tuple fields are immutable so the caller can merge this property's wiring
+    into the scenario's parallel collections without handing mutable lists into the helper.
+    Property tax remains a policy rather than a payee obligation and is wired by the caller.
+    """
+
+    purchase = scenario_key.property_purchase
+    assert purchase is not None
+    end_month = horizon_months - 1
+    initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(purchase)
+    # When these obligations carry `property_id`, the sim reads the runtime rented fraction at
+    # settlement time so mid-horizon stop/restart events resize the Schedule E share.
+    property_deduction_category, property_deductible_fraction = _schedule_e_split(initial_rented_fraction)
+    agents: list[Agent] = []
+    initial_cash: list[InitialAccountBalance] = []
+    recurring_obligations: list[RecurringObligation] = []
+    if property_.hoa_monthly > 0:
+        agents.append(Agent(agent_id=HOA_AGENT_ID))
+        initial_cash.append(InitialAccountBalance(agent_id=HOA_AGENT_ID, account_id=HOA_ACCOUNT_ID, balance=0))
+        recurring_obligations.append(
+            RecurringObligation(
+                start_month=0,
+                end_month=end_month,
+                obligation_id=HOA_OBLIGATION_ID,
+                obligation_type=ObligationType.HOA_DUES,
+                agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                to_agent_id=HOA_AGENT_ID,
+                to_account_id=HOA_ACCOUNT_ID,
+                amount_due=SeriesIndexedAmount(
+                    base_amount=_amount(property_.hoa_monthly), series=InflationKey(), adjustment_period_months=1
+                ),
+                deduction_category=property_deduction_category,
+                deductible_fraction=property_deductible_fraction,
+                property_id=property_.id,
+            )
+        )
+    if scenario_key.annual_insurance_pct > 0:
+        agents.append(Agent(agent_id=INSURER_AGENT_ID))
+        initial_cash.append(InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance=0))
+        effective_insurance_pct = insurance_rate(
+            base_annual_pct=float(scenario_key.annual_insurance_pct),
+            occupancy_mode=initial_occupancy_mode,
+            rented_fraction=initial_rented_fraction,
+        )
+        monthly_insurance = round_currency_amount(
+            _amount(property_.price) * _amount(effective_insurance_pct) / Decimal(100 * 12), quantum=currency_quantum
+        )
+        recurring_obligations.append(
+            RecurringObligation(
+                start_month=0,
+                end_month=end_month,
+                obligation_id=INSURANCE_OBLIGATION_ID,
+                obligation_type=ObligationType.HOMEOWNERS_INSURANCE,
+                agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                to_agent_id=INSURER_AGENT_ID,
+                to_account_id=INSURER_ACCOUNT_ID,
+                amount_due=SeriesIndexedAmount(
+                    base_amount=monthly_insurance, series=InflationKey(), adjustment_period_months=1
+                ),
+                deduction_category=property_deduction_category,
+                deductible_fraction=property_deductible_fraction,
+                property_id=property_.id,
+            )
+        )
+    if scenario_key.annual_maintenance_pct > 0:
+        agents.append(Agent(agent_id=MAINTENANCE_VENDOR_AGENT_ID))
+        initial_cash.append(
+            InitialAccountBalance(
+                agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance=0
+            )
+        )
+        effective_maintenance_pct = maintenance_rate(
+            base_annual_pct=float(scenario_key.annual_maintenance_pct),
+            occupancy_mode=initial_occupancy_mode,
+            rented_fraction=initial_rented_fraction,
+        )
+        monthly_maintenance = round_currency_amount(
+            _amount(property_.price) * _amount(effective_maintenance_pct) / Decimal(100 * 12), quantum=currency_quantum
+        )
+        recurring_obligations.append(
+            RecurringObligation(
+                start_month=0,
+                end_month=end_month,
+                obligation_id=MAINTENANCE_OBLIGATION_ID,
+                obligation_type=ObligationType.PROPERTY_MAINTENANCE,
+                agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                to_agent_id=MAINTENANCE_VENDOR_AGENT_ID,
+                to_account_id=MAINTENANCE_VENDOR_ACCOUNT_ID,
+                amount_due=SeriesIndexedAmount(
+                    base_amount=monthly_maintenance, series=InflationKey(), adjustment_period_months=1
+                ),
+                deduction_category=property_deduction_category,
+                deductible_fraction=property_deductible_fraction,
+                property_id=property_.id,
+            )
+        )
+    return PropertyExpenseWiring(
+        agents=tuple(agents), initial_cash=tuple(initial_cash), recurring_obligations=tuple(recurring_obligations)
+    )
 
 
 @dataclass(frozen=True)

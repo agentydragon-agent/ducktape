@@ -1522,6 +1522,57 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: s
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
 
+def test_build_scenario_wires_property_expenses_to_payees(augur_config: Config, catalog: CatalogResponse) -> None:
+    primary_agent_id = resolve_primary_agent_id(augur_config)
+    scenario = ScenarioKey(
+        model_id="current_model",
+        horizon_months=12,
+        monthly_spend=1_000,
+        spend_index="none",
+        funding_policy=FundingPolicy(sleeve_weights=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_b_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            initial_rental=RentalIncomePlan(full_property_monthly_rent=3_100, fraction_rented=0.25),
+        ),
+    )
+
+    sim_scenario = build_scenario(
+        scenario,
+        primary_agent_id=primary_agent_id,
+        initial_cash=Decimal(600_000),
+        initial_lots=(),
+        properties_by_id=catalog.properties_by_id,
+    )
+
+    expense_obligations = [
+        obligation
+        for obligation in sim_scenario.recurring_obligations
+        if obligation.obligation_id in {"hoa_dues", "homeowners_insurance", "property_maintenance"}
+    ]
+    assert [obligation.obligation_id for obligation in expense_obligations] == [
+        "hoa_dues",
+        "homeowners_insurance",
+        "property_maintenance",
+    ]
+    assert [(obligation.to_agent_id, obligation.to_account_id) for obligation in expense_obligations] == [
+        ("hoa", "checking"),
+        ("insurer", "checking"),
+        ("maintenance_vendor", "checking"),
+    ]
+    assert all(obligation.agent_id == primary_agent_id for obligation in expense_obligations)
+    assert all(obligation.property_id == "location_b_property" for obligation in expense_obligations)
+    assert [obligation.deductible_fraction for obligation in expense_obligations] == pytest.approx([0.25] * 3)
+    expense_amounts: list[Decimal] = []
+    for obligation in expense_obligations:
+        assert isinstance(obligation.amount_due, SeriesIndexedAmount)
+        expense_amounts.append(obligation.amount_due.base_amount)
+    assert expense_amounts == [Decimal(150), Decimal(182), Decimal("487.50")]
+    assert {agent.agent_id for agent in sim_scenario.agents} >= {"hoa", "insurer", "maintenance_vendor"}
+    assert {balance.agent_id for balance in sim_scenario.initial_cash} >= {"hoa", "insurer", "maintenance_vendor"}
+
+
 def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:
     # location_a_property is $900k. Default annual_insurance_pct=0.4 → $300/mo at month 0.
     scenario = ScenarioKey(
