@@ -236,8 +236,6 @@ dependencies = [
     "pydantic-ai-slim[openai,anthropic,fastmcp]>=0.10",
     "crewai>=0.80",
     "openai-agents>=0.0.1",
-    # skills/reverse_engineer/evals/x — Inspect AI port of the RE eval.
-    "inspect-ai>=0.3",
 
     # git_commit_ai
     "mako>=1.3",
