@@ -82,6 +82,7 @@ from haku.console.operator_identity import (
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
+from haku.console.x.launch_identity import LaunchAgentRejectedError
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 
 _INTERACTION_LIFETIME = datetime.timedelta(minutes=10)
@@ -607,6 +608,59 @@ class PostgresAgentAuthority:
 
     async def static_authorization_for_binding(self, *, binding_id: UUID) -> StaticAgentAuthorization:
         return await self._database_call(lambda: self._static_authorization(binding_id=binding_id, fingerprint=None))
+
+    async def launch_authorization(
+        self,
+        db: AsyncSession,
+        *,
+        operator_id: UUID,
+        agent_id: UUID,
+        access_profile_id: str | None = None,
+        binding_id: UUID | None = None,
+    ) -> StaticAgentAuthorization:
+        """Resolve active launch authority at the caller's transaction linearization point."""
+        if not db.in_transaction():
+            raise RuntimeError("launch authorization requires an active caller transaction")
+        # Lock in a stable order.  The locks are held until the caller's transaction commits, so a
+        # concurrent disable/rotation cannot pass this check and then invalidate the conversation
+        # or attachment before it is durable.
+        operator = await db.get(Operator, operator_id, with_for_update=True)
+        agent = await db.get(Agent, agent_id, with_for_update=True)
+        binding = await db.scalar(
+            select(CredentialBinding)
+            .where(
+                CredentialBinding.agent_id == agent_id,
+                CredentialBinding.kind == CredentialKind.STATIC,
+                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
+                *((CredentialBinding.binding_id == binding_id,) if binding_id is not None else ()),
+            )
+            .order_by(CredentialBinding.activated_at.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        credential = (
+            None if binding is None else await db.get(StaticCredential, binding.binding_id, with_for_update=True)
+        )
+        if (
+            operator is None
+            or agent is None
+            or credential is None
+            or operator.status is not OperatorStatus.ACTIVE
+            or agent.owner_operator_id != operator_id
+            or agent.status is not AgentStatus.ACTIVE
+            or binding is None
+            or binding.kind is not CredentialKind.STATIC
+            or binding.status is not CredentialBindingStatus.ACTIVE
+        ):
+            raise LaunchAgentRejectedError
+        # Replacement sessions use the conversation's pinned profile.  The Agent's current profile
+        # is deliberately not required to equal it: profile changes must not retarget an old thread.
+        return StaticAgentAuthorization(
+            agent.agent_id,
+            binding.binding_id,
+            operator.operator_id,
+            access_profile_id if access_profile_id is not None else agent.access_profile_id,
+        )
 
     async def static_authorization_for_fingerprint(
         self, *, fingerprint: bytes, record_seen: bool = False
