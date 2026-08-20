@@ -23,7 +23,9 @@ from sqlalchemy import (
     text as sql_text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from haku.console.agents.models import (
     MAX_AGENT_DISPLAY_NAME_LENGTH,
@@ -49,6 +51,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
+from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
@@ -64,6 +67,25 @@ from util.sqlalchemy_types import (
 
 class Base(DeclarativeBase):
     pass
+
+
+class _KubernetesRulesColumn(TypeDecorator[list[KubernetesRule]]):
+    """Persist validated Kubernetes rules as their stable JSON representation."""
+
+    impl = JSONB
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: list[KubernetesRule] | None, dialect: Dialect
+    ) -> list[dict[str, list[str]]] | None:
+        del dialect
+        return None if value is None else [rule.model_dump(mode="json") for rule in value]
+
+    def process_result_value(
+        self, value: list[dict[str, list[str]]] | None, dialect: Dialect
+    ) -> list[KubernetesRule] | None:
+        del dialect
+        return None if value is None else [KubernetesRule.model_validate(rule) for rule in value]
 
 
 class Operator(Base):
@@ -494,6 +516,49 @@ class AuthorizationGrant(Base):
     initial_refresh_jti: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_family_persisted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class KubernetesGrantRow(Base):
+    """One Agent-owned, time-bounded Kubernetes capability lease.
+
+    The rule document is intentionally JSONB: Kubernetes evolves its resource vocabulary, while
+    the domain validates the stable RBAC-like shape before writing. ``source_tool_call_id`` is
+    retained as immutable provenance and must refer to the Agent-authenticated source call.
+    """
+
+    __tablename__ = "kubernetes_grants"
+    __table_args__ = (
+        UniqueConstraint("source_tool_call_id", name="uq_kubernetes_grants_source_tool_call"),
+        CheckConstraint("btrim(source_tool_call_id) <> ''", name="ck_kubernetes_grants_source_tool_call_nonempty"),
+        CheckConstraint(
+            "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
+            name="ck_kubernetes_grants_rules_nonempty",
+        ),
+        CheckConstraint("expires_at > created_at", name="ck_kubernetes_grants_expiration_after_creation"),
+        CheckConstraint(
+            "(status = 'active' AND ended_at IS NULL AND end_reason IS NULL) OR "
+            "(status IN ('released', 'revoked', 'expired') AND ended_at IS NOT NULL "
+            "AND end_reason IS NOT NULL AND btrim(end_reason) <> '')",
+            name="ck_kubernetes_grants_status_shape",
+        ),
+        Index("idx_kubernetes_grants_agent_status_expiry", "agent_id", "status", "expires_at"),
+    )
+
+    grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    source_tool_call_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
+    )
+    rules: Mapped[list[KubernetesRule]] = mapped_column(_KubernetesRulesColumn(), nullable=False)
+    status: Mapped[KubernetesGrantStatus] = mapped_column(
+        TextBackedStrEnumColumn(KubernetesGrantStatus), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StaticCredential(Base):

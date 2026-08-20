@@ -174,6 +174,7 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":chat_models",
+        ":kubernetes_grant_models",
         ":node_daemon_models",
         ":operator_identity",
         ":provider_connection_registry",
@@ -181,6 +182,34 @@ py_library(
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "kubernetes_grant_models",
+    srcs = ["kubernetes_grant_models.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "kubernetes_grant_repository",
+    srcs = ["kubernetes_grant_repository.py"],
+    deps = [
+        ":database_schema",
+        ":kubernetes_grant_models",
+        "//haku/console/agents:models",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "kubernetes_grant_service",
+    srcs = ["kubernetes_grant_service.py"],
+    deps = [
+        ":kubernetes_grant_models",
     ],
 )
 
@@ -1677,6 +1706,54 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes_grants",
+    srcs = ["test_kubernetes_grants.py"],
+    deps = [
+        ":kubernetes_grant_models",
+        ":kubernetes_grant_service",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes_grant_service",
+    srcs = ["test_kubernetes_grant_service.py"],
+    deps = [
+        ":kubernetes_grant_models",
+        ":kubernetes_grant_service",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes_grant_repository",
+    size = "medium",
+    srcs = ["test_kubernetes_grant_repository.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_schema",
+        ":kubernetes_grant_models",
+        ":kubernetes_grant_repository",
+        "//:conftest",
+        "//haku/console/agents:authorization",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
