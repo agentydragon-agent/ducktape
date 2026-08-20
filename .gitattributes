@@ -11,7 +11,6 @@
 # Test data files - inputs to tests, not source code
 py_detectors/rules/**/bad/** rules-lint-ignored=true
 py_detectors/rules/**/ok/** rules-lint-ignored=true
-x/claude_hooks/testdata/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
 x/sysrw/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
@@ -41,9 +40,6 @@ devinfra/claude/web_env/rootfs/** rules-lint-ignored=true
 devinfra/claude/web_env/reference/** rules-lint-ignored=true
 devinfra/claude/web_env/live-dpkg-versions.txt rules-lint-ignored=true
 
-# GNOME extensions - uuid@domain convention uses dashes
-gnome-extensions/** filename-conventions-ignored=true
-
 # Terraform/k8s - kebab-case is conventional in HCL and k8s manifests
 # kebab-case filenames are conventional in HCL and k8s manifests
 cluster/** filename-conventions-ignored=true
@@ -66,10 +62,9 @@ website/posts/** filename-conventions-ignored=true
 
 # agent-box NixOS host: the host dir name must match the hostname (mkNixos reads
 # ./nix/nixos/hosts/${hostname}), and the host/DNS name agent-box is kebab by
-# k8s/DNS convention. Keep the related Nix + plan filenames consistent.
+# k8s/DNS convention. Keep the related Nix host filenames consistent.
 nix/nixos/hosts/agent-box/** filename-conventions-ignored=true
 nix/home/hosts/agent-box/** filename-conventions-ignored=true
-plans/agent-box.md filename-conventions-ignored=true
 
 # CPAP gateway NixOS host: the directory name intentionally matches the
 # kebab-case Kubernetes/DNS host name used by the VM.
