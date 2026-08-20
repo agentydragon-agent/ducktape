@@ -40,10 +40,8 @@ from haku.console.mcp_execution import (
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_calls import (
-    AgentToolCallCaller,
     ApprovalDecision,
     ApprovalDecisionRequest,
-    OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallRecord,
     ToolCallStatus,
@@ -126,7 +124,17 @@ class ToolCallRepository(Protocol):
         self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord: ...
 
-    async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> UUID: ...
+    async def authorize_execution(
+        self, tool_call_id: str, *, actor: ToolCallActor
+    ) -> ToolCallExecutionAuthorization: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallExecutionAuthorization:
+    """The revalidated original caller and owning Operator for one executable ledger row."""
+
+    operator_id: UUID
+    caller: ToolCallActor
 
 
 class ToolExecutor(Protocol):
@@ -303,6 +311,25 @@ class ToolCallApplicationService:
         # schema check needs the tool's input schema, so build the (credential-independent) server.
         gmail = await self._gmail_client_provider(actor.operator_id) if server.id == GMAIL_SERVER_ID else None
         server_builder = self._in_process_servers.get(server.id)
+        authorizer = server_builder.authorizer if server_builder is not None else None
+        if authorizer is not None and (authorization_denial := authorizer(actor, req.tool_name, req.arguments)):
+            record = await self._repository.submit(
+                server=server,
+                req=req,
+                actor=actor,
+                auto_approval_evaluation="denied: trusted in-process authorization",
+                auto_denial_reason=authorization_denial,
+            )
+            logger.info(
+                "tool call %s auto-denied (in-process authorization) server=%s tool=%s caller=%s reason=%r",
+                record.tool_call_id,
+                record.server_id,
+                record.tool_name,
+                record.caller,
+                record.denial_reason,
+            )
+            await self._publish(actor.operator_id, record.tool_call_id)
+            return record
         decision = await auto_approve_tool_call(
             policies=self._auto_approval_policies,
             actor=actor,
@@ -475,8 +502,8 @@ class ToolCallApplicationService:
     ) -> ToolCallRecord:
         if record.status != ToolCallStatus.RUNNING:
             return record
-        execution_operator_id = await self._repository.authorize_execution(record.tool_call_id, actor=actor)
-        execution_context = self._execution_context(record, actor, execution_operator_id)
+        execution = await self._repository.authorize_execution(record.tool_call_id, actor=actor)
+        execution_context = self._execution_context(record, actor, execution)
         cancellation: asyncio.CancelledError | None = None
         try:
             result = await self._executor.execute(
@@ -493,7 +520,7 @@ class ToolCallApplicationService:
             updated = await self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
         # The durable row is authoritative. One invalidation after terminal persistence is enough:
         # observers re-read the complete record rather than replaying intermediate transitions.
-        await self._publish(execution_operator_id, updated.tool_call_id)
+        await self._publish(execution.operator_id, updated.tool_call_id)
         logger.info(
             "tool call %s finished status=%s server=%s tool=%s",
             updated.tool_call_id,
@@ -517,21 +544,21 @@ class ToolCallApplicationService:
 
     @staticmethod
     def _execution_context(
-        record: ToolCallRecord, actor: ToolCallActor, execution_operator_id: UUID
+        record: ToolCallRecord, deciding_actor: ToolCallActor, execution: ToolCallExecutionAuthorization
     ) -> McpExecutionContext:
         """Build trusted explicit execution identity after the repository revalidates the caller."""
 
         caller: McpExecutionCaller
-        match record.caller:
-            case AgentToolCallCaller(agent_id=agent_id):
-                caller = AgentMcpExecutionCaller(agent_id=agent_id)
-            case OperatorToolCallCaller():
-                caller = OperatorMcpExecutionCaller(operator_id=execution_operator_id)
+        match execution.caller:
+            case AgentActor(agent_id=agent_id, access_profile_id=access_profile_id):
+                caller = AgentMcpExecutionCaller(agent_id=agent_id, access_profile_id=access_profile_id)
+            case OperatorActor(operator_id=operator_id):
+                caller = OperatorMcpExecutionCaller(operator_id=operator_id)
 
         return McpExecutionContext(
             caller=caller,
             tool_call_id=record.tool_call_id,
-            approving_operator_id=actor.operator_id if isinstance(actor, OperatorActor) else None,
+            approving_operator_id=deciding_actor.operator_id if isinstance(deciding_actor, OperatorActor) else None,
             approval_policy_id=record.approval_policy_id,
         )
 

@@ -58,6 +58,7 @@ py_library(
     deps = [
         ":config",
         ":provider_connection_registry",
+        ":tool_call_actor",
         "//haku/console/agents:naming",
         "//mcp_infra:prefix",
         "@pypi//fastmcp_slim",
@@ -97,6 +98,7 @@ py_library(
     deps = [
         ":config",
         ":database_schema",
+        ":mcp_config",
         "//haku/console/tools:recall_index",
         "//haku/recall_index:chat_corpus",
         "//haku/recall_index:chat_source",
@@ -110,11 +112,33 @@ py_library(
 )
 
 py_library(
+    name = "recall_index_access",
+    srcs = ["recall_index_access.py"],
+    deps = [
+        ":mcp_config",
+        ":mcp_execution",
+        ":tool_call_actor",
+    ],
+)
+
+py_library(
+    name = "in_process_server_access",
+    srcs = ["in_process_server_access.py"],
+    deps = [
+        ":mcp_config",
+        ":mcp_execution",
+        ":tool_call_actor",
+    ],
+)
+
+py_library(
     name = "in_process_servers",
     srcs = ["in_process_servers.py"],
     deps = [
         ":config",
+        ":in_process_server_access",
         ":mcp_config",
+        ":recall_index_access",
         "//haku/console/tools:conversations",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
@@ -743,6 +767,7 @@ py_test(
         ":mcp_execution",
         ":operator_identity",
         ":operator_identity_store",
+        ":recall_index_access",
         ":tool_call_actor",
         "//:conftest",
         "@ducktape_haku//haku/console:tool_calls",
@@ -1059,6 +1084,7 @@ py_library(
     srcs = ["export_mcp_tool_schemas.py"],
     deps = [
         ":in_process_servers",
+        ":mcp_config",
         ":mcp_server",
         ":node_daemons",
         "//grocy_mcp:batch_tools",
@@ -1260,6 +1286,7 @@ py_test(
         ":oauth_token_state",
         ":operator_identity",
         ":operator_identity_store",
+        ":recall_index_access",
         ":tool_call_actor",
         ":tool_call_service",
         "//:conftest",

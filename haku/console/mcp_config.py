@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import yaml
@@ -34,6 +34,7 @@ from haku.console.config import (
     Settings,
 )
 from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.tool_call_actor import ToolCallActor
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -200,6 +201,7 @@ class ConsoleMcpConfig(BaseModel):
 
 type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
 type RecallIndexId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")]
+type InProcessServerId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
 
 
 class AutoApprovalPolicyBase(BaseModel):
@@ -283,6 +285,10 @@ class AccessProfile(BaseModel):
     id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     auto_approval_policy: AutoApprovalPolicyId
     recall_index_ids: set[RecallIndexId] = Field(default_factory=set)
+    # Explicit access to credential-free in-process servers whose data is held by Console itself.
+    # This is independent from auto-approval (whether a call skips review) and Recall access
+    # (whether a particular index can be searched).
+    in_process_server_ids: set[InProcessServerId] = Field(default_factory=set)
 
 
 class StaticAgentEntry(BaseModel):
@@ -484,12 +490,20 @@ class ConsoleConfigFile(BaseModel):
                 )
 
         configured_recall_indexes = {index.index_id for index in self.recall_indexes}
+        configured_in_process_servers = {
+            server.id for server in self.mcp.servers if isinstance(server.backend, InProcessBackend)
+        }
         for profile in profiles.values():
             unknown_recall_indexes = set(profile.recall_index_ids) - configured_recall_indexes
             if unknown_recall_indexes:
                 raise ValueError(
                     f"access profile {profile.id!r} references unknown Recall indexes "
                     f"{sorted(unknown_recall_indexes)!r}"
+                )
+            if unknown_in_process_servers := set(profile.in_process_server_ids) - configured_in_process_servers:
+                raise ValueError(
+                    f"access profile {profile.id!r} references unknown in-process MCP servers "
+                    f"{sorted(unknown_in_process_servers)!r}"
                 )
 
         for agent in self.static_agents:
@@ -594,6 +608,7 @@ def _credential_token(server_id: str, bearer_token_secret: str) -> str:
 # building for tool-schema reflection (`tools/list` never invokes a tool). Credential-free
 # servers (routine, tests) use `const_in_process_server`.
 InProcessServerBuilder = Callable[[str | None], FastMCP]
+InProcessRequestAuthorizer = Callable[[ToolCallActor, str, dict[str, Any]], str | None]
 
 
 class InProcessCredentialKind(StrEnum):
@@ -606,6 +621,7 @@ class InProcessCredentialKind(StrEnum):
 class InProcessServerRegistration:
     builder: InProcessServerBuilder
     credential_kind: InProcessCredentialKind
+    authorizer: InProcessRequestAuthorizer | None = None
 
 
 InProcessServers = dict[str, InProcessServerRegistration]

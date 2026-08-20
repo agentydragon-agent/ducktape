@@ -59,34 +59,24 @@ class PostgresIndexSearcher:
         self._indexes = {index.index_id: index for index in indexes}
         self._budget = budget
 
-    def _selected(self, index_ids: tuple[str, ...] | None) -> tuple[ConfiguredRecallIndex, ...]:
-        if index_ids is None:
-            return tuple(self._indexes.values())
+    def _selected(self, index_ids: tuple[str, ...]) -> tuple[ConfiguredRecallIndex, ...]:
         unknown = sorted(set(index_ids) - self._indexes.keys())
         if unknown:
             raise ValueError(f"unknown configured recall indexes: {', '.join(unknown)}")
         return tuple(self._indexes[index_id] for index_id in dict.fromkeys(index_ids))
 
-    async def search(
-        self,
-        query: str,
-        *,
-        index_ids: tuple[str, ...] | None,
-        limit: int,
-        path_prefix: str | None,
-        session_id: UUID | None,
-    ) -> SearchResults:
-        selected = self._selected(index_ids)
+    async def search(self, query: str, *, index_id: str, limit: int, session_id: UUID | None) -> SearchResults:
+        selected = self._selected((index_id,))
         embedding = await self._embedder.embed_query(query)
         hits: list[SearchHit] = []
         async with self._sessions() as session:
             for index in selected:
                 if isinstance(index, GitRecallIndexDefinition):
-                    hits.extend(await self._search_git(session, index, embedding, limit=limit, path_prefix=path_prefix))
+                    hits.extend(await self._search_git(session, index, embedding, limit=limit))
                 else:
                     hits.extend(await self._search_chat(session, index, embedding, limit=limit, session_id=session_id))
         hits.sort(key=lambda hit: hit.score, reverse=True)
-        status = await self.status()
+        status = await self.status(index_ids=(index_id,))
         selected_ids = {index.index_id for index in selected}
         return SearchResults(
             hits=hits[:limit],
@@ -96,13 +86,7 @@ class PostgresIndexSearcher:
         )
 
     async def _search_git(
-        self,
-        session: AsyncSession,
-        index: GitRecallIndexDefinition,
-        embedding: list[float],
-        *,
-        limit: int,
-        path_prefix: str | None,
+        self, session: AsyncSession, index: GitRecallIndexDefinition, embedding: list[float], *, limit: int
     ) -> list[SearchHit]:
         state = await current_git_state(session, index.index_id)
         if state is None:
@@ -113,7 +97,7 @@ class PostgresIndexSearcher:
             index_id=index.index_id,
             model_key=self._embedder.model_key,
             limit=limit,
-            path_prefix=path_prefix,
+            path_prefix=None,
             budget=self._budget,
         )
         return [
@@ -181,11 +165,11 @@ class PostgresIndexSearcher:
             for hit in found
         ]
 
-    async def status(self) -> IndexStatus:
+    async def status(self, *, index_ids: tuple[str, ...]) -> IndexStatus:
         model_key = self._embedder.model_key
         statuses: list[GitIndexStatus | ChatIndexStatus] = []
         async with self._sessions() as session:
-            for index in self._indexes.values():
+            for index in self._selected(index_ids):
                 if isinstance(index, GitRecallIndexDefinition):
                     state = await current_git_state(session, index.index_id)
                     summary = await git_index_summary(session, index_id=index.index_id, budget=self._budget)

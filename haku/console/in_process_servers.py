@@ -2,8 +2,9 @@
 
 The registry holds *builders* (`InProcessServers`): the gmail/google_calendar servers are
 built per execution from the acting Operator's Google access token, hostexec from the acting
-Operator's Authentik access token (bound by argument, no ambient state), while routine,
-conversations and index are credential-free. See `mcp_config.InProcessServerBuilder`.
+Operator's Authentik access token, while routine, conversations and index are credential-free.
+Trusted caller context for the profile-scoped servers travels in MCP request metadata. See
+`mcp_execution.McpExecutionContext`.
 """
 
 from __future__ import annotations
@@ -17,12 +18,15 @@ import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 from haku.console.config import HostexecConfig
+from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
+    AccessProfile,
     InProcessCredentialKind,
     InProcessServerRegistration,
     InProcessServers,
     const_in_process_server,
 )
+from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 
@@ -55,11 +59,14 @@ class InProcessServerDependencies:
     # The semantic index over haku-state's files and past conversations — set only when
     # `config.yaml` lists the server, which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
+    recall_access_profiles: tuple[AccessProfile, ...] = ()
 
 
 def build_in_process_servers(dependencies: InProcessServerDependencies) -> InProcessServers:
     """Build the per-call builder for every configured in-process server."""
 
+    recall_access = RecallIndexAccessPolicy(dependencies.recall_access_profiles)
+    in_process_access = InProcessServerAccessPolicy(dependencies.recall_access_profiles)
     servers: InProcessServers = {
         gmail_tools.GMAIL_SERVER_ID: InProcessServerRegistration(
             builder=lambda token: gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(token)),
@@ -76,13 +83,17 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         servers[routine_tools.HAKU_ROUTINE_SERVER_ID] = const_in_process_server(
             routine_tools.build_mcp(dependencies.routine_launcher)
         )
-    if dependencies.conversations is not None:
-        servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = const_in_process_server(
-            conversations_tools.build_mcp(dependencies.conversations)
+    if (conversations := dependencies.conversations) is not None:
+        servers[conversations_tools.HAKU_CONVERSATIONS_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: conversations_tools.build_mcp(conversations, access=in_process_access),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=in_process_access.authorizer_for(conversations_tools.HAKU_CONVERSATIONS_SERVER_ID),
         )
-    if dependencies.index is not None:
-        servers[recall_index_tools.HAKU_INDEX_SERVER_ID] = const_in_process_server(
-            recall_index_tools.build_mcp(dependencies.index)
+    if (index := dependencies.index) is not None:
+        servers[recall_index_tools.HAKU_INDEX_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: recall_index_tools.build_mcp(index, access=recall_access),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=recall_access.authorize_index_tool,
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}
