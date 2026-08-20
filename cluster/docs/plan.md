@@ -103,8 +103,6 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   `region=hil` should it ever be revived.)
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
-- **Matrix**: `matrix`, `matrix-{agent-rbac,db,secrets,namespace}` — parked; workload
-  manifests are retained on disk, but the Flux Kustomization CRs were removed.
 - **OpenClaw / OpenShell**: **removed 2026-07-31**, manifests deleted rather than
   parked. The gateway was unused and wedged (no exec traffic, idle orphaned
   sandboxes), the operator could not be egress-confined
