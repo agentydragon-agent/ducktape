@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -210,6 +211,67 @@ class CompiledSimulation:
     target_allocation_policies: TargetAllocationCompileOutput
 
 
+class _LotRow(NamedTuple):
+    """One complete host-side lot row before dense column materialization."""
+
+    lot_id_code: int
+    agent_code: int
+    account_code: int
+    asset_code: int
+    asset: AssetKey
+    purchase_month: int
+    fifo_rank: int
+    cost_basis_per_unit: int
+    initial_quantity: int
+    quantity_scale: int
+
+
+class _LotTable(NamedTuple):
+    lot_id_codes: NDArray[np.int64]
+    agent_codes: NDArray[np.int64]
+    account_codes: NDArray[np.int64]
+    asset_codes: NDArray[np.int64]
+    assets: tuple[AssetKey, ...]
+    purchase_month: NDArray[np.int64]
+    fifo_rank: NDArray[np.int64]
+    cost_basis_per_unit: NDArray[np.int64]
+    initial_quantity: NDArray[np.int64]
+    quantity_scale: NDArray[np.int64]
+
+
+def _materialize_lots(rows: list[_LotRow]) -> _LotTable:
+    """Materialize complete lot rows as aligned int64 columns once."""
+    numeric = np.asarray(
+        [
+            (
+                row.lot_id_code,
+                row.agent_code,
+                row.account_code,
+                row.asset_code,
+                row.purchase_month,
+                row.fifo_rank,
+                row.cost_basis_per_unit,
+                row.initial_quantity,
+                row.quantity_scale,
+            )
+            for row in rows
+        ],
+        dtype=np.int64,
+    ).reshape(len(rows), 9)
+    return _LotTable(
+        lot_id_codes=numeric[:, 0],
+        agent_codes=numeric[:, 1],
+        account_codes=numeric[:, 2],
+        asset_codes=numeric[:, 3],
+        assets=tuple(row.asset for row in rows),
+        purchase_month=numeric[:, 4],
+        fifo_rank=numeric[:, 5],
+        cost_basis_per_unit=numeric[:, 6],
+        initial_quantity=numeric[:, 7],
+        quantity_scale=numeric[:, 8],
+    )
+
+
 def lot_order_for_pool(
     *,
     lot_agent_codes: NDArray[np.int64],
@@ -382,52 +444,48 @@ def compile_simulation(
         scenario, strings, assets, account_slots, series_index_by_id
     )
 
-    lot_id_codes: list[int] = []
-    lot_agent_codes: list[int] = []
-    lot_account_codes: list[int] = []
-    lot_asset_codes: list[int] = []
-    lot_purchase_month: list[int] = []
-    lot_fifo_rank: list[int] = []
-    lot_cost_basis_per_unit: list[np.int64] = []
-    lot_initial_quantity: list[np.int64] = []
-    lot_quantity_scale: list[int] = []
-    # Kept alongside the code list so the price-series lookup below is derived from the lots
-    # that actually exist. Rebuilding it from the scenario instead means every new source of
-    # lots has to be remembered in two places, and the one that forgets is silently short.
-    lot_assets: list[AssetKey] = []
+    lot_rows: list[_LotRow] = []
     for lot in scenario.initial_lots:
         scale = quantity_scale_for_asset(lot.asset)
-        lot_id_codes.append(strings.require(lot.lot_id))
-        lot_agent_codes.append(strings.require(lot.agent_id))
-        lot_account_codes.append(strings.require(lot.account_id))
-        lot_asset_codes.append(assets.require(lot.asset))
-        lot_assets.append(lot.asset)
-        lot_purchase_month.append(int(lot.purchase_month_index))
-        lot_fifo_rank.append(int(lot.purchase_month_index))
-        lot_cost_basis_per_unit.append(currency_amount(lot.cost_basis_per_unit))
-        lot_initial_quantity.append(quantity_to_quanta(lot.quantity, scale=scale))
-        lot_quantity_scale.append(scale)
+        lot_rows.append(
+            _LotRow(
+                lot_id_code=strings.require(lot.lot_id),
+                agent_code=strings.require(lot.agent_id),
+                account_code=strings.require(lot.account_id),
+                asset_code=assets.require(lot.asset),
+                asset=lot.asset,
+                purchase_month=int(lot.purchase_month_index),
+                fifo_rank=int(lot.purchase_month_index),
+                cost_basis_per_unit=int(currency_amount(lot.cost_basis_per_unit)),
+                initial_quantity=int(quantity_to_quanta(lot.quantity, scale=scale)),
+                quantity_scale=scale,
+            )
+        )
 
     # One empty lot slot per scheduled purchase, appended after the initial lots. The slot
     # carries its real purchase month, so the compile-time FIFO order is already right: the
     # slot holds zero units until that month, and a zero-quantity lot contributes nothing to
     # a FIFO walk that reaches it early.
     purchases = compile_purchases(
-        scenario, strings, assets, account_slots, series_index_by_id, first_lot_slot=len(scenario.initial_lots)
+        scenario, strings, assets, account_slots, series_index_by_id, first_lot_slot=len(lot_rows)
     )
-    for purchase in scenario.scheduled_asset_purchases:
-        lot_id_codes.append(strings.require(purchase.lot_id))
-        lot_agent_codes.append(strings.require(purchase.agent_id))
-        lot_account_codes.append(strings.require(purchase.to_account_id))
-        lot_asset_codes.append(assets.require(purchase.asset))
-        lot_assets.append(purchase.asset)
-        lot_purchase_month.append(int(purchase.month))
-        lot_fifo_rank.append(int(purchase.month))
-        # Basis is per-rollout from here on: the engine promotes this column to `(lot, rollout)`
-        # carry state and the purchase writes the realized price into its slot.
-        lot_cost_basis_per_unit.append(np.int64(0))
-        lot_initial_quantity.append(np.int64(0))
-        lot_quantity_scale.append(quantity_scale_for_asset(purchase.asset))
+    lot_rows.extend(
+        _LotRow(
+            lot_id_code=strings.require(purchase.lot_id),
+            agent_code=strings.require(purchase.agent_id),
+            account_code=strings.require(purchase.to_account_id),
+            asset_code=assets.require(purchase.asset),
+            asset=purchase.asset,
+            purchase_month=int(purchase.month),
+            fifo_rank=int(purchase.month),
+            # Basis is per-rollout from here on: the engine promotes this column to
+            # `(lot, rollout)` carry state and the purchase writes its realized price.
+            cost_basis_per_unit=0,
+            initial_quantity=0,
+            quantity_scale=quantity_scale_for_asset(purchase.asset),
+        )
+        for purchase in scenario.scheduled_asset_purchases
+    )
 
     # Purchase slots for the target-allocation policies: `purchase_slots_per_sleeve` empty lots
     # per sleeve, so a policy that buys has somewhere to put what it bought. Each purchase needs
@@ -453,24 +511,26 @@ def compile_simulation(
         account_id = policy.source_account_ids[0] if policy.source_account_ids else policy.account_id
         for sleeve_idx, sleeve in enumerate(policy.sleeves):
             for k in range(policy.purchase_slots_per_sleeve):
-                ta_purchase_slots[policy_idx, sleeve_idx, k] = len(lot_id_codes)
-                lot_id_codes.append(strings.require(f"{policy.cause_id_prefix}_buy_p{policy_idx}_s{sleeve_idx}_{k}"))
-                lot_agent_codes.append(strings.require(policy.agent_id))
-                lot_account_codes.append(strings.require(account_id))
-                lot_asset_codes.append(assets.require(sleeve.asset))
-                lot_assets.append(sleeve.asset)
-                # Month 0 until the purchase writes the month its rollout actually paid. An
-                # unfilled slot holds zero units, so nothing ever reads it.
-                lot_purchase_month.append(0)
-                lot_fifo_rank.append(scenario.horizon_months + len(lot_fifo_rank))
-                lot_cost_basis_per_unit.append(np.int64(0))
-                lot_initial_quantity.append(np.int64(0))
-                lot_quantity_scale.append(quantity_scale_for_asset(sleeve.asset))
+                slot = len(lot_rows)
+                ta_purchase_slots[policy_idx, sleeve_idx, k] = slot
+                lot_rows.append(
+                    _LotRow(
+                        lot_id_code=strings.require(f"{policy.cause_id_prefix}_buy_p{policy_idx}_s{sleeve_idx}_{k}"),
+                        agent_code=strings.require(policy.agent_id),
+                        account_code=strings.require(account_id),
+                        asset_code=assets.require(sleeve.asset),
+                        asset=sleeve.asset,
+                        # Month 0 until the purchase writes the month its rollout actually paid.
+                        # An unfilled slot holds zero units, so nothing ever reads it.
+                        purchase_month=0,
+                        fifo_rank=scenario.horizon_months + slot,
+                        cost_basis_per_unit=0,
+                        initial_quantity=0,
+                        quantity_scale=quantity_scale_for_asset(sleeve.asset),
+                    )
+                )
 
-    lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
-    lot_account_codes_arr = np.asarray(lot_account_codes, dtype=np.int64)
-    lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
-    lot_quantity_scale_arr = np.asarray(lot_quantity_scale, dtype=np.int64)
+    lot_table = _materialize_lots(lot_rows)
     # After every lot list is complete, deliberately: a distribution pays on the pool's units
     # including the purchase slots a policy has not filled yet, so its mask has to see them.
     distributions = compile_distributions(
@@ -481,10 +541,10 @@ def compile_simulation(
         profile_index_by_agent,
         tax.buckets,
         series_index_by_id,
-        lot_agent_codes=lot_agent_codes_arr,
-        lot_account_codes=lot_account_codes_arr,
-        lot_asset_codes=lot_asset_codes_arr,
-        lot_quantity_scale=lot_quantity_scale_arr,
+        lot_agent_codes=lot_table.agent_codes,
+        lot_account_codes=lot_table.account_codes,
+        lot_asset_codes=lot_table.asset_codes,
+        lot_quantity_scale=lot_table.quantity_scale,
     )
     # PE-guard: PE lots are priced by `pe_channels` marks, not the price cube, so they have no
     # asset-price series (`asset_price_key_or_none` → None → NO_CODE).
@@ -493,7 +553,7 @@ def compile_simulation(
             NO_CODE
             if (price_key := asset_price_key_or_none(asset)) is None
             else series_index_by_id.get(price_key, NO_CODE)
-            for asset in lot_assets
+            for asset in lot_table.assets
         ],
         dtype=np.int64,
     )
@@ -506,8 +566,8 @@ def compile_simulation(
         strings,
         asset_table=assets,
         series_index_by_id=series_index_by_id,
-        lot_agent_codes=lot_agent_codes_arr,
-        lot_asset_codes=lot_asset_codes_arr,
+        lot_agent_codes=lot_table.agent_codes,
+        lot_asset_codes=lot_table.asset_codes,
         cash_agent_codes=cash_agent_codes_arr,
     )
     pe_channels = compile_pe_channels(
@@ -524,9 +584,9 @@ def compile_simulation(
     harvest_policies = compile_harvest_policies(
         scenario,
         series_index_by_id=series_index_by_id,
-        lot_agent_codes=lot_agent_codes_arr,
-        lot_account_codes=np.asarray(lot_account_codes, dtype=np.int64),
-        lot_asset_codes=lot_asset_codes_arr,
+        lot_agent_codes=lot_table.agent_codes,
+        lot_account_codes=lot_table.account_codes,
+        lot_asset_codes=lot_table.asset_codes,
         capital_gain_agent_codes=capital_gain_agent_codes,
         string_code_of=strings.require,
         asset_code_of=assets.require,
@@ -537,7 +597,7 @@ def compile_simulation(
         snapshot_months=horizon + 1,
         rollout_count=rollout_count,
         cash_count=len(cash_initial_balance),
-        lot_count=len(lot_id_codes),
+        lot_count=lot_table.lot_id_codes.shape[0],
         tax_profile_count=tax.profile_agent.shape[0],
         income_bucket_count=tax.buckets.row_count,
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
@@ -571,17 +631,17 @@ def compile_simulation(
         cash_agent_codes=np.asarray(cash_agent_codes, dtype=np.int64),
         cash_account_codes=np.asarray(cash_account_codes, dtype=np.int64),
         cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.int64),
-        lot_id_codes=np.asarray(lot_id_codes, dtype=np.int64),
-        lot_agent_codes=lot_agent_codes_arr,
-        lot_account_codes=lot_account_codes_arr,
-        lot_asset_codes=lot_asset_codes_arr,
+        lot_id_codes=lot_table.lot_id_codes,
+        lot_agent_codes=lot_table.agent_codes,
+        lot_account_codes=lot_table.account_codes,
+        lot_asset_codes=lot_table.asset_codes,
         lot_asset_series_index=lot_asset_series_index,
-        lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
-        lot_fifo_rank=np.asarray(lot_fifo_rank, dtype=np.int64),
+        lot_purchase_month=lot_table.purchase_month,
+        lot_fifo_rank=lot_table.fifo_rank,
         target_allocation_purchase_slots=ta_purchase_slots,
-        lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.int64),
-        lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.int64),
-        lot_quantity_scale=lot_quantity_scale_arr,
+        lot_cost_basis_per_unit=lot_table.cost_basis_per_unit,
+        lot_initial_quantity=lot_table.initial_quantity,
+        lot_quantity_scale=lot_table.quantity_scale,
         tax=tax,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,
