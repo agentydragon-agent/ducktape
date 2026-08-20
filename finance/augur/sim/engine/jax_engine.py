@@ -72,6 +72,7 @@ from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
 from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
+    _AssetPurchaseProgram,
     _BondInputs,
     _CapitalGainTarget,
     _DenseFinalOutput,
@@ -365,6 +366,21 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     )
 
 
+def _asset_purchase_program(plan: CompiledSimulation) -> _AssetPurchaseProgram:
+    """Pack real scheduled asset purchases as one semantic JAX program component."""
+    purchases = plan.purchases
+    count = int((purchases.month >= 0).sum())
+    return _AssetPurchaseProgram(
+        month=jnp.asarray(purchases.month[:count], dtype=jnp.int32),
+        amount_quanta=jnp.asarray(purchases.amount_quanta[:count], dtype=jnp.int64),
+        price_fixed=jnp.asarray(purchases.price_fixed[:count], dtype=jnp.int64),
+        price_series=jnp.asarray(purchases.price_series[:count], dtype=jnp.int64),
+        quantity_scale=jnp.asarray(purchases.quantity_scale[:count], dtype=jnp.int64),
+        lot_slot=tuple(int(slot) for slot in purchases.lot_slot[:count]),
+        cash_slot=tuple(int(slot) for slot in purchases.from_slot[:count]),
+    )
+
+
 class _Operands(NamedTuple):
     """Device arrays the scan closes over, nested in `_SimulationProgram.dynamic`.
 
@@ -396,12 +412,6 @@ class _Operands(NamedTuple):
     sale_policy_mask_t: jnp.ndarray
     sale_price_fixed_t: jnp.ndarray
     sale_price_series: jnp.ndarray  # scheduled-sale price-series row indices (traced, dynamic gather)
-    # Scheduled asset-purchase stacked static data (all `(n_buys,)`).
-    buy_month_t: jnp.ndarray
-    buy_amount_t: jnp.ndarray
-    buy_price_fixed_t: jnp.ndarray
-    buy_price_series: jnp.ndarray
-    buy_scale_t: jnp.ndarray
     # Year-end / property tables.
     property_is_primary_table: jnp.ndarray
     tax_slot_table: jnp.ndarray
@@ -432,12 +442,13 @@ class _Operands(NamedTuple):
 
 
 class _ProgramDynamic(NamedTuple):
-    """Array-valued leaves JAX traces and keys by shape/dtype."""
+    """Traced components; registered children may carry their own static topology."""
 
     external_values: jax.Array
     external_money_values: jax.Array
     pe_channels: _PEChannelInputs
     swept: _TracedConfig
+    asset_purchases: _AssetPurchaseProgram
     operands: _Operands
     product_inputs: _ProductSummaryInputs | None
 
@@ -1012,12 +1023,9 @@ def _build_program(
     sale_price_series = np.array(
         [int(sales.price_series[fs.buffer_index]) for fs in folded_sales], dtype=np.int64
     ).reshape(n_sales)
-    # Scheduled asset purchases. Nothing to fold: each fills its own dedicated lot slot, so there
-    # is no shared pool to sequence and the compiled rows are already the loop-free form. Real rows
-    # only — the compile output pads to one slot so the arrays are never zero-length, and a padded
-    # row is NO_CODE-monthed.
-    buys = plan.purchases
-    n_buys = int((buys.month >= 0).sum())
+    # Scheduled asset purchases need no fold: each fills its own dedicated lot slot, so their
+    # compiler rows are already the loop-free representation consumed by the scan.
+    asset_purchases = _asset_purchase_program(plan)
     # Same-pool ((agent, account, asset)) earlier-sale mask -> cumulative prior demand on each pool.
     _pool_key = [
         (
@@ -1467,11 +1475,6 @@ def _build_program(
         sale_policy_mask_t=sale_policy_mask_t,
         sale_price_fixed_t=sale_price_fixed_t,
         sale_price_series=jnp.asarray(sale_price_series),
-        buy_month_t=jnp.asarray(buys.month[:n_buys], dtype=jnp.int32),
-        buy_amount_t=jnp.asarray(buys.amount_quanta[:n_buys], dtype=jnp.int64),
-        buy_price_fixed_t=jnp.asarray(buys.price_fixed[:n_buys], dtype=jnp.int64),
-        buy_price_series=jnp.asarray(buys.price_series[:n_buys], dtype=jnp.int64),
-        buy_scale_t=jnp.asarray(buys.quantity_scale[:n_buys], dtype=jnp.int64),
         property_is_primary_table=property_is_primary_table,
         tax_slot_table=tax_slot_table,
         salt_cap_table=salt_cap_table,
@@ -1548,9 +1551,6 @@ def _build_program(
         pur_mort_idx=tuple(int(x) for x in pur_mort_idx),
         folded_purchases_present=bool(folded_purchases),
         folded_sales_present=bool(folded_sales),
-        buy_lot_slot=tuple(int(x) for x in buys.lot_slot[:n_buys]),
-        buy_cash_slot=tuple(int(x) for x in buys.from_slot[:n_buys]),
-        asset_buys_present=bool(n_buys),
         external_cash_slot=int(plan.external_cash_slot),
         cg_targets=cg_targets,
         link_tax_static=link_tax_static,
@@ -1568,6 +1568,7 @@ def _build_program(
             external_money_values=jnp.asarray(plan.external_money_values),
             pe_channels=_pe_channel_inputs(plan),
             swept=_traced_config(plan),
+            asset_purchases=asset_purchases,
             operands=baked,
             product_inputs=product_inputs,
         ),
@@ -1584,6 +1585,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     external_money_values = dynamic.external_money_values
     pe_ch = dynamic.pe_channels
     cfg = dynamic.swept
+    asset_purchases = dynamic.asset_purchases
     baked = dynamic.operands
     product_inputs = dynamic.product_inputs
     structure = static.structure
@@ -1614,15 +1616,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     profile_ordinary_bucket = structure.profile_ordinary_bucket
     cg_profiles_by_agent = {ct.agent_code: ct.profiles for ct in structure.cg_targets}
     # Static index/selection arrays (rebuilt from the hashable tuples carried in `structure`).
-    asset_buys = structure.asset_buys_present
-    n_buys = len(structure.buy_lot_slot)
-    buy_lot_slot = np.asarray(structure.buy_lot_slot, dtype=np.int64).reshape(n_buys)
-    buy_cash_slot = np.asarray(structure.buy_cash_slot, dtype=np.int64).reshape(n_buys)
-    buy_month_t = baked.buy_month_t
-    buy_amount_t = baked.buy_amount_t
-    buy_price_fixed_t = baked.buy_price_fixed_t
-    buy_price_series = baked.buy_price_series
-    buy_scale_t = baked.buy_scale_t
+    n_asset_purchases = len(asset_purchases.lot_slot)
+    asset_purchase_lot_slot = np.asarray(asset_purchases.lot_slot, dtype=np.int64).reshape(n_asset_purchases)
+    asset_purchase_cash_slot = np.asarray(asset_purchases.cash_slot, dtype=np.int64).reshape(n_asset_purchases)
     sale_pslot = np.asarray(structure.sale_pslot, dtype=np.int64).reshape(n_sales)
     sale_bufidx = np.asarray(structure.sale_bufidx, dtype=np.int64).reshape(n_sales)
     sale_olots = np.asarray(structure.sale_olots, dtype=np.int64).reshape(n_sales, sale_max_pool)
@@ -2353,42 +2349,50 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         )
 
         # Scheduled asset purchases. AFTER settlement on purpose: buying is discretionary and must
-        # never be able to starve an obligation into a false ruin. Fully vectorized `(n_buys, R)` —
-        # every rollout buys at its own price with its own cash.
-        if asset_buys:
+        # never be able to starve an obligation into a false ruin. Fully vectorized over purchases
+        # and rollouts: every rollout buys at its own price with its own cash.
+        if n_asset_purchases:
             if external_money_values.shape[0] > 0:
-                buy_safe_series = jnp.where(buy_price_series >= 0, buy_price_series, 0)
-                buy_price = jnp.where(
-                    (buy_price_series >= 0)[:, None],
-                    external_money_values[buy_safe_series, :, month],
-                    buy_price_fixed_t[:, None],
-                )  # (n_buys, R)
+                safe_price_series = jnp.where(asset_purchases.price_series >= 0, asset_purchases.price_series, 0)
+                purchase_price = jnp.where(
+                    (asset_purchases.price_series >= 0)[:, None],
+                    external_money_values[safe_price_series, :, month],
+                    asset_purchases.price_fixed[:, None],
+                )  # (purchase, R)
             else:
-                buy_price = jnp.broadcast_to(buy_price_fixed_t[:, None], (n_buys, r))
+                purchase_price = jnp.broadcast_to(asset_purchases.price_fixed[:, None], (n_asset_purchases, r))
             # `~failed`, not the month-opening `active`: settlement runs just above and can fail
             # the rollout, and a failed rollout must stop transacting immediately.
-            buy_fires = (~failed)[None, :] & (month == buy_month_t)[:, None]  # (n_buys, R)
+            purchase_fires = (~failed)[None, :] & (month == asset_purchases.month)[:, None]
             # Clamp to what the funding account actually holds. Recorded on the event, so a caller
             # comparing executed against requested sees the shortfall.
-            budget = jnp.where(buy_fires, jnp.minimum(buy_amount_t[:, None], jnp.maximum(cash[buy_cash_slot], 0)), 0)
-            safe_price = jnp.where(buy_price > 0, buy_price, 1)
+            budget = jnp.where(
+                purchase_fires,
+                jnp.minimum(asset_purchases.amount_quanta[:, None], jnp.maximum(cash[asset_purchase_cash_slot], 0)),
+                0,
+            )
+            safe_price = jnp.where(purchase_price > 0, purchase_price, 1)
             # Whole quanta only; the sub-quantum remainder stays in cash. Flooring here and valuing
             # with the same helper the basis math uses keeps `spent` <= `budget` (round(x) <= N for
             # x <= integer N) and makes an immediate full-lot resale net exactly zero gain.
-            buy_quanta = jnp.where(buy_price > 0, (budget * buy_scale_t[:, None]) // safe_price, 0)
-            buy_spent = _value_quanta_from_quantity(buy_quanta, buy_price, buy_scale_t[:, None])
+            purchase_quanta = jnp.where(
+                purchase_price > 0, (budget * asset_purchases.quantity_scale[:, None]) // safe_price, 0
+            )
+            purchase_spent = _value_quanta_from_quantity(
+                purchase_quanta, purchase_price, asset_purchases.quantity_scale[:, None]
+            )
             # The cash leaves for the market, which is `rest_of_world`.
             cash = _move_cash(
                 cash,
-                debit=buy_cash_slot,
+                debit=asset_purchase_cash_slot,
                 credit=structure.external_cash_slot,
-                amount=buy_spent,
+                amount=purchase_spent,
                 row_of_world=structure.external_cash_slot,
             )
-            lot_remaining = lot_remaining.at[buy_lot_slot].add(buy_quanta)
-            bought = buy_quanta > 0
-            cost_basis_per_unit = cost_basis_per_unit.at[buy_lot_slot].set(
-                jnp.where(bought, buy_price, cost_basis_per_unit[buy_lot_slot])
+            lot_remaining = lot_remaining.at[asset_purchase_lot_slot].add(purchase_quanta)
+            purchased = purchase_quanta > 0
+            cost_basis_per_unit = cost_basis_per_unit.at[asset_purchase_lot_slot].set(
+                jnp.where(purchased, purchase_price, cost_basis_per_unit[asset_purchase_lot_slot])
             )
 
         # Target-allocation purchases, decided above and executed here: same placement as the

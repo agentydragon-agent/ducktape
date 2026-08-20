@@ -38,6 +38,7 @@ from finance.augur.sim.scenario import (
     RecurringPropertyCashflow,
     RecurringTransfer,
     Scenario,
+    ScheduledAssetPurchase,
     ScheduledAssetSale,
     ScheduledPropertyPurchase,
     TaxProfile,
@@ -119,6 +120,30 @@ def _sale_scenario() -> Scenario:
     )
 
 
+def _asset_purchase_scenario() -> Scenario:
+    return Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=1_000_000),
+            InitialAccountBalance(agent_id="alice", account_id="reserve", balance=250_000),
+        ],
+        scheduled_asset_purchases=[
+            ScheduledAssetPurchase(
+                month=1,
+                cause_id="alice_buys_sp500",
+                lot_id="bought_sp500",
+                agent_id="alice",
+                from_account_id="checking",
+                asset=SecurityKey(symbol=SP500_SYMBOL),
+                amount=500_000,
+                price_per_unit=100,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=4,
+    )
+
+
 def _compile(scenario: Scenario, *, rollout_count: int, locations: dict[str, Location]) -> CompiledSimulation:
     external_series = materialize_external_series(
         scenario.external_series, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
@@ -190,6 +215,34 @@ def test_initial_balance_sweep_takes_effect() -> None:
         lambda p: replace(p, cash_initial_balance=p.cash_initial_balance + np.int64(5_000_000)),
         lambda b: b.state.cash_state,
     )
+
+
+def test_asset_purchase_amount_sweep_takes_effect() -> None:
+    def perturb(p: CompiledSimulation) -> CompiledSimulation:
+        return replace(
+            p, purchases=replace(p.purchases, amount_quanta=p.purchases.amount_quanta + np.int64(10_000_000))
+        )
+
+    _assert_value_sweep_takes_effect(_asset_purchase_scenario(), perturb, lambda b: b.state.lot_state)
+
+
+def _reroute_asset_purchase(plan: CompiledSimulation) -> CompiledSimulation:
+    from_slot = plan.purchases.from_slot.copy()
+    funded_slots = [int(slot) for slot in np.flatnonzero(plan.cash_initial_balance > 0)]
+    from_slot[0] = next(slot for slot in funded_slots if slot != int(from_slot[0]))
+    return replace(plan, purchases=replace(plan.purchases, from_slot=from_slot))
+
+
+def test_asset_purchase_static_slot_change_recompiles() -> None:
+    plan = _compile(_asset_purchase_scenario(), rollout_count=2, locations={})
+    original_cash = _run_jax(plan).state.cash_state.copy()
+    base_cache_size = _program_cache_size()
+
+    rerouted = _reroute_asset_purchase(plan)
+    rerouted_cash = _run_jax(rerouted).state.cash_state
+
+    assert not np.array_equal(rerouted_cash, original_cash)
+    assert _program_cache_size() == base_cache_size + 1
 
 
 def _financed_purchase_scenario() -> Scenario:
@@ -341,6 +394,30 @@ def test_program_pytree_separates_dynamic_leaves_from_static_metadata() -> None:
 
     different_shape = _compile(_tax_scenario(), rollout_count=3, locations={})
     assert cast(Any, jax.tree_util.tree_structure(_build_program(different_shape))) != tree
+
+
+def test_asset_purchase_program_owns_values_and_static_slots() -> None:
+    plan = _compile(_asset_purchase_scenario(), rollout_count=2, locations={})
+    program = _build_program(plan)
+    purchases = program.dynamic.asset_purchases
+    count = int((plan.purchases.month >= 0).sum())
+
+    leaves, tree = jax.tree_util.tree_flatten(purchases)
+    assert len(leaves) == 5
+    assert all(isinstance(leaf, jax.Array) for leaf in leaves)
+    assert np.array_equal(purchases.amount_quanta, plan.purchases.amount_quanta[:count])
+    assert purchases.lot_slot == tuple(int(slot) for slot in plan.purchases.lot_slot[:count])
+    assert purchases.cash_slot == tuple(int(slot) for slot in plan.purchases.from_slot[:count])
+    assert not hasattr(program.dynamic.operands, "buy_amount_t")
+    assert not hasattr(program.static.structure, "buy_lot_slot")
+
+    value_sweep = replace(
+        plan, purchases=replace(plan.purchases, amount_quanta=plan.purchases.amount_quanta + np.int64(10_000_000))
+    )
+    assert cast(Any, jax.tree_util.tree_structure(_build_program(value_sweep).dynamic.asset_purchases)) == tree
+
+    topology_change = _reroute_asset_purchase(plan)
+    assert cast(Any, jax.tree_util.tree_structure(_build_program(topology_change).dynamic.asset_purchases)) != tree
 
 
 def _multi_series_scenario() -> Scenario:
