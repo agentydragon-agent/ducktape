@@ -352,6 +352,18 @@ export function productProjectionSamplingRequest(input, bootstrap, metric, share
   };
 }
 
+export function productProjectionSummaryRequest(input, bootstrap, metric, shared, fanPercentiles, terminalPercentiles) {
+  const request = productProjectionSamplingRequest(input, bootstrap, metric, shared, fanPercentiles);
+  return {
+    scenario: request.scenario,
+    firstSeed: request.firstSeed,
+    rolloutCount: request.rolloutCount,
+    metric: request.metric,
+    fanPercentiles: request.percentiles,
+    terminalPercentiles,
+  };
+}
+
 // -- Scenario set (multi-scenario comparison) ---------------------------------
 //
 // The product view can hold a *set* of scenarios that share one rollout seed window (and

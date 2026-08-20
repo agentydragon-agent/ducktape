@@ -10,6 +10,7 @@ import {
   resolveVariant,
   productInputDefaults,
   productProjectionSamplingRequest,
+  productProjectionSummaryRequest,
   productScenario,
   resolveSleeveWeights,
   MAX_VARIANTS,
@@ -44,6 +45,25 @@ test("the shared projection builder uses the caller's percentile set", () => {
     rolloutCount: 20,
     metric: "cash",
     percentiles,
+  });
+});
+
+test("the combined projection builder carries distinct fan and terminal percentiles", () => {
+  const request = productProjectionSummaryRequest(
+    productInputDefaults(bootstrap),
+    { ...bootstrap, maxRolloutSamples: 100 },
+    { value: "cash" },
+    { rolloutCount: 20, firstSeed: 7, model: "test-model", horizonMonths: 12, sellable: [] },
+    [5, 50, 95],
+    [0, 1, 50, 99, 100]
+  );
+
+  expect(request).toMatchObject({
+    firstSeed: 7,
+    rolloutCount: 20,
+    metric: "cash",
+    fanPercentiles: [5, 50, 95],
+    terminalPercentiles: [0, 1, 50, 99, 100],
   });
 });
 

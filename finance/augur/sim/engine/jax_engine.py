@@ -60,7 +60,11 @@ import numpy as np
 from finance.augur.model.series import PrivateEquityRegimeCode
 from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.product.quantiles import currency_quantile_plan, interpolate_currency_quantiles
+from finance.augur.product.quantiles import (
+    CurrencyQuantileInterpolation,
+    currency_quantile_plan,
+    interpolate_currency_quantiles,
+)
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
 from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import CompiledSimulation
@@ -507,6 +511,24 @@ class ProductTerminalSummary:
 
 
 @dataclass(frozen=True)
+class ProductProjectionSummaries:
+    """Metric-fan and terminal-distribution summaries from one product scan."""
+
+    metric_fan: ProductMetricFanSummary
+    terminal_distribution: ProductTerminalSummary
+
+
+class _ProductMetricFanDeviceSummary(NamedTuple):
+    """Device-side order statistics needed to build one exact metric fan."""
+
+    failed_count: jax.Array
+    monthly_lower: jax.Array
+    monthly_upper: jax.Array
+    terminal_lower: jax.Array
+    terminal_upper: jax.Array
+
+
+@dataclass(frozen=True)
 class ProductMetricArrays:
     """Base product series emitted by JAX for selected-rollout detail."""
 
@@ -586,6 +608,82 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
     return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, product_tail.failed_month)
 
 
+def _run_jax_product_series(
+    plan: CompiledSimulation, *, primary_agent_id: str, metric: str
+) -> tuple[jnp.ndarray, _ProductTailOutput]:
+    """Execute the product reducer once and materialize the requested metric series."""
+    validate_seed_dependent_inputs(plan)
+    product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
+    program = _build_program(plan, product_summary=product_static, product_inputs=product_inputs, emit_dense=False)
+    product_ys, product_tail = _program_impl(program)
+    initial_ys, monthly_ys = product_ys
+    return _product_metric_series(metric, initial_ys, monthly_ys), product_tail
+
+
+def _product_terminal_series(metric: str, series: jnp.ndarray) -> jnp.ndarray:
+    """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
+    return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
+
+
+def _product_metric_fan_device_summary(
+    plan: CompiledSimulation,
+    *,
+    metric: str,
+    percentiles: tuple[float, ...],
+    series: jnp.ndarray,
+    terminal: jnp.ndarray,
+    failed_month: jnp.ndarray,
+) -> tuple[tuple[CurrencyQuantileInterpolation, ...], _ProductMetricFanDeviceSummary]:
+    """Select exact quantile brackets on-device for one metric fan."""
+    quantile_plan = currency_quantile_plan(plan.rollout_count, percentiles)
+    lower_indices = jnp.asarray([item.lower_index for item in quantile_plan], dtype=jnp.int32)
+    upper_indices = jnp.asarray([item.upper_index for item in quantile_plan], dtype=jnp.int32)
+    ordered = jnp.sort(series, axis=1)
+    monthly_lower = ordered[:, lower_indices]
+    monthly_upper = ordered[:, upper_indices]
+    if metric == "shortfall_quanta":
+        ordered_terminal = jnp.sort(terminal)
+        terminal_lower = ordered_terminal[lower_indices]
+        terminal_upper = ordered_terminal[upper_indices]
+    else:
+        terminal_lower = monthly_lower[-1]
+        terminal_upper = monthly_upper[-1]
+    return quantile_plan, _ProductMetricFanDeviceSummary(
+        failed_count=(failed_month >= 0).sum(),
+        monthly_lower=monthly_lower,
+        monthly_upper=monthly_upper,
+        terminal_lower=terminal_lower,
+        terminal_upper=terminal_upper,
+    )
+
+
+def _product_metric_fan_summary_from_device(
+    plan: CompiledSimulation,
+    *,
+    percentiles: tuple[float, ...],
+    quantile_plan: tuple[CurrencyQuantileInterpolation, ...],
+    device_summary: _ProductMetricFanDeviceSummary,
+) -> ProductMetricFanSummary:
+    """Build the host read model from transferred quantile brackets."""
+    return ProductMetricFanSummary(
+        month_index=np.arange(plan.horizon_months + 1, dtype=np.int64),
+        failed_count=int(device_summary.failed_count),
+        currency_code=plan.currency_code,
+        currency_quantum=format(plan.currency_quantum, "f"),
+        percentiles=percentiles,
+        terminal_percentiles=interpolate_currency_quantiles(
+            np.asarray(device_summary.terminal_lower, dtype=np.int64),
+            np.asarray(device_summary.terminal_upper, dtype=np.int64),
+            quantile_plan,
+        ),
+        monthly_percentiles=interpolate_currency_quantiles(
+            np.asarray(device_summary.monthly_lower, dtype=np.int64),
+            np.asarray(device_summary.monthly_upper, dtype=np.int64),
+            quantile_plan,
+        ),
+    )
+
+
 @overload
 def run_jax_product_summary(
     plan: CompiledSimulation, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
@@ -608,15 +706,8 @@ def run_jax_product_summary(
     boundary without copying the full `(month, rollout)` sample matrix. A terminal-distribution
     request transfers only the per-rollout terminal vector.
     """
-    validate_seed_dependent_inputs(plan)
-
-    product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
-    program = _build_program(plan, product_summary=product_static, product_inputs=product_inputs, emit_dense=False)
-    product_ys, product_tail = _program_impl(program)
-    initial_ys, monthly_ys = product_ys
-    series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
-    # Terminal sample: cumulative over the horizon for shortfall, end-of-horizon snapshot otherwise.
-    terminal = series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
+    series, product_tail = _run_jax_product_series(plan, primary_agent_id=primary_agent_id, metric=metric)
+    terminal = _product_terminal_series(metric, series)
     if percentiles is None:
         oversell_host, failed_host, buy_count_host, terminal_host = jax.device_get(
             (product_tail.sale_oversell, product_tail.failed_month, product_tail.target_allocation_buy_count, terminal)
@@ -629,56 +720,64 @@ def run_jax_product_summary(
             terminal_samples=np.asarray(terminal_host, dtype=np.int64),
         )
 
-    quantile_plan = currency_quantile_plan(plan.rollout_count, percentiles)
-    lower_indices = jnp.asarray([item.lower_index for item in quantile_plan], dtype=jnp.int32)
-    upper_indices = jnp.asarray([item.upper_index for item in quantile_plan], dtype=jnp.int32)
-    ordered = jnp.sort(series, axis=1)
-    monthly_lower = ordered[:, lower_indices]
-    monthly_upper = ordered[:, upper_indices]
-    if metric == "shortfall_quanta":
-        ordered_terminal = jnp.sort(terminal)
-        terminal_lower = ordered_terminal[lower_indices]
-        terminal_upper = ordered_terminal[upper_indices]
-    else:
-        terminal_lower = monthly_lower[-1]
-        terminal_upper = monthly_upper[-1]
-    (
-        oversell_host,
-        failed_count_host,
-        buy_count_host,
-        monthly_lower_host,
-        monthly_upper_host,
-        terminal_lower_host,
-        terminal_upper_host,
-    ) = jax.device_get(
+    quantile_plan, fan_device = _product_metric_fan_device_summary(
+        plan,
+        metric=metric,
+        percentiles=percentiles,
+        series=series,
+        terminal=terminal,
+        failed_month=product_tail.failed_month,
+    )
+    oversell_host, buy_count_host, fan_host = jax.device_get(
+        (product_tail.sale_oversell, product_tail.target_allocation_buy_count, fan_device)
+    )
+    _validate_product_tail(plan, oversell_host, buy_count_host)
+    return _product_metric_fan_summary_from_device(
+        plan, percentiles=percentiles, quantile_plan=quantile_plan, device_summary=fan_host
+    )
+
+
+def run_jax_product_summaries(
+    plan: CompiledSimulation, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...]
+) -> ProductProjectionSummaries:
+    """Return fan and terminal summaries from one JAX month-loop execution.
+
+    The product page renders both projections for the same scenario and seed batch. Keeping the
+    two reductions in one invocation means the expensive simulation and product-series materialize
+    once; only the requested order statistics and terminal sample vector cross the device boundary.
+    """
+    series, product_tail = _run_jax_product_series(plan, primary_agent_id=primary_agent_id, metric=metric)
+    terminal = _product_terminal_series(metric, series)
+    quantile_plan, fan_device = _product_metric_fan_device_summary(
+        plan,
+        metric=metric,
+        percentiles=percentiles,
+        series=series,
+        terminal=terminal,
+        failed_month=product_tail.failed_month,
+    )
+
+    oversell_host, failed_host, buy_count_host, fan_host, terminal_host = jax.device_get(
         (
             product_tail.sale_oversell,
-            (product_tail.failed_month >= 0).sum(),
+            product_tail.failed_month,
             product_tail.target_allocation_buy_count,
-            monthly_lower,
-            monthly_upper,
-            terminal_lower,
-            terminal_upper,
+            fan_device,
+            terminal,
         )
     )
     _validate_product_tail(plan, oversell_host, buy_count_host)
-    return ProductMetricFanSummary(
-        month_index=np.arange(plan.horizon_months + 1, dtype=np.int64),
-        failed_count=int(failed_count_host),
+    failed_month = np.asarray(failed_host, dtype=np.int64)
+    metric_fan = _product_metric_fan_summary_from_device(
+        plan, percentiles=percentiles, quantile_plan=quantile_plan, device_summary=fan_host
+    )
+    terminal_distribution = ProductTerminalSummary(
+        failed_month=failed_month,
         currency_code=plan.currency_code,
         currency_quantum=format(plan.currency_quantum, "f"),
-        percentiles=percentiles,
-        terminal_percentiles=interpolate_currency_quantiles(
-            np.asarray(terminal_lower_host, dtype=np.int64),
-            np.asarray(terminal_upper_host, dtype=np.int64),
-            quantile_plan,
-        ),
-        monthly_percentiles=interpolate_currency_quantiles(
-            np.asarray(monthly_lower_host, dtype=np.int64),
-            np.asarray(monthly_upper_host, dtype=np.int64),
-            quantile_plan,
-        ),
+        terminal_samples=np.asarray(terminal_host, dtype=np.int64),
     )
+    return ProductProjectionSummaries(metric_fan=metric_fan, terminal_distribution=terminal_distribution)
 
 
 def _validate_product_tail(plan: CompiledSimulation, oversell: np.ndarray, ta_buy_count: np.ndarray) -> None:

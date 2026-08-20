@@ -36,6 +36,8 @@ from finance.augur.product.scenarios import (
 )
 from finance.augur.product.wire import (
     MetricFanResponse,
+    ProductProjectionRequest,
+    ProductProjectionResponse,
     ProjectionSamplingRequest,
     RolloutOutput,
     RolloutRequest,
@@ -50,7 +52,9 @@ from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import (
     ProductMetricArrays,
     ProductMetricFanSummary,
+    ProductProjectionSummaries,
     ProductTerminalSummary,
+    run_jax_product_summaries,
     run_jax_product_summary,
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
@@ -108,15 +112,7 @@ class ProductService:
             summary, model_id = self._simulate_product_summary(
                 request.scenario, request.rollout_seeds, metric=request.metric, percentiles=percentiles
             )
-            return MetricFanResponse(
-                model_id=model_id,
-                currency_code=summary.currency_code,
-                currency_quantum=summary.currency_quantum,
-                metric=request.metric,
-                monthly_metric_fan=_monthly_fan_frame(summary),
-                terminal_metric_percentiles=_quantile_frame(summary.percentiles, summary.terminal_percentiles),
-                failed_count=summary.failed_count,
-            )
+            return _metric_fan_response(summary, model_id=model_id, metric=request.metric)
 
     def terminal_distribution(self, request: ProjectionSamplingRequest) -> TerminalDistributionResponse:
         if request.rollout_count > self._max_rollout_samples:
@@ -126,14 +122,31 @@ class ProductService:
             summary, model_id = self._simulate_product_summary(
                 request.scenario, request.rollout_seeds, metric=request.metric, percentiles=None
             )
-            return TerminalDistributionResponse(
-                model_id=model_id,
-                currency_code=summary.currency_code,
-                currency_quantum=summary.currency_quantum,
-                metric=request.metric,
-                terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
-                terminal_metric_samples=_terminal_samples_frame(request.rollout_seeds, summary),
-                failed_count=_failed_count(summary.failed_month),
+            return _terminal_distribution_response(
+                summary, model_id=model_id, metric=request.metric, percentiles=percentiles, seeds=request.rollout_seeds
+            )
+
+    def projection_summary(self, request: ProductProjectionRequest) -> ProductProjectionResponse:
+        """Return the fan and terminal distribution from one shared simulation."""
+        if request.rollout_count > self._max_rollout_samples:
+            raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
+        fan_percentiles = tuple(float(pct) for pct in request.fan_percentiles)
+        terminal_percentiles = tuple(float(pct) for pct in request.terminal_percentiles)
+        with self._projection_lock:
+            summaries, model_id = self._simulate_product_summaries(
+                request.scenario, request.rollout_seeds, metric=request.metric, percentiles=fan_percentiles
+            )
+            fan = summaries.metric_fan
+            terminal = summaries.terminal_distribution
+            return ProductProjectionResponse(
+                metric_fan=_metric_fan_response(fan, model_id=model_id, metric=request.metric),
+                terminal_distribution=_terminal_distribution_response(
+                    terminal,
+                    model_id=model_id,
+                    metric=request.metric,
+                    percentiles=terminal_percentiles,
+                    seeds=request.rollout_seeds,
+                ),
             )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
@@ -189,6 +202,20 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
+    def _compile_product_plan(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
+    ) -> tuple[CompiledSimulation, str]:
+        self._validate_scenario_key(scenario_key)
+        scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
+        plan = compile_simulation(
+            scenario,
+            rollout_count=len(seeds),
+            external_series=materialize_sampled_exogenous(sampled),
+            jurisdictions=load_jurisdictions_for(scenario),
+            locations=self._locations,
+        )
+        return plan, model_id
+
     @overload
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
@@ -202,15 +229,7 @@ class ProductService:
     def _simulate_product_summary(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
     ) -> tuple[ProductMetricFanSummary | ProductTerminalSummary, str]:
-        self._validate_scenario_key(scenario_key)
-        scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        plan = compile_simulation(
-            scenario,
-            rollout_count=len(seeds),
-            external_series=materialize_sampled_exogenous(sampled),
-            jurisdictions=load_jurisdictions_for(scenario),
-            locations=self._locations,
-        )
+        plan, model_id = self._compile_product_plan(scenario_key, seeds)
         summary = run_jax_product_summary(
             plan,
             primary_agent_id=self._primary_agent_id,
@@ -218,6 +237,18 @@ class ProductService:
             percentiles=percentiles,
         )
         return summary, model_id
+
+    def _simulate_product_summaries(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
+    ) -> tuple[ProductProjectionSummaries, str]:
+        plan, model_id = self._compile_product_plan(scenario_key, seeds)
+        summaries = run_jax_product_summaries(
+            plan,
+            primary_agent_id=self._primary_agent_id,
+            metric=metric if metric.endswith("_quanta") else f"{metric}_quanta",
+            percentiles=percentiles,
+        )
+        return summaries, model_id
 
     def _simulate_dense(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
@@ -273,6 +304,37 @@ def _monthly_fan_frame(summary: ProductMetricFanSummary) -> Frame:
         "percentile": np.tile(percentile_array, month_indices.size).tolist(),
         "value_quanta": [_quanta(value) for value in summary.monthly_percentiles.reshape(-1)],
     }
+
+
+def _metric_fan_response(summary: ProductMetricFanSummary, *, model_id: str, metric: str) -> MetricFanResponse:
+    return MetricFanResponse(
+        model_id=model_id,
+        currency_code=summary.currency_code,
+        currency_quantum=summary.currency_quantum,
+        metric=metric,
+        monthly_metric_fan=_monthly_fan_frame(summary),
+        terminal_metric_percentiles=_quantile_frame(summary.percentiles, summary.terminal_percentiles),
+        failed_count=summary.failed_count,
+    )
+
+
+def _terminal_distribution_response(
+    summary: ProductTerminalSummary,
+    *,
+    model_id: str,
+    metric: str,
+    percentiles: tuple[float, ...],
+    seeds: tuple[int, ...],
+) -> TerminalDistributionResponse:
+    return TerminalDistributionResponse(
+        model_id=model_id,
+        currency_code=summary.currency_code,
+        currency_quantum=summary.currency_quantum,
+        metric=metric,
+        terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
+        terminal_metric_samples=_terminal_samples_frame(seeds, summary),
+        failed_count=_failed_count(summary.failed_month),
+    )
 
 
 def _percentile_frame(samples: np.ndarray, percentiles: tuple[float, ...]) -> Frame:

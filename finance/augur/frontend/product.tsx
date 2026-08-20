@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect, SegmentedControl } from "@mantine/core";
 
-import {
-  fetchProductMetricFan,
-  fetchProductPortfolio,
-  fetchProductRollout,
-  fetchProductTerminalDistribution,
-} from "./client";
+import { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
 
@@ -25,7 +20,7 @@ import {
   MAX_VARIANTS,
   TERMINAL_DISTRIBUTION_PERCENTILES,
   productInputDefaults,
-  productProjectionSamplingRequest,
+  productProjectionSummaryRequest,
   scenarioSetToSearch,
   scenarioSetFromSearch,
   makeVariant,
@@ -250,13 +245,12 @@ export function ProductProjectionWorkspace({
 }) {
   const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth");
-  // One metric-fan response per scenario id. Every scenario shares the seed set, and identical
-  // seeds reproduce identical sampled exogenous paths, so the overlaid fans are apples-to-apples
-  // (no backend comparison endpoint needed). Updated in place as each fan arrives so the comparison
-  // fans don't blank out while the active scenario is being edited.
+  // One combined projection response per scenario id. Every scenario shares the seed set, and
+  // identical seeds reproduce identical sampled exogenous paths, so the overlaid fans are
+  // apples-to-apples. The backend returns the fan and terminal distribution from one simulation.
   const [resultsById, setResultsById] = useState(() => new Map());
-  // Dense terminal-only percentiles are requested separately from the timeline fan. This keeps the
-  // fan payload small while giving the terminal distribution enough points to render smoothly.
+  // Dense terminal-only percentiles remain separate inside the combined response. This keeps the
+  // timeline fan payload small while giving the terminal distribution enough points to render smoothly.
   const [terminalResultsById, setTerminalResultsById] = useState(() => new Map());
   const [terminalResultKeysById, setTerminalResultKeysById] = useState(() => new Map());
   const [errorsById, setErrorsById] = useState(() => new Map());
@@ -310,12 +304,12 @@ export function ProductProjectionWorkspace({
   // portfolio arrives would ask for a no-target scenario (never auto-sells, so ruin) and get a
   // fan the user never asked for. The fetch effects below wait for it rather than showing that.
   const sellable = useMemo(() => (portfolio ? sellableSecurities(portfolio) : null), [portfolio]);
-  const requestEntries = useMemo(
+  const projectionRequestEntries = useMemo(
     () =>
       chartScenarios.map((entry) => ({
         id: entry.id,
         label: entry.label,
-        request: productProjectionSamplingRequest(
+        request: productProjectionSummaryRequest(
           entry.input,
           bootstrap,
           selectedMetric,
@@ -326,37 +320,18 @@ export function ProductProjectionWorkspace({
             horizonMonths,
             sellable: sellable ?? [],
           },
-          FAN_PERCENTILES
-        ),
-      })),
-    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
-  );
-  const terminalRequestEntries = useMemo(
-    () =>
-      chartScenarios.map((entry) => ({
-        id: entry.id,
-        label: entry.label,
-        request: productProjectionSamplingRequest(
-          entry.input,
-          bootstrap,
-          selectedMetric,
-          {
-            rolloutCount,
-            firstSeed,
-            model,
-            horizonMonths,
-            sellable: sellable ?? [],
-          },
+          FAN_PERCENTILES,
           TERMINAL_DISTRIBUTION_PERCENTILES
         ),
       })),
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths, sellable]
   );
   const terminalRequestKeyById = useMemo(
-    () => new Map(terminalRequestEntries.map(({ id, request }) => [id, JSON.stringify(request)])),
-    [terminalRequestEntries]
+    () => new Map(projectionRequestEntries.map(({ id, request }) => [id, JSON.stringify(request)])),
+    [projectionRequestEntries]
   );
-  const activeRequest = requestEntries.find((entry) => entry.id === activeId)?.request ?? requestEntries[0].request;
+  const activeRequest =
+    projectionRequestEntries.find((entry) => entry.id === activeId)?.request ?? projectionRequestEntries[0].request;
   const activeRawResult = resultsById.get(activeId) ?? null;
   const activeResult = activeRawResult?.metric === selectedMetric.value ? activeRawResult : null;
   const activeRawTerminalResult = terminalResultsById.get(activeId) ?? null;
@@ -552,43 +527,22 @@ export function ProductProjectionWorkspace({
   useEffect(() => {
     if (sellable == null) return;
     const controller = new AbortController();
-    // Fan out one request per scenario over the shared seed set. Results land in place (no clear)
-    // so the comparison fans stay put while the active scenario is being edited.
+    // Fan out one combined request per scenario. The backend performs the metric-fan and terminal
+    // reductions after one shared simulation, while the two public legacy endpoints remain intact.
     const handle = setTimeout(() => {
-      for (const { id, label, request } of requestEntries) {
-        fetchProductMetricFan(request, { signal: controller.signal })
+      for (const { id, label, request } of projectionRequestEntries) {
+        const requestKey = JSON.stringify(request);
+        fetchProductProjectionSummary(request, { signal: controller.signal })
           .then((payload) => {
-            setResultsById((previous) => new Map(previous).set(id, payload));
+            setResultsById((previous) => new Map(previous).set(id, payload.metricFan));
+            setTerminalResultsById((previous) => new Map(previous).set(id, payload.terminalDistribution));
+            setTerminalResultKeysById((previous) => new Map(previous).set(id, requestKey));
             setErrorsById((previous) => {
               if (!previous.has(id)) return previous;
               const next = new Map(previous);
               next.delete(id);
               return next;
             });
-          })
-          .catch((error) => {
-            if (error?.name === "AbortError") return;
-            setErrorsById((previous) => new Map(previous).set(id, error?.message || String(error)));
-            toastFetchError(`product-fan-${id}`, `Projection failed: ${label}`, error);
-          });
-      }
-    }, 120);
-    return () => {
-      clearTimeout(handle);
-      controller.abort();
-    };
-  }, [requestEntries, sellable]);
-
-  useEffect(() => {
-    if (sellable == null) return;
-    const controller = new AbortController();
-    const handle = setTimeout(() => {
-      for (const { id, label, request } of terminalRequestEntries) {
-        const requestKey = JSON.stringify(request);
-        fetchProductTerminalDistribution(request, { signal: controller.signal })
-          .then((payload) => {
-            setTerminalResultsById((previous) => new Map(previous).set(id, payload));
-            setTerminalResultKeysById((previous) => new Map(previous).set(id, requestKey));
             setTerminalErrorsById((previous) => {
               if (!previous.has(id)) return previous;
               const next = new Map(previous);
@@ -598,8 +552,10 @@ export function ProductProjectionWorkspace({
           })
           .catch((error) => {
             if (error?.name === "AbortError") return;
-            setTerminalErrorsById((previous) => new Map(previous).set(id, error?.message || String(error)));
-            toastFetchError(`product-terminal-${id}`, `Terminal distribution failed: ${label}`, error);
+            const message = error?.message || String(error);
+            setErrorsById((previous) => new Map(previous).set(id, message));
+            setTerminalErrorsById((previous) => new Map(previous).set(id, message));
+            toastFetchError(`product-projection-${id}`, `Projection failed: ${label}`, error);
           });
       }
     }, 120);
@@ -607,7 +563,7 @@ export function ProductProjectionWorkspace({
       clearTimeout(handle);
       controller.abort();
     };
-  }, [terminalRequestEntries, sellable]);
+  }, [projectionRequestEntries, sellable]);
 
   useEffect(() => {
     eventSelection.clear();
@@ -727,7 +683,7 @@ export function ProductProjectionWorkspace({
             onClearSelection={clearSelectedRollout}
             selectedRolloutLoading={selectedRolloutLoading}
             fanSeries={fanSeries}
-            percentiles={activeRequest.percentiles}
+            percentiles={activeRequest.fanPercentiles}
             scenarios={chartScenarios}
             terminalResultsById={terminalResultsForDisplay}
             activeId={activeId}
