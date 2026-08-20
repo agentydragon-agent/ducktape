@@ -7,21 +7,18 @@ to, creds already wired, Claude CLI installed) minus the persistence.
 
 ## Layout
 
-- `controller/` — the upstream controller (v0.5.1) installed from the in-repo
-  Helm chart via a `GitRepository` + `HelmRelease`, with extensions enabled
-  (`SandboxTemplate`/`SandboxClaim`/`SandboxWarmPool` CRDs).
+- `controller/` — the upstream v0.5.5 combined release asset, fetched directly
+  by Kustomize from the documented GitOps install URL. The asset contains one
+  controller Deployment, core and extension CRDs, RBAC, Services, and the
+  webhook configuration. `patches.yaml` keeps Ducktape's namespace label,
+  OVH-only controller placement, restricted security context, and health probes.
 
-  **Deviation** from the upstream `kubectl apply -f manifest.yaml` install: at
-  v0.5.1 the release assets `manifest.yaml` and `extensions.yaml` both declare
-  the `agent-sandbox-controller` Deployment (the second `kubectl apply` is
-  expected to overwrite the first), which under Flux is either a duplicate
-  resource ID or two SSA owners fighting over `args`. The Helm chart renders a
-  single Deployment with `--extensions`.
-
-  <!-- CLEANUP(added 2026-07-16): switch controller/ to the single collision-free
-    release manifest (upstream main's k8s/ kustomization says the next release
-    after v0.5.1 ships a sandbox-with-extensions.yaml asset for GitOps engines);
-    drop the GitRepository + HelmRelease then. -->
+  v0.5.5 is the first release used here after the documented release gate: its
+  `sandbox-with-extensions.yaml` asset is a single collision-free install for
+  GitOps engines. The old v0.5.1 GitRepository + HelmRelease workaround is
+  removed; CRDs now remain owned by this Flux Kustomization and are upgraded
+  from the pinned upstream release asset (SHA-256
+  `aaa9d931acb8af90a0a458b6d72bd245d224faac7117e8a241f9e7086acc24e9`).
 
 - `workspace-image/` — the dedicated
   `git.allegedly.works/ducktape-ci/agent-workspace` image (Claude Code + Codex
