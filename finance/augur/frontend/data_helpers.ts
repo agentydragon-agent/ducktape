@@ -8,6 +8,9 @@ import {
   fmtNumber,
 } from "./lib/format";
 import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers";
+import { ROLLOUT_EVENT_KIND_ORDER, type RolloutEventKind } from "./rollout_event_vocabulary.generated";
+
+export { ROLLOUT_EVENT_KIND_ORDER };
 
 function currency(result) {
   return { currencyCode: result?.currencyCode, currencyQuantum: result?.currencyQuantum };
@@ -19,32 +22,36 @@ function cu(value, currencyMeta) {
 
 export const SELECTED_ROLLOUT_COLOR = "#0f766e";
 export const FAILED_ROLLOUT_COLOR = "#ef4444";
-// Canonical event vocabulary. Array order drives legend/marker stacking and mirrors
-// `priority` in `augur/product/decode.py`; recurring events start hidden to avoid clutter.
-type RolloutEventMetadata = { kind: string; label: string; color: string; hidden?: boolean };
-const ROLLOUT_EVENT_METADATA: RolloutEventMetadata[] = [
-  { kind: "property_purchase", label: "Property purchase", color: "#1d4ed8" },
-  { kind: "closing_cost_payment", label: "Closing cost", color: "#7e22ce" },
-  { kind: "set_primary_residence", label: "Set primary home", color: "#2563eb" },
-  { kind: "set_rented_fraction", label: "Set rented %", color: "#0ea5e9" },
-  { kind: "capital_improvement", label: "Capital improvement", color: "#15803d" },
-  { kind: "property_sale", label: "Property sale", color: "#be123c" },
-  { kind: "private_equity_event", label: "PE event", color: "#9333ea" },
-  { kind: "private_equity_opportunity", label: "PE opportunity", color: "#6d28d9" },
-  { kind: "holding_sale", label: "Holding sale", color: "#0f766e" },
-  { kind: "tax_accrual", label: "Tax accrual", color: "#b45309" },
-  { kind: "tax_payment", label: "Tax payment", color: "#7c3aed" },
-  { kind: "property_tax_payment", label: "Property tax", color: "#a16207", hidden: true },
-  { kind: "hoa_dues_payment", label: "HOA dues", color: "#14b8a6" },
-  { kind: "homeowners_insurance_payment", label: "Homeowners insurance", color: "#9333ea", hidden: true },
-  { kind: "property_maintenance_payment", label: "Maintenance", color: "#d97706", hidden: true },
-  { kind: "mortgage_payment", label: "Mortgage payment", color: "#0369a1" },
-  { kind: "monthly_expense", label: "Monthly expense", color: "#64748b", hidden: true },
-  { kind: "outside_rent", label: "Outside rent", color: "#0891b2", hidden: true },
-  { kind: "failure", label: "Rollout failure", color: "#dc2626" },
-];
+// Presentation stays frontend policy, but its keys are exhaustively checked against the
+// backend-generated discriminator vocabulary. The generated order drives legends and marker stacks.
+type RolloutEventMetadata = { label: string; color: string; hidden?: boolean };
+const ROLLOUT_EVENT_METADATA_BY_KIND: Record<RolloutEventKind, RolloutEventMetadata> = {
+  property_purchase: { label: "Property purchase", color: "#1d4ed8" },
+  closing_cost_payment: { label: "Closing cost", color: "#7e22ce" },
+  set_primary_residence: { label: "Set primary home", color: "#2563eb" },
+  set_rented_fraction: { label: "Set rented %", color: "#0ea5e9" },
+  capital_improvement: { label: "Capital improvement", color: "#15803d" },
+  property_sale: { label: "Property sale", color: "#be123c" },
+  private_equity_event: { label: "PE event", color: "#9333ea" },
+  private_equity_opportunity: { label: "PE opportunity", color: "#6d28d9" },
+  holding_sale: { label: "Holding sale", color: "#0f766e" },
+  tax_accrual: { label: "Tax accrual", color: "#b45309" },
+  tax_payment: { label: "Tax payment", color: "#7c3aed" },
+  property_tax_payment: { label: "Property tax", color: "#a16207", hidden: true },
+  hoa_dues_payment: { label: "HOA dues", color: "#14b8a6" },
+  homeowners_insurance_payment: { label: "Homeowners insurance", color: "#9333ea", hidden: true },
+  property_maintenance_payment: { label: "Maintenance", color: "#d97706", hidden: true },
+  mortgage_payment: { label: "Mortgage payment", color: "#0369a1" },
+  monthly_expense: { label: "Monthly expense", color: "#64748b", hidden: true },
+  outside_rent: { label: "Outside rent", color: "#0891b2", hidden: true },
+  failure: { label: "Rollout failure", color: "#dc2626" },
+};
 
-export const ROLLOUT_EVENT_KIND_ORDER = ROLLOUT_EVENT_METADATA.map(({ kind }) => kind);
+const ROLLOUT_EVENT_METADATA = ROLLOUT_EVENT_KIND_ORDER.map((kind) => ({
+  kind,
+  ...ROLLOUT_EVENT_METADATA_BY_KIND[kind],
+}));
+
 export const ROLLOUT_EVENT_KIND_LABELS = Object.fromEntries(
   ROLLOUT_EVENT_METADATA.map(({ kind, label }) => [kind, label])
 );
@@ -449,7 +456,7 @@ export const EVENT_FORMATTERS = {
       return parts.filter(Boolean).join("; ");
     },
   },
-};
+} satisfies Record<RolloutEventKind, unknown>;
 
 export function eventLabel(event) {
   return EVENT_FORMATTERS[event?.kind]?.label(event) ?? "Event";

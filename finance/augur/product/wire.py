@@ -566,6 +566,30 @@ type RolloutEvent = Annotated[
     Field(discriminator="kind"),
 ]
 
+# The API preserves this order for same-month events. Frontend event metadata mirrors it so
+# legends, marker stacks, and the event table stay in the same order as the rollout response.
+ROLLOUT_EVENT_KIND_ORDER = (
+    "property_purchase",
+    "closing_cost_payment",
+    "set_primary_residence",
+    "set_rented_fraction",
+    "capital_improvement",
+    "property_sale",
+    "private_equity_event",
+    "private_equity_opportunity",
+    "holding_sale",
+    "tax_accrual",
+    "tax_payment",
+    "property_tax_payment",
+    "hoa_dues_payment",
+    "homeowners_insurance_payment",
+    "property_maintenance_payment",
+    "mortgage_payment",
+    "monthly_expense",
+    "outside_rent",
+    "failure",
+)
+
 
 class RolloutOutput(ApiModel):
     seed: NonNegativeInt
