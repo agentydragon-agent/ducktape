@@ -2,9 +2,6 @@
 finance/worthy/worthy/index_head.html
 finance/worthy/worthy/index_tail.html
 
-# Claude Code testdata - description.md are extracted content from Claude Code
-x/claude_hooks/testdata/claude_tools/**/*.md
-
 # Jinja2 templates - prettier mangles block/variable tag formatting
 **/*.j2
 
@@ -20,10 +17,10 @@ tana/testdata/**/*.tanapaste
 tana/testdata/**/*.txt
 
 # Logseq export - generated content
-llm/instruct-logseq/**
+llm/instruct_logseq/**
 
 # Archived directories - complex formatting that doesn't survive prettier
-claude_commands_old/**
+x/claude_commands_old/**
 
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**
@@ -36,13 +33,11 @@ cluster/charts/**/templates/**
 cluster/k8s/*-chart/templates/**
 # Vendored Browsertrix chart contains both Helm and runtime Jinja templates.
 cluster/charts/browsertrix/**
-props/helm/templates/**
 
 # Specimens committed snapshot code
 props/specimens/*/*/code/**
 
 # JS debundler golden testdata - must match pipeline output exactly, not reformatted
-devinfra/js/debundle/harness/testdata/**
 devinfra/js/debundle/peel/golden/**
 
 # Lock files - managed by package managers
