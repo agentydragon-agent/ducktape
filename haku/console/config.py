@@ -555,7 +555,6 @@ class Settings(BaseSettings):
     operator_identity: OperatorIdentityConfig
     # Optional standing Kubernetes authorization policy. Absent means the
     # internal Kubernetes authorization endpoint remains fail-closed.
-    kubernetes_authorization: KubernetesAuthorizationConfig | None = None
 
     @model_validator(mode="after")
     def _operator_auth_requires_canonical_public_origin(self) -> Self:

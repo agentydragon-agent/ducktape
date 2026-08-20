@@ -425,7 +425,7 @@ def create_app(
         )
 
     kubernetes_authorization = KubernetesAuthorizationService(
-        config=settings.kubernetes_authorization, resolve_agent=resolve_kubernetes_agent
+        config=console_config.kubernetes_authorization, resolve_agent=resolve_kubernetes_agent
     )
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's

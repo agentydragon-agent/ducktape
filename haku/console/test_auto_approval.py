@@ -371,6 +371,18 @@ def test_profile_config_rejects_unknown_static_agent_profile() -> None:
         )
 
 
+def test_profile_config_rejects_unknown_kubernetes_authorization_profile() -> None:
+    with pytest.raises(ValidationError, match="Kubernetes authorization references unknown access profiles"):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "kubernetes_authorization": {
+                    "subjects_by_access_profile": {"missing": {"username": "system:serviceaccount:ns:reader"}}
+                },
+            }
+        )
+
+
 def test_static_agent_access_profile_assignment_is_required() -> None:
     with pytest.raises(ValidationError, match="access_profile_id"):
         ConsoleConfigFile.model_validate(
