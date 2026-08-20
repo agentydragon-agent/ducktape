@@ -1,8 +1,25 @@
+import asyncio
+from typing import Any
+from uuid import UUID
+
+import pytest
 import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.kube_proxy_authorization import router
+from haku.console.kubernetes_authorization import (
+    AuthorizationRequest,
+    KubernetesAuthorizationService,
+    KubernetesAuthorizationUnavailableError,
+    KubernetesBearerRejectedError,
+    KubernetesClients,
+    KubernetesSubjectAccessReviewClient,
+    RequestAttributes,
+    SubjectAccessReviewResult,
+)
+from haku.console.tool_call_actor import AgentActor
 
 REQUEST = {
     "attributes": {
@@ -19,25 +36,225 @@ REQUEST = {
 }
 
 
-def _client() -> TestClient:
+def _client(service: KubernetesAuthorizationService | None = None) -> TestClient:
     app = FastAPI()
+    if service is not None:
+        app.state.kubernetes_authorization = service
     app.include_router(router)
     return TestClient(app)
 
 
-def test_stub_requires_bearer() -> None:
+def test_endpoint_requires_bearer() -> None:
     with _client() as client:
         response = client.post("/api/internal/kubernetes/authorize", json=REQUEST)
     assert response.status_code == 401
 
 
-def test_stub_fails_closed_until_grants_are_implemented() -> None:
+def test_endpoint_is_unavailable_when_not_wired() -> None:
     with _client() as client:
         response = client.post(
             "/api/internal/kubernetes/authorize", json=REQUEST, headers={"Authorization": "Bearer agent-token"}
         )
-    assert response.status_code == 501
-    assert response.json()["detail"] == "temporary Kubernetes grant authorization is not implemented"
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Kubernetes authorization is not configured"
+
+
+class FakeSarClient:
+    def __init__(self, result: SubjectAccessReviewResult | None = None, error: Exception | None = None) -> None:
+        self.result = result or SubjectAccessReviewResult(allowed=True, reason="standing policy")
+        self.error = error
+        self.calls: list[tuple[KubernetesAuthorizationSubject, RequestAttributes]] = []
+        self.closed = False
+
+    async def review(
+        self, *, subject: KubernetesAuthorizationSubject, attributes: RequestAttributes
+    ) -> SubjectAccessReviewResult:
+        self.calls.append((subject, attributes))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class FakeAuthorizationApi:
+    def __init__(self, *, evaluation_error: str | None = None) -> None:
+        self.requests: list[Any] = []
+        self.evaluation_error = evaluation_error
+
+    async def create_subject_access_review(self, request):
+        self.requests.append(request)
+        return type(
+            "Response",
+            (),
+            {
+                "status": type(
+                    "Status",
+                    (),
+                    {
+                        "allowed": True,
+                        "denied": False,
+                        "reason": "standing policy",
+                        "evaluation_error": self.evaluation_error,
+                    },
+                )()
+            },
+        )()
+
+
+class FakeApiClient:
+    async def close(self) -> None:
+        pass
+
+
+def _agent() -> AgentActor:
+    return AgentActor(
+        agent_id=UUID("00000000-0000-4000-8000-000000000001"),
+        operator_id=UUID("00000000-0000-4000-8000-000000000002"),
+        binding_id=UUID("00000000-0000-4000-8000-000000000003"),
+        access_profile_id="public-diagnostics",
+    )
+
+
+def _service(sar: FakeSarClient, resolver=None) -> KubernetesAuthorizationService:
+    return KubernetesAuthorizationService(
+        config=KubernetesAuthorizationConfig(
+            subjects_by_access_profile={
+                "public-diagnostics": KubernetesAuthorizationSubject(
+                    username="system:serviceaccount:haku:haku-kube-proxy", groups=("haku",)
+                )
+            }
+        ),
+        resolve_agent=resolver or (lambda _token: _async_agent()),
+        sar_client=sar,
+    )
+
+
+async def _async_agent() -> AgentActor:
+    return _agent()
+
+
+@pytest.mark.asyncio
+async def test_service_uses_fixed_configured_subject_and_request_attributes() -> None:
+    sar = FakeSarClient()
+    result = await _service(sar).authorize(
+        bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST)
+    )
+    assert result.allowed is True
+    assert sar.calls == [
+        (
+            KubernetesAuthorizationSubject(username="system:serviceaccount:haku:haku-kube-proxy", groups=("haku",)),
+            RequestAttributes.model_validate(REQUEST["attributes"]),
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_service_fails_closed_when_agent_profile_has_no_configured_subject() -> None:
+    sar = FakeSarClient()
+
+    async def unconfigured_profile(_token: str) -> AgentActor:
+        return AgentActor(
+            agent_id=UUID("00000000-0000-4000-8000-000000000011"),
+            operator_id=UUID("00000000-0000-4000-8000-000000000012"),
+            binding_id=UUID("00000000-0000-4000-8000-000000000013"),
+            access_profile_id="unconfigured",
+        )
+
+    with pytest.raises(KubernetesAuthorizationUnavailableError, match="Agent access profile"):
+        await _service(sar, unconfigured_profile).authorize(
+            bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST)
+        )
+    assert sar.calls == []
+
+
+def test_endpoint_returns_sar_decision() -> None:
+    sar = FakeSarClient(result=SubjectAccessReviewResult(allowed=False, reason="RBAC denied"))
+    with _client(_service(sar)) as client:
+        response = client.post(
+            "/api/internal/kubernetes/authorize", json=REQUEST, headers={"Authorization": "Bearer caller-token"}
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["allowed"] is False
+    assert body["reason"] == "RBAC denied"
+    assert body["decision_id"].startswith("sar:")
+
+
+@pytest.mark.asyncio
+async def test_service_rejects_unknown_bearer_before_sar() -> None:
+    sar = FakeSarClient()
+
+    async def reject(_token: str) -> AgentActor | None:
+        return None
+
+    with pytest.raises(KubernetesBearerRejectedError):
+        await _service(sar, reject).authorize(
+            bearer="Bearer unknown", request=AuthorizationRequest.model_validate(REQUEST)
+        )
+    assert sar.calls == []
+
+
+@pytest.mark.asyncio
+async def test_service_surfaces_sar_failure_as_unavailable() -> None:
+    sar = FakeSarClient(error=KubernetesAuthorizationUnavailableError("SAR failed"))
+    with pytest.raises(KubernetesAuthorizationUnavailableError, match="SAR failed"):
+        await _service(sar).authorize(
+            bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST)
+        )
+
+
+@pytest.mark.asyncio
+async def test_subject_access_review_client_builds_resource_request_for_fixed_subject() -> None:
+    authorization = FakeAuthorizationApi()
+    client = KubernetesSubjectAccessReviewClient(
+        clients=KubernetesClients(api=FakeApiClient(), authorization=authorization)
+    )
+    result = await client.review(
+        subject=KubernetesAuthorizationSubject(username="proxy", groups=("haku",)),
+        attributes=RequestAttributes.model_validate(REQUEST["attributes"]),
+    )
+    assert result == SubjectAccessReviewResult(allowed=True, reason="standing policy")
+    request = authorization.requests[0]
+    assert request.spec.user == "proxy"
+    assert request.spec.groups == ["haku"]
+    assert request.spec.resource_attributes.resource == "pods"
+    assert request.spec.resource_attributes.subresource == "log"
+    assert request.spec.non_resource_attributes is None
+
+
+@pytest.mark.asyncio
+async def test_subject_access_review_client_fails_closed_on_evaluation_error() -> None:
+    client = KubernetesSubjectAccessReviewClient(
+        clients=KubernetesClients(
+            api=FakeApiClient(), authorization=FakeAuthorizationApi(evaluation_error="authorizer unavailable")
+        )
+    )
+    with pytest.raises(KubernetesAuthorizationUnavailableError, match="evaluation reported an error"):
+        await client.review(
+            subject=KubernetesAuthorizationSubject(username="proxy"),
+            attributes=RequestAttributes.model_validate(REQUEST["attributes"]),
+        )
+
+
+@pytest.mark.asyncio
+async def test_service_fails_closed_when_sar_times_out() -> None:
+    class HangingSar(FakeSarClient):
+        async def review(self, *, subject, attributes):
+            await asyncio.sleep(10)
+            return SubjectAccessReviewResult(allowed=True)
+
+    service = KubernetesAuthorizationService(
+        config=KubernetesAuthorizationConfig(
+            subjects_by_access_profile={"public-diagnostics": KubernetesAuthorizationSubject(username="proxy")},
+            timeout_seconds=0.001,
+        ),
+        resolve_agent=lambda _token: _async_agent(),
+        sar_client=HangingSar(),
+    )
+    with pytest.raises(KubernetesAuthorizationUnavailableError, match="timed out"):
+        await service.authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))
 
 
 if __name__ == "__main__":

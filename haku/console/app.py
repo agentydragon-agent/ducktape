@@ -51,12 +51,18 @@ from haku.console import (
     web_push,
 )
 from haku.console.agents import enrollment_routes
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.agents.authorization import (
+    PostgresAgentAuthority,
+    StaticAgentDefinition,
+    StaticAgentRejectedError,
+    fingerprint_static_token,
+)
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
+from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -73,6 +79,7 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
+from haku.console.tool_call_actor import AgentActor
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import conversation_follow, sandbox_claims, session_runtime, subscription
@@ -395,6 +402,32 @@ def create_app(
         )
     static_credential_registry = mcp_agent_auth.StaticAgentCredentialRegistry(fingerprints=static_agent_fingerprints)
 
+    async def resolve_kubernetes_agent(token: str) -> AgentActor | None:
+        """Resolve only configured static Agent bearers for the proxy hop.
+
+        The proxy has no OAuth browser exchange and therefore cannot invent an
+        Agent identity.  Resolution still goes through the canonical authority
+        so revoked/rotated bindings are rejected before a SAR is attempted.
+        """
+
+        fingerprint = static_credential_registry.configured_fingerprint(token)
+        if fingerprint is None:
+            return None
+        try:
+            authorization = await agent_authority.static_authorization_for_fingerprint(fingerprint=fingerprint)
+        except (StaticAgentRejectedError, ValueError):
+            return None
+        return AgentActor(
+            agent_id=authorization.agent_id,
+            operator_id=authorization.operator_id,
+            binding_id=authorization.binding_id,
+            access_profile_id=authorization.access_profile_id,
+        )
+
+    kubernetes_authorization = KubernetesAuthorizationService(
+        config=settings.kubernetes_authorization, resolve_agent=resolve_kubernetes_agent
+    )
+
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
     # Google access token, resolved from the provider-connection store. Auto-approval label lookups
     # use the same per-Operator Gmail client; a test may inject a fixed `gmail_client` instead.
@@ -564,6 +597,7 @@ def create_app(
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
+                await kubernetes_authorization.aclose()
                 if session_service is not None:
                     await session_service.aclose()
                 await session_notifications.aclose()
@@ -603,6 +637,7 @@ def create_app(
     app.state.node_daemon_service = node_daemon_service
     app.state.push_subscription_store = push_subscription_store
     app.state.web_push_identity = web_push_identity
+    app.state.kubernetes_authorization = kubernetes_authorization
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -657,7 +692,7 @@ def create_app(
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
-    # endpoint currently fails closed until temporary grant lookup is implemented.
+    # endpoint remains fail-closed unless standing SAR policy is configured.
     app.include_router(kube_proxy_authorization.router)
 
     @app.get("/api/deployment", dependencies=operator_only)
