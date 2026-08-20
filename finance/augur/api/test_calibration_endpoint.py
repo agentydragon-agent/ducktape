@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,7 @@ def test_run_calibration(client: TestClient) -> None:
     assert body["preset_id"] == "openai_pe"
 
     result = body["result"]
+    date.fromisoformat(result["as_of"])
     assert result["horizon_months"] == 24
     assert result["rollout_count"] == 16
     # PE markets now carry their issuer in `channel`; the example catalog scores `openai`.

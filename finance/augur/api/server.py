@@ -28,7 +28,6 @@ from finance.augur.api.catalog import build_calibration_info, build_catalog, bui
 from finance.augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
-from finance.augur.api.schemas import ApiModel
 from finance.augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
 from finance.augur.budget.service import BudgetService
 from finance.augur.budget.wire import (
@@ -146,8 +145,8 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def error(status_code: int, detail: Any) -> JSONResponse:
         return JSONResponse(status_code=status_code, content={"detail": detail}, headers=no_store)
 
-    def payload(value: Any) -> JSONResponse:
-        return JSONResponse(content=plain_json(value), headers=no_store)
+    def payload(value: Any, *, exclude_none: bool = True) -> JSONResponse:
+        return JSONResponse(content=plain_json(value, exclude_none=exclude_none), headers=no_store)
 
     app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
@@ -195,13 +194,6 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> JSONResponse:
         return payload(product_service.rollout(request))
-
-    def calibration_payload(value: ApiModel) -> JSONResponse:
-        # Calibration responses carry `date` fields (CalibrationResult.as_of,
-        # resolution_deadline), which the stdlib JSON encoder behind JSONResponse
-        # cannot serialize. Dump in JSON mode (dates -> ISO strings) first, keeping the
-        # same snake_case + drop-None wire convention as `payload`.
-        return JSONResponse(content=value.model_dump(mode="json", exclude_none=True), headers=no_store)
 
     @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
     async def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
@@ -312,7 +304,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             if spec is not None
             else []
         )
-        return calibration_payload(
+        return payload(
             CalibrationRunResponse(
                 preset_id=preset_id,
                 result=result,
@@ -326,11 +318,8 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     async def budget_snapshot(request: BudgetSnapshotRequest) -> JSONResponse:
         if config.budget_service is None:
             return error(400, "no budget config for this deployment")
-        # Snapshot rows carry `date` fields (months, lumpy.date) that the stdlib JSON
-        # encoder behind JSONResponse can't serialize; dump in JSON mode (dates -> ISO
-        # strings) like calibration_payload, same snake_case + drop-None wire convention.
         result = await config.budget_service.build_snapshot(window=request.window)
-        return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
+        return payload(result, exclude_none=False)
 
     @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
     async def budget_transactions(request: BudgetTransactionsRequest) -> JSONResponse:
@@ -339,7 +328,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         result = await config.budget_service.list_transactions_in_bucket(
             bucket_id=request.bucket_id, window=request.window
         )
-        return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
+        return payload(result, exclude_none=False)
 
     @app.post("/api/budget/snapshot.csv", include_in_schema=False)
     async def budget_snapshot_csv(request: BudgetSummaryCsvRequest) -> Response:
