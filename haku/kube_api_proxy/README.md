@@ -2,8 +2,8 @@
 
 This is the first, deliberately narrow implementation of the inline authorization
 proxy tracked by [#4428](https://github.com/agentydragon/ducktape/issues/4428).
-It is a separate Go binary: Haku Console remains the temporary-grant authority,
-while the proxy is the only Kubernetes request path available to an Agent.
+It is a separate Go binary: Haku Console remains the Kubernetes authorization
+authority, while the proxy is the only Kubernetes request path available to an Agent.
 
 ```text
 Agent --Haku bearer--> kube API proxy
@@ -11,17 +11,17 @@ Agent --Haku bearer--> kube API proxy
                        |  POST bearer + attributes + minimal PolicyRule
                        v
                     Haku Console
-                       |  allowed + lease expiry
+                       |  allowed + SAR reason
                        v
                     kube-apiserver <-- proxy-held in-cluster credential
 ```
 
-The structural property is fail-closed expiry. The proxy asks Console before
-every request and bounds the forwarded request context by both the configured
-request timeout and the returned lease expiry. If Console or the grant state is
-unavailable, no request is sent to Kubernetes. Unlike a temporary RoleBinding,
-there is no independent native-RBAC object which can remain usable because an
-expiry reaper stopped.
+The structural property is fail-closed authority. The proxy asks Console before
+every request and bounds the forwarded request context by its configured request
+timeout. If Console or the Kubernetes authorization API is unavailable, no
+request is sent to Kubernetes. The Console asks Kubernetes for a
+SubjectAccessReview using a fixed, deploy-configured subject; the Agent cannot
+choose the Kubernetes username or groups.
 
 ## Implemented
 
@@ -38,14 +38,14 @@ expiry reaper stopped.
   authorization, cookies, API keys, proxy metadata and Kubernetes
   identity/impersonation headers are removed; the in-cluster transport supplies
   the upstream credential.
-- Authority failures, malformed decisions, denials and already-expired grants
-  all fail closed.
+- Authority failures, malformed decisions and denials all fail closed.
 - Request bodies, authorization calls and Kubernetes requests are bounded.
 - `watch`, log following, resource proxying, upgrades, pod `exec`, `attach` and
   `portforward` return `501` before authorization or forwarding.
 - Console exposes the typed endpoint contract at
-  `POST /api/internal/kubernetes/authorize`, but the current stub always returns
-  `501`. The component therefore cannot authorize live traffic yet.
+  `POST /api/internal/kubernetes/authorize`. It remains unavailable (and thus
+  fail-closed) until standing SAR subjects are explicitly mapped to Agent access
+  profiles.
 
 ## Console authorization contract
 
@@ -80,15 +80,17 @@ HTTPS. A successful response is:
 ```json
 {
   "allowed": true,
-  "lease_id": "opaque-audit-id",
-  "expires_at": "2026-08-19T20:00:00Z"
+  "decision_id": "sar:4f5c..."
 }
 ```
 
-Every allowed decision must contain a non-empty `lease_id` and `expires_at`;
-the proxy fails closed on an incomplete response. Console should return
-`allowed: false` for a valid identity without a covering lease, `401` for an
-invalid identity, and a non-2xx response when grant state cannot be read.
+Console should return `allowed: false` for a valid identity denied by the
+standing policy, `401` for an invalid Haku identity, and a non-2xx response
+when the Kubernetes authorization API cannot be read. The proxy fails closed
+on every non-2xx or malformed response. Allowed decisions require a non-empty
+`decision_id`. Standing SAR decisions omit `valid_until`; a later temporary-grant
+decision may include it, in which case the proxy terminates the upstream request
+at that instant.
 
 ## Configuration
 
@@ -111,26 +113,33 @@ are decoded and validated together with `github.com/caarlos0/env/v11`; malformed
 configured durations, booleans and sizes stop startup rather than silently
 falling back to defaults.
 
+Console-side SAR authorization is separately opt-in. Its production-safe
+default is unset, which leaves the internal endpoint unavailable and the proxy
+denied. Deployment configuration maps `subjects_by_access_profile` entries to
+fixed Kubernetes usernames/groups and may set a bounded `timeout_seconds`.
+Console validates the Haku bearer through the canonical static-Agent authority,
+uses the Agent's deploy-managed access profile to select a subject, and fails
+closed when that profile has no configured subject.
+
 ## Deployment status and TODOs
 
 The image is built and tested by `push-images.yml`, but **no Deployment, RBAC or
 Agent routing is added yet**. Deploying a proxy with a broad upstream identity
-before Console can authorize grants and before the direct API path is closed
+before Console can authorize requests and before the direct API path is closed
 would create authority without enforcement.
 
 Before production deployment:
 
-- TODO(#4428): implement Console Agent-token verification and temporary-grant
-  rule matching; require and return the matching lease expiry.
 - TODO(#4428): define the proxy ServiceAccount's reviewed maximum capability.
-  Haku grants can only narrow that capability.
+  Each access profile's fixed SAR subject can only authorize requests within
+  that capability.
 - TODO(#4428): force Agent Kubernetes traffic through the proxy with network
   policy/credential substitution and prove there is no direct API-server path.
-- TODO(#4428): add per-agent/lease audit correlation and Prometheus metrics.
+- TODO(#4428): add per-agent/SAR audit correlation and Prometheus metrics.
 - TODO(#4428): decide whether to implement Kubernetes `watch` and following
-  logs. Any implementation must terminate active streams at grant expiry.
+  logs. Any implementation must preserve the standing-policy fail-closed model.
 - TODO(#4428): treat `exec`, `attach`, `portforward`, upgrades and resource
   proxying as separate, security-reviewed protocol increments rather than
   silently passing them through the ordinary HTTP handler.
 - TODO(#4428): consider discovery-response caching only if it preserves the
-  fail-closed authority model and never extends a grant lifetime.
+  fail-closed authority model and never bypasses a SAR decision.

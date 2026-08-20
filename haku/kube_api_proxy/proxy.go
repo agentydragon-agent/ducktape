@@ -55,17 +55,17 @@ type AuthorizationRequest struct {
 	RequiredRules []PolicyRule      `json:"required_rules"`
 }
 
-// AuthorizationResponse is returned by Haku Console after checking an active
-// temporary grant. ExpiresAt bounds this request even if it has already begun.
+// AuthorizationResponse is returned by Haku Console after a Kubernetes
+// SubjectAccessReview for the fixed deploy-configured subject.
 type AuthorizationResponse struct {
-	Allowed   bool       `json:"allowed"`
-	Reason    string     `json:"reason,omitempty"`
-	LeaseID   string     `json:"lease_id,omitempty"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Allowed    bool       `json:"allowed"`
+	Reason     string     `json:"reason,omitempty"`
+	DecisionID string     `json:"decision_id,omitempty"`
+	ValidUntil *time.Time `json:"valid_until,omitempty"`
 }
 
-// Config contains proxy-only configuration. Grant persistence and approval
-// state intentionally remain Haku Console responsibilities.
+// Config contains proxy-only configuration. Agent authority and Kubernetes
+// authorization state intentionally remain Haku Console/Kubernetes responsibilities.
 type Config struct {
 	Upstream            *url.URL
 	UpstreamTransport   http.RoundTripper
@@ -186,18 +186,18 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 	if !decision.Allowed {
 		reason := decision.Reason
 		if reason == "" {
-			reason = "no active Haku grant covers this Kubernetes request"
+			reason = "Kubernetes standing policy denied this request"
 		}
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": reason})
 		return
 	}
 
 	deadline := time.Now().Add(config.RequestTimeout)
-	if decision.ExpiresAt != nil && decision.ExpiresAt.Before(deadline) {
-		deadline = *decision.ExpiresAt
+	if decision.ValidUntil != nil && decision.ValidUntil.Before(deadline) {
+		deadline = *decision.ValidUntil
 	}
 	if !deadline.After(time.Now()) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "the Haku grant has expired"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "the Haku authorization decision has expired"})
 		return
 	}
 
@@ -223,32 +223,27 @@ func authorize(ctx context.Context, config Config, bearer string, body Authoriza
 
 	response, err := config.AuthorizationClient.Do(req)
 	if err != nil {
-		return AuthorizationResponse{}, http.StatusServiceUnavailable, fmt.Errorf("temporary grant authority unavailable: %w", err)
+		return AuthorizationResponse{}, http.StatusServiceUnavailable, fmt.Errorf("Kubernetes authorization authority unavailable: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		return AuthorizationResponse{}, response.StatusCode, fmt.Errorf("Haku rejected the caller credential")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return AuthorizationResponse{}, http.StatusServiceUnavailable, fmt.Errorf("temporary grant authority returned %s", response.Status)
+		return AuthorizationResponse{}, http.StatusServiceUnavailable, fmt.Errorf("Kubernetes authorization authority returned %s", response.Status)
 	}
 	limited := io.LimitReader(response.Body, 1<<20)
 	var decision AuthorizationResponse
 	decoder := json.NewDecoder(limited)
 	if err := decoder.Decode(&decision); err != nil {
-		return AuthorizationResponse{}, http.StatusServiceUnavailable, fmt.Errorf("invalid temporary grant authority response: %w", err)
+		return AuthorizationResponse{}, http.StatusServiceUnavailable, fmt.Errorf("invalid Kubernetes authorization response: %w", err)
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return AuthorizationResponse{}, http.StatusServiceUnavailable, errors.New("invalid temporary grant authority response: trailing JSON")
+		return AuthorizationResponse{}, http.StatusServiceUnavailable, errors.New("invalid Kubernetes authorization response: trailing JSON")
 	}
-	if decision.Allowed {
-		if strings.TrimSpace(decision.LeaseID) == "" {
-			return AuthorizationResponse{}, http.StatusServiceUnavailable, errors.New("invalid temporary grant authority response: allowed decision has no lease_id")
-		}
-		if decision.ExpiresAt == nil {
-			return AuthorizationResponse{}, http.StatusServiceUnavailable, errors.New("invalid temporary grant authority response: allowed decision has no expires_at")
-		}
+	if decision.Allowed && strings.TrimSpace(decision.DecisionID) == "" {
+		return AuthorizationResponse{}, http.StatusServiceUnavailable, errors.New("invalid Kubernetes authorization response: allowed decision has no decision_id")
 	}
 	return decision, http.StatusOK, nil
 }

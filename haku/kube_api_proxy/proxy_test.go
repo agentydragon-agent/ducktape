@@ -39,8 +39,7 @@ func (a *recordingAuthority) ServeHTTP(w http.ResponseWriter, request *http.Requ
 }
 
 func allowedDecision() AuthorizationResponse {
-	expires := time.Now().Add(time.Hour)
-	return AuthorizationResponse{Allowed: true, LeaseID: "lease-test", ExpiresAt: &expires}
+	return AuthorizationResponse{Allowed: true, DecisionID: "sar:test"}
 }
 
 type bearerTransport struct {
@@ -116,8 +115,10 @@ func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expires := time.Unix(1, 0).UTC()
-	decisionBody, err := json.Marshal(AuthorizationResponse{Allowed: true, LeaseID: "lease", ExpiresAt: &expires})
+	validUntil := time.Unix(1, 0).UTC()
+	decisionBody, err := json.Marshal(AuthorizationResponse{
+		Allowed: true, DecisionID: "sar:test", ValidUntil: &validUntil,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +134,8 @@ func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
 		"resources",
 		"resource_names",
 		"non_resource_urls",
-		"lease_id",
-		"expires_at",
+		"decision_id",
+		"valid_until",
 	} {
 		if !strings.Contains(encoded, `"`+field+`"`) {
 			t.Errorf("JSON does not contain %q: %s", field, encoded)
@@ -144,7 +145,6 @@ func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
 
 func TestNamedPodLogRequestIsAuthorizedAndForwarded(t *testing.T) {
 	decision := allowedDecision()
-	decision.LeaseID = "lease-1"
 	authority := &recordingAuthority{decision: decision}
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if got := request.Header.Get("Authorization"); got != "Bearer proxy-kubernetes-token" {
@@ -291,7 +291,7 @@ func TestMissingBearerIsRejectedBeforeAuthority(t *testing.T) {
 }
 
 func TestDeniedRequestIsNotForwarded(t *testing.T) {
-	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: false, Reason: "lease does not cover secrets"}}
+	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: false, Reason: "standing policy denied secrets"}}
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("upstream called")
 	}), nil)
@@ -314,21 +314,15 @@ func TestAuthorityFailureFailsClosed(t *testing.T) {
 	}
 }
 
-func TestAllowedDecisionRequiresLeaseIdentityAndExpiry(t *testing.T) {
-	tests := []AuthorizationResponse{
-		{Allowed: true},
-		{Allowed: true, LeaseID: "lease-without-expiry"},
-	}
-	for _, decision := range tests {
-		authority := &recordingAuthority{decision: decision}
-		proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			t.Error("upstream called")
-		}), nil)
-		response := request(t, proxy.Client(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods", "caller")
-		response.Body.Close()
-		if response.StatusCode != http.StatusServiceUnavailable {
-			t.Fatalf("decision %#v: status = %d", decision, response.StatusCode)
-		}
+func TestAllowedDecisionRequiresDecisionIdentity(t *testing.T) {
+	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: true}}
+	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("upstream called")
+	}), nil)
+	response := request(t, proxy.Client(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods", "caller")
+	response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", response.StatusCode)
 	}
 }
 
@@ -354,28 +348,14 @@ func TestAuthorityRedirectDoesNotForwardCallerBearer(t *testing.T) {
 	}
 }
 
-func TestExpiredDecisionIsNotForwarded(t *testing.T) {
-	expired := time.Now().Add(-time.Second)
-	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: true, LeaseID: "expired", ExpiresAt: &expired}}
-	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Error("upstream called")
-	}), nil)
-	response := request(t, proxy.Client(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods", "caller")
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusForbidden {
-		t.Fatalf("status = %d", response.StatusCode)
-	}
-}
-
-func TestRequestContextEndsAtGrantExpiry(t *testing.T) {
-	expires := time.Now().Add(100 * time.Millisecond)
-	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: true, LeaseID: "short", ExpiresAt: &expires}}
+func TestRequestContextEndsAtProxyRequestTimeout(t *testing.T) {
+	authority := &recordingAuthority{decision: allowedDecision()}
 	upstreamDone := make(chan struct{})
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		<-request.Context().Done()
 		close(upstreamDone)
 	}), func(config *Config) {
-		config.RequestTimeout = 5 * time.Second
+		config.RequestTimeout = 100 * time.Millisecond
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods/web/log", nil)
@@ -384,7 +364,47 @@ func TestRequestContextEndsAtGrantExpiry(t *testing.T) {
 	select {
 	case <-upstreamDone:
 	case <-time.After(time.Second):
-		t.Fatal("upstream request survived grant expiry")
+		t.Fatal("upstream request survived proxy timeout")
+	}
+}
+
+func TestRequestContextEndsAtTemporaryDecisionExpiry(t *testing.T) {
+	validUntil := time.Now().Add(100 * time.Millisecond)
+	authority := &recordingAuthority{decision: AuthorizationResponse{
+		Allowed: true, DecisionID: "grant:test", ValidUntil: &validUntil,
+	}}
+	upstreamDone := make(chan struct{})
+	proxy := newTestProxy(t, authority, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		<-request.Context().Done()
+		close(upstreamDone)
+	}), func(config *Config) {
+		config.RequestTimeout = 5 * time.Second
+	})
+
+	req, _ := http.NewRequestWithContext(
+		context.Background(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods/web/log", nil,
+	)
+	req.Header.Set("Authorization", "Bearer caller")
+	_, _ = proxy.Client().Do(req)
+	select {
+	case <-upstreamDone:
+	case <-time.After(time.Second):
+		t.Fatal("upstream request survived temporary authorization expiry")
+	}
+}
+
+func TestExpiredTemporaryDecisionIsNotForwarded(t *testing.T) {
+	validUntil := time.Now().Add(-time.Second)
+	authority := &recordingAuthority{decision: AuthorizationResponse{
+		Allowed: true, DecisionID: "grant:expired", ValidUntil: &validUntil,
+	}}
+	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("upstream called")
+	}), nil)
+	response := request(t, proxy.Client(), http.MethodGet, proxy.URL+"/api/v1/namespaces/demo/pods", "caller")
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d", response.StatusCode)
 	}
 }
 
