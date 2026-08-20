@@ -9,15 +9,15 @@ terraform {
     # From persistent-auth (SOPS-encrypted secrets)
     sops = { source = "carlpett/sops", version = "~> 1.4.0" }
     # From persistent-auth + nixos-dev-env
-    proxmox = { source = "bpg/proxmox", version = "~> 0.93.0" }
+    proxmox = { source = "bpg/proxmox", version = "~> 0.111.0" }
     # From infrastructure
-    talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
+    talos      = { source = "siderolabs/talos", version = "~> 0.11.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.38.0" }
-    helm       = { source = "hashicorp/helm", version = "~> 3.1.0" }
+    helm       = { source = "hashicorp/helm", version = "~> 3.2.0" }
     # Utility (from multiple)
-    local = { source = "hashicorp/local", version = "~> 2.5.0" }
-    null  = { source = "hashicorp/null", version = "~> 3.2.0" }
-    tls   = { source = "hashicorp/tls", version = "~> 4.1.0" }
+    local = { source = "hashicorp/local", version = "~> 2.9.0" }
+    null  = { source = "hashicorp/null", version = "~> 3.3.0" }
+    tls   = { source = "hashicorp/tls", version = "~> 4.3.0" }
     ovh   = { source = "ovh/ovh", version = "~> 2.0" }
   }
 }
