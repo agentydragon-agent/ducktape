@@ -81,6 +81,12 @@ ts_library(
     deps = ["//finance/augur/frontend/lib:format"],
 )
 
+ts_library(
+    name = "url_state",
+    srcs = ["url_state.ts"],
+    tsconfig = TSCONFIG,
+)
+
 # -- React components -----------------------------------------------------------
 
 ts_library(
@@ -88,6 +94,7 @@ ts_library(
     srcs = ["header.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -286,6 +293,7 @@ ts_library(
     deps = [
         ":budget_adjustments",
         ":client",
+        ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -311,6 +319,7 @@ ts_library(
         ":scenario_tabs",
         ":skeleton",
         ":terminal_distribution",
+        ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -333,6 +342,7 @@ ts_library(
         ":input_helpers",
         ":product",
         ":skeleton",
+        ":url_state",
         "//:node_modules/@mantine/core",
         "//:node_modules/@mantine/notifications",
         "//:node_modules/@types/react",
@@ -621,6 +631,16 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "url_state_test_lib",
+    srcs = ["url_state.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":url_state",
+        "//:node_modules/vitest",
+    ],
+)
+
 # vitest loads this config itself, so it stays a `.ts` in the runfiles rather than being compiled
 # away; no_emit type-checks it anyway, through the generated :vitest_config_typecheck_test.
 ts_project(
@@ -679,6 +699,20 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":format_test_lib",
+        "//:node_modules/vitest",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "url_state_test",
+    args = [
+        "run",
+        "url_state.test.js",
+    ],
+    chdir = package_name(),
+    data = [
+        "vitest.config.ts",
+        ":url_state_test_lib",
         "//:node_modules/vitest",
     ],
 )

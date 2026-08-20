@@ -1,6 +1,8 @@
 import React from "react";
 import { NativeSelect, NumberInput, SegmentedControl } from "@mantine/core";
 
+import { replaceSearchParams } from "./url_state";
+
 const SCALE_OPTIONS = [
   { value: "linear", label: "Linear" },
   { value: "log", label: "Log" },
@@ -151,14 +153,7 @@ export function tabFromSearch(searchString) {
 }
 
 export function writeTabToSearch(tab) {
-  const params = new URLSearchParams(window.location.search);
-  if (tab === DEFAULT_TAB) params.delete("tab");
-  else params.set("tab", tab);
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
+  replaceSearchParams({ tab: tab === DEFAULT_TAB ? null : tab });
 }
 
 export function AugurTabBar({ tab, onSelectTab }) {
