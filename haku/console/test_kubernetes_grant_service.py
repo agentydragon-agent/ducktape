@@ -40,7 +40,18 @@ class FakeRepository:
 
     async def expire(self, *, agent_id=None, now):
         self.expire_calls.append((agent_id, now))
-        return 0
+        expired = 0
+        for grant_id, grant in tuple(self.grants.items()):
+            if (
+                grant.status is KubernetesGrantStatus.ACTIVE
+                and grant.expires_at <= now
+                and (agent_id is None or grant.agent_id == agent_id)
+            ):
+                self.grants[grant_id] = grant.model_copy(
+                    update={"status": KubernetesGrantStatus.EXPIRED, "ended_at": now, "end_reason": "expired"}
+                )
+                expired += 1
+        return expired
 
     async def list(self, *, agent_id, include_terminal=True):
         return tuple(g for g in self.grants.values() if g.agent_id == agent_id)
@@ -52,7 +63,9 @@ class FakeRepository:
 
     async def active_for_agent(self, *, agent_id, now):
         return tuple(
-            g for g in self.grants.values() if g.agent_id == agent_id and g.status is KubernetesGrantStatus.ACTIVE
+            g
+            for g in self.grants.values()
+            if g.agent_id == agent_id and g.status is KubernetesGrantStatus.ACTIVE and g.expires_at > now
         )
 
     async def release(self, **kwargs):
@@ -73,7 +86,75 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
     assert grant.agent_id == _AGENT
     assert (await service.match_request(agent_id=_AGENT, required_rules=(_rule(),))).allowed
     assert not (await service.match_request(agent_id=_OTHER_AGENT, required_rules=(_rule(),))).allowed
-    assert repo.expire_calls[-1][0] == _OTHER_AGENT
+    assert repo.expire_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_tool_call_id", "rules", "expires_at", "message"),
+    [
+        ("", (_rule(),), _NOW + timedelta(minutes=5), "source_tool_call_id must not be empty"),
+        ("tool-call-1", (), _NOW + timedelta(minutes=5), "rules must not be empty"),
+        ("tool-call-1", (_rule(),), _NOW.replace(tzinfo=None), "expires_at must be timezone-aware"),
+        ("tool-call-1", (_rule(),), _NOW, "expires_at must be in the future"),
+        ("tool-call-1", (_rule(),), _NOW + timedelta(hours=2), "configured grant lifetime"),
+    ],
+)
+async def test_create_rejects_invalid_input(source_tool_call_id, rules, expires_at, message) -> None:
+    service = KubernetesGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    with pytest.raises(ValueError, match=message):
+        await service.create_grant(
+            agent_id=_AGENT, source_tool_call_id=source_tool_call_id, rules=rules, expires_at=expires_at
+        )
+
+
+@pytest.mark.asyncio
+async def test_match_ignores_expired_rows_without_writing() -> None:
+    repo = FakeRepository()
+    grant = KubernetesGrant(
+        grant_id=uuid4(),
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        rules=(_rule(),),
+        status=KubernetesGrantStatus.ACTIVE,
+        created_at=_NOW - timedelta(minutes=10),
+        expires_at=_NOW - timedelta(minutes=1),
+    )
+    repo.grants[grant.grant_id] = grant
+    service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    assert not (await service.match_request(agent_id=_AGENT, required_rules=(_rule(),))).allowed
+    assert repo.expire_calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_uses_one_timestamp_when_expiring_a_grant() -> None:
+    repo = FakeRepository()
+    grant = KubernetesGrant(
+        grant_id=uuid4(),
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        rules=(_rule(),),
+        status=KubernetesGrantStatus.ACTIVE,
+        created_at=_NOW - timedelta(minutes=10),
+        expires_at=_NOW - timedelta(minutes=1),
+    )
+    repo.grants[grant.grant_id] = grant
+    clock_calls = 0
+
+    def clock() -> datetime:
+        nonlocal clock_calls
+        clock_calls += 1
+        return _NOW
+
+    service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
+
+    result = await service.get_grant(agent_id=_AGENT, grant_id=grant.grant_id)
+
+    assert result.status is KubernetesGrantStatus.EXPIRED
+    assert repo.expire_calls == [(_AGENT, _NOW)]
+    assert clock_calls == 1
 
 
 @pytest.mark.asyncio

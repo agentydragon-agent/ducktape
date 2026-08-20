@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from uuid import UUID
-
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.kubernetes_grant_models import KubernetesGrantCreate, KubernetesGrantStatus, KubernetesRule
+from haku.console.kubernetes_grant_models import KubernetesRule
 from haku.console.kubernetes_grant_service import rule_covers, rules_cover
-
-_NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
-_AGENT = UUID("10000000-0000-4000-8000-000000000001")
 
 
 def resource_rule(**kwargs: object) -> KubernetesRule:
@@ -52,8 +46,14 @@ def test_rule_rejects_scalar_strings_for_collection_fields() -> None:
 
 
 def test_rule_rejects_mixed_or_empty_shape() -> None:
-    with pytest.raises(ValidationError, match="must describe resources"):
+    with pytest.raises(ValidationError, match="must contain resources"):
         KubernetesRule(verbs=("get",))
+    with pytest.raises(ValidationError, match="must contain resources"):
+        KubernetesRule(api_groups=("apps",), verbs=("get",))
+    with pytest.raises(ValidationError, match="must contain resources"):
+        KubernetesRule(resource_names=("pod-a",), verbs=("get",))
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        KubernetesRule(api_groups=("",), resources=("pods",), verbs=())
     with pytest.raises(ValidationError, match="cannot mix"):
         KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",), non_resource_urls=("/healthz",))
 
@@ -90,29 +90,6 @@ def test_rules_cover_requires_every_request_rule() -> None:
     requested = (resource_rule(), KubernetesRule(verbs=("list",), api_groups=("",), resources=("pods",)))
 
     assert not rules_cover(granted, requested)
-
-
-def test_status_vocabulary_is_terminal_explicitly() -> None:
-    assert tuple(status.value for status in KubernetesGrantStatus) == ("active", "released", "revoked", "expired")
-
-
-def test_service_domain_requires_explicit_timezone_and_future_expiry() -> None:
-    with pytest.raises(ValidationError, match="timezone-aware"):
-        KubernetesGrantCreate(
-            agent_id=_AGENT,
-            source_tool_call_id="tool-1",
-            rules=(resource_rule(),),
-            expires_at=_NOW.replace(tzinfo=None),
-        )
-    assert (
-        KubernetesGrantCreate(
-            agent_id=_AGENT,
-            source_tool_call_id="tool-1",
-            rules=(resource_rule(),),
-            expires_at=_NOW + timedelta(minutes=5),
-        ).agent_id
-        == _AGENT
-    )
 
 
 if __name__ == "__main__":

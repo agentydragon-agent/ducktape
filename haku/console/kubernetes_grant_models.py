@@ -46,13 +46,14 @@ class KubernetesRule(BaseModel):
 
     api_groups: frozenset[str] = Field(default_factory=frozenset)
     resources: frozenset[str] = Field(default_factory=frozenset)
-    verbs: frozenset[_NON_EMPTY]
+    verbs: frozenset[_NON_EMPTY] = Field(min_length=1)
     resource_names: frozenset[str] = Field(default_factory=frozenset)
     non_resource_urls: frozenset[str] = Field(default_factory=frozenset)
 
     @field_validator("api_groups", "resources", "resource_names", "non_resource_urls")
     @classmethod
     def normalize_values(cls, value: frozenset[str], info: ValidationInfo) -> frozenset[str]:
+        assert info.field_name is not None
         return _clean_values(value, info.field_name, allow_empty=info.field_name == "api_groups")
 
     @field_validator("verbs")
@@ -66,14 +67,11 @@ class KubernetesRule(BaseModel):
 
     @model_validator(mode="after")
     def validate_kind(self) -> KubernetesRule:
-        has_resource_shape = bool(self.api_groups or self.resources or self.resource_names)
-        has_non_resource_shape = bool(self.non_resource_urls)
-        if has_resource_shape and has_non_resource_shape:
-            raise ValueError("a Kubernetes rule cannot mix resource and non-resource URL fields")
-        if not has_resource_shape and not has_non_resource_shape:
-            raise ValueError("a Kubernetes rule must describe resources or non-resource URLs")
-        if has_non_resource_shape and self.resource_names:
-            raise ValueError("non-resource URL rules cannot contain resource_names")
+        if self.non_resource_urls:
+            if self.api_groups or self.resources or self.resource_names:
+                raise ValueError("a Kubernetes rule cannot mix resource and non-resource URL fields")
+        elif not self.resources:
+            raise ValueError("a Kubernetes resource rule must contain resources")
         return self
 
 
@@ -110,24 +108,6 @@ class KubernetesGrant(BaseModel):
         return self
 
 
-class KubernetesGrantCreate(BaseModel):
-    """Validated create input. ``agent_id`` is intentionally mandatory and explicit."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    agent_id: UUID
-    source_tool_call_id: _NON_EMPTY
-    rules: tuple[KubernetesRule, ...] = Field(min_length=1)
-    expires_at: datetime.datetime
-
-    @field_validator("expires_at")
-    @classmethod
-    def expiration_is_aware(cls, value: datetime.datetime) -> datetime.datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("expires_at must be timezone-aware")
-        return value
-
-
 class KubernetesGrantDecision(BaseModel):
     """Result of matching a request against one Agent's currently active grants."""
 
@@ -152,12 +132,4 @@ class KubernetesGrantOwnershipError(KubernetesGrantError, PermissionError):
 
 
 class KubernetesGrantSourceError(KubernetesGrantError, ValueError):
-    pass
-
-
-class KubernetesGrantStateError(KubernetesGrantError, RuntimeError):
-    pass
-
-
-class KubernetesGrantExpiredError(KubernetesGrantError, RuntimeError):
     pass

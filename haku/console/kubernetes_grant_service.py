@@ -9,8 +9,8 @@ from uuid import UUID
 
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
-    KubernetesGrantCreate,
     KubernetesGrantDecision,
+    KubernetesGrantStatus,
     KubernetesRule,
 )
 
@@ -136,19 +136,23 @@ class KubernetesGrantService:
         now = self._clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("grant service clock must return a timezone-aware datetime")
-        create = KubernetesGrantCreate(
-            agent_id=agent_id, source_tool_call_id=source_tool_call_id, rules=tuple(rules), expires_at=expires_at
-        )
-        if create.expires_at <= now:
+        if not source_tool_call_id:
+            raise ValueError("source_tool_call_id must not be empty")
+        rules = tuple(rules)
+        if not rules:
+            raise ValueError("rules must not be empty")
+        if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise ValueError("expires_at must be timezone-aware")
+        if expires_at <= now:
             raise ValueError("expires_at must be in the future")
-        if create.expires_at > now + self._max_lifetime:
+        if expires_at > now + self._max_lifetime:
             raise ValueError("expires_at exceeds the configured grant lifetime")
         return await self._repository.create(
-            agent_id=create.agent_id,
-            source_tool_call_id=create.source_tool_call_id,
-            rules=create.rules,
+            agent_id=agent_id,
+            source_tool_call_id=source_tool_call_id,
+            rules=rules,
             created_at=now,
-            expires_at=create.expires_at,
+            expires_at=expires_at,
         )
 
     async def list_grants(self, *, agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
@@ -157,8 +161,9 @@ class KubernetesGrantService:
 
     async def get_grant(self, *, agent_id: UUID, grant_id: UUID) -> KubernetesGrant:
         grant = await self._repository.get(agent_id=agent_id, grant_id=grant_id)
-        if grant.status.value == "active" and grant.expires_at <= self._clock():
-            await self._repository.expire(agent_id=agent_id, now=self._clock())
+        now = self._clock()
+        if grant.status is KubernetesGrantStatus.ACTIVE and grant.expires_at <= now:
+            await self._repository.expire(agent_id=agent_id, now=now)
             grant = await self._repository.get(agent_id=agent_id, grant_id=grant_id)
         return grant
 
@@ -184,7 +189,6 @@ class KubernetesGrantService:
         required = tuple(required_rules)
         if not required:
             raise ValueError("required_rules must not be empty")
-        await self._repository.expire(agent_id=agent_id, now=now)
         matching = [
             grant
             for grant in await self._repository.active_for_agent(agent_id=agent_id, now=now)
