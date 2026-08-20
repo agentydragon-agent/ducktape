@@ -114,6 +114,18 @@ class FrameDirection(StrEnum):
     FROM_AGENT = "from_agent"
 
 
+class BridgeFrameKind(StrEnum):
+    """Which Haku bridge envelope was durably recorded.
+
+    The selected harness is immutable on the session, and its native discriminator remains inside
+    the opaque payload.  This enum therefore names only Haku's framing vocabulary, never Claude's
+    ``type`` or Codex's JSON-RPC method.
+    """
+
+    HARNESS_FRAME = "harness_frame"
+    SETUP_OUTPUT = "setup_output"
+
+
 class TurnOutcome(StrEnum):
     """How one exchange ended. Absent while it is still running.
 

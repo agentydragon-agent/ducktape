@@ -41,7 +41,7 @@ from haku.cli_protocol.frames import (
     InitializeRequest,
     InterruptRequest,
 )
-from haku.runtime.x.bridge.protocol import ClaudeLaunch, ClaudeMessage, TextWebSocket
+from haku.runtime.x.bridge.protocol import ClaudeFrame, HarnessFrame, HarnessLaunch, TextWebSocket
 from haku.runtime.x.bridge.transport import ProgressSink, WebSocketTransport
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class FrameChannel(Protocol):
     also what makes it exercisable against a real CLI without standing up the bridge.
 
     **A read yields the envelope, not the payload alone**, because the runner's own number for each
-    frame (`ClaudeMessage.seq`) has to reach the sink — it is what a reconnect's cursor is built
+    frame (`HarnessFrame.seq`) has to reach the sink — it is what a reconnect's cursor is built
     from. A channel with no runner behind it leaves `seq` None: nobody numbered those frames.
     """
 
@@ -66,7 +66,7 @@ class FrameChannel(Protocol):
 
     async def write(self, data: str) -> None: ...
 
-    def read_messages(self) -> AsyncIterator[ClaudeMessage]: ...
+    def read_messages(self) -> AsyncIterator[HarnessFrame]: ...
 
     async def close(self) -> None: ...
 
@@ -103,9 +103,9 @@ class FrameSink(Protocol):
     the session down — intentionally: a record with quiet holes looks complete while being wrong.
     """
 
-    async def sent(self, payload: dict[str, Any]) -> int: ...
+    async def sent(self, frame: dict[str, Any]) -> int: ...
 
-    async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame: ...
+    async def received(self, frame: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,7 +239,7 @@ class ClaudeCli:
         `session_store._prompt_left` reads that as evidence of delivery, so it lands as a turn never
         re-asked rather than one asked twice.
         """
-        frame_seq = await self._frames_to.sent(payload)
+        frame_seq = await self._frames_to.sent(ClaudeFrame(payload=payload).model_dump())
         await self._channel.write(json.dumps(payload) + "\n")
         return frame_seq
 
@@ -250,13 +250,15 @@ class ClaudeCli:
         skipped = 0
         try:
             async for message in self._channel.read_messages():
-                frame = message.payload
+                inner = message.frame
+                if inner.get("kind") != "claude" or not isinstance(frame := inner.get("payload"), dict):
+                    raise ValueError("harness frame must contain a complete Claude frame")
                 # Before the routing, deliberately: control frames never reach `frames()`, so a
                 # recorder hung off the conversation queue would drop the control channel from the
                 # record. The record is also what recognises a replay — an adopted connection
                 # re-sends what the previous console may not have acknowledged, and routing a
                 # second `assistant` would post the same answer into the room twice.
-                recorded = await self._frames_to.received(frame, runner_seq=message.seq)
+                recorded = await self._frames_to.received(inner, runner_seq=message.seq)
                 if not recorded.fresh:
                     skipped += 1
                     continue
@@ -319,7 +321,7 @@ class ClaudeCli:
 
 
 def cli_over_websocket(
-    websocket: TextWebSocket, launch: ClaudeLaunch, on_progress: ProgressSink | None, frames_to: FrameSink
+    websocket: TextWebSocket, launch: HarnessLaunch, on_progress: ProgressSink | None, frames_to: FrameSink
 ) -> ClaudeCli:
     """The console's composition: a CLI client over the runner's bridge socket."""
     return ClaudeCli(WebSocketTransport(websocket, launch, on_progress), frames_to)

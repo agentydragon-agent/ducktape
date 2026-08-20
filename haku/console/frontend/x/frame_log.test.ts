@@ -5,14 +5,16 @@ import { frameSummary, kindsForMode, prependEarlierPage, unprojectedSummary } fr
 
 function frame(
   frame_seq: number,
-  kind: string,
+  native_kind: string,
   payload: Record<string, unknown>,
   unprojected?: Record<string, number>
 ): SessionFrame {
+  const setupOutput = native_kind === "setup_output";
   return {
     frame_seq,
-    kind,
-    payload,
+    kind: setupOutput ? "setup_output" : "harness_frame",
+    native_kind: setupOutput ? null : native_kind,
+    payload: setupOutput ? payload : { kind: "claude", payload },
     unprojected,
     direction: "from_agent",
     created_at: "2026-08-01T03:00:00Z",

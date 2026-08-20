@@ -17,8 +17,15 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN, FrameDirection, ItemStatus, ItemType, SessionStatus, TurnOutcome
-from haku.console.x.claude_code.frames import PROMPT_FRAME_KIND
+from haku.console.chat_models import (
+    SPA_ORIGIN,
+    BridgeFrameKind,
+    FrameDirection,
+    ItemStatus,
+    ItemType,
+    SessionStatus,
+    TurnOutcome,
+)
 from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
@@ -74,8 +81,10 @@ async def _exchange(chat_store: SessionStore, operator_id: UUID, session_id: UUI
     await chat_store.enqueue_prompt(operator_id, session_id, prompt, SPA_ORIGIN)
     turn = await chat_store.next_prompt(session_id)
     assert turn is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, PROMPT_FRAME_KIND, {"type": "user"})
-    spoke = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", {"type": "assistant"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
+    spoke = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+    )
     where = FrameRange(spoke.frame_seq, spoke.frame_seq)
     await chat_store.apply_frame(
         session_id,

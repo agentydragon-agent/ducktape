@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-# TODO(frame-vocabulary): `session_frames.kind` holds two discriminator vocabularies at once, and
-# there is deliberately no enum over the union. This literal is the *bridge* envelope's; the CLI's
-# own top-level `type` (<claude_code/frames.py>) is put in the same column by a different sink.
-# Naming the union would name a concept the schema does not have.
-SETUP_OUTPUT_KIND = "setup_output"
+from haku.console.chat_models import BridgeFrameKind
+
+SETUP_OUTPUT_KIND = BridgeFrameKind.SETUP_OUTPUT
 
 
 def setup_output_frame(text: str) -> dict[str, Any]:

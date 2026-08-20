@@ -127,6 +127,8 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
 
     runner = await asyncio.create_subprocess_exec(
         str(get_required_path(RUNNER_BIN)),
+        "--harness",
+        "claude",
         # The nested binary needs the test's RUNFILES_* to find its own runfiles, and the stub
         # inherits this environment in turn (`backend.child_environment`), which is how it learns
         # where to leave its handshake files. `HAKU_CLAUDE_SETUP` stays unset: no bootstrap here.
@@ -178,7 +180,8 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
             (stub_state / "release").touch()
             await _wait_until("the adopted turn to finish", both_turns_finished, runner=runner)
     finally:
-        runner.terminate()
+        if runner.returncode is None:
+            runner.terminate()
         async with asyncio.timeout(30):
             await runner.wait()
 
@@ -201,8 +204,8 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     assert [frame.payload for frame in narration] == [{"kind": SETUP_OUTPUT_KIND, "text": GREETING}]
     # The resume cursor, end to end. The second console computed it from the rows the first left
     # and sent it on `start`, so the runner replayed only what was above it. Without a cursor the
-    # whole window comes back and the classes with no agent-assigned id (a `control_response`) are
-    # recorded a second time, because `frame_uid` has nothing to recognise them by.
+    # whole retained window comes back; runner position still makes every replay a no-op before it
+    # reaches projection, including native classes with no payload-level id.
     numbered = await _runner_seqs(migrated_db_url, session_id)
     assert numbered == sorted(set(numbered)), "a frame was recorded twice, or out of the order it was sent in"
     assert await chat_store.highest_runner_seq(session_id) == numbered[-1]

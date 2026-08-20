@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 
 from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError, RecordedFrame
-from haku.runtime.x.bridge.protocol import ClaudeMessage
+from haku.runtime.x.bridge.protocol import ClaudeFrame, HarnessFrame
 
 # The gap between one frame's number and the next. Deliberately not 1: the real sink is a Postgres
 # `Identity` column, which skips, so nothing may come to depend on adjacency.
@@ -52,12 +52,14 @@ class ScriptedChannel:
     def __init__(self, *frames: dict[str, Any]):
         self.written: list[dict[str, Any]] = []
         self.closed = False
-        self._inbound: asyncio.Queue[ClaudeMessage | None] = asyncio.Queue()
+        self._inbound: asyncio.Queue[HarnessFrame | None] = asyncio.Queue()
         for frame in frames:
-            self._inbound.put_nowait(ClaudeMessage(payload=frame))
+            self._inbound.put_nowait(HarnessFrame(frame=ClaudeFrame(payload=frame).model_dump()))
 
     def deliver(self, frame: dict[str, Any] | None, *, seq: int | None = None) -> None:
-        self._inbound.put_nowait(None if frame is None else ClaudeMessage(payload=frame, seq=seq))
+        self._inbound.put_nowait(
+            None if frame is None else HarnessFrame(frame=ClaudeFrame(payload=frame).model_dump(), seq=seq)
+        )
 
     async def connect(self) -> None:
         pass
@@ -65,7 +67,7 @@ class ScriptedChannel:
     async def write(self, data: str) -> None:
         self.written.append(json.loads(data))
 
-    async def read_messages(self) -> AsyncIterator[ClaudeMessage]:
+    async def read_messages(self) -> AsyncIterator[HarnessFrame]:
         while (message := await self._inbound.get()) is not None:
             yield message
 
@@ -114,7 +116,9 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
     assert (first.payload, second.payload["type"]) == (assistant, "result")
     # Each carries the sink's number for it, which is what a reader addresses a frame by. The
     # control response the sink numbered before them is plumbing and reached nobody.
-    assert [(first.frame_seq, first.payload), (second.frame_seq, second.payload)] == sink.numbered[-2:]
+    assert [(first.frame_seq, first.payload), (second.frame_seq, second.payload)] == [
+        (seq, frame["payload"]) for seq, frame in sink.numbered[-2:]
+    ]
     await cli.aclose()
 
 
@@ -169,7 +173,7 @@ async def test_a_written_frame_is_numbered_before_it_can_be_answered() -> None:
     cli = ClaudeCli(channel, sink, control_timeout=5)
     await cli.connect()
 
-    numbered = {payload["type"]: seq for seq, payload in sink.numbered}
+    numbered = {frame["payload"]["type"]: seq for seq, frame in sink.numbered}
     assert numbered["control_request"] < numbered["control_response"]
     await cli.aclose()
 
@@ -190,7 +194,7 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
     assert channel.written[-1]["uuid"] == prompt.command_uuid
     # The number the prompt reports is the sink's own for the frame just written, which is what
     # lets the console point the operator's message row at the frame it went out as.
-    assert sink.numbered[-1] == (prompt.frame_seq, channel.written[-1])
+    assert sink.numbered[-1] == (prompt.frame_seq, ClaudeFrame(payload=channel.written[-1]).model_dump())
     assert channel.written[-1]["message"] == {"role": "user", "content": "hello"}
     await cli.aclose()
 
@@ -249,7 +253,7 @@ async def test_wait_closed_resolves_when_the_socket_breaks() -> None:
     cannot hand its failure back — so `wait_closed` is the signal that the stream is over."""
 
     class BreakingChannel(ScriptedChannel):
-        async def read_messages(self) -> AsyncIterator[ClaudeMessage]:
+        async def read_messages(self) -> AsyncIterator[HarnessFrame]:
             await self._inbound.get()
             raise ConnectionResetError("socket went away")
             yield  # pragma: no cover - marks this an async generator

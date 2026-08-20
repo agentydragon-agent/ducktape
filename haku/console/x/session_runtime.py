@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, SecretStr
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     SPA_ORIGIN,
+    BridgeFrameKind,
     FrameDirection,
     ItemType,
     PromptOrigin,
@@ -34,7 +35,6 @@ from haku.console.chat_models import (
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x import frame_projection
-from haku.console.x.claude_code.frames import frame_kind
 from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.sandbox_claims import (
@@ -145,26 +145,30 @@ class RolloutRecorder:
         self._session_id = session_id
 
     async def sent(self, payload: dict[str, Any]) -> int:
-        # No `runner_seq`: the runner numbers what it puts on the wire, and this it only forwards.
-        return (await self._record(FrameDirection.TO_AGENT, payload)).frame_seq
+        return (await self._record(FrameDirection.TO_AGENT, payload, kind=BridgeFrameKind.HARNESS_FRAME)).frame_seq
 
     async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame:
-        """Record the frame, answering whether the caller should act on it and where it landed.
+        """Record the complete inner frame and its bridge-owned position.
 
-        A delta has no agent-assigned identity, so it is always recorded and always fresh — safe
-        because the runner never replays one (`runner.DELTA_TYPE`).
+        All native frames, including deltas and opaque JSON-RPC notifications, are replayed and
+        deduplicated by *runner_seq*. Their contents never participate in replay identity.
 
         *runner_seq* is kept beside the row's own `frame_seq` and read back as the session's resume
         cursor. Nothing orders by it.
         """
-        return await self._record(FrameDirection.FROM_AGENT, payload, runner_seq=runner_seq)
+        return await self._record(
+            FrameDirection.FROM_AGENT, payload, runner_seq=runner_seq, kind=BridgeFrameKind.HARNESS_FRAME
+        )
 
     async def _record(
-        self, direction: FrameDirection, payload: dict[str, Any], *, runner_seq: int | None = None
+        self,
+        direction: FrameDirection,
+        payload: dict[str, Any],
+        *,
+        runner_seq: int | None = None,
+        kind: BridgeFrameKind = BridgeFrameKind.HARNESS_FRAME,
     ) -> RecordedFrame:
-        return await self._store.record_frame(
-            self._session_id, direction, frame_kind(payload), payload, runner_seq=runner_seq
-        )
+        return await self._store.record_frame(self._session_id, direction, kind, payload, runner_seq=runner_seq)
 
 
 @dataclass(frozen=True)

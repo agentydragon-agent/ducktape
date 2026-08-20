@@ -35,6 +35,7 @@ from haku.console.agents.models import (
 )
 from haku.console.chat_models import (
     AuthoredEventKind,
+    BridgeFrameKind,
     ChatSurface,
     ConversationEventKind,
     EventProvenance,
@@ -1350,8 +1351,7 @@ class ConversationPrompt(Base):
 
 
 class SessionFrame(Base):
-    """The agent's newline-delimited JSON protocol as it crossed the wire — and rows that are not
-    that, which is a defect.
+    """The bridge's opaque wire log for one session.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `conversation_item` keeps a tool call's arguments and not the frames carrying the results, so
@@ -1361,13 +1361,10 @@ class SessionFrame(Base):
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
     are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    **TODO(frame-vocabulary): this schema is in a half state and does not map to one concept.**
-    ``kind`` holds two discriminator vocabularies, because two unrelated sinks write here:
-    `RolloutRecorder` puts the CLI's own top-level ``type`` in it, and the setup reporter puts the
-    *bridge* envelope's ``setup_output`` literal in it. So "what is this row" has two answers and
-    neither field gives both, which is why there is no enum over ``kind``: one would name a concept
-    this table does not have. The intended shape — the CLI's type in a column of its own — is
-    <plans/conversation_layers.md> § 13.
+    ``kind`` is only the bridge class (``harness_frame`` or ``setup_output``). For harness rows,
+    ``payload`` stores the complete inner frame (for Claude, ``{kind: "claude", payload: ...}``),
+    including its own discriminator and native ``type`` or JSON-RPC method; none is copied into
+    this column.
     """
 
     __tablename__ = "session_frames"
@@ -1379,16 +1376,10 @@ class SessionFrame(Base):
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     direction: Mapped[FrameDirection] = mapped_column(TextBackedStrEnumColumn(FrameDirection), nullable=False)
-    # The frame's own top-level `type`, lifted out so a reader can select `assistant` frames
-    # without scanning JSONB.
-    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    # The outer bridge discriminator, never the native payload's `type` or JSON-RPC method.
+    kind: Mapped[BridgeFrameKind] = mapped_column(TextBackedStrEnumColumn(BridgeFrameKind), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # The agent's own identity for this frame, where it has one — see
-    # <../cli_protocol/frame_identity.py> for which kinds do and why deltas must not. NULL is the
-    # common case and always will be, and means "no identity to compare" rather than "not yet
-    # computed", so a reader must not treat two NULLs as the same frame.
-    frame_uid: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The **runner's** number for this frame, off the bridge envelope (`ClaudeMessage.seq`), where
+    # The **runner's** number for this frame, off the bridge envelope (`HarnessFrame.seq`), where
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
     # the console hands back the highest it holds and the runner replays only what is above it.
@@ -1402,6 +1393,7 @@ class SessionFrame(Base):
 
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
+        CheckConstraint("kind IN ('harness_frame','setup_output')", name="ck_session_frames_kind"),
         # The runner numbers what *it* puts on the wire, so a number on a frame this console sent
         # would be one nobody assigned.
         CheckConstraint(
@@ -1412,26 +1404,16 @@ class SessionFrame(Base):
         # deltas — so the frame inspector, the narration read, and the MCP transcript fold would
         # each scan past them.
         Index("idx_session_frames_kind", "session_id", "kind", "frame_seq"),
-        # What makes a replayed frame a no-op rather than a second line in the rollout. Partial
-        # because most rows have no identity; a plain unique index would be almost all nulls.
-        Index(
-            "uq_session_frames_uid",
-            "session_id",
-            "frame_uid",
-            unique=True,
-            postgresql_where=text("frame_uid IS NOT NULL"),
-        ),
         # What the resume cursor is read off: `max(runner_seq)` for one session, on every runner
         # connection. Partial because most rows have no runner number, and the reader always
         # excludes them.
         #
-        # **Not unique, deliberately.** The insert can infer only one conflict target and today's
-        # is `frame_uid`, so a second unique index would turn a replayed frame with no
-        # agent-assigned identity (a `control_response`, a `system` without a `task_id`) from one
-        # duplicate row into a raised `UniqueViolation` that ends the session. Uniqueness lands with
-        # the release that moves the dedup onto position, not before.
         Index(
-            "idx_session_frames_runner_seq", "session_id", "runner_seq", postgresql_where=text("runner_seq IS NOT NULL")
+            "uq_session_frames_runner_seq",
+            "session_id",
+            "runner_seq",
+            unique=True,
+            postgresql_where=text("runner_seq IS NOT NULL"),
         ),
     )
 

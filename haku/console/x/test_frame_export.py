@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import SPA_ORIGIN, FrameDirection
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
 from haku.console.x import frame_export
 from haku.console.x.claude_code import frames
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
@@ -29,8 +29,7 @@ SECRET = "sk-ant-oat01-DO-NOT-PUBLISH-THIS-VALUE"
 
 
 def _assistant(*blocks: dict[str, Any], message_id: str) -> dict[str, Any]:
-    """One `assistant` frame. Every frame needs its own *message_id*: `frame_uid` dedupes on it, so
-    two frames sharing one are one frame to the recorder."""
+    """One native `assistant` frame; the id remains forensic payload rather than replay identity."""
     return {"type": "assistant", "message": {"id": message_id, "role": "assistant", "content": list(blocks)}}
 
 
@@ -84,7 +83,9 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
     assert started is not None
     state = ProjectionState()
     for payload in SESSION_FRAMES:
-        recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, payload["type"], payload)
+        recorded = await chat_store.record_frame(
+            session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
+        )
         state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
         await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
     async with migrated_sessions() as db:
@@ -94,7 +95,8 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
 def _reread(exported: frame_export.ExportedSession) -> list[RecordedFrame]:
     """The fixture as `test_diverse_session.py` reads one: a record's index is its `frame_seq`."""
     return [
-        RecordedFrame(frame_seq=index, payload=json.loads(line)["frame"]) for index, line in enumerate(exported.lines())
+        RecordedFrame(frame_seq=index, payload=json.loads(line)["frame"]["payload"])
+        for index, line in enumerate(exported.lines())
     ]
 
 

@@ -3,9 +3,8 @@
 Almost nothing below the envelope is Claude-specific: the console sends argv, a working directory
 and an environment, and the runner pumps the process's newline-delimited JSON across console rolls.
 What is CLI-specific sits at opposite ends of the wire — which flags mean "stream JSON and take
-prompts on stdin" (`options.build_claude_launch`, console side), which binary in the sandbox image
-answers to them (`options.ClaudeBackend`, runner side) — plus which of a CLI's frames survive being
-sent twice.
+prompts on stdin" (`options.build_claude_launch`, console side), and which binary in the sandbox
+image answers to them (`options.ClaudeBackend`, runner side).
 
 A backend names those once, so a second CLI is a second implementation rather than a branch inside
 the runner; what one would have to provide is <docs/second_backend.md>.
@@ -17,9 +16,9 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
-from haku.runtime.x.bridge.protocol import ClaudeLaunch
+from haku.runtime.x.bridge.protocol import HarnessLaunch
 
 # The credential the runner dials the console with. A property of the bridge rather than of any
 # CLI, which is why stripping it is here and not in a backend: it is ours whichever child runs.
@@ -30,7 +29,7 @@ BRIDGE_CREDENTIAL_VARIABLE = "HAKU_AGENT_SDK_RUNNER_TOKEN"
 class ProcessLaunch:
     """One CLI process, fully decided: which binary, which argv, where, and in what environment.
 
-    The console's `ClaudeLaunch` carries every part of this except the binary, because the
+    The console's `HarnessLaunch` carries every part of this except the binary, because the
     binary is the one part the console cannot know — it is a path inside a sandbox image whose
     tag the SandboxTemplate chose. Resolving the two into this is the backend's whole job.
     """
@@ -45,7 +44,7 @@ class ProcessLaunch:
         return [str(self.executable), *self.arguments]
 
 
-def child_environment(launch: ClaudeLaunch) -> dict[str, str]:
+def child_environment(launch: HarnessLaunch) -> dict[str, str]:
     """This process's environment with the launch overlaid and the bridge credential removed."""
     return {
         key: value for key, value in {**os.environ, **launch.environment}.items() if key != BRIDGE_CREDENTIAL_VARIABLE
@@ -57,18 +56,8 @@ class CliBackend(Protocol):
 
     @property
     def name(self) -> str:
-        """How this CLI is named to an operator: `--backend`, and the exit-status error."""
+        """How this CLI is named to an operator: `--harness`, and the exit-status error."""
 
-    def resolve(self, launch: ClaudeLaunch) -> ProcessLaunch:
+    def resolve(self, launch: HarnessLaunch) -> ProcessLaunch:
         """The process to start for *launch*."""
-        ...
-
-    def replayable(self, payload: dict[str, Any]) -> bool:
-        """Whether a console adopting this session mid-turn may be handed this frame again.
-
-        Not delegable to the console: the runner decides what to retain as it sends, long before an
-        adopting console exists. A frame with no agent-assigned identity cannot be recognised as a
-        duplicate, and one the console accumulates (`streamed += delta`) is corrupted by a second
-        copy — which frames those are is a fact about a CLI's protocol.
-        """
         ...

@@ -42,12 +42,18 @@ from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ConversationEventKind, EventProvenance, StoredEventKind
+from haku.console.chat_models import BridgeFrameKind, ConversationEventKind, EventProvenance, StoredEventKind
 from haku.console.database_schema import ConversationEvent, ConversationItem, ConversationTurn, Session, SessionFrame
 from haku.console.x import frame_projection, session_events
 from haku.console.x.conversation_events import FrameRange, ProjectionState
-from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 from util.sqlalchemy_types import UnknownValue
+
+
+def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
+    """Use only the native payload when folding a complete stored inner frame."""
+    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
+        return payload
+    raise ValueError("reprojection row does not contain a complete inner harness frame")
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,7 +353,9 @@ def _expected(frames: Sequence[SessionFrame]) -> dict[int, tuple[ProjectedRow, .
         # A frame with no events still belongs in coverage and can have stored rows to disagree
         # with, so retain an empty bucket for it.
         said[frame.frame_seq]
-        state, events = frame_projection.projected(state, frame_seq=frame.frame_seq, payload=frame.payload)
+        state, events = frame_projection.projected(
+            state, frame_seq=frame.frame_seq, payload=_native_payload(frame.payload)
+        )
         for event in events:
             if (row := session_events.stored(event)) is None:
                 continue
@@ -375,7 +383,7 @@ def foldable_frames(session_id: UUID) -> Select[tuple[SessionFrame]]:
     """
     return (
         select(SessionFrame)
-        .where(SessionFrame.session_id == session_id, SessionFrame.kind != SETUP_OUTPUT_KIND)
+        .where(SessionFrame.session_id == session_id, SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME)
         .order_by(SessionFrame.frame_seq)
     )
 

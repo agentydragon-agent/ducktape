@@ -23,7 +23,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.chat_models import BridgeFrameKind, RuntimeKind
 
 
 class ChannelAttachment(BaseModel):
@@ -79,15 +79,19 @@ class SessionCursor(BaseModel):
 
 
 class RolloutFrame(BaseModel):
-    """One frame of a named backend's wire — Claude Code's — not of the neutral conversation.
+    """One bridge record containing a named harness's wire, not the neutral conversation.
 
-    The sanctioned exception among the models here, labelled so a reader cannot mistake the two:
-    `kind` and `payload` are the CLI's own words, and a transcript entry is what they projected to.
+    ``kind`` is Haku's bridge class. ``native_kind`` is a derived inspection hint; ``payload`` is
+    the authoritative complete inner harness frame and a transcript entry is what its native
+    payload projected to.
     """
 
     frame_seq: int
     direction: str = Field(description="`to_agent` for what the console sent, `from_agent` for what came back.")
-    kind: str = Field(description="The frame's protocol `type`: assistant, user, result, system, …")
+    kind: BridgeFrameKind = Field(description="The outer Haku bridge class.")
+    native_kind: str | None = Field(
+        default=None, description="The native payload's `type` or JSON-RPC method when one is present; diagnostic only."
+    )
     created_at: datetime.datetime
     payload: dict[str, Any] | None = Field(
         description="The frame exactly as it crossed the wire, or absent when it was clipped for size."

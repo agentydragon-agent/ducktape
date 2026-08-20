@@ -129,7 +129,9 @@ class Deployment:
             "HAKU_STUB_STATE": str(self.stub_state),
         }
 
-    async def _spawn(self, name: str, program: Path, environment: dict[str, str]) -> asyncio.subprocess.Process:
+    async def _spawn(
+        self, name: str, program: Path, environment: dict[str, str], *arguments: str
+    ) -> asyncio.subprocess.Process:
         """Run *program*, with its output in the undeclared outputs rather than in this test's.
 
         Both processes narrate continuously, and a wedged test's explanation is in there — which
@@ -139,7 +141,7 @@ class Deployment:
         log = (undeclared_outputs_dir() / f"{self._name}.{name}.log").open("wb")
         self._logs.append(log)
         return await asyncio.create_subprocess_exec(
-            str(program), env=os.environ | self._environment | environment, stdout=log, stderr=log
+            str(program), *arguments, env=os.environ | self._environment | environment, stdout=log, stderr=log
         )
 
     async def start_console(self, name: str) -> None:
@@ -242,7 +244,18 @@ class Deployment:
 
         async def recorded() -> bool:
             frames = await self._store.read_frames(session_id, cursor=None, limit=200, kinds=[ASSISTANT_FRAME_KIND])
-            return any(_assistant_text(frame.payload) == text for frame in frames if frame.payload is not None)
+            for frame in frames:
+                stored_frame = frame.payload
+                if not isinstance(stored_frame, dict):
+                    continue
+                native_payload = stored_frame.get("payload")
+                if (
+                    stored_frame.get("kind") == "claude"
+                    and isinstance(native_payload, dict)
+                    and _assistant_text(native_payload) == text
+                ):
+                    return True
+            return False
 
         await self._wait_until(f"{text!r} to be recorded in the rollout", recorded)
 
@@ -313,6 +326,8 @@ class Deployment:
                     f"runner-{len(self._session_ids)}",
                     get_required_path(RUNNER_BIN),
                     {"HAKU_CLAUDE_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
+                    "--harness",
+                    "claude",
                 )
                 self._session_ids.append(session_id)
             for session_id in set(self._runners) - claimed:

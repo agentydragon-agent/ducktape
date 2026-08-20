@@ -149,6 +149,7 @@ py_library(
 py_library(
     name = "setup_output",
     srcs = ["setup_output.py"],
+    deps = ["//haku/console:chat_models"],
 )
 
 py_library(

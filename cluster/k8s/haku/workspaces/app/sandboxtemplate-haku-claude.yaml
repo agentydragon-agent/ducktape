@@ -37,6 +37,9 @@ spec:
         - name: runner
           image: ghcr.io/agentydragon/haku-claude-runner:devel-20260820160613-9259fc4 # {"$imagepolicy": "flux-system:haku-claude-runner"}
           imagePullPolicy: Always
+          # Harness selection is immutable for the runner lifetime. It is not inferred from the
+          # native payload, which stays opaque inside the bridge envelope.
+          args: ["--harness", "claude"]
           workingDir: /workspace
           env:
             - name: HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL
