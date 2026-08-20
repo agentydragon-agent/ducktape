@@ -443,7 +443,6 @@ manifest:
     port_for: port_for
     portalocker: portalocker
     posthog: posthog
-    pproxy: pproxy
     pre_commit: pre_commit
     prometheus_client: prometheus_client
     prompt_toolkit: prompt_toolkit
@@ -665,4 +664,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 7e22a179166abc8de3e5836d8240398034b3cf1e6329df9f984207920afc53f4
+integrity: 9ef192c1ff9cc049ab8a9a380190831eb6c3f415a61a93240b526debf1fd151d
