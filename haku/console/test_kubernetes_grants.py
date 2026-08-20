@@ -47,6 +47,13 @@ def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
     assert rule.model_dump(mode="json")["api_groups"] == ["", "apps"]
 
 
+def test_rule_rejects_scalar_strings_for_collection_fields() -> None:
+    with pytest.raises(ValidationError, match="valid frozenset"):
+        KubernetesRule(api_groups=("",), resources=("pods",), verbs="get")
+    with pytest.raises(ValidationError, match="valid frozenset"):
+        KubernetesRule(api_groups="", resources=("pods",), verbs=("get",))
+
+
 def test_rule_rejects_mixed_or_empty_shape() -> None:
     with pytest.raises(ValidationError, match="must describe resources"):
         KubernetesRule(verbs=("get",))

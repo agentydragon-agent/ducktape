@@ -10,10 +10,10 @@ from __future__ import annotations
 import datetime
 from collections.abc import Iterable
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_serializer, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -57,20 +57,14 @@ class KubernetesRule(BaseModel):
     resource_names: frozenset[str] = Field(default_factory=frozenset)
     non_resource_urls: frozenset[str] = Field(default_factory=frozenset)
 
-    @field_validator("api_groups", "resources", "resource_names", "non_resource_urls", mode="before")
+    @field_validator("api_groups", "resources", "resource_names", "non_resource_urls")
     @classmethod
-    def normalize_values(cls, value: Any, info: Any) -> frozenset[str]:
-        if value is None:
-            return frozenset()
-        if isinstance(value, str):
-            value = [value]
+    def normalize_values(cls, value: frozenset[str], info: ValidationInfo) -> frozenset[str]:
         return _clean_values(value, info.field_name, allow_empty=info.field_name == "api_groups")
 
-    @field_validator("verbs", mode="before")
+    @field_validator("verbs")
     @classmethod
-    def normalize_verbs(cls, value: Any) -> frozenset[str]:
-        if isinstance(value, str):
-            value = [value]
+    def normalize_verbs(cls, value: frozenset[str]) -> frozenset[str]:
         return _clean_values(value, "verbs")
 
     @field_serializer("api_groups", "resources", "verbs", "resource_names", "non_resource_urls")
