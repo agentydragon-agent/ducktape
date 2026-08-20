@@ -4,6 +4,7 @@ import { NativeSelect, SegmentedControl } from "@mantine/core";
 import { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
+import { replaceSearchParams } from "./url_state";
 
 import { MetricFanChart } from "./fan_chart";
 import { TerminalDistributionChart } from "./terminal_distribution";
@@ -478,21 +479,8 @@ export function ProductProjectionWorkspace({
     // The active selection is ephemeral UI state, not persisted: the codec always decodes Base as
     // active, so reloading a shared link lands on Base.
     const params = new URLSearchParams(scenarioSetToSearch(base, variants));
-    if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shell-owned shared params live outside the scenario set, as do the budget tab's planning
-    // params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the product
-    // `?scenarios=` state doesn't drop them when switching away from and back to another tab.
-    const currentParams = new URLSearchParams(window.location.search);
-    for (const key of ["n", "x", "h", "scale", "fmt", "bhide", "bset"]) {
-      const value = currentParams.get(key);
-      if (value != null) params.set(key, value);
-    }
-    const search = params.toString();
-    const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-    if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-      window.history.replaceState(null, "", newUrl);
-    }
-  }, [base, variants, currencyDisplay]);
+    replaceSearchParams({ scenarios: params.get("scenarios") });
+  }, [base, variants]);
 
   useEffect(() => {
     const controller = new AbortController();

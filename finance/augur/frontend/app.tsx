@@ -29,55 +29,28 @@ import {
   clampHorizonMonths,
   metricScaleFromSearch,
 } from "./input_helpers";
+import { replaceSearchParams } from "./url_state";
 
 // The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
 // its own `?n=` param written by the shell rather than living in either tab's serialized input.
 // Omitted when at the default, so a default rollout count leaves no `?n=` in the URL.
 function writeRolloutCountToSearch(value, bootstrap) {
-  const params = new URLSearchParams(window.location.search);
-  if (value == null || value === rolloutCountDefault(bootstrap)) params.delete("n");
-  else params.set("n", String(value));
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
+  replaceSearchParams({ n: value == null || value === rolloutCountDefault(bootstrap) ? null : value });
 }
 
 // The shared exogenous model is likewise a top-level concern (both tabs run against it), so it
 // gets its own `?x=` param. Omitted when at the deployment default, like the `?n=` param above.
 function writeExogenousModelToSearch(value, bootstrap) {
-  const params = new URLSearchParams(window.location.search);
-  if (value == null || value === defaultModel(bootstrap)) params.delete("x");
-  else params.set("x", value);
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
+  replaceSearchParams({ x: value == null || value === defaultModel(bootstrap) ? null : value });
 }
 
 // The shared horizon (`?h=`) and chart scale (`?scale=`) are also top-level, owned by the shell.
 function writeHorizonMonthsToSearch(value, bootstrap) {
-  const params = new URLSearchParams(window.location.search);
-  if (value == null || value === horizonMonthsDefault(bootstrap)) params.delete("h");
-  else params.set("h", String(value));
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
+  replaceSearchParams({ h: value == null || value === horizonMonthsDefault(bootstrap) ? null : value });
 }
 
 function writeMetricScaleToSearch(value) {
-  const params = new URLSearchParams(window.location.search);
-  if (value === "log") params.set("scale", "log");
-  else params.delete("scale");
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
+  replaceSearchParams({ scale: value === "log" ? "log" : null });
 }
 
 function currencyDisplayFromSearch(searchString) {
@@ -197,12 +170,7 @@ function LoadedAppShell({ bootstrap, deployment }) {
 
   const onChangeCurrencyDisplay = (value) => {
     setCurrencyDisplay(value);
-    const params = new URLSearchParams(window.location.search);
-    if (value !== "compact") params.set("fmt", "exact");
-    else params.delete("fmt");
-    const search = params.toString();
-    const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-    window.history.replaceState(null, "", newUrl);
+    replaceSearchParams({ fmt: value !== "compact" ? "exact" : null });
   };
 
   const sharedProps = {

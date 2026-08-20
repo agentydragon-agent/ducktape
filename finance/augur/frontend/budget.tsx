@@ -10,6 +10,7 @@ import {
 import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments";
 import { fmtUsd, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
+import { replaceSearchParams } from "./url_state";
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
 // income render in their own panels (or, for inflow, alongside their family's expenses).
@@ -66,17 +67,8 @@ function adjustmentsToRequest(adjustments) {
 // Mirror the product/calibration shell's URL-state pattern: rewrite only our two budget params
 // (preserving everything else) so a hidden-rent / overridden view round-trips through the URL.
 function writeAdjustmentsToSearch(adjustments) {
-  const params = new URLSearchParams(window.location.search);
   const { bhide, bset } = adjustmentsToParams(adjustments);
-  if (bhide) params.set("bhide", bhide);
-  else params.delete("bhide");
-  if (bset) params.set("bset", bset);
-  else params.delete("bset");
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
+  replaceSearchParams({ bhide, bset });
 }
 
 const UNGROUPED_FAMILY = "_ungrouped";
