@@ -32,10 +32,18 @@ from haku.console.mcp_config import (
     _server_entry,
     load_console_config,
 )
+from haku.console.mcp_execution import (
+    AgentMcpExecutionCaller,
+    McpExecutionCaller,
+    McpExecutionContext,
+    OperatorMcpExecutionCaller,
+)
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
 from haku.console.tool_calls import (
+    AgentToolCallCaller,
     ApprovalDecision,
     ApprovalDecisionRequest,
+    OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallRecord,
     ToolCallStatus,
@@ -123,7 +131,12 @@ class ToolCallRepository(Protocol):
 
 class ToolExecutor(Protocol):
     async def execute(
-        self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+        self,
+        server: McpServerEntry,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth_token: str | None,
+        execution_context: McpExecutionContext,
     ) -> dict[str, Any]: ...
 
 
@@ -361,7 +374,13 @@ class ToolCallApplicationService:
         logger.info(
             "operator direct MCP call server=%s tool=%s operator_id=%s", server.id, req.tool_name, operator.operator_id
         )
-        return await self._executor.execute(server, req.tool_name, req.arguments, auth_token)
+        return await self._executor.execute(
+            server,
+            req.tool_name,
+            req.arguments,
+            auth_token,
+            McpExecutionContext(caller=OperatorMcpExecutionCaller(operator_id=operator.operator_id), tool_call_id=None),
+        )
 
     async def get(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallRecord:
         return await self._repository.get(tool_call_id, actor=self._require_actor(actor))
@@ -457,9 +476,12 @@ class ToolCallApplicationService:
         if record.status != ToolCallStatus.RUNNING:
             return record
         execution_operator_id = await self._repository.authorize_execution(record.tool_call_id, actor=actor)
+        execution_context = self._execution_context(record, actor, execution_operator_id)
         cancellation: asyncio.CancelledError | None = None
         try:
-            result = await self._executor.execute(server, record.tool_name, record.arguments, auth_token)
+            result = await self._executor.execute(
+                server, record.tool_name, record.arguments, auth_token, execution_context
+            )
         except asyncio.CancelledError as error:
             cancellation = error
             updated = await self._repository.finish(
@@ -492,6 +514,26 @@ class ToolCallApplicationService:
         )
         self._execution_tasks.add(task)
         task.add_done_callback(self._on_execution_done)
+
+    @staticmethod
+    def _execution_context(
+        record: ToolCallRecord, actor: ToolCallActor, execution_operator_id: UUID
+    ) -> McpExecutionContext:
+        """Build trusted explicit execution identity after the repository revalidates the caller."""
+
+        caller: McpExecutionCaller
+        match record.caller:
+            case AgentToolCallCaller(agent_id=agent_id):
+                caller = AgentMcpExecutionCaller(agent_id=agent_id)
+            case OperatorToolCallCaller():
+                caller = OperatorMcpExecutionCaller(operator_id=execution_operator_id)
+
+        return McpExecutionContext(
+            caller=caller,
+            tool_call_id=record.tool_call_id,
+            approving_operator_id=actor.operator_id if isinstance(actor, OperatorActor) else None,
+            approval_policy_id=record.approval_policy_id,
+        )
 
     def _on_execution_done(self, task: asyncio.Task[ToolCallRecord]) -> None:
         self._execution_tasks.discard(task)

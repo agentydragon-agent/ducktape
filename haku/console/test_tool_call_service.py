@@ -22,6 +22,7 @@ from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import McpServerEntry, McpServerNotFoundError, NoCredential, RemoteMcpBackend
+from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore
@@ -118,20 +119,30 @@ class _TransitionBeforeYieldInvalidationPublisher(_RecordingInvalidationPublishe
 
 class _RecordingExecutor:
     def __init__(self) -> None:
-        self.executions: list[tuple[str, str, dict[str, Any], str | None]] = []
+        self.executions: list[tuple[str, str, dict[str, Any], str | None, McpExecutionContext]] = []
 
     async def execute(
-        self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+        self,
+        server: McpServerEntry,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth_token: str | None,
+        execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
-        self.executions.append((server.id, tool_name, arguments, auth_token))
+        self.executions.append((server.id, tool_name, arguments, auth_token, execution_context))
         return {"content": [{"type": "text", "text": f"{server.id}:{tool_name}"}], "isError": False}
 
 
 class _CancellingExecutor(_RecordingExecutor):
     async def execute(
-        self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+        self,
+        server: McpServerEntry,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth_token: str | None,
+        execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
-        self.executions.append((server.id, tool_name, arguments, auth_token))
+        self.executions.append((server.id, tool_name, arguments, auth_token, execution_context))
         raise asyncio.CancelledError
 
 
@@ -143,9 +154,14 @@ class _BlockingExecutor(_RecordingExecutor):
         self.started = asyncio.Event()
 
     async def execute(
-        self, server: McpServerEntry, tool_name: str, arguments: dict[str, Any], auth_token: str | None
+        self,
+        server: McpServerEntry,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth_token: str | None,
+        execution_context: McpExecutionContext,
     ) -> dict[str, Any]:
-        self.executions.append((server.id, tool_name, arguments, auth_token))
+        self.executions.append((server.id, tool_name, arguments, auth_token, execution_context))
         self.started.set()
         await asyncio.Event().wait()
         raise AssertionError("unreachable: blocking executor is only released by cancellation")
@@ -390,7 +406,10 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
     result = await service.execute_direct(req=_request(owner="browser"), actor=operator)
 
     assert result["content"][0]["text"] == "operator-backend:mutate"
-    assert executor.executions == [("operator-backend", "mutate", {"owner": "browser"}, "token-a")]
+    assert len(executor.executions) == 1
+    server_id, tool_name, arguments, token, execution_context = executor.executions[0]
+    assert (server_id, tool_name, arguments, token) == ("operator-backend", "mutate", {"owner": "browser"}, "token-a")
+    assert execution_context.tool_call_id is None
     assert tokens.lookups == [operator.operator_id]
     assert await service.list_tool_calls(actor=operator) == []
     assert publisher.publications == []
@@ -606,6 +625,13 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
     ]
     assert [record.status for record in completed] == [ToolCallStatus.OK, ToolCallStatus.OK]
     assert [execution[3] for execution in executor.executions] == ["token-a", "token-b"]
+    for execution, actor in zip(executor.executions, submitted_actors, strict=True):
+        assert isinstance(actor, AgentActor)
+        context = execution[4]
+        assert context.caller == AgentMcpExecutionCaller(agent_id=actor.agent_id)
+        assert context.tool_call_id is not None
+        assert context.approving_operator_id is None
+        assert context.approval_policy_id == "policy:test"
     assert ledger.finish_actors == submitted_actors
 
     missing_auth_actor = actors["aa2"]
@@ -965,6 +991,16 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     )
     assert decided.status is ToolCallStatus.RUNNING
     await asyncio.wait_for(executor.started.wait(), timeout=1)
+    [execution] = executor.executions
+    context = execution[4]
+    agent = actors["aa1"]
+    operator = actors["oa"]
+    assert isinstance(agent, AgentActor)
+    assert isinstance(operator, OperatorActor)
+    assert context.caller == AgentMcpExecutionCaller(agent_id=agent.agent_id)
+    assert context.tool_call_id == pending.tool_call_id
+    assert context.approving_operator_id == operator.operator_id
+    assert context.approval_policy_id is None
 
     # Shutdown cancels the in-flight execution, which terminalizes the row as cancelled.
     await service.aclose()

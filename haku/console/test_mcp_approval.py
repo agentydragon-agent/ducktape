@@ -17,6 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import event, select, text
@@ -67,6 +68,7 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     validate_in_process_server_bindings,
 )
+from haku.console.mcp_execution import McpExecutionContext, OperatorMcpExecutionCaller, require_mcp_execution_context
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
@@ -78,6 +80,8 @@ from haku.console.tool_calls import AgentToolCallCaller, OperatorToolCallCaller,
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync
+
+_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -168,6 +172,17 @@ def _build_test_mcp_server() -> FastMCP:
                 },
             ],
         }
+
+    return server
+
+
+def _build_execution_context_mcp_server() -> FastMCP:
+    server = FastMCP("haku-execution-context-test")
+
+    @server.tool()
+    async def caller_id(execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> str:
+        caller = execution.caller
+        return str(caller.operator_id) if isinstance(caller, OperatorMcpExecutionCaller) else str(caller.agent_id)
 
     return server
 
@@ -1851,9 +1866,34 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    result = await executor.execute(server, "echo", {"text": "hi"}, auth_token="operator-token")
+    context = McpExecutionContext(caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)), tool_call_id="tc_test")
+    result = await executor.execute(
+        server, "echo", {"text": "hi"}, auth_token="operator-token", execution_context=context
+    )
     assert result["content"][0]["text"] == "echo:hi"
     builder.assert_called_once_with("operator-token")
+
+
+async def test_executor_injects_trusted_context_into_a_stable_in_process_server() -> None:
+    server_instance = _build_execution_context_mcp_server()
+    registration = InProcessServerRegistration(
+        builder=lambda _token: server_instance, credential_kind=InProcessCredentialKind.NONE
+    )
+    executor = McpServerDispatcher({"internal": registration})
+    server = McpServerEntry(id="internal", backend=InProcessBackend(credential=NoCredential()))
+    operator_id = UUID(int=42)
+
+    result = await executor.execute(
+        server,
+        "caller_id",
+        {},
+        auth_token=None,
+        execution_context=McpExecutionContext(
+            caller=OperatorMcpExecutionCaller(operator_id=operator_id), tool_call_id="tc_test"
+        ),
+    )
+
+    assert result["content"][0]["text"] == str(operator_id)
 
 
 async def test_executor_raises_when_in_process_backend_is_not_registered() -> None:
@@ -1862,7 +1902,15 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
     with pytest.raises(RuntimeError, match="no in-process registration"):
-        await executor.execute(server, "echo", {}, auth_token=None)
+        await executor.execute(
+            server,
+            "echo",
+            {},
+            auth_token=None,
+            execution_context=McpExecutionContext(
+                caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)), tool_call_id=None
+            ),
+        )
 
 
 async def test_dispatcher_reflects_in_process_server_tools() -> None:
