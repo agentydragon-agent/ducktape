@@ -9,9 +9,6 @@ default_stages: [pre-commit]
 # Uses (?x) verbose regex mode for readable multi-line patterns
 exclude: |
   (?x)^(
-    # Legacy/archived directories
-    x/k8s_old/.*|
-
     # Artifacts captured from live Claude Code containers — not our source code
     devinfra/claude/web_env/(rootfs|reference)/.*|
     devinfra/claude/web_env/live-dpkg-versions\.txt|
