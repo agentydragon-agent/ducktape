@@ -21,6 +21,16 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+py_test(
+    name = "casing_test",
+    srcs = ["casing_test.py"],
+    deps = [
+        ":casing",
+        ":schemas",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "calibration_wire",
     srcs = ["calibration_wire.py"],
@@ -311,7 +321,6 @@ py_library(
         ":config",
         ":deployment",
         ":portfolio_sources",
-        ":schemas",
         ":wire",
         "//finance/augur/budget:service",
         "//finance/augur/budget:wire",

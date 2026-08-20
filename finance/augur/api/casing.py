@@ -17,4 +17,5 @@ def _plain(value: Any, *, exclude_none: bool) -> Any:
 
 
 def plain_json(value: Any, *, exclude_none: bool = True) -> Any:
+    """Return Augur's recursive, JSON-safe snake_case wire form."""
     return _plain(value, exclude_none=exclude_none)
