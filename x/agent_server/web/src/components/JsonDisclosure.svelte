@@ -1,5 +1,4 @@
 <script lang="ts">
-  // @ts-expect-error - json-formatter-js ships no type declarations
   import JSONFormatter from "json-formatter-js";
   import { onMount } from "svelte";
 

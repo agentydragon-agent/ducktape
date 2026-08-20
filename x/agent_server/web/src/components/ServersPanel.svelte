@@ -1,6 +1,5 @@
 <script lang="ts">
   import "../styles/shared.css";
-  // @ts-expect-error - json-formatter-js ships no type declarations
   import JSONFormatter from "json-formatter-js";
   import { SvelteMap } from "svelte/reactivity";
 
