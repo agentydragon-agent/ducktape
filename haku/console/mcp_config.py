@@ -29,6 +29,7 @@ from haku.console.config import (
     ConfiguredRecallIndex,
     GitRecallIndexDefinition,
     HostexecConfig,
+    KubernetesAuthorizationConfig,
     NodeDaemonsConfig,
     Settings,
 )
@@ -347,6 +348,9 @@ class ConsoleConfigFile(BaseModel):
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.
     recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
+    # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
+    # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
+    kubernetes_authorization: KubernetesAuthorizationConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -469,6 +473,15 @@ class ConsoleConfigFile(BaseModel):
             profiles[profile.id] = profile
         if self.default_access_profile_id not in profiles:
             raise ValueError(f"default access profile {self.default_access_profile_id!r} is not configured")
+        if self.kubernetes_authorization is not None:
+            unknown_kubernetes_profiles = (
+                set(self.kubernetes_authorization.subjects_by_access_profile) - profiles.keys()
+            )
+            if unknown_kubernetes_profiles:
+                raise ValueError(
+                    "Kubernetes authorization references unknown access profiles "
+                    f"{sorted(unknown_kubernetes_profiles)!r}"
+                )
 
         configured_recall_indexes = {index.index_id for index in self.recall_indexes}
         for profile in profiles.values():
