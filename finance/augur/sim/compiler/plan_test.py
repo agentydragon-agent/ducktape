@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any, cast
 
 import numpy as np
 import pytest_bazel
 
-from finance.augur.sim.compiler.plan import compile_simulation, lot_order_for_pool
+from finance.augur.sim.compiler.plan import _LotRow, _materialize_lots, compile_simulation, lot_order_for_pool
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import Agent, Currency, InitialAccountBalance, Scenario
 
@@ -26,6 +27,55 @@ def test_compiler_uses_the_scenario_currency_quantum_for_static_money() -> None:
     assert plan.currency_code == "CHF"
     assert plan.currency_quantum == Decimal("0.05")
     assert plan.cash_initial_balance.tolist() == [25, 0]
+
+
+def test_complete_lot_rows_materialize_as_aligned_int64_columns() -> None:
+    first_asset = cast(Any, object())
+    second_asset = cast(Any, object())
+    rows = [
+        _LotRow(
+            lot_id_code=101,
+            agent_code=1,
+            account_code=10,
+            asset_code=20,
+            asset=first_asset,
+            purchase_month=-12,
+            fifo_rank=-12,
+            cost_basis_per_unit=5_000,
+            initial_quantity=300,
+            quantity_scale=100,
+        ),
+        _LotRow(
+            lot_id_code=102,
+            agent_code=2,
+            account_code=11,
+            asset_code=21,
+            asset=second_asset,
+            purchase_month=3,
+            fifo_rank=7,
+            cost_basis_per_unit=0,
+            initial_quantity=0,
+            quantity_scale=1_000,
+        ),
+    ]
+    table = _materialize_lots(rows)
+
+    assert table.assets == (first_asset, second_asset)
+    expected_columns = {
+        "lot_id_codes": [101, 102],
+        "agent_codes": [1, 2],
+        "account_codes": [10, 11],
+        "asset_codes": [20, 21],
+        "purchase_month": [-12, 3],
+        "fifo_rank": [-12, 7],
+        "cost_basis_per_unit": [5_000, 0],
+        "initial_quantity": [300, 0],
+        "quantity_scale": [100, 1_000],
+    }
+    for field, expected in expected_columns.items():
+        column = cast(Any, getattr(table, field))
+        assert column.dtype == np.dtype(np.int64)
+        np.testing.assert_array_equal(column, np.asarray(expected, dtype=np.int64))
 
 
 def test_lot_order_for_pool_is_account_scoped_fifo() -> None:
