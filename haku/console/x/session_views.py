@@ -29,8 +29,8 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import ConversationItem, Session, SessionFrame
-from haku.console.x.claude_code import projection
 from haku.console.x.conversation_records import ChannelAttachment
+from haku.console.x.runtime import RuntimeRegistry
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
@@ -370,7 +370,7 @@ class SessionFramePage(BaseModel):
     )
 
 
-def _unprojected(row: SessionFrame) -> dict[str, int] | None:
+def _unprojected(row: SessionFrame, *, runtime_kind: RuntimeKind, runtimes: RuntimeRegistry) -> dict[str, int] | None:
     """`Projection.unprojected` for one frame, or nothing — never an empty map standing in for "none".
 
     **The keys are the adapter's on purpose.** They are Claude's own frame class names
@@ -384,20 +384,24 @@ def _unprojected(row: SessionFrame) -> dict[str, int] | None:
     """
     if row.kind == SETUP_OUTPUT_KIND:
         return None
-    folded = projection.project_log(
-        [projection.RecordedFrame(frame_seq=row.frame_seq, payload=_native_payload(row.payload))]
-    )
+    folded = runtimes[runtime_kind].project_log([(row.frame_seq, row.payload)])
     return dict(folded.unprojected) or None
 
 
 def frame_page(
-    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: RuntimeKind
+    rows: Sequence[SessionFrame],
+    *,
+    limit: int,
+    conversation_id: UUID,
+    runtime_kind: RuntimeKind,
+    runtimes: RuntimeRegistry | None = None,
 ) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
     A short page is the first one, the same rule the MCP reader uses in the other direction:
     cheaper than a second count query, for the only question a caller has.
     """
+    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
     frames = [
         SessionFrameView(
             frame_seq=row.frame_seq,
@@ -406,7 +410,7 @@ def frame_page(
             native_kind=_native_kind(row),
             created_at=row.created_at,
             payload=row.payload,
-            unprojected=_unprojected(row),
+            unprojected=_unprojected(row, runtime_kind=runtime_kind, runtimes=registry),
         )
         for row in rows
     ]

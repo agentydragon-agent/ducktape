@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 from datetime import UTC, datetime
+from typing import cast
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -33,6 +34,7 @@ from haku.console.chat_models import (
     LeaseExpiryReason,
     MatrixOrigin,
     PromptRejection,
+    RuntimeKind,
     SessionStatus,
     SpaOrigin,
     ToolOutcome,
@@ -52,6 +54,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
 )
 from haku.console.x.conversation_records import FrameCursor, SessionCursor, TranscriptCursor, TurnCursor
+from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_events import PromptStartedBody
 from haku.console.x.session_notifications import SessionEventKind
 from haku.console.x.session_store import (
@@ -65,6 +68,45 @@ from haku.console.x.session_store import (
 )
 
 ROOM = "!room:example.org"
+
+
+class _AlternateFrameVocabulary:
+    """Claude projection with non-Claude discriminator names, for store dispatch tests."""
+
+    kind = RuntimeKind.CLAUDE_CODE
+    delta_frame_kind = "future_delta"
+    prompt_frame_kinds = frozenset({"future_prompt"})
+
+
+async def test_store_uses_the_injected_runtime_frame_vocabulary(migrated_sessions, operator_id) -> None:
+    runtime = cast(RuntimeAdapter, _AlternateFrameVocabulary())
+    store = SessionStore(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: runtime}))
+    view, token = await store.create(operator_id)
+    assert await store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
+    assert await store.next_prompt(view.session_id) is not None
+    await store.record_frame(
+        view.session_id,
+        FrameDirection.TO_AGENT,
+        BridgeFrameKind.HARNESS_FRAME,
+        {"jsonrpc": "2.0", "method": "future_prompt"},
+    )
+    await store.record_frame(
+        view.session_id,
+        FrameDirection.FROM_AGENT,
+        BridgeFrameKind.HARNESS_FRAME,
+        {"jsonrpc": "2.0", "method": "future_delta"},
+    )
+    await store.record_frame(
+        view.session_id,
+        FrameDirection.FROM_AGENT,
+        BridgeFrameKind.HARNESS_FRAME,
+        {"jsonrpc": "2.0", "method": "future_event"},
+    )
+
+    assert await store.adopt_open_turn(view.session_id) is not None
+    frames = await store.read_frames(view.session_id, cursor=None, limit=25, kinds=None)
+    assert [frame.native_kind for frame in frames] == ["future_prompt", "future_event"]
 
 
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
@@ -277,7 +319,7 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
 async def test_method_only_native_frames_are_visible_and_filterable(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
     payload = {"jsonrpc": "2.0", "method": "codex/event/unknown", "params": {"opaque": True}}
-    inner = {"kind": "codex", "payload": payload}
+    inner = {"kind": "claude", "payload": payload}
     recorded = await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
@@ -287,12 +329,15 @@ async def test_method_only_native_frames_are_visible_and_filterable(chat_store, 
         str(session.session_id), cursor=None, limit=25, kinds=["codex/event/unknown"]
     )
     exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
+    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=25)
 
     assert [(frame.native_kind, frame.payload) for frame in default] == [("codex/event/unknown", inner)]
     assert [(frame.native_kind, frame.payload) for frame in filtered] == [("codex/event/unknown", inner)]
     assert exact is not None
     assert exact.native_kind == "codex/event/unknown"
     assert exact.payload == inner
+    assert transcript.entries == []
+    assert transcript.unreadable == {"codex/event/unknown": 1}
 
 
 async def test_native_frames_without_a_known_discriminator_remain_in_the_default_and_exact_views(
@@ -300,18 +345,21 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
 ) -> None:
     session, _ = await chat_store.create(operator_id)
     payload = {"jsonrpc": "2.0", "id": 7, "result": {"opaque": True}}
-    inner = {"kind": "codex", "payload": payload}
+    inner = {"kind": "claude", "payload": payload}
     recorded = await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
     default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=None)
     exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
+    transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=25)
 
     assert [(frame.native_kind, frame.payload) for frame in default] == [(None, inner)]
     assert exact is not None
     assert exact.native_kind is None
     assert exact.payload == inner
+    assert transcript.entries == []
+    assert transcript.unreadable == {"<undiscriminated>": 1}
 
 
 async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> None:

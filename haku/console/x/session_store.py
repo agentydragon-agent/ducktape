@@ -56,8 +56,6 @@ from haku.console.database_schema import (
     SessionFrame,
 )
 from haku.console.x import conversation_log, session_events, transcript_entries
-from haku.console.x.claude_code import projection
-from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
@@ -77,6 +75,7 @@ from haku.console.x.conversation_records import (
     TurnCursor,
     TurnRecord,
 )
+from haku.console.x.runtime import RuntimeRegistry
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
     ConversationCursor,
@@ -122,7 +121,9 @@ ADOPTION_GRACE = timedelta(seconds=45)
 REPLICA = os.environ.get("HOSTNAME", "unknown")
 
 
-def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | None) -> Select[tuple[SessionFrame]]:
+def _frames_of_kinds(
+    query: Select[tuple[SessionFrame]], kinds: Sequence[str] | None, *, delta_kind: str
+) -> Select[tuple[SessionFrame]]:
     """Restrict a frame query to *kinds*, or to everything a reader means by "everything".
 
     **Deltas are in the log but not in the default view.** A turn streams them in the hundreds and
@@ -141,7 +142,7 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
             )
         )
     return query.where(
-        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME, or_(native_kind.is_(None), native_kind != DELTA_FRAME_KIND)
+        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME, or_(native_kind.is_(None), native_kind != delta_kind)
     )
 
 
@@ -427,8 +428,9 @@ class _MovedRows:
 class SessionStore:
     """Async Postgres store for agent sessions."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], runtime_registry: RuntimeRegistry | None = None):
         self._sessions = sessions
+        self._runtime_registry = runtime_registry if runtime_registry is not None else RuntimeRegistry.projection_only()
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
@@ -1055,8 +1057,8 @@ class SessionStore:
         question is asked here: **was the prompt ever asked?** No prompt frame means the previous
         holder claimed the prompt and died before writing it, so it goes back on the queue. A
         projection cursor cannot answer that — the console's own outbound write is the evidence,
-        and the fold projects an outbound prompt to nothing on purpose
-        (`claude_code.projection._user`).
+        and the fold projects the selected runtime adapter's outbound prompt frames to nothing on
+        purpose.
 
         Everything else is the fold's. The turn resumes with the frames past its cursor, and if one
         of them is the turn's ending then projecting it closes the turn; how far the answer got is
@@ -1067,6 +1069,13 @@ class SessionStore:
         which is what stops `next_prompt` opening a second beside the inherited one.
         """
         async with self._sessions.begin() as db:
+            runtime_kind = await db.scalar(
+                select(Conversation.runtime_kind)
+                .join(Session, Session.conversation_id == Conversation.conversation_id)
+                .where(Session.session_id == session_id)
+            )
+            if runtime_kind is None:
+                raise KeyError(session_id)
             turn = await db.scalar(
                 select(ConversationTurn)
                 .where(ConversationTurn.session_id == session_id, ConversationTurn.ended_at.is_(None))
@@ -1075,7 +1084,12 @@ class SessionStore:
             if turn is None:
                 return None
             turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            if not await _prompt_left(db, session_id, first_frame_seq or 0):
+            if not await _prompt_left(
+                db,
+                session_id,
+                first_frame_seq or 0,
+                prompt_frame_kinds=self._runtime_registry[runtime_kind].prompt_frame_kinds,
+            ):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
             else:
@@ -1552,7 +1566,12 @@ class SessionStore:
         The cursor names the first frame to return rather than the last one already returned, so
         a transcript entry's `first_frame_seq` is a cursor as it stands.
         """
-        query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+        runtime_kind = await self.runtime_kind_of(session_id)
+        query = _frames_of_kinds(
+            select(SessionFrame).where(SessionFrame.session_id == session_id),
+            kinds,
+            delta_kind=self._runtime_registry[runtime_kind].delta_frame_kind,
+        )
         if cursor is not None:
             query = query.where(SessionFrame.frame_seq >= cursor.frame_seq)
         async with self._sessions() as db:
@@ -1608,21 +1627,15 @@ class SessionStore:
         hundreds per turn of prose that arrives again whole. Everything else is passed through, so
         a frame class the CLI adds still lands in `Projection.unprojected` and is reported.
         """
-        async with self._sessions() as db:
-            rows = (
-                await db.scalars(
-                    select(SessionFrame)
-                    .where(
-                        SessionFrame.session_id == session_id,
-                        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
-                        SessionFrame.payload["payload"]["type"].astext != DELTA_FRAME_KIND,
-                    )
-                    .order_by(SessionFrame.frame_seq)
-                )
-            ).all()
-        projected = projection.project_log(
-            projection.RecordedFrame(frame_seq=row.frame_seq, payload=_native_payload(row.payload)) for row in rows
+        runtime_kind = await self.runtime_kind_of(session_id)
+        query = _frames_of_kinds(
+            select(SessionFrame).where(SessionFrame.session_id == session_id),
+            None,
+            delta_kind=self._runtime_registry[runtime_kind].delta_frame_kind,
         )
+        async with self._sessions() as db:
+            rows = (await db.scalars(query.order_by(SessionFrame.frame_seq))).all()
+        projected = self._runtime_registry[runtime_kind].project_log((row.frame_seq, row.payload) for row in rows)
         entries = transcript_entries.entries(projected)
         start = cursor.index if cursor is not None else 0
         return TranscriptSlice(
@@ -1644,9 +1657,7 @@ class SessionStore:
         already its upper half, so per-message provenance is a filter over this view rather than a
         second read path.
         """
-        query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
-        if before_seq is not None:
-            query = query.where(SessionFrame.frame_seq < before_seq)
+        before = before_seq
         async with self._sessions() as db:
             owned = (
                 await db.execute(
@@ -1657,10 +1668,22 @@ class SessionStore:
             ).one_or_none()
             if owned is None:
                 raise KeyError(session_id)
+            runtime_kind = owned[1]
+            query = _frames_of_kinds(
+                select(SessionFrame).where(SessionFrame.session_id == session_id),
+                kinds,
+                delta_kind=self._runtime_registry[runtime_kind].delta_frame_kind,
+            )
+            if before is not None:
+                query = query.where(SessionFrame.frame_seq < before)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
         session, runtime_kind = owned
         return frame_page(
-            list(reversed(rows)), limit=limit, conversation_id=session.conversation_id, runtime_kind=runtime_kind
+            list(reversed(rows)),
+            limit=limit,
+            conversation_id=session.conversation_id,
+            runtime_kind=runtime_kind,
+            runtimes=self._runtime_registry,
         )
 
     async def apply_frame(
@@ -1833,6 +1856,18 @@ class SessionStore:
     async def status(self, session_id: UUID) -> SessionStatus | None:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
+
+    async def runtime_kind_of(self, session_id: UUID) -> RuntimeKind:
+        """Return the immutable runtime discriminator of a session's conversation."""
+        async with self._sessions() as db:
+            kind = await db.scalar(
+                select(Conversation.runtime_kind)
+                .join(Session, Session.conversation_id == Conversation.conversation_id)
+                .where(Session.session_id == session_id)
+            )
+            if kind is None:
+                raise KeyError(session_id)
+            return kind
 
     async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
         """The immutable conversation identity behind one Operator-owned session."""
@@ -2165,19 +2200,24 @@ async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:
     return turn_id
 
 
-async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> bool:
+async def _prompt_left(
+    db: AsyncSession, session_id: UUID, first_frame_seq: int, *, prompt_frame_kinds: frozenset[str]
+) -> bool:
     """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
 
-    **The console's own record is the evidence, not the CLI's acknowledgement.** `sent()` records
+    **The console's own record is the evidence, not the harness's acknowledgement.** `sent()` records
     the frame before `channel.write` (`cli_client._write`), so a row here means this end committed
-    to sending the prompt. The CLI's `command_lifecycle` — the only thing that would say whether
-    the *CLI* has it — may still be sitting unrecorded in the runner's replay window, since replay
+    to sending the prompt. A native lifecycle frame — the only thing that would say whether the
+    *harness* has it — may still be sitting unrecorded in the runner's replay window, since replay
     does not begin until the socket is accepted and this runs before that.
 
     So the ambiguous middle — recorded, and then the write or the replica died — is deliberately
     treated as delivered: a duplicate turn is the worse of the two failures. What this closes is
     the window where nothing was recorded at all.
     """
+    native_kind = func.coalesce(
+        SessionFrame.payload["payload"]["type"].astext, SessionFrame.payload["payload"]["method"].astext
+    )
     written = await db.scalar(
         select(SessionFrame.frame_seq)
         .where(
@@ -2185,7 +2225,7 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
             SessionFrame.frame_seq >= first_frame_seq,
             SessionFrame.direction == FrameDirection.TO_AGENT,
             SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
-            SessionFrame.payload["payload"]["type"].astext == PROMPT_FRAME_KIND,
+            native_kind.in_(prompt_frame_kinds),
         )
         .limit(1)
     )

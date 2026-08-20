@@ -89,6 +89,7 @@ from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import (
     conversation_follow,
     conversation_runtime,
+    runtime as console_runtime,
     sandbox_allocation,
     sandbox_claims,
     session_runtime,
@@ -214,7 +215,6 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
-    session_store = SessionStore(db_sessions)
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
@@ -295,6 +295,33 @@ def create_app(
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
 
+    runtime_registry: console_runtime.RuntimeRegistry
+    runtime_mcp_agent: LoadedStaticAgent | None = None
+    if claude_runtime is not None:
+        if loaded_static_agents is None:
+            raise RuntimeError("Claude runtime requires loaded static Agent credentials")
+        runtime_mcp_agent = next(
+            (agent for agent in loaded_static_agents if agent.agent_id == claude_runtime.mcp_static_agent_id), None
+        )
+        if runtime_mcp_agent is None:
+            raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
+        runtime_registry = console_runtime.claude_registry(
+            claude_runtime,
+            sandbox_claims.KubernetesSandboxClaims(claude_runtime),
+            mcp_token=runtime_mcp_agent.token,
+            # Parsed at construction, so a broken deploy template prevents readiness rather than
+            # failing the first attached chat session hours later.
+            system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+        )
+    else:
+        # Runtime-disabled replicas can still inspect the one durable runtime kind the Console
+        # currently knows. This registry has projection only: no claims, credentials, or launcher.
+        runtime_registry = console_runtime.RuntimeRegistry.projection_only()
+    # All production read and write paths share the same catalog. A future adapter registration is
+    # therefore enough for both execution and forensic projection; no hidden Claude fallback can
+    # reinterpret another runtime's immutable conversation rows.
+    session_store = SessionStore(db_sessions, runtime_registry)
+
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None
 
@@ -353,26 +380,18 @@ def create_app(
             matrix_sync_service.bound_room,
             matrix_room_outbox,
         )
-    # Resolving configured external identities is database I/O. Keep app construction pure and do
-    # this during the async lifespan, after the event loop exists.
+    # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
+    # the same registry in their store above but expose no session-creation runtime service.
     if claude_runtime is not None:
-        if loaded_static_agents is None:
-            raise RuntimeError("Claude runtime requires loaded static Agent credentials")
-        mcp_agent = next(
-            (agent for agent in loaded_static_agents if agent.agent_id == claude_runtime.mcp_static_agent_id), None
-        )
-        if mcp_agent is None:
-            raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
+        assert runtime_mcp_agent is not None
         session_service = session_runtime.SessionService(
-            claude_runtime,
+            runtime_registry,
             session_store,
-            sandbox_claims.KubernetesSandboxClaims(claude_runtime),
+            None,
             session_notifications,
-            mcp_token=mcp_agent.token,
+            mcp_token=runtime_mcp_agent.token,
             conversation_history=ConversationHistory(db_sessions),
-            # Parsed at construction, so a broken deploy template prevents readiness rather than
-            # failing the first attached chat session hours later.
-            system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
+            system_prompt=None,
         )
     else:
         session_service = None

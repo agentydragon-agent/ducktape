@@ -1,4 +1,4 @@
-"""Operator chat sessions backed by Claude Code in Agent Sandbox pods.
+"""Operator chat sessions dispatched by immutable conversation runtime kind.
 
 The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA chat surface's own
 routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
@@ -14,8 +14,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Annotated, Any, Protocol, cast
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
@@ -32,17 +31,11 @@ from haku.console.chat_models import (
     SessionStatus,
     TurnOutcome,
 )
-from haku.console.config import ClaudeRuntimeConfig
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.x import frame_projection
 from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
 from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.sandbox_claims import (
-    ClaudeSandboxProvisioningView,
-    ProvisioningStep,
-    SandboxClaims,
-    provisioning_view,
-)
+from haku.console.x.runtime import RuntimeAdapter, RuntimeClient, RuntimeRegistry, legacy_claude_registry
+from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
@@ -64,8 +57,7 @@ from haku.console.x.session_views import (
     SessionView,
 )
 from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
-from haku.runtime.x.bridge.cli_client import ClaudeCli, ReceivedFrame, RecordedFrame, SentPrompt, cli_over_websocket
-from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame, cli_over_websocket
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
 
 router = APIRouter(tags=["sessions"])
@@ -79,6 +71,11 @@ OBSERVATION_TTL = timedelta(seconds=2)
 # The conversation tail a replacement session receives. Counted in finished prompts/answers, not
 # transport events, and read from the console's record rather than any attached channel's copy.
 RE_AWAKENING_MESSAGES = 20
+
+
+def _current_cli(*args: Any) -> Any:
+    """Resolve the bridge factory at call time so existing runtime tests can patch it."""
+    return cli_over_websocket(*args)
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -108,14 +105,6 @@ class PromptAccepted(BaseModel):
     """
 
     item_id: UUID
-
-
-class TurnClient(Protocol):
-    """The part of the CLI client the turn loop needs after frames are handed to it."""
-
-    async def query(self, text: str) -> SentPrompt: ...
-
-    async def interrupt(self) -> None: ...
 
 
 class StarletteTextWebSocket(TextWebSocket):
@@ -208,25 +197,34 @@ def _inherited(turn: TurnStart | ResumedTurn) -> ProjectionState:
 class SessionService:
     def __init__(
         self,
-        config: ClaudeRuntimeConfig,
+        runtimes: RuntimeRegistry | Any,
         store: SessionStore,
-        claims: SandboxClaims,
+        claims: SandboxClaims | None,
         notifications: SessionNotifications,
         *,
         mcp_token: SecretStr,
         conversation_history: ConversationHistory | None = None,
         system_prompt: SystemPromptTemplate | None = None,
     ):
-        self._config = config
+        if isinstance(runtimes, RuntimeRegistry):
+            self._runtimes = runtimes
+        else:
+            if claims is None:
+                raise TypeError("legacy Claude session construction requires sandbox claims")
+            self._runtimes = legacy_claude_registry(
+                runtimes, claims, mcp_token=mcp_token, system_prompt=system_prompt, client_factory=_current_cli
+            )
         self._store = store
-        self._claims = claims
         self._notifications = notifications
         self._mcp_token = mcp_token
         self._conversation_history = conversation_history
         self._system_prompt = system_prompt
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
-        self._observations: dict[UUID, ClaudeSandboxProvisioningView] = {}
+        self._observations: dict[UUID, Any] = {}
+
+    async def _runtime(self, session_id: UUID) -> RuntimeAdapter:
+        return self._runtimes[await self._store.runtime_kind_of(session_id)]
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
@@ -275,10 +273,11 @@ class SessionService:
 
     async def _create_claim(self, session_id: UUID, bridge_token: str) -> None:
         try:
-            await self._claims.create(
+            runtime = await self._runtime(session_id)
+            await runtime.create_sandbox(
                 session_id=session_id,
                 bridge_token=bridge_token,
-                expires_at=datetime.now(UTC) + timedelta(seconds=self._config.session_ttl_seconds),
+                expires_at=datetime.now(UTC) + timedelta(seconds=runtime.session_ttl_seconds),
             )
         except Exception as error:
             await self._store.fail(session_id, f"sandbox provisioning failed: {error}")
@@ -319,7 +318,7 @@ class SessionService:
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
 
-    async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> ClaudeSandboxProvisioningView | None:
+    async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> Any | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
 
         Only while it is what the operator is waiting on, unlike `sandbox_provisioning`: this read
@@ -336,7 +335,7 @@ class SessionService:
             return None
         return await self._observed(session_id)
 
-    async def _observed(self, session_id: UUID) -> ClaudeSandboxProvisioningView:
+    async def _observed(self, session_id: UUID) -> Any:
         """The cluster's account of one session's sandbox — never raising, never hammered.
 
         An unreachable Kubernetes comes back as `observation_error` on the view rather than as an
@@ -352,17 +351,15 @@ class SessionService:
         if (fresh := self._observations.get(session_id)) is not None:
             return fresh
         try:
-            view = await self._claims.inspect(session_id=session_id)
+            view = await (await self._runtime(session_id)).inspect_sandbox(session_id=session_id)
         except Exception as error:
-            view = provisioning_view(
-                f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=str(error)
-            )
+            view = (await self._runtime(session_id)).provisioning_error(session_id, str(error))
         self._observations[session_id] = view
         return view
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await self._store.request_close(operator_id, session_id)
-        await self._claims.delete(session_id=session_id)
+        await (await self._runtime(session_id)).delete_sandbox(session_id=session_id)
         await self._store.complete_claim_cleanup(session_id)
 
     async def reconcile_terminal_claims(self) -> None:
@@ -374,11 +371,11 @@ class SessionService:
 
     async def _cleanup_terminal_claim(self, session_id: UUID) -> bool:
         try:
-            await self._claims.delete(session_id=session_id)
+            await (await self._runtime(session_id)).delete_sandbox(session_id=session_id)
         except Exception as error:
             # Leave `claim_cleaned_at` NULL so another replica or a later restart retries.
             # Kubernetes deletion is idempotent, so a redundant retry costs a 404.
-            logger.warning("Claude claim cleanup failed for session %s: %s", session_id, error)
+            logger.warning("runtime claim cleanup failed for session %s: %s", session_id, error)
             return False
         await self._store.complete_claim_cleanup(session_id)
         return True
@@ -389,8 +386,9 @@ class SessionService:
         The conversation decides whether chat context applies; no channel object is handed to the
         session. `--append-system-prompt` preserves Claude Code's own tool-driving preset.
         """
+        runtime = await self._runtime(session_id)
         if (
-            self._system_prompt is None
+            runtime.system_prompt is None
             or self._conversation_history is None
             or not await self._store.attached(session_id)
         ):
@@ -403,10 +401,10 @@ class SessionService:
         except Exception:
             logger.exception("Could not read conversation history; starting session %s without it", session_id)
             recorded = ()
-        return self._system_prompt.render(
+        return runtime.system_prompt.render(
             SessionIntroduction(
                 session_id=session_id,
-                workspace=self._config.cwd,
+                workspace=runtime.cwd,
                 recent_messages=tuple(
                     HistoryMessage(
                         sender="operator" if message.item_type is ItemType.PROMPT else "assistant",
@@ -422,7 +420,7 @@ class SessionService:
         """Record every sandbox progress report; subscribers decide how attached channels show it."""
 
         async def report(detail: str) -> None:
-            logger.info("Claude sandbox %s: %s", session_id, detail)
+            logger.info("runtime sandbox %s: %s", session_id, detail)
             await self._store.narrate(session_id, detail)
 
         return report
@@ -452,7 +450,8 @@ class SessionService:
         #
         # **Read before the socket is accepted**, which is what stops a frame being both replayed
         # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
-        # `ClaudeCli._read` routes it, and nothing is being read on this connection yet.
+        # the runtime client's reader routes it, and nothing is being read on this connection yet.
+        runtime = await self._runtime(session_id)
         resumed = await self._store.adopt_open_turn(session_id)
         if resumed is not None:
             logger.warning(
@@ -468,28 +467,20 @@ class SessionService:
         try:
             appended = await self._appended_prompt(session_id)
         except Exception as error:
-            logger.exception("Claude system prompt failed to render for session %s", session_id)
+            logger.exception("runtime system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
         await websocket.accept()
-        session = ClaudeSession(
-            append_system_prompt=appended,
-            cwd=Path(self._config.cwd),
-            environment=self._config.claude_environment(),
-            mcp_servers={
-                "haku-console": HttpMcpServer(
-                    url=self._config.mcp_url, headers={"Authorization": f"Bearer {self._mcp_token.get_secret_value()}"}
-                )
-            },
-        )
-        client = cli_over_websocket(
+        client = runtime.client(
             StarletteTextWebSocket(websocket),
             # The cursor is read here, per connection, off the session's own rows — so a replica
             # adopting a session mid-turn asks for what it is missing rather than being handed the
             # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
-            build_claude_launch(session, resume_from=await self._store.highest_runner_seq(session_id)),
+            runtime.build_launch(
+                appended_system_prompt=appended, resume_from=await self._store.highest_runner_seq(session_id)
+            ),
             self._progress_reporter(session_id),
             RolloutRecorder(self._store, session_id),
         )
@@ -540,7 +531,9 @@ class SessionService:
                             # kill this turn on arrival.
                             abort_event.clear()
                             try:
-                                await self._run_turn(client, frames, session_id, turn, abort_event=abort_event)
+                                await self._run_turn(
+                                    client, frames, session_id, turn, abort_event=abort_event, runtime=runtime
+                                )
                             except Exception as error:
                                 logger.exception("turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
@@ -558,8 +551,8 @@ class SessionService:
                 await self._store.release_lease(session_id)
             except* Exception as errors:
                 # `fail` records the message; the traceback is what says which call produced it.
-                logger.exception("Claude runtime failed for session %s", session_id)
-                await self._store.fail(session_id, f"Claude runtime failed: {_first_message(errors)}")
+                logger.exception("%s runtime failed for session %s", runtime.display_name, session_id)
+                await self._store.fail(session_id, f"{runtime.display_name} runtime failed: {_first_message(errors)}")
         except asyncio.CancelledError:
             # A `BaseException`, so neither clause above sees it. This is the replica going away —
             # a rolling update, an evicted pod — which says nothing about the session: recording it
@@ -580,7 +573,9 @@ class SessionService:
                     asyncio.wait_for(self._finalize(session_id, websocket, client, keep_sandbox), timeout=10)
                 )
 
-    async def _finalize(self, session_id: UUID, websocket: WebSocket, client: ClaudeCli, keep_sandbox: bool) -> None:
+    async def _finalize(
+        self, session_id: UUID, websocket: WebSocket, client: RuntimeClient, keep_sandbox: bool
+    ) -> None:
         """Let go of one runner connection, and of the session itself unless it outlives us.
 
         `keep_sandbox` is the difference between "this conversation is over" and "this replica is".
@@ -605,15 +600,15 @@ class SessionService:
         renewed lease rather than a `session_ttl_seconds` hard timer (`sandbox_claims.renew`), and
         both lapse together the moment a replica stops tending it.
         """
+        runtime = await self._runtime(session_id)
         while True:
             await self._store.renew_lease(session_id)
-            await self._claims.renew(
-                session_id=session_id,
-                expires_at=datetime.now(UTC) + timedelta(seconds=self._config.session_ttl_seconds),
+            await runtime.renew_sandbox(
+                session_id=session_id, expires_at=datetime.now(UTC) + timedelta(seconds=runtime.session_ttl_seconds)
             )
             await asyncio.sleep(LEASE_RENEW_INTERVAL.total_seconds())
 
-    async def _watch_connection(self, client: ClaudeCli) -> None:
+    async def _watch_connection(self, client: RuntimeClient) -> None:
         """Raise `WebSocketDisconnect` the moment the runner's stream ends.
 
         The reader is a detached task, so a dropped socket cannot propagate into the task group by
@@ -638,18 +633,19 @@ class SessionService:
 
     async def _run_turn(
         self,
-        client: TurnClient,
+        client: RuntimeClient,
         frames: AsyncIterator[ReceivedFrame],
         session_id: UUID,
         turn: TurnStart | ResumedTurn,
         *,
         abort_event: asyncio.Event,
+        runtime: RuntimeAdapter | None = None,
     ) -> None:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
         completes.
 
-        **Project, then act.** Every frame goes through `claude_code.projection` and this loop acts
-        on the neutral events that come back, so what it knows about is prose, messages, tool calls
+        **Project, then act.** Every frame goes through the selected runtime adapter and this loop
+        acts on the neutral events that come back, so what it knows about is prose, messages, tool calls
         and a completed turn — not `assistant`, `stream_event` and `result`
         (<README.md> § The neutral projection).
 
@@ -665,6 +661,7 @@ class SessionService:
         session saying which frame it had got through — which is what makes adoption a read and its
         effects exactly-once (<README.md> § The cursor).
         """
+        runtime = runtime or await self._runtime(session_id)
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
             # A resumed turn's question was asked by a process that is gone; only its answer is
@@ -703,7 +700,7 @@ class SessionService:
                 # ends a turn rather than the conversation.
                 received = await next_frame
                 frame_seq = received.frame_seq
-                folding, events = frame_projection.projected(folding, frame_seq=frame_seq, payload=received.payload)
+                folding, events = runtime.project_frame(folding, frame_seq=frame_seq, payload=received.payload)
                 # The frame that ends the turn goes no further: what is left of the exchange is
                 # written below and `end_turn` is the transaction that closes it and carries the
                 # cursor past this frame, so projecting it into `apply_frame` would advance the
@@ -720,7 +717,7 @@ class SessionService:
                 else:
                     await self._store.apply_frame(session_id, turn_id, frame_seq, events)
             result = completed.frame.payload
-            failed = completed.event.outcome is TurnOutcome.FAILED and not abort_event.is_set()
+            failed = runtime.turn_failed(result) and not abort_event.is_set()
             # `result.result` is deliberately not projected — it repeats the turn's last message on
             # every result frame, so minting prose from it would double every answer. It is handed
             # over as the fallback for the one case that is not a repeat: a turn whose text arrived
@@ -744,9 +741,7 @@ class SessionService:
                 # Quoted from the frame rather than the event: *why* a turn failed is
                 # provider-specific by nature, and the neutral vocabulary carries an outcome
                 # rather than a message on purpose.
-                raise RuntimeError(
-                    f"the agent's turn failed: {result.get('subtype')}: {result.get('stop_reason') or 'unknown error'}"
-                )
+                raise RuntimeError(runtime.turn_failure_message(result))
             await self._store.end_turn(
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
@@ -775,7 +770,8 @@ class SessionService:
         released = await self._store.release_held_leases()
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
-        await self._claims.aclose()
+        for kind in self._runtimes.kinds:
+            await self._runtimes[kind].close()
 
 
 async def _replaying(
@@ -873,7 +869,7 @@ async def read_session_frames(
     limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
     kind: Annotated[list[str] | None, Query()] = None,
 ) -> SessionFramePage:
-    """Claude Code's own protocol frames behind one session, newest page first.
+    """The native harness protocol frames behind one session, newest page first.
 
     **One backend's wire, not the conversation.** These are the CLI's own frames in the CLI's own
     shapes — what `session_messages` is a lossy projection *of*. Nothing renders, announces or
