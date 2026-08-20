@@ -9,8 +9,8 @@
       "sha256": "zV9vs+sjVRB7pRkN8WeTdxJWZJtlPEMqsA2qDum3c0A="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-54d193b61f9c/bbapi",
-      "sha256": "VNGTth+cLK0n1spIMPcS+CZPDaT4JRrAtppfFRT30Jg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-177faa58b582/bbapi",
+      "sha256": "F3+qWLWCTER7YVAApOnAnMx30rOdfH0jPGw+UW5kJ4o="
     },
     "claude-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-d2a3c94634ab/claude_hooks-0.1.0-py3-none-any.whl",
@@ -33,8 +33,8 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-0648c724fb04/claude_hook",
-      "sha256": "BkjHJPsEFiyWLutvAsdxWDLoGcoPm/Ie0bJHAm70TpE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-4ef132d9119f/claude_hook",
+      "sha256": "TvEy2RGfLZ5q0TA98fGtzZDTZXaiqwCrF60b/z/ibFE="
     },
     "hostexecd": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/hostexecd-820224ba3db6/hostexecd",
@@ -49,8 +49,8 @@
       "sha256": "GevZROAC5TMDfuEJMTfPwKxFl8tWJxAWgpkoBoZZsQs="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-2683ab268b88/debundle",
-      "sha256": "JoOrJouIjF9g2vkNIkfTTXIte/x5MNWAgS8KXjkyUk0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-aea3e2b48610/debundle",
+      "sha256": "rqPitIYQhXjAC06jEajL3YchAm2J6Ob+QKFenSCV3po="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-e6c111e103de/cluster_health.skill",
