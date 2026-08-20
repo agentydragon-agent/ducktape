@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
@@ -28,6 +29,10 @@ logger = logging.getLogger(__name__)
 AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"
 SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
 GMAIL_LABEL_NAMESPACE_TOOLS = frozenset({"threads_modify_labels", "labels_patch", "labels_delete"})
+# GitHub MCP's search_pull_requests adds ``repo:<owner>/<repo>`` from the separate owner/repo
+# arguments only when the query contains no repository qualifier. Do not allow a caller to bypass
+# a repository policy by supplying an approved owner/repo pair alongside a query for another repo.
+_GITHUB_SEARCH_REPOSITORY_QUALIFIER = re.compile(r"(?:^|[^\w])repo:", re.IGNORECASE)
 
 
 class ToolAutoApprovalMode(IntEnum):
@@ -212,7 +217,7 @@ class AutoApprovalPolicyRegistry:
             case GitHubRepositoryAutoApprovalPolicy(server=server, owner=owner, repository=repository, tools=tools):
                 if server_id != server or tool_name not in tools:
                     return
-                evaluation.record(current_path, _evaluate_github_repository(arguments, owner, repository))
+                evaluation.record(current_path, _evaluate_github_repository(tool_name, arguments, owner, repository))
             case AnyOfAutoApprovalPolicy(policies=members):
                 for member in members:
                     await self._evaluate_policy(
@@ -228,13 +233,23 @@ class AutoApprovalPolicyRegistry:
                 evaluation.record(current_path, NotAutoApproved("policy never auto-approves"))
 
 
-def _evaluate_github_repository(arguments: dict[str, Any], owner: str, repository: str) -> AutoApprovalDecision:
+def _evaluate_github_repository(
+    tool_name: str, arguments: dict[str, Any], owner: str, repository: str
+) -> AutoApprovalDecision:
     actual_owner = arguments.get("owner")
     actual_repository = arguments.get("repo")
     if not isinstance(actual_owner, str) or not isinstance(actual_repository, str):
         return NotAutoApproved("call does not identify a repository with string owner/repo arguments")
     if (actual_owner.casefold(), actual_repository.casefold()) != (owner.casefold(), repository.casefold()):
         return NotAutoApproved(f"repository {actual_owner}/{actual_repository} is outside {owner}/{repository}")
+    if tool_name == "search_pull_requests":
+        query = arguments.get("query")
+        if not isinstance(query, str):
+            return NotAutoApproved("pull-request search requires a string query")
+        if _GITHUB_SEARCH_REPOSITORY_QUALIFIER.search(query):
+            return NotAutoApproved(
+                "pull-request search query sets a repository qualifier; omit it so owner/repo scopes the search"
+            )
     return AutoApproved(f"reviewed read targets repository {owner}/{repository}")
 
 

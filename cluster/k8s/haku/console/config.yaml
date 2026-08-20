@@ -136,8 +136,9 @@ auto_approval_policies:
         - search_repositories
         - search_users
   # public-coder-agent may inspect this public source repository, but not use the Operator's GitHub
-  # credential to read other public or private repositories. Search/global tools remain manual
-  # because their query strings do not provide a trustworthy repository boundary.
+  # credential to read other public or private repositories. search_pull_requests is safe only
+  # with its matching owner/repo arguments and no query-level `repo:` qualifier; its typed policy
+  # evaluator verifies both before GitHub MCP adds the repository scope.
   - id: public_ducktape_reads
     type: github_repository
     server: github
@@ -165,10 +166,11 @@ auto_approval_policies:
       - list_repository_collaborators
       - list_tags
       - pull_request_read
+      - search_pull_requests
   # public-coder-agent may also inspect the private Gaffer repository. Keep this as a separate
   # repository-scoped atom so adding one private source does not widen the Ducktape boundary or
-  # accidentally grant access to other repositories. Search/global tools remain manual because
-  # their query strings do not provide a trustworthy repository boundary.
+  # accidentally grant access to other repositories. search_pull_requests is admitted only with
+  # this policy's owner/repo arguments and no query-level `repo:` qualifier.
   - id: public_gaffer_private_reads
     type: github_repository
     server: github
@@ -196,6 +198,7 @@ auto_approval_policies:
       - list_repository_collaborators
       - list_tags
       - pull_request_read
+      - search_pull_requests
   - id: public_coder_github_reads
     type: any_of
     policies:
