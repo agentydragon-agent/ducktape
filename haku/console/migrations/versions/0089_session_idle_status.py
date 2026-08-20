@@ -31,15 +31,24 @@ def upgrade() -> None:
     op.drop_constraint(_CONSTRAINT, _TABLE, type_="check")
     op.create_check_constraint(_CONSTRAINT, _TABLE, _WITH_IDLE)
     op.alter_column("sessions", "bridge_token_fingerprint", nullable=True)
+    op.alter_column("sessions", "lease_expires_at", nullable=True)
     op.create_check_constraint(
         "ck_sessions_idle_bridge_token",
         "sessions",
         "(status = 'idle' AND bridge_token_fingerprint IS NULL) OR "
         "(status <> 'idle' AND (bridge_token_fingerprint IS NOT NULL OR status IN ('closing','closed','failed')))",
     )
+    op.create_check_constraint(
+        "ck_sessions_idle_lease",
+        "sessions",
+        "(status = 'idle' AND lease_expires_at IS NULL) OR "
+        "(status <> 'idle' AND (lease_expires_at IS NOT NULL OR status IN ('closing','closed','failed')))",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint("ck_sessions_idle_lease", "sessions", type_="check")
+    op.alter_column("sessions", "lease_expires_at", nullable=False)
     op.drop_constraint("ck_sessions_idle_bridge_token", "sessions", type_="check")
     op.alter_column("sessions", "bridge_token_fingerprint", nullable=False)
     op.drop_constraint(_CONSTRAINT, _TABLE, type_="check")

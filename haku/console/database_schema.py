@@ -1011,9 +1011,10 @@ class Session(Base):
     projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Renewed by whichever replica currently holds this session's runner websocket: a replica that
-    # dies mid-turn otherwise leaves the row claiming a turn is in flight forever. Required, because
-    # the sweep looks for a lease that has passed and an absent lease never does.
-    lease_expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # dies mid-turn otherwise leaves the row claiming a turn is in flight forever. Absent only while
+    # idle (or if that unallocated session ends); allocation installs the provisioning grant in the
+    # transaction that mints the runner credential.
+    lease_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Which replica is asserting the lease, and — by being NULL or not — which of the lease's two
     # meanings is running. NULL is the creator's provisioning grant: nobody holds this session
     # yet, it is merely budgeted until a runner attaches. Set means that pod's heartbeat, so an
@@ -1032,6 +1033,11 @@ class Session(Base):
             "(status = 'idle' AND bridge_token_fingerprint IS NULL) OR "
             "(status <> 'idle' AND (bridge_token_fingerprint IS NOT NULL OR status IN ('closing','closed','failed')))",
             name="ck_sessions_idle_bridge_token",
+        ),
+        CheckConstraint(
+            "(status = 'idle' AND lease_expires_at IS NULL) OR "
+            "(status <> 'idle' AND (lease_expires_at IS NOT NULL OR status IN ('closing','closed','failed')))",
+            name="ck_sessions_idle_lease",
         ),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),

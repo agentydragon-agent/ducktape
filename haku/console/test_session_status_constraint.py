@@ -35,7 +35,13 @@ def _operator(conn: Connection) -> UUID:
     return operator_id
 
 
-def _insert_session(conn: Connection, status: str, *, fingerprint: bytes | None = b"fingerprint") -> None:
+def _insert_session(
+    conn: Connection,
+    status: str,
+    *,
+    fingerprint: bytes | None = b"fingerprint",
+    lease_expires_at: datetime.datetime | None = _NOW,
+) -> None:
     operator_id, conversation_id = _operator(conn), uuid4()
     conn.execute(
         text(
@@ -47,7 +53,7 @@ def _insert_session(conn: Connection, status: str, *, fingerprint: bytes | None 
         text(
             "INSERT INTO sessions (session_id, operator_id, conversation_id, status, bridge_token_fingerprint, "
             "lease_expires_at, created_at, updated_at) "
-            "VALUES (:session_id, :operator_id, :conversation_id, :status, :fingerprint, :n, :n, :n)"
+            "VALUES (:session_id, :operator_id, :conversation_id, :status, :fingerprint, :lease, :n, :n)"
         ),
         {
             "session_id": uuid4(),
@@ -55,6 +61,7 @@ def _insert_session(conn: Connection, status: str, *, fingerprint: bytes | None 
             "conversation_id": conversation_id,
             "status": status,
             "fingerprint": fingerprint,
+            "lease": lease_expires_at,
             "n": _NOW,
         },
     )
@@ -67,7 +74,7 @@ def test_idle_is_admitted_only_after_the_rollout_migration(db_url: str, engine: 
 
     apply_migrations(db_url)
     with engine.begin() as conn:
-        _insert_session(conn, "idle", fingerprint=None)
+        _insert_session(conn, "idle", fingerprint=None, lease_expires_at=None)
 
 
 @pytest.mark.parametrize("status", _PREVIOUS_STATUSES)
@@ -100,7 +107,16 @@ def test_only_an_idle_session_lacks_a_bridge_credential(
 def test_an_unallocated_session_may_end_without_a_credential(db_url: str, engine: Engine, status: str) -> None:
     apply_migrations(db_url)
     with engine.begin() as conn:
-        _insert_session(conn, status, fingerprint=None)
+        _insert_session(conn, status, fingerprint=None, lease_expires_at=None)
+
+
+@pytest.mark.parametrize(("status", "lease"), [("idle", _NOW), ("provisioning", None), ("ready", None)])
+def test_only_an_idle_session_lacks_a_lease(
+    db_url: str, engine: Engine, status: str, lease: datetime.datetime | None
+) -> None:
+    apply_migrations(db_url)
+    with engine.begin() as conn, pytest.raises(IntegrityError, match="ck_sessions_idle_lease"):
+        _insert_session(conn, status, fingerprint=None if status == "idle" else b"fingerprint", lease_expires_at=lease)
 
 
 if __name__ == "__main__":
