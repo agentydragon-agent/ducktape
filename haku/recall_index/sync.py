@@ -93,8 +93,13 @@ async def sync(
             skipped_large += 1
             continue
         try:
-            blob_text = data.decode()
+            blob_text = data.decode("utf-8")
         except UnicodeDecodeError:
+            skipped_binary += 1
+            continue
+        # A NUL is valid Unicode but invalid PostgreSQL TEXT. Treat it as binary rather than
+        # letting one nominally UTF-8 blob abort the atomic source-tip publication.
+        if "\0" in blob_text:
             skipped_binary += 1
             continue
         for chunk in chunk_text(blob_text, budget):
