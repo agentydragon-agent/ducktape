@@ -43,6 +43,5 @@ Kustomizations were retired.
 
 The `openclaw` ImageRepository and ImagePolicy under
 `cluster/k8s/flux-image-automation-ghcr/` remain active because
-`public-coder-agent` still consumes that image. The `litellm-key-openclaw` name also
-survives while `agent-lab` uses that existing virtual key; only its obsolete
-`openclaw-gateway` reflection target was removed.
+`public-coder-agent` still consumes that image. The retired gateway's LiteLLM key remained only through the time-boxed `agent-lab` experiment and was
+removed with that namespace after the experiment ended.
