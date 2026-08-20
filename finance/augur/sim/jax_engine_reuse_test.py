@@ -91,7 +91,10 @@ def _sale_scenario() -> Scenario:
     """A long-held SP500 lot sold mid-horizon: the realized capital gain depends on the lot cost basis."""
     return Scenario(
         agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=0)],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=0),
+            InitialAccountBalance(agent_id="alice", account_id="reserve", balance=1),
+        ],
         initial_lots=[
             InitialLot(
                 lot_id="alice_sp500",
@@ -207,6 +210,32 @@ def test_cost_basis_sweep_takes_effect() -> None:
         lambda p: replace(p, lot_cost_basis_per_unit=p.lot_cost_basis_per_unit // np.int64(2)),
         lambda b: b.state.capital_gain_state,
     )
+
+
+def test_asset_sale_price_sweep_takes_effect() -> None:
+    def perturb(p: CompiledSimulation) -> CompiledSimulation:
+        return replace(p, sales=replace(p.sales, price_fixed=p.sales.price_fixed + np.int64(1_000)))
+
+    _assert_value_sweep_takes_effect(_sale_scenario(), perturb, lambda b: b.state.cash_state)
+
+
+def _reroute_asset_sale(plan: CompiledSimulation) -> CompiledSimulation:
+    proceeds_slot = plan.sales.proceeds_slot.copy()
+    funded_slots = [int(slot) for slot in np.flatnonzero(plan.cash_initial_balance > 0)]
+    proceeds_slot[0] = next(slot for slot in funded_slots if slot != int(proceeds_slot[0]))
+    return replace(plan, sales=replace(plan.sales, proceeds_slot=proceeds_slot))
+
+
+def test_asset_sale_static_slot_change_recompiles() -> None:
+    plan = _compile(_sale_scenario(), rollout_count=2, locations={})
+    original_cash = _run_jax(plan).state.cash_state.copy()
+    base_cache_size = _program_cache_size()
+
+    rerouted = _reroute_asset_sale(plan)
+    rerouted_cash = _run_jax(rerouted).state.cash_state
+
+    assert not np.array_equal(rerouted_cash, original_cash)
+    assert _program_cache_size() == base_cache_size + 1
 
 
 def test_initial_balance_sweep_takes_effect() -> None:
@@ -418,6 +447,29 @@ def test_asset_purchase_program_owns_values_and_static_slots() -> None:
 
     topology_change = _reroute_asset_purchase(plan)
     assert cast(Any, jax.tree_util.tree_structure(_build_program(topology_change).dynamic.asset_purchases)) != tree
+
+
+def test_asset_sale_program_owns_values_and_fifo_topology() -> None:
+    plan = _compile(_sale_scenario(), rollout_count=2, locations={})
+    program = _build_program(plan)
+    sales = program.dynamic.asset_sales
+    count = int((plan.sales.month >= 0).sum())
+
+    leaves, tree = jax.tree_util.tree_flatten(sales)
+    assert len(leaves) == 7
+    assert all(isinstance(leaf, jax.Array) for leaf in leaves)
+    assert np.array_equal(sales.quantity, plan.sales.quantity[:count])
+    assert sales.proceeds_slot == tuple(int(slot) for slot in plan.sales.proceeds_slot[:count])
+    assert sales.buffer_index == tuple(range(count))
+    assert len(sales.ordered_lots) == count
+    assert not hasattr(program.dynamic.operands, "sale_qty_t")
+    assert not hasattr(program.static.structure, "sale_olots")
+
+    value_sweep = replace(plan, sales=replace(plan.sales, price_fixed=plan.sales.price_fixed + np.int64(1_000)))
+    assert cast(Any, jax.tree_util.tree_structure(_build_program(value_sweep).dynamic.asset_sales)) == tree
+
+    topology_change = _reroute_asset_sale(plan)
+    assert cast(Any, jax.tree_util.tree_structure(_build_program(topology_change).dynamic.asset_sales)) != tree
 
 
 def _multi_series_scenario() -> Scenario:
