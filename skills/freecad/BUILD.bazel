@@ -1,4 +1,3 @@
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
@@ -62,12 +61,6 @@ filegroup(
     srcs = ["@freecad_mcp//:addon"],
 )
 
-oci_layout_rloc(
-    name = "freecad_test",
-    testonly = True,
-    image = "@freecad_test_linux_amd64",
-)
-
 py_library(
     name = "conftest",
     testonly = True,
@@ -77,10 +70,8 @@ py_library(
     ],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
-        "//util:oci",
         "//util/bazel:runfiles",
         "//util/bazel:subprocess",
-        "//util/testing:container_logs",
         "//util/testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
