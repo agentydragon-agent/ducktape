@@ -1236,6 +1236,7 @@ async def test_shutdown_hands_back_every_lease_this_replica_holds(chat_store, mi
     for view, _ in held:
         holder, expires_at = await lease_of(migrated_sessions, view.session_id)
         assert holder is None
+        assert expires_at is not None
         assert expires_at <= datetime.now(UTC), "the lease is expired, so any runner may adopt it"
         assert await chat_store.status(view.session_id) in OPEN_SESSION_STATUSES, "adoptable, not failed"
     assert await chat_store.expire_stale_leases() == 0, "within the grace, so no sweep fails it yet"

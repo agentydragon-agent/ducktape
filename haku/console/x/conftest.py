@@ -96,7 +96,9 @@ async def make_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID
     """
     async with sessions.begin() as db:
         await db.execute(
-            update(Session).where(Session.session_id == session_id).values(status="idle", bridge_token_fingerprint=None)
+            update(Session)
+            .where(Session.session_id == session_id)
+            .values(status="idle", bridge_token_fingerprint=None, lease_expires_at=None)
         )
 
 
@@ -149,7 +151,7 @@ async def age_lease(sessions: async_sessionmaker[AsyncSession], session_id: UUID
         chat.lease_expires_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
 
 
-async def lease_of(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime]:
+async def lease_of(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> tuple[str | None, datetime | None]:
     async with sessions() as db:
         chat = await db.get(Session, session_id)
         assert chat is not None

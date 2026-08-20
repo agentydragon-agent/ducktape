@@ -748,7 +748,11 @@ class SessionStore:
             if first_attach:
                 record.bridge_connected_at = now
                 record.status = SessionStatus.READY
-            elif record.lease_holder not in (None, REPLICA) and record.lease_expires_at > now:
+            elif (
+                record.lease_holder not in (None, REPLICA)
+                and record.lease_expires_at is not None
+                and record.lease_expires_at > now
+            ):
                 # Somebody else is still serving this session and saying so. Turning this runner
                 # away keeps one CLI answering to one console — but only until that lease lapses,
                 # which is why it is `HELD` rather than `REJECTED`.
