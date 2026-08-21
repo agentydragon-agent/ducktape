@@ -291,11 +291,11 @@ What remains is composing that target with the PE tender floor, and buying.
   - The trigger is a POLICY, not a schedule. An unconditional scheduled buy is not a neutral
     default, it is the maximally-forced-buyer strategy, and its underfunding clamp is silent —
     realized ladder depth would become path-dependent and unreported, i.e. measuring a strategy
-    with no name. It also means a second scheduled-purchase type on a channel already tombstoned
-    for deletion (`ScheduledAssetPurchase`, #3739). The policy maintains K years of real
+    with no name. Mid-horizon acquisition now uses the target-allocation policy's purchase
+    slots, so the policy maintains K years of real
     coverage, with a real-yield threshold knob below which it defers; that knob is what turns
     "wait and decide later" from prose into a measurable arm. A schedule stays useful as a
-    deterministic test fixture for the execution layer, not as config.
+    deterministic test fixture for the execution layer, not as a second config path.
     Open design questions: whether the ladder joins the target-allocation denominator (today it
     cannot — sleeves outside the denominator are what make a target alongside an untradeable
     holding expressible); phase ordering against the cash band, since both want the same dollars

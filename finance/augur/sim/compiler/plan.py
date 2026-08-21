@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
-from finance.augur.sim.compiler.assets import PurchaseCompileOutput, SaleCompileOutput, compile_purchases, compile_sales
+from finance.augur.sim.compiler.assets import SaleCompileOutput, compile_sales
 from finance.augur.sim.compiler.bonds import BondCompileOutput, compile_bonds
 from finance.augur.sim.compiler.deductions import (
     MIDCompileOutput,
@@ -191,7 +191,6 @@ class CompiledSimulation:
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
     liability_owner_profile_index: NDArray[np.int64]
     sales: SaleCompileOutput
-    purchases: PurchaseCompileOutput
     obligations: ObligationCompileOutput
     # Per-PE-issuer arrays. Issuers are the distinct `private_equity:<issuer>` asset_ids
     # appearing in `initial_lots`. For each issuer:
@@ -462,31 +461,6 @@ def compile_simulation(
             )
         )
 
-    # One empty lot slot per scheduled purchase, appended after the initial lots. The slot
-    # carries its real purchase month, so the compile-time FIFO order is already right: the
-    # slot holds zero units until that month, and a zero-quantity lot contributes nothing to
-    # a FIFO walk that reaches it early.
-    purchases = compile_purchases(
-        scenario, strings, assets, account_slots, series_index_by_id, first_lot_slot=len(lot_rows)
-    )
-    lot_rows.extend(
-        _LotRow(
-            lot_id_code=strings.require(purchase.lot_id),
-            agent_code=strings.require(purchase.agent_id),
-            account_code=strings.require(purchase.to_account_id),
-            asset_code=assets.require(purchase.asset),
-            asset=purchase.asset,
-            purchase_month=int(purchase.month),
-            fifo_rank=int(purchase.month),
-            # Basis is per-rollout from here on: the engine promotes this column to
-            # `(lot, rollout)` carry state and the purchase writes its realized price.
-            cost_basis_per_unit=0,
-            initial_quantity=0,
-            quantity_scale=quantity_scale_for_asset(purchase.asset),
-        )
-        for purchase in scenario.scheduled_asset_purchases
-    )
-
     # Purchase slots for the target-allocation policies: `purchase_slots_per_sleeve` empty lots
     # per sleeve, so a policy that buys has somewhere to put what it bought. Each purchase needs
     # its OWN lot — a lot bought in a different month has a different holding period and a
@@ -667,7 +641,6 @@ def compile_simulation(
         primary_residence_events=primary_residence_events,
         lifecycle_events=lifecycle_events,
         sales=sales,
-        purchases=purchases,
         obligations=obligations,
         pe_issuers=pe_issuers,
         pe_policies=pe_policies,

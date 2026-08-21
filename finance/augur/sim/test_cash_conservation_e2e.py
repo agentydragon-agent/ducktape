@@ -57,7 +57,6 @@ from finance.augur.sim.scenario import (
     RecurringObligation,
     RecurringTransfer,
     Scenario,
-    ScheduledAssetPurchase,
     ScheduledAssetSale,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
@@ -84,8 +83,8 @@ def _total_cash_by_month(run: SimulationRun) -> NDArray[np.int64]:
 
 def _scenario() -> Scenario:
     """Deliberately busy: money entering from outside (wages, a bond coupon), leaving to
-    outside (rent to an unmodeled landlord), moving between modeled agents, and a lot bought
-    from the market and sold back to it at a profit."""
+    outside (rent to an unmodeled landlord), moving between modeled agents, and a seeded lot
+    sold back to the market at a profit."""
 
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="bob"), Agent(agent_id="irs")],
@@ -108,15 +107,14 @@ def _scenario() -> Scenario:
                 maturity_month_index=12,
             )
         ],
-        scheduled_asset_purchases=[
-            ScheduledAssetPurchase(
-                month=1,
-                cause_id="buy_vti",
+        initial_lots=[
+            InitialLot(
                 lot_id="bought",
                 agent_id="alice",
                 asset=_VTI,
-                amount=200000,
-                price_per_unit=100,
+                quantity=2_000,
+                cost_basis_per_unit=100,
+                purchase_month_index=0,
             )
         ],
         scheduled_asset_sales=[
@@ -188,15 +186,14 @@ def _scheduled_sale_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance=1000000)],
-        scheduled_asset_purchases=[
-            ScheduledAssetPurchase(
-                month=1,
-                cause_id="buy_vti",
+        initial_lots=[
+            InitialLot(
                 lot_id="bought",
                 agent_id="alice",
                 asset=_VTI,
-                amount=500000,
-                price_per_unit=100,
+                quantity=5_000,
+                cost_basis_per_unit=100,
+                purchase_month_index=0,
             )
         ],
         scheduled_asset_sales=[

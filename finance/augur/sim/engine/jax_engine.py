@@ -72,7 +72,6 @@ from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
 from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
-    _AssetPurchaseProgram,
     _AssetSaleProgram,
     _BondInputs,
     _CapitalGainTarget,
@@ -365,21 +364,6 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     )
 
 
-def _asset_purchase_program(plan: CompiledSimulation) -> _AssetPurchaseProgram:
-    """Pack real scheduled asset purchases as one semantic JAX program component."""
-    purchases = plan.purchases
-    count = int((purchases.month >= 0).sum())
-    return _AssetPurchaseProgram(
-        month=jnp.asarray(purchases.month[:count], dtype=jnp.int32),
-        amount_quanta=jnp.asarray(purchases.amount_quanta[:count], dtype=jnp.int64),
-        price_fixed=jnp.asarray(purchases.price_fixed[:count], dtype=jnp.int64),
-        price_series=jnp.asarray(purchases.price_series[:count], dtype=jnp.int64),
-        quantity_scale=jnp.asarray(purchases.quantity_scale[:count], dtype=jnp.int64),
-        lot_slot=tuple(int(slot) for slot in purchases.lot_slot[:count]),
-        cash_slot=tuple(int(slot) for slot in purchases.from_slot[:count]),
-    )
-
-
 def _asset_sale_program(plan: CompiledSimulation) -> _AssetSaleProgram:
     """Pack scheduled sales with their host-resolved FIFO topology."""
     sales = plan.sales
@@ -495,7 +479,6 @@ class _ProgramDynamic(NamedTuple):
     external_money_values: jax.Array
     pe_channels: _PEChannelInputs
     swept: _TracedConfig
-    asset_purchases: _AssetPurchaseProgram
     asset_sales: _AssetSaleProgram
     operands: _Operands
     product_inputs: _ProductSummaryInputs | None
@@ -1029,9 +1012,6 @@ def _build_program(
 
     # Scheduled asset sales own both their traced values and host-resolved FIFO topology.
     asset_sales = _asset_sale_program(plan)
-    # Scheduled asset purchases need no fold: each fills its own dedicated lot slot, so their
-    # compiler rows are already the loop-free representation consumed by the scan.
-    asset_purchases = _asset_purchase_program(plan)
     folded_purchases = [
         _FoldedPurchase(
             buffer_index=prop,
@@ -1534,7 +1514,6 @@ def _build_program(
             external_money_values=jnp.asarray(plan.external_money_values),
             pe_channels=_pe_channel_inputs(plan),
             swept=_traced_config(plan),
-            asset_purchases=asset_purchases,
             asset_sales=asset_sales,
             operands=baked,
             product_inputs=product_inputs,
@@ -1552,7 +1531,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     external_money_values = dynamic.external_money_values
     pe_ch = dynamic.pe_channels
     cfg = dynamic.swept
-    asset_purchases = dynamic.asset_purchases
     asset_sales = dynamic.asset_sales
     baked = dynamic.operands
     product_inputs = dynamic.product_inputs
@@ -1582,9 +1560,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     profile_ordinary_bucket = structure.profile_ordinary_bucket
     cg_profiles_by_agent = {ct.agent_code: ct.profiles for ct in structure.cg_targets}
     # Static index/selection arrays (rebuilt from the hashable tuples carried in `structure`).
-    n_asset_purchases = len(asset_purchases.lot_slot)
-    asset_purchase_lot_slot = np.asarray(asset_purchases.lot_slot, dtype=np.int64).reshape(n_asset_purchases)
-    asset_purchase_cash_slot = np.asarray(asset_purchases.cash_slot, dtype=np.int64).reshape(n_asset_purchases)
     n_asset_sales = len(asset_sales.proceeds_slot)
     asset_sale_pool_width = len(asset_sales.ordered_lots[0]) if asset_sales.ordered_lots else 1
     asset_sale_proceeds_slot = np.asarray(asset_sales.proceeds_slot, dtype=np.int64).reshape(n_asset_sales)
@@ -2320,62 +2295,16 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             )
         )
 
-        # Scheduled asset purchases. AFTER settlement on purpose: buying is discretionary and must
-        # never be able to starve an obligation into a false ruin. Fully vectorized over purchases
-        # and rollouts: every rollout buys at its own price with its own cash.
-        if n_asset_purchases:
-            if external_money_values.shape[0] > 0:
-                safe_price_series = jnp.where(asset_purchases.price_series >= 0, asset_purchases.price_series, 0)
-                purchase_price = jnp.where(
-                    (asset_purchases.price_series >= 0)[:, None],
-                    external_money_values[safe_price_series, :, month],
-                    asset_purchases.price_fixed[:, None],
-                )  # (purchase, R)
-            else:
-                purchase_price = jnp.broadcast_to(asset_purchases.price_fixed[:, None], (n_asset_purchases, r))
-            # `~failed`, not the month-opening `active`: settlement runs just above and can fail
-            # the rollout, and a failed rollout must stop transacting immediately.
-            purchase_fires = (~failed)[None, :] & (month == asset_purchases.month)[:, None]
-            # Clamp to what the funding account actually holds. Recorded on the event, so a caller
-            # comparing executed against requested sees the shortfall.
-            budget = jnp.where(
-                purchase_fires,
-                jnp.minimum(asset_purchases.amount_quanta[:, None], jnp.maximum(cash[asset_purchase_cash_slot], 0)),
-                0,
-            )
-            safe_price = jnp.where(purchase_price > 0, purchase_price, 1)
-            # Whole quanta only; the sub-quantum remainder stays in cash. Flooring here and valuing
-            # with the same helper the basis math uses keeps `spent` <= `budget` (round(x) <= N for
-            # x <= integer N) and makes an immediate full-lot resale net exactly zero gain.
-            purchase_quanta = jnp.where(
-                purchase_price > 0, (budget * asset_purchases.quantity_scale[:, None]) // safe_price, 0
-            )
-            purchase_spent = _value_quanta_from_quantity(
-                purchase_quanta, purchase_price, asset_purchases.quantity_scale[:, None]
-            )
-            # The cash leaves for the market, which is `rest_of_world`.
-            cash = _move_cash(
-                cash,
-                debit=asset_purchase_cash_slot,
-                credit=structure.external_cash_slot,
-                amount=purchase_spent,
-                row_of_world=structure.external_cash_slot,
-            )
-            lot_remaining = lot_remaining.at[asset_purchase_lot_slot].add(purchase_quanta)
-            purchased = purchase_quanta > 0
-            cost_basis_per_unit = cost_basis_per_unit.at[asset_purchase_lot_slot].set(
-                jnp.where(purchased, purchase_price, cost_basis_per_unit[asset_purchase_lot_slot])
-            )
-
-        # Target-allocation purchases, decided above and executed here: same placement as the
-        # scheduled ones, for the same reason. `~failed` rather than the month-opening `active`,
+        # Target-allocation purchases, decided above and executed here: after settlement because
+        # buying is discretionary and must never be able to starve an obligation into a false ruin.
+        # `~failed` rather than the month-opening `active`,
         # because settlement runs between the decision and this line.
         for tp, sleeve, want, unit_price in ta_buy_orders:
             scale = jnp.asarray(sleeve.quantity_scale, dtype=jnp.int64)
             priced = unit_price > 0
             # Affordability is measured against cash as it stands NOW, not as the policy saw it:
-            # settlement, a scheduled purchase, or a second policy on the same account can all have
-            # spent in between. Flooring keeps `spent <= cash`, so the clamp cannot overdraw. This
+            # settlement or a second policy on the same account can have spent in between. Flooring
+            # keeps `spent <= cash`, so the clamp cannot overdraw. This
             # is not the engine choosing a size — the policy's own order already fits the cash it
             # observed; the clamp binds only when something else took that cash first.
             affordable = jnp.where(
