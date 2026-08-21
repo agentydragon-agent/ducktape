@@ -245,6 +245,18 @@ async def test_the_same_outbox_row_cannot_post_twice(bot: Bot, joined_room: Oper
     assert [event.event_id for event in await joined_room.timeline() if isinstance(event, Message)] == [first]
 
 
+async def test_the_same_projected_notice_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
+    """A cursor replay inside Synapse's transaction-cache window reaches the first notice."""
+    tag = EventTag(kind=RoomEventKind.LIFECYCLE, attachment_id=uuid4(), conversation_id=uuid4(), source_event_seq=7)
+    room = joined_room.room_id
+
+    first = await bot.client.send_notice(bot.token, room, "session ended", txn_id=tag.transaction_id(), tag=tag)
+    again = await bot.client.send_notice(bot.token, room, "session ended", txn_id=tag.transaction_id(), tag=tag)
+
+    assert first == again
+    assert [event.event_id for event in await joined_room.timeline() if isinstance(event, Message)] == [first]
+
+
 async def test_an_edit_replaces_the_status_line_rather_than_adding_one(bot: Bot, joined_room: OperatorRoom) -> None:
     """One status line per turn, which is an `m.replace` and not a second notice."""
     room = joined_room.room_id

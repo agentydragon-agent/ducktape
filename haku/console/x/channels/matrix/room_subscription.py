@@ -20,10 +20,11 @@ loop used to write inside its own transaction is now something the channel decid
 what `conversation_event` records, and several things the room says have no row at all: a room being
 bound or adopted, an invite refused. Those still reach the room by being pushed at it.
 
-**The position is kept after the notice, never before.** A crash in that window says the notice
-again on the next pass — the same trade `revisions.retire` takes, and the right way round: a
-room told twice is odd, a room never told is a message silently dropped. What is left unguarded is
-the pacer's in-process queue, exactly as every other notice already is.
+**The position is kept after a sealed notice reaches the homeserver, never while it is merely
+queued.** A crash in that window derives the notice again on the next pass under the same Matrix
+transaction id — the right way round: a cached repeat is refused, while a room never told is a
+message silently dropped. Relayed prompts and silent-turn narration still use the older queued
+path because their bodies require store queries rather than this PR's pure one-event projection.
 """
 
 from __future__ import annotations
@@ -97,6 +98,10 @@ _NOTICES_ADVISORY_LOCK = 0x4D58_4E54  # "MXNT"
 # event states about itself.
 Notify = Callable[[str, RoomEventKind], Awaitable[None]]
 
+# A sealed notice projected from one durable conversation event. Returning means the homeserver
+# accepted the effect, so the caller may advance its cursor.
+ProjectNotice = Callable[[str, UUID, str, RoomEventKind, UUID, int], Awaitable[None]]
+
 # A completed turn with no finished assistant message is legitimate, but silence looks like a lost
 # answer. The turn loop records the facts; this subscriber supplies Matrix's words for their absence.
 NOTHING_SAID = "the turn finished without saying anything"
@@ -158,10 +163,12 @@ class RoomCursor:
         primary key.
         """
         async with self._sessions() as db, db.begin():
+            statement = insert(ChannelCursor).values(attachment_id=self._attachment_id, event_seq=position.event_seq)
             await db.execute(
-                insert(ChannelCursor)
-                .values(attachment_id=self._attachment_id, event_seq=position.event_seq)
-                .on_conflict_do_update(index_elements=["attachment_id"], set_={"event_seq": position.event_seq})
+                statement.on_conflict_do_update(
+                    index_elements=["attachment_id"],
+                    set_={"event_seq": func.greatest(ChannelCursor.event_seq, statement.excluded.event_seq)},
+                )
             )
 
 
@@ -171,6 +178,8 @@ class Notice:
 
     body: str
     kind: RoomEventKind
+    conversation_id: UUID
+    source_event_seq: int
 
 
 def _why_not(reason: PromptRejection) -> str:
@@ -218,7 +227,7 @@ def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:
             return False
 
 
-def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
+def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str) -> Notice | None:
     """What this room says about *event*, or nothing where it says nothing.
 
     A match on the event's body rather than on its kind, and every shape spelled out rather than
@@ -238,19 +247,23 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
     """
     match event.body:
         case PromptRejectedBody(reason=reason):
-            return Notice(f"not delivered — {_why_not(reason)}; send it again", RoomEventKind.REJECTED)
+            body = f"not delivered — {_why_not(reason)}; send it again"
+            kind = RoomEventKind.REJECTED
         case UnreadableInputBody(media_type=media_type):
-            return Notice(
+            body = (
                 f"received a message Haku cannot read ({media_type}) — it reads text only; "
-                "describe it in words and it will reach the session",
-                RoomEventKind.UNREADABLE,
+                "describe it in words and it will reach the session"
             )
+            kind = RoomEventKind.UNREADABLE
         case SessionAdoptedBody(holder=holder):
-            return Notice(f"another console replica ({holder}) took this session over", RoomEventKind.LIFECYCLE)
+            body = f"another console replica ({holder}) took this session over"
+            kind = RoomEventKind.LIFECYCLE
         case SetupNarrationBody(text=text):
-            return Notice(text, RoomEventKind.NARRATION)
+            body = text
+            kind = RoomEventKind.NARRATION
         case LeaseExpiredBody(reason=reason):
-            return Notice(f"the session ended — {_why_it_lapsed(reason)}", RoomEventKind.LIFECYCLE)
+            body = f"the session ended — {_why_it_lapsed(reason)}"
+            kind = RoomEventKind.LIFECYCLE
         case PromptStartedBody():
             # **The text is not on this row.** A prompt is an item and its prose is the segments
             # that follow, so the relay is said at the item's completion, where the whole of it is
@@ -259,7 +272,8 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
         case TurnEndedBody(outcome=TurnOutcome.ABORTED):
             # An abort is a turn outcome now rather than an event of its own, so the room's line for
             # it is said here — on the one outcome of three that the operator caused.
-            return Notice(ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE)
+            body = ABORTED_BY_OPERATOR
+            kind = RoomEventKind.LIFECYCLE
         case (
             MessageStartedBody()
             | ReasoningStartedBody()
@@ -276,6 +290,7 @@ def notice(event: StreamedEvent, *, room_id: str) -> Notice | None:
             | UnknownEventBody()
         ):
             return None
+    return Notice(body=body, kind=kind, conversation_id=conversation_id, source_event_seq=event.position.event_seq)
 
 
 class RoomNotices:
@@ -294,6 +309,7 @@ class RoomNotices:
         conversations: MatrixConversationStore,
         notifications: SessionNotifications,
         announce: Notify,
+        project: ProjectNotice,
         status: StatusFrontend,
         room: BoundRoom,
         outbox: RoomOutbox,
@@ -304,6 +320,7 @@ class RoomNotices:
         self._conversations = conversations
         self._notifications = notifications
         self._announce = announce
+        self._project = project
         self._status_frontend = status
         self._room = room
         self._outbox = outbox
@@ -316,8 +333,8 @@ class RoomNotices:
         """Say or queue what the room is owed. True when the read stopped at its limit.
 
         **The position is kept after the whole batch, never during it.** A crash part-way replays
-        the batch: a notice is said again, and a reply is refused by the outbox's unique subject —
-        which is the trade this reader is built around.
+        the batch: a sealed notice reuses its event-derived Matrix transaction, and a reply is
+        refused by the outbox's unique subject — which is the trade this reader is built around.
         """
         if (room_id := await self._room()) is None:
             return False
@@ -358,8 +375,10 @@ class RoomNotices:
                     if await self._silent(event.turn_id):
                         await self._announce(NOTHING_SAID, RoomEventKind.NARRATION)
                 case _:
-                    if (said := notice(event, room_id=room_id)) is not None:
-                        await self._announce(said.body, said.kind)
+                    if (said := project_notice(event, conversation_id=conversation_id, room_id=room_id)) is not None:
+                        await self._project(
+                            room_id, attachment_id, said.body, said.kind, said.conversation_id, said.source_event_seq
+                        )
         await self._live_status.reconcile(self._status_frontend)
         await subscription.keep(read.position)
         return read.more

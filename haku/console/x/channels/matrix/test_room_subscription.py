@@ -27,9 +27,10 @@ from haku.console.x.channels.matrix.room_subscription import (
     RELAYED_PROMPT,
     RoomCursor,
     RoomNotices,
+    project_notice,
 )
 from haku.console.x.session_store import SessionStore
-from haku.console.x.subscription import START, ConversationStream, StreamPosition
+from haku.console.x.subscription import START, ConversationStream, StreamedEvent, StreamPosition
 
 
 class Room:
@@ -41,10 +42,22 @@ class Room:
         self.statuses: list[tuple[str, UUID | None]] = []
         self.cleared = 0
         self.typing: list[bool] = []
+        self.projected: list[tuple[UUID, int]] = []
+        self.fail_project = False
 
     async def announce(self, body: str, kind: RoomEventKind) -> None:
         self.said.append(body)
         self.kinds.append(kind)
+
+    async def project(
+        self, room_id: str, attachment_id: UUID, body: str, kind: RoomEventKind, conversation_id: UUID, event_seq: int
+    ) -> None:
+        assert room_id == MATRIX_ROOM
+        assert attachment_id
+        self.projected.append((conversation_id, event_seq))
+        if self.fail_project:
+            raise RuntimeError("homeserver refused the projected notice")
+        await self.announce(body, kind)
 
     async def show_status(self, text: str, session_id: UUID | None = None) -> None:
         self.statuses.append((text, session_id))
@@ -91,6 +104,7 @@ def notices(
         conversations,
         notifications,
         room.announce,
+        room.project,
         room,
         room.bound,
         outbox,
@@ -224,6 +238,7 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
         conversations,
         notifications,
         successor_room.announce,
+        successor_room.project,
         successor_room,
         successor_room.bound,
         outbox,
@@ -271,6 +286,7 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
         conversations,
         notifications,
         successor_room.announce,
+        successor_room.project,
         successor_room,
         successor_room.bound,
         outbox,
@@ -440,6 +456,76 @@ async def test_keeping_a_position_twice_moves_it_rather_than_failing(
     await cursor.keep(StreamPosition(event_seq=17))
 
     assert await cursor.position() == StreamPosition(event_seq=17)
+
+
+async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_sessions, operator_id, conversations) -> None:
+    await conversations.bind_room(MATRIX_ROOM, operator_id)
+    attachment_id = await conversations.attachment(MATRIX_ROOM)
+    assert attachment_id is not None
+    cursor = RoomCursor(migrated_sessions, attachment_id)
+
+    await cursor.keep(StreamPosition(event_seq=17))
+    await cursor.keep(StreamPosition(event_seq=3))
+
+    assert await cursor.position() == StreamPosition(event_seq=17)
+
+
+async def test_a_failed_projection_is_replayed_with_the_same_source_identity(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    """The cursor follows the accepted effect. A failed send leaves the row owed, and the retry
+    names the same durable source for Matrix transaction deduplication."""
+    await notices.reconcile_once()
+    before = await stored_position(migrated_sessions)
+    room.fail_project = True
+    await abort_a_turn(chat_store, operator_id, served)
+
+    with pytest.raises(RuntimeError, match="homeserver refused"):
+        await notices.reconcile_once()
+    assert await stored_position(migrated_sessions) == before
+
+    room.fail_project = False
+    await notices.reconcile_once()
+
+    assert len(room.projected) == 2
+    assert room.projected[0] == room.projected[1]
+    assert room.said == [ABORTED_BY_OPERATOR]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected", "kind"),
+    [
+        (
+            session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="wait"),
+            "not delivered — Haku is still working on the previous message; send it again",
+            RoomEventKind.REJECTED,
+        ),
+        (
+            session_events.UnreadableInputBody(media_type="m.image"),
+            "received a message Haku cannot read (m.image) — it reads text only; "
+            "describe it in words and it will reach the session",
+            RoomEventKind.UNREADABLE,
+        ),
+        (session_events.SetupNarrationBody(text="cloning haku-state"), "cloning haku-state", RoomEventKind.NARRATION),
+        (session_events.TurnEndedBody(outcome=TurnOutcome.ABORTED), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
+    ],
+)
+def test_sealed_notices_are_pure_projections_of_their_source_event(body, expected, kind) -> None:
+    conversation_id = uuid4()
+    event = StreamedEvent(
+        position=StreamPosition(event_seq=23),
+        session_id=uuid4(),
+        turn_id=uuid4(),
+        item_id=None,
+        created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
+        body=body,
+    )
+
+    projected = project_notice(event, conversation_id=conversation_id, room_id=MATRIX_ROOM)
+
+    assert projected is not None
+    assert (projected.body, projected.kind) == (expected, kind)
+    assert (projected.conversation_id, projected.source_event_seq) == (conversation_id, 23)
 
 
 if __name__ == "__main__":

@@ -341,6 +341,30 @@ class MatrixSyncService:
             return
         self._queue_notice(binding.room_id, body, kind)
 
+    async def project_notice(
+        self,
+        room_id: str,
+        attachment_id: UUID,
+        body: str,
+        kind: RoomEventKind,
+        conversation_id: UUID,
+        source_event_seq: int,
+    ) -> None:
+        """Post one notice derived from a durable conversation event.
+
+        Unlike `announce`, this call does not return while the effect exists only in the pacer's
+        memory. `RoomNotices` advances its cursor after this returns, so a send failure or process
+        death leaves the source event owed. Replaying it uses the same Matrix transaction id.
+        """
+        tag = EventTag(
+            kind=kind, attachment_id=attachment_id, conversation_id=conversation_id, source_event_seq=source_event_seq
+        )
+
+        async def post() -> None:
+            await self._client.send_notice(await self._token(), room_id, body, txn_id=tag.transaction_id(), tag=tag)
+
+        await self.pacer.send_and_wait(post)
+
     def _queue_notice(self, room_id: str, body: str, kind: RoomEventKind) -> None:
         tag = EventTag(kind=kind)
 
