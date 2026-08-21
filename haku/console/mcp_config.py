@@ -357,6 +357,9 @@ class ConsoleConfigFile(BaseModel):
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
+    # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
+    # remain useful client guidance, but this server-side setting is authoritative.
+    kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
 
     @model_validator(mode="before")
     @classmethod

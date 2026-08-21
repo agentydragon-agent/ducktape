@@ -4,8 +4,8 @@ Grant scope and rules stay in JSONB because the Kubernetes API resource vocabula
 The application domain validates the namespace scope and RBAC-like rule shape before insertion;
 PostgreSQL enforces their basic shape plus the lifecycle and provenance invariants here.
 
-Revision ID: 0089
-Revises: 0088
+Revision ID: 0091
+Revises: 0090
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision: str = "0089"
-down_revision: str | None = "0088"
+revision: str = "0091"
+down_revision: str | None = "0090"
 branch_labels: str | None = None
 depends_on: str | None = None
 
@@ -74,7 +74,7 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE FUNCTION public.haku_0089_kubernetes_grant_source_invariants()
+        CREATE FUNCTION public.haku_0091_kubernetes_grant_source_invariants()
         RETURNS trigger
         LANGUAGE plpgsql
         AS $$
@@ -108,15 +108,15 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        CREATE TRIGGER trg_haku_0089_kubernetes_grant_source_invariants
+        CREATE TRIGGER trg_haku_0091_kubernetes_grant_source_invariants
         BEFORE INSERT OR UPDATE OF agent_id, source_tool_call_id ON public.kubernetes_grants
-        FOR EACH ROW EXECUTE FUNCTION public.haku_0089_kubernetes_grant_source_invariants()
+        FOR EACH ROW EXECUTE FUNCTION public.haku_0091_kubernetes_grant_source_invariants()
         """
     )
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER trg_haku_0089_kubernetes_grant_source_invariants ON public.kubernetes_grants")
-    op.execute("DROP FUNCTION public.haku_0089_kubernetes_grant_source_invariants()")
+    op.execute("DROP TRIGGER trg_haku_0091_kubernetes_grant_source_invariants ON public.kubernetes_grants")
+    op.execute("DROP FUNCTION public.haku_0091_kubernetes_grant_source_invariants()")
     op.drop_index("idx_kubernetes_grants_agent_status_expiry", table_name="kubernetes_grants")
     op.drop_table("kubernetes_grants")

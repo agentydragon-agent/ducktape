@@ -104,6 +104,7 @@ func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
 			FieldSelector:   "metadata.name=web",
 			LabelSelector:   "app=web",
 		},
+		RequiredScope: GrantScope{Kind: grantScopeNamespaces, Namespaces: []string{"demo"}},
 		RequiredRules: []PolicyRule{{
 			APIGroups:       []string{"apps"},
 			Resources:       []string{"deployments"},
@@ -129,6 +130,7 @@ func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
 		"api_version",
 		"field_selector",
 		"label_selector",
+		"required_scope",
 		"required_rules",
 		"api_groups",
 		"resources",
@@ -206,6 +208,9 @@ func TestNamedPodLogRequestIsAuthorizedAndForwarded(t *testing.T) {
 	if got.Attributes != wantAttributes {
 		t.Errorf("attributes = %#v, want %#v", got.Attributes, wantAttributes)
 	}
+	if got.RequiredScope.Kind != grantScopeNamespaces || strings.Join(got.RequiredScope.Namespaces, ",") != "demo" {
+		t.Errorf("scope = %#v", got.RequiredScope)
+	}
 	if len(got.RequiredRules) != 1 {
 		t.Fatalf("rules = %#v", got.RequiredRules)
 	}
@@ -273,8 +278,46 @@ func TestNonResourceRequestProducesNonResourceRule(t *testing.T) {
 	authority.mu.Lock()
 	defer authority.mu.Unlock()
 	rule := authority.requests[0].RequiredRules[0]
+	if scope := authority.requests[0].RequiredScope; scope.Kind != grantScopeNonResource || len(scope.Namespaces) != 0 {
+		t.Errorf("scope = %#v", scope)
+	}
 	if strings.Join(rule.NonResourceURLs, ",") != "/version" || strings.Join(rule.Verbs, ",") != "get" {
 		t.Errorf("rule = %#v", rule)
+	}
+}
+
+func TestUnnamespacedResourceScopeComesFromDiscovery(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		path       string
+		namespaced bool
+		wantKind   string
+	}{
+		{name: "all namespaces", path: "/api/v1/pods", namespaced: true, wantKind: grantScopeAllNamespaces},
+		{name: "cluster resource", path: "/api/v1/nodes", namespaced: false, wantKind: grantScopeCluster},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			authority := &recordingAuthority{decision: allowedDecision()}
+			resolver := &staticResourceScopes{namespaced: test.namespaced}
+			proxy := newTestProxy(t, authority, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]string{"kind": "List"})
+			}), func(config *Config) {
+				config.ResourceScopes = resolver
+			})
+			response := request(t, proxy.Client(), http.MethodGet, proxy.URL+test.path, "caller")
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d", response.StatusCode)
+			}
+			authority.mu.Lock()
+			defer authority.mu.Unlock()
+			if scope := authority.requests[0].RequiredScope; scope.Kind != test.wantKind || len(scope.Namespaces) != 0 {
+				t.Errorf("scope = %#v", scope)
+			}
+			if len(resolver.calls) != 1 {
+				t.Fatalf("scope resolver calls = %#v", resolver.calls)
+			}
+		})
 	}
 }
 

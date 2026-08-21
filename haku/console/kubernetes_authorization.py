@@ -5,11 +5,10 @@ authorization decision is made by a Kubernetes SubjectAccessReview (SAR).  A
 SAR is always issued for the deploy-configured subject below; request callers
 cannot supply a Kubernetes username or groups.
 
-This module deliberately has no database or grant state.  The bearer resolver
-is supplied by the Console composition root and is responsible for resolving
-the presented credential to a currently active Haku Agent.  Kubernetes
-authorization is disabled when no config is supplied, and every client/config
-failure is surfaced as an unavailable authority so callers fail closed.
+The evaluator itself has no ambient request state. The bearer resolver and optional grant service
+are supplied by the Console composition root; both the proxy and in-process MCP path feed the same
+trusted Agent evaluation method. Kubernetes authorization is disabled when no config is supplied,
+and every client/config failure is surfaced as an unavailable authority so callers fail closed.
 """
 
 from __future__ import annotations
@@ -20,14 +19,21 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthorizationV1Api
 from kubernetes_asyncio.config.config_exception import ConfigException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.kubernetes_grant_models import (
+    KubernetesGrantScope,
+    KubernetesGrantScopeKind,
+    KubernetesRule,
+    validate_grant_scope_rules,
+)
+from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.tool_call_actor import AgentActor
 
 logger = logging.getLogger(__name__)
@@ -59,30 +65,39 @@ class RequestAttributes(BaseModel):
     label_selector: str = ""
 
 
-class PolicyRule(BaseModel):
-    """The proxy's legacy rule projection, retained for wire compatibility.
-
-    SAR authorization uses ``RequestAttributes`` directly.  Keeping this
-    field in the request lets the proxy roll independently of Console and
-    avoids making a caller-controlled PolicyRule part of the decision.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    api_groups: list[str] = Field(default_factory=list)
-    resources: list[str] = Field(default_factory=list)
-    verbs: list[str] = Field(min_length=1)
-    resource_names: list[str] = Field(default_factory=list)
-    non_resource_urls: list[str] = Field(default_factory=list)
-
-
 class AuthorizationRequest(BaseModel):
     """Proxy-to-Console authorization request."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     attributes: RequestAttributes
-    required_rules: list[PolicyRule] = Field(default_factory=list, min_length=1)
+    required_scope: KubernetesGrantScope
+    required_rules: list[KubernetesRule] = Field(default_factory=list, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_canonical_projection(self) -> AuthorizationRequest:
+        validate_grant_scope_rules(self.required_scope, self.required_rules)
+        if self.required_rules != [required_rule(self.attributes)]:
+            raise ValueError("required_rules must be the canonical minimal rule for attributes")
+        attributes = self.attributes
+        scope = self.required_scope
+        if not attributes.resource_request:
+            if scope.kind is not KubernetesGrantScopeKind.NON_RESOURCE:
+                raise ValueError("a non-resource request requires non_resource scope")
+        elif attributes.namespace:
+            expected = KubernetesGrantScope(
+                kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=(attributes.namespace,)
+            )
+            if scope != expected:
+                raise ValueError("a named-namespace request requires its exact namespace scope")
+        elif scope.kind not in {KubernetesGrantScopeKind.ALL_NAMESPACES, KubernetesGrantScopeKind.CLUSTER}:
+            raise ValueError("an unnamespaced resource request requires all_namespaces or cluster scope")
+        return self
+
+
+# Compatibility name retained for the proxy foundation's public import surface. The grant and
+# proxy paths deliberately share the stricter canonical rule model.
+PolicyRule = KubernetesRule
 
 
 class AuthorizationResponse(BaseModel):
@@ -186,17 +201,26 @@ class KubernetesSubjectAccessReviewClient:
 
 
 class KubernetesAuthorizationService:
-    """Authenticate a Haku bearer, then use its deploy-selected profile's fixed SAR subject."""
+    """Evaluate standing Kubernetes policy, then an Agent-owned temporary grant.
+
+    The bearer-facing proxy route is only an adapter: it resolves the bearer through the canonical
+    Agent authority and then calls :meth:`evaluate`. In-process tools carry the same Agent id and
+    access profile in trusted execution metadata. SAR is always the first authority. A grant is
+    consulted only after a clean SAR denial; SAR failures remain unavailable/fail-closed even when
+    a matching grant exists.
+    """
 
     def __init__(
         self,
         *,
         config: KubernetesAuthorizationConfig | None,
         resolve_agent: Callable[[str], Awaitable[AgentActor | None]],
+        grants: KubernetesGrantService | None = None,
         sar_client: SubjectAccessReviewClient | None = None,
     ) -> None:
         self._config = config
         self._resolve_agent = resolve_agent
+        self._grants = grants
         self._sar_client = sar_client
 
     async def authorize(self, *, bearer: str, request: AuthorizationRequest) -> AuthorizationResponse:
@@ -211,10 +235,25 @@ class KubernetesAuthorizationService:
             raise KubernetesAuthorizationUnavailableError("Haku Agent authority is unavailable") from error
         if actor is None:
             raise KubernetesBearerRejectedError("Haku rejected the caller credential")
+        return await self.evaluate(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=request)
+
+    async def authorize_agent(
+        self, *, agent_id: UUID, access_profile_id: str | None, request: AuthorizationRequest
+    ) -> AuthorizationResponse:
+        """Evaluate identity already revalidated into trusted in-process execution metadata."""
+
+        return await self.evaluate(agent_id=agent_id, access_profile_id=access_profile_id, request=request)
+
+    async def evaluate(
+        self, *, agent_id: UUID, access_profile_id: str | None, request: AuthorizationRequest
+    ) -> AuthorizationResponse:
+        """Evaluate one trusted Agent request without mutating grant state."""
+
         if self._config is None:
             raise KubernetesAuthorizationUnavailableError("Kubernetes authorization is not configured")
-        profile_id = actor.access_profile_id
-        subject = self._config.subjects_by_access_profile.get(profile_id) if profile_id is not None else None
+        subject = (
+            self._config.subjects_by_access_profile.get(access_profile_id) if access_profile_id is not None else None
+        )
         if subject is None:
             raise KubernetesAuthorizationUnavailableError(
                 "Kubernetes authorization is not configured for the Agent access profile"
@@ -228,12 +267,16 @@ class KubernetesAuthorizationService:
                 result = await client.review(subject=subject, attributes=request.attributes)
         except TimeoutError as error:
             raise KubernetesAuthorizationUnavailableError("Kubernetes authorization timed out") from error
+        except KubernetesAuthorizationUnavailableError:
+            raise
+        except Exception as error:
+            raise KubernetesAuthorizationUnavailableError("Kubernetes authorization evaluation failed") from error
         decision_id = f"sar:{uuid4()}"
         logger.info(
             "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
             "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s path=%s",
-            actor.agent_id,
-            actor.access_profile_id,
+            agent_id,
+            access_profile_id,
             subject.username,
             decision_id,
             result.allowed,
@@ -244,7 +287,32 @@ class KubernetesAuthorizationService:
             request.attributes.name,
             request.attributes.path,
         )
-        return AuthorizationResponse(allowed=result.allowed, reason=result.reason, decision_id=decision_id)
+        if result.allowed:
+            return AuthorizationResponse(allowed=True, reason=result.reason, decision_id=decision_id)
+
+        # A normal SAR denial is the only point at which temporary authority may add access.
+        # Matching is read-only: the repository query excludes expired rows.
+        if self._grants is not None:
+            try:
+                grant = await self._grants.match_request(
+                    agent_id=agent_id, required_scope=request.required_scope, required_rules=request.required_rules
+                )
+            except Exception as error:
+                raise KubernetesAuthorizationUnavailableError("Kubernetes grant authority is unavailable") from error
+            if grant.allowed and grant.grant_id is not None:
+                grant_decision_id = f"grant:{grant.grant_id}"
+                logger.info(
+                    "Kubernetes temporary-grant decision agent_id=%s access_profile_id=%s "
+                    "decision_id=%s allowed=true valid_until=%s",
+                    agent_id,
+                    access_profile_id,
+                    grant_decision_id,
+                    grant.expires_at,
+                )
+                return AuthorizationResponse(
+                    allowed=True, reason=grant.reason, decision_id=grant_decision_id, valid_until=grant.expires_at
+                )
+        return AuthorizationResponse(allowed=False, reason=result.reason, decision_id=decision_id)
 
     async def aclose(self) -> None:
         if self._sar_client is not None:
@@ -256,3 +324,37 @@ def _bearer_token(value: str) -> str | None:
     if scheme.lower() != "bearer" or not separator or not token.strip():
         return None
     return token.strip()
+
+
+def required_rule(attributes: RequestAttributes) -> KubernetesRule:
+    """Build the same minimal RBAC-like rule used by the Kubernetes API proxy."""
+
+    if not attributes.resource_request:
+        return KubernetesRule(verbs=(attributes.verb,), non_resource_urls=(attributes.path,))
+    resource = attributes.resource
+    if attributes.subresource:
+        resource = f"{resource}/{attributes.subresource}"
+    return KubernetesRule(
+        api_groups=(attributes.api_group,),
+        resources=(resource,),
+        verbs=(attributes.verb,),
+        resource_names=(attributes.name,) if attributes.name else (),
+    )
+
+
+def required_scope(
+    attributes: RequestAttributes, *, unnamespaced_resource_kind: KubernetesGrantScopeKind | None = None
+) -> KubernetesGrantScope:
+    """Derive scope when a request either names its namespace or states its unnamespaced kind."""
+
+    if not attributes.resource_request:
+        if unnamespaced_resource_kind is not None:
+            raise ValueError("non-resource requests cannot declare a resource scope kind")
+        return KubernetesGrantScope(kind=KubernetesGrantScopeKind.NON_RESOURCE)
+    if attributes.namespace:
+        if unnamespaced_resource_kind is not None:
+            raise ValueError("a named-namespace request cannot declare an unnamespaced resource scope kind")
+        return KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=(attributes.namespace,))
+    if unnamespaced_resource_kind not in {KubernetesGrantScopeKind.ALL_NAMESPACES, KubernetesGrantScopeKind.CLUSTER}:
+        raise ValueError("an unnamespaced resource request must declare all_namespaces or cluster scope")
+    return KubernetesGrantScope(kind=unnamespaced_resource_kind)

@@ -12,6 +12,7 @@ wires that router and serves the config endpoint. It can also mount the built SP
 from __future__ import annotations
 
 import contextlib
+import datetime
 import logging
 import os
 import sys
@@ -64,6 +65,8 @@ from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService
+from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
+from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -81,7 +84,7 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.console.tool_call_actor import AgentActor
-from haku.console.tools import gmail as gmail_tools, routine as routine_tools
+from haku.console.tools import gmail as gmail_tools, kubernetes as kubernetes_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import conversation_follow, sandbox_claims, session_runtime, subscription
 
@@ -425,8 +428,12 @@ def create_app(
             access_profile_id=authorization.access_profile_id,
         )
 
+    kubernetes_grants = KubernetesGrantService(
+        PostgresKubernetesGrantRepository(db_sessions),
+        max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
+    )
     kubernetes_authorization = KubernetesAuthorizationService(
-        config=console_config.kubernetes_authorization, resolve_agent=resolve_kubernetes_agent
+        config=console_config.kubernetes_authorization, resolve_agent=resolve_kubernetes_agent, grants=kubernetes_grants
     )
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
@@ -504,6 +511,13 @@ def create_app(
                 # Only when the Claude runtime is configured: without it nothing writes sessions,
                 # so the read tools would reflect an always-empty corpus.
                 conversations=session_store if claude_runtime is not None else None,
+                kubernetes=(
+                    kubernetes_tools.KubernetesToolsService(
+                        grants=kubernetes_grants, authorization=kubernetes_authorization
+                    )
+                    if any(server.id == kubernetes_tools.KUBERNETES_SERVER_ID for server in console_config.mcp.servers)
+                    else None
+                ),
             )
         )
     validate_in_process_server_bindings(console_config, in_process_servers)
