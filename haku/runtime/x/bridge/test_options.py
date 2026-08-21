@@ -97,14 +97,11 @@ def test_no_mcp_config_is_sent_when_there_are_no_servers() -> None:
     assert "--mcp-config" not in build_claude_launch(ClaudeSession()).arguments
 
 
-def test_only_a_delta_is_withheld_from_a_console_that_adopts_this_session() -> None:
-    """The runner asks the backend which frames survive being sent twice, and for Claude the
-    answer is "all but `stream_event`" — the one kind with no id to recognise a duplicate by and
-    the one the console reconstructs by appending."""
+def test_backend_does_not_classify_native_replay_frames() -> None:
+    """Replay retention is position-based and never asks Claude to classify native payloads."""
     backend = claude_backend(Path("/usr/local/bin/claude"))
 
-    assert not backend.replayable({"type": "stream_event", "event": {}})
-    assert backend.replayable({"type": "assistant", "message": {"id": "msg_01abc"}})
+    assert not hasattr(backend, "replayable")
 
 
 if __name__ == "__main__":

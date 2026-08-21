@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, FrameDirection, ItemType, RuntimeKind
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemType, RuntimeKind
 from haku.console.database_schema import SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
@@ -58,7 +58,7 @@ async def test_narration_carries_only_this_session_and_only_setup_output(chat_st
     await chat_store.narrate(session.session_id, "mine")
     await chat_store.narrate(other.session_id, "theirs")
     await chat_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, "result", {"type": "result", "uuid": "r1"}
+        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
     detail = await _detail(chat_store, operator_id, session.session_id)
@@ -105,14 +105,14 @@ async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_
     assert {item.call_id: item.text for item in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
 
 
-def _frame(frame_seq: int, kind: str, payload: dict[str, Any]) -> SessionFrame:
+def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> SessionFrame:
     now = datetime.now(UTC)
     return SessionFrame(
         frame_seq=frame_seq,
         session_id=uuid4(),
         direction=FrameDirection.FROM_AGENT,
         kind=kind,
-        payload=payload,
+        payload={"kind": "claude", "payload": payload} if kind is BridgeFrameKind.HARNESS_FRAME else payload,
         created_at=now,
         updated_at=now,
     )
@@ -120,10 +120,12 @@ def _frame(frame_seq: int, kind: str, payload: dict[str, Any]) -> SessionFrame:
 
 _INSPECTED = [
     _frame(1, SETUP_OUTPUT_KIND, setup_output_frame("cloning haku-state")),
-    _frame(2, "system", {"type": "system", "subtype": "status"}),
-    _frame(3, "system", {"type": "system", "subtype": "vcs_state_changed"}),
-    _frame(4, "user", {"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}}),
-    _frame(5, "result", {"type": "result", "subtype": "success"}),
+    _frame(2, BridgeFrameKind.HARNESS_FRAME, {"type": "system", "subtype": "status"}),
+    _frame(3, BridgeFrameKind.HARNESS_FRAME, {"type": "system", "subtype": "vcs_state_changed"}),
+    _frame(
+        4, BridgeFrameKind.HARNESS_FRAME, {"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}}
+    ),
+    _frame(5, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "subtype": "success"}),
 ]
 
 
@@ -151,7 +153,7 @@ def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
         _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
     )
     whole = projection.project_log(
-        projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)
+        projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload["payload"])
         for row in _INSPECTED
         if row.kind != SETUP_OUTPUT_KIND
     )

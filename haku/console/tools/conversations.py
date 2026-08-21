@@ -62,7 +62,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from typing import Annotated, Literal, Protocol, get_args
+from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastmcp import FastMCP
@@ -188,6 +188,8 @@ class ConversationReader(Protocol):
         self, session_id: UUID, *, cursor: FrameCursor | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]: ...
 
+    async def read_frame(self, session_id: UUID, frame_seq: int) -> RolloutFrame | None: ...
+
     async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]: ...
 
     async def read_transcript(
@@ -260,8 +262,8 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions="Read Haku's own past sessions. `list_sessions` finds one and `list_turns` finds an "
         "exchange within it; `read_transcript` is what was said and done, in one vocabulary that names no "
-        "agent backend, and `read_rollout` / `read_frame` are the raw frames one named backend sent — Claude "
-        "Code's — which is the one place here that is not neutral, so read them as that backend's wire rather "
+        "agent backend, and `read_rollout` / `read_frame` are the native frames the session's named harness "
+        "sent — the one place here that is not neutral, so read them as that harness's wire rather "
         "than as the conversation. Start with the transcript and follow an entry's `provenance` into the "
         "frames when a normalization looks wrong. Every listing pages the same way: pass `next_cursor` back "
         "as `cursor`. Read-only.",
@@ -376,7 +378,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
     ) -> RolloutPage:
         """Read one session's raw protocol frames in order, a page at a time.
 
-        Claude Code's own wire format, verbatim — one backend's frames, not the conversation.
+        The session harness's own wire format, verbatim — native frames, not the conversation.
         `read_transcript` is the same conversation already read, in the vocabulary that names no
         backend; this is what to check it against.
         """
@@ -397,7 +399,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ],
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> RolloutFrame:
-        """One of Claude Code's frames in full, however large — including one too big for any page.
+        """One native harness frame in full, however large — including one too big for any page.
 
         A page spends a byte budget and stops, so a frame larger than the whole budget is the one
         thing it cannot hand over; naming a single frame bounds the response by that frame alone.
@@ -408,13 +410,9 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         characters of an answer.
         """
         require_conversation_access(execution)
-        # `kinds=None` would drop deltas from the query, and a caller naming a `frame_seq` has
-        # already chosen its row.
-        frames = await reader.read_frames(
-            session_id, cursor=FrameCursor(frame_seq=frame_seq), limit=1, kinds=list(get_args(FrameKind))
-        )
-        if not frames or frames[0].frame_seq != frame_seq:
+        frame = await reader.read_frame(session_id, frame_seq)
+        if frame is None:
             raise ValueError(f"no such frame: {session_id=} {frame_seq=}")
-        return frames[0]
+        return frame
 
     return mcp

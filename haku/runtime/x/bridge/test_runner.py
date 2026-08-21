@@ -17,9 +17,10 @@ from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_cl
 from haku.runtime.x.bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     RUNNER_TO_CONSOLE,
-    ClaudeLaunch,
-    ClaudeMessage,
+    ClaudeFrame,
     EndInput,
+    HarnessFrame,
+    HarnessLaunch,
     SetupOutput,
 )
 from haku.runtime.x.bridge.runner import (
@@ -100,7 +101,7 @@ def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
 def test_environment_does_not_expose_the_bridge_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDECODE", "parent")
     monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "bridge-secret")
-    launch = ClaudeLaunch(
+    launch = HarnessLaunch(
         arguments=(),
         cwd="/workspace",
         environment={
@@ -132,7 +133,7 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
         "#!/usr/bin/env python3\nimport sys\nfor line in sys.stdin:\n    print(line, end='', flush=True)\n"
     )
     fake_claude.chmod(0o755)
-    launch = ClaudeLaunch(arguments=(), cwd=str(tmp_path), environment={})
+    launch = HarnessLaunch(arguments=(), cwd=str(tmp_path), environment={})
     console_socket, runner_socket = memory_websocket_pair()
 
     async with anyio.create_task_group() as tasks:
@@ -140,12 +141,12 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
             partial(bridge_websocket_to_cli, runner_socket, backend=claude_backend(fake_claude), launch=launch)
         )
         message = {"type": "user", "message": {"role": "user", "content": "hello"}}
-        await console_socket.send_text(ClaudeMessage(payload=message).model_dump_json())
+        await console_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=message).model_dump()).model_dump_json())
         with anyio.fail_after(5):
             # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo proves the
             # runner strips and restores the envelope. `seq=1` is the session's first frame.
-            assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == ClaudeMessage(
-                payload=message, seq=1
+            assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == HarnessFrame(
+                frame=ClaudeFrame(payload=message).model_dump(), seq=1
             )
         await console_socket.send_text(EndInput().model_dump_json())
 
@@ -160,7 +161,7 @@ async def test_what_the_cli_writes_to_stderr_reaches_the_console(tmp_path: Path)
         "#!/usr/bin/env python3\nimport sys\nprint('cannot start: no credential', file=sys.stderr, flush=True)\n"
     )
     fake_claude.chmod(0o755)
-    launch = ClaudeLaunch(arguments=(), cwd=str(tmp_path), environment={})
+    launch = HarnessLaunch(arguments=(), cwd=str(tmp_path), environment={})
     console_socket, runner_socket = memory_websocket_pair()
 
     async with anyio.create_task_group() as tasks:
@@ -179,7 +180,7 @@ async def test_the_cli_keeps_running_when_a_console_connection_ends(tmp_path: Pa
     fake_claude = tmp_path / "claude"
     fake_claude.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n")
     fake_claude.chmod(0o755)
-    launch = ClaudeLaunch(arguments=(), cwd=str(tmp_path), environment={})
+    launch = HarnessLaunch(arguments=(), cwd=str(tmp_path), environment={})
     console_socket, runner_socket = memory_websocket_pair()
     outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](8)
 
@@ -224,15 +225,15 @@ async def test_the_runner_waits_out_a_missing_console_but_not_a_refusing_one(tmp
 
 async def test_a_second_console_is_handed_what_the_first_may_not_have_recorded(tmp_path: Path) -> None:
     """The point of the window: nothing at this end can tell whether a frame handed to a dying
-    socket was recorded, so it is offered again and the console dedupes by the agent's own id."""
+    socket was recorded, so it is offered again and the console dedupes by its runner position."""
     process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
     log = OutboundLog()
     payload = {"type": "assistant", "message": {"id": "msg_01abc"}}
-    answered = ClaudeMessage(payload=payload, seq=1).model_dump_json()
+    answered = HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump(), seq=1).model_dump_json()
     try:
         first_console, first_runner = memory_websocket_pair()
-        await sender.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=True))
+        await sender.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(partial(_serve_console, first_runner, process, receiver, log))
             with anyio.fail_after(5):
@@ -256,8 +257,8 @@ async def test_a_console_that_says_where_it_got_to_is_sent_only_what_it_is_missi
     """Catch-up, which is what the runner's own numbering is for.
 
     Without a cursor the adopting console is handed the whole window and dedupes it against its
-    log — which works only for the frame classes the CLI gives an id. With one, the runner answers
-    from its own deque and the console is told exactly what it does not have.
+    runner positions. With one, the runner answers from its own deque and the console is told
+    exactly what it does not have.
     """
     process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
@@ -266,7 +267,7 @@ async def test_a_console_that_says_where_it_got_to_is_sent_only_what_it_is_missi
         first_console, first_runner = memory_websocket_pair()
         for message_id in ("msg_01", "msg_02"):
             payload = {"type": "assistant", "message": {"id": message_id}}
-            await sender.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=True))
+            await sender.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(partial(_serve_console, first_runner, process, receiver, log))
             with anyio.fail_after(5):
@@ -296,31 +297,28 @@ def test_a_cursor_above_the_runners_own_count_lifts_it_rather_than_colliding() -
     """
     log = OutboundLog()
     log.seed(41)
-    stamped = log.stamp(Outbound(frame=SetupOutput(data=b"x"), replayable=False))
+    stamped = log.stamp(Outbound(frame=SetupOutput(data=b"x")))
     assert RUNNER_TO_CONSOLE.validate_json(stamped) == SetupOutput(data=b"x", seq=42)
+    assert log.missed(None) == [], "rendered setup narration cannot be replayed without duplicating lines"
 
 
-async def test_a_delta_is_sent_but_never_replayed(tmp_path: Path) -> None:
-    """The one class replay corrupts: a `stream_event` has no identity for a console to recognise
-    it by, and `streamed += delta` double-appends. It is also the class that never needs it —
-    whatever it built is superseded by the completed `assistant` frame behind it."""
+async def test_a_delta_is_sent_and_replayed_by_position(tmp_path: Path) -> None:
+    """Native deltas are opaque and retained like every other harness frame."""
     process = await _start_cli(claude_backend(executable(tmp_path / "claude", "sleep 30")), _launch(tmp_path))
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
     log = OutboundLog()
     payload = {"type": "stream_event", "event": {}}
-    delta = ClaudeMessage(payload=payload, seq=1).model_dump_json()
+    delta = HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump(), seq=1).model_dump_json()
     try:
         console, runner = memory_websocket_pair()
-        await sender.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=False))
+        await sender.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(partial(_serve_console, runner, process, receiver, log))
             with anyio.fail_after(5):
                 assert await console.receive_text() == delta, "a delta must still reach the console live"
             await console.close()
 
-        # Numbered like everything else — a sequence that skipped a class would have holes meaning
-        # nothing — but not kept: the next console is offered what it can recognise.
-        assert not log.missed(None), "a delta must not be retained for the next console"
+        assert log.missed(None), "a delta must be retained for position-based replay"
     finally:
         sender.close()
         await _shutdown(process)
@@ -332,13 +330,13 @@ def executable(path: Path, body: str) -> Path:
     return path
 
 
-def _launch(cwd: Path) -> ClaudeLaunch:
-    return ClaudeLaunch(arguments=(), cwd=str(cwd), environment={})
+def _launch(cwd: Path) -> HarnessLaunch:
+    return HarnessLaunch(arguments=(), cwd=str(cwd), environment={})
 
 
-def _claude_frame(text: str) -> ClaudeMessage:
+def _claude_frame(text: str) -> HarnessFrame:
     frame = RUNNER_TO_CONSOLE.validate_json(text)
-    assert isinstance(frame, ClaudeMessage)
+    assert isinstance(frame, HarnessFrame)
     return frame
 
 

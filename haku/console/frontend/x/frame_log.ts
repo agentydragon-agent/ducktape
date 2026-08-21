@@ -95,13 +95,16 @@ function blockSummary(block: Record<string, unknown>): string {
  * unrecognised shape summarises to nothing instead of guessing. */
 export function frameSummary(frame: SessionFrame): string {
   const { payload } = frame;
-  if (frame.kind === "stream_event") return oneLine(field(payload, "event", "delta", "text"));
   if (frame.kind === "setup_output") return oneLine(payload.text);
-  if (frame.kind === "result") {
-    const subtype = typeof payload.subtype === "string" ? payload.subtype : "result";
-    return payload.is_error === true ? `${subtype} · error` : subtype;
+  if (!(isRecord(payload) && typeof payload.kind === "string" && isRecord(payload.payload))) return "";
+  const native = payload.payload;
+  const nativeKind = frame.native_kind ?? (typeof native.type === "string" ? native.type : undefined);
+  if (nativeKind === "stream_event") return oneLine(field(native, "event", "delta", "text"));
+  if (nativeKind === "result") {
+    const subtype = typeof native.subtype === "string" ? native.subtype : "result";
+    return native.is_error === true ? `${subtype} · error` : subtype;
   }
-  const content = field(payload, "message", "content");
+  const content = field(native, "message", "content");
   if (typeof content === "string") return oneLine(content);
   if (Array.isArray(content)) {
     const blocks = content.filter(isRecord);
@@ -109,5 +112,5 @@ export function frameSummary(frame: SessionFrame): string {
     const rest = blocks.length - NAMED_BLOCKS;
     return [...named, ...(rest > 0 ? [`+${rest} more`] : [])].join(" · ");
   }
-  return oneLine(payload.subtype);
+  return oneLine(native.subtype);
 }

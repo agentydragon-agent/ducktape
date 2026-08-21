@@ -12,7 +12,7 @@ from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.chat_models import BridgeFrameKind, RuntimeKind
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (
@@ -106,7 +106,8 @@ def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> Ro
     return RolloutFrame(
         frame_seq=seq,
         direction="from_agent",
-        kind=kind,
+        kind=BridgeFrameKind.HARNESS_FRAME,
+        native_kind=kind,
         created_at=NOW,
         payload=payload if payload is not None else {"type": kind},
     )
@@ -155,10 +156,14 @@ class _Reader:
         self, session_id: UUID, *, cursor: FrameCursor | None, limit: int, kinds: Sequence[str] | None
     ) -> list[RolloutFrame]:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit, "kinds": kinds})
-        selected = [frame for frame in self._frames if kinds is None or frame.kind in kinds]
+        selected = [frame for frame in self._frames if kinds is None or frame.native_kind in kinds]
         if cursor is not None:
             selected = [frame for frame in selected if frame.frame_seq >= cursor.frame_seq]
         return selected[:limit]
+
+    async def read_frame(self, session_id: UUID, frame_seq: int) -> RolloutFrame | None:
+        self.queries.append({"session_id": session_id, "frame_seq": frame_seq})
+        return next((frame for frame in self._frames if frame.frame_seq == frame_seq), None)
 
     async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit})
@@ -375,7 +380,24 @@ async def test_a_named_frame_is_read_including_the_kinds_a_page_leaves_out() -> 
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 7})
 
-    assert result.data.kind == "stream_event"
+    assert result.data.kind == BridgeFrameKind.HARNESS_FRAME
+    assert result.data.native_kind == "stream_event"
+    assert reader.queries == [{"session_id": SESSION, "frame_seq": 7}]
+
+
+async def test_a_named_method_only_frame_is_not_limited_to_the_known_kind_vocabulary() -> None:
+    frame = _frame(
+        8,
+        kind="codex/event/unknown",
+        payload={"jsonrpc": "2.0", "method": "codex/event/unknown", "params": {"opaque": True}},
+    )
+    reader = _Reader(frame)
+
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 8})
+
+    assert result.data.native_kind == "codex/event/unknown"
+    assert result.data.payload == frame.payload
 
 
 async def test_a_frame_seq_that_does_not_exist_is_an_error_not_the_next_frame() -> None:

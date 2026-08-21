@@ -34,6 +34,11 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
           <Badge size="sm" variant="outline">
             {frame.kind}
           </Badge>
+          {frame.native_kind && (
+            <Badge size="sm" variant="outline" color="gray">
+              {frame.native_kind}
+            </Badge>
+          )}
           {/* The one thing the transcript is silently missing, said where it can be acted on: this
               frame reached the fold and the fold had no branch for it. Orange rather than red —
               a class the CLI added is news, not a failure. */}

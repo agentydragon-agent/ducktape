@@ -22,8 +22,8 @@ works because of two properties of Synapse's `synapse/rest/client/transactions.p
   at _MOST_ 60". A console roll takes seconds, so the window is not the binding constraint.
 
 Outside that window the derivation degrades to what a random `txn_id` did, which is why it is a
-second line of defence and not the first. The first is `frame_uid`: a replayed `assistant` frame is
-dropped before any send happens.
+second line of defence and not the first. The first is the unique runner position: a replayed native
+frame is dropped before any send happens, whether or not its payload carries an id.
 
 Pinned by `//haku/console/x/channels/matrix:test_homeserver_e2e`, which sends one transaction twice against a
 real Synapse and requires a single event back. It asks for the behaviour rather than the source, so

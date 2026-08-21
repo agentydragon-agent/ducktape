@@ -93,10 +93,10 @@ partial JSON and stop are what first make that call addressable.
 `Identity` and is still the log's ordering, its keyset cursors and every reference to a frame.
 `runner_seq` is the number the **runner** put on the frame as it went on the wire, recorded
 alongside — dense over everything one runner sent, where `frame_seq` is sparse by design. Nothing
-orders or pages by it. What reads it is `highest_runner_seq`, the session's **resume cursor**: the
-console sends it on `start` (`ClaudeLaunch.resume_from`) and the runner replays only what is above
-it, instead of offering its whole window for `frame_uid` to sort out — which the frame classes
-carrying no agent-assigned id escape. Two properties worth knowing before changing it:
+orders or pages by it. It is unique per session and is the replay identity for native frames,
+including deltas and control responses with no payload-level id. `highest_runner_seq` is the
+session's **resume cursor**: the console sends it on `start` (`HarnessLaunch.resume_from`) and the
+runner replays only what is above it. Two properties worth knowing before changing it:
 
 - **Per session, not per connection.** Two consoles can be adopting one runner's window during a
   roll, so both compute the cursor from the same rows and agree. The runner treats it as a floor
@@ -104,9 +104,8 @@ carrying no agent-assigned id escape. Two properties worth knowing before changi
 - **It can legitimately sit below what the console holds, and never above.** Setup narration's
   compatibility frame is minted by the console with no `runner_seq`. **This is also why there is no
   gap detection yet**: narration leaves holes in the recorded runner numbers, and the runner's replay
-  window retains only replayable frames, so an adopted connection's own sequence is sparse too.
-  "A hole means loss" becomes true at the release that makes this the log's ordering
-  (<../plans/conversation_layers.md> § 13), not before.
+  window retains every native harness frame but not rendered setup narration. "A hole means loss"
+  is therefore not yet a general database invariant across both bridge classes.
 
 Both surfaces run on it at once. They are ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather

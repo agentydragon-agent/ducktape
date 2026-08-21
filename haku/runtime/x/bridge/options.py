@@ -16,10 +16,10 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
-from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, ClaudeLaunch
+from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, HarnessLaunch
 
 # What the CLI reports itself as. A label: the CLI does not switch behaviour on it.
 ENTRYPOINT = "haku-console"
@@ -59,12 +59,12 @@ class ClaudeSession:
     permission_mode: str = "bypassPermissions"
 
 
-def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = None) -> ClaudeLaunch:
+def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = None) -> HarnessLaunch:
     """The argv, cwd and environment for one CLI process, and where its console has got to.
 
     *resume_from* is not part of the process: it is the highest frame number this console has
     recorded for the session, riding on `start` because that frame is sent on every connection
-    (`ClaudeLaunch.resume_from`). None means nothing recorded yet, and the runner replays its whole
+    (`HarnessLaunch.resume_from`). None means nothing recorded yet, and the runner replays its whole
     window.
     """
     arguments = ["--output-format", "stream-json", "--verbose"]
@@ -84,7 +84,7 @@ def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = Non
     # Last, and always: the CLI reads prompts and control requests as newline-delimited JSON on
     # stdin. Everything the console does depends on it.
     arguments += ["--input-format", "stream-json"]
-    return ClaudeLaunch(
+    return HarnessLaunch(
         arguments=tuple(arguments),
         cwd=str(session.cwd) if session.cwd is not None else ".",
         environment={"CLAUDE_CODE_ENTRYPOINT": ENTRYPOINT, FINE_GRAINED_TOOL_STREAMING_ENV: "1", **session.environment},
@@ -97,24 +97,15 @@ class ClaudeBackend:
     """Claude Code, as the sandbox runner starts it and reads it back."""
 
     name: ClassVar[str] = "claude"
-    # No agent-assigned identity, so a console cannot recognise a second copy, and its
-    # reconstruction is `streamed += delta` — a replay double-appends. It never needs replaying
-    # either: the completed `assistant` frame behind it supersedes what it built, and does carry an
-    # id (<../../../cli_protocol/frame_identity.py>).
-    DELTA_TYPE: ClassVar[str] = "stream_event"
-
     executable: Path
 
-    def resolve(self, launch: ClaudeLaunch) -> ProcessLaunch:
+    def resolve(self, launch: HarnessLaunch) -> ProcessLaunch:
         return ProcessLaunch(
             executable=self.executable,
             arguments=launch.arguments,
             cwd=launch.cwd,
             environment=child_environment(launch),
         )
-
-    def replayable(self, payload: dict[str, Any]) -> bool:
-        return payload.get("type") != self.DELTA_TYPE
 
 
 def claude_backend(executable: Path | None = None) -> ClaudeBackend:

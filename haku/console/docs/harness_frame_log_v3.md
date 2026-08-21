@@ -1,0 +1,25 @@
+# Haku bridge v3 frame log
+
+The v3 cutover makes `session_frames` a forensic log of the bridge, not a projection of one
+harness vocabulary.
+
+- `kind` is only `harness_frame` or `setup_output`.
+- `payload` is the complete inner harness frame. For Claude it is `{kind: "claude", payload: <native JSON>}`;
+  its `kind`, native `type`, JSON-RPC method, and unknown fields are preserved and are not copied
+  into the outer `kind`.
+- `direction`, `created_at`, `updated_at`, and the runner's `runner_seq` are retained for replay and
+  ordering analysis.
+- Reconnect deduplication is positional (`session_id`, `runner_seq`), so native deltas and
+  notifications are retained/replayed exactly like every other harness frame. There is no
+  backend-specific `replayable()` classifier in the runner.
+
+This release is intentionally incompatible. The protocol negotiates version 3 only. A runner that
+advertises no common version is refused and its session is allowed to terminate/clean up; it must
+not be guessed into the v2 envelope. Migration `0090_harness_frame_log_cutover` clears session and
+chat-derived rows while preserving Operators, credentials, approvals, provider connections,
+conversations, and Matrix room attachments. The Matrix supervisor creates replacement sessions
+against the preserved conversation/room association.
+
+The frame inspector derives the native payload type as a presentation detail, while filtering and
+storage continue to use the bridge class. Exports include `bridge_kind` and `wire_seq` alongside the
+redacted, otherwise complete inner `frame`.

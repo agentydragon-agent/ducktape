@@ -1,7 +1,7 @@
 """Tunnel the CLI's newline-delimited JSON protocol over a text WebSocket.
 
 This module only moves that protocol across a WebSocket, inside the bridge envelope `protocol`
-defines: one CLI frame travels as one `ClaudeMessage`, and Haku's own control frames travel
+defines: one CLI frame travels as one `HarnessFrame`, and Haku's own control frames travel
 beside it without sharing its key namespace. What the frames mean is
 <../../../cli_protocol/README.md>; what reads them is `cli_client.ClaudeCli`.
 """
@@ -16,9 +16,10 @@ import anyio
 from haku.runtime.x.bridge.protocol import (
     RUNNER_TO_CONSOLE,
     SUPPORTED_VERSIONS,
-    ClaudeLaunch,
-    ClaudeMessage,
+    ClaudeFrame,
     EndInput,
+    HarnessFrame,
+    HarnessLaunch,
     Hello,
     SetupOutput,
     TextWebSocket,
@@ -47,7 +48,7 @@ class WebSocketTransport:
     def __init__(
         self,
         websocket: TextWebSocket,
-        launch: ClaudeLaunch,
+        launch: HarnessLaunch,
         on_progress: ProgressSink | None = None,
         *,
         hello_timeout: float = HELLO_TIMEOUT_SECONDS,
@@ -103,12 +104,14 @@ class WebSocketTransport:
     async def write(self, data: str) -> None:
         if not self._ready:
             raise RuntimeError("WebSocket transport is not connected")
-        await self._websocket.send_text(ClaudeMessage(payload=decode_object(data.strip())).model_dump_json())
+        await self._websocket.send_text(
+            HarnessFrame(frame=ClaudeFrame(payload=decode_object(data.strip())).model_dump()).model_dump_json()
+        )
 
-    def read_messages(self) -> AsyncIterator[ClaudeMessage]:
+    def read_messages(self) -> AsyncIterator[HarnessFrame]:
         return self._read_messages()
 
-    async def _read_messages(self) -> AsyncIterator[ClaudeMessage]:
+    async def _read_messages(self) -> AsyncIterator[HarnessFrame]:
         if not self._ready:
             raise RuntimeError("WebSocket transport is not connected")
         try:
@@ -116,7 +119,7 @@ class WebSocketTransport:
                 # Exhaustive over `RunnerToConsole`. A `start` or `end_input` coming back the
                 # wrong way never reaches here — the decoder refuses it.
                 match RUNNER_TO_CONSOLE.validate_json(await self._websocket.receive_text()):
-                    case ClaudeMessage() as message:
+                    case HarnessFrame() as message:
                         # The whole envelope: `seq` orders the console's log and is what a reconnect
                         # is computed from, so unwrapping here would drop it.
                         yield message

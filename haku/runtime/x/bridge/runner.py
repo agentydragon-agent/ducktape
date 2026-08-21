@@ -27,9 +27,10 @@ from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
 from haku.runtime.x.bridge.options import ClaudeBackend, claude_backend
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
-    ClaudeLaunch,
-    ClaudeMessage,
+    ClaudeFrame,
     EndInput,
+    HarnessFrame,
+    HarnessLaunch,
     Hello,
     SetupOutput,
     TextWebSocket,
@@ -47,17 +48,13 @@ SetupNarration = Callable[[SetupOutput], Awaitable[None]]
 
 @dataclass(frozen=True)
 class Outbound:
-    """One frame on its way to the console, and whether a later console may need it again.
+    """One frame on its way to the console.
 
-    Which frames are replayable is the backend's to say (`CliBackend`): the class that cannot
-    survive being sent twice is a fact about one CLI's protocol.
-
-    Carried as a model rather than serialized text because `OutboundLog.stamp` still has to number
-    it, and that number is what the other end's resume cursor is built from.
+    v3 retention is position-based. The runner retains every wire frame rather than trying to
+    understand a harness's native delta or JSON-RPC vocabulary.
     """
 
-    frame: ClaudeMessage | SetupOutput
-    replayable: bool
+    frame: HarnessFrame | SetupOutput
 
 
 # What the CLI may say before its pipes fill and it pauses for want of a listener. Sized for a whole
@@ -84,9 +81,9 @@ class OutboundLog:
     reconnecting console hands back has to name a number its peer assigned, which makes catch-up a
     filter over this deque rather than a reconciliation against the console's database.
 
-    Dense and monotonic over **everything** sent, replayable or not, so a hole the console sees is
-    evidence of loss rather than of a class this end declined to count. Which frames are *retained*
-    is the separate question `Outbound.replayable` answers.
+    Dense and monotonic over everything sent. Native harness frames are retained for reconnect;
+    setup narration is not, because Console renders one byte chunk into zero or more lines and does
+    not retain the runner sequence needed to identify a replay.
     """
 
     def __init__(self, window: int = REPLAY_WINDOW):
@@ -116,7 +113,7 @@ class OutboundLog:
         return [text for seq, text in self._retained if seq > resume_from]
 
     def stamp(self, outbound: Outbound) -> str:
-        """Number one frame and serialize it, retaining it if a later console may want it again.
+        """Number one frame and serialize it, retaining native harness traffic for replay.
 
         Numbered at send rather than at build, so the buffer's order is the wire's order and a
         replayed frame keeps the number it first went out under — two consoles therefore agree on
@@ -124,7 +121,7 @@ class OutboundLog:
         """
         seq, self._next_seq = self._next_seq, self._next_seq + 1
         text = outbound.frame.model_copy(update={"seq": seq}).model_dump_json()
-        if outbound.replayable:
+        if isinstance(outbound.frame, HarnessFrame):
             self._retained.append((seq, text))
         return text
 
@@ -148,30 +145,28 @@ class ClientWebSocketAdapter(TextWebSocket):
         await self._connection.close()
 
 
-# One entry by design: a second CLI ships as its own image and SandboxTemplate, setting
-# `HAKU_CLI_BACKEND` and changing nothing else here.
+# One entry by design: a second harness ships as its own image and SandboxTemplate. The selected
+# value is resolved once at process start and cannot change while a runner is alive.
 BACKENDS: Final[Mapping[str, Callable[[Path | None], CliBackend]]] = {ClaudeBackend.name: claude_backend}
 
 
-async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], backend: CliBackend, line: bytes) -> None:
-    """Wrap one CLI stream-JSON line in a `claude` envelope, skipping anything that is not one."""
+async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], line: bytes) -> None:
+    """Wrap one CLI stream-JSON line in a nested Claude frame, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
     payload = decode_object(stripped.decode())
-    await outbound.send(Outbound(frame=ClaudeMessage(payload=payload), replayable=backend.replayable(payload)))
+    await outbound.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
 
 
-async def _forward_cli_frames(
-    outbound: MemoryObjectSendStream[Outbound], backend: CliBackend, stdout: anyio.abc.ByteReceiveStream
-) -> None:
+async def _forward_cli_frames(outbound: MemoryObjectSendStream[Outbound], stdout: anyio.abc.ByteReceiveStream) -> None:
     pending = b""
     async for chunk in stdout:
         pending += chunk
         while b"\n" in pending:
             line, pending = pending.split(b"\n", 1)
-            await _queue_cli_line(outbound, backend, line)
+            await _queue_cli_line(outbound, line)
 
-    await _queue_cli_line(outbound, backend, pending)
+    await _queue_cli_line(outbound, pending)
 
 
 async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
@@ -180,9 +175,11 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
             case EndInput():
                 await stdin.aclose()
                 return
-            case ClaudeMessage(payload=payload):
+            case HarnessFrame(frame=frame):
+                if frame.get("kind") != "claude" or not isinstance(payload := frame.get("payload"), dict):
+                    raise ValueError("harness frame must contain a complete Claude frame")
                 await stdin.send((encode_object(payload) + "\n").encode())
-            case ClaudeLaunch():
+            case HarnessLaunch():
                 # A sequencing error the types cannot express: `start` opens a connection, so a
                 # second one mid-conversation means the console thinks this runner never launched.
                 raise ValueError("console sent a second launch frame mid-conversation")
@@ -202,12 +199,12 @@ async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr
     async for chunk in stderr:
         sys.stdout.buffer.write(chunk)
         sys.stdout.buffer.flush()
-        # Not retained: narration has no frame identity, so a console cannot tell a replayed line
-        # from a repeated one and would show the bootstrap twice.
-        await outbound.send(Outbound(frame=SetupOutput(data=chunk), replayable=False))
+        # `OutboundLog` numbers but does not retain narration: the console renders a byte chunk to
+        # lines and therefore cannot identify a repeated chunk by its runner sequence.
+        await outbound.send(Outbound(frame=SetupOutput(data=chunk)))
 
 
-async def _start_cli(backend: CliBackend, launch: ClaudeLaunch) -> anyio.abc.Process:
+async def _start_cli(backend: CliBackend, launch: HarnessLaunch) -> anyio.abc.Process:
     resolved = backend.resolve(launch)
     return await anyio.open_process(
         resolved.command,
@@ -241,10 +238,7 @@ async def _shutdown(process: anyio.abc.Process) -> int | None:
 
 
 async def _drain_cli(
-    process: anyio.abc.Process,
-    backend: CliBackend,
-    outbound: MemoryObjectSendStream[Outbound],
-    scope: anyio.CancelScope,
+    process: anyio.abc.Process, outbound: MemoryObjectSendStream[Outbound], scope: anyio.CancelScope
 ) -> None:
     """Read the CLI for as long as it lives, whether or not a console is listening.
 
@@ -261,7 +255,7 @@ async def _drain_cli(
     async with anyio.create_task_group() as readers:
         # stderr ending says nothing about the conversation; stdout ending is the CLI's exit.
         readers.start_soon(_forward_cli_errors, outbound, stderr)
-        await _forward_cli_frames(outbound, backend, stdout)
+        await _forward_cli_frames(outbound, stdout)
         readers.cancel_scope.cancel()
     scope.cancel()
 
@@ -277,8 +271,8 @@ async def _serve_console(
 
     **The replay window is what makes a lost socket lossless.** Nothing here can tell whether a
     frame handed to a dying socket was recorded, so every retained frame is offered again to
-    whichever console adopts the session next, and the console drops duplicates by their
-    agent-assigned identity (<../../../cli_protocol/frame_identity.py>).
+    whichever console adopts the session next, and the console drops duplicates by the runner
+    position carried in the bridge envelope.
 
     Re-sending a frame the console already holds costs one `ON CONFLICT DO NOTHING`; *omitting* one
     is the real failure, which is why frames are retained as they are sent rather than as they are
@@ -317,7 +311,7 @@ async def _serve_console(
         tasks.start_soon(cli_to_console)
 
 
-async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBackend, launch: ClaudeLaunch) -> None:
+async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBackend, launch: HarnessLaunch) -> None:
     """Run one CLI and serve exactly one console connection with it.
 
     `run` composes the same pieces with a process that outlives the socket.
@@ -326,7 +320,7 @@ async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBacke
     process = await _start_cli(backend, launch)
     try:
         async with anyio.create_task_group() as tasks:
-            tasks.start_soon(_drain_cli, process, backend, outbound_sender, tasks.cancel_scope)
+            tasks.start_soon(_drain_cli, process, outbound_sender, tasks.cancel_scope)
             # No window, since there is no second connection to hand one to; still numbered, because
             # the console's log takes its ordering from that number either way.
             await _serve_console(websocket, process, outbound_receiver, OutboundLog(window=0), launch.resume_from)
@@ -374,12 +368,12 @@ def _narrator(websocket: TextWebSocket, log: OutboundLog) -> SetupNarration:
     """Send bootstrap output down *websocket*, numbered by *log* like everything else this end sends."""
 
     async def narrate(frame: SetupOutput) -> None:
-        await websocket.send_text(log.stamp(Outbound(frame=frame, replayable=False)))
+        await websocket.send_text(log.stamp(Outbound(frame=frame)))
 
     return narrate
 
 
-async def _receive_launch(websocket: TextWebSocket) -> ClaudeLaunch:
+async def _receive_launch(websocket: TextWebSocket) -> HarnessLaunch:
     """Say which versions this image speaks, then read the launch the console chose.
 
     The hello goes first on **every** connection, not only the first: a console adopting a session
@@ -387,7 +381,7 @@ async def _receive_launch(websocket: TextWebSocket) -> ClaudeLaunch:
     expect it never reads before it writes, so the frame simply goes unread.
     """
     await websocket.send_text(Hello().model_dump_json())
-    if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), ClaudeLaunch):
+    if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), HarnessLaunch):
         raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
     return launch
 
@@ -478,7 +472,7 @@ async def run(
                         # Long-lived, so nothing the CLI writes is lost to a closed socket: the
                         # pipes drain into the buffer either way, whose backpressure pauses the CLI
                         # rather than dropping what it said.
-                        session.start_soon(_drain_cli, process, backend, outbound_sender, session.cancel_scope)
+                        session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
                     await _serve_console(websocket, process, outbound_receiver, log, launch.resume_from)
                 except ConnectionClosed:
                     # This connection ending says nothing about the session; `_dial` decides
@@ -506,7 +500,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--websocket-url", default=os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"))
     parser.add_argument("--session-id", default=os.environ.get("HAKU_CLAUDE_SESSION_ID"))
     parser.add_argument(
-        "--backend", choices=sorted(BACKENDS), default=os.environ.get("HAKU_CLI_BACKEND", ClaudeBackend.name)
+        "--harness",
+        choices=sorted(BACKENDS),
+        default=os.environ.get("HAKU_HARNESS"),
+        required=False,
+        help="immutable native harness to run (the deployment must provide this explicitly)",
     )
     # Unset leaves the executable to the backend, which reads the variable its own image sets
     # (`options.EXECUTABLE_VARIABLE` for Claude); this is for a local run against a CLI elsewhere.
@@ -516,6 +514,8 @@ def parse_args() -> argparse.Namespace:
     # nothing about which CLI follows it.
     parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get("HAKU_CLAUDE_SETUP")))
     args = parser.parse_args()
+    if not args.harness:
+        parser.error("--harness or HAKU_HARNESS is required")
     if not args.websocket_url:
         parser.error("--websocket-url or HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL is required")
     if args.session_id:
@@ -528,7 +528,7 @@ def main() -> None:
     anyio.run(
         run,
         args.websocket_url,
-        BACKENDS[args.backend](args.cli_path),
+        BACKENDS[args.harness](args.cli_path),
         os.environ.get(BRIDGE_CREDENTIAL_VARIABLE),
         args.setup_path,
     )

@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
+    BridgeFrameKind,
     FrameDirection,
     ItemStatus,
     ItemType,
@@ -37,7 +38,7 @@ from haku.console.chat_models import (
 from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
 from haku.console.mcp_config import ConsoleConfigFile
-from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, frame_kind
+from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     content_block_stop,
@@ -62,7 +63,7 @@ from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, S
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.bridge.cli_client import ClaudeCli, FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeMessage
+from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeFrame, HarnessFrame
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
@@ -527,7 +528,7 @@ async def _folded(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *pa
     folding = ProjectionState()
     for payload in payloads:
         recorded = await chat_store.record_frame(
-            session_id, FrameDirection.FROM_AGENT, frame_kind(payload) or "assistant", payload
+            session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
         )
         folding, events = projected(folding, frame_seq=recorded.frame_seq, payload=payload)
         if folding.open_tool_call is None:
@@ -549,7 +550,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
     await _folded(chat_store, session_id, started.turn_id, text_delta("we were half way through"))
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -571,7 +572,7 @@ async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
     await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
     await _folded(
         chat_store,
         session_id,
@@ -615,7 +616,7 @@ async def test_adoption_replays_a_tool_call_composition_from_its_start(
     await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
     await _folded(
         chat_store,
         session_id,
@@ -664,7 +665,7 @@ async def test_a_turn_that_said_something_the_room_could_not_hear_still_knows_it
     await chat_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
     await _folded(
         chat_store,
         session_id,
@@ -713,8 +714,10 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "result", result(uuid="res-1"))
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
+    await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, result(uuid="res-1")
+    )
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
@@ -746,9 +749,12 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
     await chat_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, "result", result(uuid="res-1", subtype="error_during_execution")
+        session_id,
+        FrameDirection.FROM_AGENT,
+        BridgeFrameKind.HARNESS_FRAME,
+        result(uuid="res-1", subtype="error_during_execution"),
     )
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -784,10 +790,12 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
     session = await chat_service.create(operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-    await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
+    await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "system"}
+    )
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
     async with migrated_sessions() as db:
         await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=0))
         await db.commit()
@@ -827,7 +835,7 @@ async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, r
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
 
     assert await chat_store.adopt_open_turn(session_id) is not None
 
@@ -1022,8 +1030,10 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     # answer streamed into a message it never closed — applied as the loop applies any frame, so
     # the message row, the turn's pointer at it and the session's cursor all landed together.
     delta = text_delta("because the ")
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    opened_at = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
+    opened_at = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, delta
+    )
     _, events = projected(ProjectionState(), frame_seq=opened_at.frame_seq, payload=delta)
     await chat_store.apply_frame(session_id, started.turn_id, opened_at.frame_seq, events)
     half_answered = one(await _open_items(migrated_sessions, session_id))
@@ -1073,13 +1083,17 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     assert started is not None
     delta = text_delta("because the ")
     answer = assistant(text_block("because the disk was full"))
-    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, "user", {"type": "user"})
-    recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "stream_event", delta)
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
+    recorded = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, delta
+    )
     _, events = projected(ProjectionState(), frame_seq=recorded.frame_seq, payload=delta)
     await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
     # Recorded and then nothing: the pod went between the sink writing the row and the loop acting
     # on what it meant.
-    unprojected = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, "assistant", answer)
+    unprojected = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, answer
+    )
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
@@ -1277,7 +1291,9 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     # A frame from before this turn, so a bracket that started at the log's beginning would show.
-    await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "system", {"type": "system"})
+    await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "system"}
+    )
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
@@ -1285,8 +1301,12 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
     ending = result(text="a bad config")
     # In production the socket wrapper writes these, so the recorder and the turn loop see the same
     # frames; here the double is handed the numbers the log gave them.
-    recorded_answer = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "assistant", answer)
-    recorded_ending = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", ending)
+    recorded_answer = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, answer
+    )
+    recorded_ending = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, ending
+    )
     client = _FakeCli([answer, ending], frame_seqs=[recorded_answer.frame_seq, recorded_ending.frame_seq])
 
     await chat_service._run_turn(
@@ -1311,9 +1331,11 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
     turn = await chat_store.next_prompt(view.session_id)
     assert turn is not None
     ending = result(text="a bad config")
-    recorded = await chat_store.record_frame(view.session_id, FrameDirection.FROM_AGENT, "result", ending)
+    recorded = await chat_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, ending
+    )
     await chat_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, "command_lifecycle", {"type": "command_lifecycle"}
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "command_lifecycle"}
     )
 
     client = _FakeCli([ending], frame_seqs=[recorded.frame_seq])
@@ -1427,11 +1449,11 @@ class _ScriptedChannel:
 
     def __init__(self) -> None:
         self.written: list[dict[str, Any]] = []
-        self._inbound: asyncio.Queue[ClaudeMessage | None] = asyncio.Queue()
+        self._inbound: asyncio.Queue[HarnessFrame | None] = asyncio.Queue()
         self._wrote = asyncio.Event()
 
     def deliver(self, frame: dict[str, Any], *, seq: int | None = None) -> None:
-        self._inbound.put_nowait(ClaudeMessage(payload=frame, seq=seq))
+        self._inbound.put_nowait(HarnessFrame(frame=ClaudeFrame(payload=frame).model_dump(), seq=seq))
 
     async def connect(self) -> None:
         pass
@@ -1469,7 +1491,14 @@ async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) 
 
 def _streamed(frames: Sequence[SessionFrame]) -> str:
     """The answer as the recorded deltas spell it, in log order."""
-    return "".join(frame.payload["event"]["delta"]["text"] for frame in frames if frame.kind == DELTA_FRAME_KIND)
+    return "".join(
+        frame.payload["payload"]["event"]["delta"]["text"]
+        for frame in frames
+        if frame.kind == BridgeFrameKind.HARNESS_FRAME
+        and frame.payload.get("kind") == "claude"
+        and isinstance(frame.payload.get("payload"), dict)
+        and frame.payload["payload"].get("type") == DELTA_FRAME_KIND
+    )
 
 
 async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas(
@@ -1508,14 +1537,21 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     # this a log rather than a selection.
     recorded = await _frames(migrated_sessions, view.session_id)
     assert [(frame.direction, frame.kind) for frame in recorded] == [
-        (FrameDirection.TO_AGENT, "control_request"),
-        (FrameDirection.FROM_AGENT, "control_response"),
-        (FrameDirection.TO_AGENT, "user"),
-        (FrameDirection.FROM_AGENT, "stream_event"),
-        (FrameDirection.FROM_AGENT, "user"),
+        (FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME),
+        (FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME),
+        (FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME),
+        (FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME),
+        (FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME),
     ]
-    # Verbatim: a reader gets the tool result the turn loop never kept.
-    assert recorded[4].payload == answered
+    assert [frame.payload["payload"]["type"] for frame in recorded] == [
+        "control_request",
+        "control_response",
+        "user",
+        "stream_event",
+        "user",
+    ]
+    # Verbatim inside the complete inner harness frame: a reader gets the tool result the turn loop never kept.
+    assert recorded[4].payload == {"kind": "claude", "payload": answered}
     # Each frame reaches its consumer carrying the row it was written to, so a projection built
     # from it can point back at that row and not at whichever frame the reader has since seen.
     assert [delta_received.frame_seq, result_received.frame_seq] == [recorded[3].frame_seq, recorded[4].frame_seq]
@@ -1542,10 +1578,11 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
 
     recorded = await _frames(migrated_sessions, view.session_id)
     assert [(frame.kind, frame.runner_seq) for frame in recorded] == [
-        ("control_request", None),
-        ("control_response", 11),
-        ("result", 12),
+        (BridgeFrameKind.HARNESS_FRAME, None),
+        (BridgeFrameKind.HARNESS_FRAME, 11),
+        (BridgeFrameKind.HARNESS_FRAME, 12),
     ]
+    assert [frame.payload["payload"]["type"] for frame in recorded] == ["control_request", "control_response", "result"]
     assert await chat_store.highest_runner_seq(view.session_id) == 12
 
 
@@ -1634,7 +1671,9 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
 
     recorded = await _frames(migrated_sessions, view.session_id)
     assert _streamed(recorded) == "half an answer"
-    assert not [frame for frame in recorded if frame.kind == "assistant"], "no frame completed the message"
+    assert not [frame for frame in recorded if frame.payload["payload"].get("type") == "assistant"], (
+        "no frame completed the message"
+    )
 
 
 async def test_a_returning_runner_beats_the_sweep(

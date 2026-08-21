@@ -412,6 +412,8 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
           : conversationDetail;
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
 // order, with a tool call and the result it got, as the frames themselves carried them.
+const claudeFrame = (payload: Record<string, unknown>) => ({ kind: "claude" as const, payload });
+
 const conversationFrames = {
   conversation_id: conversationId,
   runtime_kind: "claude_code",
@@ -419,16 +421,21 @@ const conversationFrames = {
     {
       frame_seq: 412,
       direction: "to_agent",
-      kind: "user",
+      kind: "harness_frame",
+      native_kind: "user",
       created_at: "2026-08-01T03:00:20Z",
-      payload: { type: "user", message: { role: "user", content: "Now check whether the degraded server recovered." } },
+      payload: claudeFrame({
+        type: "user",
+        message: { role: "user", content: "Now check whether the degraded server recovered." },
+      }),
     },
     {
       frame_seq: 413,
       direction: "from_agent",
-      kind: "assistant",
+      kind: "harness_frame",
+      native_kind: "assistant",
       created_at: "2026-08-01T03:00:21Z",
-      payload: {
+      payload: claudeFrame({
         type: "assistant",
         message: {
           id: "msg_01HZ4kQ",
@@ -444,14 +451,15 @@ const conversationFrames = {
             },
           ],
         },
-      },
+      }),
     },
     {
       frame_seq: 414,
       direction: "from_agent",
-      kind: "user",
+      kind: "harness_frame",
+      native_kind: "user",
       created_at: "2026-08-01T03:00:23Z",
-      payload: {
+      payload: claudeFrame({
         type: "user",
         message: {
           role: "user",
@@ -464,21 +472,22 @@ const conversationFrames = {
             },
           ],
         },
-      },
+      }),
     },
     {
       frame_seq: 416,
       direction: "from_agent",
-      kind: "result",
+      kind: "harness_frame",
+      native_kind: "result",
       created_at: "2026-08-01T03:00:24Z",
-      payload: {
+      payload: claudeFrame({
         type: "result",
         subtype: "error_during_execution",
         is_error: true,
         duration_ms: 3600,
         total_cost_usd: 0.0041,
         usage: { input_tokens: 1900, output_tokens: 60 },
-      },
+      }),
     },
   ],
   next_before_seq: 412,

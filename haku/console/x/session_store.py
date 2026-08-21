@@ -27,11 +27,11 @@ from sqlalchemy import CursorResult, Select, func, literal, or_, select, text, t
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
     OPEN_SESSION_STATUSES,
+    BridgeFrameKind,
     FrameDirection,
     ItemStatus,
     ItemType,
@@ -130,7 +130,49 @@ def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | 
     is how a caller reading a truncated answer asks for them anyway — for the MCP reader and the
     console's frame inspector alike, which is why the policy lives here rather than in either one.
     """
-    return query.where(SessionFrame.kind.in_(kinds) if kinds else SessionFrame.kind != DELTA_FRAME_KIND)
+    native_kind = func.coalesce(
+        SessionFrame.payload["payload"]["type"].astext, SessionFrame.payload["payload"]["method"].astext
+    )
+    if kinds:
+        return query.where(
+            or_(
+                SessionFrame.kind == SETUP_OUTPUT_KIND if SETUP_OUTPUT_KIND in kinds else literal(False),
+                (SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME) & native_kind.in_(kinds),
+            )
+        )
+    return query.where(
+        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME, or_(native_kind.is_(None), native_kind != DELTA_FRAME_KIND)
+    )
+
+
+def _native_kind(row: SessionFrame) -> str | None:
+    if row.kind != BridgeFrameKind.HARNESS_FRAME:
+        return None
+    payload = _native_payload(row.payload)
+    for field in ("type", "method"):
+        if isinstance(value := payload.get(field), str):
+            return value
+    return None
+
+
+def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
+    """Return only the native payload from a complete nested harness frame.
+
+    Migration 0089 clears the incompatible v2 log, so every surviving harness row has this shape.
+    Refusing a malformed row is safer than silently treating a flattened record as v3 evidence.
+    """
+    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
+        return payload
+    raise ValueError("harness-frame log row does not contain a complete inner frame")
+
+
+def _inner_frame(kind: BridgeFrameKind, frame: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a harness record to the complete inner frame kept in the forensic log."""
+    if kind == BridgeFrameKind.HARNESS_FRAME and not (
+        isinstance(frame.get("kind"), str) and isinstance(frame.get("payload"), dict)
+    ):
+        return {"kind": "claude", "payload": frame}
+    return frame
 
 
 class PromptRecords(Protocol):
@@ -1098,7 +1140,7 @@ class SessionStore:
         self,
         session_id: UUID,
         direction: FrameDirection,
-        kind: str,
+        kind: BridgeFrameKind,
         payload: dict[str, Any],
         *,
         runner_seq: int | None = None,
@@ -1107,12 +1149,11 @@ class SessionStore:
 
         `fresh` says whether the caller should act on the frame; `frame_seq` is the row's sequence
         either way, which is what a projection built from this frame points back at. **False means
-        a replay** — the same agent-assigned identity already in this log — and the caller must
-        then not act on it again. A frame with no identity is always recorded, since "no identity"
-        is not "the same as the last one" (`frame_identity.frame_uid`).
+        a replay** — the same runner position already exists in this log — and the caller must not
+        act on it again. Console-authored records have no runner position and are always appended.
 
-        *kind* is passed rather than read out of the payload: a CLI frame keeps its discriminator
-        in `type` and the bridge envelope keeps it in `kind`, and this table holds both.
+        *kind* is passed rather than read out of the payload: it is the bridge record class, while
+        the native harness discriminator stays inside the opaque payload.
 
         *runner_seq* is the runner's own number for the frame, where one came from a runner that
         numbers. Nothing here orders by it; what reads it is `highest_runner_seq`. Default None
@@ -1130,46 +1171,43 @@ class SessionStore:
         db: AsyncSession,
         session_id: UUID,
         direction: FrameDirection,
-        kind: str,
+        kind: BridgeFrameKind,
         payload: dict[str, Any],
         *,
         runner_seq: int | None,
         now: datetime,
     ) -> RecordedFrame:
         """The transactional half of `record_frame`, shared by narration's compatibility write."""
-        uid = frame_uid(kind, payload)
-        # `ON CONFLICT DO NOTHING` against the partial unique index rather than a read followed by a
-        # write: two replicas can be replaying the same buffer at once during an adoption, and a
-        # check-then-insert would let both through.
+        # Runner positions are the identity for every native frame, including deltas and
+        # JSON-RPC notifications. Payload identity is intentionally not consulted: two identical
+        # native messages may be real events, while a replayed opaque frame has the same position.
         insert = (
             pg_insert(SessionFrame)
             .values(
                 session_id=session_id,
                 direction=direction,
                 kind=kind,
-                payload=payload,
-                frame_uid=uid,
+                payload=_inner_frame(kind, payload),
                 runner_seq=runner_seq,
                 created_at=now,
                 updated_at=now,
             )
-            # `index_where` as well as the columns, because the index is partial and Postgres will
-            # not infer one without its predicate. A row whose `frame_uid` is NULL does not satisfy
-            # that predicate, so it is simply inserted.
             .on_conflict_do_nothing(
-                index_elements=["session_id", "frame_uid"], index_where=text("frame_uid IS NOT NULL")
+                index_elements=["session_id", "runner_seq"], index_where=text("runner_seq IS NOT NULL")
             )
         )
         inserted = await db.execute(insert.returning(SessionFrame.frame_seq))
         if (inserted_seq := inserted.scalar_one_or_none()) is not None:
             return RecordedFrame(fresh=True, frame_seq=int(inserted_seq))
-        # Nothing was inserted, so the partial index found this frame's identity already in the
-        # log. Read back the row it collided with, so a replay still names the frame it duplicates.
+        # Nothing was inserted, so the position already exists. Read back the row it collided with
+        # so a replay still names the original log position.
         existing_seq = await db.scalar(
-            select(SessionFrame.frame_seq).where(SessionFrame.session_id == session_id, SessionFrame.frame_uid == uid)
+            select(SessionFrame.frame_seq).where(
+                SessionFrame.session_id == session_id, SessionFrame.runner_seq == runner_seq
+            )
         )
         if existing_seq is None:
-            raise RuntimeError(f"replayed frame disappeared from the rollout for {uid=}")
+            raise RuntimeError(f"replayed frame disappeared from the rollout for {runner_seq=}")
         return RecordedFrame(fresh=False, frame_seq=int(existing_seq))
 
     async def narrate(self, session_id: UUID, text: str) -> None:
@@ -1208,10 +1246,8 @@ class SessionStore:
         recorded. None is a session whose log holds nothing a runner numbered, and the runner
         reading it replays its whole window.
 
-        It is a **floor**, and the runner treats it as one (`OutboundLog.seed`). A `setup_output`
-        row cannot carry its number here — the runner numbers the frame, the console records the
-        lines it decoded into — so the cursor can sit below what the console truly holds. That
-        costs a re-sent frame the `frame_uid` dedup refuses, never a frame skipped.
+        It is a **floor**, and the runner treats it as one (`OutboundLog.seed`). Console-authored
+        `setup_output` rows do not participate in this native-frame cursor.
         """
         async with self._sessions() as db:
             return await db.scalar(
@@ -1275,11 +1311,35 @@ class SessionStore:
                 frame_seq=row.frame_seq,
                 direction=row.direction,
                 kind=row.kind,
+                native_kind=_native_kind(row),
                 created_at=row.created_at,
                 payload=row.payload,
             )
             for row in rows
         ]
+
+    async def read_frame(self, session_id: UUID, frame_seq: int) -> RolloutFrame | None:
+        """One exact native or console-authored frame, without a page-view filter.
+
+        A caller naming the sequence has already selected the row. In particular, this must keep
+        method-only JSON-RPC frames, harness payloads with no known discriminator, setup narration,
+        and stream deltas available as forensic evidence even though the default rollout page
+        suppresses the noisy last category.
+        """
+        async with self._sessions() as db:
+            row = await db.scalar(
+                select(SessionFrame).where(SessionFrame.session_id == session_id, SessionFrame.frame_seq == frame_seq)
+            )
+        if row is None:
+            return None
+        return RolloutFrame(
+            frame_seq=row.frame_seq,
+            direction=row.direction,
+            kind=row.kind,
+            native_kind=_native_kind(row),
+            created_at=row.created_at,
+            payload=row.payload,
+        )
 
     async def read_transcript(
         self, session_id: UUID, *, cursor: TranscriptCursor | None, limit: int
@@ -1303,13 +1363,14 @@ class SessionStore:
                     select(SessionFrame)
                     .where(
                         SessionFrame.session_id == session_id,
-                        SessionFrame.kind.not_in([SETUP_OUTPUT_KIND, DELTA_FRAME_KIND]),
+                        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
+                        SessionFrame.payload["payload"]["type"].astext != DELTA_FRAME_KIND,
                     )
                     .order_by(SessionFrame.frame_seq)
                 )
             ).all()
         projected = projection.project_log(
-            projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload) for row in rows
+            projection.RecordedFrame(frame_seq=row.frame_seq, payload=_native_payload(row.payload)) for row in rows
         )
         entries = transcript_entries.entries(projected)
         start = cursor.index if cursor is not None else 0
@@ -1669,11 +1730,11 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
         .where(
             SessionFrame.session_id == session_id,
             SessionFrame.frame_seq > cursor,
-            SessionFrame.kind != SETUP_OUTPUT_KIND,
+            SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
         )
         .order_by(SessionFrame.frame_seq)
     )
-    return tuple(ReceivedFrame(payload=row.payload, frame_seq=row.frame_seq) for row in rows)
+    return tuple(ReceivedFrame(payload=_native_payload(row.payload), frame_seq=row.frame_seq) for row in rows)
 
 
 async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool = False) -> ConversationPrompt | None:
@@ -1872,7 +1933,8 @@ async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int)
             SessionFrame.session_id == session_id,
             SessionFrame.frame_seq >= first_frame_seq,
             SessionFrame.direction == FrameDirection.TO_AGENT,
-            SessionFrame.kind == PROMPT_FRAME_KIND,
+            SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
+            SessionFrame.payload["payload"]["type"].astext == PROMPT_FRAME_KIND,
         )
         .limit(1)
     )

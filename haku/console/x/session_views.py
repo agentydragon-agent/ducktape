@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import (
+    BridgeFrameKind,
     FrameDirection,
     ItemStatus,
     ItemType,
@@ -144,8 +145,8 @@ class ConversationPage(BaseModel):
 class SetupNarrationView(BaseModel):
     """One thing the sandbox said while coming up, as the frame log recorded it.
 
-    Positioned by `frame_seq` alone: these rows carry **no frame identity** (the runner sends them
-    `replayable=False`), so two identical lines are two things that happened, not one seen twice.
+    Positioned by `frame_seq` alone: the runner numbers setup output on the wire but does not retain
+    it in the native replay window, so two identical rendered lines are two things that happened.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -332,7 +333,7 @@ class SessionFrameView(BaseModel):
     **This is one backend's wire and must be presented as such**, never as the conversation: it is
     the only shape the console serves that names a backend.
 
-    The payload is the wire, whole. This surface exists because `conversation_item` is a lossy
+    The payload is the complete inner frame, wire whole. This surface exists because `conversation_item` is a lossy
     projection of the frame log, so clipping here would reintroduce that one level down; bounding a
     response is the page's job.
     """
@@ -341,7 +342,10 @@ class SessionFrameView(BaseModel):
 
     frame_seq: int
     direction: FrameDirection
-    kind: str
+    kind: BridgeFrameKind
+    native_kind: str | None = Field(
+        default=None, description="The native payload's `type` or JSON-RPC method when present; diagnostic only."
+    )
     created_at: datetime
     payload: dict[str, Any]
     unprojected: dict[str, int] | None = Field(
@@ -380,7 +384,9 @@ def _unprojected(row: SessionFrame) -> dict[str, int] | None:
     """
     if row.kind == SETUP_OUTPUT_KIND:
         return None
-    folded = projection.project_log([projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)])
+    folded = projection.project_log(
+        [projection.RecordedFrame(frame_seq=row.frame_seq, payload=_native_payload(row.payload))]
+    )
     return dict(folded.unprojected) or None
 
 
@@ -397,6 +403,7 @@ def frame_page(
             frame_seq=row.frame_seq,
             direction=row.direction,
             kind=row.kind,
+            native_kind=_native_kind(row),
             created_at=row.created_at,
             payload=row.payload,
             unprojected=_unprojected(row),
@@ -409,6 +416,23 @@ def frame_page(
         runtime_kind=runtime_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
+
+
+def _native_kind(row: SessionFrame) -> str | None:
+    if row.kind != BridgeFrameKind.HARNESS_FRAME:
+        return None
+    payload = _native_payload(row.payload)
+    for field in ("type", "method"):
+        if isinstance(value := payload.get(field), str):
+            return value
+    return None
+
+
+def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
+    """Project a stored complete inner harness frame to its native payload for display helpers."""
+    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
+        return payload
+    raise ValueError("harness-frame view row does not contain a complete inner frame")
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:

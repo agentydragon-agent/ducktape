@@ -1,12 +1,14 @@
-"""The runner's own frame number is optional, so a writer that never heard of it still records."""
+"""The v3 frame log rejects pre-cutover kinds and deduplicates runner positions."""
 
 from __future__ import annotations
 
 import datetime
 from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 from sqlalchemy import Connection, create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 from haku.console.database_migrate import apply_migrations, sync_database_url
 
@@ -63,16 +65,14 @@ def _frame(conn: Connection, session_id: UUID, kind: str, **extra: object) -> No
     )
 
 
-def test_a_writer_that_never_heard_of_the_column_still_records_frames(db_url: str) -> None:
-    """The roll: `maxUnavailable: 0` means a replica on the previous image keeps recording frames
-    against this schema, and its INSERT names every column that image knew and no more. Nullable is
-    what makes that legal, and NULL is the honest answer — nothing numbered that frame."""
+def test_a_console_write_without_a_runner_number_still_records(db_url: str) -> None:
+    """Only runner-origin frames have a runner position; Console writes honestly leave it NULL."""
     apply_migrations(db_url)
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:
             session_id = _session(conn)
-            _frame(conn, session_id, "assistant")
+            _frame(conn, session_id, "harness_frame")
 
         with engine.connect() as conn:
             assert conn.execute(text("SELECT runner_seq FROM session_frames")).scalar_one() is None
@@ -80,24 +80,16 @@ def test_a_writer_that_never_heard_of_the_column_still_records_frames(db_url: st
         engine.dispose()
 
 
-def test_one_session_may_hold_the_same_runner_number_twice(db_url: str) -> None:
-    """The index is deliberately not unique while dedup still keys on `frame_uid`.
-
-    Postgres infers one conflict target, so uniqueness here would turn a replayed frame with no
-    agent-assigned identity — a `control_response`, a `system` with no `task_id` — from one
-    duplicate row into a violation raised inside the reader, ending the session. That is the
-    behaviour this pins until dedup keys on position (<plans/conversation_layers.md> § 13).
-    """
+def test_one_session_cannot_hold_the_same_runner_number_twice(db_url: str) -> None:
+    """Runner position is the identity even for native frames with no payload-level id."""
     apply_migrations(db_url)
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:
             session_id = _session(conn)
-            _frame(conn, session_id, "control_response", runner_seq=7)
-            _frame(conn, session_id, "control_response", runner_seq=7)
-
-        with engine.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM session_frames WHERE runner_seq = 7")).scalar_one() == 2
+            _frame(conn, session_id, "harness_frame", runner_seq=7)
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            _frame(conn, session_id, "harness_frame", runner_seq=7)
     finally:
         engine.dispose()
 

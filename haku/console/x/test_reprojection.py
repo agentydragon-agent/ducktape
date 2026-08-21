@@ -14,7 +14,14 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, update
 
-from haku.console.chat_models import SPA_ORIGIN, ConversationEventKind, FrameDirection, ItemType, TurnOutcome
+from haku.console.chat_models import (
+    SPA_ORIGIN,
+    BridgeFrameKind,
+    ConversationEventKind,
+    FrameDirection,
+    ItemType,
+    TurnOutcome,
+)
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session
 from haku.console.x import reprojection
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
@@ -24,8 +31,7 @@ from haku.console.x.session_store import BridgeAuthentication
 
 
 def _assistant(*blocks: dict[str, Any], message_id: str = "msg_1") -> dict[str, Any]:
-    """One `assistant` frame. Every frame in a session needs its own *message_id*: `frame_uid`
-    dedupes on it, so two frames sharing one are one frame to the recorder."""
+    """One native `assistant` frame; the id remains part of the forensic payload."""
     return {"type": "assistant", "message": {"id": message_id, "role": "assistant", "content": list(blocks)}}
 
 
@@ -47,7 +53,9 @@ async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dic
     assert started is not None
     state = ProjectionState()
     for payload in frames:
-        recorded = await chat_store.record_frame(session_id, FrameDirection.FROM_AGENT, payload["type"], payload)
+        recorded = await chat_store.record_frame(
+            session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
+        )
         state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
         if state.open_tool_call is None:
             await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
@@ -240,7 +248,7 @@ async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
     await chat_store.record_frame(
         session_id,
         FrameDirection.FROM_AGENT,
-        "assistant",
+        BridgeFrameKind.HARNESS_FRAME,
         _assistant({"type": "text", "text": "and another"}, message_id="msg_2"),
     )
 

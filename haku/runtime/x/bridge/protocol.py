@@ -1,11 +1,11 @@
-"""Envelope framing for the bridge between Haku Console and the sandbox runner.
+"""Envelope framing for the incompatible v3 bridge between Console and a harness runner.
 
 Two protocols share this socket: the CLI's own newline-delimited JSON
 (<../../../cli_protocol/README.md>), and the small control protocol Haku needs around it — what
-to launch, when input ends, and what the sandbox is doing before Claude exists to say anything.
-Every frame on the wire is one of the models below, discriminated on ``kind``; a CLI frame
-travels nested in `ClaudeMessage.payload`, the one field whose contents this module does not
-interpret, so it may hold anything — including keys named after ours.
+to launch, when input ends, and what the sandbox is doing before a harness exists to say anything.
+Native harness frames are opaque to this module and always travel in ``HarnessFrame.frame``. The
+outer ``kind`` is backend-neutral: the complete inner frame (including its own discriminator) is
+never flattened into the bridge vocabulary or the database's ``kind`` column.
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMIN
 
 # Carried on the ``start`` frame only: the version is a property of the connection that its first
 # frame settles.
-PROTOCOL_VERSION: Final = 2
+PROTOCOL_VERSION: Final = 3
 
 # Every version this image can speak, not the one it prefers. A runner's image is fixed when its
 # claim is created and a live session may outlast several console releases, so console and runner
 # sit on different numbers for hours at a time.
-SUPPORTED_VERSIONS: Final = (2,)
+SUPPORTED_VERSIONS: Final = (3,)
 
 # What ending the socket means. **The runner redials after every disconnection except a refusal**,
 # which is the console rejecting *this runner* — a consumed credential, a session already over — and
@@ -53,8 +53,8 @@ class _Frame(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
 
 
-class ClaudeLaunch(_Frame):
-    """Console → runner, once, first: the CLI process to run.
+class HarnessLaunch(_Frame):
+    """Console → runner, once, first: the selected harness process to run.
 
     Built by the trusted process (`options.build_claude_launch`), never by the runner: the
     argv decides the session's permissions and which MCP servers it reaches, so it is not the
@@ -90,11 +90,22 @@ class ClaudeLaunch(_Frame):
 
 
 class ClaudeMessage(_Frame):
-    """One CLI protocol frame, in either direction, passed through untouched."""
+    """One complete Claude native frame, nested inside the bridge envelope."""
 
     kind: Literal["claude"] = "claude"
-    # The CLI's vocabulary, not ours: never modelled here.
     payload: dict[str, Any]
+
+
+# Descriptive alias for code that calls the nested object a frame rather than a message.
+ClaudeFrame = ClaudeMessage
+
+
+class HarnessFrame(_Frame):
+    """One opaque native harness frame, in either direction, passed through untouched."""
+
+    kind: Literal["harness_frame"] = "harness_frame"
+    # The harness's complete frame, including its own kind and payload, not ours to interpret.
+    frame: dict[str, Any]
     # **The runner's own number for this frame, dense and monotonic per session.** Set only on the
     # runner → console direction; None on the console's writes, which the runner does not number.
     #
@@ -142,7 +153,7 @@ class SetupOutput(_Frame):
 
     **Raw, and unsplit.** The runner does not decode these bytes, split them into lines, or filter
     them; that is the console's, and it means the transport cannot mangle what it did not
-    understand. Contrast `ClaudeMessage`, which stays parsed: that stream is newline-delimited JSON
+    understand. Contrast `HarnessFrame`, which stays parsed: that stream is newline-delimited JSON
     by contract and the client needs objects anyway.
 
     Every line goes, uncurated — on a failure the error text is the thing worth having in the room.
@@ -153,18 +164,17 @@ class SetupOutput(_Frame):
 
     kind: Literal["setup_output"] = "setup_output"
     data: bytes
-    # As `ClaudeMessage.seq`: numbered like everything else the runner sends, since a sequence that
-    # skipped a kind would leave holes that mean nothing. Never replayed, though — narration carries
-    # no identity, so a console cannot tell a re-sent line from a repeated one — which the replay
-    # window's `replayable` decides separately.
+    # As `HarnessFrame.seq`: numbered like everything else the runner sends. Setup output remains
+    # outside the native harness log, but its position is still preserved on the wire so a replay
+    # cannot silently change ordering.
     seq: int | None = None
 
 
 # The two directions carry different frames. Not request/response: both ends speak unprompted and
 # nothing at this layer pairs a reply with a call. (The CLI's own control_request/control_response
-# do correlate, by an id that rides inside `ClaudeMessage.payload` and is opaque here.)
-ConsoleToRunner = ClaudeLaunch | ClaudeMessage | EndInput
-RunnerToConsole = ClaudeMessage | Hello | SetupOutput
+# do correlate, by an id that rides inside `HarnessFrame.frame` and is opaque here.)
+ConsoleToRunner = HarnessLaunch | HarnessFrame | EndInput
+RunnerToConsole = HarnessFrame | Hello | SetupOutput
 
 # Read with the adapter for the direction you are reading; write with the model's own
 # `model_dump_json`.
