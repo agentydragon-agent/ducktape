@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,6 +31,21 @@ type CashflowLike = ScheduledTransfer | RecurringTransfer | ScheduledPropertyCas
 type CashflowRow = tuple[CashflowLike, str | None]
 
 
+class CashflowExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    amount_kind: ArrayT
+    amount_fixed: ArrayT
+    amount_base: ArrayT
+    amount_series: ArrayT
+    amount_base_month: ArrayT
+    amount_period: ArrayT
+    from_slot: ArrayT
+    to_slot: ArrayT
+    property_slot: ArrayT
+    income_profile: ArrayT
+    deduction_profile: ArrayT
+
+
 @dataclass(frozen=True)
 class CashflowCompileOutput:
     """Per-(month, slot) tables for every transfer-like cashflow.
@@ -38,22 +54,12 @@ class CashflowCompileOutput:
     unconditional ordinary transfer. All other columns share one execution and decode schema.
     """
 
+    execution: CashflowExecution[np.ndarray]
     cause: NDArray[np.int64]
     from_agent: NDArray[np.int64]
     from_account: NDArray[np.int64]
-    from_slot: NDArray[np.int64]
     to_agent: NDArray[np.int64]
     to_account: NDArray[np.int64]
-    to_slot: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    income_profile: NDArray[np.int64]
-    deduction_profile: NDArray[np.int64]
-    amount_kind: NDArray[np.int64]
-    amount_fixed: NDArray[np.int64]
-    amount_base: NDArray[np.int64]
-    amount_series: NDArray[np.int64]
-    amount_base_month: NDArray[np.int64]
-    amount_period: NDArray[np.int64]
 
 
 def compile_cashflows(
@@ -140,20 +146,23 @@ def compile_cashflows(
             amount_period[month, idx] = period
 
     return CashflowCompileOutput(
+        execution=CashflowExecution(
+            active=cause >= 0,
+            amount_kind=amount_kind,
+            amount_fixed=amount_fixed,
+            amount_base=amount_base,
+            amount_series=amount_series,
+            amount_base_month=amount_base_month,
+            amount_period=amount_period,
+            from_slot=from_slot,
+            to_slot=to_slot,
+            property_slot=property_slot,
+            income_profile=income_profile,
+            deduction_profile=deduction_profile,
+        ),
         cause=cause,
         from_agent=from_agent,
         from_account=from_account,
-        from_slot=from_slot,
         to_agent=to_agent,
         to_account=to_account,
-        to_slot=to_slot,
-        property_slot=property_slot,
-        income_profile=income_profile,
-        deduction_profile=deduction_profile,
-        amount_kind=amount_kind,
-        amount_fixed=amount_fixed,
-        amount_base=amount_base,
-        amount_series=amount_series,
-        amount_base_month=amount_base_month,
-        amount_period=amount_period,
     )

@@ -12,21 +12,6 @@ from finance.augur.sim.compiler.plan import SlotPlan
 from finance.augur.sim.output import DenseFinalOutput
 
 
-class _CashflowInputs(NamedTuple):
-    cause: jax.Array
-    amount_kind: jax.Array
-    amount_fixed: jax.Array
-    amount_base: jax.Array
-    amount_series: jax.Array
-    amount_base_month: jax.Array
-    amount_period: jax.Array
-    from_slot: jax.Array
-    to_slot: jax.Array
-    property_slot: jax.Array
-    income_profile: jax.Array
-    deduction_profile: jax.Array
-
-
 @partial(
     jax.tree_util.register_dataclass,
     data_fields=(
@@ -54,30 +39,6 @@ class _AssetSaleProgram:
     proceeds_slot: tuple[int, ...]
     buffer_index: tuple[int, ...]
     ordered_lots: tuple[tuple[int, ...], ...]
-
-
-class _BondInputs(NamedTuple):
-    coupon: jax.Array
-    redemption: jax.Array
-    to_slot: jax.Array
-    income_row: jax.Array
-    indexed: jax.Array
-    cpi_series: jax.Array
-    index_base_month: jax.Array
-    period_rate: jax.Array
-    face: jax.Array
-    pays: jax.Array
-    matures: jax.Array
-    on_books: jax.Array
-
-
-class _DistributionInputs(NamedTuple):
-    lot_mask: jax.Array
-    series: jax.Array
-    quantity_scale: jax.Array
-    fraction: jax.Array
-    to_slot: jax.Array
-    income_row: jax.Array
 
 
 class _PEChannelInputs(NamedTuple):

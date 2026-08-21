@@ -22,6 +22,7 @@ def decode_cashflows(plan: CompiledSimulation, output: DenseSimulationOutput) ->
     active = output.cashflows.active  # (M, S, R)
     months, slots, rollouts = np.argwhere(active).T if active.any() else (np.array([], dtype=np.int64),) * 3
     cashflows = plan.cashflows
+    execution = cashflows.execution
     return frame_from_columns(
         EVENT_FRAMES.transfers,
         rollout_index=rollouts,
@@ -32,5 +33,5 @@ def decode_cashflows(plan: CompiledSimulation, output: DenseSimulationOutput) ->
         to_agent_id=code_column(plan, cashflows.to_agent[months, slots]),
         to_account_id=code_column(plan, cashflows.to_account[months, slots]),
         amount_quanta=currency_quanta_column(output.cashflows.amount[months, slots, rollouts]),
-        income_category=_income_category_column(cashflows.income_profile[months, slots] >= 0),
+        income_category=_income_category_column(execution.income_profile[months, slots] >= 0),
     )

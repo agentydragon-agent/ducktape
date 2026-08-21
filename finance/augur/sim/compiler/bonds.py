@@ -16,6 +16,7 @@ at all. At par against a par basis it is not a capital gain either.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,28 +29,29 @@ from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import BondHolding, InterestIncome, Scenario
 
 
+class BondExecution[ArrayT](NamedTuple):
+    coupon: ArrayT
+    redemption: ArrayT
+    to_slot: ArrayT
+    income_row: ArrayT
+    indexed: ArrayT
+    cpi_series: ArrayT
+    index_base_month: ArrayT
+    period_rate: ArrayT
+    face: ArrayT
+    pays: ArrayT
+    matures: ArrayT
+    on_books: ArrayT
+
+
 @dataclass(frozen=True)
 class BondCompileOutput:
     """Per-bond identity plus the per-(month, bond) cash and balance-sheet tables."""
 
+    # Numeric execution data is one native PyTree; identity remains decoder metadata.
+    execution: BondExecution[np.ndarray]
     bond_id: NDArray[np.int64]
     agent: NDArray[np.int64]
-    to_slot: NDArray[np.int64]
-    face: NDArray[np.int64]
-    # Income-tensor row this bond's coupon accrues to, or NO_CODE when the holder is untaxed.
-    income_row: NDArray[np.int64]
-    coupon: NDArray[np.int64]  # (H, bond); 0 for indexed bonds, whose amounts are not fixed
-    redemption: NDArray[np.int64]  # (H, bond); likewise
-    # Inflation-indexed (TIPS) support. The SCHEDULE is still compile-time — a TIPS pays on
-    # the same months a nominal bond would — but the AMOUNTS are not, so `pays`/`matures`
-    # carry the schedule and the engine computes the amounts from the CPI path per rollout.
-    indexed: NDArray[np.int64]  # (bond,) 0/1
-    cpi_series: NDArray[np.int64]  # (bond,) row into external_values; NO_CODE when nominal
-    index_base_month: NDArray[np.int64]  # (bond,) CPI denominator: purchase month, clamped >= 0
-    period_rate: NDArray[np.float64]  # (bond,) annual_rate * period/12, applied to indexed principal
-    pays: NDArray[np.int64]  # (H, bond) 0/1
-    matures: NDArray[np.int64]  # (H, bond) 0/1
-    on_books: NDArray[np.int64]  # (H+1, bond); face is cash by the end of the maturity month
 
 
 def bond_income_categories(scenario: Scenario) -> set[InterestIncome]:
@@ -112,28 +114,33 @@ def compile_bonds(
             )
 
     return BondCompileOutput(
+        execution=BondExecution(
+            coupon=coupon,
+            redemption=redemption,
+            to_slot=np.asarray(
+                [
+                    account_slot_by_key.require(bond.agent_id, bond.account_id, owner=f"bond {bond.bond_id!r}")
+                    for bond in bonds
+                ],
+                dtype=np.int64,
+            ),
+            income_row=np.asarray(
+                [_income_row(bond, profile_index_by_agent, buckets) for bond in bonds], dtype=np.int64
+            ),
+            indexed=np.asarray([int(bond.inflation_indexed) for bond in bonds], dtype=np.int64),
+            cpi_series=np.asarray([_cpi_series_row(bond, series_index_by_id) for bond in bonds], dtype=np.int64),
+            index_base_month=np.asarray([max(0, bond.purchase_month_index) for bond in bonds], dtype=np.int64),
+            period_rate=np.asarray(
+                [bond.annual_coupon_rate * bond.coupon_period_months / MONTHS_PER_YEAR for bond in bonds],
+                dtype=np.float64,
+            ),
+            face=np.asarray(face_quanta, dtype=np.int64),
+            pays=pays,
+            matures=matures,
+            on_books=on_books,
+        ),
         bond_id=np.asarray([strings.require(bond.bond_id) for bond in bonds], dtype=np.int64),
         agent=np.asarray([strings.require(bond.agent_id) for bond in bonds], dtype=np.int64),
-        to_slot=np.asarray(
-            [
-                account_slot_by_key.require(bond.agent_id, bond.account_id, owner=f"bond {bond.bond_id!r}")
-                for bond in bonds
-            ],
-            dtype=np.int64,
-        ),
-        face=np.asarray(face_quanta, dtype=np.int64),
-        income_row=np.asarray([_income_row(bond, profile_index_by_agent, buckets) for bond in bonds], dtype=np.int64),
-        coupon=coupon,
-        redemption=redemption,
-        on_books=on_books,
-        indexed=np.asarray([int(bond.inflation_indexed) for bond in bonds], dtype=np.int64),
-        cpi_series=np.asarray([_cpi_series_row(bond, series_index_by_id) for bond in bonds], dtype=np.int64),
-        index_base_month=np.asarray([max(0, bond.purchase_month_index) for bond in bonds], dtype=np.int64),
-        period_rate=np.asarray(
-            [bond.annual_coupon_rate * bond.coupon_period_months / MONTHS_PER_YEAR for bond in bonds], dtype=np.float64
-        ),
-        pays=pays,
-        matures=matures,
     )
 
 
