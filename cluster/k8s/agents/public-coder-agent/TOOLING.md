@@ -131,9 +131,8 @@ specifically about host-resident state, such as that host checkout's dirty files
 local-only branch/ref, configured remotes, direnv environment, or private source unavailable to the
 Pod.
 
-If a source tree genuinely exists only on an approved host, prefer a typed host-checkout read tool
-when one is available. Otherwise request a narrowly bounded hostexec read and explain why the local
-checkout or GitHub cannot answer the question.
+If a source tree genuinely exists only on an approved host, request a narrowly bounded hostexec read
+and explain why the local checkout or GitHub cannot answer the question.
 
 ### Kubernetes diagnostics
 
