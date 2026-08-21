@@ -13,6 +13,10 @@ own GitHub account and pushes to its own forks.
 | `proxy/`     | Interception CA, trust bundle, iron-proxy, and the FQDN allowlist    |
 | `app/`       | OpenClaw Deployment, config, state PVC, credentials, NetworkPolicies |
 
+The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
+which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
+authority, and how to handle the approval lifecycle without unnecessary stalls.
+
 The agent also connects to Matrix as `@public-coder-agent:allegedly.works`.
 Matrix is an official plugin baked into the derivative OpenClaw gateway's
 trusted bundled-extension tree; loading it from an arbitrary config path would
@@ -44,9 +48,13 @@ and only on scoped GitHub hosts.
 Haku Console privileged calls use the same mediated shape. Terraform generates a dedicated
 `public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
 OpenClaw container sees `proxy-haku-console-placeholder`, which is replaced only in the
-`Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the explicit
-`no_auto_approval` policy: every tool call becomes an operator-reviewed request, including the
-cluster-admin-backed kubectl passthrough surface, and the Agent bearer cannot approve requests.
+`Authorization` header for `haku.allegedly.works`. Haku Console assigns this Agent the
+`public-coder` access profile: its typed repository policy auto-approves only reviewed reads of
+`agentydragon/ducktape` and `agentydragon/gaffer-private`. Every other downstream tool remains an
+operator-reviewed request, including the cluster-admin-backed kubectl passthrough surface, and the
+Agent bearer cannot approve requests. Ordinary public GitHub writes should instead use the
+proxy-mediated `agentydragon-agent` token directly; see <TOOLING.md> for the operational
+playbook.
 
 BuildBuddy is the deliberate exception. The agent receives the real shared API
 key from the reflected `buildbuddy-api-key` Secret. A local Bazel client or the
