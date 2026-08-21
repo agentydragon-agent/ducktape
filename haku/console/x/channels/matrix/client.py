@@ -20,7 +20,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any
 from uuid import UUID, uuid4, uuid5
 
 from nio import AsyncClient, AsyncClientConfig, ErrorResponse, Response
@@ -38,7 +38,7 @@ from nio.responses import (
     SyncResponse,
     WhoamiResponse,
 )
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.x.channels.matrix.formatted_body import to_formatted_body
 
@@ -104,6 +104,16 @@ class RoomEventKind(StrEnum):
     UNREADABLE = "unreadable"
 
 
+class ConversationEventSource(BaseModel):
+    """The durable conversation fact from which a Matrix event was projected."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    attachment_id: UUID
+    conversation_id: UUID
+    event_seq: int = Field(gt=0)
+
+
 class EventTag(BaseModel):
     """What the console states about an event it is sending.
 
@@ -118,18 +128,7 @@ class EventTag(BaseModel):
 
     kind: RoomEventKind
     session_id: UUID | None = None
-    attachment_id: UUID | None = None
-    conversation_id: UUID | None = None
-    source_event_seq: int | None = None
-
-    @model_validator(mode="after")
-    def source_identity_is_whole(self) -> Self:
-        source = (self.attachment_id, self.conversation_id, self.source_event_seq)
-        if any(part is None for part in source) and any(part is not None for part in source):
-            raise ValueError("attachment_id, conversation_id and source_event_seq must be present together")
-        if self.source_event_seq is not None and self.source_event_seq < 1:
-            raise ValueError("source_event_seq must name a conversation event")
-        return self
+    source: ConversationEventSource | None = None
 
     def content(self) -> dict[str, Any]:
         """The tag as it goes on the wire, with an absent field absent rather than null."""
@@ -151,9 +150,10 @@ class EventTag(BaseModel):
         Rests on how Synapse keys and expires its transaction cache
         (<../../../docs/chat_runtime_facts.md>).
         """
-        if self.attachment_id is not None and self.conversation_id is not None and self.source_event_seq is not None:
+        if self.source is not None:
             return uuid5(
-                _PROJECTED_NOTICE_NAMESPACE, f"{self.attachment_id}:{self.conversation_id}:{self.source_event_seq}"
+                _PROJECTED_NOTICE_NAMESPACE,
+                f"{self.source.attachment_id}:{self.source.conversation_id}:{self.source.event_seq}",
             ).hex
         return uuid4().hex
 

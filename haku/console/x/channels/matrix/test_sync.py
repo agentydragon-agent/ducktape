@@ -21,6 +21,7 @@ from sqlalchemy import select
 from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
 from haku.console.database_schema import ConversationEvent
 from haku.console.x.channels.matrix.client import (
+    ConversationEventSource,
     EventTag,
     InboundMessage,
     Invite,
@@ -564,9 +565,9 @@ async def test_a_projected_notice_uses_its_durable_source_as_the_transaction(ser
         == [
             EventTag(
                 kind=RoomEventKind.LIFECYCLE,
-                attachment_id=attachment_id,
-                conversation_id=conversation_id,
-                source_event_seq=17,
+                source=ConversationEventSource(
+                    attachment_id=attachment_id, conversation_id=conversation_id, event_seq=17
+                ),
             )
         ]
         * 2

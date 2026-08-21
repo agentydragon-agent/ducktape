@@ -41,6 +41,7 @@ from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import (
+    ConversationEventSource,
     EventTag,
     InboundMessage,
     Invite,
@@ -357,7 +358,10 @@ class MatrixSyncService:
         death leaves the source event owed. Replaying it uses the same Matrix transaction id.
         """
         tag = EventTag(
-            kind=kind, attachment_id=attachment_id, conversation_id=conversation_id, source_event_seq=source_event_seq
+            kind=kind,
+            source=ConversationEventSource(
+                attachment_id=attachment_id, conversation_id=conversation_id, event_seq=source_event_seq
+            ),
         )
 
         async def post() -> None:

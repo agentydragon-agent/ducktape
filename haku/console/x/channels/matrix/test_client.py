@@ -12,7 +12,7 @@ from nio.responses import RoomMessagesResponse, SyncResponse
 
 # Aliased: `client` is the name every test here gives its `MatrixClient` local.
 from haku.console.x.channels.matrix import client as matrix_client
-from haku.console.x.channels.matrix.client import EventTag, MatrixClient, RoomEventKind
+from haku.console.x.channels.matrix.client import ConversationEventSource, EventTag, MatrixClient, RoomEventKind
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
@@ -313,20 +313,20 @@ def test_a_projected_tag_carries_its_durable_source_and_has_a_stable_transaction
     attachment_id = UUID("11111111-2222-4333-8444-555555555555")
     conversation_id = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
     tag = EventTag(
-        kind=RoomEventKind.LIFECYCLE, attachment_id=attachment_id, conversation_id=conversation_id, source_event_seq=42
+        kind=RoomEventKind.LIFECYCLE,
+        source=ConversationEventSource(attachment_id=attachment_id, conversation_id=conversation_id, event_seq=42),
     )
 
     assert tag.content() == {
         "kind": "lifecycle",
-        "attachment_id": str(attachment_id),
-        "conversation_id": str(conversation_id),
-        "source_event_seq": 42,
+        "source": {"attachment_id": str(attachment_id), "conversation_id": str(conversation_id), "event_seq": 42},
     }
     assert tag.transaction_id() == tag.transaction_id()
     assert EventTag.model_validate(tag.content()).transaction_id() == tag.transaction_id()
     assert (
         EventTag(
-            kind=tag.kind, attachment_id=uuid4(), conversation_id=conversation_id, source_event_seq=42
+            kind=tag.kind,
+            source=ConversationEventSource(attachment_id=uuid4(), conversation_id=conversation_id, event_seq=42),
         ).transaction_id()
         != tag.transaction_id()
     ), "two room attachments must each receive their own projection"
@@ -339,9 +339,9 @@ def test_legacy_tags_without_a_source_still_parse_and_mint_fresh_transactions() 
     assert tag.transaction_id() != tag.transaction_id()
 
 
-def test_a_partial_projected_source_is_rejected() -> None:
-    with pytest.raises(ValueError, match="must be present together"):
-        EventTag(kind=RoomEventKind.LIFECYCLE, conversation_id=uuid4())
+def test_a_projected_source_must_name_a_conversation_event() -> None:
+    with pytest.raises(ValueError, match="greater than 0"):
+        ConversationEventSource(attachment_id=uuid4(), conversation_id=uuid4(), event_seq=0)
 
 
 if __name__ == "__main__":
