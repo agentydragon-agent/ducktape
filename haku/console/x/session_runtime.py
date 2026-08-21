@@ -19,7 +19,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from more_itertools import first
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field
 
 from haku.console.chat_models import (
     ENDED_SESSION_STATUSES,
@@ -34,8 +34,8 @@ from haku.console.chat_models import (
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
 from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.runtime import RuntimeAdapter, RuntimeClient, RuntimeRegistry, legacy_claude_registry
-from haku.console.x.sandbox_claims import SandboxClaims
+from haku.console.x.runtime import ConfiguredRuntime, RuntimeAdapter, RuntimeClient, RuntimeLaunch, RuntimeRegistry
+from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
     LEASE_RENEW_INTERVAL,
@@ -56,12 +56,12 @@ from haku.console.x.session_views import (
     SessionProvisioningView,
     SessionView,
 )
-from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction, SystemPromptTemplate
-from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame, cli_over_websocket
-from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, TextWebSocket
+from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction
+from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
+from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, HarnessFrame, TextWebSocket
 
 router = APIRouter(tags=["sessions"])
-internal_router = APIRouter(tags=["claude-chat-internal"])
+internal_router = APIRouter(tags=["session-runtime-internal"])
 logger = logging.getLogger(__name__)
 
 # How long one session's observed provisioning state is reused before the cluster is read again.
@@ -71,11 +71,6 @@ OBSERVATION_TTL = timedelta(seconds=2)
 # The conversation tail a replacement session receives. Counted in finished prompts/answers, not
 # transport events, and read from the console's record rather than any attached channel's copy.
 RE_AWAKENING_MESSAGES = 20
-
-
-def _current_cli(*args: Any) -> Any:
-    """Resolve the bridge factory at call time so existing runtime tests can patch it."""
-    return cli_over_websocket(*args)
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -133,11 +128,11 @@ class RolloutRecorder:
         self._store = store
         self._session_id = session_id
 
-    async def sent(self, payload: dict[str, Any]) -> int:
-        return (await self._record(FrameDirection.TO_AGENT, payload, kind=BridgeFrameKind.HARNESS_FRAME)).frame_seq
+    async def sent(self, frame: HarnessFrame) -> int:
+        return (await self._record(FrameDirection.TO_AGENT, frame.frame, kind=BridgeFrameKind.HARNESS_FRAME)).frame_seq
 
-    async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame:
-        """Record the complete inner frame and its bridge-owned position.
+    async def received(self, frame: HarnessFrame) -> RecordedFrame:
+        """Record the complete native harness frame and its bridge-owned position.
 
         All native frames, including deltas and opaque JSON-RPC notifications, are replayed and
         deduplicated by *runner_seq*. Their contents never participate in replay identity.
@@ -146,7 +141,7 @@ class RolloutRecorder:
         cursor. Nothing orders by it.
         """
         return await self._record(
-            FrameDirection.FROM_AGENT, payload, runner_seq=runner_seq, kind=BridgeFrameKind.HARNESS_FRAME
+            FrameDirection.FROM_AGENT, frame.frame, runner_seq=frame.seq, kind=BridgeFrameKind.HARNESS_FRAME
         )
 
     async def _record(
@@ -197,34 +192,25 @@ def _inherited(turn: TurnStart | ResumedTurn) -> ProjectionState:
 class SessionService:
     def __init__(
         self,
-        runtimes: RuntimeRegistry | Any,
+        runtimes: RuntimeRegistry,
         store: SessionStore,
-        claims: SandboxClaims | None,
         notifications: SessionNotifications,
         *,
-        mcp_token: SecretStr,
         conversation_history: ConversationHistory | None = None,
-        system_prompt: SystemPromptTemplate | None = None,
     ):
-        if isinstance(runtimes, RuntimeRegistry):
-            self._runtimes = runtimes
-        else:
-            if claims is None:
-                raise TypeError("legacy Claude session construction requires sandbox claims")
-            self._runtimes = legacy_claude_registry(
-                runtimes, claims, mcp_token=mcp_token, system_prompt=system_prompt, client_factory=_current_cli
-            )
+        self._runtimes = runtimes
         self._store = store
         self._notifications = notifications
-        self._mcp_token = mcp_token
         self._conversation_history = conversation_history
-        self._system_prompt = system_prompt
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
-        self._observations: dict[UUID, Any] = {}
+        self._observations: dict[UUID, SandboxProvisioningView] = {}
 
     async def _runtime(self, session_id: UUID) -> RuntimeAdapter:
         return self._runtimes[await self._store.runtime_kind_of(session_id)]
+
+    async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
+        return self._runtimes.configured(await self._store.runtime_kind_of(session_id))
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
         """Interrupt this session's turn, or answer False when it has none.
@@ -273,11 +259,12 @@ class SessionService:
 
     async def _create_claim(self, session_id: UUID, bridge_token: str) -> None:
         try:
-            runtime = await self._runtime(session_id)
-            await runtime.create_sandbox(
+            configured = await self._configured(session_id)
+            resources = configured.resources
+            await resources.claims.create(
                 session_id=session_id,
                 bridge_token=bridge_token,
-                expires_at=datetime.now(UTC) + timedelta(seconds=runtime.session_ttl_seconds),
+                expires_at=datetime.now(UTC) + timedelta(seconds=resources.session_ttl_seconds),
             )
         except Exception as error:
             await self._store.fail(session_id, f"sandbox provisioning failed: {error}")
@@ -318,7 +305,7 @@ class SessionService:
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
 
-    async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> Any | None:
+    async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> SandboxProvisioningView | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
 
         Only while it is what the operator is waiting on, unlike `sandbox_provisioning`: this read
@@ -335,7 +322,7 @@ class SessionService:
             return None
         return await self._observed(session_id)
 
-    async def _observed(self, session_id: UUID) -> Any:
+    async def _observed(self, session_id: UUID) -> SandboxProvisioningView:
         """The cluster's account of one session's sandbox — never raising, never hammered.
 
         An unreachable Kubernetes comes back as `observation_error` on the view rather than as an
@@ -350,16 +337,17 @@ class SessionService:
         }
         if (fresh := self._observations.get(session_id)) is not None:
             return fresh
+        configured = await self._configured(session_id)
         try:
-            view = await (await self._runtime(session_id)).inspect_sandbox(session_id=session_id)
+            view = await configured.resources.claims.inspect(session_id=session_id)
         except Exception as error:
-            view = (await self._runtime(session_id)).provisioning_error(session_id, str(error))
+            view = configured.resources.claims.observation_error(session_id=session_id, error=str(error))
         self._observations[session_id] = view
         return view
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await self._store.request_close(operator_id, session_id)
-        await (await self._runtime(session_id)).delete_sandbox(session_id=session_id)
+        await (await self._configured(session_id)).resources.claims.delete(session_id=session_id)
         await self._store.complete_claim_cleanup(session_id)
 
     async def reconcile_terminal_claims(self) -> None:
@@ -371,7 +359,7 @@ class SessionService:
 
     async def _cleanup_terminal_claim(self, session_id: UUID) -> bool:
         try:
-            await (await self._runtime(session_id)).delete_sandbox(session_id=session_id)
+            await (await self._configured(session_id)).resources.claims.delete(session_id=session_id)
         except Exception as error:
             # Leave `claim_cleaned_at` NULL so another replica or a later restart retries.
             # Kubernetes deletion is idempotent, so a redundant retry costs a 404.
@@ -384,14 +372,11 @@ class SessionService:
         """Who this session is, when its conversation has an attached chat surface.
 
         The conversation decides whether chat context applies; no channel object is handed to the
-        session. `--append-system-prompt` preserves Claude Code's own tool-driving preset.
+        session. The selected adapter decides how this addition is expressed without replacing the
+        harness's own tool-driving preset.
         """
-        runtime = await self._runtime(session_id)
-        if (
-            runtime.system_prompt is None
-            or self._conversation_history is None
-            or not await self._store.attached(session_id)
-        ):
+        resources = (await self._configured(session_id)).resources
+        if self._conversation_history is None or not await self._store.attached(session_id):
             return None
         try:
             conversation_id = await self._store.conversation_of(session_id)
@@ -401,10 +386,10 @@ class SessionService:
         except Exception:
             logger.exception("Could not read conversation history; starting session %s without it", session_id)
             recorded = ()
-        return runtime.system_prompt.render(
+        return resources.system_prompt.render(
             SessionIntroduction(
                 session_id=session_id,
-                workspace=runtime.cwd,
+                workspace=resources.cwd,
                 recent_messages=tuple(
                     HistoryMessage(
                         sender="operator" if message.item_type is ItemType.PROMPT else "assistant",
@@ -451,7 +436,9 @@ class SessionService:
         # **Read before the socket is accepted**, which is what stops a frame being both replayed
         # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
         # the runtime client's reader routes it, and nothing is being read on this connection yet.
-        runtime = await self._runtime(session_id)
+        configured = await self._configured(session_id)
+        runtime = configured.adapter
+        resources = configured.resources
         resumed = await self._store.adopt_open_turn(session_id)
         if resumed is not None:
             logger.warning(
@@ -473,14 +460,21 @@ class SessionService:
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
         await websocket.accept()
+        launch = runtime.build_launch(
+            RuntimeLaunch(
+                cwd=resources.cwd,
+                environment=resources.environment,
+                mcp_servers=resources.mcp_servers,
+                appended_system_prompt=appended,
+                resume_from=await self._store.highest_runner_seq(session_id),
+            )
+        )
         client = runtime.client(
             StarletteTextWebSocket(websocket),
             # The cursor is read here, per connection, off the session's own rows — so a replica
             # adopting a session mid-turn asks for what it is missing rather than being handed the
             # runner's whole replay window (<README.md> § `session_store.py` and `session_runtime.py`).
-            runtime.build_launch(
-                appended_system_prompt=appended, resume_from=await self._store.highest_runner_seq(session_id)
-            ),
+            launch,
             self._progress_reporter(session_id),
             RolloutRecorder(self._store, session_id),
         )
@@ -600,11 +594,11 @@ class SessionService:
         renewed lease rather than a `session_ttl_seconds` hard timer (`sandbox_claims.renew`), and
         both lapse together the moment a replica stops tending it.
         """
-        runtime = await self._runtime(session_id)
+        resources = (await self._configured(session_id)).resources
         while True:
             await self._store.renew_lease(session_id)
-            await runtime.renew_sandbox(
-                session_id=session_id, expires_at=datetime.now(UTC) + timedelta(seconds=runtime.session_ttl_seconds)
+            await resources.claims.renew(
+                session_id=session_id, expires_at=datetime.now(UTC) + timedelta(seconds=resources.session_ttl_seconds)
             )
             await asyncio.sleep(LEASE_RENEW_INTERVAL.total_seconds())
 
@@ -700,7 +694,7 @@ class SessionService:
                 # ends a turn rather than the conversation.
                 received = await next_frame
                 frame_seq = received.frame_seq
-                folding, events = runtime.project_frame(folding, frame_seq=frame_seq, payload=received.payload)
+                folding, events = runtime.project_frame(folding, frame_seq=frame_seq, frame=received.envelope)
                 # The frame that ends the turn goes no further: what is left of the exchange is
                 # written below and `end_turn` is the transaction that closes it and carries the
                 # cursor past this frame, so projecting it into `apply_frame` would advance the
@@ -716,8 +710,8 @@ class SessionService:
                         raise AssertionError("a composing tool call emitted a conversation event")
                 else:
                     await self._store.apply_frame(session_id, turn_id, frame_seq, events)
-            result = completed.frame.payload
-            failed = runtime.turn_failed(result) and not abort_event.is_set()
+            completion = runtime.complete_turn(completed.frame.envelope)
+            failed = completion.failure is not None and not abort_event.is_set()
             # `result.result` is deliberately not projected — it repeats the turn's last message on
             # every result frame, so minting prose from it would double every answer. It is handed
             # over as the fallback for the one case that is not a repeat: a turn whose text arrived
@@ -734,14 +728,15 @@ class SessionService:
                 turn_id,
                 # A failing result's `result` is the failure rather than an answer, so nothing is
                 # minted from it; what the turn already said stands on its own items.
-                final_text="" if failed else str(result.get("result") or "").strip(),
+                final_text="" if failed else completion.final_text,
                 frame_seq=completed.frame.frame_seq,
             )
             if failed:
                 # Quoted from the frame rather than the event: *why* a turn failed is
                 # provider-specific by nature, and the neutral vocabulary carries an outcome
                 # rather than a message on purpose.
-                raise RuntimeError(runtime.turn_failure_message(result))
+                assert completion.failure is not None
+                raise RuntimeError(completion.failure)
             await self._store.end_turn(
                 turn_id,
                 TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
@@ -770,8 +765,7 @@ class SessionService:
         released = await self._store.release_held_leases()
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
-        for kind in self._runtimes.kinds:
-            await self._runtimes[kind].close()
+        await self._runtimes.aclose()
 
 
 async def _replaying(

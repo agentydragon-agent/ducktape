@@ -14,7 +14,7 @@ function frame(
     frame_seq,
     kind: setupOutput ? "setup_output" : "harness_frame",
     native_kind: setupOutput ? null : native_kind,
-    payload: setupOutput ? payload : { kind: "claude", payload },
+    payload,
     unprojected,
     direction: "from_agent",
     created_at: "2026-08-01T03:00:00Z",

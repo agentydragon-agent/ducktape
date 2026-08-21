@@ -17,7 +17,6 @@ from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_cl
 from haku.runtime.x.bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     RUNNER_TO_CONSOLE,
-    ClaudeFrame,
     EndInput,
     HarnessFrame,
     HarnessLaunch,
@@ -141,12 +140,12 @@ async def test_bridge_copies_json_between_websocket_and_cli_stdio(tmp_path: Path
             partial(bridge_websocket_to_cli, runner_socket, backend=claude_backend(fake_claude), launch=launch)
         )
         message = {"type": "user", "message": {"role": "user", "content": "hello"}}
-        await console_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=message).model_dump()).model_dump_json())
+        await console_socket.send_text(HarnessFrame(frame=message).model_dump_json())
         with anyio.fail_after(5):
             # Unwrapped on the way to the CLI and re-wrapped on the way back, so the echo proves the
             # runner strips and restores the envelope. `seq=1` is the session's first frame.
             assert RUNNER_TO_CONSOLE.validate_json(await console_socket.receive_text()) == HarnessFrame(
-                frame=ClaudeFrame(payload=message).model_dump(), seq=1
+                frame=message, seq=1
             )
         await console_socket.send_text(EndInput().model_dump_json())
 
@@ -230,10 +229,10 @@ async def test_a_second_console_is_handed_what_the_first_may_not_have_recorded(t
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
     log = OutboundLog()
     payload = {"type": "assistant", "message": {"id": "msg_01abc"}}
-    answered = HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump(), seq=1).model_dump_json()
+    answered = HarnessFrame(frame=payload, seq=1).model_dump_json()
     try:
         first_console, first_runner = memory_websocket_pair()
-        await sender.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
+        await sender.send(Outbound(frame=HarnessFrame(frame=payload)))
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(partial(_serve_console, first_runner, process, receiver, log))
             with anyio.fail_after(5):
@@ -267,7 +266,7 @@ async def test_a_console_that_says_where_it_got_to_is_sent_only_what_it_is_missi
         first_console, first_runner = memory_websocket_pair()
         for message_id in ("msg_01", "msg_02"):
             payload = {"type": "assistant", "message": {"id": message_id}}
-            await sender.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
+            await sender.send(Outbound(frame=HarnessFrame(frame=payload)))
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(partial(_serve_console, first_runner, process, receiver, log))
             with anyio.fail_after(5):
@@ -308,10 +307,10 @@ async def test_a_delta_is_sent_and_replayed_by_position(tmp_path: Path) -> None:
     sender, receiver = anyio.create_memory_object_stream[Outbound](8)
     log = OutboundLog()
     payload = {"type": "stream_event", "event": {}}
-    delta = HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump(), seq=1).model_dump_json()
+    delta = HarnessFrame(frame=payload, seq=1).model_dump_json()
     try:
         console, runner = memory_websocket_pair()
-        await sender.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
+        await sender.send(Outbound(frame=HarnessFrame(frame=payload)))
         async with anyio.create_task_group() as tasks:
             tasks.start_soon(partial(_serve_console, runner, process, receiver, log))
             with anyio.fail_after(5):

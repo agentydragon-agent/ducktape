@@ -1,9 +1,9 @@
 """The CLI's own frame vocabulary, and the readers that pick a value out of one.
 
 The `type` values Claude Code puts at the top of a frame, and the shapes underneath them. The
-console stores these in `session_frames.kind` alongside the bridge's own envelope discriminator
-(<../setup_output.py>), which is the two-vocabulary collision that giving the CLI's type its own
-column resolves (<../../plans/conversation_layers.md> § 13).
+console stores the complete native object in `session_frames.payload`; `session_frames.kind` remains
+only the bridge envelope class. Native kinds are derived when an inspection or projection needs
+them, so a later CLI value remains preserved even before this module learns its meaning.
 
 Everything here is about the wire's shapes, so it holds no session state and touches no table.
 """
@@ -30,9 +30,10 @@ ASSISTANT_FRAME_KIND = "assistant"
 
 def frame_kind(payload: dict[str, Any]) -> str:
     kind = payload.get("type")
-    if not isinstance(kind, str):
-        raise ValueError(f"protocol frame has no type: {payload=}")
-    return kind
+    if isinstance(kind, str):
+        return kind
+    method = payload.get("method")
+    return method if isinstance(method, str) else "<undiscriminated>"
 
 
 def agent_message_id(frame: dict[str, Any]) -> str | None:

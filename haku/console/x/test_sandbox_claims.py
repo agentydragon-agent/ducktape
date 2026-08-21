@@ -15,8 +15,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from haku.console.x.conftest import runtime_config
-from haku.console.x.sandbox_claims import KubernetesClients, KubernetesSandboxClaims, ProvisioningStep
+from haku.console.x.sandbox_claims import KubernetesClients, KubernetesSandboxClaims, ProvisioningStep, SandboxClaimSpec
 
 
 class RecordingCustomObjectsApi:
@@ -74,7 +73,13 @@ def core_v1_api() -> RecordingCoreV1Api:
 def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
     """The real claim builder with only the Kubernetes API objects recorded."""
     return KubernetesSandboxClaims(
-        runtime_config(),
+        SandboxClaimSpec(
+            namespace="haku-claude-sandbox",
+            warm_pool="haku-claude",
+            claim_prefix="claude",
+            runtime_label="claude-chat",
+            runner_environment={},
+        ),
         KubernetesClients(
             api=cast(Any, RecordingApiClient()),
             custom_objects=cast(Any, custom_objects_api),
@@ -97,7 +102,7 @@ async def test_claim_injects_only_the_session_rendezvous_values(sandbox_claims, 
     assert body["metadata"]["name"] == "claude-10000000000040008000000000000001"
     assert body["spec"]["warmPoolRef"] == {"name": "haku-claude"}
     assert body["spec"]["env"] == [
-        {"name": "HAKU_CLAUDE_SESSION_ID", "value": str(session_id)},
+        {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
         {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": "one-use-secret"},
     ]
     assert body["spec"]["lifecycle"] == {"shutdownPolicy": "DeleteForeground", "shutdownTime": "2026-08-01T05:00:00Z"}

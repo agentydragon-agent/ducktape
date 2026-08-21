@@ -412,7 +412,7 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
           : conversationDetail;
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
 // order, with a tool call and the result it got, as the frames themselves carried them.
-const claudeFrame = (payload: Record<string, unknown>) => ({ kind: "claude" as const, payload });
+const claudeFrame = (payload: Record<string, unknown>) => payload;
 
 const conversationFrames = {
   conversation_id: conversationId,

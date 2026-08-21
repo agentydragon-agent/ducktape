@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, ItemType, SessionStatus, TurnOutcome
 from haku.console.database_schema import SessionFrame
-from haku.console.x.conftest import MCP_TOKEN, runtime_config
+from haku.console.x.conftest import configured_runtimes, runtime_config
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
@@ -55,16 +55,10 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
         engine = create_async_engine(database_url, pool_pre_ping=True)
         notifications = SessionNotifications(database_url)
         await notifications.start()
-        app.state.session_service = SessionService(
-            # The deployed `cwd` is the sandbox's `/workspace`, which does not exist here — and the
-            # runner starts the CLI in it, so the wrong one fails the launch rather than an
-            # assertion.
-            runtime_config(cwd=str(workspace)),
-            SessionStore(async_sessionmaker(engine, expire_on_commit=False)),
-            RecordingClaims(),
-            notifications,
-            mcp_token=MCP_TOKEN,
-        )
+        claims = RecordingClaims()
+        runtimes = configured_runtimes(claims, config=runtime_config(cwd=str(workspace)))
+        store = SessionStore(async_sessionmaker(engine, expire_on_commit=False), runtimes)
+        app.state.session_service = SessionService(runtimes, store, notifications)
         try:
             yield
         finally:
@@ -131,11 +125,11 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         "claude",
         # The nested binary needs the test's RUNFILES_* to find its own runfiles, and the stub
         # inherits this environment in turn (`backend.child_environment`), which is how it learns
-        # where to leave its handshake files. `HAKU_CLAUDE_SETUP` stays unset: no bootstrap here.
+        # where to leave its handshake files. `HAKU_RUNNER_SETUP` stays unset: no bootstrap here.
         env=os.environ
         | {
             "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{port}/internal/claude/runner",
-            "HAKU_CLAUDE_SESSION_ID": str(session_id),
+            "HAKU_RUNNER_SESSION_ID": str(session_id),
             "HAKU_AGENT_SDK_RUNNER_TOKEN": token,
             "HAKU_CLAUDE_PATH": str(get_required_path(STUB_CLAUDE)),
             "HAKU_STUB_STATE": str(stub_state),

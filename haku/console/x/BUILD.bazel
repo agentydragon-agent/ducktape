@@ -8,6 +8,7 @@ py_library(
     deps = [
         ":conversation_events",
         ":runtime",
+        ":runtime_catalog",
     ],
 )
 
@@ -19,9 +20,24 @@ py_library(
         ":sandbox_claims",
         ":system_prompt",
         "//haku/console:chat_models",
-        "//haku/console/x/claude_code:runtime",
-        "//haku/runtime/x/bridge:cli_client",
+        "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
+        "//haku/runtime/x/bridge:transport",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "runtime_catalog",
+    srcs = ["runtime_catalog.py"],
+    deps = [
+        ":runtime",
+        ":sandbox_claims",
+        ":system_prompt",
+        "//haku/console:config",
+        "//haku/console/x/claude_code:client",
+        "//haku/console/x/claude_code:runtime",
+        "@pypi//pydantic",
     ],
 )
 
@@ -30,6 +46,7 @@ py_test(
     srcs = ["test_runtime.py"],
     deps = [
         ":runtime",
+        ":runtime_catalog",
         "//:conftest",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code/testing:wire",
@@ -106,6 +123,7 @@ py_library(
     srcs = ["reprojection.py"],
     deps = [
         ":frame_projection",
+        ":runtime_catalog",
         ":session_events",
         ":setup_output",
         "//haku/console:chat_models",
@@ -157,6 +175,7 @@ py_library(
         ":conversation_log",
         ":conversation_records",
         ":runtime",
+        ":runtime_catalog",
         ":session_events",
         ":session_notifications",
         ":session_views",
@@ -167,7 +186,8 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x/claude_code:frames",
-        "//haku/runtime/x/bridge:cli_client",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:protocol",
         "@pypi//sqlalchemy",
     ],
 )
@@ -219,6 +239,7 @@ py_library(
         ":conversation_events",
         ":conversation_records",
         ":runtime",
+        ":runtime_catalog",
         ":sandbox_claims",
         ":session_events",
         ":setup_output",
@@ -233,7 +254,6 @@ py_library(
     name = "sandbox_claims",
     srcs = ["sandbox_claims.py"],
     deps = [
-        "//haku/console:config",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
@@ -281,6 +301,8 @@ py_library(
     name = "session_live_updates",
     srcs = ["session_live_updates.py"],
     deps = [
+        ":runtime",
+        ":runtime_catalog",
         ":session_notifications",
         "//haku/console:console_events",
         "//haku/console:database_schema",
@@ -444,9 +466,12 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
+        "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:frames",
+        "//haku/console/x/claude_code:runtime",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/console/x/testing:recording_claims",
+        "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest",

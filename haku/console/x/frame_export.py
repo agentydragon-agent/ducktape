@@ -67,7 +67,7 @@ def _records(frames: Sequence[SessionFrame]) -> Iterator[dict[str, Json]]:
         redacted = redact(frame.payload, pseudonyms)
         record: dict[str, Json] = {
             "t": round((frame.created_at - frames[0].created_at).total_seconds(), 4),
-            # Keep the outer bridge class and wire position beside the untouched complete inner frame.
+            # Keep the outer bridge class and wire position beside the untouched native frame.
             # In particular, do not replace `bridge_kind` with payload["type"]: a future JSON-RPC
             # method must remain forensic data, not a database discriminator.
             "bridge_kind": frame.kind,
@@ -85,11 +85,9 @@ def _encoded(payload: dict[str, Json]) -> str:
 
 def _kind(record: dict[str, Json]) -> str:
     frame = record["frame"]
-    if not (
-        isinstance(frame, dict)
-        and isinstance(frame.get("kind"), str)
-        and isinstance(native := frame.get("payload"), dict)
-    ):
-        raise ValueError("export row does not contain a complete inner harness frame")
-    kind = native.get("type")
-    return kind if isinstance(kind, str) else "<untyped>"
+    if not isinstance(frame, dict):
+        raise ValueError("export row does not contain a native harness JSON object")
+    for field in ("type", "method"):
+        if isinstance(kind := frame.get(field), str):
+            return kind
+    return "<untyped>"

@@ -90,6 +90,7 @@ from haku.console.x import (
     conversation_follow,
     conversation_runtime,
     runtime as console_runtime,
+    runtime_catalog,
     sandbox_allocation,
     sandbox_claims,
     session_runtime,
@@ -305,9 +306,17 @@ def create_app(
         )
         if runtime_mcp_agent is None:
             raise RuntimeError(f"Claude runtime references unknown static Agent {claude_runtime.mcp_static_agent_id}")
-        runtime_registry = console_runtime.claude_registry(
+        runtime_registry = runtime_catalog.claude_registry(
             claude_runtime,
-            sandbox_claims.KubernetesSandboxClaims(claude_runtime),
+            sandbox_claims.KubernetesSandboxClaims(
+                sandbox_claims.SandboxClaimSpec(
+                    namespace=claude_runtime.namespace,
+                    warm_pool=claude_runtime.warm_pool,
+                    claim_prefix="claude",
+                    runtime_label="claude-chat",
+                    runner_environment={},
+                )
+            ),
             mcp_token=runtime_mcp_agent.token,
             # Parsed at construction, so a broken deploy template prevents readiness rather than
             # failing the first attached chat session hours later.
@@ -316,7 +325,7 @@ def create_app(
     else:
         # Runtime-disabled replicas can still inspect the one durable runtime kind the Console
         # currently knows. This registry has projection only: no claims, credentials, or launcher.
-        runtime_registry = console_runtime.RuntimeRegistry.projection_only()
+        runtime_registry = runtime_catalog.projection_registry()
     # All production read and write paths share the same catalog. A future adapter registration is
     # therefore enough for both execution and forensic projection; no hidden Claude fallback can
     # reinterpret another runtime's immutable conversation rows.
@@ -387,11 +396,8 @@ def create_app(
         session_service = session_runtime.SessionService(
             runtime_registry,
             session_store,
-            None,
             session_notifications,
-            mcp_token=runtime_mcp_agent.token,
             conversation_history=ConversationHistory(db_sessions),
-            system_prompt=None,
         )
     else:
         session_service = None

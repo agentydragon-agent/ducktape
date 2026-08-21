@@ -89,22 +89,13 @@ class HarnessLaunch(_Frame):
     resume_from: int | None = None
 
 
-class ClaudeMessage(_Frame):
-    """One complete Claude native frame, nested inside the bridge envelope."""
-
-    kind: Literal["claude"] = "claude"
-    payload: dict[str, Any]
-
-
-# Descriptive alias for code that calls the nested object a frame rather than a message.
-ClaudeFrame = ClaudeMessage
-
-
 class HarnessFrame(_Frame):
     """One opaque native harness frame, in either direction, passed through untouched."""
 
     kind: Literal["harness_frame"] = "harness_frame"
-    # The harness's complete frame, including its own kind and payload, not ours to interpret.
+    # The exact JSON object emitted by or sent to the selected harness. The bridge adds no inner
+    # wrapper and does not interpret a provider discriminator such as Claude's ``type`` or a
+    # JSON-RPC ``method``.
     frame: dict[str, Any]
     # **The runner's own number for this frame, dense and monotonic per session.** Set only on the
     # runner → console direction; None on the console's writes, which the runner does not number.

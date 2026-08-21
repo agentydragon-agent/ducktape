@@ -95,8 +95,7 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
 def _reread(exported: frame_export.ExportedSession) -> list[RecordedFrame]:
     """The fixture as `test_diverse_session.py` reads one: a record's index is its `frame_seq`."""
     return [
-        RecordedFrame(frame_seq=index, payload=json.loads(line)["frame"]["payload"])
-        for index, line in enumerate(exported.lines())
+        RecordedFrame(frame_seq=index, payload=json.loads(line)["frame"]) for index, line in enumerate(exported.lines())
     ]
 
 

@@ -1418,9 +1418,9 @@ class SessionFrame(Base):
     are dropped by the turn loop's extraction, as is a result's cost and usage.
 
     ``kind`` is only the bridge class (``harness_frame`` or ``setup_output``). For harness rows,
-    ``payload`` stores the complete inner frame (for Claude, ``{kind: "claude", payload: ...}``),
-    including its own discriminator and native ``type`` or JSON-RPC method; none is copied into
-    this column.
+    ``payload`` stores the complete native frame exactly as the selected harness emitted or
+    received it, including its own ``type`` or JSON-RPC method when it has one; none is copied into
+    this column and no provider wrapper is added.
     """
 
     __tablename__ = "session_frames"

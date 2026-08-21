@@ -28,7 +28,7 @@ from haku.console.x import reprojection
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
 from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.frame_projection import projected
-from haku.console.x.runtime import RuntimeRegistry
+from haku.console.x.runtime_catalog import projection_registry
 from haku.console.x.session_store import BridgeAuthentication
 
 
@@ -55,7 +55,7 @@ async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dic
     assert started is not None
     state = ProjectionState()
     for payload in frames:
-        frame = {"kind": "claude", "payload": payload}
+        frame = payload
         recorded = await chat_store.record_frame(
             session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame
         )
@@ -83,10 +83,11 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
         ],
     )
 
-    runtimes = RuntimeRegistry.projection_only()
+    runtimes = projection_registry()
     async with migrated_sessions() as db:
-        with patch.object(
-            RuntimeRegistry, "projection_only", side_effect=AssertionError("explicit reprojection registry was ignored")
+        with patch(
+            "haku.console.x.reprojection.projection_registry",
+            side_effect=AssertionError("explicit reprojection registry was ignored"),
         ):
             report = await reprojection.check_session(db, session_id, runtimes=runtimes)
 

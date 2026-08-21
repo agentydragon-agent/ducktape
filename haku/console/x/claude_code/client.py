@@ -25,11 +25,9 @@ and takes `interrupt` down with it — the one call an operator makes when a tur
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -41,7 +39,8 @@ from haku.cli_protocol.frames import (
     InitializeRequest,
     InterruptRequest,
 )
-from haku.runtime.x.bridge.protocol import ClaudeFrame, HarnessFrame, HarnessLaunch, TextWebSocket
+from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
+from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
 from haku.runtime.x.bridge.transport import ProgressSink, WebSocketTransport
 
 logger = logging.getLogger(__name__)
@@ -64,69 +63,11 @@ class FrameChannel(Protocol):
 
     async def connect(self) -> None: ...
 
-    async def write(self, data: str) -> None: ...
+    async def write(self, frame: HarnessFrame) -> None: ...
 
     def read_messages(self) -> AsyncIterator[HarnessFrame]: ...
 
     async def close(self) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class RecordedFrame:
-    """Where a sink put one frame, and whether the caller should act on it.
-
-    *fresh* is False when the sink has seen this exact frame before and the reader must not route
-    it a second time; a sink with no notion of that reports True for everything. *frame_seq* is
-    the sink's own number for the frame either way, since a replay names a row that exists.
-    """
-
-    fresh: bool
-    frame_seq: int
-
-
-class FrameSink(Protocol):
-    """Where a session's frames are kept, and what numbers them.
-
-    Two methods rather than one plus a direction enum, because the only direction vocabulary
-    that exists lives in the console's own schema and this package must not depend on it.
-
-    **The numbers it returns are an order, not a count.** The console's sink is a Postgres
-    `Identity` column, which leaves gaps — so a reader may compare two of them and may not read a
-    gap between them as a frame that went missing.
-
-    *runner_seq* is the other number: the one the **peer** minted for a frame it sent, dense over
-    everything that runner put on the wire, and None for a frame no runner numbered — this end's
-    writes, and anything from a runner image predating the field. It is recorded beside the sink's
-    own number rather than replacing it; what reads it is the resume cursor.
-
-    Called from the client's write path and from its reader, so an implementation that raises takes
-    the session down — intentionally: a record with quiet holes looks complete while being wrong.
-    """
-
-    async def sent(self, frame: dict[str, Any]) -> int: ...
-
-    async def received(self, frame: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame: ...
-
-
-@dataclass(frozen=True, slots=True)
-class SentPrompt:
-    """One written prompt: the id its lifecycle is reported under, and where it was recorded."""
-
-    command_uuid: str
-    frame_seq: int
-
-
-@dataclass(frozen=True, slots=True)
-class ReceivedFrame:
-    """One conversation frame, with the sink's number for it.
-
-    **The number travels with the frame rather than being read back off the client**: the reader is
-    a detached task running ahead of whoever consumes `frames()`, so a cursor on the client answers
-    "the newest frame recorded", not "the frame you are holding".
-    """
-
-    payload: dict[str, Any]
-    frame_seq: int
 
 
 class ClaudeCliError(Exception):
@@ -239,8 +180,9 @@ class ClaudeCli:
         `session_store._prompt_left` reads that as evidence of delivery, so it lands as a turn never
         re-asked rather than one asked twice.
         """
-        frame_seq = await self._frames_to.sent(ClaudeFrame(payload=payload).model_dump())
-        await self._channel.write(json.dumps(payload) + "\n")
+        frame = HarnessFrame(frame=payload)
+        frame_seq = await self._frames_to.sent(frame)
+        await self._channel.write(frame)
         return frame_seq
 
     async def _read(self) -> None:
@@ -250,30 +192,27 @@ class ClaudeCli:
         skipped = 0
         try:
             async for message in self._channel.read_messages():
-                inner = message.frame
-                if inner.get("kind") != "claude" or not isinstance(frame := inner.get("payload"), dict):
-                    raise ValueError("harness frame must contain a complete Claude frame")
                 # Before the routing, deliberately: control frames never reach `frames()`, so a
                 # recorder hung off the conversation queue would drop the control channel from the
                 # record. The record is also what recognises a replay — an adopted connection
                 # re-sends what the previous console may not have acknowledged, and routing a
                 # second `assistant` would post the same answer into the room twice.
-                recorded = await self._frames_to.received(inner, runner_seq=message.seq)
+                recorded = await self._frames_to.received(message)
                 if not recorded.fresh:
                     skipped += 1
                     continue
                 if skipped:
                     logger.info("Skipped %d replayed frame(s) already in the rollout", skipped)
                     skipped = 0
-                match frame.get("type"):
+                match message.frame.get("type"):
                     case "control_response":
-                        self._resolve(frame)
+                        self._resolve(message.frame)
                     case "control_cancel_request":
-                        logger.info("Claude CLI cancelled control request %s", frame.get("request_id"))
+                        logger.info("Claude CLI cancelled control request %s", message.frame.get("request_id"))
                     case "control_request":
-                        await self._refuse(frame)
+                        await self._refuse(message.frame)
                     case _:
-                        self._conversation.put_nowait(ReceivedFrame(payload=frame, frame_seq=recorded.frame_seq))
+                        self._conversation.put_nowait(ReceivedFrame(envelope=message, frame_seq=recorded.frame_seq))
         except asyncio.CancelledError:
             raise
         except Exception:

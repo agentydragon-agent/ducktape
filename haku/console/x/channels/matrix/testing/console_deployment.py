@@ -248,14 +248,7 @@ class Deployment:
             frames = await self._store.read_frames(session_id, cursor=None, limit=200, kinds=[ASSISTANT_FRAME_KIND])
             for frame in frames:
                 stored_frame = frame.payload
-                if not isinstance(stored_frame, dict):
-                    continue
-                native_payload = stored_frame.get("payload")
-                if (
-                    stored_frame.get("kind") == "claude"
-                    and isinstance(native_payload, dict)
-                    and _assistant_text(native_payload) == text
-                ):
+                if isinstance(stored_frame, dict) and _assistant_text(stored_frame) == text:
                     return True
             return False
 
@@ -327,7 +320,7 @@ class Deployment:
                 self._runners[session_id] = await self._spawn(
                     f"runner-{len(self._session_ids)}",
                     get_required_path(RUNNER_BIN),
-                    {"HAKU_CLAUDE_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
+                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
                     "--harness",
                     "claude",
                 )

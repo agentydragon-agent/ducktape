@@ -31,8 +31,10 @@ from haku.console.chat_models import (
 from haku.console.database_schema import ConversationItem, Session, SessionFrame
 from haku.console.x.conversation_records import ChannelAttachment
 from haku.console.x.runtime import RuntimeRegistry
-from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
+from haku.console.x.runtime_catalog import projection_registry
+from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 
 class ConversationItemView(BaseModel):
@@ -177,7 +179,7 @@ class ConversationSessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    provisioning: ClaudeSandboxProvisioningView | None = None
+    provisioning: SandboxProvisioningView | None = None
     narration: list[SetupNarrationView]
     items: list[ConversationItemView]
     turns: list[ConversationTurnView]
@@ -257,7 +259,7 @@ class ConversationUpdate(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    provisioning: ClaudeSandboxProvisioningView | None = Field(
+    provisioning: SandboxProvisioningView | None = Field(
         default=None,
         description="The cluster's account of the sandbox this session is waiting on, while it is still waiting.",
     )
@@ -313,7 +315,7 @@ class SessionProvisioningView(BaseModel):
         description="The session's stored status. `responding` never appears here: it is derived "
         "from an open turn by `session_view` and is not on the row."
     )
-    sandbox: ClaudeSandboxProvisioningView | None = Field(
+    sandbox: SandboxProvisioningView | None = Field(
         description="The cluster's account of this session's sandbox. Null only while the session "
         "is idle and has never asked for one; `claim_absent` means one was requested but Kubernetes "
         "does not have it now."
@@ -328,14 +330,14 @@ MAX_FRAME_PAGE = 200
 
 
 class SessionFrameView(BaseModel):
-    """One row of the rollout, as the console's frame inspector reads it — Claude Code's own frame.
+    """One row of the rollout, as the console's frame inspector reads the selected harness's wire.
 
     **This is one backend's wire and must be presented as such**, never as the conversation: it is
     the only shape the console serves that names a backend.
 
-    The payload is the complete inner frame, wire whole. This surface exists because `conversation_item` is a lossy
-    projection of the frame log, so clipping here would reintroduce that one level down; bounding a
-    response is the page's job.
+    The payload is the complete native frame, wire whole. This surface exists because
+    `conversation_item` is a lossy projection of the frame log, so clipping here would reintroduce
+    that one level down; bounding a response is the page's job.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -373,9 +375,9 @@ class SessionFramePage(BaseModel):
 def _unprojected(row: SessionFrame, *, runtime_kind: RuntimeKind, runtimes: RuntimeRegistry) -> dict[str, int] | None:
     """`Projection.unprojected` for one frame, or nothing — never an empty map standing in for "none".
 
-    **The keys are the adapter's on purpose.** They are Claude's own frame class names
-    (`system/vcs_state_changed`, `user/text`): what the fold could not read is only sayable in the
-    wire's own words, so they must not be renamed into the neutral vocabulary.
+    **The keys are the adapter's on purpose.** They are the selected backend's own frame class
+    names (for Claude, `system/vcs_state_changed` or `user/text`): what the fold could not read is
+    only sayable in the wire's own words, so they must not be renamed into the neutral vocabulary.
 
     Folding one frame at a time is exact here, unlike for the events: a count keys off the frame's
     own class and content blocks, never off what the fold accumulated before it, so per frame sums
@@ -384,7 +386,7 @@ def _unprojected(row: SessionFrame, *, runtime_kind: RuntimeKind, runtimes: Runt
     """
     if row.kind == SETUP_OUTPUT_KIND:
         return None
-    folded = runtimes[runtime_kind].project_log([(row.frame_seq, row.payload)])
+    folded = runtimes[runtime_kind].project_log([(row.frame_seq, HarnessFrame(frame=row.payload, seq=row.runner_seq))])
     return dict(folded.unprojected) or None
 
 
@@ -401,7 +403,7 @@ def frame_page(
     A short page is the first one, the same rule the MCP reader uses in the other direction:
     cheaper than a second count query, for the only question a caller has.
     """
-    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
+    registry = runtimes if runtimes is not None else projection_registry()
     frames = [
         SessionFrameView(
             frame_seq=row.frame_seq,
@@ -425,18 +427,10 @@ def frame_page(
 def _native_kind(row: SessionFrame) -> str | None:
     if row.kind != BridgeFrameKind.HARNESS_FRAME:
         return None
-    payload = _native_payload(row.payload)
     for field in ("type", "method"):
-        if isinstance(value := payload.get(field), str):
+        if isinstance(value := row.payload.get(field), str):
             return value
     return None
-
-
-def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
-    """Project a stored complete inner harness frame to its native payload for display helpers."""
-    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
-        return payload
-    raise ValueError("harness-frame view row does not contain a complete inner frame")
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:

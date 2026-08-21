@@ -24,10 +24,10 @@ import asyncio
 from datetime import datetime
 from uuid import UUID
 
-from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView, ProvisioningStep, provisioning_view
+from haku.console.x.sandbox_claims import ProvisioningStep, SandboxProvisioningView, provisioning_view
 
 
-def fixed_provisioning_view(session_id: UUID) -> ClaudeSandboxProvisioningView:
+def fixed_provisioning_view(session_id: UUID) -> SandboxProvisioningView:
     """What every claim stand-in here answers `inspect` with — see the module docstring's caveat."""
     return provisioning_view(f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED)
 
@@ -45,14 +45,14 @@ class RecordingClaims:
         # Every `inspect`, so a test can assert which reads reached the cluster and which were
         # answered off the cached observation.
         self.inspected: list[UUID] = []
-        self._answer: ClaudeSandboxProvisioningView | None = None
+        self._answer: SandboxProvisioningView | None = None
         self._failure: Exception | None = None
 
     def refuse(self, session_id: UUID) -> None:
         """Make claim creation fail for one session without affecting the rest of a sweep."""
         self.refused.add(session_id)
 
-    def answer(self, view: ClaudeSandboxProvisioningView) -> None:
+    def answer(self, view: SandboxProvisioningView) -> None:
         """Make the next inspections report *view* instead of the fixed one."""
         self._answer = view
         self._failure = None
@@ -77,11 +77,16 @@ class RecordingClaims:
     async def delete(self, *, session_id: UUID) -> None:
         self.deleted.append(session_id)
 
-    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
+    async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView:
         self.inspected.append(session_id)
         if self._failure is not None:
             raise self._failure
         return self._answer if self._answer is not None else fixed_provisioning_view(session_id)
+
+    def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
+        return provisioning_view(
+            f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=error
+        )
 
     async def aclose(self) -> None:
         return None

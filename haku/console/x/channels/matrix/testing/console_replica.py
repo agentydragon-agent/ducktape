@@ -50,8 +50,9 @@ from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_runtime import ConversationRuntime
+from haku.console.x.runtime_catalog import claude_registry
 from haku.console.x.sandbox_allocation import SandboxAllocator
-from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
+from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
 from haku.console.x.session_store import SessionStore
@@ -96,8 +97,11 @@ class FileSandboxClaims:
         self._path(session_id).unlink(missing_ok=True)
         logger.info("claim deleted for session %s", session_id)
 
-    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
+    async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView:
         return fixed_provisioning_view(session_id)
+
+    def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
+        return fixed_provisioning_view(session_id).model_copy(update={"observation_error": error})
 
     async def aclose(self) -> None:
         return None
@@ -156,7 +160,14 @@ async def _serve() -> None:
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     notifications = SessionNotifications(database_url)
     await notifications.start()
-    store = SessionStore(sessions)
+    claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
+    runtimes = claude_registry(
+        runtime,
+        claims,
+        mcp_token=MCP_TOKEN,
+        system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template),
+    )
+    store = SessionStore(sessions, runtimes)
     conversations = MatrixConversationStore(sessions)
     ledger = IngressLedger(sessions)
     outbox = RoomOutbox(sessions)
@@ -176,15 +187,7 @@ async def _serve() -> None:
         ledger,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
-    service = SessionService(
-        runtime,
-        store,
-        FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR"))),
-        notifications,
-        mcp_token=MCP_TOKEN,
-        conversation_history=ConversationHistory(sessions),
-        system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template),
-    )
+    service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))
     supervisor = ConversationRuntime(service, store, notifications, engine)
     allocator = SandboxAllocator(service, store, notifications, engine)
     notices = RoomNotices(

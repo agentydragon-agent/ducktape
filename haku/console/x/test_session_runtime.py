@@ -38,7 +38,9 @@ from haku.console.chat_models import (
 from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
 from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.x.claude_code.client import ClaudeCli
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
+from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     content_block_stop,
@@ -52,7 +54,7 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
     tool_use_start,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, runtime_config
+from haku.console.x.conftest import age_lease, answers, attach_channel, configured_runtimes, lease_of, runtime_config
 from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.frame_projection import projected
@@ -62,8 +64,8 @@ from haku.console.x.session_runtime import GOING_AWAY_CODE, RolloutRecorder, Ses
 from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import RecordingClaims
-from haku.runtime.x.bridge.cli_client import ClaudeCli, FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, ClaudeFrame, HarnessFrame
+from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
+from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, HarnessFrame
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
@@ -176,7 +178,9 @@ class _FakeCli:
 
     def deliver(self, frame: dict[str, Any], frame_seq: int | None = None) -> None:
         self._queue.put_nowait(
-            ReceivedFrame(payload=frame, frame_seq=self._number() if frame_seq is None else frame_seq)
+            ReceivedFrame(
+                envelope=HarnessFrame(frame=frame), frame_seq=self._number() if frame_seq is None else frame_seq
+            )
         )
 
     def _number(self) -> int:
@@ -325,8 +329,8 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
     # Recorded through the real sink, so the numbers the turn is handed are the rollout's own.
     script = [text_delta("hello"), assistant(text_block("hello")), result(text="hello")]
     recorder = RolloutRecorder(chat_store, view.session_id)
-    prompt_frame_seq = await recorder.sent(prompt("say hello"))
-    frame_seqs = [(await recorder.received(frame, runner_seq=None)).frame_seq for frame in script]
+    prompt_frame_seq = await recorder.sent(HarnessFrame(frame=prompt("say hello")))
+    frame_seqs = [(await recorder.received(HarnessFrame(frame=frame))).frame_seq for frame in script]
 
     client = _FakeCli(script, frame_seqs=frame_seqs, prompt_frame_seq=prompt_frame_seq)
     await chat_service._run_turn(
@@ -367,7 +371,7 @@ class _LifecycleWebSocket:
 class _LifecycleClaudeClient(_FakeCli):
     """A `cli_over_websocket` stand-in that records through the sink it is handed.
 
-    The sink is not optional in the real client (<../../runtime/x/bridge/cli_client.py>): every
+    The sink is not optional in the real client (<claude_code/client.py>): every
     frame either way is written as it crosses the wire and numbered from the row it landed in, so a
     double that dropped it would hand the turn loop numbers naming no row.
     """
@@ -385,9 +389,21 @@ class _LifecycleClaudeClient(_FakeCli):
         return {"subtype": "success"}
 
     async def query(self, text: str) -> SentPrompt:
-        self.prompt_frame_seq = await self._frames_to.sent(prompt(text))
-        self.frame_seqs = [(await self._frames_to.received(frame, runner_seq=None)).frame_seq for frame in self.script]
+        self.prompt_frame_seq = await self._frames_to.sent(HarnessFrame(frame=prompt(text)))
+        self.frame_seqs = [
+            (await self._frames_to.received(HarnessFrame(frame=frame))).frame_seq for frame in self.script
+        ]
         return await super().query(text)
+
+
+def _use_client(factory: type[_LifecycleClaudeClient]):
+    return patch.object(
+        ClaudeRuntimeAdapter,
+        "client",
+        new=lambda _runtime, websocket, launch, on_progress, frames_to: factory(
+            websocket, launch, on_progress, frames_to
+        ),
+    )
 
 
 class _ClosingClaudeClient(_LifecycleClaudeClient):
@@ -417,9 +433,12 @@ async def _allocated_session(chat_service: SessionService, recording_claims: Rec
 
 
 async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim(
-    allocator, chat_store, chat_service, recording_claims, operator_id
+    allocator, chat_store, recording_claims, notifications, operator_id
 ) -> None:
     websocket = _LifecycleWebSocket()
+    chat_service = SessionService(
+        configured_runtimes(recording_claims, client_factory=_ClosingClaudeClient), chat_store, notifications
+    )
 
     session = await chat_service.create(operator_id)
     session_id = session.session_id
@@ -427,8 +446,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     await chat_service.enqueue_prompt(operator_id, session_id, "start", SPA_ORIGIN)
     await allocator.allocate_once()
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
-    with patch("haku.console.x.session_runtime.cli_over_websocket", _ClosingClaudeClient):
-        await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
+    await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
     assert recording_claims.created == [session_id]
     assert websocket.accepted is True
@@ -494,19 +512,19 @@ class _RollingClaudeClient(_LifecycleClaudeClient):
 
 
 async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
-    chat_store, chat_service, recording_claims, operator_id
+    chat_store, recording_claims, notifications, operator_id
 ) -> None:
     """A roll cancels `handle_runner`. Failing the row there refuses the runner's reconnect as
     terminal and replaces the whole session, which at six rolls a day is the ordinary end of a
     conversation."""
     websocket = _LifecycleWebSocket()
+    chat_service = SessionService(
+        configured_runtimes(recording_claims, client_factory=_RollingClaudeClient), chat_store, notifications
+    )
 
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
-    with (
-        patch("haku.console.x.session_runtime.cli_over_websocket", _RollingClaudeClient),
-        pytest.raises(asyncio.CancelledError),
-    ):
+    with pytest.raises(asyncio.CancelledError):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
 
     assert await chat_store.status(session_id) == SessionStatus.READY, "a roll is not a session ending"
@@ -641,7 +659,7 @@ async def test_adoption_replays_a_tool_call_composition_from_its_start(
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
-    assert [frame.payload["type"] for frame in resumed.replay] == ["user", "stream_event", "stream_event"]
+    assert [frame.envelope.frame["type"] for frame in resumed.replay] == ["user", "stream_event", "stream_event"]
 
     client = _FakeCli(
         [
@@ -735,7 +753,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
 
     resumed = await chat_store.adopt_open_turn(session_id)
     assert resumed is not None
-    assert [frame.payload["type"] for frame in resumed.replay] == ["user", "result"]
+    assert [frame.envelope.frame["type"] for frame in resumed.replay] == ["user", "result"]
     client = _FakeCli()
     async with asyncio.timeout(30):
         await chat_service._run_turn(
@@ -992,7 +1010,7 @@ async def _turn_into_a_room(
     abort_event: asyncio.Event | None = None,
 ) -> list[str]:
     """Run one turn against *client* for a room-backed session and return what the room is owed."""
-    service = SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+    service = SessionService(configured_runtimes(recording_claims), chat_store, notifications)
     view, token = await chat_store.create(operator_id)
     assert token is not None
     await attach_channel(migrated_sessions, view.session_id, ROOM)
@@ -1012,13 +1030,12 @@ async def test_only_an_attached_chat_conversation_gets_the_chat_prompt(
 ) -> None:
     """The conversation selects chat context; the session never receives a channel object."""
     service = SessionService(
-        runtime_config(),
+        configured_runtimes(
+            recording_claims, system_prompt=SystemPromptTemplate("{{ session_id }} {{ recent_messages | length }}")
+        ),
         chat_store,
-        recording_claims,
         notifications,
-        mcp_token=MCP_TOKEN,
         conversation_history=ConversationHistory(migrated_sessions),
-        system_prompt=SystemPromptTemplate("{{ session_id }} {{ recent_messages | length }}"),
     )
     spa, _ = await chat_store.create(operator_id)
     attached, _ = await chat_store.create(operator_id)
@@ -1033,7 +1050,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
 ) -> None:
     """The replacement replica finishes the exchange the dead one started, in the message it
     started, and the room is owed the answer once."""
-    service = SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+    service = SessionService(configured_runtimes(recording_claims), chat_store, notifications)
     view, token = await chat_store.create(operator_id)
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
@@ -1088,7 +1105,7 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     while not redoing the unprojected answer would lose it outright — the runner will not offer a
     frame this session already recorded, so nothing else is coming to write it down.
     """
-    service = SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+    service = SessionService(configured_runtimes(recording_claims), chat_store, notifications)
     view, token = await chat_store.create(operator_id)
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
@@ -1159,7 +1176,7 @@ async def test_the_room_is_owed_the_answer_before_the_turn_can_fail(
     message the turn was mid-way through is closed by `close_answer` or by nothing at all — and a
     message left open is prose no channel is owed.
     """
-    service = SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+    service = SessionService(configured_runtimes(recording_claims), chat_store, notifications)
     view, token = await chat_store.create(operator_id)
     await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1421,7 +1438,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(chat_store, 
     # deletes one on the way out, and Kubernetes is not what this test is about.
     view, token = await chat_store.create(operator_id)
 
-    with patch("haku.console.x.session_runtime.cli_over_websocket", _RealDbClaudeClient):
+    with _use_client(_RealDbClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -1468,19 +1485,19 @@ class _ScriptedChannel:
         self._wrote = asyncio.Event()
 
     def deliver(self, frame: dict[str, Any], *, seq: int | None = None) -> None:
-        self._inbound.put_nowait(HarnessFrame(frame=ClaudeFrame(payload=frame).model_dump(), seq=seq))
+        self._inbound.put_nowait(HarnessFrame(frame=frame, seq=seq))
 
     async def connect(self) -> None:
         pass
 
-    async def write(self, data: str) -> None:
-        self.written.append(json.loads(data))
+    async def write(self, frame: HarnessFrame) -> None:
+        self.written.append(frame.frame)
         self._wrote.set()
 
     async def first_write(self) -> dict[str, Any]:
         """The opening frame, once it is actually on the wire.
 
-        `cli_client._write` numbers a frame before writing it, and numbering here is a database
+        `claude_code.client._write` numbers a frame before writing it, and numbering here is a database
         round trip, so the write lands several loop turns after `connect()` is scheduled.
         """
         async with asyncio.timeout(30):
@@ -1507,12 +1524,9 @@ async def _frames(sessions: async_sessionmaker[AsyncSession], session_id: UUID) 
 def _streamed(frames: Sequence[SessionFrame]) -> str:
     """The answer as the recorded deltas spell it, in log order."""
     return "".join(
-        frame.payload["payload"]["event"]["delta"]["text"]
+        frame.payload["event"]["delta"]["text"]
         for frame in frames
-        if frame.kind == BridgeFrameKind.HARNESS_FRAME
-        and frame.payload.get("kind") == "claude"
-        and isinstance(frame.payload.get("payload"), dict)
-        and frame.payload["payload"].get("type") == DELTA_FRAME_KIND
+        if frame.kind == BridgeFrameKind.HARNESS_FRAME and frame.payload.get("type") == DELTA_FRAME_KIND
     )
 
 
@@ -1543,9 +1557,9 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
     # Reading is what proves the reader got that far; the recorder runs inside it.
     frames = cli.frames()
     delta_received = await anext(frames)
-    assert delta_received.payload["type"] == "stream_event"
+    assert delta_received.envelope.frame["type"] == "stream_event"
     result_received = await anext(frames)
-    assert result_received.payload == answered
+    assert result_received.envelope.frame == answered
     await cli.aclose()
 
     # Every frame either way and no exceptions left — the delta included, which is what makes
@@ -1558,7 +1572,7 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
         (FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME),
         (FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME),
     ]
-    assert [frame.payload["payload"]["type"] for frame in recorded] == [
+    assert [frame.payload["type"] for frame in recorded] == [
         "control_request",
         "control_response",
         "user",
@@ -1566,7 +1580,7 @@ async def test_the_rollout_records_both_channels_both_ways_and_skips_only_deltas
         "user",
     ]
     # Verbatim inside the complete inner harness frame: a reader gets the tool result the turn loop never kept.
-    assert recorded[4].payload == {"kind": "claude", "payload": answered}
+    assert recorded[4].payload == answered
     # Each frame reaches its consumer carrying the row it was written to, so a projection built
     # from it can point back at that row and not at whichever frame the reader has since seen.
     assert [delta_received.frame_seq, result_received.frame_seq] == [recorded[3].frame_seq, recorded[4].frame_seq]
@@ -1588,7 +1602,7 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
     )
     await connecting
     channel.deliver(result(uuid="turn-1"), seq=12)
-    assert (await anext(cli.frames())).payload["type"] == "result"
+    assert (await anext(cli.frames())).envelope.frame["type"] == "result"
     await cli.aclose()
 
     recorded = await _frames(migrated_sessions, view.session_id)
@@ -1597,7 +1611,7 @@ async def test_the_runners_number_is_recorded_beside_the_rows_own(chat_store, mi
         (BridgeFrameKind.HARNESS_FRAME, 11),
         (BridgeFrameKind.HARNESS_FRAME, 12),
     ]
-    assert [frame.payload["payload"]["type"] for frame in recorded] == ["control_request", "control_response", "result"]
+    assert [frame.payload["type"] for frame in recorded] == ["control_request", "control_response", "result"]
     assert await chat_store.highest_runner_seq(view.session_id) == 12
 
 
@@ -1630,7 +1644,7 @@ async def test_an_idle_session_hands_back_the_instant_its_socket_drops(
     view, token = await chat_store.create(operator_id)
     _DisconnectingClaudeClient.instance = None
 
-    with patch("haku.console.x.session_runtime.cli_over_websocket", _DisconnectingClaudeClient):
+    with _use_client(_DisconnectingClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -1662,7 +1676,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
     """
     view, token = await chat_store.create(operator_id)
 
-    with patch("haku.console.x.session_runtime.cli_over_websocket", _DyingMidStreamClaudeClient):
+    with _use_client(_DyingMidStreamClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )
@@ -1686,7 +1700,7 @@ async def test_an_answer_cut_off_mid_stream_is_in_the_rollout(
 
     recorded = await _frames(migrated_sessions, view.session_id)
     assert _streamed(recorded) == "half an answer"
-    assert not [frame for frame in recorded if frame.payload["payload"].get("type") == "assistant"], (
+    assert not [frame for frame in recorded if frame.payload.get("type") == "assistant"], (
         "no frame completed the message"
     )
 
@@ -1766,7 +1780,7 @@ async def test_a_cancelled_runner_hands_the_session_back_without_stranding_it(
     """
     view, token = await chat_store.create(operator_id)
 
-    with patch("haku.console.x.session_runtime.cli_over_websocket", _RealDbClaudeClient):
+    with _use_client(_RealDbClaudeClient):
         runner = asyncio.create_task(
             chat_service.handle_runner(cast(Any, _LifecycleWebSocket()), view.session_id, token)
         )

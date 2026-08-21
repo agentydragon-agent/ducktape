@@ -2,8 +2,8 @@
 
 This module only moves that protocol across a WebSocket, inside the bridge envelope `protocol`
 defines: one CLI frame travels as one `HarnessFrame`, and Haku's own control frames travel
-beside it without sharing its key namespace. What the frames mean is
-<../../../cli_protocol/README.md>; what reads them is `cli_client.ClaudeCli`.
+beside it without sharing its key namespace. What a native frame means belongs to the selected
+provider adapter, not this transport.
 """
 
 from __future__ import annotations
@@ -16,14 +16,12 @@ import anyio
 from haku.runtime.x.bridge.protocol import (
     RUNNER_TO_CONSOLE,
     SUPPORTED_VERSIONS,
-    ClaudeFrame,
     EndInput,
     HarnessFrame,
     HarnessLaunch,
     Hello,
     SetupOutput,
     TextWebSocket,
-    decode_object,
 )
 
 # Called for each complete line the sandbox bootstrap printed. Unset drops them; they are narration,
@@ -38,7 +36,7 @@ HELLO_TIMEOUT_SECONDS = 30.0
 
 
 class WebSocketTransport:
-    """A `cli_client.FrameChannel` backed by an already-authenticated WebSocket.
+    """A harness client's frame channel backed by an already-authenticated WebSocket.
 
     Structural rather than declared: `FrameChannel` is a Protocol, so this satisfies it by shape.
     `end_input` and `is_ready` are wider than that Protocol — they exist because the bridge has an
@@ -101,12 +99,10 @@ class WebSocketTransport:
                 # reading its next frame as a launch response would compound the confusion.
                 raise RuntimeError(f"runner sent {other.kind} before saying hello")
 
-    async def write(self, data: str) -> None:
+    async def write(self, frame: HarnessFrame) -> None:
         if not self._ready:
             raise RuntimeError("WebSocket transport is not connected")
-        await self._websocket.send_text(
-            HarnessFrame(frame=ClaudeFrame(payload=decode_object(data.strip())).model_dump()).model_dump_json()
-        )
+        await self._websocket.send_text(frame.model_dump_json())
 
     def read_messages(self) -> AsyncIterator[HarnessFrame]:
         return self._read_messages()
@@ -128,8 +124,8 @@ class WebSocketTransport:
                         # restarting a handshake mid-conversation, which nothing here can honour.
                         raise RuntimeError("runner said hello again mid-conversation")
                     case SetupOutput(data=data):
-                        # Narration about the sandbox, not part of the conversation: it must
-                        # not reach `ClaudeCli`, which would see an unknown frame type.
+                        # Narration about the sandbox, not part of the conversation: it must not
+                        # reach the provider client, which reads only native harness frames.
                         await self._report_setup_output(data)
         except (EOFError, anyio.EndOfStream):
             self._ready = False

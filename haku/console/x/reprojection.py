@@ -60,14 +60,8 @@ from haku.console.database_schema import (
 from haku.console.x import frame_projection, session_events
 from haku.console.x.conversation_events import FrameRange, ProjectionState
 from haku.console.x.runtime import RuntimeRegistry
+from haku.console.x.runtime_catalog import projection_registry
 from util.sqlalchemy_types import UnknownValue
-
-
-def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
-    """Use only the native payload when folding a complete stored inner frame."""
-    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
-        return payload
-    raise ValueError("reprojection row does not contain a complete inner harness frame")
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +196,7 @@ async def check_session(
     db: AsyncSession, session_id: UUID, *, runtimes: RuntimeRegistry | None = None
 ) -> SessionReport:
     """Every turn of one session, re-projected and aligned against its rows."""
-    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
+    registry = runtimes if runtimes is not None else projection_registry()
     row = (
         await db.execute(
             select(Session, Conversation.runtime_kind)
@@ -390,18 +384,14 @@ def _expected(
     functions — folded with one state across the turn, because that is how the writer folds it.
     """
     state = ProjectionState()
-    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
+    registry = runtimes if runtimes is not None else projection_registry()
     said: defaultdict[int, list[ProjectedRow]] = defaultdict(list)
     for frame in frames:
         # A frame with no events still belongs in coverage and can have stored rows to disagree
         # with, so retain an empty bucket for it.
         said[frame.frame_seq]
         state, events = frame_projection.projected(
-            state,
-            frame_seq=frame.frame_seq,
-            payload=_native_payload(frame.payload),
-            runtime_kind=runtime_kind,
-            runtimes=registry,
+            state, frame_seq=frame.frame_seq, payload=frame.payload, runtime_kind=runtime_kind, runtimes=registry
         )
         for event in events:
             if (row := session_events.stored(event)) is None:

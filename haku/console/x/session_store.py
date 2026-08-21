@@ -76,6 +76,7 @@ from haku.console.x.conversation_records import (
     TurnRecord,
 )
 from haku.console.x.runtime import RuntimeRegistry
+from haku.console.x.runtime_catalog import projection_registry
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
     ConversationCursor,
@@ -98,7 +99,8 @@ from haku.console.x.session_views import (
 )
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.x.subscription import stream_head
-from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
+from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +133,7 @@ def _frames_of_kinds(
     is how a caller reading a truncated answer asks for them anyway — for the MCP reader and the
     console's frame inspector alike, which is why the policy lives here rather than in either one.
     """
-    native_kind = func.coalesce(
-        SessionFrame.payload["payload"]["type"].astext, SessionFrame.payload["payload"]["method"].astext
-    )
+    native_kind = func.coalesce(SessionFrame.payload["type"].astext, SessionFrame.payload["method"].astext)
     if kinds:
         return query.where(
             or_(
@@ -149,31 +149,10 @@ def _frames_of_kinds(
 def _native_kind(row: SessionFrame) -> str | None:
     if row.kind != BridgeFrameKind.HARNESS_FRAME:
         return None
-    payload = _native_payload(row.payload)
     for field in ("type", "method"):
-        if isinstance(value := payload.get(field), str):
+        if isinstance(value := row.payload.get(field), str):
             return value
     return None
-
-
-def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
-    """Return only the native payload from a complete nested harness frame.
-
-    Migration 0089 clears the incompatible v2 log, so every surviving harness row has this shape.
-    Refusing a malformed row is safer than silently treating a flattened record as v3 evidence.
-    """
-    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
-        return payload
-    raise ValueError("harness-frame log row does not contain a complete inner frame")
-
-
-def _inner_frame(kind: BridgeFrameKind, frame: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a harness record to the complete inner frame kept in the forensic log."""
-    if kind == BridgeFrameKind.HARNESS_FRAME and not (
-        isinstance(frame.get("kind"), str) and isinstance(frame.get("payload"), dict)
-    ):
-        return {"kind": "claude", "payload": frame}
-    return frame
 
 
 class PromptRecords(Protocol):
@@ -430,7 +409,7 @@ class SessionStore:
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession], runtime_registry: RuntimeRegistry | None = None):
         self._sessions = sessions
-        self._runtime_registry = runtime_registry if runtime_registry is not None else RuntimeRegistry.projection_only()
+        self._runtime_registry = runtime_registry if runtime_registry is not None else projection_registry()
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
@@ -1452,7 +1431,7 @@ class SessionStore:
                 session_id=session_id,
                 direction=direction,
                 kind=kind,
-                payload=_inner_frame(kind, payload),
+                payload=payload,
                 runner_seq=runner_seq,
                 created_at=now,
                 updated_at=now,
@@ -1635,7 +1614,9 @@ class SessionStore:
         )
         async with self._sessions() as db:
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq))).all()
-        projected = self._runtime_registry[runtime_kind].project_log((row.frame_seq, row.payload) for row in rows)
+        projected = self._runtime_registry[runtime_kind].project_log(
+            (row.frame_seq, HarnessFrame(frame=row.payload, seq=row.runner_seq)) for row in rows
+        )
         entries = transcript_entries.entries(projected)
         start = cursor.index if cursor is not None else 0
         return TranscriptSlice(
@@ -2020,7 +2001,10 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
         )
         .order_by(SessionFrame.frame_seq)
     )
-    return tuple(ReceivedFrame(payload=_native_payload(row.payload), frame_seq=row.frame_seq) for row in rows)
+    return tuple(
+        ReceivedFrame(envelope=HarnessFrame(frame=row.payload, seq=row.runner_seq), frame_seq=row.frame_seq)
+        for row in rows
+    )
 
 
 async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool = False) -> ConversationPrompt | None:
@@ -2206,7 +2190,7 @@ async def _prompt_left(
     """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
 
     **The console's own record is the evidence, not the harness's acknowledgement.** `sent()` records
-    the frame before `channel.write` (`cli_client._write`), so a row here means this end committed
+    the frame before `channel.write` (`claude_code.client._write`), so a row here means this end committed
     to sending the prompt. A native lifecycle frame — the only thing that would say whether the
     *harness* has it — may still be sitting unrecorded in the runner's replay window, since replay
     does not begin until the socket is accepted and this runs before that.
@@ -2215,9 +2199,7 @@ async def _prompt_left(
     treated as delivered: a duplicate turn is the worse of the two failures. What this closes is
     the window where nothing was recorded at all.
     """
-    native_kind = func.coalesce(
-        SessionFrame.payload["payload"]["type"].astext, SessionFrame.payload["payload"]["method"].astext
-    )
+    native_kind = func.coalesce(SessionFrame.payload["type"].astext, SessionFrame.payload["method"].astext)
     written = await db.scalar(
         select(SessionFrame.frame_seq)
         .where(

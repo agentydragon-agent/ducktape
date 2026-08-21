@@ -15,7 +15,6 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -24,10 +23,9 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
-from haku.runtime.x.bridge.options import ClaudeBackend, claude_backend
+from haku.runtime.x.bridge.backend_registry import BackendFactory, runner_backends
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
-    ClaudeFrame,
     EndInput,
     HarnessFrame,
     HarnessLaunch,
@@ -145,17 +143,12 @@ class ClientWebSocketAdapter(TextWebSocket):
         await self._connection.close()
 
 
-# One entry by design: a second harness ships as its own image and SandboxTemplate. The selected
-# value is resolved once at process start and cannot change while a runner is alive.
-BACKENDS: Final[Mapping[str, Callable[[Path | None], CliBackend]]] = {ClaudeBackend.name: claude_backend}
-
-
 async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], line: bytes) -> None:
-    """Wrap one CLI stream-JSON line in a nested Claude frame, skipping anything that is not one."""
+    """Wrap one native CLI JSON object in Haku's envelope, skipping anything that is not one."""
     if not (stripped := line.strip()).startswith(b"{"):
         return
     payload = decode_object(stripped.decode())
-    await outbound.send(Outbound(frame=HarnessFrame(frame=ClaudeFrame(payload=payload).model_dump())))
+    await outbound.send(Outbound(frame=HarnessFrame(frame=payload)))
 
 
 async def _forward_cli_frames(outbound: MemoryObjectSendStream[Outbound], stdout: anyio.abc.ByteReceiveStream) -> None:
@@ -176,9 +169,7 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
                 await stdin.aclose()
                 return
             case HarnessFrame(frame=frame):
-                if frame.get("kind") != "claude" or not isinstance(payload := frame.get("payload"), dict):
-                    raise ValueError("harness frame must contain a complete Claude frame")
-                await stdin.send((encode_object(payload) + "\n").encode())
+                await stdin.send((encode_object(frame) + "\n").encode())
             case HarnessLaunch():
                 # A sequencing error the types cannot express: `start` opens a connection, so a
                 # second one mid-conversation means the console thinks this runner never launched.
@@ -495,13 +486,13 @@ def _optional_path(value: str | None) -> Path | None:
     return Path(value) if value else None
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(backends: Mapping[str, BackendFactory]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bridge a Haku Console WebSocket to an agent CLI's stdio.")
     parser.add_argument("--websocket-url", default=os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"))
-    parser.add_argument("--session-id", default=os.environ.get("HAKU_CLAUDE_SESSION_ID"))
+    parser.add_argument("--session-id", default=os.environ.get("HAKU_RUNNER_SESSION_ID"))
     parser.add_argument(
         "--harness",
-        choices=sorted(BACKENDS),
+        choices=sorted(backends),
         default=os.environ.get("HAKU_HARNESS"),
         required=False,
         help="immutable native harness to run (the deployment must provide this explicitly)",
@@ -510,9 +501,8 @@ def parse_args() -> argparse.Namespace:
     # (`options.EXECUTABLE_VARIABLE` for Claude); this is for a local run against a CLI elsewhere.
     parser.add_argument("--cli-path", type=Path)
     # Unset means "no bootstrap", which is what tests and a bare local run want; the image sets it.
-    # The variable's name says Claude, but the bootstrap only checks haku-state out and knows
-    # nothing about which CLI follows it.
-    parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get("HAKU_CLAUDE_SETUP")))
+    # The bootstrap checks haku-state out and knows nothing about which CLI follows it.
+    parser.add_argument("--setup-path", type=Path, default=_optional_path(os.environ.get("HAKU_RUNNER_SETUP")))
     args = parser.parse_args()
     if not args.harness:
         parser.error("--harness or HAKU_HARNESS is required")
@@ -524,11 +514,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    args = parse_args()
+    backends = runner_backends()
+    args = parse_args(backends)
     anyio.run(
         run,
         args.websocket_url,
-        BACKENDS[args.harness](args.cli_path),
+        backends[args.harness](args.cli_path),
         os.environ.get(BRIDGE_CREDENTIAL_VARIABLE),
         args.setup_path,
     )

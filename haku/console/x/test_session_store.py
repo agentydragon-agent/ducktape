@@ -81,7 +81,7 @@ class _AlternateFrameVocabulary:
 async def test_store_uses_the_injected_runtime_frame_vocabulary(migrated_sessions, operator_id) -> None:
     runtime = cast(RuntimeAdapter, _AlternateFrameVocabulary())
     store = SessionStore(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: runtime}))
-    view, token = await store.create(operator_id)
+    view, token = await store._create_provisioning_for_test(operator_id)
     assert await store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
     assert await store.next_prompt(view.session_id) is not None
@@ -299,8 +299,8 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
     )
 
     assert [frame.kind for frame in first] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in first] == ["user", "assistant"]
-    assert [frame.payload["payload"]["type"] for frame in rest] == ["result"]
+    assert [frame.payload["type"] for frame in first] == ["user", "assistant"]
+    assert [frame.payload["type"] for frame in rest] == ["result"]
 
 
 async def test_the_kinds_filter_skims_without_paging_through_everything(chat_store, operator_id) -> None:
@@ -313,13 +313,13 @@ async def test_the_kinds_filter_skims_without_paging_through_everything(chat_sto
     frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=["assistant", "result"])
 
     assert [frame.kind for frame in frames] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in frames] == ["assistant", "result"]
+    assert [frame.payload["type"] for frame in frames] == ["assistant", "result"]
 
 
 async def test_method_only_native_frames_are_visible_and_filterable(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
     payload = {"jsonrpc": "2.0", "method": "codex/event/unknown", "params": {"opaque": True}}
-    inner = {"kind": "claude", "payload": payload}
+    inner = payload
     recorded = await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
@@ -345,7 +345,7 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
 ) -> None:
     session, _ = await chat_store.create(operator_id)
     payload = {"jsonrpc": "2.0", "id": 7, "result": {"opaque": True}}
-    inner = {"kind": "claude", "payload": payload}
+    inner = payload
     recorded = await chat_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
@@ -382,7 +382,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
 
     frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=None)
     assert [frame.kind for frame in frames] == ["harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in frames] == ["assistant"]
+    assert [frame.payload["type"] for frame in frames] == ["assistant"]
 
 
 async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_session(chat_store, operator_id) -> None:
@@ -471,9 +471,9 @@ async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, ope
     asked = await chat_store.read_frames(str(session_id), cursor=None, limit=25, kinds=["stream_event"])
 
     assert [frame.kind for frame in default] == ["harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in default] == ["result"]
+    assert [frame.payload["type"] for frame in default] == ["result"]
     assert [frame.kind for frame in asked] == ["harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in asked] == ["stream_event"]
+    assert [frame.payload["type"] for frame in asked] == ["stream_event"]
 
 
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
@@ -489,7 +489,7 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
     frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25, kinds=None)
 
     assert [frame.kind for frame in frames] == ["harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in frames] == ["assistant"]
+    assert [frame.payload["type"] for frame in frames] == ["assistant"]
 
 
 async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(chat_store, operator_id) -> None:
@@ -511,9 +511,9 @@ async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(ch
     )
 
     assert [frame.kind for frame in newest.frames] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in newest.frames] == ["assistant", "result"]
+    assert [frame.payload["type"] for frame in newest.frames] == ["assistant", "result"]
     assert [frame.kind for frame in earlier.frames] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in earlier.frames] == ["system", "user"]
+    assert [frame.payload["type"] for frame in earlier.frames] == ["system", "user"]
     # A short page is the first one; this page is full, so whether it is the first is unknown.
     assert earlier.next_before_seq == earlier.frames[0].frame_seq
 
@@ -535,9 +535,9 @@ async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(ch
     )
 
     assert [frame.kind for frame in default.frames] == ["harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in default.frames] == ["result"]
+    assert [frame.payload["type"] for frame in default.frames] == ["result"]
     assert [frame.kind for frame in asked.frames] == ["harness_frame"]
-    assert [frame.payload["payload"]["type"] for frame in asked.frames] == ["stream_event"]
+    assert [frame.payload["type"] for frame in asked.frames] == ["stream_event"]
     assert default.next_before_seq is None
 
 
@@ -567,7 +567,7 @@ async def test_a_frame_reaches_the_inspector_with_its_payload_whole(chat_store, 
 
     page = await chat_store.read_operator_frames(operator_id, session.session_id, before_seq=None, limit=25, kinds=None)
 
-    assert page.frames[0].payload == {"kind": "claude", "payload": payload}
+    assert page.frames[0].payload == payload
     assert page.frames[0].direction == FrameDirection.TO_AGENT
     assert page.runtime_kind == "claude_code"
 
@@ -754,9 +754,7 @@ async def test_the_transcript_reads_the_conversation_rather_than_the_protocol(ch
         limit=1,
         kinds=None,
     )
-    assert named[0].payload["payload"]["message"]["id"] == "msg_1", (
-        "provenance points at the complete inner frame it was read off"
-    )
+    assert named[0].payload["message"]["id"] == "msg_1", "provenance points at the complete inner frame it was read off"
 
 
 async def test_a_transcript_page_holds_what_the_whole_session_holds_at_that_position(chat_store, operator_id) -> None:

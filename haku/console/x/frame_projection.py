@@ -37,6 +37,8 @@ from typing import Any
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.conversation_events import ConversationEvent, ProjectionState
 from haku.console.x.runtime import RuntimeRegistry
+from haku.console.x.runtime_catalog import projection_registry
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 
 def projected(
@@ -53,5 +55,5 @@ def projected(
     block completes. The completed block then adds only what the deltas did not deliver, which is
     the whole of it wherever a backend streams nothing.
     """
-    registry = runtimes if runtimes is not None else RuntimeRegistry.projection_only()
-    return registry[runtime_kind].project_frame(state, frame_seq=frame_seq, payload=payload)
+    registry = runtimes if runtimes is not None else projection_registry()
+    return registry[runtime_kind].project_frame(state, frame_seq=frame_seq, frame=HarnessFrame(frame=payload))

@@ -19,6 +19,18 @@ py_library(
 )
 
 py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        "//haku/cli_protocol:frames",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:protocol",
+        "//haku/runtime/x/bridge:transport",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "projection",
     srcs = ["projection.py"],
     visibility = [
@@ -36,16 +48,29 @@ py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
+        ":client",
         ":projection",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console/x:conversation_events",
-        "//haku/console/x:sandbox_claims",
-        "//haku/console/x:system_prompt",
-        "//haku/runtime/x/bridge:cli_client",
+        "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:options",
         "//haku/runtime/x/bridge:protocol",
-        "@pypi//pydantic",
+        "//haku/runtime/x/bridge:transport",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        "//:conftest",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:protocol",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
     ],
 )
 

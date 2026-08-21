@@ -90,14 +90,14 @@ function blockSummary(block: Record<string, unknown>): string {
 
 /** What this frame is, in one line, without opening its payload.
  *
- * Deliberately tolerant: the payload is the wire, where an unseen block type or `kind` is a new CLI
- * feature rather than a bug, and the frame's own JSON sits right below the summary. So an
- * unrecognised shape summarises to nothing instead of guessing. */
+ * Deliberately tolerant: the payload is the native harness wire, where an unseen block type is a
+ * new backend feature rather than a bug, and the frame's own JSON sits right below the summary. So
+ * an unrecognised shape summarises to nothing instead of guessing. */
 export function frameSummary(frame: SessionFrame): string {
   const { payload } = frame;
   if (frame.kind === "setup_output") return oneLine(payload.text);
-  if (!(isRecord(payload) && typeof payload.kind === "string" && isRecord(payload.payload))) return "";
-  const native = payload.payload;
+  if (!isRecord(payload)) return "";
+  const native = payload;
   const nativeKind = frame.native_kind ?? (typeof native.type === "string" ? native.type : undefined);
   if (nativeKind === "stream_event") return oneLine(field(native, "event", "delta", "text"));
   if (nativeKind === "result") {

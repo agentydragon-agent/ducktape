@@ -131,8 +131,8 @@ def project(
 
     Pure and order-dependent — the events are a function of the sequence, not of any one frame —
     and the state holds everything that order-dependence needs, which is why a batch boundary is
-    not an event. Raises `ValueError` on a payload with no `type`: that is a caller handing it a
-    row the CLI never sent, not anything the wire can do.
+    not an event. Unknown envelopes are counted as unprojected native evidence rather than making
+    a forensic read fail.
     """
     projector = _Projector(
         delta_source=delta_source,

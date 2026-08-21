@@ -112,7 +112,7 @@ def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> Se
         session_id=uuid4(),
         direction=FrameDirection.FROM_AGENT,
         kind=kind,
-        payload={"kind": "claude", "payload": payload} if kind is BridgeFrameKind.HARNESS_FRAME else payload,
+        payload=payload,
         created_at=now,
         updated_at=now,
     )
@@ -153,7 +153,7 @@ def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
         _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
     )
     whole = projection.project_log(
-        projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload["payload"])
+        projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload)
         for row in _INSPECTED
         if row.kind != SETUP_OUTPUT_KIND
     )
