@@ -72,8 +72,6 @@ py_library(
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/x:session_events",
-        "//haku/console/x:session_notifications",
-        "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",
         "@pypi//sqlalchemy",
     ],

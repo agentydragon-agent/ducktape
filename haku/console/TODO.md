@@ -11,10 +11,12 @@ conversation record; projecting that record consistently onto both channels is w
 Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
-The channel-neutral allocator is complete. `RoomNotices` now reads the one bound conversation for
-replies, live status and sealed notices; sealed notices use an attachment-scoped transaction id and
-the cursor advances only after the homeserver accepts the send. Prompts from another surface are
-also relayed into the room. What remains, in dependency order:
+The channel-neutral allocator and conversation-runtime supervision are complete. Web and Matrix
+offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. `RoomNotices`
+reads the one bound conversation for replies, live status and sealed notices; sealed notices use an
+attachment-scoped transaction id and the cursor advances only after the homeserver accepts the
+send. Prompts from another surface are also relayed into the room. What remains, in dependency
+order:
 
 1. **Read Matrix's own copy.** Add the opposite-filter `/sync` reader for Haku-authored events and
    parse `EventTag.source`. A transaction id covers only Synapse's cache window; durable
@@ -24,19 +26,15 @@ also relayed into the room. What remains, in dependency order:
    stable turn and session subjects whose bodies are pure, bounded folds: create, edit, then seal or
    retire. Move relayed prompts, silent turns and supervisor lifecycle narration off `_queue_notice`
    so advancing the cursor never outruns their delivery.
-3. **Move session supervision behind the conversation.** Matrix still creates and replaces session
-   rows through `MatrixSessionSupervisor`. A channel should bind a conversation and offer input;
-   channel-neutral runtime code should ensure that conversation has the appropriate idle or
-   replacement session. Keep this separate from the selectable-runtime work in #4431.
-4. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
+3. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
    user-wide token, dispatch its room events by attachment, and give each live attachment one owner
    for its conversation cursor, reply outbox, status revisions and send budget. Only after the
    remaining `bound_room()` and process-global pacer/supervisor state is gone can a second invite
    safely create and service another conversation.
-5. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
+4. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
    Prefer a prefix Element does not consume (for example `!haku stop`) over an assumed-free slash
    command.
-6. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
+5. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
    console, and session ↔ tool-call navigation. A posted Matrix event is permanent and federated, so
    mint only routes intended to survive.
 

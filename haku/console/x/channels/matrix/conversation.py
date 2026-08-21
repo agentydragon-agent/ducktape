@@ -8,56 +8,26 @@ names rather than re-pointing the attachment.
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import datetime
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import (
-    OPEN_SESSION_STATUSES,
-    ChatSurface,
-    MatrixOrigin,
-    PromptRejection,
-    RuntimeKind,
-    SessionStatus,
-)
+from haku.console.chat_models import ChatSurface, MatrixOrigin, PromptRejection, RuntimeKind
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import ChatAttachment, Conversation, Session
+from haku.console.database_schema import ChatAttachment, Conversation
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
-from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import REPLICA, PromptRefusedError, SessionStore
+from haku.console.x.session_store import PromptRefusedError, SessionStore
 
 logger = logging.getLogger(__name__)
-
-# Distinct from the sync loop's lock in `sync` and the OAuth refresh lock. Its own rather than the
-# sync loop's because a stalled claim must not wedge ingress, which keeps reading the room and
-# telling it what it is waiting for while no sandbox is up, and sharing one lock would mean a
-# supervisor stall could only be resolved by giving up ingress leadership too.
-_SUPERVISOR_ADVISORY_LOCK = 0x4D58_5345  # "MXSE"
-
-SUPERVISE_INTERVAL = datetime.timedelta(seconds=10)
-# How long a replica that lost the election waits before contending again.
-LEADER_RETRY = datetime.timedelta(seconds=30)
-# A failed provision should not be retried as fast as a healthy poll: claim creation talks
-# to Kubernetes, and a persistent failure would otherwise become a hot loop against it.
-PROVISION_BACKOFF = datetime.timedelta(seconds=60)
-
-# Emits a lifecycle line into the live room. Supplied by the sync service, which owns the access
-# token and the send path: the supervisor never gets a Matrix credential of its own, so there is
-# still exactly one login and one device.
-Announce = Callable[[str], Awaitable[None]]
 
 
 async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
@@ -108,11 +78,10 @@ async def _live_binding(db: AsyncSession) -> BoundRoom | None:
 
 
 class MatrixConversationStore:
-    """Which conversation the bound room holds a copy of, and which session is running under it.
+    """Which durable conversation the bound room holds a copy of.
 
-    The conversation is the durable half and the one a replacement session joins, so which session
-    is serving the room is derived from it (`session_serving`) rather than kept as a pointer that
-    has to be re-aimed.
+    Runtime sessions are deliberately absent from the binding. Neutral supervision creates and
+    replaces them under the conversation, so the channel has no pointer to tend or re-aim.
     """
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
@@ -168,23 +137,6 @@ class MatrixConversationStore:
                 )
             )
             return BoundRoom(room_id=room_id, conversation_id=conversation_id)
-
-    async def session_serving(self) -> UUID | None:
-        """The session behind the bound room, or None while nothing is serving it.
-
-        Read through the conversation the room's live attachment names rather than through a
-        pointer: successive sessions of one thread share `conversation_id`, so the newest of them
-        is the answer and a replacement needs nothing re-pointed at it.
-        """
-        async with self._sessions() as db:
-            session_id: UUID | None = await db.scalar(
-                select(Session.session_id)
-                .join(ChatAttachment, ChatAttachment.conversation_id == Session.conversation_id)
-                .where(ChatAttachment.surface == ChatSurface.MATRIX, ChatAttachment.detached_at.is_(None))
-                .order_by(Session.created_at.desc(), Session.session_id.desc())
-                .limit(1)
-            )
-            return session_id
 
     async def attachment_of_room(self, room_id: str) -> tuple[UUID, UUID] | None:
         """The conversation *room_id* holds a copy of and the attachment holding it, or None.
@@ -255,12 +207,11 @@ type Admission = PromptAccepted | PromptRejected
 class MatrixTurns:
     """Ingress: offers the operator's messages to the conversation the room is attached to.
 
-    Refusal is a first-class answer and a terminal one. `enqueue_prompt` accepts a prompt on an
-    idle session (creating demand) or a ready session, provided nothing is already queued. A message
-    arriving mid-turn, mid-provision, or between a session dying and its replacement is rejected
-    rather than held: the operator is told so and sends it again. What the caller does with a
-    rejection is acknowledge it, recording the row this hands back in the same transaction
-    (`sync.MatrixSyncStore.advance`).
+    Refusal is a first-class answer and a terminal one. Ingress offers the prompt to the durable
+    conversation without resolving, creating or replacing a session. Neutral runtime supervision
+    creates one when needed; admission still refuses an in-flight turn or an already queued prompt.
+    What the caller does with a rejection is acknowledge it, recording the row this hands back in
+    the same transaction (`sync.MatrixSyncStore.advance`).
 
     A prompt this accepts is the conversation's, not the accepting session's, so a session that dies
     before claiming it strands nothing: its replacement finds the same queued row. What the record
@@ -297,29 +248,23 @@ class MatrixTurns:
         if binding is None:
             logger.info("Matrix: no room bound, rejecting %d event(s)", len(event_ids))
             return PromptRejected(reason=PromptRejection.NO_SESSION, facts=None)
-        session_id = await self._conversations.session_serving()
-        if session_id is None:
-            logger.info("Matrix: no session behind the room, rejecting %d event(s)", len(event_ids))
-            return self._refused(binding, None, PromptRejection.NO_SESSION, prompt_text)
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
-            item_id = await self._chat_store.enqueue_prompt(
+            item_id = await self._chat_store.enqueue_conversation_prompt(
                 operator_id,
-                session_id,
+                binding.conversation_id,
                 prompt_text,
                 _origin(binding.room_id, event_ids),
                 self._ledger.carrying(event_ids),
             )
         except KeyError:
-            # The session row has gone under us — the supervisor is between sessions. Recorded
-            # against the conversation with no session named, which is what happened.
-            logger.info("Matrix: session %s is gone, rejecting the batch", session_id)
+            logger.info("Matrix: bound conversation %s is gone, rejecting the batch", binding.conversation_id)
             return self._refused(binding, None, PromptRejection.NO_SESSION, prompt_text)
         except PromptRefusedError as refusal:
             # Admission is `enqueue_prompt`'s alone, decided under `SELECT … FOR UPDATE`: a status
             # read here could only agree with a decision that had not been made yet.
-            logger.info("Matrix: session %s rejected the batch: %s", session_id, refusal.reason)
-            return self._refused(binding, session_id, refusal.reason, prompt_text)
+            logger.info("Matrix: conversation %s rejected the batch: %s", binding.conversation_id, refusal.reason)
+            return self._refused(binding, None, refusal.reason, prompt_text)
         return PromptAccepted(item_id=item_id)
 
     def _refused(
@@ -345,7 +290,7 @@ class MatrixTurns:
             return None
         return ConversationFacts(
             conversation_id=binding.conversation_id,
-            session_id=await self._conversations.session_serving(),
+            session_id=None,
             bodies=tuple(UnreadableInputBody(media_type=event.msgtype) for event in events),
         )
 
@@ -371,165 +316,3 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
     addresses itself with.
     """
     return "\n".join(message.body for message in messages)
-
-
-class MatrixSessionSupervisor:
-    """Open, observe and replace the session running under the room's conversation.
-
-    An idle room keeps its session row and no sandbox. Once ingress queues the first prompt, this
-    supervisor only reports the state it observes: the channel-neutral sandbox allocator moves
-    durable demand to provisioning. The supervisor also replaces sessions that have ended.
-    """
-
-    def __init__(
-        self,
-        config: MatrixConfig,
-        conversations: MatrixConversationStore,
-        chat: SessionService,
-        chat_store: SessionStore,
-        notifications: SessionNotifications,
-        identities: PostgresOperatorIdentityStore,
-        announce: Announce,
-        engine: AsyncEngine,
-    ):
-        self._config = config
-        self._engine = engine
-        self._conversations = conversations
-        self._chat = chat
-        self._chat_store = chat_store
-        self._notifications = notifications
-        self._identities = identities
-        self._announce = announce
-        self._last_announced: str | None = None
-
-    async def _operator_id(self) -> UUID:
-        """The canonical Operator behind the configured MXID.
-
-        Resolved per pass rather than cached at startup: the console must come up with the Matrix
-        surface configured even if identity resolution is not yet possible, and a supervisor that
-        had cached a failure would never recover.
-        """
-        return await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
-
-    async def _report(self, status: str, detail: str) -> None:
-        """Announce a status the room has not already been told about.
-
-        Every transition is reported while this is being debugged; the filter here is only
-        against repeating the same one on each poll.
-        """
-        if status == self._last_announced:
-            return
-        self._last_announced = status
-        await self._announce(detail)
-
-    async def supervise_once(self) -> None:
-        """Bring the live room's session back to a working state, if it is not already."""
-        binding = await self._conversations.bound_room()
-        if binding is None:
-            return  # No room yet — nothing to serve, and nowhere to say so.
-
-        # Before believing a live status, give a session whose holder has gone away the chance
-        # to become an ended one. Otherwise this method reads `responding` off a row nobody is
-        # working on and returns satisfied, which is how a room stops being answered without
-        # anything reporting a failure.
-        await self._chat_store.expire_stale_leases()
-
-        session_id = await self._conversations.session_serving()
-        outcome = await self._chat_store.outcome(session_id) if session_id is not None else None
-        status = outcome.status if outcome is not None else None
-        if status == SessionStatus.IDLE:
-            assert session_id is not None
-            await self._report(str(status), f"session {session_id} is {status}")
-            return
-        if status in OPEN_SESSION_STATUSES:
-            await self._report(str(status), f"session {session_id} is {status}")
-            return
-
-        if session_id is not None:
-            # With the reason, not just the status: every path that ends a session records a
-            # specific sentence in `error`, and the room is where the operator is looking.
-            reason = f" — {outcome.error}" if outcome is not None and outcome.error else ""
-            await self._report(
-                f"ended:{status}", f"session {session_id} ended ({status or 'gone'}){reason}; starting a new one"
-            )
-            # The claim may already be gone — `handle_runner` deletes it on the way out — so
-            # this is the idempotent sweep rather than a targeted delete.
-            await self._chat.reconcile_terminal_claims()
-
-        # The replacement joins the conversation the room is already attached to, so the attachment
-        # is not touched and the thread survives the session that was running it.
-        session = await self._chat.create(await self._operator_id(), conversation_id=binding.conversation_id)
-        self._last_announced = SessionStatus.IDLE
-        await self._announce(f"waiting for the first prompt · session {session.session_id}")
-        logger.info("Matrix: opened idle session %s for room %s", session.session_id, binding.room_id)
-
-    async def _supervise_as_leader(self) -> None:
-        """Supervise until cancelled. Only ever entered holding the advisory lock."""
-        while True:
-            try:
-                await self.supervise_once()
-            except Exception:
-                logger.exception("Matrix: session supervision failed")
-                await asyncio.sleep(PROVISION_BACKOFF.total_seconds())
-                continue
-            await self._wait_for_change()
-
-    async def _wait_for_change(self) -> None:
-        """Wait until the session's status may have changed, or the interval elapses.
-
-        The chat store notifies on every status transition, so waiting on that channel reports them
-        as they happen rather than up to a full interval late. The interval stays as the backstop
-        for what no transition announces — a room bound for the first time, or a session row
-        disappearing underneath us.
-        """
-        session_id = await self._conversations.session_serving()
-        if session_id is None:
-            await asyncio.sleep(SUPERVISE_INTERVAL.total_seconds())
-            return
-        await self._notifications.wait(
-            SessionEventKind.UPDATE, session_id, timeout_seconds=SUPERVISE_INTERVAL.total_seconds()
-        )
-
-    async def _run(self) -> None:
-        """Contend for leadership, and supervise for as long as we hold it.
-
-        Without the lock every replica provisions: two would each create a session for the same
-        room, overwrite each other's pointer and narrate the result. It is held for the loop's
-        lifetime rather than per pass, so a session cannot be created between one replica's status
-        read and its decision to replace it.
-        """
-        while True:
-            async with self._engine.connect() as leader:
-                locked = await leader.scalar(
-                    text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _SUPERVISOR_ADVISORY_LOCK}
-                )
-                if not locked:
-                    await asyncio.sleep(LEADER_RETRY.total_seconds())
-                    continue
-                logger.info("Matrix: this replica (%s) is the session supervisor", REPLICA)
-                # Said in the room, not just logged. `_last_announced` is per-process, so a new
-                # leader re-announces the current status; naming the replica makes that read as a
-                # handover rather than as the session having changed.
-                await self._report(f"leader:{REPLICA}", f"session supervisor is now {REPLICA}")
-                try:
-                    await self._supervise_as_leader()
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("Matrix: supervision loop exited, retrying")
-                    await asyncio.sleep(PROVISION_BACKOFF.total_seconds())
-                finally:
-                    with contextlib.suppress(Exception):
-                        await leader.scalar(
-                            text("SELECT pg_advisory_unlock(:lock)"), {"lock": _SUPERVISOR_ADVISORY_LOCK}
-                        )
-
-    @asynccontextmanager
-    async def run(self) -> AsyncIterator[None]:
-        task = asyncio.create_task(self._run(), name="matrix-session-supervisor")
-        try:
-            yield
-        finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task

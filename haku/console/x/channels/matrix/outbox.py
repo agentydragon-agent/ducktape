@@ -13,7 +13,7 @@ minutes later.
 
 **One drainer.** The pacer runs on every replica (the turn loop speaks from whichever holds the
 session's lease), but two drains would reorder replies against each other, so this contends for an
-advisory lock the way the sync loop and the supervisor do.
+advisory lock the way the sync loop and the neutral runtime reconciler do.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from haku.console.x.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SEC
 
 logger = logging.getLogger(__name__)
 
-# Distinct from the sync loop's lock, the supervisor's, and the OAuth refresh sweep's.
+# Distinct from the sync loop's lock, the runtime reconciler's, and the OAuth refresh sweep's.
 _OUTBOX_ADVISORY_LOCK = 0x4D58_4F42  # "MXOB"
 
 # How many times one reply may be attempted before it is left alone. Past this the row stops being

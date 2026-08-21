@@ -42,13 +42,14 @@ from haku.console.config import ClaudeRuntimeConfig, MatrixConfig
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
-from haku.console.x.channels.matrix.conversation import MatrixConversationStore, MatrixSessionSupervisor, MatrixTurns
+from haku.console.x.channels.matrix.conversation import MatrixConversationStore, MatrixTurns
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.conversation_runtime import ConversationRuntime
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
@@ -184,9 +185,7 @@ async def _serve() -> None:
         conversation_history=ConversationHistory(sessions),
         system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template),
     )
-    supervisor = MatrixSessionSupervisor(
-        matrix, conversations, service, store, notifications, identities, sync.announce, engine
-    )
+    supervisor = ConversationRuntime(service, store, notifications, engine)
     allocator = SandboxAllocator(service, store, notifications, engine)
     notices = RoomNotices(
         engine,

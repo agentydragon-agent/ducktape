@@ -505,6 +505,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
         </div>
         {!SETTLED.has(session.status) && (
           <ConversationComposer
+            conversationId={conversation.conversation_id}
             sessionId={session.session_id}
             status={session.status}
             onSent={() => {

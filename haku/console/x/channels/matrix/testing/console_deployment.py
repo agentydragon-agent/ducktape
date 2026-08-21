@@ -225,12 +225,14 @@ class Deployment:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.
 
         Lazy sessions have no sandbox before their first prompt, so this cannot be the pre-prompt
-        sync barrier. Full-stack callers first wait for the supervisor's idle notice, then send the
-        prompt whose durable demand creates the claim, and only then wait here for its runner.
+        sync barrier. Full-stack callers first wait for the room-joined notice, then send the
+        prompt whose durable demand creates the session and claim, and only then wait here for its
+        runner.
 
-        `after` names a session being replaced. The supervisor mints the replacement only once the
-        dead one's lease has lapsed, so without it a test that has just killed a sandbox reads its
-        own victim back and believes the replacement is already serving.
+        `after` names a session being replaced. Neutral supervision mints the replacement only once
+        durable demand exists and the dead one's lease has lapsed, so without it a test that has
+        just killed a sandbox reads its own victim back and believes the replacement is already
+        serving.
         """
         await self._wait_until("a session to be provisioned", lambda: self._provisioned(after))
         session_id = self._session_ids[-1]

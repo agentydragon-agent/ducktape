@@ -1,0 +1,108 @@
+"""Durable conversation demand creates and replaces sessions without a channel supervisor."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+
+import pytest_bazel
+from sqlalchemy import func, select
+
+from haku.console.chat_models import SPA_ORIGIN, SessionStatus
+from haku.console.database_schema import ConversationItem, Session
+from haku.console.x.conversation_runtime import ConversationRuntime
+from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication
+
+
+async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
+    chat_store,
+    chat_service,
+    allocator,
+    notifications,
+    migrated_engine,
+    migrated_sessions,
+    operator_id,
+    recording_claims,
+) -> None:
+    view, _ = await chat_store.create_idle(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    # Model a conversation created or attached without a runtime session.
+    async with migrated_sessions.begin() as db:
+        await db.delete(await db.get(Session, view.session_id))
+
+    item_id = await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
+    runtime = ConversationRuntime(chat_service, chat_store, notifications, migrated_engine)
+
+    await runtime.reconcile_once()
+    await runtime.reconcile_once()
+
+    async with migrated_sessions() as db:
+        sessions = list(await db.scalars(select(Session).where(Session.conversation_id == conversation_id)))
+        item = await db.get(ConversationItem, item_id)
+    assert len(sessions) == 1
+    assert sessions[0].status == SessionStatus.IDLE
+    assert item is not None
+    assert item.session_id == sessions[0].session_id
+    assert recording_claims.created == []
+
+    await allocator.allocate_once()
+
+    assert recording_claims.created == [sessions[0].session_id]
+    assert await chat_store.status(sessions[0].session_id) == SessionStatus.PROVISIONING
+
+
+async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
+    chat_store, chat_service, notifications, migrated_engine, migrated_sessions, operator_id
+) -> None:
+    view, _ = await chat_store.create_idle(operator_id)
+    conversation_id = await chat_store.conversation_of(view.session_id)
+    async with migrated_sessions.begin() as db:
+        await db.delete(await db.get(Session, view.session_id))
+    await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "once", SPA_ORIGIN)
+    first = ConversationRuntime(chat_service, chat_store, notifications, migrated_engine)
+    second = ConversationRuntime(chat_service, chat_store, notifications, migrated_engine)
+
+    await asyncio.gather(
+        first.reconcile_once(),
+        second.reconcile_once(),
+        chat_store.create_idle(operator_id, conversation_id=conversation_id),
+    )
+
+    async with migrated_sessions() as db:
+        count = await db.scalar(
+            select(func.count()).select_from(Session).where(Session.conversation_id == conversation_id)
+        )
+    assert count == 1
+
+
+async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
+    chat_store, chat_service, notifications, migrated_engine, migrated_sessions, operator_id, recording_claims
+) -> None:
+    first, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
+    conversation_id = await chat_store.conversation_of(first.session_id)
+    item_id = await chat_store.enqueue_conversation_prompt(operator_id, conversation_id, "do not lose me", SPA_ORIGIN)
+    async with migrated_sessions.begin() as db:
+        row = await db.get(Session, first.session_id)
+        assert row is not None
+        row.lease_expires_at = datetime.now(UTC) - ADOPTION_GRACE - timedelta(seconds=1)
+
+    await ConversationRuntime(chat_service, chat_store, notifications, migrated_engine).reconcile_once()
+
+    async with migrated_sessions() as db:
+        sessions = list(
+            await db.scalars(
+                select(Session)
+                .where(Session.conversation_id == conversation_id)
+                .order_by(Session.created_at, Session.session_id)
+            )
+        )
+        item = await db.get(ConversationItem, item_id)
+    assert [row.status for row in sessions] == [SessionStatus.FAILED, SessionStatus.IDLE]
+    assert item is not None
+    assert item.session_id == sessions[1].session_id
+    assert first.session_id in recording_claims.deleted
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { abortSessionTurn, displayableError, PromptRefused, sendChatPrompt, type ConversationSession } from "../client";
 
 function placeholder(status: ConversationSession["status"]): string {
-  if (status === "ready") return "Send a message…";
+  if (status === "idle" || status === "ready") return "Send a message…";
   if (status === "responding") return "A turn is running — a message sent now would be refused.";
   return "The session is not ready for a message yet.";
 }
 
-/** Send into an existing session, whichever surface opened it.
+/** Offer a prompt to the conversation, whichever surface opened it.
  *
  * Nothing here asks what the session's `surface` is, because the route does not either: a Matrix
  * room's session takes a prompt from the browser on the same terms as one the SPA created, and the
@@ -22,10 +22,12 @@ function placeholder(status: ConversationSession["status"]): string {
  * accepts it, so a refusal keeps it and says why.
  */
 export function ConversationComposer({
+  conversationId,
   sessionId,
   status,
   onSent,
 }: {
+  conversationId: string;
   sessionId: string;
   status: ConversationSession["status"];
   onSent: () => void;
@@ -45,7 +47,7 @@ export function ConversationComposer({
     setRefusal(null);
     setError(null);
     try {
-      await sendChatPrompt(sessionId, prompt);
+      await sendChatPrompt(conversationId, prompt);
       setText("");
       onSent();
     } catch (reason: unknown) {
@@ -106,7 +108,11 @@ export function ConversationComposer({
               Abort
             </Button>
           )}
-          <Button onClick={() => void send()} disabled={status !== "ready" || text.trim().length === 0} loading={busy}>
+          <Button
+            onClick={() => void send()}
+            disabled={(status !== "idle" && status !== "ready") || text.trim().length === 0}
+            loading={busy}
+          >
             Send
           </Button>
         </Group>

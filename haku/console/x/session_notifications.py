@@ -18,6 +18,10 @@ on commit: emitting it anywhere else would announce work that a rollback then un
 **One channel, a typed payload.** Every event travels on `CHANNEL` as a `SessionEvent` rather than
 the kind being implicit in a channel name, which would need another LISTEN per kind. `pg_notify`
 allows 8000 bytes of payload; this uses about seventy.
+
+The historical payload field is `session_id`. New `runtime_demand` wakes place a conversation id
+there instead; retaining the field is what lets older rolling replicas parse and ignore the new
+kind without losing the kinds they already understand.
 """
 
 from __future__ import annotations
@@ -45,6 +49,9 @@ CHANNEL = "session_events"
 
 
 class SessionEventKind(StrEnum):
+    RUNTIME_DEMAND = "runtime_demand"
+    """A conversation has queued work and may need a session to run it."""
+
     PROMPT = "prompt"
     """A prompt is queued: whichever replica runs this session's turn loop should pick it up."""
 
@@ -77,6 +84,12 @@ class SessionEvent(BaseModel):
 
     kind: SessionEventKind | UnknownValue
     session_id: UUID
+    """The subject of the wake.
+
+    Historical kinds name a session. ``runtime_demand`` names a conversation instead. The field
+    stays spelled this way for the rolling wire contract: older replicas must be able to parse and
+    ignore the new kind rather than rejecting a renamed payload.
+    """
 
     @field_validator("kind", mode="before")
     @classmethod
