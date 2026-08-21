@@ -17,6 +17,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
@@ -214,7 +215,7 @@ def test_harvested_short_term_loss_offsets_realized_gain_lowering_tax() -> None:
             horizon_months=13, with_harvest=with_harvest, scheduled_asset_sales=[gain_sale], extra_lots=[gain_lot]
         )
         result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
-        accruals = result.events_log.tax_accruals.filter(pl.col("jurisdiction_id") == "federal_us")
+        accruals = result.events_log.frame(EVENT_FRAMES.tax_accruals).filter(pl.col("jurisdiction_id") == "federal_us")
         return float(accruals.get_column("amount_quanta").sum())
 
     tax_with = year_tax(with_harvest=True)

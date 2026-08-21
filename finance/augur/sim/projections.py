@@ -13,6 +13,7 @@ import polars as pl
 
 from finance.augur.frames import FrameSpec
 from finance.augur.sim.codec.plan import SimulationRun
+from finance.augur.sim.events import EVENT_FRAMES
 
 NET_WORTH_SCHEMA = pl.Schema(
     {
@@ -297,20 +298,21 @@ def project_transactions(run: SimulationRun) -> pl.DataFrame:
 
 
 def project_tax_breakdowns(run: SimulationRun) -> pl.DataFrame:
-    if run.events_log.tax_breakdowns.is_empty():
+    if run.events_log.frame(EVENT_FRAMES.tax_breakdowns).is_empty():
         return TAX_BREAKDOWN_PROJECTION_FRAME.empty()
     return (
-        run.events_log.tax_breakdowns.with_columns(tax_year=pl.col("tax_year_end_month") // 12)
+        run.events_log.frame(EVENT_FRAMES.tax_breakdowns)
+        .with_columns(tax_year=pl.col("tax_year_end_month") // 12)
         .pipe(TAX_BREAKDOWN_PROJECTION_FRAME.normalize)
         .sort(["rollout_index", "tax_year", "agent_id", "jurisdiction_id"])
     )
 
 
 def project_obligation_lifecycle(run: SimulationRun) -> pl.DataFrame:
-    accruals = run.events_log.obligation_accruals
+    accruals = run.events_log.frame(EVENT_FRAMES.obligation_accruals)
     if accruals.is_empty():
         return OBLIGATION_LIFECYCLE_FRAME.empty()
-    settlements = run.events_log.obligation_settlements.select(
+    settlements = run.events_log.frame(EVENT_FRAMES.obligation_settlements).select(
         "rollout_index", "obligation_id", "amount_paid_quanta", "shortfall_quanta", "attempted_funding_sources"
     )
     return (
@@ -336,7 +338,7 @@ def project_obligation_lifecycle(run: SimulationRun) -> pl.DataFrame:
 
 
 def project_failures(run: SimulationRun) -> pl.DataFrame:
-    failures = run.events_log.rollout_failures
+    failures = run.events_log.frame(EVENT_FRAMES.rollout_failures)
     if failures.is_empty():
         return FAILURE_PROJECTION_FRAME.empty()
     return (
@@ -449,7 +451,7 @@ def _liability_net_worth_components(run: SimulationRun) -> pl.DataFrame:
 
 
 def _transfer_transactions(run: SimulationRun) -> pl.DataFrame:
-    transfers = run.events_log.transfers
+    transfers = run.events_log.frame(EVENT_FRAMES.transfers)
     if transfers.is_empty():
         return TRANSACTION_FRAME.empty()
     return transfers.select(
@@ -470,7 +472,7 @@ def _transfer_transactions(run: SimulationRun) -> pl.DataFrame:
 
 
 def _lot_disposition_transactions(run: SimulationRun) -> pl.DataFrame:
-    dispositions = run.events_log.lot_dispositions
+    dispositions = run.events_log.frame(EVENT_FRAMES.lot_dispositions)
     if dispositions.is_empty():
         return TRANSACTION_FRAME.empty()
     return dispositions.select(
@@ -491,10 +493,10 @@ def _lot_disposition_transactions(run: SimulationRun) -> pl.DataFrame:
 
 
 def _obligation_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
-    settlements = run.events_log.obligation_settlements
+    settlements = run.events_log.frame(EVENT_FRAMES.obligation_settlements)
     if settlements.is_empty():
         return TRANSACTION_FRAME.empty()
-    destinations = run.events_log.obligation_accruals.select(
+    destinations = run.events_log.frame(EVENT_FRAMES.obligation_accruals).select(
         "rollout_index", "obligation_id", "to_agent_id", "to_account_id"
     )
     return settlements.join(destinations, on=["rollout_index", "obligation_id"], how="left").select(
@@ -515,7 +517,7 @@ def _obligation_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
 
 
 def _tax_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
-    settlements = run.events_log.tax_settlements
+    settlements = run.events_log.frame(EVENT_FRAMES.tax_settlements)
     if settlements.is_empty():
         return TRANSACTION_FRAME.empty()
     return settlements.select(

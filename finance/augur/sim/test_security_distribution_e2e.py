@@ -22,6 +22,7 @@ from finance.augur.model.deterministic import Constant
 from finance.augur.model.level_series_groups import AssetPriceGroups, SecurityDistributionGroups
 from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.scenario import (
     Agent,
     DistributionTaxSlice,
@@ -136,7 +137,10 @@ def _tax_by_jurisdiction(*, tax_character: tuple[DistributionTaxSlice, ...]) -> 
     run = simulate(_scenario(tax_character=tax_character), rollout_count=1, locations={})
     return {
         str(row["jurisdiction_id"]): int(row["amount_quanta"])
-        for row in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
+        for row in run.events_log.frame(EVENT_FRAMES.tax_accruals)
+        .group_by("jurisdiction_id")
+        .agg(pl.col("amount_quanta").sum())
+        .to_dicts()
     }
 
 

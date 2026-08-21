@@ -16,6 +16,7 @@ import polars as pl
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
 
@@ -68,7 +69,10 @@ def _tax_by_jurisdiction(*, issuer: str | None) -> dict[str, int]:
     run = simulate(_scenario(issuer=issuer), rollout_count=1, locations={})
     return {
         str(row["jurisdiction_id"]): int(row["amount_quanta"])
-        for row in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
+        for row in run.events_log.frame(EVENT_FRAMES.tax_accruals)
+        .group_by("jurisdiction_id")
+        .agg(pl.col("amount_quanta").sum())
+        .to_dicts()
     }
 
 

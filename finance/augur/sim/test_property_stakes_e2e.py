@@ -21,6 +21,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
@@ -171,12 +172,12 @@ def test_property_purchase_transfer_is_derived_from_active_and_stake() -> None:
 
     run = simulate(scenario, rollout_count=1, locations=LOCATIONS)
 
-    purchases = run.events_log.property_purchases.sort("month_index")
+    purchases = run.events_log.frame(EVENT_FRAMES.property_purchases).sort("month_index")
     assert purchases.select("month_index", "cause_id").to_dicts() == [
         {"month_index": 1, "cause_id": "buy_zero_stake"},
         {"month_index": 2, "cause_id": "buy_positive_stake"},
     ]
-    transfers = run.events_log.transfers
+    transfers = run.events_log.frame(EVENT_FRAMES.transfers)
     assert transfers.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
         {"month_index": 2, "cause_id": "buy_positive_stake_buyer_cash", "amount_quanta": 20_000_000}
     ]
@@ -298,9 +299,9 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     run = simulate_with_external_series(
         scenario, external_series=ctx, rollout_count=1, locations=MULTI_PROPERTY_LOCATIONS
     )
-    assert run.events_log.rollout_failures.is_empty()
+    assert run.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
-    transfers = run.events_log.transfers
+    transfers = run.events_log.frame(EVENT_FRAMES.transfers)
     home_tax = transfers.filter(pl.col("cause_id").str.starts_with("home_property_tax_m")).sort("month_index")
     assert home_tax.get_column("month_index").to_list() == list(range(1, horizon))
     assert home_tax.get_column("amount_quanta").to_list() == [50_000] * (horizon - 1)
@@ -311,10 +312,10 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
         [rental_monthly_tax * 100] * (rental_sale_month - 1)
     )
 
-    assert run.events_log.set_rented_fraction_events.to_dicts() == [
+    assert run.events_log.frame(EVENT_FRAMES.set_rented_fraction_events).to_dicts() == [
         {"rollout_index": 0, "month_index": 12, "property_id": "rental", "rented_fraction": 0.5}
     ]
-    capex_rows = run.events_log.capital_improvement_events.to_dicts()
+    capex_rows = run.events_log.frame(EVENT_FRAMES.capital_improvement_events).to_dicts()
     assert len(capex_rows) == 1
     assert capex_rows[0]["rollout_index"] == 0
     assert capex_rows[0]["month_index"] == 12
@@ -325,7 +326,7 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     expected_gross_proceeds = rental_purchase_price * 1.5 * 0.94
     expected_realized_gain = expected_gross_proceeds - (rental_purchase_price + rental_capex - cumulative_depreciation)
     expected_ltcg = expected_realized_gain - cumulative_depreciation
-    sale = run.events_log.property_sale_events.to_dicts()[0]
+    sale = run.events_log.frame(EVENT_FRAMES.property_sale_events).to_dicts()[0]
     assert sale["month_index"] == rental_sale_month
     assert sale["property_id"] == "rental"
     assert sale["gross_proceeds_quanta"] == pytest.approx(expected_gross_proceeds * 100, abs=100)
@@ -349,7 +350,9 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
 
     federal_by_month = {
         row["month_index"]: row
-        for row in run.events_log.tax_breakdowns.filter(pl.col("jurisdiction_id") == "federal_us").iter_rows(named=True)
+        for row in run.events_log.frame(EVENT_FRAMES.tax_breakdowns)
+        .filter(pl.col("jurisdiction_id") == "federal_us")
+        .iter_rows(named=True)
     }
     expected_year_0_ordinary = 24_000.0 - 12 * monthly_dep_before - 11 * rental_monthly_tax
     expected_year_1_ordinary = 24_000.0 - 12 * monthly_dep_after_half_rented - 12 * rental_monthly_tax * 0.5

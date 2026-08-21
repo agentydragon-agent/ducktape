@@ -274,11 +274,10 @@ recovery cashouts. Still missing:
   orders and checking-cash payment transfers; settlement only validates
   that every hard demand was satisfied. Current split: policy emits
   sales; settlement emits required payments.
-- Consider whether `EventLog` should expose only catalog-keyed access
-  (`log.frame(EVENT_FRAMES.transfers)`) or keep the current convenience
-  properties (`log.transfers`, etc.). The catalog now owns
-  schema/normalization but the property layer still repeats event names
-  for caller ergonomics.
+- `EventLog` exposes only catalog-keyed access
+  (`log.frame(EVENT_FRAMES.transfers)`). `EVENT_FRAMES` owns the event
+  vocabulary, schemas, and normalization; callers do not get a second
+  convenience-property vocabulary to keep synchronized.
 - Treat `augur/model/x/legacy_market_models/` as non-runtime code. Port
   only models selected by production or used as representative
   joint-model coverage; delete or keep the rest quarantined.

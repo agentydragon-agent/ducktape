@@ -37,6 +37,7 @@ from finance.augur.model.structural_macro import (
     StructuralMacroProviderConfig,
 )
 from finance.augur.sim.codec.plan import SimulationRun
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
 from finance.augur.sim.projections import project_net_worth
 from finance.augur.sim.scenario import (
@@ -230,7 +231,7 @@ def _first_failure_month(run: SimulationRun, rollout_count: int) -> np.ndarray:
     """
 
     survived = np.full(rollout_count, HORIZON_MONTHS, dtype=np.float64)
-    failures = run.events_log.rollout_failures
+    failures = run.events_log.frame(EVENT_FRAMES.rollout_failures)
     if failures.is_empty():
         return survived
     first = failures.group_by("rollout_index").agg(pl.col("month_index").min())

@@ -22,6 +22,7 @@ from finance.augur.model.series import SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import SecurityKey
 from finance.augur.sim.engine.jax_engine import _program_impl
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.scenario import (
     Agent,
     FixedAmount,
@@ -253,7 +254,7 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
 
     scenario = _scenario(opening_cash=5_000, floor=10_000, ceiling=40_000)
     run = _run(scenario)
-    rows = run.events_log.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
+    rows = run.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(pl.col("agent_id") == "alice").to_dicts()
 
     assert [str(row["lot_id"]) for row in rows] == ["stock"]
     assert str(rows[0]["asset_id"]) == "security:vti"
@@ -417,7 +418,7 @@ def test_a_rebalanced_portfolio_then_sits_still() -> None:
 
     scenario = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25)
     run = _run(scenario)
-    trades = run.events_log.lot_dispositions.filter(pl.col("agent_id") == "alice").to_dicts()
+    trades = run.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(pl.col("agent_id") == "alice").to_dicts()
 
     assert [(str(row["lot_id"]), float(row["units_sold"])) for row in trades] == [("stock", 400.0)]
     assert _lots(scenario, month=_HORIZON) == _lots(scenario, month=1)

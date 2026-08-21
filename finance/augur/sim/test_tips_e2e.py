@@ -21,6 +21,7 @@ from finance.augur.model.series import InflationKey
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
 
@@ -156,7 +157,10 @@ def test_accretion_is_federally_taxed_and_state_exempt() -> None:
     run = simulate(_scenario(indexed=True, cpi=_CPI_DOUBLING, taxed=True, maturity=120), rollout_count=1, locations={})
     tax = {
         str(r["jurisdiction_id"]): int(r["amount_quanta"])
-        for r in run.events_log.tax_accruals.group_by("jurisdiction_id").agg(pl.col("amount_quanta").sum()).to_dicts()
+        for r in run.events_log.frame(EVENT_FRAMES.tax_accruals)
+        .group_by("jurisdiction_id")
+        .agg(pl.col("amount_quanta").sum())
+        .to_dicts()
     }
 
     assert tax["federal_us"] > 0

@@ -31,6 +31,7 @@ from finance.augur.model.series import (
 )
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.product.asset_key import PrivateEquityAssetKey
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import round_currency_amount
 from finance.augur.sim.locations import Location
@@ -912,8 +913,8 @@ def test_alice_gives_bob_five_dollars_one_rollout(alice_bob_scenario: Scenario) 
     assert totals.get_column("total").to_list() == [30.0, 30.0]
 
     # The transfer is on the log.
-    assert result.events_log.transfers.height == 1
-    txn = result.events_log.transfers.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.transfers).height == 1
+    txn = result.events_log.frame(EVENT_FRAMES.transfers).row(0, named=True)
     assert txn["from_agent_id"] == "bob"
     assert txn["to_agent_id"] == "alice"
     assert txn["amount_quanta"] / 100 == 5.0
@@ -939,7 +940,7 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
         result.cash_balances.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
         == [100.0] * 6
     )
-    assert result.events_log.transfers.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.transfers).is_empty()
 
 
 def test_rejects_zero_rollout_count(alice_bob_scenario: Scenario) -> None:
@@ -993,9 +994,11 @@ def test_recurring_paycheck_accrues_monthly() -> None:
     assert payroll_final == -12 * 3000.0
 
     # 12 paycheck events on the log (one per month).
-    assert result.events_log.transfers.height == 12
-    assert set(result.events_log.transfers.get_column("month_index").to_list()) == set(range(12))
-    assert set(result.events_log.transfers.get_column("cause_id").unique().to_list()) == {"alice_paycheck"}
+    assert result.events_log.frame(EVENT_FRAMES.transfers).height == 12
+    assert set(result.events_log.frame(EVENT_FRAMES.transfers).get_column("month_index").to_list()) == set(range(12))
+    assert set(result.events_log.frame(EVENT_FRAMES.transfers).get_column("cause_id").unique().to_list()) == {
+        "alice_paycheck"
+    }
 
 
 def test_recurring_transfer_bounded_by_end_month() -> None:
@@ -1025,7 +1028,7 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
     )
 
     result = simulate(scenario, rollout_count=1, locations={})
-    assert result.events_log.transfers.height == 5  # months 0..4
+    assert result.events_log.frame(EVENT_FRAMES.transfers).height == 5  # months 0..4
 
     # Alice's balance plateaus at 500.0 from month 5 onward.
     balances = (
@@ -1079,7 +1082,7 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     )
 
     # Event log expands rollouts × months: 1000 × 24 = 24000 events.
-    assert result.events_log.transfers.height == rollout_count * 24
+    assert result.events_log.frame(EVENT_FRAMES.transfers).height == rollout_count * 24
 
     # Conservation at every month, across every rollout.
     totals = (
@@ -1130,7 +1133,7 @@ def test_combined_one_off_and_recurring() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     # 10 paycheck events + 1 bonus = 11.
-    assert result.events_log.transfers.height == 11
+    assert result.events_log.frame(EVENT_FRAMES.transfers).height == 11
 
     # Alice at end-of-horizon: 10 × $1000 paychecks + $5000 bonus = $15000.
     alice_final = (
@@ -1200,8 +1203,8 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     assert cash_trajectory == [0.0, 0.0, 0.0, 0.0, 3600.0, 3600.0, 3600.0]
 
     # Disposition log: one row, with FIFO from the seeded lot.
-    assert result.events_log.lot_dispositions.height == 1
-    disp = result.events_log.lot_dispositions.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).height == 1
+    disp = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert disp["lot_id"] == "alice_vti_seed"
     assert disp["cause_id"] == "alice_partial_sale"
     assert disp["month_index"] == 3
@@ -1249,8 +1252,8 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
     remaining_after = result.asset_lots.filter(pl.col("month_index") == 3).get_column("remaining_quantity").item()
     assert remaining_after == 0.0
 
-    assert result.events_log.lot_dispositions.height == 1
-    disp = result.events_log.lot_dispositions.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).height == 1
+    disp = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert disp["units_sold"] == 100.0
     assert disp["proceeds_quanta"] / 100 == 15000.0
     assert disp["cost_basis_consumed_quanta"] / 100 == 9000.0
@@ -1291,7 +1294,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
     result = simulate(scenario, rollout_count=rollout_count, locations={})
 
     # Every rollout has one disposition.
-    assert result.events_log.lot_dispositions.height == rollout_count
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).height == rollout_count
     # Every rollout's lot row at end-of-horizon has 30 units remaining.
     end_state = result.asset_lots.filter(pl.col("month_index") == 2)
     assert end_state.height == rollout_count
@@ -1343,10 +1346,12 @@ def test_fifo_sale_crossing_two_lots() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     # Two disposition rows for one sale (FIFO crossed two lots).
-    assert result.events_log.lot_dispositions.height == 2
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).height == 2
     by_lot = {
         row["lot_id"]: row
-        for row in result.events_log.lot_dispositions.sort("purchase_month_index").iter_rows(named=True)
+        for row in result.events_log.frame(EVENT_FRAMES.lot_dispositions)
+        .sort("purchase_month_index")
+        .iter_rows(named=True)
     }
     assert by_lot["lot_a_old"]["units_sold"] == 100.0
     assert by_lot["lot_a_old"]["cost_basis_consumed_quanta"] / 100 == 8000.0
@@ -1425,7 +1430,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    dispositions = result.events_log.lot_dispositions.sort(["cause_id", "purchase_month_index"])
+    dispositions = result.events_log.frame(EVENT_FRAMES.lot_dispositions).sort(["cause_id", "purchase_month_index"])
     assert dispositions.select("cause_id", "lot_id", "units_sold").to_dicts() == [
         {"cause_id": "first_sale", "lot_id": "old", "units_sold": pytest.approx(70.0)},
         {"cause_id": "second_sale", "lot_id": "old", "units_sold": pytest.approx(30.0)},
@@ -1489,9 +1494,11 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
     )
 
     result = simulate(scenario, rollout_count=1, locations={})
-    dispositions = result.events_log.lot_dispositions.with_columns(
-        holding_period_months=pl.col("month_index") - pl.col("purchase_month_index")
-    ).sort("purchase_month_index")
+    dispositions = (
+        result.events_log.frame(EVENT_FRAMES.lot_dispositions)
+        .with_columns(holding_period_months=pl.col("month_index") - pl.col("purchase_month_index"))
+        .sort("purchase_month_index")
+    )
 
     rows = dispositions.iter_rows(named=True)
     long_disp = next(rows)
@@ -1555,7 +1562,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     )
 
     result = simulate(scenario, rollout_count=1, locations={})
-    assert result.events_log.lot_dispositions.height == 2
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).height == 2
 
     end_lots = result.asset_lots.filter(pl.col("month_index") == 6).sort("lot_id")
     by_lot = {row["lot_id"]: row["remaining_quantity"] for row in end_lots.iter_rows(named=True)}
@@ -1613,7 +1620,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    disposition = result.events_log.lot_dispositions.row(0, named=True)
+    disposition = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert disposition["source_account_id"] == "taxable"
     assert disposition["lot_id"] == "taxable_vti"
     assert disposition["units_sold"] == pytest.approx(8.0)
@@ -1698,8 +1705,8 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
     result = simulate(scenario, rollout_count=1, locations={})
 
     # Sale at month 4 used the month-4 price of $150 → 4 × 150 = $600.
-    assert result.events_log.lot_dispositions.height == 1
-    disp = result.events_log.lot_dispositions.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).height == 1
+    disp = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert disp["units_sold"] == 4.0
     assert disp["proceeds_quanta"] / 100 == 600.0
 
@@ -1817,10 +1824,10 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     # 12 paycheck transfers fired (income_category = "ordinary").
-    assert result.events_log.transfers.filter(pl.col("income_category") == "ordinary").height == 12
+    assert result.events_log.frame(EVENT_FRAMES.transfers).filter(pl.col("income_category") == "ordinary").height == 12
 
     # Two tax accruals at month 11 — federal + CA — for one rollout.
-    accruals = result.events_log.tax_accruals.sort("jurisdiction_id")
+    accruals = result.events_log.frame(EVENT_FRAMES.tax_accruals).sort("jurisdiction_id")
     assert accruals.height == 2
     accruals_by_jurisdiction = {row["jurisdiction_id"]: row for row in accruals.iter_rows(named=True)}
     annual_income = 12 * _engine_usd(200_000.0 / 12.0)
@@ -1828,7 +1835,10 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert accruals_by_jurisdiction["california"]["amount_quanta"] / 100 == pytest.approx(14754.09, abs=0.02)
     assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
     assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
-    breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
+    breakdowns = {
+        row["jurisdiction_id"]: row
+        for row in result.events_log.frame(EVENT_FRAMES.tax_breakdowns).iter_rows(named=True)
+    }
     assert breakdowns["federal_us"]["ordinary_income_quanta"] / 100 == pytest.approx(annual_income, abs=0.02)
     assert breakdowns["federal_us"]["ordinary_taxable_quanta"] / 100 == pytest.approx(185_400.04, abs=0.02)
     assert breakdowns["federal_us"]["ordinary_tax_quanta"] / 100 == pytest.approx(37_538.51, abs=0.01)
@@ -1926,10 +1936,15 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
+    accruals = {
+        row["jurisdiction_id"]: row for row in result.events_log.frame(EVENT_FRAMES.tax_accruals).iter_rows(named=True)
+    }
     assert accruals["federal_us"]["amount_quanta"] / 100 == pytest.approx(5272.26, abs=0.01)
     assert accruals["california"]["amount_quanta"] / 100 == pytest.approx(2712.36, abs=0.01)
-    breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
+    breakdowns = {
+        row["jurisdiction_id"]: row
+        for row in result.events_log.frame(EVENT_FRAMES.tax_breakdowns).iter_rows(named=True)
+    }
     assert breakdowns["federal_us"]["ordinary_taxable_quanta"] / 100 == pytest.approx(35_400.04, abs=0.02)
     assert breakdowns["federal_us"]["capital_gain_taxable_quanta"] / 100 == pytest.approx(20_000.0, abs=0.02)
     assert breakdowns["federal_us"]["ordinary_tax_quanta"] / 100 == pytest.approx(4_016.0, abs=0.01)
@@ -2011,12 +2026,16 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
+    accruals = {
+        row["jurisdiction_id"]: row for row in result.events_log.frame(EVENT_FRAMES.tax_accruals).iter_rows(named=True)
+    }
     assert accruals["federal_us"]["amount_quanta"] / 100 == pytest.approx(5272.26, abs=0.01)
     assert accruals["california"]["amount_quanta"] / 100 == pytest.approx(2712.36, abs=0.01)
 
-    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
-        ["month_index", "cause_id"]
+    tax_payments = (
+        result.events_log.frame(EVENT_FRAMES.transfers)
+        .filter(pl.col("cause_id").str.contains("tax"))
+        .sort(["month_index", "cause_id"])
     )
     assert tax_payments.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
         {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_quanta": 100_000},
@@ -2029,7 +2048,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
         quanta_to_usd, return_dtype=pl.Float64
     ).sum() == pytest.approx(7_984.62, abs=0.02)
 
-    tax_settlement = result.events_log.tax_settlements.row(0, named=True)
+    tax_settlement = result.events_log.frame(EVENT_FRAMES.tax_settlements).row(0, named=True)
     assert tax_settlement["month_index"] == 12
     assert tax_settlement["tax_year_end_month"] == 11
     assert tax_settlement["amount_quanta"] / 100 == pytest.approx(7_984.62, abs=0.02)
@@ -2141,9 +2160,9 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    accrual = result.events_log.tax_accruals.row(0, named=True)
+    accrual = result.events_log.frame(EVENT_FRAMES.tax_accruals).row(0, named=True)
     assert accrual["amount_quanta"] / 100 == pytest.approx(4_196.0, abs=0.01)
-    breakdown = result.events_log.tax_breakdowns.row(0, named=True)
+    breakdown = result.events_log.frame(EVENT_FRAMES.tax_breakdowns).row(0, named=True)
     assert breakdown["ordinary_income_quanta"] / 100 == pytest.approx(50_000.04, abs=0.02)
     assert breakdown["ltcg_quanta"] / 100 == pytest.approx(10_000.0, abs=0.02)
     assert breakdown["stcg_quanta"] / 100 == pytest.approx(1_500.0, abs=0.02)
@@ -2232,8 +2251,10 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
-        ["month_index", "cause_id"]
+    tax_payments = (
+        result.events_log.frame(EVENT_FRAMES.transfers)
+        .filter(pl.col("cause_id").str.contains("tax"))
+        .sort(["month_index", "cause_id"])
     )
     assert tax_payments.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
         {"month_index": 3, "cause_id": "alice_estimated_tax_q1_y0", "amount_quanta": 50_000},
@@ -2242,11 +2263,13 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         {"month_index": 12, "cause_id": "alice_estimated_tax_q4_y0", "amount_quanta": 50_000},
         {"month_index": 12, "cause_id": "alice_tax_true_up_y0", "amount_quanta": 201_600},
     ]
-    assert result.events_log.tax_settlements.get_column("amount_quanta").map_elements(
+    assert result.events_log.frame(EVENT_FRAMES.tax_settlements).get_column("amount_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
     ).sum() == pytest.approx(4_016.0, abs=0.01)
 
-    policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("allocation_sale"))
+    policy_sales = result.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(
+        pl.col("cause_id").str.starts_with("allocation_sale")
+    )
     # Fixed-point FIFO sells fractional quanta for whole-unit-scale assets too: month-12 needs exactly
     # $2,516 at $100/unit, so it sells 25.16 units with no excess cash.
     assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_quanta").to_dicts() == [
@@ -2305,7 +2328,7 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
     )
 
     result = simulate(scenario, rollout_count=1, locations={})
-    assert result.events_log.tax_accruals.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.tax_accruals).is_empty()
     assert result.tax_liabilities.is_empty()
 
 
@@ -2348,7 +2371,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     # Year-end tax: $37,538.51 federal + $14,754.09 CA = $52,292.60.
-    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax"))
+    tax_payments = result.events_log.frame(EVENT_FRAMES.transfers).filter(pl.col("cause_id").str.contains("tax"))
     assert tax_payments.height == 1
     assert tax_payments.get_column("amount_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
@@ -2356,8 +2379,8 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     assert tax_payments.row(0, named=True)["cause_id"] == "alice_tax_true_up_y0"
     # Tax true-up fires in January after the year-end accrual.
     assert set(tax_payments.get_column("month_index").to_list()) == {12}
-    assert result.events_log.tax_settlements.height == 1
-    settlement = result.events_log.tax_settlements.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.tax_settlements).height == 1
+    settlement = result.events_log.frame(EVENT_FRAMES.tax_settlements).row(0, named=True)
     assert settlement["cause_id"] == "alice_tax_settlement_y0"
     assert settlement["amount_quanta"] / 100 == pytest.approx(52_292.60, abs=0.02)
 
@@ -2446,7 +2469,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
     # Alice has $0 cash after year 0 (income == rent), no assets,
     # but the tax bill arrives in January. Failure fires at month 12.
-    failures = result.events_log.rollout_failures
+    failures = result.events_log.frame(EVENT_FRAMES.rollout_failures)
     assert failures.height == 1
     assert failures.row(0, named=True)["month_index"] == 12
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
@@ -2498,16 +2521,16 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    accrual = result.events_log.obligation_accruals.row(0, named=True)
+    accrual = result.events_log.frame(EVENT_FRAMES.obligation_accruals).row(0, named=True)
     assert accrual["obligation_id"] == "rent_due_m0"
     assert accrual["amount_due_quanta"] / 100 == pytest.approx(500.0)
 
-    settlement = result.events_log.obligation_settlements.row(0, named=True)
+    settlement = result.events_log.frame(EVENT_FRAMES.obligation_settlements).row(0, named=True)
     assert settlement["amount_paid_quanta"] / 100 == pytest.approx(500.0)
     assert settlement["shortfall_quanta"] / 100 == pytest.approx(0.0)
     assert settlement["attempted_funding_sources"] == "security:vti"
 
-    funding_sale = result.events_log.lot_dispositions.row(0, named=True)
+    funding_sale = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert funding_sale["cause_id"] == "allocation_sale_m0_security:vti"
     assert funding_sale["units_sold"] == pytest.approx(4.0)
     assert funding_sale["proceeds_quanta"] / 100 == pytest.approx(400.0)
@@ -2519,7 +2542,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
         .item()
     )
     assert final_cash == pytest.approx(0.0)
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
@@ -2568,13 +2591,13 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
 
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
-    sales = result.events_log.lot_dispositions.sort("rollout_index")
+    sales = result.events_log.frame(EVENT_FRAMES.lot_dispositions).sort("rollout_index")
     # Fixed-point FIFO sells the exact fractional quanta needed for each rollout's price.
     assert sales.select("rollout_index", "units_sold", "proceeds_quanta").to_dicts() == [
         {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_quanta": 50_000},
         {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_quanta": 50_000},
     ]
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_series_bundle) -> None:
@@ -2631,7 +2654,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    disposition = result.events_log.lot_dispositions.row(0, named=True)
+    disposition = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert disposition["source_account_id"] == "taxable"
     assert disposition["lot_id"] == "alice_taxable_vti"
     assert disposition["units_sold"] == pytest.approx(4.0)
@@ -2641,7 +2664,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
         {"lot_id": "alice_ira_vti", "account_id": "ira", "remaining_quantity": pytest.approx(100.0)},
         {"lot_id": "alice_taxable_vti", "account_id": "taxable", "remaining_quantity": pytest.approx(1.0)},
     ]
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_liquidity_policy_can_sell_from_source_account_into_cash_account(deterministic_series_bundle) -> None:
@@ -2690,11 +2713,11 @@ def test_liquidity_policy_can_sell_from_source_account_into_cash_account(determi
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    disposition = result.events_log.lot_dispositions.row(0, named=True)
+    disposition = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert disposition["source_account_id"] == "taxable"
     assert disposition["proceeds_account_id"] == "checking"
     assert disposition["units_sold"] == pytest.approx(4.0)
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> None:
@@ -2730,7 +2753,7 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
 
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
-    accruals = result.events_log.obligation_accruals.sort(["rollout_index", "month_index"])
+    accruals = result.events_log.frame(EVENT_FRAMES.obligation_accruals).sort(["rollout_index", "month_index"])
     for rollout_index in (0, 1):
         first_year = accruals.filter((pl.col("rollout_index") == rollout_index) & (pl.col("month_index") < 12))
         assert first_year.get_column("amount_due_quanta").map_elements(
@@ -2750,7 +2773,7 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
     assert final_cash.get_column("balance_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
     ).to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
@@ -2783,7 +2806,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
-    transfers = result.events_log.transfers.sort("month_index")
+    transfers = result.events_log.frame(EVENT_FRAMES.transfers).sort("month_index")
     assert transfers.filter(pl.col("month_index") < 12).get_column("amount_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
     ).to_list() == pytest.approx([1_500.0] * 12)
@@ -2824,13 +2847,13 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    settlement = result.events_log.obligation_settlements.row(0, named=True)
+    settlement = result.events_log.frame(EVENT_FRAMES.obligation_settlements).row(0, named=True)
     assert settlement["amount_due_quanta"] / 100 == pytest.approx(500.0)
     assert settlement["amount_paid_quanta"] / 100 == pytest.approx(0.0)
     assert settlement["shortfall_quanta"] / 100 == pytest.approx(500.0)
-    assert result.events_log.transfers.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.transfers).is_empty()
 
-    failure = result.events_log.rollout_failures.row(0, named=True)
+    failure = result.events_log.frame(EVENT_FRAMES.rollout_failures).row(0, named=True)
     assert failure["obligation_id"] == "rent_due_m0"
     assert failure["obligation_type"] == "rent"
     assert failure["shortfall_quanta"] / 100 == pytest.approx(500.0)
@@ -2876,11 +2899,11 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    assert result.events_log.lot_dispositions.is_empty()
-    settlement = result.events_log.obligation_settlements.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).is_empty()
+    settlement = result.events_log.frame(EVENT_FRAMES.obligation_settlements).row(0, named=True)
     assert settlement["amount_paid_quanta"] / 100 == pytest.approx(0.0)
     assert settlement["shortfall_quanta"] / 100 == pytest.approx(500.0)
-    assert result.events_log.rollout_failures.height == 1
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).height == 1
 
 
 def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series_bundle) -> None:
@@ -2935,7 +2958,7 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    sale = result.events_log.lot_dispositions.row(0, named=True)
+    sale = result.events_log.frame(EVENT_FRAMES.lot_dispositions).row(0, named=True)
     assert sale["units_sold"] == pytest.approx(50.0)
     assert sale["proceeds_quanta"] / 100 == pytest.approx(5000.0)
     alice_final = (
@@ -2945,7 +2968,7 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
         .item()
     )
     assert alice_final == pytest.approx(6500.0)
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(deterministic_series_bundle) -> None:
@@ -2996,7 +3019,7 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    assert result.events_log.lot_dispositions.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).is_empty()
     alice_final = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
         .get_column("balance_quanta")
@@ -3004,7 +3027,7 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
         .item()
     )
     assert alice_final == pytest.approx(2500.0)
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_a_band_it_cannot_refill_does_not_fail_the_rollout() -> None:
@@ -3031,8 +3054,8 @@ def test_a_band_it_cannot_refill_does_not_fail_the_rollout() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    assert result.events_log.lot_dispositions.is_empty()
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
     assert result.rollout_status.row(0, named=True)["status"] == "active"
 
 
@@ -3072,13 +3095,13 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    settlements = result.events_log.obligation_settlements.sort("obligation_id")
+    settlements = result.events_log.frame(EVENT_FRAMES.obligation_settlements).sort("obligation_id")
     assert settlements.select("obligation_id", "amount_paid_quanta", "shortfall_quanta").to_dicts() == [
         {"obligation_id": "rent_due_m0", "amount_paid_quanta": 0, "shortfall_quanta": 50_000},
         {"obligation_id": "utility_due_m0", "amount_paid_quanta": 0, "shortfall_quanta": 50_000},
     ]
-    assert result.events_log.transfers.is_empty()
-    assert result.events_log.rollout_failures.height == 2
+    assert result.events_log.frame(EVENT_FRAMES.transfers).is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).height == 2
 
 
 def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundle) -> None:
@@ -3117,7 +3140,8 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
 
     result = simulate(scenario, rollout_count=1, locations={})
     assert (
-        result.events_log.lot_dispositions.get_column("proceeds_quanta")
+        result.events_log.frame(EVENT_FRAMES.lot_dispositions)
+        .get_column("proceeds_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
         == 3.0 * 99.0
@@ -3202,10 +3226,13 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
     # Property tax: 500_000 * 0.012 / 12 = 500.0 (basis excludes closing cost).
     assert final_cash == pytest.approx(120_000.0 - 110_000.0 - mortgage_payment - 500.0)
 
-    assert result.events_log.property_purchases.height == 1
-    assert result.events_log.mortgage_originations.height == 1
-    assert result.events_log.mortgage_payments.height == 1
-    assert result.events_log.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
+    assert result.events_log.frame(EVENT_FRAMES.property_purchases).height == 1
+    assert result.events_log.frame(EVENT_FRAMES.mortgage_originations).height == 1
+    assert result.events_log.frame(EVENT_FRAMES.mortgage_payments).height == 1
+    assert (
+        result.events_log.frame(EVENT_FRAMES.transfers).filter(pl.col("cause_id") == "sf_home_property_tax_m1").height
+        == 1
+    )
 
 
 def test_real_estate_purchase_requires_known_location(san_francisco_location: Location) -> None:
@@ -3391,7 +3418,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
     result = simulate(scenario, rollout_count=1, locations={})
 
     # Month-0 sale: deficit was 4000, sold 40 units at $100 = $4000.
-    m0_dispositions = result.events_log.lot_dispositions.filter(pl.col("month_index") == 0)
+    m0_dispositions = result.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(pl.col("month_index") == 0)
     assert m0_dispositions.height == 1
     assert m0_dispositions.row(0, named=True)["units_sold"] == pytest.approx(40.0, abs=0.02)
     assert m0_dispositions.row(0, named=True)["proceeds_quanta"] / 100 == pytest.approx(4000.0, abs=0.02)
@@ -3454,8 +3481,8 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
 
     # Failure event fired at month 0: rent demand was $1000, but
     # only $500 of VTI could be liquidated, so no rent payment fires.
-    assert result.events_log.rollout_failures.height == 1
-    failure = result.events_log.rollout_failures.row(0, named=True)
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).height == 1
+    failure = result.events_log.frame(EVENT_FRAMES.rollout_failures).row(0, named=True)
     assert failure["month_index"] == 0
     assert failure["deficit_quanta"] / 100 == pytest.approx(1000.0, abs=0.02)
     assert failure["agent_id"] == "alice"
@@ -3531,7 +3558,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
     result = simulate(scenario, rollout_count=1, locations={})
 
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
-    assert result.events_log.transfers.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.transfers).is_empty()
     failed_cash = result.cash_balances.filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
     assert (
         failed_cash.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
@@ -3628,7 +3655,7 @@ def _mid_scenario(
 def _accrual_breakdown(result, *, jurisdiction_id: str) -> dict:
     return next(
         row
-        for row in result.events_log.tax_breakdowns.iter_rows(named=True)
+        for row in result.events_log.frame(EVENT_FRAMES.tax_breakdowns).iter_rows(named=True)
         if row["jurisdiction_id"] == jurisdiction_id
     )
 
@@ -3636,7 +3663,7 @@ def _accrual_breakdown(result, *, jurisdiction_id: str) -> dict:
 def _liability_year_interest(result, *, liability_id: str, through_month: int) -> float:
     """Sum of interest paid on a liability across mortgage payments up to and including
     `through_month` (inclusive)."""
-    rows = result.events_log.mortgage_payments.filter(
+    rows = result.events_log.frame(EVENT_FRAMES.mortgage_payments).filter(
         (pl.col("liability_id") == liability_id) & (pl.col("month_index") <= through_month)
     )
     return float(rows.get_column("interest_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).sum())
@@ -3917,7 +3944,7 @@ def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) 
     federal_rows = sorted(
         (
             row
-            for row in result.events_log.tax_breakdowns.iter_rows(named=True)
+            for row in result.events_log.frame(EVENT_FRAMES.tax_breakdowns).iter_rows(named=True)
             if row["jurisdiction_id"] == "federal_us"
         ),
         key=lambda row: row["month_index"],
@@ -3943,7 +3970,7 @@ def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) 
 
 def _accrual_breakdowns_in_year(result, *, jurisdiction_id: str, year_index: int) -> dict | None:
     target_month = 12 * year_index + 11
-    for row in result.events_log.tax_breakdowns.iter_rows(named=True):
+    for row in result.events_log.frame(EVENT_FRAMES.tax_breakdowns).iter_rows(named=True):
         if row["jurisdiction_id"] == jurisdiction_id and row["month_index"] == target_month:
             return dict(row)
     return None
@@ -3974,9 +4001,8 @@ def test_salt_deduction_under_cap_passes_through_in_full(san_francisco_location:
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     ca = _accrual_breakdown(result, jurisdiction_id="california")
     property_tax_paid = float(
-        result.events_log.obligation_settlements.filter(
-            (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
-        )
+        result.events_log.frame(EVENT_FRAMES.obligation_settlements)
+        .filter((pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11))
         .get_column("amount_paid_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
@@ -4017,9 +4043,8 @@ def test_salt_cap_binds_for_high_income_high_property_tax(san_francisco_location
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     ca = _accrual_breakdown(result, jurisdiction_id="california")
     property_tax_paid = float(
-        result.events_log.obligation_settlements.filter(
-            (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
-        )
+        result.events_log.frame(EVENT_FRAMES.obligation_settlements)
+        .filter((pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11))
         .get_column("amount_paid_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
@@ -4112,9 +4137,8 @@ def test_salt_uncapped_when_cap_schedule_is_empty(san_francisco_location: Locati
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     ca = _accrual_breakdown(result, jurisdiction_id="california")
     property_tax_paid = float(
-        result.events_log.obligation_settlements.filter(
-            (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
-        )
+        result.events_log.frame(EVENT_FRAMES.obligation_settlements)
+        .filter((pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11))
         .get_column("amount_paid_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
@@ -4300,9 +4324,9 @@ def _alice_cash_at(result, *, month_index: int) -> float:
 def _pe_opportunity_at(result, *, month_index: int) -> dict[str, object]:
     return cast(
         dict[str, object],
-        result.events_log.private_equity_opportunities.filter(
-            (pl.col("rollout_index") == 0) & (pl.col("month_index") == month_index)
-        ).row(0, named=True),
+        result.events_log.frame(EVENT_FRAMES.private_equity_opportunities)
+        .filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == month_index))
+        .row(0, named=True),
     )
 
 
@@ -4361,7 +4385,7 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     assert _alice_cash_at(result, month_index=snapshot) == pytest.approx(30_000.0, abs=1.0)
 
     # Disposition event should be recorded.
-    disp = result.events_log.lot_dispositions.filter(
+    disp = result.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(
         (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
     )
     assert disp.height >= 1, f"expected PE disposition at month {tender_month}, got none"
@@ -4370,9 +4394,11 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     assert row["units_sold"] == pytest.approx(100.0, abs=0.02)
     assert row["proceeds_quanta"] / 100 == pytest.approx(6_000.0, abs=1.0)
     assert row["cause_id"] == "pe_tender_m5_acme"
-    [marker] = result.events_log.private_equity_events.filter(
-        (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
-    ).iter_rows(named=True)
+    [marker] = (
+        result.events_log.frame(EVENT_FRAMES.private_equity_events)
+        .filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month))
+        .iter_rows(named=True)
+    )
     assert marker["event_kind"] == "tender"
     assert marker["asset_id"] == "private_equity:acme"
 
@@ -4509,9 +4535,11 @@ def test_pe_public_market_regime_allows_floor_sale_without_tender_event() -> Non
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(50.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(5_000.0)
-    [row] = result.events_log.lot_dispositions.filter(
-        (pl.col("rollout_index") == 0) & (pl.col("month_index") == 5)
-    ).iter_rows(named=True)
+    [row] = (
+        result.events_log.frame(EVENT_FRAMES.lot_dispositions)
+        .filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == 5))
+        .iter_rows(named=True)
+    )
     assert row["cause_id"] == "pe_public_market_m5_acme"
 
 
@@ -4537,9 +4565,11 @@ def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> No
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(70.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(13_000.0)
-    [row] = result.events_log.lot_dispositions.filter(
-        (pl.col("rollout_index") == 0) & (pl.col("month_index") == 5)
-    ).iter_rows(named=True)
+    [row] = (
+        result.events_log.frame(EVENT_FRAMES.lot_dispositions)
+        .filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == 5))
+        .iter_rows(named=True)
+    )
     assert row["cause_id"] == "pe_forced_sale_m5_acme"
 
 
@@ -4565,7 +4595,9 @@ def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() 
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(0.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(100.0)
-    disp = result.events_log.lot_dispositions.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == 5))
+    disp = result.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(
+        (pl.col("rollout_index") == 0) & (pl.col("month_index") == 5)
+    )
     assert disp.height == 1
     row = disp.row(0, named=True)
     assert row["units_sold"] == pytest.approx(100.0)
@@ -4721,7 +4753,7 @@ def test_pe_tender_disposition_recorded() -> None:
     )
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
-    disp = result.events_log.lot_dispositions.filter(
+    disp = result.events_log.frame(EVENT_FRAMES.lot_dispositions).filter(
         (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
     )
     assert disp.height == 1, f"expected exactly 1 PE disposition, got {disp.height}"

@@ -12,6 +12,7 @@ import argparse
 import time
 
 from finance.augur.sim.bench_scenario import build_bench_scenario
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.simulate import simulate
 
 
@@ -33,10 +34,10 @@ def main() -> None:
     print(f"cash_balances_rows: {result.cash_balances.height}")
     print(f"asset_lots_rows: {result.asset_lots.height}")
     print(f"series_values_rows: {result.series_values.height}")
-    print(f"transfers: {result.events_log.transfers.height}")
-    print(f"lot_dispositions: {result.events_log.lot_dispositions.height}")
-    print(f"tax_accruals: {result.events_log.tax_accruals.height}")
-    print(f"rollout_failures: {result.events_log.rollout_failures.height}")
+    print(f"transfers: {result.events_log.frame(EVENT_FRAMES.transfers).height}")
+    print(f"lot_dispositions: {result.events_log.frame(EVENT_FRAMES.lot_dispositions).height}")
+    print(f"tax_accruals: {result.events_log.frame(EVENT_FRAMES.tax_accruals).height}")
+    print(f"rollout_failures: {result.events_log.frame(EVENT_FRAMES.rollout_failures).height}")
 
 
 if __name__ == "__main__":

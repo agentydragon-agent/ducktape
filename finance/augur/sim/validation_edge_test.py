@@ -18,6 +18,7 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.product.asset_key import PrivateEquityAssetKey
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.scenario import (
     Agent,
@@ -135,7 +136,7 @@ def test_private_equity_terminal_snapshot_is_not_validated_as_a_sim_month() -> N
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
@@ -184,7 +185,7 @@ def test_tlh_terminal_snapshot_is_not_validated_as_a_sim_month() -> None:
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
-    assert result.events_log.rollout_failures.is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).is_empty()
 
 
 def test_scheduled_sale_oversell_validation() -> None:
@@ -268,8 +269,8 @@ def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float
 
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
-    assert result.events_log.lot_dispositions.is_empty()
-    assert result.events_log.rollout_failures.row(0, named=True)["month_index"] == 0
+    assert result.events_log.frame(EVENT_FRAMES.lot_dispositions).is_empty()
+    assert result.events_log.frame(EVENT_FRAMES.rollout_failures).row(0, named=True)["month_index"] == 0
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
 
 

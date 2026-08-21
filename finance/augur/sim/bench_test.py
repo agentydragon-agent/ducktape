@@ -16,6 +16,7 @@ from finance.augur.model.deterministic import Deterministic
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.bench_scenario import build_bench_scenario
+from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.scenario import InitialLot, SleeveTarget
 from finance.augur.sim.simulate import simulate
 
@@ -30,12 +31,12 @@ def test_bench_scenario_runs_at_low_rollout_count() -> None:
     # Two recurring transfers (paycheck + rent) x 24 months x 10
     # rollouts = 480 monthly transfer rows. Tax payment timing is
     # scenario-dependent, so only assert the recurring spine here.
-    assert result.events_log.transfers.height >= 2 * 24 * 10
-    assert result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).height > 0
+    assert result.events_log.frame(EVENT_FRAMES.transfers).height >= 2 * 24 * 10
+    assert result.events_log.frame(EVENT_FRAMES.transfers).filter(pl.col("cause_id").str.contains("tax")).height > 0
 
     # Year-end accruals: 2 jurisdictions x 2 years (months 11, 23)
     # x 10 rollouts = 40 accrual rows.
-    assert result.events_log.tax_accruals.height == 2 * 2 * 10
+    assert result.events_log.frame(EVENT_FRAMES.tax_accruals).height == 2 * 2 * 10
 
     # External series values: 3 assets x 25 months (0..24) x 10 rollouts.
     assert result.series_values.height == 3 * 25 * 10
