@@ -112,7 +112,6 @@ class TrainedPrivateEquityModel(FrozenModel):
                 horizon_months=horizon_months,
             ),
             model_id=self.label,
-            private_equity_prices_usd={issuer: self.artifact.current_mark_usd},
             provenance={
                 "private_equity_model_schema_version": self.artifact.schema_version,
                 "private_equity_issuers": (issuer,),

@@ -75,7 +75,7 @@ def test_private_equity_risk_provider_config_roundtrips_through_union() -> None:
     assert isinstance(config, PrivateEquityRiskProviderConfig)
     assert config.realize_model().sample(
         ExogenousSamplingRequest(horizon_months=1, rollout_seeds=(1,))
-    ).private_equity_prices_usd == {"acme": 100.0}
+    ).private_equity.issuer_ids() == frozenset({"acme"})
 
 
 def test_private_equity_risk_samples_complete_protocol_bundle() -> None:

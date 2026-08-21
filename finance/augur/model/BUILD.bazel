@@ -166,7 +166,6 @@ py_library(
     name = "independent",
     srcs = ["independent.py"],
     deps = [
-        ":deterministic",
         ":exogenous",
         ":gbm",
         ":level_series_groups",
