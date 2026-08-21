@@ -17,6 +17,7 @@ from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraSpend, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
+from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory
 from devinfra.claude.claude_api.usage import Spend, UsageBucket, UsageResponse
 
@@ -157,12 +158,28 @@ def _to_success(usage: UsageResponse) -> FetchSuccess:
 class ClaudeProvider(Provider):
     name = "claude"
 
-    def __init__(self, settings: ClaudeSettings, client_factory: ProviderClientFactory) -> None:
+    def __init__(
+        self,
+        settings: ClaudeSettings,
+        client_factory: ProviderClientFactory,
+        management_client: CLIProxyAPIManagementClient | None = None,
+    ) -> None:
         self.settings = settings
         self.client_factory = client_factory
+        self.management_client = management_client
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
+        if self.management_client:
+            try:
+                body = await self.management_client.fetch_usage(
+                    self.name, USAGE_URL, {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
+                )
+                usage = UsageResponse.model_validate_json(body)
+            except Exception as e:
+                return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
+            return ProviderFetch(fetched_at=now, result=_to_success(usage))
+
         path = self.settings.credentials_path
         creds, stored_token = _read_credentials(path)
         configured_token = self.settings.access_token.get_secret_value() if self.settings.access_token else None

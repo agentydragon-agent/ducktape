@@ -25,6 +25,18 @@ body from the provider's usage endpoint, with fetch status and content type.
 It never returns request or response headers, OAuth refresh responses, cookies,
 or credentials.
 
+## Local clients
+
+The CLI and GNOME extension can use the same API through the managed
+`~/.config/aiquota/remote.toml` companion file. Home Manager materializes that
+file with the bearer token and configures it for `https://aiquota.allegedly.works`;
+the token is not kept in the normal provider config or in the source tree.
+
+Remote results use the normal local `~/.cache/aiquota/quotas.json` cache. A fresh
+cache avoids a network request, and an unavailable API falls back to the last
+cached snapshot so the CLI and GNOME panel still show the most recent known
+quotas while offline.
+
 Responses use `Cache-Control: no-store`. The service keeps the most recent
 snapshot only in process memory (default 120 seconds); it does not write quota
 or raw-response data to disk.
@@ -41,22 +53,36 @@ an additional writer alongside Claude Code itself. Use this mode only when that
 shared-file ownership and its concurrency risk are acceptable; it is not
 appropriate where another process is the declared sole refresh owner.
 
-### Initial API deployment (Claude and Codex)
+### Initial API deployment
 
-aiquota sends a non-secret sentinel through the dedicated Claude
-credential-substitution proxy. The real long-lived setup token remains mounted
-only in that proxy and substitution is limited to `api.anthropic.com`
-authorization headers. aiquota cannot refresh or write that token.
+The API has one Claude credential path: CLIProxyAPI's authenticated management
+integration. AIQuota does not receive the Claude setup token, mount the
+CLIProxyAPI PVC, or connect to the legacy Claude credential-substitution proxy.
+The SOPS-managed setup token remains owned by Haku's existing Claude runner
+while that separate route is still in use.
 
 ### CLIProxyAPI integration
 
-The Codex adapter discovers the single available Codex credential through
-CLIProxyAPI's authenticated integration endpoint, then asks CLIProxyAPI to
-call `https://chatgpt.com/backend-api/wham/usage` with that credential. The
+The Claude and Codex adapters discover their single available provider
+credential through CLIProxyAPI's authenticated integration endpoint, then ask
+CLIProxyAPI to call the provider's usage endpoint with that credential. The
 `$TOKEN$` substitution and OAuth refresh remain entirely inside CLIProxyAPI;
 aiquota never reads or writes the `ReadWriteOnce` PVC. The integration key is
 the SOPS-managed `cli-proxy-api-management` Secret, injected into both
 Deployments without putting it in the TOML config.
+
+CLIProxyAPI's current `/api-call` contract requires an opaque runtime
+`auth_index` for token substitution, so aiquota briefly discovers the one
+available credential for each provider through `/auth-files`. It does not read
+file names, file contents, access tokens, or refresh tokens. If CLIProxyAPI
+adds provider-based selection to `/api-call`, this discovery can be removed.
+
+CLIProxyAPI can hold multiple credentials for a provider, for example when
+cycling between subscriptions. AIQuota deliberately does not choose between
+them: it fails unless exactly one matching credential is enabled and available.
+The current deployment therefore expects one Claude and one Codex credential;
+support for displaying or cycling multiple subscriptions would be a separate
+explicit feature.
 
 The CLIProxyAPI management surface is not exposed through the public
 `cli-proxy-api.allegedly.works` route; that route only forwards `/v1` model
