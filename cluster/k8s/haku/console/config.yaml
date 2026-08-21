@@ -345,6 +345,17 @@ access_profiles:
   - id: manual-review
     auto_approval_policy: manual_review
 default_access_profile_id: manual-review
+# Evaluate standing Kubernetes access as the same dedicated read-only ServiceAccount whose token
+# iron-proxy mediates for public-coder-agent. Username and groups match `kubectl auth whoami`; they
+# are deploy-owned policy, never caller-supplied request data.
+kubernetes_authorization:
+  subjects_by_access_profile:
+    public-coder:
+      username: system:serviceaccount:public-coder-agent:public-coder-agent-reader
+      groups:
+        - system:serviceaccounts
+        - system:serviceaccounts:public-coder-agent
+        - system:authenticated
 # Temporary grants begin only when an approved create_grant call executes. This deploy-owned bound
 # is authoritative even if a client constructs a wider duration than the tool schema recommends.
 kubernetes_grant_max_lifetime_seconds: 3600
