@@ -220,7 +220,6 @@ class PropertyCashflowEventBuffers:
 
 @dataclass
 class PropertyEventBuffers:
-    transfer_active: NDArray[np.bool_]
     purchase_active: NDArray[np.bool_]
     mortgage_origination_active: NDArray[np.bool_]
     mortgage_payment_active: NDArray[np.bool_]
@@ -233,7 +232,6 @@ class PropertyEventBuffers:
         r = plan.rollout_count
         property_shape = (h, plan.property_count, r)
         liability_event_shape = (h, max(1, plan.liability_count), r)
-        _expect_array("transfer_active", self.transfer_active, shape=property_shape, dtype=np.bool_)
         _expect_array("purchase_active", self.purchase_active, shape=property_shape, dtype=np.bool_)
         _expect_array(
             "mortgage_origination_active", self.mortgage_origination_active, shape=liability_event_shape, dtype=np.bool_

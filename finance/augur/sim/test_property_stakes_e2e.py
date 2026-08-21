@@ -133,6 +133,55 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
             assert distinct.pop() == value, f"{property_id}.{column} != {value}"
 
 
+def test_property_purchase_transfer_is_derived_from_active_and_stake() -> None:
+    """Only active purchases with a positive stake emit the buyer-cash transfer."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance=300000),
+            InitialAccountBalance(agent_id="property_seller", account_id="checking", balance=0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=1,
+                cause_id="buy_zero_stake",
+                property_id="zero_stake",
+                location_id=LOCATION_ID,
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="property_seller",
+                purchase_price=100000,
+                down_payment=0,
+            ),
+            ScheduledPropertyPurchase(
+                month=2,
+                cause_id="buy_positive_stake",
+                property_id="positive_stake",
+                location_id=LOCATION_ID,
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="property_seller",
+                purchase_price=200000,
+                down_payment=200000,
+            ),
+        ],
+        tax_profiles=[],
+        horizon_months=3,
+    )
+
+    run = simulate(scenario, rollout_count=1, locations=LOCATIONS)
+
+    purchases = run.events_log.property_purchases.sort("month_index")
+    assert purchases.select("month_index", "cause_id").to_dicts() == [
+        {"month_index": 1, "cause_id": "buy_zero_stake"},
+        {"month_index": 2, "cause_id": "buy_positive_stake"},
+    ]
+    transfers = run.events_log.transfers
+    assert transfers.select("month_index", "cause_id", "amount_quanta").to_dicts() == [
+        {"month_index": 2, "cause_id": "buy_positive_stake_buyer_cash", "amount_quanta": 20_000_000}
+    ]
+
+
 def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> None:
     """One owner holds a primary home and a rental; only the rental changes and sells.
 

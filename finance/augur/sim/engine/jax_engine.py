@@ -100,7 +100,6 @@ from finance.augur.sim.engine.jax_types import (
     _PrivateEquityOutput,
     _ProductTailOutput,
     _PropertyCashflowInputs,
-    _PropertyPurchaseOutput,
     _PropertySaleTraceOutput,
     _PropertyTaxObligationInputs,
     _SalePool,
@@ -1986,7 +1985,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # mortgage liability (principal + monthly payment set, YTD interest/principal reset).
         mort_orig_rows = jnp.zeros((liab_active.shape[0], r), dtype=bool)
         purchase_active_rows = jnp.zeros((0, r), dtype=bool)
-        transfer_active_rows = jnp.zeros((0, r), dtype=bool)
         if folded_purchases:
             fires = (month == pur_month)[:, None] & active[None, :]  # (P, R)
             stake_pos = (pur_stake > 0)[:, None]  # (P, 1) static
@@ -2025,9 +2023,8 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 jnp.where(mfires, 0, liab_principal_ytd[pur_mort_idx])
             )
             mort_orig_rows = mort_orig_rows.at[pur_mort_idx].set(mfires)
-            # Per-purchase event rows for `ys` (folded order): purchase fired; transfer fired (stake>0).
+            # Per-purchase event rows for `ys` (folded order): purchase fired.
             purchase_active_rows = fires
-            transfer_active_rows = fires & stake_pos
 
         cash, ordinary, property_cashflow_active, property_cashflow_amount = _property_cashflows_jit(
             property_cashflows.cause[month],
@@ -2846,9 +2843,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 shortfall=shortfall,
                 failure_active=failure_active,
             ),
-            property_purchases=_PropertyPurchaseOutput(
-                active=purchase_active_rows, transfer_active=transfer_active_rows
-            ),
+            property_purchases=purchase_active_rows,
             mortgages=_MortgageOutput(
                 origination_active=mort_orig,
                 payment_active=mort_pay_active,
