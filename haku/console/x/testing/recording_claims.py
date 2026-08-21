@@ -20,6 +20,7 @@ test about the *real* step derivation needs `../test_sandbox_claims.py`, not thi
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from uuid import UUID
 
@@ -36,14 +37,20 @@ class RecordingClaims:
 
     def __init__(self) -> None:
         self.created: list[UUID] = []
+        self.created_event = asyncio.Event()
         self.deleted: list[UUID] = []
         self.renewed: list[tuple[UUID, datetime]] = []
         self.tokens: dict[UUID, str] = {}
+        self.refused: set[UUID] = set()
         # Every `inspect`, so a test can assert which reads reached the cluster and which were
         # answered off the cached observation.
         self.inspected: list[UUID] = []
         self._answer: ClaudeSandboxProvisioningView | None = None
         self._failure: Exception | None = None
+
+    def refuse(self, session_id: UUID) -> None:
+        """Make claim creation fail for one session without affecting the rest of a sweep."""
+        self.refused.add(session_id)
 
     def answer(self, view: ClaudeSandboxProvisioningView) -> None:
         """Make the next inspections report *view* instead of the fixed one."""
@@ -56,7 +63,10 @@ class RecordingClaims:
 
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
         assert expires_at > datetime.now(expires_at.tzinfo)
+        if session_id in self.refused:
+            raise RuntimeError("claim creation refused")
         self.created.append(session_id)
+        self.created_event.set()
         # The claim is where a test reaches the bridge credential: the store mints it and
         # `SessionService.create` does not hand it back.
         self.tokens[session_id] = bridge_token

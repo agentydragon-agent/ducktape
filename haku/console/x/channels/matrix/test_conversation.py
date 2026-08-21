@@ -123,8 +123,8 @@ async def test_leaves_a_live_session_alone(supervisor, conversations, operator_i
     assert recording_claims.created == [], "an empty idle session unexpectedly bought a sandbox"
 
 
-async def test_an_idle_session_allocates_only_after_matrix_accepts_a_prompt(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims
+async def test_matrix_only_persists_demand_and_the_channel_neutral_allocator_serves_it(
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims
 ) -> None:
     await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
@@ -134,12 +134,16 @@ async def test_an_idle_session_allocates_only_after_matrix_accepts_a_prompt(
     admitted = await turns.offer([operator_message("wake up", event_id="$wake", at=1)])
     assert isinstance(admitted, PromptAccepted)
     await supervisor.supervise_once()
+    assert recording_claims.created == [], "the Matrix supervisor must not allocate"
+    assert await chat_store.status(session_id) == SessionStatus.IDLE
+
+    await allocator.allocate_once()
 
     assert recording_claims.created == [session_id]
     assert await chat_store.status(session_id) == SessionStatus.PROVISIONING
 
 
-async def allocated_room_session(supervisor, conversations, turns, operator_id) -> UUID:
+async def allocated_room_session(allocator, supervisor, conversations, turns, operator_id) -> UUID:
     """Bind the room and create the demand that buys its first sandbox."""
     await conversations.bind_room(MATRIX_ROOM, operator_id)
     await supervisor.supervise_once()
@@ -147,15 +151,15 @@ async def allocated_room_session(supervisor, conversations, turns, operator_id) 
     assert session_id is not None
     admitted = await turns.offer([operator_message("start", event_id=f"${uuid4()}", at=1)])
     assert isinstance(admitted, PromptAccepted)
-    await supervisor.supervise_once()
+    await allocator.allocate_once()
     return session_id
 
 
 async def test_replaces_a_failed_session(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims, announced
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, announced
 ) -> None:
     """A dead session over Matrix is invisible — the room would just stop answering."""
-    dead = await allocated_room_session(supervisor, conversations, turns, operator_id)
+    dead = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
     await chat_store.fail(dead, "the sandbox went away")
 
     await supervisor.supervise_once()
@@ -172,11 +176,11 @@ async def test_replaces_a_failed_session(
 
 
 async def test_which_session_serves_the_room_is_read_off_the_thread(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims
 ) -> None:
     """Nothing points the room at a session: the answer is the newest session of the conversation
     the room's attachment names, which is what makes replacement invisible to the channel."""
-    first = await allocated_room_session(supervisor, conversations, turns, operator_id)
+    first = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
     await chat_store.fail(first, "the sandbox went away")
 
     await supervisor.supervise_once()
@@ -187,11 +191,11 @@ async def test_which_session_serves_the_room_is_read_off_the_thread(
 
 
 async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
 ) -> None:
     """Session replacement is the supervisor's normal job, and the room's attachment is not touched
     by it: the successor joins the thread the attachment names."""
-    first = await allocated_room_session(supervisor, conversations, turns, operator_id)
+    first = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
     await chat_store.fail(first, "the sandbox went away")
 
     await supervisor.supervise_once()
@@ -207,14 +211,14 @@ async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attac
 
 
 async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions, announced
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions, announced
 ) -> None:
     """A replica that went away without recording anything leaves a live status nothing is working
     on, and supervision has to reclaim it rather than believe it — but only once the lease has been
     adoptable for a whole `ADOPTION_GRACE` and no runner took it, which is what makes a console
     roll survivable rather than fatal.
     """
-    orphan = await allocated_room_session(supervisor, conversations, turns, operator_id)
+    orphan = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
     async with migrated_sessions.begin() as db:
         chat = await db.get(Session, orphan)
         assert chat is not None
@@ -230,14 +234,14 @@ async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
 
 
 async def test_replaces_a_session_whose_row_is_gone(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
 ) -> None:
     """A deleted session leaves the room's thread unserved, and the next pass re-provisions.
 
     What the schema allows is the session row being deleted underneath the conversation, which
     leaves it with no session rather than a dangling reference.
     """
-    vanished = await allocated_room_session(supervisor, conversations, turns, operator_id)
+    vanished = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
 
     async with migrated_sessions.begin() as db:
         await db.execute(delete(Session).where(Session.session_id == vanished))
@@ -252,11 +256,12 @@ async def test_replaces_a_session_whose_row_is_gone(
 
 
 async def test_does_not_repeat_an_unchanged_status(
-    supervisor, conversations, turns, operator_id, chat_store, recording_claims, announced
+    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, announced
 ) -> None:
     """Every transition is reported, but a poll that changes nothing must not spam the room."""
-    session_id = await allocated_room_session(supervisor, conversations, turns, operator_id)
-    # Provisioning already announced itself; the runner connecting is the next transition.
+    session_id = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
+    # The allocator moved it through provisioning; the runner connecting is the next state this
+    # deliberately delayed supervisor pass observes.
     assert (
         await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
         == BridgeAuthentication.ACCEPTED

@@ -49,6 +49,7 @@ from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
+from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService, internal_router
@@ -186,6 +187,7 @@ async def _serve() -> None:
     supervisor = MatrixSessionSupervisor(
         matrix, conversations, service, store, notifications, identities, sync.announce, engine
     )
+    allocator = SandboxAllocator(service, store, notifications, engine)
     notices = RoomNotices(
         engine,
         sessions,
@@ -202,7 +204,7 @@ async def _serve() -> None:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         del app
         try:
-            async with sync.run(), supervisor.run(), notices.run():
+            async with sync.run(), supervisor.run(), allocator.run(), notices.run():
                 yield
         finally:
             await service.aclose()

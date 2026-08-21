@@ -52,6 +52,12 @@ the SPA's own routes. It records setup, answers, silence and turn state without 
 subscribers project those facts. A second channel inherits the runtime unchanged, which is why it
 imports nothing under `channels/`.
 
+`sandbox_allocation.py` is the channel-neutral reconciler between those halves. A prompt commits as
+conversation-owned demand while its session is still idle; one `SBOX` leader finds that row and
+calls the runtime only after admission has returned. Notification wakes make the common path fast,
+and an oldest-first periodic sweep makes a lost notification or dead admitting replica a delay
+rather than a dropped first message.
+
 Session provisioning, setup narration and ending are authored into `conversation_event` in the
 same transactions that make them true. Narration also writes a temporary `setup_output` frame for
 readers from the previous release; the event is the durable fact and the frame is only a rollout
@@ -215,11 +221,12 @@ at up to twice a second while a turn streams, and a cluster read per update is n
 a question already answered. Both go through one `_observed`, so the two surfaces cannot disagree
 about what the cluster said; what differs is when each asks.
 
-**Nothing here is reported by being absent.** Every session has a sandbox to report on — one is
-created only once a sandbox is being claimed for it — so the view is never `null`. A claim
-Kubernetes does not have (never created, or reclaimed by `_cleanup_terminal_claim` once the session
-ended) is `claim_absent`. A cluster that could not be read at all is `observation_error` on an
-otherwise empty view. Two answers, two shapes.
+**Idle is explicit absence.** An idle session has never requested a sandbox, so its nested
+provisioning view is `null` and the session-addressed response carries `sandbox=None`. Once
+allocation commits, Kubernetes not having the requested claim (never created, ambiguously created
+then cleaned up, or reclaimed after the session ended) is `claim_absent`. A cluster that could not
+be read at all is `observation_error` on an otherwise empty view. These are distinct answers:
+"never requested", "requested but absent", and "could not observe".
 
 **One observation is reused for `OBSERVATION_TTL`.** A poll costs up to three Kubernetes reads, and
 this is an operator-facing GET a browser watching a sandbox come up will poll — so the API server
@@ -446,8 +453,8 @@ Behaviours worth knowing before reading the code:
   it. There is deliberately **no row per delivered message** — a flushed-up-to position materialised
   one row at a time is what `channel_cursor` holds properly.
 
-- **A rejected batch is not queued anywhere.** `enqueue_prompt` only accepts on a ready session with
-  no turn open and nothing pending, and a refusal is the answer: the room is told the messages were
+- **A rejected batch is not queued anywhere.** `enqueue_prompt` accepts on an idle or ready session
+  with no turn open and nothing pending, and a refusal is the answer: the room is told the messages were
   not delivered and what to wait for, and the watermark advances past them so the homeserver does
   not offer them again. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
   status question of its own, because an answer read outside `enqueue_prompt`'s
@@ -479,9 +486,10 @@ Behaviours worth knowing before reading the code:
   itself an event.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a batch.
-  The supervisor is a sibling task holding a **second** lock (`MXSE`), so provisioning is single too
-  while a stalled claim cannot wedge ingress. Two locks, not one: they are elected independently and
-  can land on different replicas.
+  The supervisor is a sibling task holding a **second** lock (`MXSE`) for room/session observation
+  and replacement. Sandbox allocation is a channel-neutral sibling under a **third** lock (`SBOX`).
+  The three are elected independently and can land on different replicas, so a stalled claim cannot
+  wedge ingress or make Matrix the only surface capable of recovering durable demand.
 
 ## Tests run against a real database
 

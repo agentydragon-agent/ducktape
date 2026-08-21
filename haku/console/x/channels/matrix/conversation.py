@@ -374,11 +374,11 @@ def _as_prompt(messages: Sequence[InboundMessage]) -> str:
 
 
 class MatrixSessionSupervisor:
-    """Allocates and replaces the session running under the room's conversation.
+    """Open, observe and replace the session running under the room's conversation.
 
     An idle room keeps its session row and no sandbox. Once ingress queues the first prompt, this
-    supervisor competes with the browser request to move that row to provisioning; the store's row
-    lock makes one of them the SandboxClaim creator. It also replaces sessions that have ended.
+    supervisor only reports the state it observes: the channel-neutral sandbox allocator moves
+    durable demand to provisioning. The supervisor also replaces sessions that have ended.
     """
 
     def __init__(
@@ -439,11 +439,7 @@ class MatrixSessionSupervisor:
         status = outcome.status if outcome is not None else None
         if status == SessionStatus.IDLE:
             assert session_id is not None
-            if await self._chat.allocate(await self._operator_id(), session_id):
-                self._last_announced = SessionStatus.PROVISIONING
-                await self._announce(f"provisioning a sandbox · session {session_id}")
-            else:
-                await self._report(str(status), f"session {session_id} is {status}")
+            await self._report(str(status), f"session {session_id} is {status}")
             return
         if status in OPEN_SESSION_STATUSES:
             await self._report(str(status), f"session {session_id} is {status}")

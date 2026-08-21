@@ -19,12 +19,13 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface, ItemStatus, ItemType
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ChatAttachment, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
@@ -88,6 +89,17 @@ def chat_service(
     chat_store: SessionStore, recording_claims: RecordingClaims, notifications: SessionNotifications
 ) -> SessionService:
     return SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+
+
+@pytest.fixture
+def allocator(
+    chat_service: SessionService,
+    chat_store: SessionStore,
+    notifications: SessionNotifications,
+    migrated_engine: AsyncEngine,
+) -> SandboxAllocator:
+    """The channel-neutral demand reconciler over the same database the test writes."""
+    return SandboxAllocator(chat_service, chat_store, notifications, migrated_engine)
 
 
 @pytest.fixture
