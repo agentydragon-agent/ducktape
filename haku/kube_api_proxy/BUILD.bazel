@@ -39,8 +39,14 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = ["/usr/local/bin/haku-kube-api-proxy"],
+    env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":binary_layer"],
+    # The rules_distroless Debian base contains loose CA files but no generated system bundle.
+    # Go's HTTPS client therefore cannot authenticate Console without the shared cacerts layer.
+    tars = [
+        "//third_party/debian_slim:cacerts",
+        ":binary_layer",
+    ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
