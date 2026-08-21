@@ -19,8 +19,7 @@ import numpy as np
 import pytest_bazel
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
-from finance.augur.sim.compiler import compile_simulation
-from finance.augur.sim.compiler.plan import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.engine.jax_engine import _build_program, _program_impl, run_jax_scan
 from finance.augur.sim.external_series import materialize_external_series
 from finance.augur.sim.locations import Location

@@ -39,7 +39,7 @@ from finance.augur.sim.codec.tax import (
     decode_tax_settlements,
 )
 from finance.augur.sim.codec.transfers import decode_cashflows
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES, EventLog
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.output import DenseSimulationOutput

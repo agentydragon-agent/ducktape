@@ -16,7 +16,7 @@ from finance.augur.sim.codec.helpers import (
     state_axes,
     state_history_frame_from_columns,
 )
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.state import LIABILITY_FRAME

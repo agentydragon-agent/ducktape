@@ -15,7 +15,7 @@ from typing import Any, cast
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 
 
 @dataclass(frozen=True)

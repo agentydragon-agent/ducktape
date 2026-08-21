@@ -16,7 +16,7 @@ import polars as pl
 
 from finance.augur.frames import FrameSpec, concat_frames
 from finance.augur.model.exogenous import LevelFrames
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 
 SERIES_VALUES_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}

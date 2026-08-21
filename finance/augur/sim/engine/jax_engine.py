@@ -66,7 +66,7 @@ from finance.augur.product.quantiles import (
     interpolate_currency_quantiles,
 )
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
 from finance.augur.sim.engine.jax_types import (
