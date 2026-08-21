@@ -52,6 +52,7 @@ type PolicyRule struct {
 // AuthorizationRequest is the proxy-to-Console authorization contract.
 type AuthorizationRequest struct {
 	Attributes    RequestAttributes `json:"attributes"`
+	RequiredScope GrantScope        `json:"required_scope"`
 	RequiredRules []PolicyRule      `json:"required_rules"`
 }
 
@@ -77,6 +78,7 @@ type Config struct {
 	AuthorizationTimeout       time.Duration
 	RequestTimeout             time.Duration
 	MaxRequestBytes            int64
+	ResourceScopes             ResourceScopeResolver
 	Logger                     *slog.Logger
 }
 
@@ -115,6 +117,9 @@ func NewHandler(config Config) (http.Handler, error) {
 	}
 	if config.Logger == nil {
 		config.Logger = slog.Default()
+	}
+	if config.ResourceScopes == nil {
+		config.ResourceScopes = newDiscoveryScopeResolver(config.Upstream, config.UpstreamTransport)
 	}
 
 	resolver := newRequestInfoResolver()
@@ -173,9 +178,18 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": reason})
 		return
 	}
+	scopeContext, cancelScope := context.WithTimeout(request.Context(), config.AuthorizationTimeout)
+	requiredScope, err := requiredGrantScope(scopeContext, config.ResourceScopes, attributes)
+	cancelScope()
+	if err != nil {
+		config.Logger.Error("Kubernetes resource scope discovery failed closed", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Kubernetes resource scope unavailable"})
+		return
+	}
 
 	decision, status, err := authorize(request.Context(), config, authorization, AuthorizationRequest{
 		Attributes:    attributes,
+		RequiredScope: requiredScope,
 		RequiredRules: []PolicyRule{requiredRule(attributes)},
 	})
 	if err != nil {

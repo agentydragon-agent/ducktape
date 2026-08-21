@@ -357,6 +357,9 @@ class ConsoleConfigFile(BaseModel):
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
+    # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
+    # remain useful client guidance, but this server-side setting is authoritative.
+    kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
 
     @model_validator(mode="before")
     @classmethod
@@ -493,6 +496,8 @@ class ConsoleConfigFile(BaseModel):
         configured_in_process_servers = {
             server.id for server in self.mcp.servers if isinstance(server.backend, InProcessBackend)
         }
+        if "kubernetes" in configured_in_process_servers and self.kubernetes_authorization is None:
+            raise ValueError("the Kubernetes in-process server requires Kubernetes authorization configuration")
         for profile in profiles.values():
             unknown_recall_indexes = set(profile.recall_index_ids) - configured_recall_indexes
             if unknown_recall_indexes:

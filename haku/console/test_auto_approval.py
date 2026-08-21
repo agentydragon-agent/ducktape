@@ -383,6 +383,18 @@ def test_profile_config_rejects_unknown_kubernetes_authorization_profile() -> No
         )
 
 
+def test_kubernetes_server_requires_authorization_configuration() -> None:
+    with pytest.raises(ValidationError, match="requires Kubernetes authorization configuration"):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "mcp": {
+                    "servers": [{"id": "kubernetes", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]
+                },
+            }
+        )
+
+
 def test_static_agent_access_profile_assignment_is_required() -> None:
     with pytest.raises(ValidationError, match="access_profile_id"):
         ConsoleConfigFile.model_validate(

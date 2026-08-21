@@ -137,6 +137,37 @@ py_test(
 )
 
 py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:kubernetes_authorization",
+        "//haku/console:kubernetes_grant_models",
+        "//haku/console:kubernetes_grant_service",
+        "//haku/console:mcp_execution",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes",
+    srcs = ["test_kubernetes.py"],
+    deps = [
+        ":kubernetes",
+        "//:conftest",
+        "//haku/console:kubernetes_authorization",
+        "//haku/console:kubernetes_grant_models",
+        "//haku/console:mcp_execution",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "routine",
     srcs = ["routine.py"],
     visibility = ["//haku/console:__subpackages__"],
