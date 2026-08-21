@@ -577,7 +577,7 @@ def _dense_output_from_device(
         rollout_count=r,
     )
     taxes = host_ys.taxes._replace(
-        accrual_active=np.asarray(host_ys.taxes.accrual_active) > 0,
+        breakdown=np.moveaxis(np.asarray(host_ys.taxes.breakdown), 1, 0),
         settlement_year_end=np.asarray(host_ys.taxes.settlement_year_end, dtype=np.int64),
     )
     private_equity = host_ys.private_equity._replace(
@@ -1734,7 +1734,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     ):
         """Branch-free December (`month % 12 == 11`) year-end tax pass, gated per-rollout by `dec`.
 
-        Returns the post-pass YTD/carryforward/tax-liability state plus the 13 per-link tax output
+        Returns the post-pass YTD/carryforward/tax-liability state plus the 12 per-link tax output
         slabs `(link_count, R)`. For non-December months every output reduces to the inputs / zeros.
         """
         dec = (month % 12 == 11) & active  # (R,)
@@ -1771,10 +1771,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         carryforward = jnp.where(do_net, carry_out, carryforward)
         ordinary = ordinary + _scatter_rows(jnp.zeros_like(ordinary), cg_rep, -jnp.where(do_net, ord_offset, 0))
 
-        # Two-pass SALT bracket math; collect per-link tax + breakdown slabs.
         annual_tax_by_link = _zeros_i64((r, max(1, link_count)))
         zero_salt = _zeros_i64((r,))
-        breakdown = [_zeros_i64((max(1, link_count), r)) for _ in range(13)]
+        breakdown = [_zeros_i64((max(1, link_count), r)) for _ in range(11)]
 
         def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
@@ -1793,11 +1792,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             tax = ord_tax + cap_tax
             cols = [
                 dec.astype(jnp.int64),  # accrual_active flag (->bool post-scan)
-                jnp.where(dec, tax, 0),
                 jnp.where(dec, ordinary[profile_ordinary_bucket[profile]], 0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0),
-                jnp.where(dec, cfg.link_standard_deduction[link], 0),  # traced value
                 jnp.where(dec, mid, 0),
                 jnp.where(dec, salt_deduction, 0),
                 jnp.where(dec, itemized, 0),
@@ -2821,19 +2818,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 payment_total=mort_pay_total,
             ),
             taxes=TaxOutput(
-                accrual_active=tax_breakdown[0],
-                accrual_amount=tax_breakdown[1],
-                ordinary_income=tax_breakdown[2],
-                long_term_capital_gain=tax_breakdown[3],
-                short_term_capital_gain=tax_breakdown[4],
-                standard_deduction=tax_breakdown[5],
-                mortgage_interest_deduction=tax_breakdown[6],
-                salt_deduction=tax_breakdown[7],
-                itemized_deduction=tax_breakdown[8],
-                ordinary_taxable=tax_breakdown[9],
-                capital_gain_taxable=tax_breakdown[10],
-                ordinary_tax=tax_breakdown[11],
-                capital_gain_tax=tax_breakdown[12],
+                breakdown=jnp.stack(tax_breakdown),
                 liability_amount=taxliab_amount,
                 liability_active=taxliab_active,
                 settlement_active=settle_active,

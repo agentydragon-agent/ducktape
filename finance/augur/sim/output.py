@@ -50,19 +50,7 @@ class MortgageOutput[ArrayT](NamedTuple):
 
 
 class TaxOutput[ArrayT](NamedTuple):
-    accrual_active: ArrayT
-    accrual_amount: ArrayT
-    ordinary_income: ArrayT
-    long_term_capital_gain: ArrayT
-    short_term_capital_gain: ArrayT
-    standard_deduction: ArrayT
-    mortgage_interest_deduction: ArrayT
-    salt_deduction: ArrayT
-    itemized_deduction: ArrayT
-    ordinary_taxable: ArrayT
-    capital_gain_taxable: ArrayT
-    ordinary_tax: ArrayT
-    capital_gain_tax: ArrayT
+    breakdown: ArrayT
     liability_amount: ArrayT
     liability_active: ArrayT
     settlement_active: ArrayT
