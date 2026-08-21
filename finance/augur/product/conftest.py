@@ -6,10 +6,9 @@ import pytest
 
 from finance.augur.api.catalog import build_catalog
 from finance.augur.api.config import Config
-from finance.augur.api.portfolio_sources import resolve_portfolio_sources
+from finance.augur.api.product_service import build_product_service
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.exogenous import Sampler
-from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
 
 # What the `make_product_service` fixture hands tests: build a ProductService for one model.
@@ -30,20 +29,7 @@ def make_product_service(augur_config: Config, catalog: CatalogResponse) -> Make
 
     def _make(model: Sampler, *, config: Config | None = None) -> ProductService:
         cfg = augur_config if config is None else config
-        cat = catalog if config is None else build_catalog(config)
-        resolved = resolve_portfolio_sources(cfg)
-        return ProductService(
-            portfolio=resolved.portfolio,
-            initial_cash=resolved.snapshot.cash,
-            primary_agent_id=resolve_primary_agent_id(cfg),
-            security_distributions=cfg.security_distributions,
-            harvest_policies=resolved.harvest_policies,
-            known_location_ids=cat.location_ids,
-            locations=sim_locations_from_config(cfg.locations),
-            properties_by_id=cat.properties_by_id,
-            models={"current_model": model},
-            max_rollout_samples=cfg.max_rollout_samples,
-            max_horizon_months=cfg.max_horizon_months,
-        )
+        cat = catalog if config is None else None
+        return build_product_service(cfg, {"current_model": model}, catalog=cat)
 
     return _make

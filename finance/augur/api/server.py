@@ -28,6 +28,7 @@ from finance.augur.api.catalog import build_calibration_info, build_catalog, bui
 from finance.augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.deployment import DeploymentInfo, build_deployment_info
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
+from finance.augur.api.product_service import build_product_service
 from finance.augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
 from finance.augur.budget.service import BudgetService
 from finance.augur.budget.wire import (
@@ -47,8 +48,6 @@ from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from finance.augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
-from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
-from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     MetricFanResponse,
     ProductProjectionRequest,
@@ -116,19 +115,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         loaded_calibration.catalog if loaded_calibration is not None else None, augur_config.calibration_catalog
     )
     deployment_info = build_deployment_info()
-    product_service = ProductService(
-        portfolio=resolved_portfolio.portfolio,
-        initial_cash=resolved_portfolio.snapshot.cash,
-        primary_agent_id=resolve_primary_agent_id(augur_config),
-        security_distributions=augur_config.security_distributions,
-        harvest_policies=resolved_portfolio.harvest_policies,
-        known_location_ids=catalog.location_ids,
-        locations=sim_locations_from_config(augur_config.locations),
-        properties_by_id=catalog.properties_by_id,
-        models=config.models,
-        max_rollout_samples=augur_config.max_rollout_samples,
-        max_horizon_months=augur_config.max_horizon_months,
-    )
+    product_service = build_product_service(augur_config, config.models, catalog=catalog)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
