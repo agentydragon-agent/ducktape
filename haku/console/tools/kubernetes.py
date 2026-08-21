@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastmcp import FastMCP
@@ -14,6 +14,7 @@ from haku.console.kubernetes_authorization import (
     AuthorizationRequest,
     AuthorizationResponse,
     KubernetesAuthorizationService,
+    KubernetesAuthorizationSource,
     RequestAttributes,
     required_rule,
     required_scope,
@@ -36,7 +37,7 @@ class CanIResult(BaseModel):
 
     allowed: bool
     reason: str | None = None
-    source: Literal["sar", "grant"] | None = None
+    source: KubernetesAuthorizationSource
     valid_until: datetime.datetime | None = None
 
 
@@ -124,13 +125,9 @@ class KubernetesToolsService:
 
 
 def _can_i_result(decision: AuthorizationResponse) -> CanIResult:
-    if decision.decision_id.startswith("grant:"):
-        source: Literal["sar", "grant"] | None = "grant"
-    elif decision.decision_id.startswith("sar:"):
-        source = "sar"
-    else:
-        source = None
-    return CanIResult(allowed=decision.allowed, reason=decision.reason, source=source, valid_until=decision.valid_until)
+    return CanIResult(
+        allowed=decision.allowed, reason=decision.reason, source=decision.source, valid_until=decision.valid_until
+    )
 
 
 def build_mcp(service: KubernetesToolsService) -> FastMCP:

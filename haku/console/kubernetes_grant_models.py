@@ -143,17 +143,18 @@ class KubernetesGrant(BaseModel):
     ended_at: datetime.datetime | None = None
     end_reason: str | None = None
 
+    @field_validator("created_at", "expires_at", "ended_at")
+    @classmethod
+    def validate_timezone_aware(cls, value: datetime.datetime | None, info: ValidationInfo) -> datetime.datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError(f"{info.field_name} must be timezone-aware")
+        return value
+
     @model_validator(mode="after")
     def validate_timestamps(self) -> KubernetesGrant:
         validate_grant_scope_rules(self.scope, self.rules)
-        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
-            raise ValueError("created_at must be timezone-aware")
-        if self.expires_at.tzinfo is None or self.expires_at.utcoffset() is None:
-            raise ValueError("expires_at must be timezone-aware")
         if self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
-        if self.ended_at is not None and (self.ended_at.tzinfo is None or self.ended_at.utcoffset() is None):
-            raise ValueError("ended_at must be timezone-aware")
         if self.status is KubernetesGrantStatus.ACTIVE:
             if self.ended_at is not None or self.end_reason is not None:
                 raise ValueError("an active grant cannot have terminal fields")

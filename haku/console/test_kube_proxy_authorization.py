@@ -14,6 +14,7 @@ from haku.console.kube_proxy_authorization import router
 from haku.console.kubernetes_authorization import (
     AuthorizationRequest,
     KubernetesAuthorizationService,
+    KubernetesAuthorizationSource,
     KubernetesAuthorizationUnavailableError,
     KubernetesBearerRejectedError,
     KubernetesClients,
@@ -184,6 +185,7 @@ def test_endpoint_returns_sar_decision() -> None:
     body = response.json()
     assert body["allowed"] is False
     assert body["reason"] == "RBAC denied"
+    assert body["source"] == "sar"
     assert body["decision_id"].startswith("sar:")
 
 
@@ -291,6 +293,7 @@ async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
         FakeSarClient(result=SubjectAccessReviewResult(allowed=False, reason="RBAC denied")), grants=grants
     ).authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))
     assert result.allowed is True
+    assert result.source is KubernetesAuthorizationSource.GRANT
     assert result.decision_id == "grant:00000000-0000-4000-8000-000000000099"
     assert result.valid_until == datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC)
     grants.match_request.assert_awaited_once()
@@ -306,6 +309,7 @@ async def test_sar_allow_does_not_consult_grants() -> None:
         bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST)
     )
     assert result.allowed is True
+    assert result.source is KubernetesAuthorizationSource.SAR
     assert result.decision_id.startswith("sar:")
     grants.match_request.assert_not_awaited()
 

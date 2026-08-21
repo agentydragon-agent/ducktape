@@ -9,7 +9,11 @@ import pytest_bazel
 from fastmcp import Client
 from pydantic import ValidationError
 
-from haku.console.kubernetes_authorization import AuthorizationResponse, RequestAttributes
+from haku.console.kubernetes_authorization import (
+    AuthorizationResponse,
+    KubernetesAuthorizationSource,
+    RequestAttributes,
+)
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
     KubernetesGrantScope,
@@ -67,7 +71,7 @@ def _service() -> tuple[KubernetesToolsService, AsyncMock, AsyncMock]:
     grants.get_grant.return_value = _grant()
     grants.release_grant.return_value = _grant()
     authorization.authorize_agent.return_value = AuthorizationResponse(
-        allowed=True, reason="standing", decision_id="sar:decision"
+        allowed=True, reason="standing", source=KubernetesAuthorizationSource.SAR, decision_id="sar:decision"
     )
     return KubernetesToolsService(grants=grants, authorization=authorization), grants, authorization
 
@@ -111,7 +115,7 @@ async def test_can_i_uses_shared_agent_evaluator_and_returns_source() -> None:
     service, _, authorization = _service()
     result = await service.can_i(context=_agent_context(), requests=[KubernetesAccessCheck(attributes=_REQUEST)])
     assert result[0].allowed is True
-    assert result[0].source == "sar"
+    assert result[0].source is KubernetesAuthorizationSource.SAR
     kwargs = authorization.authorize_agent.await_args.kwargs
     assert kwargs["agent_id"] == _AGENT
     assert kwargs["access_profile_id"] == "public-coder"

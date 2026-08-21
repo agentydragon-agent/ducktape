@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import datetime
+from uuid import UUID
+
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
 from haku.console.kubernetes_grant_models import (
+    KubernetesGrant,
     KubernetesGrantScope,
     KubernetesGrantScopeKind,
+    KubernetesGrantStatus,
     KubernetesRule,
     validate_grant_scope_rules,
 )
@@ -87,6 +92,26 @@ def test_scope_is_explicit_and_consistent_with_rule_kind() -> None:
         KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("*",))
     with pytest.raises(ValueError, match="requires only non-resource"):
         validate_grant_scope_rules(KubernetesGrantScope(kind=KubernetesGrantScopeKind.NON_RESOURCE), (resource_rule(),))
+
+
+@pytest.mark.parametrize("field", ["created_at", "expires_at", "ended_at"])
+def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
+    payload = {
+        "grant_id": UUID("00000000-0000-4000-8000-000000000001"),
+        "agent_id": UUID("00000000-0000-4000-8000-000000000002"),
+        "source_tool_call_id": "tc_source",
+        "scope": KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("demo",)),
+        "rules": (resource_rule(),),
+        "status": KubernetesGrantStatus.ACTIVE,
+        "created_at": datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
+        "expires_at": datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
+    }
+    if field == "ended_at":
+        payload.update(status=KubernetesGrantStatus.RELEASED, end_reason="done")
+    payload[field] = datetime.datetime(2026, 8, 21)
+
+    with pytest.raises(ValidationError, match=rf"{field} must be timezone-aware"):
+        KubernetesGrant.model_validate(payload)
 
 
 def test_matching_is_conservative_about_resource_names() -> None:

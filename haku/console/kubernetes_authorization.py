@@ -18,6 +18,7 @@ import datetime
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -45,6 +46,13 @@ class KubernetesAuthorizationUnavailableError(RuntimeError):
 
 class KubernetesBearerRejectedError(RuntimeError):
     """The presented Haku bearer does not resolve to an active Agent."""
+
+
+class KubernetesAuthorizationSource(StrEnum):
+    """Authority that made the effective Kubernetes decision."""
+
+    SAR = "sar"
+    GRANT = "grant"
 
 
 class RequestAttributes(BaseModel):
@@ -107,6 +115,7 @@ class AuthorizationResponse(BaseModel):
 
     allowed: bool
     reason: str | None = None
+    source: KubernetesAuthorizationSource
     decision_id: str = Field(min_length=1)
     valid_until: datetime.datetime | None = None
 
@@ -288,7 +297,9 @@ class KubernetesAuthorizationService:
             request.attributes.path,
         )
         if result.allowed:
-            return AuthorizationResponse(allowed=True, reason=result.reason, decision_id=decision_id)
+            return AuthorizationResponse(
+                allowed=True, reason=result.reason, source=KubernetesAuthorizationSource.SAR, decision_id=decision_id
+            )
 
         # A normal SAR denial is the only point at which temporary authority may add access.
         # Matching is read-only: the repository query excludes expired rows.
@@ -310,9 +321,15 @@ class KubernetesAuthorizationService:
                     grant.expires_at,
                 )
                 return AuthorizationResponse(
-                    allowed=True, reason=grant.reason, decision_id=grant_decision_id, valid_until=grant.expires_at
+                    allowed=True,
+                    reason=grant.reason,
+                    source=KubernetesAuthorizationSource.GRANT,
+                    decision_id=grant_decision_id,
+                    valid_until=grant.expires_at,
                 )
-        return AuthorizationResponse(allowed=False, reason=result.reason, decision_id=decision_id)
+        return AuthorizationResponse(
+            allowed=False, reason=result.reason, source=KubernetesAuthorizationSource.SAR, decision_id=decision_id
+        )
 
     async def aclose(self) -> None:
         if self._sar_client is not None:
