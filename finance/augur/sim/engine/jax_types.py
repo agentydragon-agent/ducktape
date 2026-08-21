@@ -158,6 +158,18 @@ class _ObligationInputs(NamedTuple):
     tax_true_up: _PriorYearTaxObligationInputs
 
 
+class _PurchaseInputs(NamedTuple):
+    """Scheduled purchase columns, kept on the full property axis."""
+
+    month: jax.Array
+    stake_contribution: jax.Array
+    buyer_slot: jax.Array
+    seller_slot: jax.Array
+    mortgage_slot: jax.Array
+    mortgage_principal: jax.Array
+    mortgage_monthly_payment: jax.Array
+
+
 class _ProductTailOutput(NamedTuple):
     sale_oversell: jax.Array
     failed_month: jax.Array
@@ -167,18 +179,6 @@ class _ProductTailOutput(NamedTuple):
 class _DenseProductTailOutput(NamedTuple):
     dense: DenseFinalOutput[jax.Array]
     failed_month: jax.Array
-
-
-@dataclass(frozen=True)
-class _FoldedPurchase:
-    """One real cash property purchase, static data resolved host-side for the scan fold."""
-
-    buffer_index: int
-    month: int
-    stake_contribution: int
-    buyer_slot: int
-    seller_slot: int
-    mortgage_slot: int
 
 
 @dataclass(frozen=True)
@@ -318,7 +318,6 @@ class _Static:
     ta_max_sleeves: int
     pe_issuer_count: int
     n_pe_kinds: int
-    folded_purchases: tuple[_FoldedPurchase, ...]
     folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]
     folded_pr: tuple[tuple[int, int], ...]
     folded_sale_events: tuple[tuple[int, int], ...]
@@ -326,14 +325,6 @@ class _Static:
     folded_pe: tuple[_FoldedPE, ...]
     folded_harvest: tuple[_FoldedHarvest, ...]
     salt_link_active: tuple[bool, ...]
-    pur_buf: tuple[int, ...]
-    pur_month: tuple[int, ...]
-    pur_stake: tuple[int, ...]
-    pur_buyer: tuple[int, ...]
-    pur_seller: tuple[int, ...]
-    pur_mort_rows: tuple[int, ...]
-    pur_mort_idx: tuple[int, ...]
-    folded_purchases_present: bool
     # Contra row every asset purchase pays into — the market is outside the modeled world.
     external_cash_slot: int
     cg_targets: tuple[_CapitalGainTarget, ...]
