@@ -38,7 +38,7 @@ from finance.augur.sim.codec.tax import (
     decode_tax_liabilities,
     decode_tax_settlements,
 )
-from finance.augur.sim.codec.transfers import decode_property_cashflows, decode_transfers
+from finance.augur.sim.codec.transfers import decode_cashflows
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES, EventLog
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -114,10 +114,8 @@ class SimulationRun:
 
 
 def decode_events(plan: CompiledSimulation, output: DenseSimulationOutput) -> EventLog:
-    transfer_frames: list[pl.DataFrame] = []
+    transfer_frames = [decode_cashflows(plan, output)]
     lot_frames: list[pl.DataFrame] = []
-    transfer_frames.append(decode_transfers(plan, output))
-    transfer_frames.append(decode_property_cashflows(plan, output))
     property_purchases_frame, property_transfer_frame = decode_property_purchases(plan, output)
     transfer_frames.append(property_transfer_frame)
     lot_frames.append(decode_sched_dispositions(plan, output))

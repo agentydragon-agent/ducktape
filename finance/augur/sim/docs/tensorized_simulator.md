@@ -167,7 +167,7 @@ filter by an active mask, and materialize the polars frame in one
 `pl.from_numpy(...)` call. Per-slot string columns are resolved by
 `_codes_to_strings` (O(slot) Python work) and indexed.
 
-Event decoders (`_decode_transfers`, `_decode_property_purchases`,
+Event decoders (`decode_cashflows`, `_decode_property_purchases`,
 `_decode_sched_dispositions`, `decode_target_allocation_dispositions`,
 `_decode_tax_accruals`, `_decode_obligations`,
 `_decode_mortgage_originations`, `_decode_mortgage_payments`,

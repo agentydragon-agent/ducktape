@@ -88,11 +88,10 @@ from finance.augur.sim.engine.jax_types import (
     _PEChannelInputs,
     _PriorYearTaxObligationInputs,
     _ProductTailOutput,
-    _PropertyCashflowInputs,
     _PropertyTaxObligationInputs,
     _SalePool,
     _Static,
-    _TransferInputs,
+    _CashflowInputs,
     _ConfiguredObligationInputs,
     _EstimatedTaxObligationInputs,
     _MortgageObligationInputs,
@@ -112,7 +111,7 @@ from finance.augur.sim.output import (
     StateOutput,
     TargetAllocationOutput,
     TaxOutput,
-    TransferOutput,
+    CashflowOutput,
 )
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.engine.jax_validation import validate_seed_dependent_inputs
@@ -440,8 +439,7 @@ class _Operands(NamedTuple):
     prop0: jnp.ndarray
     liab0: jnp.ndarray
     # Whole-horizon static tables sliced by the traced month.
-    transfers: _TransferInputs
-    property_cashflows: _PropertyCashflowInputs
+    cashflows: _CashflowInputs
     bonds: _BondInputs
     distributions: _DistributionInputs
     obligations: _ObligationInputs
@@ -617,8 +615,7 @@ def _dense_output_from_device(
             failed=_prepend_zero_snapshot(state.failed),
             failed_month=_prepend_snapshot(state.failed_month, np.full((r,), NO_CODE, dtype=np.int64), dtype=np.int64),
         ),
-        transfers=host_ys.transfers,
-        property_cashflows=host_ys.property_cashflows,
+        cashflows=host_ys.cashflows,
         obligations=host_ys.obligations,
         property_purchases=purchase_active,
         mortgages=host_ys.mortgages,
@@ -1181,34 +1178,20 @@ def _build_program(
     pur_mort_idx = pur_mort[pur_mort_rows]
     # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
     # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
-    t = plan.transfers
-    transfers = _TransferInputs(
-        cause=jnp.asarray(t.cause),
-        amount_kind=jnp.asarray(t.amount_kind),
-        amount_fixed=jnp.asarray(t.amount_fixed),
-        amount_base=jnp.asarray(t.amount_base),
-        amount_series=jnp.asarray(t.amount_series),
-        amount_base_month=jnp.asarray(t.amount_base_month),
-        amount_period=jnp.asarray(t.amount_period),
-        from_slot=jnp.asarray(t.from_slot),
-        to_slot=jnp.asarray(t.to_slot),
-        income_profile=jnp.asarray(t.income_profile),
-        deduction_profile=jnp.asarray(t.deduction_profile),
-    )
-    pcf = plan.property_cashflows
-    property_cashflows = _PropertyCashflowInputs(
-        cause=jnp.asarray(pcf.cause),
-        amount_kind=jnp.asarray(pcf.amount_kind),
-        amount_fixed=jnp.asarray(pcf.amount_fixed),
-        amount_base=jnp.asarray(pcf.amount_base),
-        amount_series=jnp.asarray(pcf.amount_series),
-        amount_base_month=jnp.asarray(pcf.amount_base_month),
-        amount_period=jnp.asarray(pcf.amount_period),
-        from_slot=jnp.asarray(pcf.from_slot),
-        to_slot=jnp.asarray(pcf.to_slot),
-        property_slot=jnp.asarray(np.where(pcf.property_slot >= 0, pcf.property_slot, 0)),
-        income_profile=jnp.asarray(pcf.income_profile),
-        deduction_profile=jnp.asarray(pcf.deduction_profile),
+    cf = plan.cashflows
+    cashflows = _CashflowInputs(
+        cause=jnp.asarray(cf.cause),
+        amount_kind=jnp.asarray(cf.amount_kind),
+        amount_fixed=jnp.asarray(cf.amount_fixed),
+        amount_base=jnp.asarray(cf.amount_base),
+        amount_series=jnp.asarray(cf.amount_series),
+        amount_base_month=jnp.asarray(cf.amount_base_month),
+        amount_period=jnp.asarray(cf.amount_period),
+        from_slot=jnp.asarray(cf.from_slot),
+        to_slot=jnp.asarray(cf.to_slot),
+        property_slot=jnp.asarray(cf.property_slot),
+        income_profile=jnp.asarray(cf.income_profile),
+        deduction_profile=jnp.asarray(cf.deduction_profile),
     )
     bd = plan.bonds
     bonds = _BondInputs(
@@ -1565,8 +1548,7 @@ def _build_program(
         property_building_basis_0=property_building_basis_0,
         prop0=_zeros_i64((p.property_count, r)),
         liab0=_zeros_i64((p.liability_count, r)),
-        transfers=transfers,
-        property_cashflows=property_cashflows,
+        cashflows=cashflows,
         bonds=bonds,
         distributions=distributions,
         obligations=obligations,
@@ -1728,8 +1710,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     property_building_basis_0 = baked.property_building_basis_0
     prop0 = baked.prop0
     liab0 = baked.liab0
-    transfers = baked.transfers
-    property_cashflows = baked.property_cashflows
+    cashflows = baked.cashflows
     bonds = baked.bonds
     distributions = baked.distributions
     obligation_inputs = baked.obligations
@@ -2028,29 +2009,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 sale_traces.append(sale_trace)
             le_fired.append(active_property)
 
-        cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
-            transfers.cause[month],
-            transfers.amount_kind[month],
-            transfers.amount_fixed[month],
-            transfers.amount_base[month],
-            transfers.amount_series[month],
-            transfers.amount_base_month[month],
-            transfers.amount_period[month],
-            transfers.from_slot[month],
-            transfers.to_slot[month],
-            transfers.income_profile[month],
-            transfers.deduction_profile[month],
-            cash,
-            ordinary,
-            active,
-            external_values,
-            month,
-            structure.external_cash_slot,
-        )
-
-        # Bond coupons and redemptions, after transfers and before obligations settle: a coupon
-        # is income arriving this month and must be able to fund this month's outflows, the same
-        # ordering a paycheck gets.
+        # Bond coupons and redemptions arrive before obligations settle. They and the consolidated
+        # cashflow program below are additive phases with no intervening affordability decision, so
+        # every incoming dollar remains available for this month's outflows.
         cash, ordinary = _bond_cashflows_jit(
             bonds.coupon[month],
             bonds.redemption[month],
@@ -2094,8 +2055,8 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 structure.external_cash_slot,
             )
 
-        # Property purchases (after transfers, before sales — eager order). Vectorized over all real
-        # purchases at once (no Python loop): each fires when its static month equals the traced month
+        # Property purchases (after market income, before cashflows and scheduled asset sales).
+        # Vectorized over all real purchases at once (no Python loop): each fires when its static month equals the traced month
         # for the rollouts still active then, into its own property row (distinct indices, no
         # cross-purchase dependency). Pure-value purchase amounts are gathered from `cfg` by index.
         # The down payment (stake_contribution) moves buyer->seller via sentinel-aware scatter-add
@@ -2144,19 +2105,21 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             # Per-purchase event rows for `ys` (folded order): purchase fired.
             purchase_active_rows = fires
 
-        cash, ordinary, property_cashflow_active, property_cashflow_amount = _property_cashflows_jit(
-            property_cashflows.cause[month],
-            property_cashflows.amount_kind[month],
-            property_cashflows.amount_fixed[month],
-            property_cashflows.amount_base[month],
-            property_cashflows.amount_series[month],
-            property_cashflows.amount_base_month[month],
-            property_cashflows.amount_period[month],
-            property_cashflows.from_slot[month],
-            property_cashflows.to_slot[month],
-            property_cashflows.property_slot[month],
-            property_cashflows.income_profile[month],
-            property_cashflows.deduction_profile[month],
+        # Every authored transfer lowers to one cashflow program. Property-linked rows gate on
+        # the post-purchase active state; ordinary rows carry NO_CODE and are unconditional.
+        cash, ordinary, cashflow_active, cashflow_amount = _cashflows_jit(
+            cashflows.cause[month],
+            cashflows.amount_kind[month],
+            cashflows.amount_fixed[month],
+            cashflows.amount_base[month],
+            cashflows.amount_series[month],
+            cashflows.amount_base_month[month],
+            cashflows.amount_period[month],
+            cashflows.from_slot[month],
+            cashflows.to_slot[month],
+            cashflows.property_slot[month],
+            cashflows.income_profile[month],
+            cashflows.deduction_profile[month],
             property_active,
             cash,
             ordinary,
@@ -2906,8 +2869,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 failed=failed,
                 failed_month=failed_month,
             ),
-            transfers=TransferOutput(active=transfer_active, amount=transfer_amount),
-            property_cashflows=TransferOutput(active=property_cashflow_active, amount=property_cashflow_amount),
+            cashflows=CashflowOutput(active=cashflow_active, amount=cashflow_amount),
             obligations=ObligationOutput(
                 active=slot_active,
                 due=accrual_due,
@@ -3194,48 +3156,7 @@ def _amount_values_vec(
 
 
 @partial(jax.jit, static_argnames=("row_of_world",))
-def _transfers_jit(
-    cause: jnp.ndarray,
-    amount_kind: jnp.ndarray,
-    amount_fixed: jnp.ndarray,
-    amount_base: jnp.ndarray,
-    amount_series: jnp.ndarray,
-    amount_base_month: jnp.ndarray,
-    amount_period: jnp.ndarray,
-    from_slot: jnp.ndarray,
-    to_slot: jnp.ndarray,
-    income_profile: jnp.ndarray,
-    deduction_profile: jnp.ndarray,
-    cash: jnp.ndarray,
-    ordinary_ytd: jnp.ndarray,
-    active: jnp.ndarray,
-    external_values: jnp.ndarray,
-    month: jnp.ndarray,
-    row_of_world: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Branch-free, jit-compiled scheduled-transfer step (all slots vectorized; `month` traced)."""
-    rollout_count = cash.shape[1]
-    fire = (cause >= 0)[:, None] & active[None, :]  # (slots, rollouts)
-    raw = _amount_values_vec(
-        amount_kind,
-        amount_fixed,
-        amount_base,
-        amount_series,
-        amount_base_month,
-        amount_period,
-        external_values,
-        month,
-        rollout_count,
-    )
-    amounts = jnp.where(fire, raw, 0)
-    cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=amounts, row_of_world=row_of_world)
-    ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
-    ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
-    return cash, ordinary_ytd, fire, amounts
-
-
-@partial(jax.jit, static_argnames=("row_of_world",))
-def _property_cashflows_jit(
+def _cashflows_jit(
     cause: jnp.ndarray,
     amount_kind: jnp.ndarray,
     amount_fixed: jnp.ndarray,
@@ -3257,8 +3178,10 @@ def _property_cashflows_jit(
     row_of_world: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     rollout_count = cash.shape[1]
-    property_gate = _gather_rows(property_active, property_slot)
-    fire = (cause >= 0)[:, None] & active[None, :] & property_gate
+    property_gated = property_slot >= 0
+    safe_property_slot = jnp.maximum(property_slot, 0)
+    property_gate = _gather_rows(property_active, safe_property_slot)
+    fire = (cause >= 0)[:, None] & active[None, :] & (~property_gated[:, None] | property_gate)
     raw = _amount_values_vec(
         amount_kind,
         amount_fixed,

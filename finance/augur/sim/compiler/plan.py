@@ -18,6 +18,7 @@ from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
 from finance.augur.sim.compiler.assets import SaleCompileOutput, compile_sales
 from finance.augur.sim.compiler.bonds import BondCompileOutput, compile_bonds
+from finance.augur.sim.compiler.cashflows import CashflowCompileOutput, compile_cashflows
 from finance.augur.sim.compiler.deductions import (
     MIDCompileOutput,
     SaltCompileOutput,
@@ -48,7 +49,6 @@ from finance.augur.sim.compiler.properties import (
     PropertyCompileOutput,
     compile_properties_and_liabilities,
 )
-from finance.augur.sim.compiler.property_cashflows import PropertyCashflowCompileOutput, compile_property_cashflows
 from finance.augur.sim.compiler.series import (
     collect_level_series_keys,
     external_money_values_cube,
@@ -66,7 +66,6 @@ from finance.augur.sim.compiler.tax import (
     compile_tax_liability_slots,
 )
 from finance.augur.sim.compiler.tlh_harvest import HarvestPolicyCompileOutput, compile_harvest_policies
-from finance.augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer_slots
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.jurisdictions import Jurisdiction
@@ -97,8 +96,7 @@ class SlotPlan:
     tax_liability_count: int
     property_count: int
     liability_count: int
-    max_transfer_slots: int
-    max_property_cashflow_slots: int
+    max_cashflow_slots: int
     max_obligation_slots: int
     scheduled_sale_count: int
     target_allocation_policy_count: int
@@ -163,8 +161,7 @@ class CompiledSimulation:
     # Row of the cash array the rest of the world settles on. It is the LAST row, so slicing
     # `[:external_cash_slot]` gives exactly the agents' own accounts.
     external_cash_slot: int
-    transfers: TransferCompileOutput
-    property_cashflows: PropertyCashflowCompileOutput
+    cashflows: CashflowCompileOutput
     bonds: BondCompileOutput
     distributions: DistributionCompileOutput
     properties: PropertyCompileOutput
@@ -374,10 +371,7 @@ def compile_simulation(
     property_slot_by_id: dict[str, int] = {
         p.property_id: i for i, p in enumerate(scenario.scheduled_property_purchases)
     }
-    transfers = compile_transfer_slots(
-        scenario, strings, account_slots, profile_index_by_agent, series_index_by_id, tax.buckets
-    )
-    property_cashflows = compile_property_cashflows(
+    cashflows = compile_cashflows(
         scenario, strings, account_slots, profile_index_by_agent, series_index_by_id, property_slot_by_id, tax.buckets
     )
     bonds = compile_bonds(scenario, strings, account_slots, profile_index_by_agent, tax.buckets, series_index_by_id)
@@ -579,8 +573,7 @@ def compile_simulation(
         tax_liability_count=tax_liabilities.profile_index.shape[0],
         property_count=properties.month.shape[0],
         liability_count=liabilities.codes.shape[0],
-        max_transfer_slots=transfers.cause.shape[1],
-        max_property_cashflow_slots=property_cashflows.cause.shape[1],
+        max_cashflow_slots=cashflows.cause.shape[1],
         max_obligation_slots=obligations.metadata.cause.shape[1],
         scheduled_sale_count=sales.month.shape[0],
         target_allocation_policy_count=target_allocation_policies.sleeve_assets.shape[0],
@@ -623,8 +616,7 @@ def compile_simulation(
         salt=salt,
         tax_liabilities=tax_liabilities,
         external_cash_slot=external_slot,
-        transfers=transfers,
-        property_cashflows=property_cashflows,
+        cashflows=cashflows,
         bonds=bonds,
         distributions=distributions,
         properties=properties,

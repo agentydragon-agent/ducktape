@@ -28,7 +28,7 @@ class StateOutput[ArrayT](NamedTuple):
     failed_month: ArrayT
 
 
-class TransferOutput[ArrayT](NamedTuple):
+class CashflowOutput[ArrayT](NamedTuple):
     active: ArrayT
     amount: ArrayT
 
@@ -116,8 +116,7 @@ class LifecycleOutput[ArrayT](NamedTuple):
 
 class DenseScanOutput[ArrayT](NamedTuple):
     state: StateOutput[ArrayT]
-    transfers: TransferOutput[ArrayT]
-    property_cashflows: TransferOutput[ArrayT]
+    cashflows: CashflowOutput[ArrayT]
     obligations: ObligationOutput[ArrayT]
     property_purchases: ArrayT
     mortgages: MortgageOutput[ArrayT]
@@ -165,8 +164,7 @@ class DenseSimulationOutput(NamedTuple):
     """One host-resident tree consumed directly by codecs and product projection."""
 
     state: DenseStateOutput
-    transfers: TransferOutput[np.ndarray]
-    property_cashflows: TransferOutput[np.ndarray]
+    cashflows: CashflowOutput[np.ndarray]
     obligations: ObligationOutput[np.ndarray]
     property_purchases: np.ndarray
     mortgages: MortgageOutput[np.ndarray]
