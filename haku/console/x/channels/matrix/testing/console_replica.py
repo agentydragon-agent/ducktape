@@ -195,6 +195,7 @@ async def _serve() -> None:
         conversations,
         notifications,
         sync.announce,
+        sync.project_notice,
         sync,
         sync.bound_room,
         outbox,

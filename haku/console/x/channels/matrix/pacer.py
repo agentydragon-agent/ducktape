@@ -80,14 +80,40 @@ class RoomPacer:
         self._idle = asyncio.Event()
         self._idle.set()
 
-    def send(self, send: Send) -> None:
+    def send(self, send: Send) -> bool:
         """Queue something that must arrive, behind everything already waiting."""
         if len(self._queue) >= MAX_QUEUED_SENDS:
             logger.error("Matrix: %d sends already queued for this room; dropping one", MAX_QUEUED_SENDS)
-            return
+            return False
         self._queue.append(_Slot(send))
         self._queued.set()
         self._idle.clear()
+        return True
+
+    async def send_and_wait(self, send: Send) -> None:
+        """Queue one required effect and wait until the homeserver accepted or rejected it.
+
+        Conversation reconciliation cannot advance its durable cursor merely because a send is in
+        this process's queue: a crash would then lose the effect. The ordinary fire-and-forget
+        callers remain isolated from room failures; this path reports them to the reconciler so it
+        leaves the cursor in place and retries the same durable source later.
+        """
+        completed = asyncio.get_running_loop().create_future()
+
+        async def observed() -> None:
+            try:
+                await send()
+            except BaseException as error:
+                if not completed.done():
+                    completed.set_exception(error)
+                raise
+            else:
+                if not completed.done():
+                    completed.set_result(None)
+
+        if not self.send(observed):
+            raise RuntimeError("Matrix room send queue is full")
+        await completed
 
     def set_status(self, send: Send) -> None:
         """Queue a status-line change, replacing one that has not gone out yet."""

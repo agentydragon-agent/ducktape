@@ -121,6 +121,22 @@ async def test_one_failed_send_does_not_stop_the_queue() -> None:
     assert sent == ["before", "after"]
 
 
+async def test_a_required_send_reports_failure_without_stopping_the_queue() -> None:
+    sent: list[str] = []
+    pacer = RoomPacer(sends_per_second=1e6, burst=100)
+
+    async def explode() -> None:
+        raise MatrixError("M_FORBIDDEN: nope")
+
+    async with pacer.run():
+        with pytest.raises(MatrixError, match="M_FORBIDDEN"):
+            await pacer.send_and_wait(explode)
+        pacer.send(recorder(sent, "after"))
+        await pacer.flush()
+
+    assert sent == ["after"]
+
+
 async def test_a_429_is_believed_over_our_own_accounting() -> None:
     """The homeserver's `retry_after_ms` is the only real measurement this console gets of a budget
     it otherwise only estimates: two replicas can each think they own the whole of it.

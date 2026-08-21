@@ -21,6 +21,7 @@ from sqlalchemy import select
 from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
 from haku.console.database_schema import ConversationEvent
 from haku.console.x.channels.matrix.client import (
+    ConversationEventSource,
     EventTag,
     InboundMessage,
     Invite,
@@ -544,6 +545,33 @@ async def test_announce_posts_a_notice_into_the_live_room(service, matrix, sync_
     await settled(service)
 
     assert matrix.notices == [(MATRIX_ROOM, "provisioning a sandbox")]
+
+
+async def test_a_projected_notice_uses_its_durable_source_as_the_transaction(service, matrix, bound_room) -> None:
+    attachment_id = UUID("11111111-2222-4333-8444-555555555555")
+    conversation_id = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+
+    await service.project_notice(
+        bound_room, attachment_id, "the session ended", RoomEventKind.LIFECYCLE, conversation_id, 17
+    )
+    await service.project_notice(
+        bound_room, attachment_id, "the session ended", RoomEventKind.LIFECYCLE, conversation_id, 17
+    )
+
+    assert matrix.notices == [(bound_room, "the session ended"), (bound_room, "the session ended")]
+    assert matrix.transactions[0] == matrix.transactions[1]
+    assert (
+        matrix.tags
+        == [
+            EventTag(
+                kind=RoomEventKind.LIFECYCLE,
+                source=ConversationEventSource(
+                    attachment_id=attachment_id, conversation_id=conversation_id, event_seq=17
+                ),
+            )
+        ]
+        * 2
+    )
 
 
 async def test_announce_is_a_no_op_with_no_room_bound(service, matrix):

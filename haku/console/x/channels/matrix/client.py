@@ -21,7 +21,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from nio import AsyncClient, AsyncClientConfig, ErrorResponse, Response
 from nio.api import MessageDirection
@@ -38,7 +38,7 @@ from nio.responses import (
     SyncResponse,
     WhoamiResponse,
 )
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.x.channels.matrix.formatted_body import to_formatted_body
 
@@ -77,6 +77,11 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 # while letting a sustained one reach `pacer`, the only place the room's real budget is learned.
 MAX_RATE_LIMIT_RETRIES = 2
 
+# Stable, private namespace for Matrix transactions derived from durable conversation events.
+# The resulting transaction id reveals neither the conversation UUID nor the event position, while
+# replaying one projection reaches the same homeserver transaction cache entry.
+_PROJECTED_NOTICE_NAMESPACE = UUID("2a56af77-06d8-4d08-a360-ab8354170eab")
+
 
 # The console's own key inside an event's `content`. Reverse-DNS on the deployment's domain,
 # which is the Matrix convention for a field outside the spec's namespace.
@@ -99,6 +104,16 @@ class RoomEventKind(StrEnum):
     UNREADABLE = "unreadable"
 
 
+class ConversationEventSource(BaseModel):
+    """The durable conversation fact from which a Matrix event was projected."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    attachment_id: UUID
+    conversation_id: UUID
+    event_seq: int = Field(gt=0)
+
+
 class EventTag(BaseModel):
     """What the console states about an event it is sending.
 
@@ -113,22 +128,33 @@ class EventTag(BaseModel):
 
     kind: RoomEventKind
     session_id: UUID | None = None
+    source: ConversationEventSource | None = None
 
     def content(self) -> dict[str, Any]:
         """The tag as it goes on the wire, with an absent field absent rather than null."""
         return self.model_dump(mode="json", exclude_none=True)
 
     def transaction_id(self) -> str:
-        """What to send this event under. **Impure**: every call mints a new one.
+        """What to send this event under.
 
-        Nothing tagged this way names a durable row — a status edit, a lifecycle notice, a room
-        binding — so there is nothing to derive a stable id from and deriving one would lose the
-        event rather than deduplicate it. The one send that must be stable across a redrive is a
-        reply, whose transaction is its outbox row's id (`outbox.PendingReply.transaction_id`).
+        A notice projected from a durable conversation row carries its attachment and source fields and gets a
+        deterministic transaction id. Re-reading that row before its cursor advances therefore
+        asks Synapse for the same send instead of posting a second event. This is bounded by the
+        homeserver's transaction-cache lifetime; it is replay protection, not durable exactly-once
+        correspondence.
+
+        Everything else tagged this way — a status edit, room binding, or supervisor notice — has
+        no durable source to name and deliberately mints a fresh id. A reply uses its outbox row's
+        id instead (`outbox.PendingReply.transaction_id`).
 
         Rests on how Synapse keys and expires its transaction cache
         (<../../../docs/chat_runtime_facts.md>).
         """
+        if self.source is not None:
+            return uuid5(
+                _PROJECTED_NOTICE_NAMESPACE,
+                f"{self.source.attachment_id}:{self.source.conversation_id}:{self.source.event_seq}",
+            ).hex
         return uuid4().hex
 
 

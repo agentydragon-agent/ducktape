@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 from nio.responses import RoomMessagesResponse, SyncResponse
 
 # Aliased: `client` is the name every test here gives its `MatrixClient` local.
 from haku.console.x.channels.matrix import client as matrix_client
-from haku.console.x.channels.matrix.client import EventTag, MatrixClient, RoomEventKind
+from haku.console.x.channels.matrix.client import ConversationEventSource, EventTag, MatrixClient, RoomEventKind
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
@@ -306,6 +307,41 @@ def test_a_tag_is_ids_and_kinds_and_omits_what_it_has_none_of() -> None:
 
     assert tag.content() == {"kind": "reply", "session_id": "11111111-2222-3333-4444-555555555555"}
     assert EventTag(kind=RoomEventKind.NARRATION).content() == {"kind": "narration"}
+
+
+def test_a_projected_tag_carries_its_durable_source_and_has_a_stable_transaction() -> None:
+    attachment_id = UUID("11111111-2222-4333-8444-555555555555")
+    conversation_id = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+    tag = EventTag(
+        kind=RoomEventKind.LIFECYCLE,
+        source=ConversationEventSource(attachment_id=attachment_id, conversation_id=conversation_id, event_seq=42),
+    )
+
+    assert tag.content() == {
+        "kind": "lifecycle",
+        "source": {"attachment_id": str(attachment_id), "conversation_id": str(conversation_id), "event_seq": 42},
+    }
+    assert tag.transaction_id() == tag.transaction_id()
+    assert EventTag.model_validate(tag.content()).transaction_id() == tag.transaction_id()
+    assert (
+        EventTag(
+            kind=tag.kind,
+            source=ConversationEventSource(attachment_id=uuid4(), conversation_id=conversation_id, event_seq=42),
+        ).transaction_id()
+        != tag.transaction_id()
+    ), "two room attachments must each receive their own projection"
+
+
+def test_legacy_tags_without_a_source_still_parse_and_mint_fresh_transactions() -> None:
+    tag = EventTag.model_validate({"kind": "narration", "newer_field": "ignored"})
+
+    assert tag.content() == {"kind": "narration"}
+    assert tag.transaction_id() != tag.transaction_id()
+
+
+def test_a_projected_source_must_name_a_conversation_event() -> None:
+    with pytest.raises(ValueError, match="greater than 0"):
+        ConversationEventSource(attachment_id=uuid4(), conversation_id=uuid4(), event_seq=0)
 
 
 if __name__ == "__main__":

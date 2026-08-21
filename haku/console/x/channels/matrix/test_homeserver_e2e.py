@@ -31,6 +31,7 @@ from nio import AsyncClient, DevicesResponse
 from haku.console.x.channels.matrix.client import (
     HAKU_CONTENT_KEY,
     TIMELINE_LIMIT,
+    ConversationEventSource,
     EventTag,
     Invite,
     MatrixClient,
@@ -240,6 +241,21 @@ async def test_the_same_outbox_row_cannot_post_twice(bot: Bot, joined_room: Oper
     room = joined_room.room_id
     first = await bot.client.send_text(bot.token, room, reply.body, txn_id=reply.transaction_id(), tag=reply.tag())
     again = await bot.client.send_text(bot.token, room, reply.body, txn_id=reply.transaction_id(), tag=reply.tag())
+
+    assert first == again
+    assert [event.event_id for event in await joined_room.timeline() if isinstance(event, Message)] == [first]
+
+
+async def test_the_same_projected_notice_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
+    """A cursor replay inside Synapse's transaction-cache window reaches the first notice."""
+    tag = EventTag(
+        kind=RoomEventKind.LIFECYCLE,
+        source=ConversationEventSource(attachment_id=uuid4(), conversation_id=uuid4(), event_seq=7),
+    )
+    room = joined_room.room_id
+
+    first = await bot.client.send_notice(bot.token, room, "session ended", txn_id=tag.transaction_id(), tag=tag)
+    again = await bot.client.send_notice(bot.token, room, "session ended", txn_id=tag.transaction_id(), tag=tag)
 
     assert first == again
     assert [event.event_id for event in await joined_room.timeline() if isinstance(event, Message)] == [first]

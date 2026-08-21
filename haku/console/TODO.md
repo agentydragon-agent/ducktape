@@ -16,8 +16,10 @@ the leader-elected `SandboxAllocator` reconciles it independently of request and
 lifetimes. The remaining checklist starts at channel reconciliation, not sandbox creation.
 
 1. **Reconcile a channel against the conversation** rather than sending to it: one loop per
-   `(channel, conversation)` over its own cursor. `RoomNotices` is that loop for one event kind;
-   every other outbound fact is still pushed at the room by whoever noticed it.
+   `(channel, conversation)` over its own cursor. `RoomNotices` is that loop for sealed notices;
+   their event-derived Matrix transaction IDs make a cursor replay idempotent within Synapse's
+   transaction-cache window. Durable room correspondence, editable spans, and every outbound fact
+   still pushed at the room by whoever noticed it remain to be reconciled.
 2. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
    so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
    its true provenance. Under the loop the send only enqueues; the room being one message behind
