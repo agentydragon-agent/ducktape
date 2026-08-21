@@ -98,6 +98,28 @@ The Haku ledger is authoritative for an individual call's final status, policy e
 whether an Operator approved it. Retained OpenClaw wrapper logs are useful audit evidence but include
 polls, retries, withdrawals, and truncated results.
 
+### Haku Console from Bash
+
+OpenClaw's generated tool wrappers are not the only client surface. Code running locally in the
+public-coder Pod can connect to the same Haku Console streamable-HTTP MCP endpoint from Bash or
+Python. This is useful when a task benefits from ordinary shell composition, for example:
+
+- filtering the reflected tool catalog or a read result with `jq`;
+- constructing structured arguments from repository data;
+- feeding a result into a local analysis pipeline; or
+- writing a small, task-specific script around several explicit MCP calls.
+
+Use the configured Haku Console URL and `HAKU_CONSOLE_TOKEN` through `HTTPS_PROXY`; the local token is
+a non-secret placeholder that iron-proxy replaces only in the Haku `Authorization` header. Never
+print or inline the token. A shell or Python client must speak MCP JSON-RPC over streamable HTTP and
+handle its SSE-framed responses.
+
+This client route does not grant different authority or bypass review. Calls still run as
+`public-coder-agent`, use its `public-coder` access profile, and receive the same auto-approval,
+manual-approval, denial, and ledger handling as calls made through OpenClaw's generated wrappers.
+The local-Pod boundary also remains unchanged: use Bash MCP access for external Haku services, not
+as an indirect way to operate on the public-coder Pod's own files, processes, checkouts, or tests.
+
 ## Current preferred surfaces
 
 ### Public GitHub development
