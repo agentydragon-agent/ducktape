@@ -25,7 +25,7 @@ const (
 // GrantScope is the explicit scope required by one canonical Kubernetes request.
 type GrantScope struct {
 	Kind       string   `json:"kind"`
-	Namespaces []string `json:"namespaces"`
+	Namespaces []string `json:"namespaces,omitempty"`
 }
 
 // ResourceScopeResolver distinguishes all-namespaces resource requests from cluster resources.
