@@ -11,28 +11,34 @@ conversation record; projecting that record consistently onto both channels is w
 Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
-The allocation prerequisite is complete: both surfaces persist the same first-prompt demand, and
-the leader-elected `SandboxAllocator` reconciles it independently of request and channel-supervisor
-lifetimes. The remaining checklist starts at channel reconciliation, not sandbox creation.
+The channel-neutral allocator is complete. `RoomNotices` now reads the one bound conversation for
+replies, live status and sealed notices; sealed notices use an attachment-scoped transaction id and
+the cursor advances only after the homeserver accepts the send. Prompts from another surface are
+also relayed into the room. What remains, in dependency order:
 
-1. **Reconcile a channel against the conversation** rather than sending to it: one loop per
-   `(channel, conversation)` over its own cursor. `RoomNotices` is that loop for sealed notices;
-   their event-derived Matrix transaction IDs make a cursor replay idempotent within Synapse's
-   transaction-cache window. Durable room correspondence, editable spans, and every outbound fact
-   still pushed at the room by whoever noticed it remain to be reconciled.
-2. **Send into a Matrix session** (lower priority) — the console holds only `@haku`'s credential,
-   so an operator message reaches the room as a **relay** posted by Haku's account and tagged with
-   its true provenance. Under the loop the send only enqueues; the room being one message behind
-   is a divergence the reconciler already closes. The subtle part is `_is_conversational`, which
-   must count a relay as conversation or every rotation re-awakens a session with the operator's
-   half missing.
-
-Two more, outside that spine. **Slash commands** give Matrix the non-message actions the console
-has — abort first — as ingress interception rather than an agent tool, so R5.4 is untouched;
-watch out for Element consuming leading-slash verbs before they ever reach the room. And
-**interlink the two channels** now that sessions have a page: a link to the console session in
-the R7.2 notice, a `matrix.to` permalink back, session ↔ tool calls. A posted Matrix event is
-permanent and federated, so mint links only under routes chosen to survive.
+1. **Read Matrix's own copy.** Add the opposite-filter `/sync` reader for Haku-authored events and
+   parse `EventTag.source`. A transaction id covers only Synapse's cache window; durable
+   correspondence is what lets a restarted reconciler find the event already showing a source,
+   repair duplicates and reconcile edits or redactions.
+2. **Make notices spans, not queued moments.** Generalise the stream-derived `LiveStatus` pattern to
+   stable turn and session subjects whose bodies are pure, bounded folds: create, edit, then seal or
+   retire. Move relayed prompts, silent turns and supervisor lifecycle narration off `_queue_notice`
+   so advancing the cursor never outruns their delivery.
+3. **Move session supervision behind the conversation.** Matrix still creates and replaces session
+   rows through `MatrixSessionSupervisor`. A channel should bind a conversation and offer input;
+   channel-neutral runtime code should ensure that conversation has the appropriate idle or
+   replacement session. Keep this separate from the selectable-runtime work in #4431.
+4. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
+   user-wide token, dispatch its room events by attachment, and give each live attachment one owner
+   for its conversation cursor, reply outbox, status revisions and send budget. Only after the
+   remaining `bound_room()` and process-global pacer/supervisor state is gone can a second invite
+   safely create and service another conversation.
+5. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
+   Prefer a prefix Element does not consume (for example `!haku stop`) over an assumed-free slash
+   command.
+6. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
+   console, and session ↔ tool-call navigation. A posted Matrix event is permanent and federated, so
+   mint only routes intended to survive.
 
 ## Notification text per tool kind
 
@@ -226,50 +232,6 @@ deliberately still holding the old name.
 
 - **`/internal/claude/runner/{session_id}`.** Left alone on purpose: the runner image dials it, so
   renaming it is a coordinated two-sided roll, not part of a console-only change.
-
-## `session_frames` does not map to one concept
-
-`kind` holds two discriminator vocabularies at once. `RolloutRecorder` — a `FrameSink` on
-`ClaudeCli`, so it structurally only ever sees CLI protocol frames — writes the CLI's own top-level
-`type` there. `_progress_reporter` writes `setup_output`, which is the **bridge envelope's** `kind`
-literal, for one decoded line of a `SetupOutput`. Two unrelated sinks, one column, two vocabularies.
-
-**Consequences, so this reads as a known state rather than an oversight:**
-
-- There is deliberately **no enum over `kind`**. One would give a name to a concept the schema does
-  not have, and an enum over the union of two vocabularies is what made the first attempt confusing
-  enough to back out.
-- The loose `*_FRAME_KIND` constants in `x/claude_code/frames.py` stay loose, with a pointer to
-  `SessionFrame` and to <plans/conversation_layers.md> § 13.
-- The table's own docstring says the same thing, since that is where a reader meets it first.
-
-<plans/conversation_layers.md> § 13 holds the intended shape — the table becomes the log of the
-bridge, `kind` becomes the envelope discriminator, and the CLI's type gets its own column —
-along with what that costs (the sink has to move down to `WebSocketTransport`, and it is a two-release
-expand/contract because flipping a column's meaning under a rolling deploy is not additive).
-
-**It is scheduled now, and it grew a second half** (operator, 2026-08-16): `frame_seq` stops being
-Postgres's `Identity` and becomes the number the runner minted when the frame crossed the wire, which
-is what makes catch-up on reconnect "send me everything after N". Same stage because it has the same
-cause and the same fix — the sink sits above the envelope and has to move onto the socket — so doing
-the two apart would move it twice. § 13 of that plan holds the schedule.
-
-**Retiring identity numbering entirely is R3 of that schedule**, and its cross-cutting half is here
-because the removal is a schema change whose consequences land in the MCP transcript tools and the
-state index. Three things to hold onto when it is picked up:
-
-- **The gate is one checkable fact**: every `haku-console` pod running an image at or after R2 — the
-  `$imagepolicy`-marked tag in <../../cluster/k8s/haku/console/deployment.yaml>, _and_ every running
-  pod actually on it, which `maxUnavailable: 0` makes a different fact.
-- **The identity-numbered rows are purged rather than carried**, on the operator's authorisation:
-  the corpus is test conversations, and `DELETE FROM sessions` cascades through every session table
-  while the Matrix supervisor re-provisions against the room. Run it on both sides of R2's roll. What
-  that spares is a durable per-session numbering column, a renumber batch, and the drop query that
-  would have decided which sessions the renumber could not reach.
-- **What R3 owes instead of a branch removal is an invariant**: nothing in the read path may assume
-  `frame_seq` is 1-based, comparable across sessions, or by itself a row identity — `frame_ord` means
-  one `frame_seq` can name several rows of a session. Today that holds by accident of how the readers
-  were written, and it wants a test over a deliberately sparse session.
 
 ## Give `system/compact_boundary` a real branch in the projection
 

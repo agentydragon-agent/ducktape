@@ -43,9 +43,9 @@ Every line here is an edge the invariant forbids, in the code today.
 
 - `MatrixSessionSupervisor` creates, replaces and tends sessions — `SessionService.create`,
   `expire_stale_leases`, `reconcile_terminal_claims`. A channel owning session lifecycle is the
-  deepest of these, and step 1 is what removes the need for it.
-- `EventTag.session_id` rides on every event the console posts, so a room's permanent, federated
-  copy is addressed by a runner incarnation that a replacement invalidates.
+  deepest of these, and § 9 step 3 removes the need for it.
+- The editable status line's `EventTag.session_id` leaves a permanent, federated channel artifact
+  addressed by a runner incarnation that a replacement invalidates.
 - **The wake itself is session-keyed.** `pg_notify` carries `{kind, session_id}`, so a subscriber to
   a conversation subscribes by session.
 - The SPA is a channel too: it posts to `POST /api/sessions/{session_id}/messages`, reads
@@ -77,7 +77,7 @@ conversation's tail as prompt text.
 
 **Handover** is the operator's "only one session holds it at a time", and the lease is what holds
 it: `authenticate_bridge` admits one runner connection while a lease is valid, and expiry makes the
-row adoptable (§ 15). `chat_attachment`'s partial unique index is a different rule wearing the same
+row adoptable (§ 14). `chat_attachment`'s partial unique index is a different rule wearing the same
 words — **one live conversation per _address_** — and reading it as the handover rule is what makes
 a channel's row look like a statement about sessions (§ 7).
 
@@ -101,10 +101,11 @@ subscribe(conversation, from: position | nothing)
 ```
 
 That is the whole contract, and the point of naming it is that **the SPA and Matrix stop being two
-mechanisms**. Today the browser reads the record and Matrix is pushed by the turn loop from inside
-the process that holds the runner (§ 8) — one job done twice, which is why a fact can reach a room
-and never reach a tab. Under one subscription there is a single path from the record outward, and a
-channel differs only in two ways:
+mechanisms**. The browser reads the record, and Matrix now does too for replies, live status and
+sealed notices. Matrix is still split between that subscriber and direct room pushes for session
+supervision, attachment notices, relayed prompts and silent turns (§ 8), so one fact can still have
+one recoverable projection and one process-local rendering. Under one subscription there is a
+single path from the record outward, and a channel differs only in two ways:
 
 - **How it renders what arrives.** A run of tool calls is a list in a tab and one folded notice in a
   room (§ 4). That is the channel's own decision and it belongs there, not in the stream.
@@ -114,9 +115,11 @@ channel differs only in two ways:
 The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
 where "no position given" is the `Unstarted` arm rather than a zero, and
 `WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
-changes, with `session_changed` as the wake that says to read again. Matrix is a second consumer for
-**one** event kind — `RoomNotices` reads `turn_aborted` from the record instead of the turn loop
-pushing it. What is missing is the rest of the kinds.
+changes, with `session_changed` as the wake that says to read again. Matrix's `RoomNotices` consumes
+that primitive: it queues completed answers in `matrix_outbox`, folds the stream into live
+status/typing, and projects the settled rejection, unreadable-input, setup, adoption, lease-expiry
+and operator-abort notices. What is missing is not another stream but closing the direct paths and
+reconciling Matrix's own copy.
 
 **The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
 State changes are whole rows, merged by id. A **delta** is `{item_id, append}` — carried to a
@@ -185,15 +188,17 @@ other.
 
 ## 3. The room as the channel's own store
 
-`EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends, carrying
-`kind`, `session_id`, `message_id` and `agent_message_id`. **The reconciler is its reader**:
-correspondence between the record and the room is exactly what step 2 of the loop needs, and the
-tag is already the correspondence.
+`EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends. It carries a
+`kind`, an optional legacy `session_id` for the editable status line, and — on a sealed projected
+notice — one optional `ConversationEventSource {attachment_id, conversation_id, event_seq}`.
+**The reconciler is the source field's reader**: correspondence between the record and the room is
+exactly what step 2 of the loop needs.
 
-**`session_id` comes off it first.** A room event is permanent and federated, so a tag is the
-longest-lived thing a channel stores, and a runner incarnation the shortest-lived thing it could
-name: replace the sandbox and every tag in the room names something gone. What a correspondence
-reader needs is the conversation and the row, which is what the other three fields already are.
+The source value landed with the replay-safe v0, but it is write-only. Its attachment prevents a
+conversation rebound to another room from reusing the old room's transaction identity; its
+conversation and event position name the durable fact. `session_id` still comes off the status tag
+when live status becomes an ordinary span: a room event is permanent and federated, so a runner
+incarnation is the shortest-lived identity it could keep.
 
 - **Two readers of one `/sync`, with opposite filters.** Ingress excludes Haku's own sender, and
   `MatrixClient._read` drops those events before anything else sees them. The correspondence reader
@@ -204,13 +209,12 @@ reader needs is the conversation and the row, which is what the other three fiel
   as absence. The cost is that **the room is not an audit log**: nothing can ask it what it used to
   show, so any fact that must survive its own retirement is recorded conversation-side or not at
   all.
-- **Idempotence by correspondence, with one window.** For anything the reader can see, the tag is
-  the identity and a duplicate send is prevented by finding the event rather than by a transaction
-  id. Between a send returning and its echo arriving in our own `/sync`, correspondence does not
-  yet know the event exists — so the transaction id still guards inside Synapse's 30-to-60 minute
-  dedup window (<../docs/chat_runtime_facts.md>), and a notice whose desired state is "exactly one
-  live line" is self-correcting on the next pass only if the reconciler may redact its own
-  duplicate.
+- **Idempotence currently has only the transaction window.** A projected notice derives one
+  transaction id from its attachment and source event, and `RoomNotices` keeps the cursor only after
+  `room_send` returns. A crash in that window safely retries while Synapse remembers the id, but
+  after the 30-to-60 minute cache expires the room can still gain a duplicate
+  (<../docs/chat_runtime_facts.md>). The correspondence reader closes that bound: find the tagged
+  event already showing the source, then repair any duplicate or stale editable copy.
 - **The token cannot live in the room**, because it is what reads the room. So the channel keeps a
   private store whatever else moves; the only question is what else is in it.
 
@@ -261,11 +265,12 @@ Three things follow, and they are why this is worth requiring rather than merely
   to be holding is a body no other consumer can reproduce — the exact coupling that lets a fact
   reach a room and never reach a tab (§ 8).
 
-**v0 may emit one notice per noticeable event and never edit** (operator, 2026-08-17). That is a
-lesser feature, not a different architecture: the fold still runs, the accumulator is still the
-carry, and what changes is only that the channel appends its output instead of editing the open
-notice's tag. Editing is added later by giving the fold's output a tag to reconcile against, which
-touches the send path and nothing about the reduction.
+**The sealed-notice v0 has landed.** `project_notice` is a pure one-event fold for prompt rejection,
+unreadable input, session adoption, setup narration, lease expiry and an operator-aborted turn. It
+appends rather than edits, tags the durable source, waits for delivery and only then advances the
+cursor. That is the accepted lesser feature, not a different architecture. Relayed prompts and
+silent turns still query item/turn state and enqueue an unrelated closure; reasoning, tool calls and
+full session lifecycle still need the bounded multi-event spans below.
 
 ### What a notice body may do
 
@@ -413,7 +418,8 @@ version of it is **the point rather than the cost** (§ 7).
 
   **A prompt arriving before a session is ready is held**, which supersedes the same day's ruling
   that it too is refused and the operator re-sends. The queue is the conversation's, so a prompt
-  sent while the sandbox provisions waits for a session to claim it (§ 9).
+  sent while the sandbox provisions waits for a session to claim it; the channel-neutral
+  `SandboxAllocator` reconciles that demand (<../x/README.md>).
 
   **Mid-turn steering is the richer answer to what is still refused**, and is not scheduled. Claude
   Code accepts input while a turn is running, so a prompt could join the turn in flight rather than
@@ -442,13 +448,15 @@ version of it is **the point rather than the cost** (§ 7).
   out — it is now prevented by the invite creating the thing that services it, rather than by
   refusing the invite.
 
-  **This promotes on-demand allocation (step 1) from tidy-up to prerequisite.** One room could
-  afford a sandbox held open; ten cannot, and a room nobody is talking to must not hold one.
+  **On-demand allocation is the prerequisite already met.** One room could afford a sandbox held
+  open; ten cannot, and a room nobody is talking to must not hold one. `SandboxAllocator` now buys a
+  claim only for durable prompt demand, independently of the channel.
 
 **Still open.**
 
-- **Which notices exist, and what does each summarise?** § 4 proposes one per turn and one per
-  session and leaves the set open, along with retire-or-seal for each.
+- **Which editable spans exist, and what does each summarise?** The settled one-event notice set is
+  now code (§ 4). One work span per turn and one lifecycle span per session remain the candidate,
+  along with retire-or-seal for each.
 - **Does `sessions.status` survive?** § 10.
 - **Which slash-command namespace survives the client?** Element consumes leading-slash verbs it
   recognises and errors on ones it does not — `/me`, `/html`, `/plain`, `/join`, `/invite`, `/op`
@@ -462,148 +470,101 @@ version of it is **the point rather than the cost** (§ 7).
 
 ## 8. Where this stands
 
-The three layers exist; the boundaries are drawn in the wrong places, and the channel is not one
-thing.
+The conversation stream and the Matrix subscriber are real, but one bound room is still served by
+several mechanisms with different recovery properties.
 
-### The channel is three mechanisms with three durabilities
+### The channel is five mechanisms with four durabilities
 
-| What                                               | Driven by                                                             | Durable?                                                                                                      |
-| -------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Assistant replies                                  | `matrix_outbox` rows, drained by a leader polling at `IDLE_POLL = 1s` | **Yes** — the row is the delivery, redriven after a crash, deduplicated at the homeserver by the row's own id |
-| Status line, typing                                | `TurnStatus._run`, a 1s poll **inside the turn loop's process**       | No                                                                                                            |
-| Lifecycle notices                                  | `MatrixSessionSupervisor`, woken by `SessionNotifications`            | Fact yes; Matrix delivery no                                                                                  |
-| Setup narration, silent-turn, room-binding notices | called from the stack frame that noticed                              | Narration fact yes; other facts and Matrix delivery no                                                        |
+| What                             | Driven by                                                             | Recovery today                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Assistant replies                | `RoomNotices` queues `matrix_outbox`; `RoomOutboxDrain` sends         | Durable row, ordered retries, stable outbox transaction id                                                                         |
+| Sealed notices                   | `RoomNotices` → `project_notice`                                      | Durable source and post-send cursor; duplicate-safe only inside Synapse's transaction-cache window                                 |
+| Status line and typing           | `RoomNotices` folds `LiveStatus`; `RevisionLog`/`RoomPacer` render it | Desired state is reconstructible; status event id is durable; the room's actual copy is not read back; typing deliberately expires |
+| Relayed prompts and silent turns | `RoomNotices` queries the completed item/turn, then calls `announce`  | Fact is durable; queued Matrix effect is not tied to the cursor and has no stable identity                                         |
+| Session and attachment narration | `MatrixSessionSupervisor` and `_handle_invite` call `_queue_notice`   | Some underlying facts are durable; delivery and process-local dedup are not                                                        |
 
-Everything in the "No" rows lives in `RoomPacer._queue`, an in-process deque given `FLUSH_SECONDS`
-on a graceful shutdown and nothing on a SIGKILL. Two consequences, each a thing the reconciler
-exists to remove:
-
-- **A dropped notice is silently gone.** `RoomPacer.send` logs and returns once 200 sends are
-  queued. A reply survives that (the row is re-claimed); a notice does not.
-- **The pacer's budget is an estimate.** `MXSY` (the sync loop), `MXOB` (the outbox drain), `MXNT`
-  (the notice reader) and the session lease are independent, so four different replicas can hold
-  them and two token buckets can each believe they own the whole room budget — only the homeserver's `retry_after_ms` corrects
-  them. A reconciler per `(channel, conversation)` collapses these to one holder, which is the point
-  at which a rate budget can be real rather than estimated.
+The replay-safe v0 removed the request/turn process from settled notice delivery, but it did not yet
+make one reconciler own the attachment. `MXSY` (ingress), `MXOB` (reply drain), `MXNT` (conversation
+reader) and `MXSE` (session supervisor) elect independently, while each replica has its own
+`RoomPacer`. A global `bound_room()` and one collapsing status slot also mean a second room would
+fail silently rather than merely run more slowly.
 
 ### What is already the right shape
 
-- **Ingress's watermark.** `matrix_sync_watermark` is where the loop reads from, and rejection is
-  terminal so it advances every pass.
-- **The ordered address.** `conversation_event.event_seq`, dense within the conversation and
-  carrying the operator's prompts as well as the agent's answers, so the stream is both halves of a
-  conversation.
-- **The wake with no payload**, in everything but which layer it names. `session_changed` carries an
-  id and nothing else, coalesced at 500ms, and is what replaces the outbox drain's 1s poll; the id
-  it carries is a session's, where the log it announces is the conversation's.
-- **A position-addressed read.** `WS /api/conversations/{id}/follow` is the conversation→subscriber
-  half working end to end for one consumer kind — a snapshot, then the changes, with a browser on
-  the other end of it.
-- **The correspondence key.** `EventTag` rides on every event the console sends. Write-only today.
+- **The record and subscription.** `ConversationStream`, dense `conversation_event.event_seq` and
+  `Subscription.read()` are shared with the browser rather than invented for Matrix.
+- **The attachment cursor.** `channel_cursor` is keyed by `chat_attachment`, advances monotonically,
+  and represents work the channel still owes.
+- **Replies as channel-private retry state.** `matrix_outbox` is attachment-scoped, ordered and
+  deduplicated by subject.
+- **A pure sealed-notice projector.** Its body is one neutral event in and Matrix prose out; the
+  transport waits before the cursor advances.
+- **A reconstructible live-state fold.** `LiveStatus` demonstrates create/edit/retire semantics from
+  conversation events without a turn-process callback.
+- **The correspondence key.** `ConversationEventSource` names attachment, conversation and event
+  position. It is written today and deliberately unread.
+- **Cross-surface prompt provenance.** A prompt typed in the SPA already appears in Matrix with its
+  origin distinguished; only its delivery path remains non-reconciling.
 
 ### What is missing
 
-`RoomNotices` projects only rejection and unreadable-input events. Status/typing still poll inside
-the turn process; lifecycle and setup displays are still pushed; the outbox drain polls at
-`IDLE_POLL = 1s` although the notice reader already wakes on `session_changed`.
+- A reader of Haku-authored Matrix events, so source correspondence survives beyond the transaction
+  cache and edits/redactions can be compared with the room's actual state.
+- Stable multi-event subjects and bounded folds for work and session-lifecycle spans.
+- A record-derived delivery path for relayed prompts and silent turns, plus a durable home for
+  Matrix-only attachment narration.
+- Channel-neutral session creation/replacement; `MatrixSessionSupervisor` still tends runtime rows.
+- One attachment owner coordinating cursor, outbox, revisions and send budget, followed by more than
+  one live room.
 
 ## 9. The order
 
-Each step is independently reviewable, and every one is worth having even if the loop is never
-built. The dependency edges are at the end.
+Each step is independently reviewable. The dependency order below is the channel stack; the
+backend-neutral runtime/Agent-selection work in #4431 is a parallel review track and must not be
+mixed into these PRs.
 
-1.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
-    permanently under the old supervisor rule, and the warm pool is `replicas: 0`, so every claim
-    is a cold start. That was ~1 CPU / 2Gi of an 8 CPU / 16Gi quota standing idle for a room nobody
-    speaks in.
+1. **Read Matrix's own copy** (§ 3). Add an own-sender `/sync` projection that parses
+   `EventTag.source` without admitting those events as prompts. Reconciliation first finds an
+   existing source, then sends; the deterministic transaction id remains the short window between a
+   successful send and its echo becoming visible. Test restart after that cache expires, duplicate
+   discovery and redaction/edit visibility.
 
-    **The deployed model is an idle session plus conversation-owned demand.** Opening either a SPA
-    conversation or a Matrix-bound conversation writes an `idle` session with no bridge credential,
-    provisioning lease or `SandboxClaim`. The first accepted prompt is an unclaimed
-    `conversation_prompt`; it is durable before any Kubernetes write and survives the replica that
-    admitted it. The session row remains the allocation mutex: `idle → provisioning`, bridge
-    fingerprint, provisioning lease and lifecycle event commit together before claim creation.
+2. **Turn notices into spans** (§ 4). Give the fold stable turn/session subjects and have it produce
+   bounded `(subject, body, lifecycle)` output. Generalise the `LiveStatus` create/edit/retire path;
+   seal facts that should remain in scrollback and redact live state that is spent. Relayed prompts,
+   silent turns and supervisor lifecycle narration move off `_queue_notice` here. The pure fold and
+   the Matrix effect stay separate and are tested separately.
 
-    **Allocation is reconciled, not requested.** `x/sandbox_allocation.py` sweeps idle sessions with
-    unclaimed prompts oldest-first under its own `SBOX` election. `SessionEventKind.PROMPT` wakes the
-    leader quickly; a periodic pass recovers missed notifications and restarts. Neither the SPA
-    request nor `MatrixSessionSupervisor` creates a claim. A Kubernetes failure records that session
-    failed and does not stop unrelated demand from being served; a replacement session in the same
-    conversation sees the still-unclaimed prompt. **Cost, stated plainly:** the first message after
-    quiet pays the full cold start. Measure it rather than assume it away.
+3. **Move session supervision behind the conversation.** Remove session creation, replacement and
+   lifecycle dedup from `MatrixSessionSupervisor`. A channel binds a conversation and offers input;
+   channel-neutral runtime code ensures that queued demand has an idle or replacement session and
+   records its lifecycle. The Matrix subscriber only renders those facts. This may use the runtime
+   registry from #4431 after it lands, but Matrix must not select or understand a backend.
 
-    The compatibility rollout for the closed status enum and nullable idle credential/lease landed
-    before production began writing `idle`; the writer and first-prompt behavior then rolled under
-    `maxUnavailable: 0`. The reconciler is the crash-recovery completion of that model, not a return
-    to #4231's superseded schema.
+4. **Make reconciliation attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner
+   for the user-wide token and dispatch its room events by attachment. One owner per attachment then
+   coordinates the conversation cursor, reply outbox, revisions and room budget. Replace
+   `bound_room()` and the process-global status/pacer state with attachment-addressed state; then an
+   operator invite may create another conversation and start another reconciler. Steps 2 and 3
+   remove the direct and session-shaped state that would otherwise cross rooms.
 
-2.  **Notices as spans** (§ 4): one work notice per turn, one lifecycle notice per
-    session, **each body a fold over the subscription stream**, each retired or sealed. This is
-    Matrix's streaming — the granularity a channel that holds a permanent, federated copy can
-    afford. The fold is not optional; editing already-posted notices is, and a v0 that appends one
-    notice per noticeable event is the accepted lesser form. Split the fold from the send path in
-    the same PR, because the fold is where this step's tests live.
+5. **Add Matrix commands.** Abort first, then new/close session semantics once step 3 makes them
+   conversation operations. Commands are ingress interception, never agent tools or approval
+   gestures. Use a namespace Element does not consume (for example `!haku stop`).
 
-3.  **Many rooms at once** (§ 7's ruling). `bound_room` stops answering with the one room and
-    `bind_room` stops refusing the second, so an invite mints a conversation; the supervisor and
-    subscriber fan out over live attachments instead of supervising one binding. The `MXSE`
-    advisory lock stays
-    global — one election supervising every attachment is cheaper than a lock per conversation, and
-    the thing that must not be global is the _lease_, which is already per session.
+6. **Interlink the channels.** Matrix events link to durable console routes; the console links back
+   with `matrix.to`; sessions and tool calls link both ways. This is independent of 1–5 once the
+   route names are chosen to survive permanent, federated events.
 
-    **Depends on 1**; the channel subscription is already in place. Ten rooms
-    each holding a sandbox is the failure this would ship without 1. An audit found **eleven**
-    things that assume one bot serves one room. The turn-local state is gone, but per-bot delivery
-    and supervision state remains: `_status_body`, `_last_announced`, the single `RoomPacer`
-    with its one collapsing status slot, `_serviced`/`_live_room`, and `RoomOutboxDrain` claiming
-    only `bound_room()`'s rows. Every one fails **silently** with a second room — ingress dropped to
-    a `logger.warning`, a status line that never appears in room B, an edit addressed at another
-    room's event id, replies that sit unsent forever.
+**Dependencies.** 1 precedes fully reconcilable edits in 2. Steps 2 and 3 precede 4. Steps 5 and 6
+can otherwise proceed independently. The channel-neutral allocator is already complete and is not a
+step in this plan.
 
-4.  **Slash commands**, which are how Matrix gets the actions the console has. The parity gap —
-    abort, new session, close — is one missing affordance, not three: a way for a room message to
-    mean something other than "talk to Haku". They are **ingress interception, not an agent tool**:
-    a command is recognised and consumed by the harness before batching, so it never reaches the
-    agent as a prompt, and the agent's read-only tool surface is untouched. Authorisation needs
-    nothing new — it is a DM, the sender maps to an operator identity, and an unmapped sender gains
-    no authority. What must not follow is approvals: a slash command is an operator gesture against
-    the _session_, and a Matrix message is never consent for a tool call. Namespace choice is § 7's
-    open question. Abort is the one worth having first. Depends on nothing here.
-
-5.  **The session link in the room's startup notice**, and interlinking generally: room notice →
-    console session, console session → the room (a `matrix.to` permalink the client already builds),
-    session → its tool calls, tool call → the session that made it. The last has its precedent —
-    `/_console/tool-calls/<tc_…>` opens the drawer on that exact call. A Matrix event is permanent
-    and federated, so post links under routes chosen to survive, or not at all.
-
-6.  **The frame log stores one thing, and the runner numbers it.** Two changes, deliberately one
-    step, because they share a cause — the recorder sits _above_ the bridge envelope and
-    structurally cannot see one — and therefore share a fix: moving that sink down onto the socket.
-    § 13 holds the design and the release schedule.
-
-7.  **`sessions.status` becomes derived timestamps** (§ 10).
-
-8.  **Finish the legacy purge.** `ck_session_frames_wire_numbered` is declared nowhere — its rows
-    are gone, so all that stands between it and the database is writing it in the ORM as well as
-    the migration, once
-    `SELECT count(*) FROM session_frames WHERE runner_seq IS NULL AND direction = 'from_agent'`
-    returns zero. `test_session_claim_cleaned_at.py` and `test_frame_runner_seq_migration.py`
-    each assert a nullability the schema has since moved past, and go outright.
-
-9.  **The read surfaces stop maintaining two model families over one query** (§ 14). Two small
-    changes, neither of which needs a transport decision.
-
-**Smaller, and each landing with the change that creates it rather than as a standalone reshuffle:**
-
-- **Remove the `asyncio.wait` abort dance in `_run_turn`.** Unmounting the SSE route made it
-  removable and nothing has removed it. It collapses with step 4, when abort becomes an intent the
-  transport writes and the CLI's answer comes back as frames.
-- **Split `session_runtime.py` further.** `handle_runner`'s admission and finalisation are a
-  connection's lifecycle and `_run_turn` is a frame reducer; those are two files' worth of concern
-  in one class.
-- **"Surface" names five things and "turn" three.**
-  **Dependencies.** 1 gates 3. Everything else — 2 and 4 through 9, plus the smaller items —
-  depends on nothing here and can be dispatched in any order.
+**Independent runtime work.** `sessions.status` (§ 10) and the duplicated read models (§ 13) are
+not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
+numbering/contract cleanup stays in that runtime stack. The
+`session_runtime.py` split and its abort wait can land with #4431 or step 5 on their own merits, not
+as incidental channel-reconciler edits.
 
 ## 10. `sessions.status` is derived, and lossy
 
@@ -707,24 +668,26 @@ be selected — the fold is spelled in terms of one provider by construction
 invariant is a convention held by review rather than by the type system, which is the same shape of
 gap that let the turn loop become a frame interpreter in the first place.
 
-### What disappears
+### What still disappears
 
-**Tables and columns**
+**Column**
 
-| Gone                                     | Replaced by                                                                        |
-| ---------------------------------------- | ---------------------------------------------------------------------------------- |
-| `matrix_conversation` (all four columns) | `chat_attachment`, whose partial unique index is what "one session holds it" means |
-| `sessions.surface`                       | the attachment                                                                     |
-| `sessions.status`                        | the timestamps of § 10, with the enum computed                                     |
+| Gone              | Replaced by                                    |
+| ----------------- | ---------------------------------------------- |
+| `sessions.status` | the timestamps of § 10, with the enum computed |
 
-Not gone, and deliberately: `matrix_sync_watermark`, `conversation_event`, `session_frames`, the
-lease. `matrix_outbox` stays too: it is the channel's retry state against a flaky homeserver, which
-is not derivable from the record (§ 5).
+`matrix_conversation` and `sessions.surface` have already been removed in favour of
+`chat_attachment`; they are no longer plan items. Not gone, and deliberately:
+`matrix_sync_watermark`, `conversation_event`, `session_frames` and the lease. `matrix_outbox` stays
+too: it is the channel's retry state against a flaky homeserver, which is not derivable from the
+record (§ 5).
 
 **Mechanisms**
 
-- `RoomOutboxDrain` (`MXOB`) and `RoomNotices` (`MXNT`) — one election instead of four.
-- `TurnStatus._run`'s in-process poll, and the turn loop calling `show_status`/`set_typing` at all.
+- `MatrixSessionSupervisor` (`MXSE`) — session creation/replacement becomes conversation-runtime
+  reconciliation, not a channel task.
+- `RoomOutboxDrain` (`MXOB`) and `RoomNotices` (`MXNT`) as separate attachment owners — one
+  reconciler owns delivery instead.
 - Every per-process latch that stands in for durable state: `_status_body`, `_last_announced`.
 - `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
   closures it cannot inspect or squash.
@@ -750,9 +713,9 @@ architecture rather than the features, and each is the acceptance test for the t
    takes over, and both surfaces show the restart without either being told twice.
 
 **Write these per step, not at the end.** A failing test cannot land on `devel`, so each step's PR
-carries the test that proves its own part, and 3, 4 and 5 land as end-to-end tests with step 2 —
-where a channel starts reading the record rather than being handed the half the turn loop
-produced.
+carries the test that proves its own part. Correspondence and spans add cache-expiry, duplicate and
+create/edit/retire cases; attachment-scoped delivery adds a real two-room end-to-end case; neutral
+session supervision adds replacement during a turn without either channel being told twice.
 
 **Encode the invariants as tests too**, because each is false today and would otherwise creep back
 silently:
@@ -827,200 +790,7 @@ delivered when it is opened, it is delivered when it is green, rebased and still
 `Pre-commit checks` lands on a later page, and the migration branches simulated **against each
 other** rather than only against `devel`. Prune finished worktrees as you go.
 
-## 13. The frame log: one vocabulary, and the runner's numbering
-
-Step 8's design. Two changes that share a cause and therefore a fix.
-
-### `kind` holds two vocabularies
-
-`session_frames.kind` holds **two different discriminator vocabularies**, because two unrelated
-sinks write to it:
-
-| Writer                                                  | Sees                                      | Writes into `kind`                             |
-| ------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `RolloutRecorder._record`, a `FrameSink` on `ClaudeCli` | CLI protocol frames only, by construction | `payload["type"]` — the CLI's vocabulary       |
-| `_progress_reporter.report`, by hand                    | one decoded line of a `SetupOutput`       | `"setup_output"` — the bridge's `kind` literal |
-
-**The intended shape: the table is the log of the bridge.** `kind` becomes the envelope
-discriminator (`claude`, `setup_output`, `hello`, `start`, `end_input` — `protocol.py` owns the
-list) and the CLI's own `type` gets a column of its own. Two columns, each answering one question,
-and any future runner-originated frame has a home instead of a special case.
-
-**What this costs, stated before starting.** The recorder is a `FrameSink` on `ClaudeCli`, which
-sits _above_ the envelope and structurally cannot see one — so the sink moves down to
-`WebSocketTransport`. The dedup answer moves with it: `received()` returns False for a replay and
-`ClaudeCli._read` uses that to skip routing, so the transport takes over both. It also means
-recording envelope kinds nothing reads today (`hello`, `start`, `end_input`); that is the point of
-the design rather than a cost, but it is new rows.
-
-### The number is the runner's, not Postgres's
-
-**Decided** (operator, 2026-08-16): _"I do think we really should do the runner owned numbering and
-use it for existing offsets, it also makes catch up trivial."_ So `frame_seq` is minted on the wire
-and becomes the log's own offset, rather than a second column beside a database-assigned one. Today
-it is `BigInteger, Identity(always=True), primary_key=True`, travelling back to the client on
-`RecordedFrame.frame_seq` after the `INSERT`.
-
-**The motivating property is catch-up, and nothing else gives it.** A dense counter the runner owns
-turns reconnect into _"send me everything after N"_: the runner answers from its own retained window
-with no database round trip and no reconciliation. An `Identity` cannot be asked that. It is sparse,
-so a hole in it is not evidence of anything; it is unknowable until after the write; and it is the
-console's fact about a row rather than the wire's fact about a frame. Today's adoption therefore
-re-sends the **whole** window every time and leans on `frame_uid` to sort it out — which works for
-the classes that carry an agent-assigned id and cannot work for the ones that do not.
-
-Three secondary properties come with it. The number exists the moment the frame is read off the
-socket. It is true arrival order rather than insert order. And `ReceivedFrame.frame_seq: int | None`
-becomes structurally impossible rather than avoided by convention.
-
-**Where the counter lives.** `WebSocketTransport` is the _console_ side of the bridge socket, and
-the console is the end that is replaced mid-conversation — that is what a roll is — while the runner
-process outlives every socket it serves, by construction. A cursor a reconnecting console hands back
-has to be a number its _peer_ minted, or the peer cannot act on it. So **`runner.py` mints, at the
-point a frame is put on the wire, and stamps it on the envelope**; `WebSocketTransport` is where the
-number is read and recorded. Numbering at send rather than at read also fixes it once: a frame
-retained in the replay window keeps the number it went out under, so the console that adopts the
-session and the console that died see the same integer for the same frame.
-
-**Seeding across reconnect.** A runner's counter is per process, which is per sandbox, which is per
-session — so in the happy case it needs no seeding. What needs seeding is the case the design exists
-for: the console must be able to say where it has got to, and two consoles may be replaying one
-runner's window at once during a roll. So the cursor is **per session, not per connection**.
-`ClaudeLaunch` (`start`) carries it as `resume_from`, computed by the console as the highest
-runner-minted sequence recorded for that session; `start` is sent on every connection, so this needs
-no new frame and no new round trip. The runner takes `next = max(next, resume_from + 1)` and replays
-only its retained frames above `resume_from`. Two consoles racing compute the same cursor from the
-same rows, and a runner whose process really did restart is seeded back above what the console holds
-rather than colliding with it from 1.
-
-**Why this rides as an added field and not a `PROTOCOL_VERSION` bump.** `SUPPORTED_VERSIONS` is a
-single element, so a bump does not negotiate — it _refuses_ the peer on the other number. A runner's
-image is fixed when its SandboxClaim is created and a live session outlasts console releases for as
-long as a replica tends it, so a bump kills every session in flight on the release that ships it.
-`protocol.py` already made the opposite trade for exactly this reason: `extra="ignore"`, so an
-unknown _field_ is dropped by a peer that predates it while an unknown _kind_ still fails closed.
-`seq` and `resume_from` are optional fields on frames that already exist, and both directions of
-skew degrade to today's behaviour.
-
-### What "dense" buys, and what enforces it
-
-Dense means consecutive frames from one runner differ by exactly one, so a hole is evidence rather
-than noise. Two checks fall out, and they are different questions:
-
-- **Live contiguity.** Within one connection, the transport compares each frame's `seq` against the
-  last. A hole means the socket delivered out of order or the runner's buffer overflowed — neither
-  should be possible, so it is a bug report, not a recoverable state.
-- **Resume completeness.** On adoption, the runner replays from `resume_from`. If the oldest frame
-  it can still offer is above `resume_from + 1`, its window has rolled past what the console
-  recorded and those frames are gone for good. That is the case today's design cannot even see.
-
-**What a consumer does with a gap.** Not "carry on quietly", which is what happens now. The
-projection over a gapped log is not trustworthy — a message can be missing the frame that closed it
-— so the gap is recorded as a session event and surfaced in the frame inspector, which is the
-surface an operator already opens to appeal a transcript. Escalating further (failing the turn) is
-deliberately not proposed: a lost `stream_event` is cosmetic while a lost `result` is not, and the
-log cannot tell which is missing.
-
-**Neither check can be written before the cutover.** Both read a run of numbers and ask whether it
-is dense, and neither run is dense yet. The console's recorded numbers are not: a `SetupOutput` is
-numbered by the runner like everything else, but it reaches the log through the progress reporter —
-where one frame decodes into however many complete lines it finished — so its number is on no row,
-and every bootstrap leaves a hole that means nothing. The wire's numbers are not either on the
-connection that matters: the replay window retains only `replayable` frames, so an adopted
-connection is handed a sequence with a hole wherever a delta or a narration line was. Adding a check
-before the cutover reports on narration and on the replay window's own design, which is a warning
-nobody can act on — the fastest way to teach an operator to ignore it.
-
-**One thing dense numbering buys that `frame_uid` never could.** `frame_identity.py` argues, and it
-is right, that a `stream_event` must not be replayed: it has no agent-assigned id, and
-`streamed += delta` double-appends. A dense sequence is an identity for the frames that have none —
-not of their _content_, which is what the module correctly refuses to invent, but of their
-_position_. Once the console dedupes on `(session_id, frame_seq)` rather than on `frame_uid`, a
-replayed delta is refused by the key before it can reach the loop, and the "never replay a delta"
-rule is a bound on the window's size instead of a correctness argument. That is also the point at
-which `REPLAY_WINDOW = 500` has to be re-sized or given a byte budget, because a delta-heavy turn
-runs to thousands of frames.
-
-### The primary key
-
-`frame_seq` is the primary key, and it is read by `FrameCursor`, both keyset reads,
-`conversation_turn`, `conversation_event.source_*`, the `haku_conversations` MCP tools, and the
-frames page.
-Client-supplied values mean dropping `Identity` and enforcing uniqueness per session instead of
-globally.
-
-**The constraint that shapes it: there are two minters into one space, and there is no way around
-that.** The runner numbers what crosses the socket, but the console writes rows the runner never
-sees — a console→CLI write is recorded before the runner has it, and a console-origin session event
-crosses no wire at all. Two independent minters cannot share one dense integer space: either they
-partition it or the key carries a tiebreak. Partitioning by a reserved stride was considered and
-rejected — the band between two runner frames is bounded by hope, and an overflow is a primary-key
-collision on the hot path. So:
-
-- **`frame_ord SMALLINT NOT NULL DEFAULT 0`**, and the primary key becomes
-  `(session_id, frame_seq, frame_ord)`. A runner frame is `frame_ord = 0`. A console-origin row
-  recorded while the console's high-water mark is _N_ takes `(N, k)` for the next free _k_, so it
-  sorts strictly after runner frame _N_ and strictly before _N+1_ — the same fidelity insert order
-  gives today, stated rather than implied.
-- **Every cursor still names one integer.** `FrameCursor`, `before_seq`, the MCP tool arguments and
-  the frontend are unchanged: a cursor of _N_ is `(N, 0)` in the composite. Only the `ORDER BY` and
-  the key change.
-- **`conversation_event.source_*` stays two integers**, and an inclusive range over a composite
-  order is still well defined — the range is over positions, and a position is a `frame_seq`.
-
-**No session may hold both numbering schemes, and the fault is loss rather than untidiness.**
-Identity values are global and run far above 1; runner values are per session and start at 1.
-Uniqueness and ordering are per session, so the two never have to be comparable — but a session
-carrying both breaks catch-up outright: `resume_from` is that session's `max(frame_seq)`, and a
-cursor in the tens of thousands selects nothing from a runner window numbered from 1, so the
-reconnect replays nothing and whatever the dead replica missed is gone.
-
-**Dropping `Identity` is the one step that is not additive**, and the trick that makes it roll-safe
-is that it does not have to be a drop. `ALTER COLUMN frame_seq DROP IDENTITY` followed by
-`SET DEFAULT nextval(...)` on a sequence seeded above the current maximum leaves an old replica —
-which inserts without naming the column — behaving exactly as before, while a new replica may supply
-its own value. `GENERATED ALWAYS` is what refuses a supplied value; a plain default does not.
-
-### The release schedule
-
-`maxUnavailable: 0` means old replicas run against the new schema for the length of every roll, so
-R3 is gated on R2's roll having **converged** — every pod on an image at or after it — rather than on
-a release having elapsed. A stalled roll leaves the old replica serving, which is exactly when "one
-release later" is the wrong gate.
-
-| Release               | What lands                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Additive?                                                                                                                                                                                 |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R1**                | The wire and the runner: optional `seq` on the runner→console envelopes, optional `resume_from` on `start`, the runner minting and replaying from the cursor. Separately: `cli_type` added, dual-written, every reader onto `coalesce(cli_type, kind)`, backfilled where `kind <> 'setup_output'`; and the console computing `resume_from` from `runner_seq`.                                                                                                                           | **Yes.** New optional fields, new nullable columns. Old replicas and old runner images unaffected.                                                                                        |
-| **R2 — the cutover**  | The sink moves to `WebSocketTransport`; `kind` becomes the envelope discriminator, typed `BridgeFrameKind`, with the coalesce dropped and the CLI's own `type` left in `cli_type`. `frame_ord` and the composite primary key; `Identity` demoted to a plain sequence default. Frames take `frame_seq` from the envelope, dedup keys on position rather than `frame_uid`, both density checks report, `REPLAY_WINDOW` is re-sized, and `runner_seq` stops being written and is unmapped. | Schema yes, behaviour no — the `kind` flip is safe **only** because R1 stopped every reader depending on it. An old replica still filtering `kind = 'assistant'` would mis-decide a turn. |
-| **R3 — the contract** | Everything an old replica was still touching through R2's roll: `frame_seq`'s sequence default and the sequence behind it dropped, so an insert that names no number fails instead of inventing one; `runner_seq` and its index dropped.                                                                                                                                                                                                                                                | Removals, so gated on R2 converging.                                                                                                                                                      |
-
-**Two releases, and it is replicas that force the second rather than rows.** An old replica inserts
-without naming `frame_seq`, and still writes `runner_seq` — so R2 cannot drop what it would need.
-That is why `Identity` is demoted to a plain default rather than removed, and why a column
-SQLAlchemy still names in every `SELECT` is unmapped in R2 and dropped in R3.
-
-**Purge on both sides of R2's roll.** `DELETE FROM sessions` is the whole operation: `ON DELETE
-CASCADE` takes `session_{frames,messages,turns,prompts,events,outbox}`, and
-`matrix_conversation.session_id` is set NULL, after which the supervisor opens a replacement
-session against the same room. Run it before, so no live session carries identity-numbered frames
-into the roll; and again once R2 has converged, because the roll is itself a window in which an old
-replica can create a session and record identity frames into it. The window is the roll's length and
-what it costs is one session's replay. The index's `chat_*` tables hold `session_id` as a bare UUID
-with no foreign key, and repair themselves within one sweep — `sync_chat` computes
-`forgotten = indexed sessions − sessions the source still shows` and calls `forget_chat_sessions`
-before indexing anything.
-
-### The invariant the read path owes
-
-**Nothing in the read path may assume `frame_seq` is 1-based, comparable across sessions, or by
-itself a row identity.** After R2 every session's numbers do start at 1, which is exactly the moment
-someone writes a reader that relies on it — and `frame_ord` means one `frame_seq` can name more than
-one row of a session. A test over a session with deliberately sparse, high-valued frames and a
-console-origin row at `(N, 1)` states that on purpose rather than leaving it true by accident of how
-the readers were written. The fixture stays sparse even though production holds no sparse session: it
-is a statement about what the readers must tolerate, not a sample of the table.
-
-## 14. The read surfaces, and the line between them
+## 13. The read surfaces, and the line between them
 
 The console reads its session corpus through two surfaces that answer nearly the same questions off
 the same tables — REST for the browser, `haku_conversations` over MCP for agents. **The duplication
@@ -1063,7 +833,7 @@ the MCP surface's prose is written for an LLM reader and `MAX_PAGE_BYTES` exists
 context; and a page moving to MCP trades a typed 404/409 for a joined-text error blob and loses the
 generated `paths` typing.
 
-## 15. The standing rules
+## 14. The standing rules
 
 Not scheduled items — constraints that govern everything above.
 
@@ -1095,7 +865,7 @@ delete every ownership change while the check reported green. What keeps `check_
 without it having to know the category exists: an authored row names no turn, and the check reads a
 turn's rows.
 
-## 16. What is uncertain
+## 15. What is uncertain
 
 - **Whether whole-message updates at the coalescing window feel as good as per-token streaming.**
   Following removed the refetch; the rate is still `COALESCE_WINDOW`, and nobody has compared it
