@@ -121,7 +121,7 @@ from finance.augur.sim.enums import (
     PrivateEquityDispositionKind,
     PrivateEquityOpportunityOutcome,
 )
-from finance.augur.sim.payment_policy import PaymentView, decide as decide_payments
+from finance.augur.sim.payment_policy import PayActions, PaymentView, decide as decide_payments
 from finance.augur.sim.target_allocation import SleeveUniverse, decide
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
@@ -1942,18 +1942,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # cashflow program below are additive phases with no intervening affordability decision, so
         # every incoming dollar remains available for this month's outflows.
         cash, ordinary = _bond_cashflows_jit(
-            bonds.coupon[month],
-            bonds.redemption[month],
-            bonds.to_slot,
-            bonds.income_row,
-            bonds.indexed,
-            bonds.cpi_series,
-            bonds.index_base_month,
-            bonds.period_rate,
-            bonds.face,
-            bonds.pays[month],
-            bonds.matures[month],
-            bonds.on_books[month],
+            bonds,
             cash,
             ordinary,
             active,
@@ -1969,12 +1958,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # which is what a record date means — a fund bought this month pays next month.
         if structure.has_distributions:
             cash, ordinary = _distribution_payouts_jit(
-                distributions.lot_mask,
-                distributions.series,
-                distributions.quantity_scale,
-                distributions.fraction,
-                distributions.to_slot,
-                distributions.income_row,
+                distributions,
                 lot_remaining,
                 cash,
                 ordinary,
@@ -2040,25 +2024,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # Every authored transfer lowers to one cashflow program. Property-linked rows gate on
         # the post-purchase active state; ordinary rows carry NO_CODE and are unconditional.
         cash, ordinary, cashflow_active, cashflow_amount = _cashflows_jit(
-            cashflows.active[month],
-            cashflows.amount_kind[month],
-            cashflows.amount_fixed[month],
-            cashflows.amount_base[month],
-            cashflows.amount_series[month],
-            cashflows.amount_base_month[month],
-            cashflows.amount_period[month],
-            cashflows.from_slot[month],
-            cashflows.to_slot[month],
-            cashflows.property_slot[month],
-            cashflows.income_profile[month],
-            cashflows.deduction_profile[month],
-            property_active,
-            cash,
-            ordinary,
-            active,
-            external_values,
-            month,
-            structure.external_cash_slot,
+            cashflows, property_active, cash, ordinary, active, external_values, month, structure.external_cash_slot
         )
 
         # Scheduled asset sales (before obligations: proceeds can fund the month's obligations).
@@ -2307,20 +2273,10 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             group_matrix, from_row, cash, pay_actions.active, pay_actions.amount_quanta
         )
 
-        property_slot = payment_metadata.property_slot
         paid, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
             _settlement_core_jit(
-                from_row,
-                payment_metadata.to_slot,
-                payment_metadata.deduction_profile,
-                payment_metadata.deductible_fraction,
-                payment_metadata.property_tax_profile,
-                jnp.where(property_slot < 0, 0, property_slot),
-                property_slot >= 0,
-                payment_metadata.property_tax_profile >= 0,
-                payment_metadata.deduction_profile >= 0,
-                pay_actions.active,
-                pay_actions.amount_quanta,
+                payment_metadata,
+                pay_actions,
                 funded,
                 cash,
                 ordinary,
@@ -3077,18 +3033,7 @@ def _amount_values_vec(
 
 @partial(jax.jit, static_argnames=("row_of_world",))
 def _cashflows_jit(
-    cashflow_active: jnp.ndarray,
-    amount_kind: jnp.ndarray,
-    amount_fixed: jnp.ndarray,
-    amount_base: jnp.ndarray,
-    amount_series: jnp.ndarray,
-    amount_base_month: jnp.ndarray,
-    amount_period: jnp.ndarray,
-    from_slot: jnp.ndarray,
-    to_slot: jnp.ndarray,
-    property_slot: jnp.ndarray,
-    income_profile: jnp.ndarray,
-    deduction_profile: jnp.ndarray,
+    cashflows: CashflowExecution[jax.Array],
     property_active: jnp.ndarray,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
@@ -3098,42 +3043,34 @@ def _cashflows_jit(
     row_of_world: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     rollout_count = cash.shape[1]
-    property_gated = property_slot >= 0
-    safe_property_slot = jnp.maximum(property_slot, 0)
+    cashflow = jax.tree.map(lambda value: value[month], cashflows)
+    property_gated = cashflow.property_slot >= 0
+    safe_property_slot = jnp.maximum(cashflow.property_slot, 0)
     property_gate = _gather_rows(property_active, safe_property_slot)
-    fire = cashflow_active[:, None] & active[None, :] & (~property_gated[:, None] | property_gate)
+    fire = cashflow.active[:, None] & active[None, :] & (~property_gated[:, None] | property_gate)
     raw = _amount_values_vec(
-        amount_kind,
-        amount_fixed,
-        amount_base,
-        amount_series,
-        amount_base_month,
-        amount_period,
+        cashflow.amount_kind,
+        cashflow.amount_fixed,
+        cashflow.amount_base,
+        cashflow.amount_series,
+        cashflow.amount_base_month,
+        cashflow.amount_period,
         external_values,
         month,
         rollout_count,
     )
     amounts = jnp.where(fire, raw, 0)
-    cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=amounts, row_of_world=row_of_world)
-    ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
-    ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
+    cash = _move_cash(
+        cash, debit=cashflow.from_slot, credit=cashflow.to_slot, amount=amounts, row_of_world=row_of_world
+    )
+    ordinary_ytd = _scatter_rows(ordinary_ytd, cashflow.income_profile, amounts)
+    ordinary_ytd = _scatter_rows(ordinary_ytd, cashflow.deduction_profile, -amounts)
     return cash, ordinary_ytd, fire, amounts
 
 
 @partial(jax.jit, static_argnames=("row_of_world", "has_indexed"))
 def _bond_cashflows_jit(
-    coupon: jnp.ndarray,
-    redemption: jnp.ndarray,
-    to_slot: jnp.ndarray,
-    income_row: jnp.ndarray,
-    indexed: jnp.ndarray,
-    cpi_series: jnp.ndarray,
-    index_base_month: jnp.ndarray,
-    period_rate: jnp.ndarray,
-    face: jnp.ndarray,
-    pays: jnp.ndarray,
-    matures: jnp.ndarray,
-    on_books: jnp.ndarray,
+    bonds: BondExecution[jax.Array],
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
     active: jnp.ndarray,
@@ -3162,52 +3099,49 @@ def _bond_cashflows_jit(
         # No TIPS in this scenario. Skipped statically rather than masked, because a scenario
         # with no sampled series has a ZERO-row `external_values` cube — gathering from it is
         # an error, not a value to discard.
-        coupons = jnp.where(active[None, :], coupon[:, None], 0)
-        redemptions = jnp.where(active[None, :], redemption[:, None], 0)
+        coupons = jnp.where(active[None, :], bonds.coupon[month, :, None], 0)
+        redemptions = jnp.where(active[None, :], bonds.redemption[month, :, None], 0)
         paid = coupons + redemptions
         # The rest of the world funds every coupon and redemption: the issuer is not modeled.
-        cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
-        return cash, _scatter_rows(ordinary_ytd, income_row, coupons)
+        cash = _move_cash(cash, debit=row_of_world, credit=bonds.to_slot, amount=paid, row_of_world=row_of_world)
+        return cash, _scatter_rows(ordinary_ytd, bonds.income_row, coupons)
 
-    is_indexed = (indexed > 0)[:, None]
-    safe_series = jnp.maximum(cpi_series, 0)
-    cpi_base = external_values[safe_series, :, index_base_month]
+    is_indexed = (bonds.indexed > 0)[:, None]
+    safe_series = jnp.maximum(bonds.cpi_series, 0)
+    cpi_base = external_values[safe_series, :, bonds.index_base_month]
     safe_base = jnp.where(cpi_base > 0, cpi_base, 1.0)
-    principal = _scale_money_by_float_ratio(face[:, None], external_values[safe_series, :, month], safe_base)
+    principal = _scale_money_by_float_ratio(bonds.face[:, None], external_values[safe_series, :, month], safe_base)
     principal_prev = _scale_money_by_float_ratio(
-        face[:, None], external_values[safe_series, :, jnp.maximum(month - 1, 0)], safe_base
+        bonds.face[:, None], external_values[safe_series, :, jnp.maximum(month - 1, 0)], safe_base
     )
 
-    indexed_coupon = _scale_money(principal, period_rate[:, None]) * pays[:, None]
+    indexed_coupon = _scale_money(principal, bonds.period_rate[:, None]) * bonds.pays[month, :, None]
     # Deflation floor: a TIPS redeems at the greater of its indexed principal and par, which
     # is what makes it a floor in exactly the scenarios the floor exists for.
-    indexed_redemption = jnp.maximum(principal, face[:, None]) * matures[:, None]
+    indexed_redemption = jnp.maximum(principal, bonds.face[:, None]) * bonds.matures[month, :, None]
 
-    coupons = jnp.where(is_indexed, indexed_coupon, coupon[:, None])
-    redemptions = jnp.where(is_indexed, indexed_redemption, redemption[:, None])
+    coupons = jnp.where(is_indexed, indexed_coupon, bonds.coupon[month, :, None])
+    redemptions = jnp.where(is_indexed, indexed_redemption, bonds.redemption[month, :, None])
 
     # Phantom income: the month's rise in indexed principal is taxable interest with no cash
     # behind it. Gated on `on_books` so it stops at maturity, and on month > 0 so the opening
     # month does not accrete against itself.
-    accretion = jnp.where(is_indexed & (on_books > 0)[:, None] & (month > 0), principal - principal_prev, jnp.int64(0))
+    accretion = jnp.where(
+        is_indexed & (bonds.on_books[month] > 0)[:, None] & (month > 0), principal - principal_prev, jnp.int64(0)
+    )
     accretion = jnp.where(active[None, :], accretion, 0)
 
     coupons = jnp.where(active[None, :], coupons, 0)
     redemptions = jnp.where(active[None, :], redemptions, 0)
     paid = coupons + redemptions
-    cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
+    cash = _move_cash(cash, debit=row_of_world, credit=bonds.to_slot, amount=paid, row_of_world=row_of_world)
     # Accretion reaches income and NOT cash — if it ever reached the cash tensor, the
     # conservation invariant would break immediately, which is the guard on this wiring.
-    return cash, _scatter_rows(ordinary_ytd, income_row, coupons + accretion)
+    return cash, _scatter_rows(ordinary_ytd, bonds.income_row, coupons + accretion)
 
 
 def _distribution_payouts_jit(
-    lot_mask: jnp.ndarray,
-    series: jnp.ndarray,
-    quantity_scale: jnp.ndarray,
-    fraction: jnp.ndarray,
-    to_slot: jnp.ndarray,
-    income_row: jnp.ndarray,
+    distributions: DistributionExecution[jax.Array],
     lot_remaining: jnp.ndarray,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
@@ -3230,15 +3164,15 @@ def _distribution_payouts_jit(
 
     # `(slice, R)` units held, from the pool masks against the current lot quantities. A pool's
     # lots share one quantum size, so one divide per slice recovers whole units.
-    quanta_held = lot_mask @ lot_remaining
-    per_unit_money = external_money_values[series, :, month]
+    quanta_held = distributions.lot_mask @ lot_remaining
+    per_unit_money = external_money_values[distributions.series, :, month]
     # The fraction is a non-monetary model parameter; the resulting cash is
     # rounded once to the scenario currency quantum.
-    value_quanta = _value_quanta_from_quantity(quanta_held, per_unit_money, quantity_scale[:, None])
-    paid = _scale_money(value_quanta, fraction[:, None])
+    value_quanta = _value_quanta_from_quantity(quanta_held, per_unit_money, distributions.quantity_scale[:, None])
+    paid = _scale_money(value_quanta, distributions.fraction[:, None])
     paid = jnp.where(active[None, :], paid, 0)
-    cash = _move_cash(cash, debit=row_of_world, credit=to_slot, amount=paid, row_of_world=row_of_world)
-    return cash, _scatter_rows(ordinary_ytd, income_row, paid)
+    cash = _move_cash(cash, debit=row_of_world, credit=distributions.to_slot, amount=paid, row_of_world=row_of_world)
+    return cash, _scatter_rows(ordinary_ytd, distributions.income_row, paid)
 
 
 def _sleeve_prices_quanta(
@@ -3470,17 +3404,8 @@ def _obligation_group_funded_jit(
 
 @partial(jax.jit, static_argnames=("row_of_world",))
 def _settlement_core_jit(
-    from_slot: jnp.ndarray,
-    to_slot: jnp.ndarray,
-    deduction_profile: jnp.ndarray,
-    deductible_fraction: jnp.ndarray,
-    property_tax_profile: jnp.ndarray,
-    property_slot_idx: jnp.ndarray,
-    has_property_slot: jnp.ndarray,
-    has_property_tax_profile: jnp.ndarray,
-    has_deduction: jnp.ndarray,
-    payment_active: jnp.ndarray,
-    payment_amount: jnp.ndarray,
+    metadata: _ObligationMetadataInputs,
+    actions: PayActions,
     funded: jnp.ndarray,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
@@ -3501,21 +3426,27 @@ def _settlement_core_jit(
     `month`, so the per-rollout first-failure month is `month` iff any slot fails and it had not
     failed before. Mortgage liability updates and tax settlement are handled by the caller.
     """
-    paid = payment_active & funded
-    slot_failed = payment_active & ~funded
-    paid_amount = jnp.where(paid, payment_amount, 0)
-    cash = _move_cash(cash, debit=from_slot, credit=to_slot, amount=paid_amount, row_of_world=row_of_world)
-    rented = _gather_rows(property_rented_fraction, property_slot_idx)  # (slots, rollouts)
+    paid = actions.active & funded
+    slot_failed = actions.active & ~funded
+    paid_amount = jnp.where(paid, actions.amount_quanta, 0)
+    cash = _move_cash(
+        cash, debit=metadata.from_slot, credit=metadata.to_slot, amount=paid_amount, row_of_world=row_of_world
+    )
+    property_slot = metadata.property_slot
+    has_property_slot = property_slot >= 0
+    rented = _gather_rows(property_rented_fraction, jnp.maximum(property_slot, 0))  # (slots, rollouts)
     property_tax_ytd = _scatter_rows(
         property_tax_ytd,
-        property_tax_profile,
-        jnp.where(has_property_tax_profile[:, None], _scale_money(paid_amount, 1.0 - rented), 0),
+        metadata.property_tax_profile,
+        jnp.where(metadata.property_tax_profile[:, None] >= 0, _scale_money(paid_amount, 1.0 - rented), 0),
     )
-    deductible = jnp.where(has_property_slot[:, None], rented, deductible_fraction[:, None])
+    deductible = jnp.where(has_property_slot[:, None], rented, metadata.deductible_fraction[:, None])
     ordinary_ytd = _scatter_rows(
-        ordinary_ytd, deduction_profile, jnp.where(has_deduction[:, None], -_scale_money(paid_amount, deductible), 0)
+        ordinary_ytd,
+        metadata.deduction_profile,
+        jnp.where(metadata.deduction_profile[:, None] >= 0, -_scale_money(paid_amount, deductible), 0),
     )
-    shortfall = jnp.where(slot_failed, payment_amount, 0)
+    shortfall = jnp.where(slot_failed, actions.amount_quanta, 0)
     failed_this = slot_failed.any(axis=0)
     failed_month = jnp.where(failed_this & (failed_month < 0), month, failed_month)
     failed = failed | failed_this
