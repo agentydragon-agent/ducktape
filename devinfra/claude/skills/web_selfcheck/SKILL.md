@@ -62,14 +62,13 @@ approval:
 When diagnosing a broken session, these are the log files worth reading, in
 order of "most likely to contain the smoking gun":
 
-| Path                                                     | What's in it                                                                                                                                                                      |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/tmp/claude-hd/<sid>/daemon.err.log`                    | **Unhandled hook daemon errors** — check first.                                                                                                                                   |
-| `/tmp/claude-hd/<sid>/daemon.log`                        | Daemon stdout: startup and per-hook diagnostics.                                                                                                                                  |
-| `/tmp/claude-hd/<sid>/startup_failure.json`              | Written when the `claude-hook` client could not reach/start the daemon. Distinguishes "dispatcher timed out waiting for socket" from "daemon crashed after accepting connection". |
-| `~/.claude/session-env/<sid>/sessionstart-hook-0.sh`     | The env file the daemon wrote. Presence means SessionStart got far enough to write the agent shell environment.                                                                   |
-| `~/.claude/session-env/<sid>/supervisor/supervisord.log` | Supervisor daemon log (only populated when the container-runtime profile is in use).                                                                                              |
-| `/tmp/web-setup.log`                                     | `web_setup.sh` output from the most recent run. First line has `web_setup.sh commit: <sha>` — use it to detect stale setup scripts.                                               |
+| Path                                                 | What's in it                                                                                                                                                                      |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tmp/claude-hd/<sid>/daemon.err.log`                | **Unhandled hook daemon errors** — check first.                                                                                                                                   |
+| `/tmp/claude-hd/<sid>/daemon.log`                    | Daemon stdout: startup and per-hook diagnostics.                                                                                                                                  |
+| `/tmp/claude-hd/<sid>/startup_failure.json`          | Written when the `claude-hook` client could not reach/start the daemon. Distinguishes "dispatcher timed out waiting for socket" from "daemon crashed after accepting connection". |
+| `~/.claude/session-env/<sid>/sessionstart-hook-0.sh` | The env file the daemon wrote. Presence means SessionStart got far enough to write the agent shell environment.                                                                   |
+| `/tmp/web-setup.log`                                 | `web_setup.sh` output from the most recent run. First line has `web_setup.sh commit: <sha>` — use it to detect stale setup scripts.                                               |
 
 `<sid>` can be resolved with:
 

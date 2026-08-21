@@ -59,14 +59,6 @@ class SessionPaths:
         return Path(user_config_dir(appname="claude-hooks", ensure_exists=True))
 
     @property
-    def supervisor_dir(self) -> Path:
-        return self.session_dir / "supervisor"
-
-    @property
-    def supervisor_pidfile(self) -> Path:
-        return self.supervisor_dir / "supervisord.pid"
-
-    @property
     def _short_dir(self) -> Path:
         """Short session-scoped dir under /tmp for Unix sockets (108-byte AF_UNIX limit)."""
         return _short_session_dir(self.session_id)

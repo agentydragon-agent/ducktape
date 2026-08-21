@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
+from devinfra.claude.settings import ENV_SESSION_DIR
 from util.bazel.subprocess import exports_from_dict
 
 
@@ -73,9 +73,6 @@ class EnvVars:
     # Per-session directory
     session_dir: Path | None = None
 
-    # Supervisor port (when setup_docker is enabled)
-    supervisor_port: int | None = None
-
     # Container runtime env vars (when setup_docker is enabled)
     docker_env: dict[str, str] | None = None
 
@@ -108,11 +105,8 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     )
 
     if vars.session_dir is not None:
-        session_config: dict[str, str | Path] = {ENV_SESSION_DIR: vars.session_dir}
-        if vars.supervisor_port is not None:
-            session_config[ENV_SUPERVISOR_PORT] = str(vars.supervisor_port)
         exports.extend(["", "# Session configuration"])
-        exports.extend(exports_from_dict(session_config))
+        exports.extend(exports_from_dict({ENV_SESSION_DIR: vars.session_dir}))
 
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.

@@ -63,9 +63,9 @@ automatic compatibility requirement.
 - **BuildBuddy BES interceptor**: Python could proxy Bazel's BES stream over a
   UDS, forward it to BuildBuddy, and nudge the agent when a local Bazel run
   forgot remote execution. Rust only writes regular BuildBuddy bazelrc files.
-- **Docker/supervisor setup**: Python could start or reuse a local Docker daemon,
-  clean stale `/var/run/docker.pid`, set `DOCKER_HOST`, and surface Docker
-  status in the session banner. Rust has no container-runtime setup path.
+- **Docker setup**: The retired Python path could start or reuse a local Docker
+  daemon, clean stale `/var/run/docker.pid`, set `DOCKER_HOST`, and surface
+  Docker status in the session banner. Rust has no container-runtime setup path.
 - **Tmpfs setup**: Python could mount tmpfs-backed session storage and add
   `startup --output_user_root=<session>/bazel-cache`. Rust no longer manages
   tmpfs storage; it only applies Firecracker JVM heap sizing when that platform
@@ -79,8 +79,8 @@ automatic compatibility requirement.
   `context_template`. Rust currently emits a fixed text banner and parses but
   does not render `context_template`.
 - **Richer env file**: Python exported `SESSION_BAZELRC`,
-  `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`, `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`,
-  `DUCKTAPE_SESSION_START_HOOK_TS`, `BBR_BAZELRC`, Docker env, and adjusted
+  `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`, `DUCKTAPE_SESSION_START_HOOK_TS`, `BBR_BAZELRC`,
+  Docker env, and adjusted
   `NO_PROXY`/`no_proxy`. Rust exports only the startup env overlay,
   `env_exports`, and final shim `PATH` prepend.
 - **WorktreeCreate handling**: Python handled `WorktreeCreate` by creating a git
