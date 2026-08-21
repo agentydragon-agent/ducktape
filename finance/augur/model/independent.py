@@ -4,25 +4,20 @@ The provider enumerates every external series the simulator may request, grouped
 by role (asset-price `sp500`/`crypto`; property-value `home_value`; index
 `inflation`/`rent`), each mapped to a scalar level model (Constant / Deterministic
 / GBM). Private-equity marks are a separate `private_equity_marks` map keyed by
-issuer id — they are not level series and travel via the typed PE bundle /
-metadata, not the `levels` frame. There is no prefix dispatch: config keys are
+issuer id — they are not level series and do not travel in this provider's
+empty PE bundle. There is no prefix dispatch: config keys are
 already typed, so the level-vs-PE split is structural rather than parsed.
-
-The model is the only source of price for any series it covers (including the
-per-issuer current PE price), exposed both as the month-0 level and as the
-`private_equity_prices_usd` metadata dict on the sampled bundle.
 """
 
 from __future__ import annotations
 
-from typing import Literal, assert_never
+from typing import Literal
 
 import jax.numpy as jnp
 import numpy as np
 from numpyro import distributions as dist
 from pydantic import Field
 
-from finance.augur.model.deterministic import Constant, Deterministic
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import LevelSeriesGroups
@@ -82,12 +77,10 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # PE marks travel via the typed PE bundle / metadata, never a level role
-        # — the inherited role groups carry only level series.
+        # The inherited role groups carry only level series. This provider does not
+        # synthesize the typed PE protocol bundle.
         frames = sample_independent_levels(self, request)
-        return SampledExogenousBundle(
-            levels=frames, model_id=self.label, private_equity_prices_usd=self._private_equity_prices_usd()
-        )
+        return SampledExogenousBundle(levels=frames, model_id=self.label)
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         """Joint predictive over the cumulative `horizon`-step log-return at origin t, for the
@@ -128,16 +121,3 @@ class IndependentModel(LevelSeriesGroups[ScalarSeriesSpec]):
         projections unioned into one map, for `emittable_level_keys` and `predictive`."""
 
         return self.by_level_key()
-
-    def _private_equity_prices_usd(self) -> dict[IssuerId, float]:
-        return {issuer_id: _month_zero_level(spec) for issuer_id, spec in self.pe_marks.items()}
-
-
-def _month_zero_level(spec: ScalarSeriesSpec) -> float:
-    if isinstance(spec, Constant):
-        return float(spec.value)
-    if isinstance(spec, Deterministic):
-        return float(spec.levels[0])
-    if isinstance(spec, GeometricBrownian):
-        return float(spec.initial_value)
-    assert_never(spec)

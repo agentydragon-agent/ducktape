@@ -318,7 +318,6 @@ class StateSpaceModel:
             levels=frames,
             private_equity=private_equity,
             model_id=self.label,
-            private_equity_prices_usd=self._private_equity_prices_usd(),
             provenance={
                 "model_version_id": self.model_version_id,
                 "scenario_generator_id": "state_space_numpy",
@@ -444,13 +443,6 @@ class StateSpaceModel:
                 if month_index >= 1:
                     events[rollout_idx, month_index] = True
         return events
-
-    def _private_equity_prices_usd(self) -> dict[IssuerId, float]:
-        levels = self._conditioned_start_levels()
-        return {
-            issuer_id: levels[PrivateEquityAssetKey(issuer_id=issuer_id).wire_id]
-            for issuer_id in self.artifact.private_equity_factor_issuers
-        }
 
     def _private_equity_scale_indexes(self) -> tuple[tuple[int, TrainedPrivateEquityScalePrior], ...]:
         if not self.artifact.private_equity_scale_priors:

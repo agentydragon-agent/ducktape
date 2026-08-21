@@ -46,10 +46,6 @@ class CompositeModel:
         sampled = SampledExogenousBundle(
             levels=merge_level_frames(macro_bundle.levels, pe_bundle.levels),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
-            # The PE half's month-0 marks pass straight through: it is the only component that
-            # has any, and the field is already `Mapping[IssuerId, float]` on both sides. This
-            # used to be fifteen lines of isinstance checks rebuilding a type the writer had.
-            private_equity_prices_usd=pe_bundle.private_equity_prices_usd,
             model_id=self.label,
             provenance={
                 "macro_provenance": dict(macro_bundle.provenance),

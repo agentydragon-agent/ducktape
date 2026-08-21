@@ -172,7 +172,6 @@ class PreSampledPrivateEquitySampler:
         sampled = SampledExogenousBundle(
             levels=bundle.levels,
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
-            private_equity_prices_usd=bundle.private_equity_prices_usd,
             model_id=bundle.model_id,
             provenance={**bundle.provenance, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )

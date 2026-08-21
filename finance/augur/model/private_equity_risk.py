@@ -364,10 +364,8 @@ class PrivateEquityRiskModel:
         rollout_count = request.rollout_count
         horizon_months = request.horizon_months
         pe_bundle_parts: list[PrivateEquityBundle] = []
-        prices: dict[IssuerId, float] = {}
         for issuer_id, issuer in sorted(self.issuers.items()):
             paths = _sample_issuer(issuer_id, issuer, request)
-            prices[issuer_id] = issuer.current_mark_usd
             pe_bundle_parts.append(
                 PrivateEquityBundle.from_issuer_arrays(
                     issuer_id,
@@ -389,7 +387,6 @@ class PrivateEquityRiskModel:
         sampled = SampledExogenousBundle(
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             model_id=self.label,
-            private_equity_prices_usd=prices,
             provenance={"private_equity_issuers": tuple(sorted(self.issuers))},
         )
         validate_sample_satisfies_request(request, sampled)

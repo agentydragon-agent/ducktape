@@ -245,15 +245,13 @@ class SampledExogenousBundle:
     Everything a consumer READS is a typed field. What used to be one
     `metadata: Mapping[str, object]` carried two unrelated things under one type: load-bearing
     data that consumers reached for by string key, and free-form provenance nobody parses. The
-    first is now `private_equity_prices_usd` and `model_id`; `provenance` keeps the second and
-    is named for what it is, so a future field cannot quietly hide in it again.
+    load-bearing data now lives in the typed level and private-equity protocol bundles; `model_id`
+    is explicit, while `provenance` keeps the descriptive remainder and is named for what it is,
+    so a future field cannot quietly hide in it again.
     """
 
     levels: LevelFrames = field(default_factory=LevelFrames.empty)
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
-    # Month-0 per-unit mark for each PE issuer the bundle covers. A provider that emits no PE
-    # leaves it empty; the empty mapping is "no issuers", not "unknown".
-    private_equity_prices_usd: Mapping[IssuerId, float] = field(default_factory=dict)
     # The provider's own label for what produced this sample, which can differ from the preset
     # id the caller asked for (a composite reports itself, not its macro half). `None` is a
     # real state: a sampler is not obliged to name itself, and the caller falls back to the id
@@ -484,9 +482,6 @@ def anchor_sampled_series_levels(
             }
         ),
         private_equity=private_equity,
-        # Anchoring rescales paths; it does not re-mark issuers, so the month-0 prices and the
-        # producer's identity carry through untouched.
-        private_equity_prices_usd=sampled.private_equity_prices_usd,
         model_id=sampled.model_id,
         provenance={**sampled.provenance, **provenance_extras},
     )
