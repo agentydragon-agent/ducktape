@@ -1,0 +1,13 @@
+# Initial deployment is Claude-only. The value is a non-secret sentinel; the
+# dedicated proxy substitutes the long-lived Claude setup token only on the
+# exact Anthropic Authorization header. This Deployment cannot refresh/write it.
+
+[claude]
+enabled = true
+access_token = "aiquota-claude-oauth-placeholder"
+
+[codex]
+enabled = false
+
+[zai]
+enabled = false

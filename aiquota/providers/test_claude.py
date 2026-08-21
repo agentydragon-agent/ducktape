@@ -1,12 +1,27 @@
 from pathlib import Path
 
+import httpx
+import pytest
 import pytest_bazel
+import respx
 
-from aiquota.providers.claude import _spend_to_extra_spend, _to_success
+from aiquota.models import FetchSuccess
+from aiquota.providers.claude import (
+    TOKEN_URL,
+    USAGE_URL,
+    ClaudeProvider,
+    ClaudeSettings,
+    _spend_to_extra_spend,
+    _to_success,
+)
+from aiquota.providers.client import provider_client
 from devinfra.claude.claude_api.usage import UsageResponse
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+pytestmark = pytest.mark.asyncio
 
 
 def test_spend_shape_drives_extra_spend() -> None:
@@ -42,3 +57,23 @@ def test_raw_usage_fixture_preserves_provider_windows() -> None:
         (5 * 3600, 73),
         (7 * 86400, 75),
     ]
+
+
+async def test_explicit_token_is_read_only_and_never_refreshed(tmp_path: Path) -> None:
+    path = tmp_path / "credentials.json"
+    path.write_text('{"claudeAiOauth":{"accessToken":"expired", "refreshToken":"refresh", "expiresAt":0}}')
+    provider = ClaudeProvider(ClaudeSettings(credentials_path=path, access_token="placeholder"), provider_client())
+
+    with respx.mock(assert_all_called=False) as mock:
+        post_route = mock.post(TOKEN_URL).mock(side_effect=AssertionError("read-only provider must not refresh"))
+        usage_route = mock.get(USAGE_URL).mock(
+            return_value=httpx.Response(
+                200, json={"five_hour": {"utilization": 10, "resets_at": "2026-08-20T05:00:00Z"}}
+            )
+        )
+        output = await provider.fetch()
+
+    assert isinstance(output.result, FetchSuccess)
+    assert post_route.call_count == 0
+    assert usage_route.calls.last.request.headers["Authorization"] == "Bearer placeholder"
+    assert "placeholder" not in path.read_text()

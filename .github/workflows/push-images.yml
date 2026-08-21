@@ -66,6 +66,7 @@ jobs:
         include:
           # Test-gated images: push only if their tests pass.
           - { image: "//airlock:image", image_name: airlock, test_target: "//airlock/..." }
+          - { image: "//aiquota:api_image", image_name: aiquota-api, test_target: "//aiquota:all" }
           - { image: "//finance/augur/api:image", image_name: augur, test_target: "//finance/augur/api/..." }
           - {
               image: "//finance/augur/frontend:image",

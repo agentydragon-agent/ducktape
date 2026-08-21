@@ -24,9 +24,7 @@ spec:
       labels:
         app.kubernetes.io/name: cli-proxy-api
     spec:
-      # seaweedfs-ovh PVC; the SeaweedFS CSI node plugin runs on OVH (hil-ovh) nodes.
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
+      automountServiceAccountToken: false
       initContainers:
         - name: init-auth-dir
           image: busybox:1.37
