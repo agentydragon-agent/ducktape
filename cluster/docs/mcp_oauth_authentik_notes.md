@@ -220,13 +220,12 @@ that prefixed group.
 
 ## Current state
 
-Three kubectl MCP servers:
+Two kubectl MCP servers:
 
-| Name                      | Transport             | Auth                                       | Permissions                                          |
-| ------------------------- | --------------------- | ------------------------------------------ | ---------------------------------------------------- |
-| `kubectl-local`           | stdio (local process) | client cert in kubeconfig                  | `kubectl-sandbox-users` group (via cert `O=` field)  |
-| `kubectl-passthrough-mcp` | HTTP                  | OAuth passthrough (public client, PKCE)    | caller's own OIDC group permissions                  |
-| `kubectl-sandbox-mcp`     | HTTP                  | OAuth passthrough + scope mapping override | always `kubectl-sandbox-users`, regardless of caller |
+| Name                      | Transport | Auth                                       | Permissions                                          |
+| ------------------------- | --------- | ------------------------------------------ | ---------------------------------------------------- |
+| `kubectl-passthrough-mcp` | HTTP      | OAuth passthrough (public client, PKCE)    | caller's own OIDC group permissions                  |
+| `kubectl-sandbox-mcp`     | HTTP      | OAuth passthrough + scope mapping override | always `kubectl-sandbox-users`, regardless of caller |
 
 ### `.mcp.json` for the scoped server
 
