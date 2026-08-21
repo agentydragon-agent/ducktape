@@ -11,7 +11,7 @@ from __future__ import annotations
 import polars as pl
 
 from finance.augur.sim.codec.plan import SimulationRun
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.engine import (
     ProductMetricArrays,
     run_dense_simulation,

@@ -46,7 +46,7 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
     TerminalMetrics,
 )
-from finance.augur.sim.compiler import CompiledSimulation, compile_simulation
+from finance.augur.sim.compiler.plan import CompiledSimulation, compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import (
     ProductMetricArrays,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 
 
 def validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:

@@ -464,7 +464,6 @@ py_library(
 py_library(
     name = "compiler",
     srcs = [
-        "compiler/__init__.py",
         "compiler/assets.py",
         "compiler/bonds.py",
         "compiler/cashflows.py",

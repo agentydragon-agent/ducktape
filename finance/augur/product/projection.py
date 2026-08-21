@@ -38,7 +38,7 @@ from finance.augur.product.wire import (
     TaxAccrualEvent,
     TaxPaymentEvent,
 )
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.engine.jax_engine import ProductMetricArrays
 from finance.augur.sim.enums import LifecycleKind, PrivateEquityOpportunityOutcome
 from finance.augur.sim.output import DenseSimulationOutput

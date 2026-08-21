@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 
 from finance.augur.sim.codec.helpers import code_column, codes_to_strings, currency_quanta_column, frame_from_columns
-from finance.augur.sim.compiler import CompiledSimulation
+from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
 
