@@ -17,7 +17,7 @@ from finance.augur.sim.codec.helpers import (
     state_history_frame_from_columns,
 )
 from finance.augur.sim.compiler.plan import CompiledSimulation
-from finance.augur.sim.enums import CapitalGainClassification
+from finance.augur.sim.enums import CapitalGainClassification, TaxBreakdownChannel
 from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.state import CAPITAL_GAINS_YTD_FRAME, ORDINARY_INCOME_YTD_FRAME, TAX_LIABILITIES_FRAME
@@ -110,7 +110,8 @@ def decode_tax_liabilities(plan: CompiledSimulation, output: DenseSimulationOutp
 def decode_tax_accruals(plan: CompiledSimulation, output: DenseSimulationOutput) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Returns (tax_accruals_frame, tax_breakdowns_frame). Same active mask, two output frames."""
 
-    active = output.taxes.accrual_active  # (M, link, R)
+    breakdown = output.taxes.breakdown
+    active = breakdown[TaxBreakdownChannel.ACCRUAL_ACTIVE] > 0  # (M, link, R)
     if active.any():
         months, links, rollouts = np.argwhere(active).T
     else:
@@ -123,7 +124,8 @@ def decode_tax_accruals(plan: CompiledSimulation, output: DenseSimulationOutput)
         [f"{a}_{j}_year_end_accrual_m{m}" for a, j, m in zip(agent_ids, jurisdiction_ids, months, strict=True)],
         dtype=object,
     )
-    totals = output.taxes.accrual_amount[months, links, rollouts]
+    breakdown = breakdown[:, months, links, rollouts]
+    totals = breakdown[TaxBreakdownChannel.ORDINARY_TAX] + breakdown[TaxBreakdownChannel.CAPITAL_GAIN_TAX]
     accruals = frame_from_columns(
         EVENT_FRAMES.tax_accruals,
         rollout_index=rollouts,
@@ -142,19 +144,17 @@ def decode_tax_accruals(plan: CompiledSimulation, output: DenseSimulationOutput)
         agent_id=agent_ids,
         jurisdiction_id=jurisdiction_ids,
         tax_year_end_month=months,
-        ordinary_income_quanta=currency_quanta_column(output.taxes.ordinary_income[months, links, rollouts]),
-        ltcg_quanta=currency_quanta_column(output.taxes.long_term_capital_gain[months, links, rollouts]),
-        stcg_quanta=currency_quanta_column(output.taxes.short_term_capital_gain[months, links, rollouts]),
+        ordinary_income_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.ORDINARY_INCOME]),
+        ltcg_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.LTCG]),
+        stcg_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.STCG]),
         standard_deduction_quanta=currency_quanta_column(plan.tax.link_standard_deduction[links]),
-        mortgage_interest_deduction_quanta=currency_quanta_column(
-            output.taxes.mortgage_interest_deduction[months, links, rollouts]
-        ),
-        salt_deduction_quanta=currency_quanta_column(output.taxes.salt_deduction[months, links, rollouts]),
-        itemized_deduction_quanta=currency_quanta_column(output.taxes.itemized_deduction[months, links, rollouts]),
-        ordinary_taxable_quanta=currency_quanta_column(output.taxes.ordinary_taxable[months, links, rollouts]),
-        capital_gain_taxable_quanta=currency_quanta_column(output.taxes.capital_gain_taxable[months, links, rollouts]),
-        ordinary_tax_quanta=currency_quanta_column(output.taxes.ordinary_tax[months, links, rollouts]),
-        capital_gain_tax_quanta=currency_quanta_column(output.taxes.capital_gain_tax[months, links, rollouts]),
+        mortgage_interest_deduction_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.MORTGAGE_DEDUCTION]),
+        salt_deduction_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.SALT_DEDUCTION]),
+        itemized_deduction_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.ITEMIZED_DEDUCTION]),
+        ordinary_taxable_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.ORDINARY_TAXABLE]),
+        capital_gain_taxable_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.CAPITAL_GAIN_TAXABLE]),
+        ordinary_tax_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.ORDINARY_TAX]),
+        capital_gain_tax_quanta=currency_quanta_column(breakdown[TaxBreakdownChannel.CAPITAL_GAIN_TAX]),
         total_tax_quanta=currency_quanta_column(totals),
     )
     return accruals, breakdowns

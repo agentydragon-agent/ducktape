@@ -41,6 +41,13 @@ class CapitalGainClassification(IntEnum):
     SHORT_TERM = 1
 
 
+class TaxBreakdownChannel(IntEnum):
+    (ACCRUAL_ACTIVE, ORDINARY_INCOME, LTCG, STCG, MORTGAGE_DEDUCTION) = range(5)
+    (SALT_DEDUCTION, ITEMIZED_DEDUCTION, ORDINARY_TAXABLE, CAPITAL_GAIN_TAXABLE, ORDINARY_TAX, CAPITAL_GAIN_TAX) = (
+        range(5, 11)
+    )
+
+
 class LifecycleKind(IntEnum):
     FRACTION = 0
     CAPITAL_IMPROVEMENT = 1

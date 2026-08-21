@@ -162,7 +162,7 @@ def test_tax_rate_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _tax_scenario(),
         lambda p: replace(p, tax=replace(p.tax, link_ordinary_rate=p.tax.link_ordinary_rate * 1.3)),
-        lambda b: b.taxes.accrual_amount,
+        lambda b: b.taxes.breakdown,
     )
 
 
@@ -171,7 +171,7 @@ def test_transfer_amount_sweep_takes_effect() -> None:
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
         return replace(p, cashflows=replace(p.cashflows, amount_fixed=p.cashflows.amount_fixed + np.int64(100_000)))
 
-    _assert_value_sweep_takes_effect(_tax_scenario(), perturb, lambda b: b.taxes.accrual_amount)
+    _assert_value_sweep_takes_effect(_tax_scenario(), perturb, lambda b: b.taxes.breakdown)
 
 
 def test_cost_basis_sweep_takes_effect() -> None:

@@ -40,7 +40,7 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.engine.jax_engine import ProductMetricArrays
-from finance.augur.sim.enums import LifecycleKind, PrivateEquityOpportunityOutcome
+from finance.augur.sim.enums import LifecycleKind, PrivateEquityOpportunityOutcome, TaxBreakdownChannel
 from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.scenario import ObligationType
 
@@ -378,26 +378,33 @@ def _tax_accrual_events(
     plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int, primary_agent_code: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[TaxAccrualEvent] = []
-    for month, link in np.argwhere(output.taxes.accrual_active[:, :, rollout_index]):
+    breakdown = output.taxes.breakdown[:, :, :, rollout_index]
+    for month, link in np.argwhere(breakdown[TaxBreakdownChannel.ACCRUAL_ACTIVE] > 0):
         profile = int(plan.tax.link_profile[link])
         if int(plan.tax.profile_agent[profile]) != primary_agent_code:
             continue
         events.append(
             TaxAccrualEvent(
                 month_index=int(month),
-                amount_quanta=_quanta(output.taxes.accrual_amount[month, link, rollout_index]),
+                amount_quanta=_quanta(
+                    breakdown[TaxBreakdownChannel.ORDINARY_TAX, month, link]
+                    + breakdown[TaxBreakdownChannel.CAPITAL_GAIN_TAX, month, link]
+                ),
                 jurisdiction_id=_required_text(plan, int(plan.tax.link_jurisdiction[link])),
                 tax_year_end_month=int(month),
-                ordinary_income_quanta=_quanta(output.taxes.ordinary_income[month, link, rollout_index]),
-                ltcg_quanta=_quanta(output.taxes.long_term_capital_gain[month, link, rollout_index]),
-                stcg_quanta=_quanta(output.taxes.short_term_capital_gain[month, link, rollout_index]),
-                ordinary_tax_quanta=_quanta(output.taxes.ordinary_tax[month, link, rollout_index]),
-                capital_gain_tax_quanta=_quanta(output.taxes.capital_gain_tax[month, link, rollout_index]),
-                total_tax_quanta=_quanta(output.taxes.accrual_amount[month, link, rollout_index]),
-                mortgage_interest_deduction_quanta=_quanta(
-                    output.taxes.mortgage_interest_deduction[month, link, rollout_index]
+                ordinary_income_quanta=_quanta(breakdown[TaxBreakdownChannel.ORDINARY_INCOME, month, link]),
+                ltcg_quanta=_quanta(breakdown[TaxBreakdownChannel.LTCG, month, link]),
+                stcg_quanta=_quanta(breakdown[TaxBreakdownChannel.STCG, month, link]),
+                ordinary_tax_quanta=_quanta(breakdown[TaxBreakdownChannel.ORDINARY_TAX, month, link]),
+                capital_gain_tax_quanta=_quanta(breakdown[TaxBreakdownChannel.CAPITAL_GAIN_TAX, month, link]),
+                total_tax_quanta=_quanta(
+                    breakdown[TaxBreakdownChannel.ORDINARY_TAX, month, link]
+                    + breakdown[TaxBreakdownChannel.CAPITAL_GAIN_TAX, month, link]
                 ),
-                itemized_deduction_quanta=_quanta(output.taxes.itemized_deduction[month, link, rollout_index]),
+                mortgage_interest_deduction_quanta=_quanta(
+                    breakdown[TaxBreakdownChannel.MORTGAGE_DEDUCTION, month, link]
+                ),
+                itemized_deduction_quanta=_quanta(breakdown[TaxBreakdownChannel.ITEMIZED_DEDUCTION, month, link]),
                 standard_deduction_quanta=_quanta(plan.tax.link_standard_deduction[link]),
             )
         )
