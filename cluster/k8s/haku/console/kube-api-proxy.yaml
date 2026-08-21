@@ -1,0 +1,174 @@
+# Dedicated Kubernetes API authorization proxy for Haku Agents.
+#
+# Gateway terminates the public wildcard certificate and forwards plain HTTP on this namespace-
+# local Service. That backend hop deliberately trusts the cluster node/pod network and Gateway;
+# compromising either can already observe or redirect this workload's traffic. The Cilium policy
+# admits only the Gateway identity. The proxy authenticates every request synchronously with Haku
+# Console, strips the Agent bearer, and uses only its rotating projected ServiceAccount token
+# upstream.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-kube-api-proxy
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-kube-api-proxy
+  annotations:
+    description: Fail-closed Haku Agent Kubernetes authorization boundary.
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-kube-api-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-kube-api-proxy
+    spec:
+      serviceAccountName: haku-kube-api-proxy
+      automountServiceAccountToken: true
+      enableServiceLinks: true
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: proxy
+          image: ghcr.io/agentydragon/haku-kube-api-proxy:devel-20260821162036-2ae8841 # {"$imagepolicy": "flux-system:haku-kube-api-proxy"}
+          env:
+            # Public TLS keeps the original Agent bearer encrypted on the proxy-to-Console hop.
+            # Redirects are rejected and any timeout/malformed response fails the request closed.
+            - name: HAKU_KUBE_AUTHORIZATION_URL
+              value: https://haku.allegedly.works/api/internal/kubernetes/authorize
+            - name: HAKU_KUBE_AUTHORIZATION_TIMEOUT
+              value: 3s
+            - name: HAKU_KUBE_REQUEST_TIMEOUT
+              value: 30s
+            - name: HAKU_KUBE_MAX_REQUEST_BYTES
+              value: "10485760"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haku-kube-api-proxy
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-kube-api-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: haku-kube-api-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: haku-kubeapi-allegedly-works
+  namespace: haku-console
+  annotations:
+    description: Dedicated TLS-terminated Kubernetes API route for Haku-authorized Agent traffic.
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  hostnames:
+    - haku-kubeapi.allegedly.works
+  rules:
+    - backendRefs:
+        - name: haku-kube-api-proxy
+          port: 8080
+      timeouts:
+        request: 35s
+        backendRequest: 35s
+---
+# Selecting the proxy makes both directions default-deny. The only ingress is the Cilium Gateway;
+# egress is DNS, kube-apiserver, and the public-TLS Console authorization endpoint. It receives no
+# general cluster or internet reachability.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: haku-kube-api-proxy
+  namespace: haku-console
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-kube-api-proxy
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchName: haku.allegedly.works
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    # `*.allegedly.works` resolves to Gateway hostNetwork/node addresses, which Cilium labels as
+    # remote-node or host rather than world. This is port-scoped to HTTPS; the process itself is
+    # configured with exactly one authorization URL and rejects redirects.
+    - toEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

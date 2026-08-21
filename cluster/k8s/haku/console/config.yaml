@@ -345,9 +345,10 @@ access_profiles:
   - id: manual-review
     auto_approval_policy: manual_review
 default_access_profile_id: manual-review
-# Evaluate standing Kubernetes access as the same dedicated read-only ServiceAccount whose token
-# iron-proxy mediates for public-coder-agent. Username and groups match `kubectl auth whoami`; they
-# are deploy-owned policy, never caller-supplied request data.
+# Evaluate standing Kubernetes access as the dedicated read-only ServiceAccount identity. Username
+# and groups match `kubectl auth whoami`; they are deploy-owned policy, never caller-supplied request
+# data. The cutover retains its old token only as an inert rollback credential; Agent requests use
+# the separate haku-kube-api-proxy execution identity.
 kubernetes_authorization:
   subjects_by_access_profile:
     public-coder:

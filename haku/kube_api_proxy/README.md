@@ -11,7 +11,7 @@ Agent --Haku bearer--> kube API proxy
                        |  POST bearer + attributes + minimal PolicyRule
                        v
                     Haku Console
-                       |  allowed + SAR reason
+                       |  allowed + SAR/grant source and decision
                        v
                     kube-apiserver <-- proxy-held in-cluster credential
 ```
@@ -63,6 +63,10 @@ Example request:
     "name": "web",
     "path": "/api/v1/namespaces/demo/pods/web/log"
   },
+  "required_scope": {
+    "kind": "namespaces",
+    "namespaces": ["demo"]
+  },
   "required_rules": [
     {
       "api_groups": [""],
@@ -80,6 +84,7 @@ HTTPS. A successful response is:
 ```json
 {
   "allowed": true,
+  "source": "sar",
   "decision_id": "sar:4f5c..."
 }
 ```
@@ -123,19 +128,22 @@ closed when that profile has no configured subject.
 
 ## Deployment status and TODOs
 
-The image is built and tested by `push-images.yml`, but **no Deployment, RBAC or
-Agent routing is added yet**. Deploying a proxy with a broad upstream identity
-before Console can authorize requests and before the direct API path is closed
-would create authority without enforcement.
+The capability-neutral production cutover deploys this proxy at
+`haku-kubeapi.allegedly.works`. Public Coder reaches it only through its mandatory
+iron-proxy, which substitutes the Agent's Haku bearer for that exact hostname.
+The Agent has no Kubernetes credential and its NetworkPolicy has no direct
+kube-apiserver path. The proxy uses a rotating projected ServiceAccount token
+whose initial RBAC ceiling equals Public Coder's existing standing SAR subject.
 
-Before production deployment:
+Flux orders the cutover so the fixed SAR subject, Console configuration, proxy
+Deployment/route, and cross-namespace execution bindings exist before the Agent
+proxy changes credential substitution. A partial rollout therefore leaves the
+old path intact or fails the new path closed; it never exposes the proxy's
+upstream credential to the Agent.
 
-- TODO(#4428): define the proxy ServiceAccount's reviewed maximum capability.
-  Each access profile's fixed SAR subject can only authorize requests within
-  that capability.
-- TODO(#4428): force Agent Kubernetes traffic through the proxy with network
-  policy/credential substitution and prove there is no direct API-server path.
-- TODO(#4428): add per-agent/SAR audit correlation and Prometheus metrics.
+Remaining work:
+
+- TODO(#4428): add per-agent/SAR/grant audit correlation and Prometheus metrics.
 - TODO(#4428): decide whether to implement Kubernetes `watch` and following
   logs. Any implementation must preserve the standing-policy fail-closed model.
 - TODO(#4428): treat `exec`, `attach`, `portforward`, upgrades and resource

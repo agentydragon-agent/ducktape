@@ -77,9 +77,8 @@ spec:
                 secretKeyRef:
                   name: haku-console-public-coder-agent
                   key: token
-            # Read-only K8s SA token, held by the proxy. iron.yaml substitutes it
-            # only for kubeapi.allegedly.works. The agent never possesses the
-            # real token — same pattern as GITHUB_TOKEN.
+            # Temporary rollback-only reader credential. The cutover iron.yaml contains no rule
+            # that selects it, so Agent traffic cannot use it. Remove after live verification.
             - name: KUBERNETES_READER_TOKEN
               valueFrom:
                 secretKeyRef:

@@ -11,6 +11,8 @@ resources:
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
+  - kube-api-proxy.yaml
+  - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
   - static-deployment.yaml

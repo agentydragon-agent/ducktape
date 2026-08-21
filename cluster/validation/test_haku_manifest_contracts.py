@@ -153,6 +153,159 @@ def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
 
 
+def test_public_coder_kubernetes_proxy_cutover_contract(k8s_dir: Path) -> None:
+    """Agent traffic, standing SAR identity, and proxy execution authority stay separate."""
+    agent_dir = k8s_dir / "agents" / "public-coder-agent"
+    console_dir = k8s_dir / "haku" / "console"
+
+    kubeconfig = yaml.safe_load((agent_dir / "app" / "agent-kubeconfig.yaml").read_text())
+    cluster = one(kubeconfig["clusters"])["cluster"]
+    user = one(kubeconfig["users"])["user"]
+    assert cluster["server"] == "https://haku-kubeapi.allegedly.works"
+    assert user["token"] == "proxy-haku-console-placeholder"
+
+    iron = yaml.safe_load((agent_dir / "proxy" / "iron.yaml").read_text())
+    secrets_transform = one(transform for transform in iron["transforms"] if transform["name"] == "secrets")
+    secrets = secrets_transform["config"]["secrets"]
+    secrets_by_env = {entry["source"]["var"]: entry for entry in secrets}
+    haku_secret = secrets_by_env["HAKU_CONSOLE_TOKEN"]
+    assert {rule["host"] for rule in haku_secret["rules"]} == {"haku.allegedly.works", "haku-kubeapi.allegedly.works"}
+    assert "KUBERNETES_READER_TOKEN" not in secrets_by_env
+
+    ingress_policy = yaml.safe_load((agent_dir / "proxy" / "cnp-ingress.yaml").read_text())
+    ingress_rule = one(ingress_policy["spec"]["ingress"])
+    assert {frozenset(endpoint["matchLabels"].items()) for endpoint in ingress_rule["fromEndpoints"]} == {
+        frozenset(
+            {
+                "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
+                "k8s:app.kubernetes.io/name": "public-coder-agent",
+            }.items()
+        ),
+        frozenset(
+            {
+                "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
+                "k8s:kubevirt.io/domain": "public-coder-devbox",
+            }.items()
+        ),
+    }
+    assert one(ingress_rule["toPorts"])["ports"] == [{"port": "8080", "protocol": "TCP"}]
+
+    app_egress = yaml.safe_load((agent_dir / "app" / "networkpolicy-egress.yaml").read_text())
+    assert all(rule.get("to") for rule in app_egress["spec"]["egress"])
+    assert not any("ipBlock" in peer for rule in app_egress["spec"]["egress"] for peer in rule["to"])
+    assert not {port["port"] for rule in app_egress["spec"]["egress"] for port in rule.get("ports", [])} & {443, 6443}
+    proxy_egress = one(
+        rule
+        for rule in app_egress["spec"]["egress"]
+        if rule["to"] == [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "public-coder-agent-proxy"}}}]
+    )
+    assert proxy_egress["ports"] == [{"port": 8080, "protocol": "TCP"}]
+
+    proxy_deployment = yaml.safe_load((agent_dir / "proxy" / "deployment.yaml").read_text())
+    proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
+    proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
+    # Kept only so the staged rollback can restore the old transform before removing Haku.
+    assert proxy_env["KUBERNETES_READER_TOKEN"]["valueFrom"]["secretKeyRef"]["name"] == (
+        "public-coder-agent-reader-token"
+    )
+    reader_objects = list(yaml.safe_load_all((agent_dir / "k8s-reader" / "serviceaccount.yaml").read_text()))
+    rollback_secret = one(obj for obj in reader_objects if obj["kind"] == "Secret")
+    assert rollback_secret["metadata"]["name"] == "public-coder-agent-reader-token"
+
+    console_config = yaml.safe_load((console_dir / "config.yaml").read_text())
+    subject = console_config["kubernetes_authorization"]["subjects_by_access_profile"]["public-coder"]
+    assert subject == {
+        "username": "system:serviceaccount:public-coder-agent:public-coder-agent-reader",
+        "groups": ["system:serviceaccounts", "system:serviceaccounts:public-coder-agent", "system:authenticated"],
+    }
+
+    authorization_objects = list(yaml.safe_load_all((console_dir / "kubernetes-authorization-rbac.yaml").read_text()))
+    execution_service_account = one(obj for obj in authorization_objects if obj["kind"] == "ServiceAccount")
+    assert execution_service_account["metadata"] == {
+        "name": "haku-kube-api-proxy",
+        "namespace": "haku-console",
+        "annotations": {"description": "Executes only Kubernetes requests authorized synchronously by Haku Console."},
+    }
+
+    proxy_objects = list(yaml.safe_load_all((console_dir / "kube-api-proxy.yaml").read_text()))
+    haku_proxy = one(obj for obj in proxy_objects if obj["kind"] == "Deployment")
+    assert haku_proxy["spec"]["template"]["spec"]["serviceAccountName"] == "haku-kube-api-proxy"
+    haku_proxy_container = one(haku_proxy["spec"]["template"]["spec"]["containers"])
+    assert haku_proxy_container["image"].startswith("ghcr.io/agentydragon/haku-kube-api-proxy:devel-")
+    assert haku_proxy_container["readinessProbe"]["httpGet"]["path"] == "/healthz"
+    route = one(obj for obj in proxy_objects if obj["kind"] == "HTTPRoute")
+    assert route["spec"]["hostnames"] == ["haku-kubeapi.allegedly.works"]
+
+    ceiling_objects = list(yaml.safe_load_all((agent_dir / "k8s-reader" / "proxy-ceiling.yaml").read_text()))
+    actual_ceiling = {
+        (obj["kind"], obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"])
+        for obj in ceiling_objects
+    }
+    assert actual_ceiling == {
+        ("RoleBinding", "public-coder-agent", "Role", "public-coder-agent-reader"),
+        ("ClusterRoleBinding", None, "ClusterRole", "public-coder-agent-node-reader"),
+        ("RoleBinding", "ducktape-flux", "Role", "ducktape-flux-reader"),
+        ("RoleBinding", "vm-images-publisher", "Role", "public-coder-agent-metadata-reader"),
+    }
+    for binding in ceiling_objects:
+        assert binding["subjects"] == [
+            {"kind": "ServiceAccount", "name": "haku-kube-api-proxy", "namespace": "haku-console"}
+        ]
+
+    standing_subject = {
+        "kind": "ServiceAccount",
+        "name": "public-coder-agent-reader",
+        "namespace": "public-coder-agent",
+    }
+    standing_binding_files = (
+        agent_dir / "k8s-reader" / "role.yaml",
+        agent_dir / "k8s-reader" / "node-reader.yaml",
+        k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
+        k8s_dir / "vm-images-publisher" / "public-coder-agent-metadata-reader.yaml",
+    )
+    standing_role_refs = {
+        (obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"])
+        for path in standing_binding_files
+        for obj in yaml.safe_load_all(path.read_text())
+        if obj["kind"] in {"RoleBinding", "ClusterRoleBinding"} and standing_subject in obj["subjects"]
+    }
+    proxy_role_refs = {
+        (obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"]) for obj in ceiling_objects
+    }
+    assert proxy_role_refs == standing_role_refs
+
+    reader_flux = yaml.safe_load((agent_dir / "k8s-reader" / "flux-kustomization.yaml").read_text())
+    proxy_flux = yaml.safe_load((agent_dir / "proxy" / "flux-kustomization.yaml").read_text())
+    console_flux = yaml.safe_load((console_dir / "flux-kustomization.yaml").read_text())
+    cutover_label = "haku.allegedly.works/kubernetes-cutover"
+    assert {
+        reader_flux["metadata"]["labels"][cutover_label],
+        proxy_flux["metadata"]["labels"][cutover_label],
+        console_flux["metadata"]["labels"][cutover_label],
+    } == {"proxy-v1"}
+    dependency_by_name = {entry["name"]: entry for entry in proxy_flux["spec"]["dependsOn"]}
+    for dependency_name in ("public-coder-agent-k8s-reader", "haku-console"):
+        expression = dependency_by_name[dependency_name]["readyExpr"]
+        assert cutover_label in expression
+        assert "dep.metadata.generation == dep.status.observedGeneration" in expression
+    assert proxy_flux["spec"]["wait"] is True
+    assert proxy_flux["spec"]["retryInterval"] == "1m"
+    assert proxy_flux["spec"]["healthChecks"] == [
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "public-coder-agent-proxy",
+            "namespace": "public-coder-agent",
+        },
+        {
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "Certificate",
+            "name": "public-coder-agent-proxy-root-ca",
+            "namespace": "public-coder-agent",
+        },
+    ]
+
+
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     """API and static releases are independently safe and report their actual images."""
     console_dir = k8s_dir / "haku" / "console"
