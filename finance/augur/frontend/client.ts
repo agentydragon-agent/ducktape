@@ -9,15 +9,12 @@ import {
   zCalibrationRunResponse,
   zCatalogResponse,
   zDeploymentInfo,
-  zMetricFanResponse,
   zProductPortfolioResponse,
   zProductProjectionRequest,
   zProductProjectionResponse,
-  zProjectionSamplingRequest,
   zRolloutRequest,
   zRolloutResponse,
   zSettingsResponse,
-  zTerminalDistributionResponse,
 } from "./lib/api/schema.zod";
 
 type FetchOptions = { signal?: AbortSignal };
@@ -119,26 +116,6 @@ export function fetchAugurDeployment({ signal }: FetchOptions = {}) {
 
 export function fetchProductPortfolio({ signal }: FetchOptions = {}) {
   return apiGet("/api/product/portfolio", zProductPortfolioResponse, signal);
-}
-
-export function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions = {}) {
-  return apiPost(
-    "/api/product/projections/metric_fan",
-    zProjectionSamplingRequest,
-    zMetricFanResponse,
-    metricFanRequest,
-    signal
-  );
-}
-
-export function fetchProductTerminalDistribution(terminalDistributionRequest, { signal }: FetchOptions = {}) {
-  return apiPost(
-    "/api/product/projections/terminal_distribution",
-    zProjectionSamplingRequest,
-    zTerminalDistributionResponse,
-    terminalDistributionRequest,
-    signal
-  );
 }
 
 export function fetchProductProjectionSummary(projectionSummaryRequest, { signal }: FetchOptions = {}) {

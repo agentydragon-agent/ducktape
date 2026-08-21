@@ -49,7 +49,6 @@ export const LIFECYCLE_KINDS = [
   { value: "capital_improvement", label: "Capital improvement" },
   { value: "property_sale", label: "Sell property" },
 ];
-export const LIFECYCLE_KINDS_BY_VALUE = new Map(LIFECYCLE_KINDS.map((kind) => [kind.value, kind]));
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_value, percentile) => percentile);
@@ -75,8 +74,6 @@ export const METRIC_OPTIONS = [
   { value: "home_equity", chartValue: "homeEquityQuanta", label: "Home equity" },
   { value: "net_worth", chartValue: "netWorthQuanta", label: "Net worth" },
 ];
-
-export const METRIC_BY_VALUE = new Map(METRIC_OPTIONS.map((metric) => [metric.value, metric]));
 
 export function productInputDefaults(bootstrap) {
   // Server-provided overrides (from the deployment's augur YAML's `product_input_defaults`).

@@ -7,7 +7,7 @@ import {
   fmtQuanta,
   fmtNumber,
 } from "./lib/format";
-import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers";
+import { METRIC_OPTIONS } from "./input_helpers";
 import { ROLLOUT_EVENT_KIND_ORDER, type RolloutEventKind } from "./rollout_event_vocabulary.generated";
 
 export { ROLLOUT_EVENT_KIND_ORDER };
@@ -154,21 +154,6 @@ export function terminalMetricValue(terminalMetrics, metric) {
   return terminalMetrics?.[metric.chartValue] ?? null;
 }
 
-export function quantile(values, percentile) {
-  const sorted = values
-    .filter(Number.isFinite)
-    .slice()
-    .sort((left, right) => left - right);
-  if (sorted.length === 0) return null;
-  if (sorted.length === 1) return sorted[0];
-  const position = (percentile / 100) * (sorted.length - 1);
-  const lowerIndex = Math.floor(position);
-  const upperIndex = Math.ceil(position);
-  if (lowerIndex === upperIndex) return sorted[lowerIndex];
-  const weight = position - lowerIndex;
-  return sorted[lowerIndex] * (1 - weight) + sorted[upperIndex] * weight;
-}
-
 const PROPERTY_METRIC_VALUES = new Set(["property_value"]);
 const MORTGAGE_METRIC_VALUES = new Set(["mortgage_balance", "home_equity"]);
 
@@ -180,20 +165,6 @@ export function visibleMetricOptions(input) {
     if (!hasMortgage && MORTGAGE_METRIC_VALUES.has(metric.value)) return false;
     return true;
   });
-}
-
-export function terminalMetricTableRows(summaries, selectedSummary, metrics) {
-  return metrics.map((metric) => ({
-    metric,
-    percentiles: FAN_PERCENTILES.map((percentile) => ({
-      percentile,
-      value: quantile(
-        summaries.map((summary) => terminalMetricValue(summary.terminalMetrics, metric)),
-        percentile
-      ),
-    })),
-    selectedValue: selectedSummary ? terminalMetricValue(selectedSummary.terminalMetrics, metric) : null,
-  }));
 }
 
 export function rolloutStatusText(summary) {
