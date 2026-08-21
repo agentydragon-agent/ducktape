@@ -97,11 +97,9 @@ def scatter_ys_to_buffers(
     buffers.lot_dispositions.scheduled.proceeds[:] = np.asarray(scheduled.proceeds)
 
     purchases = ys.property_purchases
-    purchase_active = np.asarray(purchases.active)
-    purchase_transfer_active = np.asarray(purchases.transfer_active)
+    purchase_active = np.asarray(purchases)
     for position, purchase in enumerate(structure.folded_purchases):
         buffers.properties.purchase_active[:, purchase.buffer_index] = purchase_active[:, position]
-        buffers.properties.transfer_active[:, purchase.buffer_index] = purchase_transfer_active[:, position]
 
     mortgage = ys.mortgages
     liability_count = p.liability_count

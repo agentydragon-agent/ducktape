@@ -223,11 +223,6 @@ class _ObligationInputs(NamedTuple):
     tax_true_up: _PriorYearTaxObligationInputs
 
 
-class _PropertyPurchaseOutput(NamedTuple):
-    active: jax.Array
-    transfer_active: jax.Array
-
-
 class _MortgageOutput(NamedTuple):
     origination_active: jax.Array
     payment_active: jax.Array
@@ -306,7 +301,7 @@ class _DenseScanOutput(NamedTuple):
     transfers: _TransferOutput
     property_cashflows: _TransferOutput
     obligations: _ObligationOutput
-    property_purchases: _PropertyPurchaseOutput
+    property_purchases: jax.Array
     mortgages: _MortgageOutput
     taxes: _TaxOutput
     target_allocation: _TargetAllocationOutput

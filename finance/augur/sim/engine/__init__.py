@@ -130,7 +130,6 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
         ),
         properties=PropertyEventBuffers(
             # property_*_active[H, P, R]
-            transfer_active=np.zeros((h, p.property_count, r), dtype=np.bool_),
             purchase_active=np.zeros((h, p.property_count, r), dtype=np.bool_),
             # mortgage_*[H, max(1, B), R]
             mortgage_origination_active=np.zeros((h, liability_event_axis, r), dtype=np.bool_),

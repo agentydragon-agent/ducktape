@@ -72,8 +72,8 @@ def decode_property_purchases(
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Returns (property_purchases_frame, derived_transfers_frame).
 
-    The transfers frame is the subset of purchases whose `property_transfer_active` flag is
-    set — the buyer-cash transfer that goes alongside the purchase event.
+    The transfers frame is the subset of purchases with a positive compiled stake contribution —
+    the buyer-cash transfer that goes alongside the purchase event.
     """
 
     active = buffers.properties.purchase_active  # (M, P, R)
@@ -102,8 +102,9 @@ def decode_property_purchases(
         stake_contribution_quanta=currency_quanta_column(plan.properties.stake_contribution[props]),
         equity_ledger_quanta=currency_quanta_column(plan.properties.equity_ledger[props]),
     )
-    # Derived buyer-cash transfers: subset where `property_transfer_active` also holds.
-    transfer_mask = buffers.properties.transfer_active[months, props, rollouts]
+    # A buyer-cash transfer is mechanically implied by the purchase event and its compiled stake.
+    # Derive this at the decode boundary rather than storing/copying a duplicate event mask.
+    transfer_mask = plan.properties.stake_contribution[props] > 0
     if transfer_mask.any():
         m_t = months[transfer_mask]
         p_t = props[transfer_mask]
