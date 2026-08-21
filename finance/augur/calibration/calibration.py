@@ -23,8 +23,8 @@ import asyncio
 import logging
 import math
 from collections import Counter
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 
 import numpy as np
@@ -34,6 +34,7 @@ from statsmodels.stats.proportion import proportion_confint
 
 from finance.augur.calibration.catalog import (
     BucketFamily,
+    BucketMember,
     CorrelateMarket,
     DateLadderFamily,
     ExactMarket,
@@ -350,6 +351,41 @@ def _exact_market_counts(
     return counts, mapping.series
 
 
+def _build_categorical_row(
+    *,
+    family_id: str,
+    question: str,
+    platform: str,
+    channel: str,
+    at_date: date,
+    bucket_specs: Sequence[BucketMember | _DerivedBucket],
+    p_market: list[float],
+    model_counts: npt.NDArray[np.integer] | None,
+) -> CategoricalRow:
+    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
+    p_model = [int(count) / n_resolved for count in model_counts] if model_counts is not None and n_resolved else None
+    return CategoricalRow(
+        family_id=family_id,
+        question=question,
+        platform=platform,
+        channel=channel,
+        at_date=at_date,
+        n_resolved=n_resolved,
+        kl_bits=kl_bits_categorical(p_market, p_model) if p_model is not None else None,
+        buckets=[
+            CategoricalBucket(
+                label=bucket.label,
+                market_id=bucket.market_id,
+                low=bucket.low,
+                high=bucket.high,
+                p_market=p_market[i],
+                p_model=p_model[i] if p_model is not None else None,
+            )
+            for i, bucket in enumerate(bucket_specs)
+        ],
+    )
+
+
 def _categorical_row(
     family: BucketFamily,
     *,
@@ -380,29 +416,15 @@ def _categorical_row(
             horizon_months=horizon_months,
         )
     )
-    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
-    p_model = [int(c) / n_resolved for c in model_counts] if model_counts is not None and n_resolved else None
-    kl_bits = kl_bits_categorical(p_market, p_model) if p_model is not None else None
-    buckets = [
-        CategoricalBucket(
-            label=member.label,
-            market_id=member.market_id,
-            low=member.low,
-            high=member.high,
-            p_market=p_market[i],
-            p_model=p_model[i] if p_model is not None else None,
-        )
-        for i, member in enumerate(family.buckets)
-    ]
-    return CategoricalRow(
+    return _build_categorical_row(
         family_id=family.family_id,
         question=family.question,
         platform=family.platform,
         channel=str(family.series),
         at_date=family.at_date,
-        n_resolved=n_resolved,
-        kl_bits=kl_bits,
-        buckets=buckets,
+        bucket_specs=family.buckets,
+        p_market=p_market,
+        model_counts=model_counts,
     )
 
 
@@ -453,30 +475,16 @@ def _threshold_ladder_row(
             model_counts = bucket_model_counts(
                 matrix, lows=lows, highs=highs, at_month=at_month, horizon_months=horizon_months
             )
-    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
-    p_model = [int(c) / n_resolved for c in model_counts] if model_counts is not None and n_resolved else None
     p_market = [bucket.p_market for bucket in derived_buckets]
-    kl_bits = kl_bits_categorical(p_market, p_model) if p_model is not None else None
-    buckets = [
-        CategoricalBucket(
-            label=derived_bucket.label,
-            market_id=derived_bucket.market_id,
-            low=derived_bucket.low,
-            high=derived_bucket.high,
-            p_market=derived_bucket.p_market,
-            p_model=p_model[i] if p_model is not None else None,
-        )
-        for i, derived_bucket in enumerate(derived_buckets)
-    ]
-    return CategoricalRow(
+    return _build_categorical_row(
         family_id=family.family_id,
         question=family.question,
         platform=family.platform,
         channel=str(family.series),
         at_date=family.at_date,
-        n_resolved=n_resolved,
-        kl_bits=kl_bits,
-        buckets=buckets,
+        bucket_specs=derived_buckets,
+        p_market=p_market,
+        model_counts=model_counts,
     )
 
 
@@ -500,28 +508,16 @@ def _date_ladder_row(
     derived_buckets = _date_ladder_buckets(family, by_dates=by_dates, curve=fitted_curve)
     trajectories = trajectories_by_issuer.get(family.issuer)
     model_counts = None if trajectories is None else ipo_by_date_bucket_counts(trajectories, by_dates=by_dates)
-    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
-    p_model = [int(c) / n_resolved for c in model_counts] if model_counts is not None and n_resolved else None
     p_market = [bucket.p_market for bucket in derived_buckets]
-    kl_bits = kl_bits_categorical(p_market, p_model) if p_model is not None else None
-    buckets = [
-        CategoricalBucket(
-            label=derived_bucket.label,
-            market_id=derived_bucket.market_id,
-            p_market=derived_bucket.p_market,
-            p_model=p_model[i] if p_model is not None else None,
-        )
-        for i, derived_bucket in enumerate(derived_buckets)
-    ]
-    return CategoricalRow(
+    return _build_categorical_row(
         family_id=family.family_id,
         question=family.question,
         platform=family.platform,
         channel=family.issuer,
         at_date=by_dates[-1],
-        n_resolved=n_resolved,
-        kl_bits=kl_bits,
-        buckets=buckets,
+        bucket_specs=derived_buckets,
+        p_market=p_market,
+        model_counts=model_counts,
     )
 
 
@@ -656,16 +652,7 @@ def _threshold_ladder_buckets(
         )
     total = sum(bucket.p_market for bucket in buckets)
     if total > 0.0:
-        buckets = [
-            _DerivedBucket(
-                low=bucket.low,
-                high=bucket.high,
-                label=bucket.label,
-                market_id=bucket.market_id,
-                p_market=bucket.p_market / total,
-            )
-            for bucket in buckets
-        ]
+        buckets = [replace(bucket, p_market=bucket.p_market / total) for bucket in buckets]
     return buckets
 
 
@@ -714,16 +701,7 @@ def _date_ladder_buckets(family: DateLadderFamily, *, by_dates: list[date], curv
     )
     total = sum(bucket.p_market for bucket in buckets)
     if total > 0.0:
-        buckets = [
-            _DerivedBucket(
-                low=bucket.low,
-                high=bucket.high,
-                label=bucket.label,
-                market_id=bucket.market_id,
-                p_market=bucket.p_market / total,
-            )
-            for bucket in buckets
-        ]
+        buckets = [replace(bucket, p_market=bucket.p_market / total) for bucket in buckets]
     return buckets
 
 
