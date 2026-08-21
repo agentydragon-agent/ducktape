@@ -66,15 +66,16 @@ from finance.augur.product.quantiles import (
     interpolate_currency_quantiles,
 )
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
+from finance.augur.sim.compiler.bonds import BondExecution
+from finance.augur.sim.compiler.cashflows import CashflowExecution
+from finance.augur.sim.compiler.distributions import DistributionExecution
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
 from finance.augur.sim.engine.jax_types import (
     _AssetSaleProgram,
-    _BondInputs,
     _CapitalGainTarget,
     _DenseProductTailOutput,
-    _DistributionInputs,
     _FoldedHarvest,
     _FoldedLifecycleEvent,
     _FoldedPE,
@@ -91,7 +92,6 @@ from finance.augur.sim.engine.jax_types import (
     _PropertyTaxObligationInputs,
     _SalePool,
     _Static,
-    _CashflowInputs,
     _ConfiguredObligationInputs,
     _EstimatedTaxObligationInputs,
     _MortgageObligationInputs,
@@ -435,9 +435,9 @@ class _Operands(NamedTuple):
     prop0: jnp.ndarray
     liab0: jnp.ndarray
     # Whole-horizon static tables sliced by the traced month.
-    cashflows: _CashflowInputs
-    bonds: _BondInputs
-    distributions: _DistributionInputs
+    cashflows: CashflowExecution[jax.Array]
+    bonds: BondExecution[jax.Array]
+    distributions: DistributionExecution[jax.Array]
     obligations: _ObligationInputs
     purchases: _PurchaseInputs
     # Year-end / property tables.
@@ -1008,6 +1008,7 @@ def _product_summary_inputs(
                 )
 
     property_mask = plan.properties.buyer_agent == primary_agent_code
+    bond_execution = plan.bonds.execution
     bond_mask = plan.bonds.agent == primary_agent_code
     inputs = _ProductSummaryInputs(
         cash_mask=jnp.asarray(cash_mask),
@@ -1020,11 +1021,11 @@ def _product_summary_inputs(
         property_home_value_series=jnp.asarray(plan.property_home_value_series_index.astype(np.int32)),
         liability_mask=jnp.asarray(plan.liabilities.agent == primary_agent_code),
         primary_obligation_mask=jnp.asarray(plan.obligations.metadata.agent == primary_agent_code),
-        bond_face=jnp.asarray(np.where(bond_mask, plan.bonds.face, 0)),
-        bond_on_books=jnp.asarray(plan.bonds.on_books),
-        bond_indexed=jnp.asarray(plan.bonds.indexed),
-        bond_cpi_series=jnp.asarray(plan.bonds.cpi_series),
-        bond_index_base_month=jnp.asarray(plan.bonds.index_base_month),
+        bond_face=jnp.asarray(np.where(bond_mask, bond_execution.face, 0)),
+        bond_on_books=jnp.asarray(bond_execution.on_books),
+        bond_indexed=jnp.asarray(bond_execution.indexed),
+        bond_cpi_series=jnp.asarray(bond_execution.cpi_series),
+        bond_index_base_month=jnp.asarray(bond_execution.index_base_month),
     )
     return (
         _ProductSummaryStatic(
@@ -1149,48 +1150,11 @@ def _build_program(
 
     # Scheduled asset sales own both their traced values and host-resolved FIFO topology.
     asset_sales = _asset_sale_program(plan)
-    # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
-    # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
-    cf = plan.cashflows
-    cashflows = _CashflowInputs(
-        cause=jnp.asarray(cf.cause),
-        amount_kind=jnp.asarray(cf.amount_kind),
-        amount_fixed=jnp.asarray(cf.amount_fixed),
-        amount_base=jnp.asarray(cf.amount_base),
-        amount_series=jnp.asarray(cf.amount_series),
-        amount_base_month=jnp.asarray(cf.amount_base_month),
-        amount_period=jnp.asarray(cf.amount_period),
-        from_slot=jnp.asarray(cf.from_slot),
-        to_slot=jnp.asarray(cf.to_slot),
-        property_slot=jnp.asarray(cf.property_slot),
-        income_profile=jnp.asarray(cf.income_profile),
-        deduction_profile=jnp.asarray(cf.deduction_profile),
-    )
-    bd = plan.bonds
-    bonds = _BondInputs(
-        coupon=jnp.asarray(bd.coupon),
-        redemption=jnp.asarray(bd.redemption),
-        to_slot=jnp.asarray(bd.to_slot),
-        income_row=jnp.asarray(bd.income_row),
-        indexed=jnp.asarray(bd.indexed),
-        cpi_series=jnp.asarray(bd.cpi_series),
-        index_base_month=jnp.asarray(bd.index_base_month),
-        period_rate=jnp.asarray(bd.period_rate),
-        face=jnp.asarray(bd.face),
-        pays=jnp.asarray(bd.pays),
-        matures=jnp.asarray(bd.matures),
-        on_books=jnp.asarray(bd.on_books),
-    )
-    dist = plan.distributions
-    distributions = _DistributionInputs(
-        # Float, so `mask @ lot_remaining` is one matmul rather than an int64 gather-and-sum.
-        lot_mask=jnp.asarray(dist.lot_mask, dtype=jnp.float64),
-        series=jnp.asarray(dist.series),
-        quantity_scale=jnp.asarray(dist.quantity_scale),
-        fraction=jnp.asarray(dist.fraction),
-        to_slot=jnp.asarray(dist.to_slot),
-        income_row=jnp.asarray(dist.income_row),
-    )
+    # Compiler execution records are explicit native PyTrees. Convert every numeric leaf once;
+    # decode-only identity columns never cross this boundary.
+    cashflows = cast(CashflowExecution[jax.Array], jax.tree.map(jnp.asarray, plan.cashflows.execution))
+    bonds = cast(BondExecution[jax.Array], jax.tree.map(jnp.asarray, plan.bonds.execution))
+    distributions = cast(DistributionExecution[jax.Array], jax.tree.map(jnp.asarray, plan.distributions.execution))
     ob = plan.obligations
     liabs = plan.liabilities
     property_tax = ob.property_tax
@@ -1602,8 +1566,8 @@ def _build_program(
         link_tax_static=link_tax_static,
         link_profile=tuple(int(taxc.link_profile[link]) for link in range(link_count)),
         profile_gain_index=tuple(int(x) for x in plan.tax_profile_capital_gain_index),
-        has_indexed_bonds=bool(plan.bonds.indexed.any()),
-        has_distributions=bool(plan.distributions.series.size),
+        has_indexed_bonds=bool(plan.bonds.execution.indexed.any()),
+        has_distributions=bool(plan.distributions.execution.series.size),
         profile_ordinary_bucket=tuple(
             plan.tax.buckets.ordinary_bucket(profile) for profile in range(p.tax_profile_count)
         ),
@@ -2079,7 +2043,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # Every authored transfer lowers to one cashflow program. Property-linked rows gate on
         # the post-purchase active state; ordinary rows carry NO_CODE and are unconditional.
         cash, ordinary, cashflow_active, cashflow_amount = _cashflows_jit(
-            cashflows.cause[month],
+            cashflows.active[month],
             cashflows.amount_kind[month],
             cashflows.amount_fixed[month],
             cashflows.amount_base[month],
@@ -3128,7 +3092,7 @@ def _amount_values_vec(
 
 @partial(jax.jit, static_argnames=("row_of_world",))
 def _cashflows_jit(
-    cause: jnp.ndarray,
+    cashflow_active: jnp.ndarray,
     amount_kind: jnp.ndarray,
     amount_fixed: jnp.ndarray,
     amount_base: jnp.ndarray,
@@ -3152,7 +3116,7 @@ def _cashflows_jit(
     property_gated = property_slot >= 0
     safe_property_slot = jnp.maximum(property_slot, 0)
     property_gate = _gather_rows(property_active, safe_property_slot)
-    fire = (cause >= 0)[:, None] & active[None, :] & (~property_gated[:, None] | property_gate)
+    fire = cashflow_active[:, None] & active[None, :] & (~property_gated[:, None] | property_gate)
     raw = _amount_values_vec(
         amount_kind,
         amount_fixed,

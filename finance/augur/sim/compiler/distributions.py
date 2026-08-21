@@ -14,6 +14,7 @@ ragged structure and no scan carry.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -25,20 +26,20 @@ from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.scenario import InterestIncome, Scenario, SecurityDistribution
 
 
+class DistributionExecution[ArrayT](NamedTuple):
+    lot_mask: ArrayT
+    series: ArrayT
+    quantity_scale: ArrayT
+    fraction: ArrayT
+    to_slot: ArrayT
+    income_row: ArrayT
+
+
 @dataclass(frozen=True)
 class DistributionCompileOutput:
     """Per-(pool, tax slice) payout plumbing. All arrays are `(slice,)` except `lot_mask`."""
 
-    # (slice, lot) 0/1 — which lots' units this slice pays on.
-    lot_mask: NDArray[np.int64]
-    # Row into `external_values` carrying dollars per unit for the pool's asset.
-    series: NDArray[np.int64]
-    # Quanta per unit for the pool's asset, so `mask @ lot_remaining` converts back to units.
-    quantity_scale: NDArray[np.int64]
-    fraction: NDArray[np.float64]
-    to_slot: NDArray[np.int64]
-    # Income-tensor row this slice accrues to, or NO_CODE when the holder is untaxed.
-    income_row: NDArray[np.int64]
+    execution: DistributionExecution[np.ndarray]
 
 
 def distribution_income_categories(scenario: Scenario) -> set[InterestIncome]:
@@ -105,12 +106,14 @@ def compile_distributions(
             )
 
     return DistributionCompileOutput(
-        lot_mask=np.asarray(masks, dtype=np.int64).reshape((len(masks), lot_count)),
-        series=np.asarray(series, dtype=np.int64),
-        quantity_scale=np.asarray(quantity_scale, dtype=np.int64),
-        fraction=np.asarray(fraction, dtype=np.float64),
-        to_slot=np.asarray(to_slot, dtype=np.int64),
-        income_row=np.asarray(income_row, dtype=np.int64),
+        execution=DistributionExecution(
+            lot_mask=np.asarray(masks, dtype=np.float64).reshape((len(masks), lot_count)),
+            series=np.asarray(series, dtype=np.int64),
+            quantity_scale=np.asarray(quantity_scale, dtype=np.int64),
+            fraction=np.asarray(fraction, dtype=np.float64),
+            to_slot=np.asarray(to_slot, dtype=np.int64),
+            income_row=np.asarray(income_row, dtype=np.int64),
+        )
     )
 
 

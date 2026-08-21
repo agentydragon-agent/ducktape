@@ -169,7 +169,9 @@ def test_tax_rate_sweep_takes_effect() -> None:
 def test_transfer_amount_sweep_takes_effect() -> None:
     # Bump the fixed paycheck amount by $1,000 in integer cents.
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
-        return replace(p, cashflows=replace(p.cashflows, amount_fixed=p.cashflows.amount_fixed + np.int64(100_000)))
+        cashflows = p.cashflows
+        execution = cashflows.execution._replace(amount_fixed=cashflows.execution.amount_fixed + np.int64(100_000))
+        return replace(p, cashflows=replace(cashflows, execution=execution))
 
     _assert_value_sweep_takes_effect(_tax_scenario(), perturb, lambda b: b.taxes.accrual_amount)
 
@@ -275,7 +277,9 @@ def _property_cashflow_scenario() -> Scenario:
 
 def test_property_cashflow_amount_sweep_takes_effect() -> None:
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
-        return replace(p, cashflows=replace(p.cashflows, amount_fixed=p.cashflows.amount_fixed + np.int64(100_000)))
+        cashflows = p.cashflows
+        execution = cashflows.execution._replace(amount_fixed=cashflows.execution.amount_fixed + np.int64(100_000))
+        return replace(p, cashflows=replace(cashflows, execution=execution))
 
     _assert_value_sweep_takes_effect(_property_cashflow_scenario(), perturb, lambda b: b.state.cash, locations=_SF)
 
@@ -345,15 +349,15 @@ def test_program_pytree_separates_dynamic_leaves_from_static_metadata() -> None:
     assert cast(Any, tree) == jax.tree_util.tree_structure(program)
     assert rebuilt.static == program.static
     assert hash(rebuilt.static) == hash(program.static)
-    assert np.array_equal(rebuilt.dynamic.operands.cashflows.amount_fixed, plan.cashflows.amount_fixed)
+    assert np.array_equal(rebuilt.dynamic.operands.cashflows.amount_fixed, plan.cashflows.execution.amount_fixed)
     assert len(jax.tree_util.tree_leaves(rebuilt.dynamic.operands.cashflows)) == len(
         rebuilt.dynamic.operands.cashflows._fields
     )
     assert not hasattr(rebuilt.dynamic.swept, "transfer_amount_fixed")
 
-    value_sweep = replace(
-        plan, cashflows=replace(plan.cashflows, amount_fixed=plan.cashflows.amount_fixed + np.int64(100_000))
-    )
+    cashflows = plan.cashflows
+    execution = cashflows.execution._replace(amount_fixed=cashflows.execution.amount_fixed + np.int64(100_000))
+    value_sweep = replace(plan, cashflows=replace(cashflows, execution=execution))
     assert cast(Any, jax.tree_util.tree_structure(_build_program(value_sweep))) == tree
 
     different_shape = _compile(_tax_scenario(), rollout_count=3, locations={})
