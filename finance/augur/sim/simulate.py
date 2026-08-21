@@ -1,16 +1,15 @@
 """Forward simulation entrypoints.
 
 `simulate(scenario, rollout_count) -> SimulationRun` materializes external series and runs the JAX
-engine: the whole month loop compiles into one XLA program, whose stacked outputs are scattered into
-NumPy buffers. Analytics consumers decode those buffers as Polars frames; selected product rollout
-detail projects directly from the plan and buffers.
+engine: the whole month loop compiles into one XLA program, whose stacked outputs return as one
+host-resident dense tree. Analytics consumers decode that output as Polars frames; selected product
+rollout detail projects directly from the plan and dense output.
 """
 
 from __future__ import annotations
 
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.engine import (
@@ -20,6 +19,7 @@ from finance.augur.sim.engine import (
 )
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from finance.augur.sim.locations import Location
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 
 
@@ -54,7 +54,7 @@ def simulate_with_external_series_and_product_metrics(
     external_series: ExternalSeriesContext,
     locations: dict[str, Location],
     primary_agent_id: str,
-) -> tuple[CompiledSimulation, SimulationBuffers, ProductMetricArrays]:
+) -> tuple[CompiledSimulation, DenseSimulationOutput, ProductMetricArrays]:
     """Return raw dense outputs and selected-product metrics in one engine dispatch."""
 
     if rollout_count <= 0:

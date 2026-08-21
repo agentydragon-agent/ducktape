@@ -9,32 +9,7 @@ from typing import NamedTuple
 import jax
 
 from finance.augur.sim.compiler.plan import SlotPlan
-
-
-class _StateOutput(NamedTuple):
-    cash: jax.Array
-    ordinary: jax.Array
-    lots: jax.Array
-    capital_gain_active: jax.Array
-    capital_gain_ytd: jax.Array
-    property_active: jax.Array
-    property_basis: jax.Array
-    property_contribution: jax.Array
-    property_equity: jax.Array
-    property_cumulative_depreciation: jax.Array
-    property_owner_occupied_months: jax.Array
-    liability_active: jax.Array
-    liability_principal: jax.Array
-    liability_monthly_payment: jax.Array
-    liability_interest_ytd: jax.Array
-    liability_principal_ytd: jax.Array
-    failed: jax.Array
-    failed_month: jax.Array
-
-
-class _TransferOutput(NamedTuple):
-    active: jax.Array
-    amount: jax.Array
+from finance.augur.sim.output import DenseFinalOutput
 
 
 class _TransferInputs(NamedTuple):
@@ -130,14 +105,6 @@ class _PEChannelInputs(NamedTuple):
     forced_recovery_cashout: jax.Array
 
 
-class _ObligationOutput(NamedTuple):
-    active: jax.Array
-    due: jax.Array
-    paid: jax.Array
-    shortfall: jax.Array
-    failure_active: jax.Array
-
-
 class _ObligationMetadataInputs(NamedTuple):
     agent: jax.Array
     from_slot: jax.Array
@@ -205,101 +172,6 @@ class _ObligationInputs(NamedTuple):
     tax_true_up: _PriorYearTaxObligationInputs
 
 
-class _MortgageOutput(NamedTuple):
-    origination_active: jax.Array
-    payment_active: jax.Array
-    payment_interest: jax.Array
-    payment_principal: jax.Array
-    payment_total: jax.Array
-
-
-class _TaxOutput(NamedTuple):
-    accrual_active: jax.Array
-    accrual_amount: jax.Array
-    ordinary_income: jax.Array
-    long_term_capital_gain: jax.Array
-    short_term_capital_gain: jax.Array
-    standard_deduction: jax.Array
-    mortgage_interest_deduction: jax.Array
-    salt_deduction: jax.Array
-    itemized_deduction: jax.Array
-    ordinary_taxable: jax.Array
-    capital_gain_taxable: jax.Array
-    ordinary_tax: jax.Array
-    capital_gain_tax: jax.Array
-    liability_amount: jax.Array
-    liability_active: jax.Array
-    settlement_active: jax.Array
-    settlement_amount: jax.Array
-    settlement_year_end: jax.Array
-
-
-class _DispositionOutput(NamedTuple):
-    active: jax.Array
-    units: jax.Array
-    basis: jax.Array
-    proceeds: jax.Array
-
-
-class _TargetAllocationOutput(NamedTuple):
-    dispositions: _DispositionOutput
-    obligation_attempt_policy: jax.Array
-
-
-class _PrivateEquityOpportunityOutput(NamedTuple):
-    active: jax.Array
-    outcome: jax.Array
-    floor: jax.Array
-    liquid_net_worth: jax.Array
-    shortfall: jax.Array
-    units_held: jax.Array
-    sellable_units: jax.Array
-    target_units: jax.Array
-    proceeds: jax.Array
-
-
-class _PrivateEquityOutput(NamedTuple):
-    dispositions: _DispositionOutput
-    opportunities: _PrivateEquityOpportunityOutput
-
-
-class _PropertySaleTraceOutput(NamedTuple):
-    gross_proceeds: jax.Array
-    mortgage_payoff: jax.Array
-    net_cash: jax.Array
-    realized_gain: jax.Array
-    depreciation_recapture: jax.Array
-    section_121_exclusion: jax.Array
-    long_term_capital_gain: jax.Array
-
-
-class _LifecycleOutput(NamedTuple):
-    fired: jax.Array
-    property_sales: _PropertySaleTraceOutput
-
-
-class _DenseScanOutput(NamedTuple):
-    state: _StateOutput
-    transfers: _TransferOutput
-    property_cashflows: _TransferOutput
-    obligations: _ObligationOutput
-    property_purchases: jax.Array
-    mortgages: _MortgageOutput
-    taxes: _TaxOutput
-    target_allocation: _TargetAllocationOutput
-    private_equity: _PrivateEquityOutput
-    lifecycle: _LifecycleOutput
-    primary_residence_fired: jax.Array
-
-
-class _DenseFinalOutput(NamedTuple):
-    lot_cost_basis: jax.Array
-    lot_purchase_month: jax.Array
-    scheduled_dispositions: _DispositionOutput
-    sale_oversell: jax.Array
-    target_allocation_buy_count: jax.Array
-
-
 class _ProductTailOutput(NamedTuple):
     sale_oversell: jax.Array
     failed_month: jax.Array
@@ -307,7 +179,7 @@ class _ProductTailOutput(NamedTuple):
 
 
 class _DenseProductTailOutput(NamedTuple):
-    dense: _DenseFinalOutput
+    dense: DenseFinalOutput[jax.Array]
     failed_month: jax.Array
 
 

@@ -6,10 +6,10 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import code_column, currency_quanta_column, frame_from_columns
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 
 
 def _income_category_column(mask: np.ndarray) -> pl.Series:
@@ -19,10 +19,10 @@ def _income_category_column(mask: np.ndarray) -> pl.Series:
     return pl.Series("income_category", values, dtype=pl.Utf8)
 
 
-def decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.transfers.active  # (M, S, R)
+def decode_transfers(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.transfers.active  # (M, S, R)
     months, slots, rollouts = np.argwhere(active).T if active.any() else (np.array([], dtype=np.int64),) * 3
-    amounts = currency_quanta_column(buffers.transfers.amount[months, slots, rollouts])
+    amounts = currency_quanta_column(output.transfers.amount[months, slots, rollouts])
     income_categories = _income_category_column(plan.transfers.income_profile[months, slots] >= 0)
     return frame_from_columns(
         EVENT_FRAMES.transfers,
@@ -38,10 +38,10 @@ def decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl
     )
 
 
-def decode_property_cashflows(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.property_cashflows.active  # (M, S, R)
+def decode_property_cashflows(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.property_cashflows.active  # (M, S, R)
     months, slots, rollouts = np.argwhere(active).T if active.any() else (np.array([], dtype=np.int64),) * 3
-    amounts = currency_quanta_column(buffers.property_cashflows.amount[months, slots, rollouts])
+    amounts = currency_quanta_column(output.property_cashflows.amount[months, slots, rollouts])
     cashflows = plan.property_cashflows
     income_categories = _income_category_column(cashflows.income_profile[months, slots] >= 0)
     return frame_from_columns(

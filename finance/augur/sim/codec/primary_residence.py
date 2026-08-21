@@ -5,17 +5,17 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import codes_to_strings, frame_from_columns
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 
 
-def decode_primary_residence_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+def decode_primary_residence_events(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
     event_count = int(plan.primary_residence_events.month.shape[0])
     if event_count == 0:
         return EVENT_FRAMES.set_primary_residence_events.empty()
-    fired = buffers.primary_residence.fired[:event_count]
+    fired = output.primary_residence_fired[:event_count]
     events_idx, rollouts = np.argwhere(fired).T if fired.any() else (np.array([], dtype=np.int64),) * 2
     if events_idx.size == 0:
         return EVENT_FRAMES.set_primary_residence_events.empty()

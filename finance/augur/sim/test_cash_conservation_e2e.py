@@ -73,11 +73,11 @@ _ACME = PrivateEquityAssetKey(issuer_id=IssuerId("acme"))
 def _total_cash_by_month(run: SimulationRun) -> NDArray[np.int64]:
     """Sum over every cash row, including the external account.
 
-    Read off the raw buffer rather than `cash_balances`, which deliberately shows only the
+    Read off the raw output rather than `cash_balances`, which deliberately shows only the
     agents' own accounts — the contra row is exactly what makes the total balance.
     """
 
-    state: NDArray[np.int64] = np.asarray(run.buffers.state.cash_state, dtype=np.int64)
+    state: NDArray[np.int64] = np.asarray(run.output.state.cash, dtype=np.int64)
     return np.asarray(state.sum(axis=tuple(range(1, state.ndim))), dtype=np.int64)
 
 
@@ -399,8 +399,8 @@ def test_the_external_account_is_what_makes_it_balance() -> None:
     """
 
     run = simulate(_scenario(), rollout_count=1, locations={})
-    # cash_state is (H+1, slot, rollout) — the slot axis is 1, not the last.
-    external = np.asarray(run.buffers.state.cash_state)[:, run.plan.external_cash_slot, :]
+    # cash is (H+1, slot, rollout) — the slot axis is 1, not the last.
+    external = np.asarray(run.output.state.cash)[:, run.plan.external_cash_slot, :]
 
     assert external[0].sum() == 0
     assert external[-1].sum() < 0
@@ -476,7 +476,7 @@ def test_a_property_sale_debits_the_boundary_by_its_net_not_its_gross() -> None:
     )
     # Snapshot `m` holds the state before month `m`, so month `sale_month`'s move is the diff
     # between snapshots `sale_month + 1` and `sale_month`.
-    external = np.asarray(run.buffers.state.cash_state)[:, run.plan.external_cash_slot, 0]
+    external = np.asarray(run.output.state.cash)[:, run.plan.external_cash_slot, 0]
     moved_quanta = int(external[sale_month + 1] - external[sale_month])
     sale = run.events_log.property_sale_events.row(0, named=True)
 

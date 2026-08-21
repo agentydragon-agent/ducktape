@@ -234,7 +234,7 @@ def test_a_sale_the_sleeves_cannot_cover_does_not_mint_money() -> None:
 
     scenario = _scenario(opening_cash=0, floor=1_000, ceiling=10_000_000)
     run = _run(scenario)
-    state = np.asarray(run.buffers.state.cash_state, dtype=np.int64)
+    state = np.asarray(run.output.state.cash, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
     assert np.all(totals == totals[0])
@@ -246,7 +246,7 @@ def test_a_sale_shows_up_as_a_lot_disposition() -> None:
     cash and lots move, and the row explaining WHY is missing.
 
     The target-allocation policy needs its own disposition group rather than the liquidity one —
-    the two policy kinds index their own dense rows, so a shared buffer would have them writing
+    the two policy kinds index their own dense rows, so a shared output row would have them writing
     over each other's policies. This asserts the row exists, is attributed to the selling agent
     and the sleeve's asset, and reconciles against the lots the run actually gave up.
     """
@@ -340,7 +340,7 @@ def test_a_purchase_does_not_mint_or_burn_money() -> None:
     debited nobody would be invisible to every other assertion in this file."""
 
     scenario = _scenario(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1)
-    state = np.asarray(_run(scenario).buffers.state.cash_state, dtype=np.int64)
+    state = np.asarray(_run(scenario).output.state.cash, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
     assert np.all(totals == totals[0])
@@ -442,7 +442,7 @@ def test_a_rebalance_does_not_mint_or_burn_money() -> None:
     the buy leg's debit to disagree."""
 
     scenario = _scenario(opening_cash=50_000, floor=10_000, ceiling=90_000, purchase_slots=1, rebalance_tolerance=0.25)
-    state = np.asarray(_run(scenario).buffers.state.cash_state, dtype=np.int64)
+    state = np.asarray(_run(scenario).output.state.cash, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
     assert np.all(totals == totals[0])

@@ -2,7 +2,7 @@
 
 These are the codec-side counterparts to the string table + slot maps the compiler
 emits: every decoder lifts integer codes back to string IDs, derives flat (month,
-rollout, slot) index columns from state buffers, and builds Polars frames that
+rollout, slot) index columns from state output, and builds Polars frames that
 match the event/state-frame schemas declared in `augur.sim.state` + `augur.sim.events`.
 """
 
@@ -100,7 +100,7 @@ def codes_to_asset_wire_ids(plan: CompiledSimulation, codes: np.ndarray) -> np.n
 
 def r_first_view(state: np.ndarray) -> np.ndarray:
     """Move R from the trailing axis (the layout the JAX scan emits) to axis 1, so decoders can
-    iterate `(h1, r, count[, ...])` row-major over the resulting flat buffer."""
+    iterate `(h1, r, count[, ...])` row-major over the resulting flat array."""
 
     return np.moveaxis(state, -1, 1)
 
@@ -124,7 +124,7 @@ def lot_quantity_column(plan: CompiledSimulation, lots: np.ndarray, quanta: Any)
 
 
 def state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Ravelled (month, rollout, slot) index columns for a state buffer of shape `(h1, r, s)`.
+    """Ravelled (month, rollout, slot) index columns for a state array of shape `(h1, r, s)`.
 
     Order is row-major over `(month, rollout, slot)` — matches the iteration order the
     old list-of-dicts decoders used so the resulting frame's row order is preserved.

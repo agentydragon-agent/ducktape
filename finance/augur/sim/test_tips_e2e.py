@@ -188,7 +188,7 @@ def test_cash_is_still_conserved_with_an_indexed_bond() -> None:
     creates income without cash. If accretion ever reached the cash tensor this breaks."""
 
     run = simulate(_scenario(indexed=True, cpi=_CPI_DOUBLING, maturity=12), rollout_count=1, locations={})
-    state = np.asarray(run.buffers.state.cash_state, dtype=np.int64)
+    state = np.asarray(run.output.state.cash, dtype=np.int64)
     totals = state.sum(axis=tuple(range(1, state.ndim)))
 
     assert np.all(totals == totals[0])

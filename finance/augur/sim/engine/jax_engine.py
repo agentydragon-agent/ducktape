@@ -2,8 +2,8 @@
 
 The whole month loop compiles into one `jax.jit` program (`_program_impl`) whose carry is the
 per-rollout `_ScanState`; one `lax.scan` over `jnp.arange(horizon)` runs every phase branch-free, and
-`run_jax_scan(plan, buffers)` fills the (NumPy-allocated, zeroed) `buffers` from the stacked scan
-outputs in one device→host transfer. The scan covers:
+`run_jax_scan(plan)` returns the stacked scan outputs as one host-resident tree after a single
+device→host transfer. The scan covers:
 - scheduled / recurring transfers;
 - property purchases (cash + mortgage origination);
 - scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
@@ -48,7 +48,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, NamedTuple, overload
+from typing import Any, NamedTuple, cast, overload
 
 import jax
 
@@ -66,19 +66,14 @@ from finance.augur.product.quantiles import (
     interpolate_currency_quantiles,
 )
 from finance.augur.sim.actor_view import ActorSlots, build_actor_view
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
-from finance.augur.sim.engine.jax_scatter import check_purchase_slot_exhaustion, scatter_ys_to_buffers
 from finance.augur.sim.engine.jax_types import (
     _AssetSaleProgram,
     _BondInputs,
     _CapitalGainTarget,
-    _DenseFinalOutput,
     _DenseProductTailOutput,
-    _DenseScanOutput,
-    _DispositionOutput,
     _DistributionInputs,
     _FoldedHarvest,
     _FoldedLifecycleEvent,
@@ -86,31 +81,38 @@ from finance.augur.sim.engine.jax_types import (
     _FoldedPurchase,
     _FoldedSleeve,
     _FoldedTargetAllocation,
-    _LifecycleOutput,
     _LinkTaxStatic,
-    _MortgageOutput,
     _ObligationInputs,
     _ObligationMetadataInputs,
-    _ObligationOutput,
     _PaymentBatch,
     _PEChannelInputs,
     _PriorYearTaxObligationInputs,
-    _PrivateEquityOpportunityOutput,
-    _PrivateEquityOutput,
     _ProductTailOutput,
     _PropertyCashflowInputs,
-    _PropertySaleTraceOutput,
     _PropertyTaxObligationInputs,
     _SalePool,
-    _StateOutput,
     _Static,
-    _TargetAllocationOutput,
-    _TaxOutput,
     _TransferInputs,
-    _TransferOutput,
     _ConfiguredObligationInputs,
     _EstimatedTaxObligationInputs,
     _MortgageObligationInputs,
+)
+from finance.augur.sim.output import (
+    DenseFinalOutput,
+    DenseScanOutput,
+    DenseSimulationOutput,
+    DenseStateOutput,
+    DispositionOutput,
+    LifecycleOutput,
+    MortgageOutput,
+    ObligationOutput,
+    PrivateEquityOpportunityOutput,
+    PrivateEquityOutput,
+    PropertySaleTraceOutput,
+    StateOutput,
+    TargetAllocationOutput,
+    TaxOutput,
+    TransferOutput,
 )
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.engine.jax_validation import validate_seed_dependent_inputs
@@ -502,7 +504,7 @@ class _SimulationProgram:
     static: _ProgramStatic
 
 
-def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
+def run_jax_scan(plan: CompiledSimulation) -> DenseSimulationOutput:
     """Single-program `lax.scan` engine: the whole month loop compiles into one XLA program (one
     dispatch for all months) whose only traced inputs are the seed-varying series and swept numeric
     config. `_build_program` packs the registered device-program PyTree; the module-level JIT compiles
@@ -511,22 +513,163 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
 
     program = _build_program(plan)
     ys, final_state = _program_impl(program)
-    scatter_ys_to_buffers(plan, buffers, program.static.structure, ys, final_state)
+    return _dense_output_from_device(plan, program.static.structure, ys, final_state)
 
 
 def run_jax_scan_with_product_metrics(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, primary_agent_id: str
-) -> ProductMetricArrays:
-    """Fill dense buffers and return the selected actor's metrics from the same scan."""
+    plan: CompiledSimulation, *, primary_agent_id: str
+) -> tuple[DenseSimulationOutput, ProductMetricArrays]:
+    """Return dense output and the selected actor's metrics from the same scan."""
 
     validate_seed_dependent_inputs(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
     program = _build_program(plan, product_summary=product_static, product_inputs=product_inputs, emit_dense=True)
     outputs, final_state = _program_impl(program)
     dense_ys, product_ys = outputs
-    scatter_ys_to_buffers(plan, buffers, program.static.structure, dense_ys, final_state.dense)
     initial_ys, monthly_ys = product_ys
-    return _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_state.failed_month)
+    output = _dense_output_from_device(plan, program.static.structure, dense_ys, final_state.dense)
+    metrics = _product_metric_arrays_from_device(plan, initial_ys, monthly_ys, final_state.failed_month)
+    return output, metrics
+
+
+def _dense_output_from_device(
+    plan: CompiledSimulation,
+    structure: _Static,
+    ys: DenseScanOutput[jax.Array],
+    final_state: DenseFinalOutput[jax.Array],
+) -> DenseSimulationOutput:
+    """Convert the device output tree into the sole host-side dense result."""
+
+    # JAX's type stub preserves the device-array parameter even though device_get returns
+    # NumPy arrays on the CPU host. This is the one explicit typing handoff at that boundary.
+    host_ys, host_final_state = cast(
+        tuple[DenseScanOutput[np.ndarray], DenseFinalOutput[np.ndarray]], jax.device_get((ys, final_state))
+    )
+    if bool(np.asarray(host_final_state.sale_oversell)):
+        raise ValueError("scheduled asset sale exceeds available lots")
+    _check_purchase_slot_exhaustion(plan, np.asarray(host_final_state.target_allocation_buy_count))
+
+    p = plan.slot_plan
+    r = p.rollout_count
+    state = host_ys.state
+    cash0 = np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r))
+    lot0 = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))
+    purchase_active = np.zeros((p.event_months, p.property_count, r), dtype=np.bool_)
+    raw_purchase_active = np.asarray(host_ys.property_purchases)
+    for position, purchase in enumerate(structure.folded_purchases):
+        purchase_active[:, purchase.buffer_index] = raw_purchase_active[:, position]
+
+    lifecycle_fired = _event_rows(
+        np.asarray(host_ys.lifecycle.fired),
+        tuple((event.event_index, event.month) for event in structure.folded_lifecycle),
+        row_count=int(plan.lifecycle_events.month.shape[0]),
+        rollout_count=r,
+    )
+    sale_traces = host_ys.lifecycle.property_sales
+    sale_mapping = structure.folded_sale_events
+    property_sales = PropertySaleTraceOutput(
+        *(
+            _event_rows(
+                np.asarray(values), sale_mapping, row_count=int(plan.lifecycle_events.month.shape[0]), rollout_count=r
+            )
+            for values in sale_traces
+        )
+    )
+    primary_residence_fired = _event_rows(
+        np.asarray(host_ys.primary_residence_fired),
+        structure.folded_pr,
+        row_count=int(plan.primary_residence_events.month.shape[0]),
+        rollout_count=r,
+    )
+    taxes = host_ys.taxes._replace(
+        accrual_active=np.asarray(host_ys.taxes.accrual_active) > 0,
+        settlement_year_end=np.asarray(host_ys.taxes.settlement_year_end, dtype=np.int64),
+    )
+    private_equity = host_ys.private_equity._replace(
+        opportunities=host_ys.private_equity.opportunities._replace(
+            active=np.asarray(host_ys.private_equity.opportunities.active, dtype=np.bool_),
+            outcome=np.asarray(host_ys.private_equity.opportunities.outcome, dtype=np.int64),
+        )
+    )
+    target_allocation = host_ys.target_allocation._replace(
+        obligation_attempt_policy=np.asarray(host_ys.target_allocation.obligation_attempt_policy, dtype=np.int64)
+    )
+    return DenseSimulationOutput(
+        state=DenseStateOutput(
+            cash=_prepend_snapshot(state.cash, cash0),
+            ordinary=_prepend_zero_snapshot(state.ordinary),
+            lots=_prepend_snapshot(state.lots, lot0),
+            lot_cost_basis=np.asarray(host_final_state.lot_cost_basis),
+            lot_purchase_month=np.asarray(host_final_state.lot_purchase_month, dtype=np.int64),
+            capital_gain_active=_prepend_zero_snapshot(state.capital_gain_active),
+            capital_gain_ytd=_prepend_zero_snapshot(state.capital_gain_ytd),
+            property_active=_prepend_zero_snapshot(state.property_active),
+            property_basis=_prepend_zero_snapshot(state.property_basis),
+            property_contribution=_prepend_zero_snapshot(state.property_contribution),
+            property_equity=_prepend_zero_snapshot(state.property_equity),
+            property_cumulative_depreciation=_prepend_zero_snapshot(state.property_cumulative_depreciation),
+            property_owner_occupied_months=_prepend_zero_snapshot(state.property_owner_occupied_months, dtype=np.int64),
+            liability_active=_prepend_zero_snapshot(state.liability_active),
+            liability_principal=_prepend_zero_snapshot(state.liability_principal),
+            liability_monthly_payment=_prepend_zero_snapshot(state.liability_monthly_payment),
+            liability_interest_ytd=_prepend_zero_snapshot(state.liability_interest_ytd),
+            liability_principal_ytd=_prepend_zero_snapshot(state.liability_principal_ytd),
+            failed=_prepend_zero_snapshot(state.failed),
+            failed_month=_prepend_snapshot(state.failed_month, np.full((r,), NO_CODE, dtype=np.int64), dtype=np.int64),
+        ),
+        transfers=host_ys.transfers,
+        property_cashflows=host_ys.property_cashflows,
+        obligations=host_ys.obligations,
+        property_purchases=purchase_active,
+        mortgages=host_ys.mortgages,
+        taxes=taxes,
+        scheduled_dispositions=host_final_state.scheduled_dispositions,
+        target_allocation=target_allocation,
+        private_equity=private_equity,
+        lifecycle=LifecycleOutput(fired=lifecycle_fired, property_sales=property_sales),
+        primary_residence_fired=primary_residence_fired,
+    )
+
+
+def _prepend_snapshot(values: Any, initial: np.ndarray, *, dtype: Any | None = None) -> np.ndarray:
+    history = np.asarray(values, dtype=dtype)
+    initial_array = np.asarray(initial, dtype=history.dtype)
+    return np.concatenate((initial_array[None, ...], history), axis=0)
+
+
+def _prepend_zero_snapshot(values: Any, *, dtype: Any | None = None) -> np.ndarray:
+    history = np.asarray(values, dtype=dtype)
+    initial = np.zeros(history.shape[1:], dtype=history.dtype)
+    return np.concatenate((initial[None, ...], history), axis=0)
+
+
+def _event_rows(
+    values: np.ndarray, mapping: tuple[tuple[int, int], ...], *, row_count: int, rollout_count: int
+) -> np.ndarray:
+    rows = np.zeros((row_count, rollout_count), dtype=values.dtype)
+    for position, (row, month) in enumerate(mapping):
+        rows[row] = values[month, position]
+    return rows
+
+
+def _check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.ndarray) -> None:
+    """Abort rather than silently dropping purchases after a policy exhausts its lot slots."""
+
+    if not ta_buy_count.size:
+        return
+    configured = (plan.target_allocation_purchase_slots >= 0).sum(axis=2)
+    wanted = ta_buy_count.max(axis=2)
+    over = np.argwhere(wanted > configured)
+    if not over.size:
+        return
+    policy_idx, sleeve_idx = (int(x) for x in over[0])
+    prefixes = plan.target_allocation_policies.cause_id_prefixes
+    raise ValueError(
+        f"target-allocation policy {prefixes[policy_idx]!r} sleeve {sleeve_idx} ran out of purchase slots: "
+        f"{int(configured[policy_idx, sleeve_idx])} configured, {int(wanted[policy_idx, sleeve_idx])} needed. "
+        "Raise `purchase_slots_per_sleeve` — every purchase needs its own lot, because it has its own "
+        "basis and its own holding period."
+    )
 
 
 @dataclass(frozen=True)
@@ -636,7 +779,7 @@ def _product_metric_arrays_from_device(
 
 
 def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id: str) -> ProductMetricArrays:
-    """Return every base metric directly from the JAX reducer without dense buffers."""
+    """Return every base metric directly from the JAX reducer without dense output."""
 
     validate_seed_dependent_inputs(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
@@ -825,7 +968,7 @@ def run_jax_product_summaries(
 def _validate_product_tail(plan: CompiledSimulation, oversell: np.ndarray, ta_buy_count: np.ndarray) -> None:
     if bool(np.asarray(oversell)):
         raise ValueError("scheduled asset sale exceeds available lots")
-    check_purchase_slot_exhaustion(plan, np.asarray(ta_buy_count))
+    _check_purchase_slot_exhaustion(plan, np.asarray(ta_buy_count))
 
 
 def _pe_channel_inputs(plan: CompiledSimulation) -> _PEChannelInputs:
@@ -1025,7 +1168,7 @@ def _build_program(
         if int(props.month[prop]) >= 0
     ]
     # Static per-purchase plan columns (folded order). Purchases are independent — each fires on its
-    # own month into its own property buffer — so the month-step applies them as batched scatters
+    # own month into its own property row — so the month-step applies them as batched scatters
     # (over these arrays) instead of a Python loop over entities. `pur_mort_rows`/`pur_mort_idx`
     # select the financed subset (distinct liability slots) for mortgage origination.
     pur_buf = np.array([fp.buffer_index for fp in folded_purchases], dtype=np.int64)
@@ -1678,7 +1821,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     ):
         """Branch-free December (`month % 12 == 11`) year-end tax pass, gated per-rollout by `dec`.
 
-        Returns the post-pass YTD/carryforward/tax-liability state plus the 13 per-link tax buffer
+        Returns the post-pass YTD/carryforward/tax-liability state plus the 13 per-link tax output
         slabs `(link_count, R)`. For non-December months every output reduces to the inputs / zeros.
         """
         dec = (month % 12 == 11) & active  # (R,)
@@ -1828,7 +1971,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # per-month host-side; the SALE path uses the §121 owner-occupancy window for the exclusion.
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
         le_fired: list[jnp.ndarray] = []
-        sale_traces: list[_PropertySaleTraceOutput] = []
+        sale_traces: list[PropertySaleTraceOutput] = []
         for evi, ev in enumerate(folded_lifecycle):
             ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
             fires = month == ev_month
@@ -1953,7 +2096,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
 
         # Property purchases (after transfers, before sales — eager order). Vectorized over all real
         # purchases at once (no Python loop): each fires when its static month equals the traced month
-        # for the rollouts still active then, into its own property buffer (distinct indices, no
+        # for the rollouts still active then, into its own property row (distinct indices, no
         # cross-purchase dependency). Pure-value purchase amounts are gathered from `cfg` by index.
         # The down payment (stake_contribution) moves buyer->seller via sentinel-aware scatter-add
         # (shared/absent cash slots fall out, duplicates accumulate); financed purchases originate the
@@ -2378,7 +2521,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         actual_per_trueup = trueup_sel_m @ eligible  # (slots, R): full year tax owed
         settle_k = (trueup_sel_m.astype(bool)[:, :, None] & trueup_paid[:, None, :]).any(axis=0)  # (taxliab, R)
         taxliab_amount = jnp.where(settle_k, 0, taxliab_amount)
-        # Settlement event buffers, scattered to tax-profile rows (one true-up per profile per month).
+        # Settlement event arrays, scattered to tax-profile rows (one true-up per profile per month).
         settle_prof_idx = jnp.where(is_trueup, true_up_source.profile_index, -1)
         settle_amount = _scatter_rows(
             _zeros_i64((profile_count, r)), settle_prof_idx, jnp.where(trueup_paid, actual_per_trueup, 0)
@@ -2721,7 +2864,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         empty_events_i64 = _zeros_i64((0, r))
         lifecycle_fired = jnp.stack(le_fired) if le_fired else empty_events_bool
         primary_residence_fired = jnp.stack(pr_fired) if pr_fired else empty_events_bool
-        sale_trace_columns = _PropertySaleTraceOutput(
+        sale_trace_columns = PropertySaleTraceOutput(
             gross_proceeds=(
                 jnp.stack([trace.gross_proceeds for trace in sale_traces]) if sale_traces else empty_events_i64
             ),
@@ -2742,8 +2885,8 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 jnp.stack([trace.long_term_capital_gain for trace in sale_traces]) if sale_traces else empty_events_i64
             ),
         )
-        dense_output = _DenseScanOutput(
-            state=_StateOutput(
+        dense_output = DenseScanOutput(
+            state=StateOutput(
                 cash=cash,
                 ordinary=ordinary,
                 lots=lot_remaining,
@@ -2763,9 +2906,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 failed=failed,
                 failed_month=failed_month,
             ),
-            transfers=_TransferOutput(active=transfer_active, amount=transfer_amount),
-            property_cashflows=_TransferOutput(active=property_cashflow_active, amount=property_cashflow_amount),
-            obligations=_ObligationOutput(
+            transfers=TransferOutput(active=transfer_active, amount=transfer_amount),
+            property_cashflows=TransferOutput(active=property_cashflow_active, amount=property_cashflow_amount),
+            obligations=ObligationOutput(
                 active=slot_active,
                 due=accrual_due,
                 paid=paid_buffer,
@@ -2773,14 +2916,14 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 failure_active=failure_active,
             ),
             property_purchases=purchase_active_rows,
-            mortgages=_MortgageOutput(
+            mortgages=MortgageOutput(
                 origination_active=mort_orig,
                 payment_active=mort_pay_active,
                 payment_interest=mort_pay_interest,
                 payment_principal=mort_pay_principal,
                 payment_total=mort_pay_total,
             ),
-            taxes=_TaxOutput(
+            taxes=TaxOutput(
                 accrual_active=tax_breakdown[0],
                 accrual_amount=tax_breakdown[1],
                 ordinary_income=tax_breakdown[2],
@@ -2800,17 +2943,17 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 settlement_amount=settle_amount,
                 settlement_year_end=settle_year_end,
             ),
-            target_allocation=_TargetAllocationOutput(
-                dispositions=_DispositionOutput(
+            target_allocation=TargetAllocationOutput(
+                dispositions=DispositionOutput(
                     active=ta_disp_active, units=ta_disp_units, basis=ta_disp_basis, proceeds=ta_disp_proceeds
                 ),
                 obligation_attempt_policy=attempt_policy,
             ),
-            private_equity=_PrivateEquityOutput(
-                dispositions=_DispositionOutput(
+            private_equity=PrivateEquityOutput(
+                dispositions=DispositionOutput(
                     active=pe_disp_active, units=pe_disp_units, basis=pe_disp_basis, proceeds=pe_disp_proceeds
                 ),
-                opportunities=_PrivateEquityOpportunityOutput(
+                opportunities=PrivateEquityOpportunityOutput(
                     active=pe_opp["active"],
                     outcome=pe_opp["outcome"],
                     floor=pe_opp["floor"],
@@ -2822,7 +2965,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                     proceeds=pe_opp["proceeds"],
                 ),
             ),
-            lifecycle=_LifecycleOutput(fired=lifecycle_fired, property_sales=sale_trace_columns),
+            lifecycle=LifecycleOutput(fired=lifecycle_fired, property_sales=sale_trace_columns),
             primary_residence_fired=primary_residence_fired,
         )
         return carry, (dense_output, product_output) if product_output is not None else dense_output
@@ -2894,11 +3037,11 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     return ys, _dense_final_output(final_carry)
 
 
-def _dense_final_output(final_carry: _ScanState) -> _DenseFinalOutput:
-    return _DenseFinalOutput(
+def _dense_final_output(final_carry: _ScanState) -> DenseFinalOutput[jax.Array]:
+    return DenseFinalOutput(
         lot_cost_basis=final_carry.cost_basis_per_unit,
         lot_purchase_month=final_carry.lot_purchase_month,
-        scheduled_dispositions=_DispositionOutput(
+        scheduled_dispositions=DispositionOutput(
             active=final_carry.sale_disp_units > 0,
             units=final_carry.sale_disp_units,
             basis=final_carry.sale_disp_basis,
@@ -3791,7 +3934,7 @@ def _scan_property_sale(
     jnp.ndarray,
     jnp.ndarray,
     jnp.ndarray,
-    _PropertySaleTraceOutput,
+    PropertySaleTraceOutput,
 ]:
     """Branch-free `lax.scan` port of `_apply_property_sale`: §1250 recapture + §121 exclusion (via the
     owner-occupancy window) + mortgage payoff, returning the updated state and the 7-field sale trace.
@@ -3846,7 +3989,7 @@ def _scan_property_sale(
     property_building_basis = property_building_basis.at[prop].set(
         jnp.where(active_property, 0, property_building_basis[prop])
     )
-    sale_trace = _PropertySaleTraceOutput(
+    sale_trace = PropertySaleTraceOutput(
         gross_proceeds=jnp.where(active_property, gross_proceeds, 0),
         mortgage_payoff=jnp.where(active_property, mortgage_payoff, 0),
         net_cash=jnp.where(active_property, net_cash, 0),

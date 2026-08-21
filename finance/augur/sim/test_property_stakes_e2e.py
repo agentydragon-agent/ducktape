@@ -1,6 +1,6 @@
 """Sim-level e2e for property-stake decoding with more than one property.
 
-Regression test for a buffer-layout bug in `decode_property_stakes`: the active
+Regression test for a output-layout bug in `decode_property_stakes`: the active
 mask was taken from an R-first view of shape `(snapshot, rollout, property)` but
 applied to the *raw* `(snapshot, property, rollout)` contribution / equity
 buffers. With a single property the two flattenings coincide, so the bug was
@@ -185,7 +185,7 @@ def test_property_purchase_transfer_is_derived_from_active_and_stake() -> None:
 def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> None:
     """One owner holds a primary home and a rental; only the rental changes and sells.
 
-    This pins the multi-property behavior that is most likely to regress when buffers are indexed
+    This pins the multi-property behavior that is most likely to regress when outputs are indexed
     by property slot: property-tax obligations, Schedule E depreciation/deductions, capex/sale
     basis, §121 primary-residence eligibility, and mortgage payoff must all stay property-scoped.
     """

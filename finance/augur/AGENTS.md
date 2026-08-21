@@ -19,8 +19,8 @@ line is not "whichever imports first":
   keys, anything resolved once host-side before the scan. `lot_order_for_pool` is the
   archetype: lot identity and purchase month are plan columns, so FIFO order is static,
   computed once with `lexsort`, and the traced step just gathers by the result.
-- **numpy for decode.** Buffers come back as numpy and polars frames are built from
-  them. That is the far side of the boundary; it is not traced.
+- **numpy for decode.** The dense output PyTree comes back as numpy and polars frames
+  are built from it. That is the far side of the boundary; it is not traced.
 - **jnp for traced VALUES.** Anything the scan computes, carries, or branches on.
 
 Two rules follow, and both have already been violated:

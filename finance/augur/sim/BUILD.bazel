@@ -445,11 +445,11 @@ py_library(
     name = "simulate",
     srcs = ["simulate.py"],
     deps = [
-        ":buffers",
         ":codec",
         ":compiler",
         ":engine",
         ":external_series",
+        ":output",
         ":scenario",
         "@pypi//polars",
     ],
@@ -503,12 +503,10 @@ py_library(
 )
 
 py_library(
-    name = "buffers",
-    srcs = ["buffers.py"],
+    name = "output",
+    srcs = ["output.py"],
     deps = [
-        ":compiler",
-        ":enums",
-        ":fixed_point",
+        "@pypi//jax",
         "@pypi//numpy",
     ],
 )
@@ -530,12 +528,12 @@ py_library(
         "codec/transfers.py",
     ],
     deps = [
-        ":buffers",
         ":compiler",
         ":enums",
         ":events",
         ":external_series",
         ":fixed_point",
+        ":output",
         ":state",
         "//finance/augur:frames",
         "//finance/augur/model:exogenous",
@@ -551,18 +549,17 @@ py_library(
     srcs = [
         "engine/__init__.py",
         "engine/jax_engine.py",
-        "engine/jax_scatter.py",
         "engine/jax_types.py",
         "engine/jax_validation.py",
     ],
     deps = [
         ":actor_view",
-        ":buffers",
         ":codec",
         ":compiler",
         ":enums",
         ":external_series",
         ":fixed_point",
+        ":output",
         ":payment_policy",
         ":runtime",
         ":scenario",
@@ -829,10 +826,10 @@ py_test(
     srcs = ["jax_engine_reuse_test.py"],
     data = [":jurisdiction_data"],
     deps = [
-        ":buffers",
         ":compiler",
         ":engine",
         ":external_series",
+        ":output",
         ":runtime",
         ":scenario",
         "//finance/augur/product:asset_key",

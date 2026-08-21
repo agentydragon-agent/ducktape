@@ -3,7 +3,7 @@
 The engine emits the base series directly from the scan carry. Product fan routes use
 those device arrays to select one metric, while selected-rollout detail copies all base
 series after the same reducer runs. The host only composes derived sums; it never
-re-values lots, properties, or bonds from dense buffers.
+re-values lots, properties, or bonds from dense output arrays.
 
 The arithmetic relating metrics is defined once here. `numpy` arrays, `jnp` arrays and
 plain floats all support the operators used, so one definition serves the device fan
