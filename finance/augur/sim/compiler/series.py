@@ -8,7 +8,7 @@ fields."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -21,7 +21,6 @@ from finance.augur.model.series import (
     SecurityKey,
 )
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
-from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.fixed_point import sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
 
@@ -94,7 +93,39 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
     return tuple(keys)
 
 
-def collect_level_series_keys(scenario: Scenario, external_series: ExternalSeriesContext) -> tuple[LevelSeriesKey, ...]:
+class MaterializedLevelRows(NamedTuple):
+    key: LevelSeriesKey
+    rollout_index: np.ndarray
+    month_index: np.ndarray
+    values: np.ndarray
+    present: np.ndarray
+    in_bounds: np.ndarray
+
+
+def materialize_level_rows(
+    value_rows: tuple[tuple[LevelSeriesKey, Any], ...], *, rollout_count: int, horizon_months: int
+) -> tuple[MaterializedLevelRows, ...]:
+    """Read every split series frame into indexed NumPy columns once."""
+
+    rows: list[MaterializedLevelRows] = []
+    for key, frame in value_rows:
+        rollout_index, month_index, values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
+        rows.append(
+            MaterializedLevelRows(
+                key=key,
+                rollout_index=rollout_index,
+                month_index=month_index,
+                values=values,
+                present=frame.get_column("value").is_not_null().to_numpy(),
+                in_bounds=in_bounds,
+            )
+        )
+    return tuple(rows)
+
+
+def collect_level_series_keys(
+    scenario: Scenario, level_rows: tuple[MaterializedLevelRows, ...]
+) -> tuple[LevelSeriesKey, ...]:
     """Distinct typed level-series keys the compiled cube carries a row for.
 
     Deliberately NOT `scenario_level_series_keys`: that is the scenario's *demand*, this is
@@ -118,8 +149,8 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     # baked into the jitted program's STATIC structure (e.g. `_FoldedPE.floor_series`), so a
     # content-independent order would bust the native `jax.jit` compile cache (every other compile
     # re-traces); a deterministic one gives identical scenarios one compile, then cache hits.
-    for key, _ in external_series.levels.value_rows():
-        add(key)
+    for rows in level_rows:
+        add(rows.key)
     for scheduled_transfer in scenario.scheduled_transfers:
         _add_amount_series_key(scheduled_transfer.amount, add)
     for recurring_transfer in scenario.recurring_transfers:
@@ -156,57 +187,113 @@ def _frame_values(frame: Any, rollout_count: int, horizon_months: int) -> tuple[
     return rollout_index, month_index, raw_values, in_bounds
 
 
-def external_values_cube(
-    external_series: ExternalSeriesContext,
-    *,
-    series_index_by_id: dict[LevelSeriesKey, int],
-    rollout_count: int,
-    horizon_months: int,
-) -> np.ndarray:
-    values = np.full((len(series_index_by_id), rollout_count, horizon_months + 1), np.nan, dtype=np.float64)
-    # Loop over series (tens), scatter each one's rows in a single fancy-index assignment —
-    # never a Python loop over the (rollout, month, series) rows themselves, which number in
-    # the millions at a 100-year horizon. Series the cube has no row for are skipped; a series
-    # whose rows do not cover every (rollout, month) keeps NaN there, which the engine rejects
-    # at the point of use.
-    for key, frame in external_series.levels.value_rows():
-        index = series_index_by_id.get(key)
-        if index is None:
-            continue
-        rollout_index, month_index, raw_values, keep = _frame_values(frame, rollout_count, horizon_months)
-        values[index, rollout_index[keep], month_index[keep]] = raw_values[keep]
-    return values
-
-
-def external_money_values_cube(
-    external_series: ExternalSeriesContext,
+def external_series_cubes(
+    level_rows: tuple[MaterializedLevelRows, ...],
     *,
     series_index_by_id: dict[LevelSeriesKey, int],
     rollout_count: int,
     horizon_months: int,
     currency_quantum: object,
-) -> np.ndarray:
-    """Compile price-like sampled levels to integer currency quantum counts.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Materialize heterogeneous and money values together.
 
-    ``external_values_cube`` remains the heterogeneous level cube for rates and
-    index ratios (CPI, rent and other non-money values).  This companion cube
-    is the only price input the dense engine may use for traded security
-    prices and per-unit distributions.  Missing/non-finite observations stay
-    zero so the engine's existing non-positive-price handling is preserved.
+    Each sampled series is split and indexed once. The float cube carries rates and index ratios;
+    the integer cube carries price-like values.
     """
 
-    values = np.zeros((len(series_index_by_id), rollout_count, horizon_months + 1), dtype=np.int64)
+    shape = (len(series_index_by_id), rollout_count, horizon_months + 1)
+    values = np.full(shape, np.nan, dtype=np.float64)
+    money_values = np.zeros(shape, dtype=np.int64)
     money_keys = (SecurityKey, SecurityDistributionKey, HomeValueKey)
-    for key, frame in external_series.levels.value_rows():
-        if not isinstance(key, money_keys):
-            continue
-        index = series_index_by_id.get(key)
+    for rows in level_rows:
+        index = series_index_by_id.get(rows.key)
         if index is None:
             continue
-        rollout_index, month_index, raw_values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
-        keep = in_bounds & np.isfinite(raw_values)
+        keep = rows.in_bounds
+        values[index, rows.rollout_index[keep], rows.month_index[keep]] = rows.values[keep]
+        if not isinstance(rows.key, money_keys):
+            continue
+        keep = rows.in_bounds & np.isfinite(rows.values)
         if keep.any():
-            values[index, rollout_index[keep], month_index[keep]] = sampled_array_to_quanta(
-                raw_values[keep], quantum=currency_quantum
+            money_values[index, rows.rollout_index[keep], rows.month_index[keep]] = sampled_array_to_quanta(
+                rows.values[keep], quantum=currency_quantum
             )
-    return values
+    return values, money_values
+
+
+def validate_series_indexed_amounts(
+    scenario: Scenario, *, rollout_count: int, rows_by_key: dict[LevelSeriesKey, MaterializedLevelRows]
+) -> None:
+    """Validate path-indexed amount schedules against their materialized cube rows."""
+
+    for label, amount, months in _series_indexed_amount_uses(scenario):
+        if not isinstance(amount, SeriesIndexedAmount) or not months:
+            continue
+        before_base = [month for month in months if month < amount.base_month_index]
+        if before_base:
+            raise ValueError(
+                f"series-indexed amount {label} is active at month {before_base[0]} "
+                f"before base month {amount.base_month_index}"
+            )
+        base_month = int(amount.base_month_index)
+        rows = rows_by_key.get(amount.series)
+        required_months = sorted({base_month, *(amount._reset_month(month) for month in months)})
+        for month in required_months:
+            present_rollouts = (
+                np.empty(0, dtype=np.int64)
+                if rows is None
+                else np.unique(rows.rollout_index[(rows.month_index == month) & rows.present])
+            )
+            if present_rollouts.size < rollout_count:
+                present_set = set(present_rollouts.tolist())
+                missing_rollouts = [rollout for rollout in range(rollout_count) if rollout not in present_set]
+                raise KeyError(
+                    f"series-indexed amount {label} references external series {amount.series.wire_id!r} "
+                    f"at month {month}, but it is missing rollout(s): {_format_rollout_sample(missing_rollouts)}"
+                )
+        zero_base_rollouts = (
+            []
+            if rows is None
+            else sorted(rows.rollout_index[(rows.month_index == base_month) & (rows.values == 0.0)].tolist())
+        )
+        if zero_base_rollouts:
+            raise ValueError(
+                f"external series {amount.series.wire_id!r} has zero base level at month "
+                f"{amount.base_month_index} for rollout(s): {_format_rollout_sample(zero_base_rollouts)}"
+            )
+
+
+def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, tuple[int, ...]]]:
+    horizon = int(scenario.horizon_months)
+    uses: list[tuple[str, object, tuple[int, ...]]] = []
+    months: tuple[int, ...]
+    for scheduled_transfer in scenario.scheduled_transfers:
+        months = (scheduled_transfer.month,) if 0 <= scheduled_transfer.month < horizon else ()
+        uses.append((f"scheduled transfer {scheduled_transfer.cause_id!r}", scheduled_transfer.amount, months))
+    for recurring_transfer in scenario.recurring_transfers:
+        months = tuple(month for month in range(horizon) if recurring_transfer.is_active_at(month))
+        uses.append((f"recurring transfer {recurring_transfer.cause_id!r}", recurring_transfer.amount, months))
+    for scheduled_cashflow in scenario.scheduled_property_cashflows:
+        months = (scheduled_cashflow.month,) if 0 <= scheduled_cashflow.month < horizon else ()
+        uses.append((f"scheduled property cashflow {scheduled_cashflow.cause_id!r}", scheduled_cashflow.amount, months))
+    for recurring_cashflow in scenario.recurring_property_cashflows:
+        months = tuple(month for month in range(horizon) if recurring_cashflow.is_active_at(month))
+        uses.append((f"recurring property cashflow {recurring_cashflow.cause_id!r}", recurring_cashflow.amount, months))
+    for scheduled_obligation in scenario.scheduled_obligations:
+        months = (scheduled_obligation.month,) if 0 <= scheduled_obligation.month < horizon else ()
+        uses.append(
+            (f"scheduled obligation {scheduled_obligation.obligation_id!r}", scheduled_obligation.amount_due, months)
+        )
+    for recurring_obligation in scenario.recurring_obligations:
+        months = tuple(month for month in range(horizon) if recurring_obligation.is_active_at(month))
+        uses.append(
+            (f"recurring obligation {recurring_obligation.obligation_id!r}", recurring_obligation.amount_due, months)
+        )
+    return uses
+
+
+def _format_rollout_sample(rollout_indices: list[int]) -> str:
+    sample = ", ".join(str(index) for index in rollout_indices[:5])
+    if len(rollout_indices) > 5:
+        sample += ", ..."
+    return sample

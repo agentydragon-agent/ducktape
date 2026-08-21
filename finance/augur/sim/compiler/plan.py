@@ -51,8 +51,9 @@ from finance.augur.sim.compiler.properties import (
 )
 from finance.augur.sim.compiler.series import (
     collect_level_series_keys,
-    external_money_values_cube,
-    external_values_cube,
+    external_series_cubes,
+    materialize_level_rows,
+    validate_series_indexed_amounts,
 )
 from finance.augur.sim.compiler.target_allocation import (
     TargetAllocationCompileOutput,
@@ -341,19 +342,22 @@ def compile_simulation(
         agent_slot_by_id[agent.agent_id] = len(agent_codes)
         agent_codes.append(strings.require(agent.agent_id))
 
-    series_keys = collect_level_series_keys(scenario, external_series)
-    series_index_by_id = {key: idx for idx, key in enumerate(series_keys)}
-    _reject_missing_property_sale_home_values(scenario, external_series)
-    external_values = external_values_cube(
-        external_series, series_index_by_id=series_index_by_id, rollout_count=rollout_count, horizon_months=horizon
+    level_rows = materialize_level_rows(
+        tuple(external_series.levels.value_rows()), rollout_count=rollout_count, horizon_months=horizon
     )
-    external_money_values = external_money_values_cube(
-        external_series,
+    series_keys = collect_level_series_keys(scenario, level_rows)
+    series_index_by_id = {key: idx for idx, key in enumerate(series_keys)}
+    external_values, external_money_values = external_series_cubes(
+        level_rows,
         series_index_by_id=series_index_by_id,
         rollout_count=rollout_count,
         horizon_months=horizon,
         currency_quantum=scenario.currency.quantum,
     )
+    validate_series_indexed_amounts(
+        scenario, rollout_count=rollout_count, rows_by_key={rows.key: rows for rows in level_rows}
+    )
+    _reject_missing_property_sale_home_values(scenario, frozenset(rows.key for rows in level_rows))
 
     profile_index_by_agent = {profile.agent_id: idx for idx, profile in enumerate(scenario.tax_profiles)}
     tax = compile_tax(scenario, strings, account_slots, jurisdictions)
@@ -642,13 +646,12 @@ def compile_simulation(
     )
 
 
-def _reject_missing_property_sale_home_values(scenario: Scenario, external_series: ExternalSeriesContext) -> None:
+def _reject_missing_property_sale_home_values(scenario: Scenario, available: frozenset[LevelSeriesKey]) -> None:
     """Property sales need an explicit external home-value path for their location."""
 
     if not scenario.property_lifecycle_events:
         return
     property_by_id = {property_.property_id: property_ for property_ in scenario.scheduled_property_purchases}
-    available = external_series.levels.series_keys()
     for event in scenario.property_lifecycle_events:
         if not isinstance(event, PropertySaleEvent):
             continue
