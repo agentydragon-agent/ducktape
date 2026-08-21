@@ -193,6 +193,3 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
         return await service.release_grant(context=context, grant_id=grant_id, reason=reason)
 
     return mcp
-
-
-__all__ = ["KUBERNETES_SERVER_ID", "CanIResult", "KubernetesAccessCheck", "KubernetesToolsService", "build_mcp"]

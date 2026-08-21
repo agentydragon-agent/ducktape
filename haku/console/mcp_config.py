@@ -496,6 +496,8 @@ class ConsoleConfigFile(BaseModel):
         configured_in_process_servers = {
             server.id for server in self.mcp.servers if isinstance(server.backend, InProcessBackend)
         }
+        if "kubernetes" in configured_in_process_servers and self.kubernetes_authorization is None:
+            raise ValueError("the Kubernetes in-process server requires Kubernetes authorization configuration")
         for profile in profiles.values():
             unknown_recall_indexes = set(profile.recall_index_ids) - configured_recall_indexes
             if unknown_recall_indexes:

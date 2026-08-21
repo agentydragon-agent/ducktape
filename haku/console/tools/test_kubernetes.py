@@ -16,9 +16,9 @@ from haku.console.kubernetes_authorization import (
 )
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
-    KubernetesGrantScope,
     KubernetesGrantScopeKind,
     KubernetesGrantStatus,
+    KubernetesNamespacesGrantScope,
     KubernetesRule,
 )
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, OperatorMcpExecutionCaller
@@ -27,7 +27,7 @@ from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesTools
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _GRANT = UUID("20000000-0000-4000-8000-000000000002")
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
-_SCOPE = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("demo",))
+_SCOPE = KubernetesNamespacesGrantScope(namespaces=("demo",))
 _RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
 _REQUEST = RequestAttributes(
     resource_request=True,

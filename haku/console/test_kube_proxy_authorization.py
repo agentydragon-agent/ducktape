@@ -123,6 +123,9 @@ def _agent() -> AgentActor:
 
 
 def _service(sar: FakeSarClient, resolver=None, grants=None) -> KubernetesAuthorizationService:
+    if grants is None:
+        grants = AsyncMock()
+        grants.match_request.return_value = KubernetesGrantDecision(allowed=False)
     return KubernetesAuthorizationService(
         config=KubernetesAuthorizationConfig(
             subjects_by_access_profile={
@@ -274,6 +277,7 @@ async def test_service_fails_closed_when_sar_times_out() -> None:
             timeout_seconds=0.001,
         ),
         resolve_agent=lambda _token: _async_agent(),
+        grants=AsyncMock(),
         sar_client=HangingSar(),
     )
     with pytest.raises(KubernetesAuthorizationUnavailableError, match="timed out"):

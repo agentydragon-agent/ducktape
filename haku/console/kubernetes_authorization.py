@@ -29,8 +29,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.kubernetes_grant_models import (
+    KubernetesAllNamespacesGrantScope,
+    KubernetesClusterGrantScope,
     KubernetesGrantScope,
     KubernetesGrantScopeKind,
+    KubernetesNamespacesGrantScope,
+    KubernetesNonResourceGrantScope,
     KubernetesRule,
     validate_grant_scope_rules,
 )
@@ -93,19 +97,12 @@ class AuthorizationRequest(BaseModel):
             if scope.kind is not KubernetesGrantScopeKind.NON_RESOURCE:
                 raise ValueError("a non-resource request requires non_resource scope")
         elif attributes.namespace:
-            expected = KubernetesGrantScope(
-                kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=(attributes.namespace,)
-            )
+            expected = KubernetesNamespacesGrantScope(namespaces=(attributes.namespace,))
             if scope != expected:
                 raise ValueError("a named-namespace request requires its exact namespace scope")
         elif scope.kind not in {KubernetesGrantScopeKind.ALL_NAMESPACES, KubernetesGrantScopeKind.CLUSTER}:
             raise ValueError("an unnamespaced resource request requires all_namespaces or cluster scope")
         return self
-
-
-# Compatibility name retained for the proxy foundation's public import surface. The grant and
-# proxy paths deliberately share the stricter canonical rule model.
-PolicyRule = KubernetesRule
 
 
 class AuthorizationResponse(BaseModel):
@@ -222,10 +219,10 @@ class KubernetesAuthorizationService:
     def __init__(
         self,
         *,
-        config: KubernetesAuthorizationConfig | None,
+        config: KubernetesAuthorizationConfig,
         resolve_agent: Callable[[str], Awaitable[AgentActor | None]],
-        grants: KubernetesGrantService | None = None,
-        sar_client: SubjectAccessReviewClient | None = None,
+        grants: KubernetesGrantService,
+        sar_client: SubjectAccessReviewClient,
     ) -> None:
         self._config = config
         self._resolve_agent = resolve_agent
@@ -258,8 +255,6 @@ class KubernetesAuthorizationService:
     ) -> AuthorizationResponse:
         """Evaluate one trusted Agent request without mutating grant state."""
 
-        if self._config is None:
-            raise KubernetesAuthorizationUnavailableError("Kubernetes authorization is not configured")
         subject = (
             self._config.subjects_by_access_profile.get(access_profile_id) if access_profile_id is not None else None
         )
@@ -267,13 +262,9 @@ class KubernetesAuthorizationService:
             raise KubernetesAuthorizationUnavailableError(
                 "Kubernetes authorization is not configured for the Agent access profile"
             )
-        client = self._sar_client
-        if client is None:
-            client = KubernetesSubjectAccessReviewClient()
-            self._sar_client = client
         try:
             async with asyncio.timeout(self._config.timeout_seconds):
-                result = await client.review(subject=subject, attributes=request.attributes)
+                result = await self._sar_client.review(subject=subject, attributes=request.attributes)
         except TimeoutError as error:
             raise KubernetesAuthorizationUnavailableError("Kubernetes authorization timed out") from error
         except KubernetesAuthorizationUnavailableError:
@@ -303,37 +294,35 @@ class KubernetesAuthorizationService:
 
         # A normal SAR denial is the only point at which temporary authority may add access.
         # Matching is read-only: the repository query excludes expired rows.
-        if self._grants is not None:
-            try:
-                grant = await self._grants.match_request(
-                    agent_id=agent_id, required_scope=request.required_scope, required_rules=request.required_rules
-                )
-            except Exception as error:
-                raise KubernetesAuthorizationUnavailableError("Kubernetes grant authority is unavailable") from error
-            if grant.allowed and grant.grant_id is not None:
-                grant_decision_id = f"grant:{grant.grant_id}"
-                logger.info(
-                    "Kubernetes temporary-grant decision agent_id=%s access_profile_id=%s "
-                    "decision_id=%s allowed=true valid_until=%s",
-                    agent_id,
-                    access_profile_id,
-                    grant_decision_id,
-                    grant.expires_at,
-                )
-                return AuthorizationResponse(
-                    allowed=True,
-                    reason=grant.reason,
-                    source=KubernetesAuthorizationSource.GRANT,
-                    decision_id=grant_decision_id,
-                    valid_until=grant.expires_at,
-                )
+        try:
+            grant = await self._grants.match_request(
+                agent_id=agent_id, required_scope=request.required_scope, required_rules=request.required_rules
+            )
+        except Exception as error:
+            raise KubernetesAuthorizationUnavailableError("Kubernetes grant authority is unavailable") from error
+        if grant.allowed and grant.grant_id is not None:
+            grant_decision_id = f"grant:{grant.grant_id}"
+            logger.info(
+                "Kubernetes temporary-grant decision agent_id=%s access_profile_id=%s "
+                "decision_id=%s allowed=true valid_until=%s",
+                agent_id,
+                access_profile_id,
+                grant_decision_id,
+                grant.expires_at,
+            )
+            return AuthorizationResponse(
+                allowed=True,
+                reason=grant.reason,
+                source=KubernetesAuthorizationSource.GRANT,
+                decision_id=grant_decision_id,
+                valid_until=grant.expires_at,
+            )
         return AuthorizationResponse(
             allowed=False, reason=result.reason, source=KubernetesAuthorizationSource.SAR, decision_id=decision_id
         )
 
     async def aclose(self) -> None:
-        if self._sar_client is not None:
-            await self._sar_client.aclose()
+        await self._sar_client.aclose()
 
 
 def _bearer_token(value: str) -> str | None:
@@ -344,7 +333,7 @@ def _bearer_token(value: str) -> str | None:
 
 
 def required_rule(attributes: RequestAttributes) -> KubernetesRule:
-    """Build the same minimal RBAC-like rule used by the Kubernetes API proxy."""
+    """Build the minimal RBAC rule; Kubernetes spells subresources as ``resource/subresource``."""
 
     if not attributes.resource_request:
         return KubernetesRule(verbs=(attributes.verb,), non_resource_urls=(attributes.path,))
@@ -367,11 +356,13 @@ def required_scope(
     if not attributes.resource_request:
         if unnamespaced_resource_kind is not None:
             raise ValueError("non-resource requests cannot declare a resource scope kind")
-        return KubernetesGrantScope(kind=KubernetesGrantScopeKind.NON_RESOURCE)
+        return KubernetesNonResourceGrantScope()
     if attributes.namespace:
         if unnamespaced_resource_kind is not None:
             raise ValueError("a named-namespace request cannot declare an unnamespaced resource scope kind")
-        return KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=(attributes.namespace,))
-    if unnamespaced_resource_kind not in {KubernetesGrantScopeKind.ALL_NAMESPACES, KubernetesGrantScopeKind.CLUSTER}:
-        raise ValueError("an unnamespaced resource request must declare all_namespaces or cluster scope")
-    return KubernetesGrantScope(kind=unnamespaced_resource_kind)
+        return KubernetesNamespacesGrantScope(namespaces=(attributes.namespace,))
+    if unnamespaced_resource_kind is KubernetesGrantScopeKind.ALL_NAMESPACES:
+        return KubernetesAllNamespacesGrantScope()
+    if unnamespaced_resource_kind is KubernetesGrantScopeKind.CLUSTER:
+        return KubernetesClusterGrantScope()
+    raise ValueError("an unnamespaced resource request must declare all_namespaces or cluster scope")

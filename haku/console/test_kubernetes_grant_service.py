@@ -10,9 +10,8 @@ import pytest_bazel
 
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
-    KubernetesGrantScope,
-    KubernetesGrantScopeKind,
     KubernetesGrantStatus,
+    KubernetesNamespacesGrantScope,
     KubernetesRule,
 )
 from haku.console.kubernetes_grant_service import KubernetesGrantService
@@ -20,8 +19,8 @@ from haku.console.kubernetes_grant_service import KubernetesGrantService
 _NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_AGENT = UUID("10000000-0000-4000-8000-000000000002")
-_SCOPE = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("default", "diagnostics"))
-_DEFAULT_SCOPE = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("default",))
+_SCOPE = KubernetesNamespacesGrantScope(namespaces=("default", "diagnostics"))
+_DEFAULT_SCOPE = KubernetesNamespacesGrantScope(namespaces=("default",))
 
 
 def _rule(verb: str = "get") -> KubernetesRule:

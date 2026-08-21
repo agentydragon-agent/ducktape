@@ -13,6 +13,7 @@ from haku.console.kubernetes_grant_models import (
     KubernetesGrantScope,
     KubernetesGrantScopeKind,
     KubernetesGrantStatus,
+    KubernetesNamespacesGrantScope,
     KubernetesRule,
     validate_grant_scope_rules,
 )
@@ -113,7 +114,11 @@ def scope_covers(granted: KubernetesGrantScope, required: KubernetesGrantScope) 
     if required.kind is KubernetesGrantScopeKind.NAMESPACES:
         if granted.kind is KubernetesGrantScopeKind.ALL_NAMESPACES:
             return True
-        return granted.kind is KubernetesGrantScopeKind.NAMESPACES and required.namespaces <= granted.namespaces
+        return (
+            isinstance(granted, KubernetesNamespacesGrantScope)
+            and isinstance(required, KubernetesNamespacesGrantScope)
+            and required.namespaces <= granted.namespaces
+        )
     return granted.kind is required.kind
 
 

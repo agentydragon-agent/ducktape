@@ -25,10 +25,9 @@ from haku.console.database_schema import (
     StaticCredential,
 )
 from haku.console.kubernetes_grant_models import (
-    KubernetesGrantScope,
-    KubernetesGrantScopeKind,
     KubernetesGrantSourceError,
     KubernetesGrantStatus,
+    KubernetesNamespacesGrantScope,
     KubernetesRule,
 )
 from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
@@ -36,9 +35,7 @@ from haku.console.tool_calls import ToolCallStatus
 
 _NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 _RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
-_SCOPE = KubernetesGrantScope(
-    kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("diagnostics", "public-coder-agent")
-)
+_SCOPE = KubernetesNamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
 
 
 async def _default_agent(sessions: async_sessionmaker[AsyncSession]) -> tuple[UUID, UUID]:

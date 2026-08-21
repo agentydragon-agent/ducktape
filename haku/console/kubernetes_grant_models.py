@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Iterable
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_serializer, field_validator, model_validator
@@ -82,17 +82,13 @@ class KubernetesRule(BaseModel):
         return self
 
 
-class KubernetesGrantScope(BaseModel):
-    """Where every rule in one grant may apply.
-
-    ``all_namespaces`` covers namespaced requests only; it never includes cluster-scoped
-    resources. Cluster resources and non-resource URLs require their own explicit scope kinds.
-    """
+class KubernetesNamespacesGrantScope(BaseModel):
+    """One or more exact namespaces in which resource rules may apply."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: KubernetesGrantScopeKind
-    namespaces: frozenset[_NON_EMPTY] = Field(default_factory=frozenset)
+    kind: Literal[KubernetesGrantScopeKind.NAMESPACES] = KubernetesGrantScopeKind.NAMESPACES
+    namespaces: frozenset[_NON_EMPTY] = Field(min_length=1)
 
     @field_validator("namespaces")
     @classmethod
@@ -106,14 +102,38 @@ class KubernetesGrantScope(BaseModel):
     def serialize_namespaces(self, value: frozenset[str]) -> list[str]:
         return sorted(value)
 
-    @model_validator(mode="after")
-    def validate_kind(self) -> KubernetesGrantScope:
-        if self.kind is KubernetesGrantScopeKind.NAMESPACES:
-            if not self.namespaces:
-                raise ValueError("namespaces scope requires at least one namespace")
-        elif self.namespaces:
-            raise ValueError(f"{self.kind.value} scope cannot contain namespaces")
-        return self
+
+class KubernetesAllNamespacesGrantScope(BaseModel):
+    """All namespaced resources, excluding cluster-scoped resources."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal[KubernetesGrantScopeKind.ALL_NAMESPACES] = KubernetesGrantScopeKind.ALL_NAMESPACES
+
+
+class KubernetesClusterGrantScope(BaseModel):
+    """Cluster-scoped resources only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal[KubernetesGrantScopeKind.CLUSTER] = KubernetesGrantScopeKind.CLUSTER
+
+
+class KubernetesNonResourceGrantScope(BaseModel):
+    """Kubernetes non-resource URLs only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal[KubernetesGrantScopeKind.NON_RESOURCE] = KubernetesGrantScopeKind.NON_RESOURCE
+
+
+KubernetesGrantScope = Annotated[
+    KubernetesNamespacesGrantScope
+    | KubernetesAllNamespacesGrantScope
+    | KubernetesClusterGrantScope
+    | KubernetesNonResourceGrantScope,
+    Field(discriminator="kind"),
+]
 
 
 def validate_grant_scope_rules(scope: KubernetesGrantScope, rules: Iterable[KubernetesRule]) -> None:

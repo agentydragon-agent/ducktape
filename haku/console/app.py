@@ -64,7 +64,7 @@ from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefiniti
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
-from haku.console.kubernetes_authorization import KubernetesAuthorizationService
+from haku.console.kubernetes_authorization import KubernetesAuthorizationService, KubernetesSubjectAccessReviewClient
 from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
 from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
@@ -432,8 +432,15 @@ def create_app(
         PostgresKubernetesGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
     )
-    kubernetes_authorization = KubernetesAuthorizationService(
-        config=console_config.kubernetes_authorization, resolve_agent=resolve_kubernetes_agent, grants=kubernetes_grants
+    kubernetes_authorization = (
+        KubernetesAuthorizationService(
+            config=console_config.kubernetes_authorization,
+            resolve_agent=resolve_kubernetes_agent,
+            grants=kubernetes_grants,
+            sar_client=KubernetesSubjectAccessReviewClient(),
+        )
+        if console_config.kubernetes_authorization is not None
+        else None
     )
 
     # The gmail/google_calendar in-process servers are built per call from the acting Operator's
@@ -515,7 +522,8 @@ def create_app(
                     kubernetes_tools.KubernetesToolsService(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
                     )
-                    if any(server.id == kubernetes_tools.KUBERNETES_SERVER_ID for server in console_config.mcp.servers)
+                    if kubernetes_authorization is not None
+                    and any(server.id == kubernetes_tools.KUBERNETES_SERVER_ID for server in console_config.mcp.servers)
                     else None
                 ),
             )
@@ -625,7 +633,8 @@ def create_app(
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
-                await kubernetes_authorization.aclose()
+                if kubernetes_authorization is not None:
+                    await kubernetes_authorization.aclose()
                 if session_service is not None:
                     await session_service.aclose()
                 await session_notifications.aclose()

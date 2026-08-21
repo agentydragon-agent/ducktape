@@ -7,13 +7,16 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from haku.console.kubernetes_grant_models import (
+    KubernetesAllNamespacesGrantScope,
+    KubernetesClusterGrantScope,
     KubernetesGrant,
     KubernetesGrantScope,
-    KubernetesGrantScopeKind,
     KubernetesGrantStatus,
+    KubernetesNamespacesGrantScope,
+    KubernetesNonResourceGrantScope,
     KubernetesRule,
     validate_grant_scope_rules,
 )
@@ -69,13 +72,11 @@ def test_rule_rejects_mixed_or_empty_shape() -> None:
 
 
 def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope() -> None:
-    exact = KubernetesGrantScope(
-        kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("diagnostics", "public-coder-agent")
-    )
-    requested = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("diagnostics",))
-    other = KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("default",))
-    all_namespaces = KubernetesGrantScope(kind=KubernetesGrantScopeKind.ALL_NAMESPACES)
-    cluster = KubernetesGrantScope(kind=KubernetesGrantScopeKind.CLUSTER)
+    exact = KubernetesNamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
+    requested = KubernetesNamespacesGrantScope(namespaces=("diagnostics",))
+    other = KubernetesNamespacesGrantScope(namespaces=("default",))
+    all_namespaces = KubernetesAllNamespacesGrantScope()
+    cluster = KubernetesClusterGrantScope()
 
     assert scope_covers(exact, requested)
     assert not scope_covers(exact, other)
@@ -83,15 +84,16 @@ def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope()
     assert not scope_covers(all_namespaces, cluster)
 
 
-def test_scope_is_explicit_and_consistent_with_rule_kind() -> None:
-    with pytest.raises(ValidationError, match="requires at least one namespace"):
-        KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES)
-    with pytest.raises(ValidationError, match="cannot contain namespaces"):
-        KubernetesGrantScope(kind=KubernetesGrantScopeKind.CLUSTER, namespaces=("default",))
+def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
+    adapter: TypeAdapter[KubernetesGrantScope] = TypeAdapter(KubernetesGrantScope)
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        adapter.validate_python({"kind": "namespaces", "namespaces": []})
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        adapter.validate_python({"kind": "cluster", "namespaces": ["default"]})
     with pytest.raises(ValidationError, match="use all_namespaces"):
-        KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("*",))
+        KubernetesNamespacesGrantScope(namespaces=("*",))
     with pytest.raises(ValueError, match="requires only non-resource"):
-        validate_grant_scope_rules(KubernetesGrantScope(kind=KubernetesGrantScopeKind.NON_RESOURCE), (resource_rule(),))
+        validate_grant_scope_rules(KubernetesNonResourceGrantScope(), (resource_rule(),))
 
 
 @pytest.mark.parametrize("field", ["created_at", "expires_at", "ended_at"])
@@ -100,7 +102,7 @@ def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
         "grant_id": UUID("00000000-0000-4000-8000-000000000001"),
         "agent_id": UUID("00000000-0000-4000-8000-000000000002"),
         "source_tool_call_id": "tc_source",
-        "scope": KubernetesGrantScope(kind=KubernetesGrantScopeKind.NAMESPACES, namespaces=("demo",)),
+        "scope": KubernetesNamespacesGrantScope(namespaces=("demo",)),
         "rules": (resource_rule(),),
         "status": KubernetesGrantStatus.ACTIVE,
         "created_at": datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
