@@ -41,17 +41,6 @@ class _AssetSaleProgram:
     ordered_lots: tuple[tuple[int, ...], ...]
 
 
-class _PEChannelInputs(NamedTuple):
-    mark_quanta: jax.Array
-    regime: jax.Array
-    sale_opportunity_active: jax.Array
-    capacity_fraction: jax.Array
-    eligible_fraction: jax.Array
-    forced_sale_fraction: jax.Array
-    liquidity_blocked: jax.Array
-    forced_recovery_cashout: jax.Array
-
-
 class _ObligationMetadataInputs(NamedTuple):
     agent: jax.Array
     from_slot: jax.Array

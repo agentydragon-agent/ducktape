@@ -13,7 +13,7 @@ def validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:
     # PE-channel validation is seed-dependent (the channels are sampled), so it runs every call on the
     # concrete plan. The in-scan path can't raise. Only months 0..H-1 are executable sim months; the
     # terminal H snapshot exists for level-series lookups but is not validated by the eager loop.
-    pe_channels = plan.pe_channels
+    pe_channels = plan.pe_channels.execution
     for issuer_idx, issuer_code in enumerate(plan.pe_issuers.codes):
         if int(issuer_code) < 0:
             continue

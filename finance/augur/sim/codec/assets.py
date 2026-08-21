@@ -179,12 +179,12 @@ def decode_pe_dispositions(plan: CompiledSimulation, output: DenseSimulationOutp
 
 def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
     rows: list[dict[str, object]] = []
-    channels = plan.pe_channels
+    channels = plan.pe_channels.execution
     for issuer_idx, issuer_code in enumerate(plan.pe_issuers.codes):
         if int(issuer_code) < 0:
             continue
         issuer_id = str(codes_to_strings(plan, np.array([issuer_code], dtype=np.int64))[0])
-        event_codes = channels.event_kind_codes[issuer_idx]
+        event_codes = plan.pe_channels.event_kind_codes[issuer_idx]
         regime_codes = channels.regime_codes[issuer_idx]
         event_window = event_codes[:, : plan.horizon_months]
         active = event_window != int(PrivateEquityEventKindCode.NONE)
@@ -223,11 +223,11 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, output: DenseSimulati
         return EVENT_FRAMES.private_equity_opportunities.empty()
     months, issuers, rollouts = np.argwhere(active).T
     issuer_ids = codes_to_strings(plan, plan.pe_issuers.codes)
-    channels = plan.pe_channels
+    channels = plan.pe_channels.execution
     rows: list[dict[str, object]] = []
     for month, issuer_idx, rollout in zip(months, issuers, rollouts, strict=True):
         issuer_id = str(issuer_ids[issuer_idx])
-        event_code = PrivateEquityEventKindCode(int(channels.event_kind_codes[issuer_idx, rollout, month]))
+        event_code = PrivateEquityEventKindCode(int(plan.pe_channels.event_kind_codes[issuer_idx, rollout, month]))
         regime_code = PrivateEquityRegimeCode(int(channels.regime_codes[issuer_idx, rollout, month]))
         outcome = PrivateEquityOpportunityOutcome(
             int(output.private_equity.opportunities.outcome[month, issuer_idx, rollout])

@@ -5,6 +5,7 @@ liquid-net-worth floor governs whether (and how much) of the issuer's lots gets 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,24 +31,30 @@ class PEIssuerCompileOutput:
     lot_mask: NDArray[np.bool_]
 
 
-@dataclass(frozen=True)
-class PEChannels:
-    """Per-issuer typed channel arrays for the PE protocol.
+class PEExecutionChannels[ArrayT](NamedTuple):
+    """Per-issuer channel arrays consumed by the simulation engine.
 
     Shape: `(issuer, rollout, month + 1)` for each channel. Built from the
     typed `PrivateEquityBundle` at compile time so the engine reads PE state
     by field access instead of going through `external_values[series_index]`.
     """
 
-    mark_quanta: NDArray[np.int64]
-    regime_codes: NDArray[np.int64]
+    mark_quanta: ArrayT
+    regime_codes: ArrayT
+    sale_opportunity_active: ArrayT
+    sale_capacity_fractions: ArrayT
+    eligible_fractions: ArrayT
+    forced_sale_fractions: ArrayT
+    liquidity_blocked: ArrayT
+    forced_recovery_cashout_quanta: ArrayT
+
+
+@dataclass(frozen=True)
+class PEChannels:
+    """Engine channels plus the event-kind channel used only by host-side decoders."""
+
+    execution: PEExecutionChannels[np.ndarray]
     event_kind_codes: NDArray[np.int64]
-    sale_opportunity_active: NDArray[np.bool_]
-    sale_capacity_fractions: NDArray[np.float64]
-    eligible_fractions: NDArray[np.float64]
-    forced_sale_fractions: NDArray[np.float64]
-    liquidity_blocked: NDArray[np.bool_]
-    forced_recovery_cashout_quanta: NDArray[np.int64]
 
 
 @dataclass(frozen=True)
@@ -256,13 +263,15 @@ def compile_pe_channels(
             forced_recovery_values, quantum=currency_quantum
         )
     return PEChannels(
-        mark_quanta=mark_quanta,
-        regime_codes=regime_codes,
+        execution=PEExecutionChannels(
+            mark_quanta=mark_quanta,
+            regime_codes=regime_codes,
+            sale_opportunity_active=sale_opportunity_active,
+            sale_capacity_fractions=sale_capacity_fractions,
+            eligible_fractions=eligible_fractions,
+            forced_sale_fractions=forced_sale_fractions,
+            liquidity_blocked=liquidity_blocked,
+            forced_recovery_cashout_quanta=forced_recovery_cashout_quanta,
+        ),
         event_kind_codes=event_kind_codes,
-        sale_opportunity_active=sale_opportunity_active,
-        sale_capacity_fractions=sale_capacity_fractions,
-        eligible_fractions=eligible_fractions,
-        forced_sale_fractions=forced_sale_fractions,
-        liquidity_blocked=liquidity_blocked,
-        forced_recovery_cashout_quanta=forced_recovery_cashout_quanta,
     )

@@ -69,6 +69,7 @@ from finance.augur.sim.actor_view import ActorSlots, build_actor_view
 from finance.augur.sim.compiler.bonds import BondExecution
 from finance.augur.sim.compiler.cashflows import CashflowExecution
 from finance.augur.sim.compiler.distributions import DistributionExecution
+from finance.augur.sim.compiler.private_equity import PEExecutionChannels
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from finance.augur.sim.compiler.plan import lot_order_for_pool
@@ -85,7 +86,6 @@ from finance.augur.sim.engine.jax_types import (
     _ObligationInputs,
     _ObligationMetadataInputs,
     _PaymentBatch,
-    _PEChannelInputs,
     _PriorYearTaxObligationInputs,
     _ProductTailOutput,
     _PurchaseInputs,
@@ -474,7 +474,7 @@ class _ProgramDynamic(NamedTuple):
 
     external_values: jax.Array
     external_money_values: jax.Array
-    pe_channels: _PEChannelInputs
+    pe_channels: PEExecutionChannels[jax.Array]
     swept: _TracedConfig
     asset_sales: _AssetSaleProgram
     operands: _Operands
@@ -963,21 +963,6 @@ def _validate_product_tail(plan: CompiledSimulation, oversell: np.ndarray, ta_bu
     if bool(np.asarray(oversell)):
         raise ValueError("scheduled asset sale exceeds available lots")
     _check_purchase_slot_exhaustion(plan, np.asarray(ta_buy_count))
-
-
-def _pe_channel_inputs(plan: CompiledSimulation) -> _PEChannelInputs:
-    """Pack rollout-varying private-equity channels as traced leaves."""
-    pe_channels = plan.pe_channels
-    return _PEChannelInputs(
-        mark_quanta=jnp.asarray(pe_channels.mark_quanta),
-        regime=jnp.asarray(pe_channels.regime_codes),
-        sale_opportunity_active=jnp.asarray(pe_channels.sale_opportunity_active),
-        capacity_fraction=jnp.asarray(pe_channels.sale_capacity_fractions),
-        eligible_fraction=jnp.asarray(pe_channels.eligible_fractions),
-        forced_sale_fraction=jnp.asarray(pe_channels.forced_sale_fractions),
-        liquidity_blocked=jnp.asarray(pe_channels.liquidity_blocked),
-        forced_recovery_cashout=jnp.asarray(pe_channels.forced_recovery_cashout_quanta),
-    )
 
 
 def _product_summary_inputs(
@@ -1576,7 +1561,7 @@ def _build_program(
         dynamic=_ProgramDynamic(
             external_values=jnp.asarray(plan.external_values),
             external_money_values=jnp.asarray(plan.external_money_values),
-            pe_channels=_pe_channel_inputs(plan),
+            pe_channels=jax.tree.map(jnp.asarray, plan.pe_channels.execution),
             swept=_traced_config(plan),
             asset_sales=asset_sales,
             operands=baked,
@@ -2438,12 +2423,12 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             mark_quanta = pe_ch.mark_quanta[issuer_idx, :, month]
             positive_mark = mark_quanta > 0
             tender_active = pe_ch.sale_opportunity_active[issuer_idx, :, month] & active
-            public_active = pe_ch.regime[issuer_idx, :, month] == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
+            public_active = pe_ch.regime_codes[issuer_idx, :, month] == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
             liq_blocked = pe_ch.liquidity_blocked[issuer_idx, :, month]
-            forced_sale_fraction = pe_ch.forced_sale_fraction[issuer_idx, :, month]
-            forced_recovery = pe_ch.forced_recovery_cashout[issuer_idx, :, month]
-            capacity = pe_ch.capacity_fraction[issuer_idx, :, month]
-            eligible = pe_ch.eligible_fraction[issuer_idx, :, month]
+            forced_sale_fraction = pe_ch.forced_sale_fractions[issuer_idx, :, month]
+            forced_recovery = pe_ch.forced_recovery_cashout_quanta[issuer_idx, :, month]
+            capacity = pe_ch.sale_capacity_fractions[issuer_idx, :, month]
+            eligible = pe_ch.eligible_fractions[issuer_idx, :, month]
             units_held = lot_remaining[ordered].sum(axis=0)
             issuer_scale = lot_quantity_scale[ordered[0]]
             if policy_idx < 0:
