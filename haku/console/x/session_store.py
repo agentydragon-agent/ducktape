@@ -434,7 +434,62 @@ class SessionStore:
         chat.updated_at = now
 
     async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
-        """Start a session, continuing *conversation_id* or opening a conversation of its own.
+        """Open the idle session used by every production caller."""
+        return await self.create_idle(operator_id, conversation_id=conversation_id)
+
+    async def create_idle(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
+        """Open an idle session without buying a sandbox or minting its credential.
+
+        The first accepted prompt is durable demand. `allocate` later locks this row, mints the
+        one-use bridge credential and moves the session to provisioning before anybody writes to
+        Kubernetes. An empty conversation therefore owns no lease and no SandboxClaim.
+
+        Absent is not "unknown": it is a caller with no thread to continue, which is every session
+        the browser starts. A channel that holds a copy passes the conversation its attachment
+        names, which is what makes replacing a dead session invisible to that channel.
+
+        **Nothing here says which channel the session is for.** A channel attaches to the
+        conversation, so which ones hold a copy is `chat_attachment` — however many — and a
+        session is the same object whoever asked for it.
+        """
+        now = datetime.now(UTC)
+        session_id = uuid4()
+        async with self._sessions.begin() as db:
+            if conversation_id is None:
+                conversation_id = uuid4()
+                db.add(
+                    Conversation(
+                        conversation_id=conversation_id,
+                        operator_id=operator_id,
+                        runtime_kind=RuntimeKind.CLAUDE_CODE,
+                        created_at=now,
+                    )
+                )
+                # Flushed before the session that points at it: a `ForeignKey` carrying no
+                # `relationship()` does not order the unit of work.
+                await db.flush()
+            db.add(
+                Session(
+                    session_id=session_id,
+                    operator_id=operator_id,
+                    conversation_id=conversation_id,
+                    status=SessionStatus.IDLE,
+                    bridge_token_fingerprint=None,
+                    bridge_connected_at=None,
+                    error=None,
+                    lease_expires_at=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        # Keep the historical tuple shape while making the absence explicit: this is not a bearer
+        # and cannot authenticate. The real credential exists only in `SessionAllocation`.
+        return await self.get(operator_id, session_id), ""
+
+    async def _create_provisioning_for_test(
+        self, operator_id: UUID, *, conversation_id: UUID | None = None
+    ) -> tuple[SessionView, str]:
+        """Seed the pre-lazy allocated state for focused tests of an already-running session.
 
         Absent is not "unknown": it is a caller with no thread to continue, which is every session
         the browser starts. A channel that holds a copy passes the conversation its attachment

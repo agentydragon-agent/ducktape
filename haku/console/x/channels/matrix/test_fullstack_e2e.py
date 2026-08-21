@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from secrets import token_hex
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -88,15 +89,29 @@ async def room(operator: AsyncClient, deployment: Deployment) -> OperatorRoom:
     return await OperatorRoom.invite(operator, bot_user_id=deployment.bot_user_id, check_alive=deployment.check_alive)
 
 
+async def start_serving(deployment: Deployment, room: OperatorRoom) -> UUID:
+    """Open the idle room session, then let its first prompt buy the sandbox.
+
+    Waiting for the idle notice is the pre-prompt sync barrier: the console has joined and bound
+    the room, but lazy allocation has deliberately created no claim yet. The operator's first
+    message is durable demand; only after sending it can this helper wait for a runner to connect.
+    """
+    await deployment.start_console("console-1")
+    await room.wait_for_notice("waiting for the first prompt")
+    await room.say("one")
+    session_id = await deployment.serving()
+    await room.wait_for_reply("re: one")
+    return session_id
+
+
 async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment, room: OperatorRoom) -> None:
     """The control: same homeserver, same console process, same runner, same stub, so a failure in
     any of the others is the condition that test introduced rather than this harness. It also
     covers the other half of "answered exactly once" — a replayed frame or a re-sent answer would
     show up here as a duplicate.
     """
-    await deployment.start_console("console-1")
-    await deployment.serving()
-    for body in ("one", "two", "three"):
+    await start_serving(deployment, room)
+    for body in ("two", "three"):
         await room.say(body)
         await room.wait_for_reply(f"re: {body}")
 
@@ -117,10 +132,7 @@ async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
     overtaken, so `four` — produced while the earlier two were still waiting out their backoff —
     still arrives last.
     """
-    await deployment.start_console("console-1")
-    session_id = await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    session_id = await start_serving(deployment, room)
 
     deployment.refuse_the_next_reply()
     await room.say("two")
@@ -154,10 +166,7 @@ async def test_a_reply_still_queued_when_the_console_stops_is_said_by_its_replac
     pacer's shutdown flush is bounded at `FLUSH_SECONDS`, which at this rate is one send, so the
     gap is not luck.
     """
-    await deployment.start_console("console-1")
-    session_id = await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    session_id = await start_serving(deployment, room)
 
     await room.say("two [narrate=25]")
     await deployment.wait_until_recorded(session_id, "re: two")
@@ -188,10 +197,7 @@ async def test_every_message_is_answered_exactly_once_across_a_console_roll(
     The agent holds its `result` across the roll on purpose: that leaves the turn open, so the
     second console adopts an exchange in flight rather than finding a finished one.
     """
-    await deployment.start_console("console-1")
-    session_id = await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    session_id = await start_serving(deployment, room)
 
     await room.say("two [narrate=25] [hold]")
     await deployment.wait_until_holding()
@@ -219,10 +225,7 @@ async def test_a_message_sent_mid_turn_is_rejected_in_the_room_rather_than_answe
     sends it again once Haku is free. What proves it was a rejection rather than a delay is the
     reply list: `re: three` is there once, and only after the re-send.
     """
-    await deployment.start_console("console-1")
-    session_id = await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    session_id = await start_serving(deployment, room)
 
     await room.say("two [hold]")
     await deployment.wait_until_holding()
@@ -248,10 +251,7 @@ async def test_a_message_accepted_by_a_dying_session_is_answered_after_a_restart
     then stopped, so what finds that row is a process that has just come up and knows only what the
     record says — the recovery reads what is still owed rather than trusting the position.
     """
-    await deployment.start_console("console-1")
-    doomed = await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    doomed = await start_serving(deployment, room)
 
     await deployment.kill_sandbox(doomed)
     await room.say("two")
@@ -276,10 +276,7 @@ async def test_a_batch_the_homeserver_re_delivers_is_answered_once(deployment: D
     `three` is what makes the assertion a settled transcript rather than one still in flight, and
     evidence that the console kept reading the room after the replay.
     """
-    await deployment.start_console("console-1")
-    await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    await start_serving(deployment, room)
     acknowledged = await deployment.sync_position()
 
     await room.say("two")
@@ -307,10 +304,7 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     Form no longer distinguishes them: the event ids ingress once wrote inline ride on the prompt's
     own event now, so both copies carry the same text and only position separates them.
     """
-    await deployment.start_console("console-1")
-    doomed = await deployment.serving()
-    await room.say("one")
-    await room.wait_for_reply("re: one")
+    doomed = await start_serving(deployment, room)
 
     await deployment.kill_sandbox(doomed)
     await room.say("two")

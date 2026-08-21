@@ -224,9 +224,9 @@ class Deployment:
     async def serving(self, *, after: UUID | None = None) -> UUID:
         """Wait until the room has a sandbox behind it with the bridge up, and say which session.
 
-        Also the barrier every test needs before its first message: a first `/sync` establishes a
-        position rather than replaying backlog, so a message sent before the console has joined the
-        room is one it is entitled never to see.
+        Lazy sessions have no sandbox before their first prompt, so this cannot be the pre-prompt
+        sync barrier. Full-stack callers first wait for the supervisor's idle notice, then send the
+        prompt whose durable demand creates the claim, and only then wait here for its runner.
 
         `after` names a session being replaced. The supervisor mints the replacement only once the
         dead one's lease has lapsed, so without it a test that has just killed a sandbox reads its

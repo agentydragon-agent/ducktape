@@ -28,6 +28,7 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
+from haku.console.x.session_views import SessionView
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 OPERATOR_SUBJECT = "authentik-user-id"
@@ -59,9 +60,16 @@ def recording_claims() -> RecordingClaims:
     return RecordingClaims()
 
 
+class _ProvisioningTestStore(SessionStore):
+    """Keep older focused tests concise while the production writer now starts idle."""
+
+    async def create(self, operator_id: UUID, *, conversation_id: UUID | None = None) -> tuple[SessionView, str]:
+        return await self._create_provisioning_for_test(operator_id, conversation_id=conversation_id)
+
+
 @pytest.fixture
-def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> SessionStore:
-    return SessionStore(migrated_sessions)
+def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
+    return _ProvisioningTestStore(migrated_sessions)
 
 
 @pytest.fixture

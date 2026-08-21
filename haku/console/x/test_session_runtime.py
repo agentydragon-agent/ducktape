@@ -52,7 +52,7 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_block,
     tool_use_start,
 )
-from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, make_idle, runtime_config
+from haku.console.x.conftest import MCP_TOKEN, age_lease, answers, attach_channel, lease_of, runtime_config
 from haku.console.x.conversation_events import ProjectionState
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.frame_projection import projected
@@ -407,6 +407,15 @@ class _ClosingClaudeClient(_LifecycleClaudeClient):
         return response
 
 
+async def _allocated_session(chat_service: SessionService, recording_claims: RecordingClaims, operator_id: UUID):
+    """Seed a claim-backed session for tests whose subject starts after allocation."""
+    view, token = await chat_service._store._create_provisioning_for_test(operator_id)
+    await recording_claims.create(
+        session_id=view.session_id, bridge_token=token, expires_at=datetime.now(UTC) + timedelta(hours=1)
+    )
+    return view
+
+
 async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
@@ -414,6 +423,8 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
 
     session = await chat_service.create(operator_id)
     session_id = session.session_id
+    assert recording_claims.created == [], "an empty session owns no sandbox"
+    await chat_service.enqueue_prompt(operator_id, session_id, "start", SPA_ORIGIN)
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
     with patch("haku.console.x.session_runtime.cli_over_websocket", _ClosingClaudeClient):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
@@ -443,10 +454,11 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
 
 
 async def test_the_first_idle_prompt_creates_the_claim_once(
-    chat_store, chat_service, recording_claims, migrated_sessions, operator_id
+    chat_store, chat_service, recording_claims, operator_id
 ) -> None:
-    session, _ = await chat_store.create(operator_id)
-    await make_idle(migrated_sessions, session.session_id)
+    session = await chat_service.create(operator_id)
+    assert await chat_store.status(session.session_id) == SessionStatus.IDLE
+    assert recording_claims.created == []
 
     item_id = await chat_service.enqueue_prompt(operator_id, session.session_id, "start now", SPA_ORIGIN)
     allocated_again = await chat_service.allocate(operator_id, session.session_id)
@@ -458,11 +470,8 @@ async def test_the_first_idle_prompt_creates_the_claim_once(
     assert await chat_store.status(session.session_id) == SessionStatus.PROVISIONING
 
 
-async def test_idle_provisioning_details_do_not_read_kubernetes(
-    chat_store, chat_service, recording_claims, migrated_sessions, operator_id
-) -> None:
-    session, _ = await chat_store.create(operator_id)
-    await make_idle(migrated_sessions, session.session_id)
+async def test_idle_provisioning_details_do_not_read_kubernetes(chat_service, recording_claims, operator_id) -> None:
+    session = await chat_service.create(operator_id)
 
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
@@ -487,7 +496,7 @@ async def test_a_rolling_replica_hands_the_session_back_instead_of_ending_it(
     conversation."""
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     with (
         patch("haku.console.x.session_runtime.cli_over_websocket", _RollingClaudeClient),
@@ -506,7 +515,7 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """A runner whose replica went away is admitted by the next one, which keeps the sandbox."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -544,7 +553,7 @@ async def test_adoption_picks_the_answer_up_where_it_stopped(
     turn starting from an empty string would write the tail of the answer over the head of it.
     Adoption says which turn, and hands back the message it was being written into.
     """
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
@@ -566,7 +575,7 @@ async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """The stream declaration can commit before a roll and its completed copy arrive afterwards."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
@@ -610,7 +619,7 @@ async def test_adoption_replays_a_tool_call_composition_from_its_start(
     chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     """No durable item can hold half a JSON value, so a roll replays the composition whole."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
@@ -709,7 +718,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
     `record_frame` refuses it as one this session already has — so adoption hands it back as a
     frame to project, and projecting it closes the turn through the loop a live frame goes through.
     """
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
@@ -744,7 +753,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
     ended badly as answered. The projection of the frame closes the turn instead, so recovery fails
     exactly as the live path fails on the same frame.
     """
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
@@ -787,7 +796,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
     `first_frame_seq - 1`, so a turn opening at 1 anchors at 0 — which is also "nothing has ever
     projected" — and there is no position below it to put the cursor.
     """
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.record_frame(
@@ -812,7 +821,7 @@ async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
     """`next_prompt` claims the prompt; `_run_turn` writes it afterwards. A replica dying between
     the two asked nothing, so the prompt is owed a second offer rather than a silent burial.
     """
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
@@ -830,7 +839,7 @@ async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
 
 async def test_a_turn_that_asked_its_prompt_keeps_it(chat_store, chat_service, recording_claims, operator_id) -> None:
     """The agent has it and the runner will replay its answer, so re-offering would ask twice."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
     await chat_store.enqueue_prompt(operator_id, session_id, "what were we doing", SPA_ORIGIN)
@@ -849,7 +858,7 @@ async def test_a_held_session_tells_the_runner_to_retry_rather_than_refusing_it(
     while the dying one's lease is still valid. Closing before `accept()` reaches it as 403 whatever
     code is passed, and 403 is a refusal it correctly gives up on — costing the sandbox. 503 is what
     it waits out."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -883,7 +892,7 @@ async def test_terminal_runner_retry_deletes_its_stale_claim(
     """A runner presenting a valid credential for an already-closed session is turned away."""
     websocket = _LifecycleWebSocket()
 
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     await chat_store.request_close(operator_id, session.session_id)
 
     await chat_service.handle_runner(
@@ -903,7 +912,7 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
 
     session_ids = []
     for _ in range(2):
-        session = await chat_service.create(operator_id)
+        session = await _allocated_session(chat_service, recording_claims, operator_id)
         await chat_store.request_close(operator_id, session.session_id)
         session_ids.append(session.session_id)
 
@@ -980,6 +989,7 @@ async def _turn_into_a_room(
     """Run one turn against *client* for a room-backed session and return what the room is owed."""
     service = SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
     view, token = await chat_store.create(operator_id)
+    assert token is not None
     await attach_channel(migrated_sessions, view.session_id, ROOM)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
@@ -1681,7 +1691,7 @@ async def test_a_returning_runner_beats_the_sweep(
 ) -> None:
     """A runner that redials inside the adoption window is admitted, and the session keeps running
     under its new holder rather than being failed."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
     assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1728,7 +1738,7 @@ async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
     """A runner attached, then its lease was handed back (a roll, or the sandbox reaching its TTL)
     and no runner returned. `release` clears `lease_holder`, so the reason must not fall through to
     "never attached" for a session that was attached for hours."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     token = recording_claims.tokens[session.session_id]
     assert await chat_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
     await chat_store.release_lease(session.session_id)
@@ -1776,7 +1786,7 @@ async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_beh
 ) -> None:
     """The reason to ask a session that is no longer provisioning: the conversation read answers
     `null` for a failed session, which is the one that most needs to be asked why."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     recording_claims.answer(
         provisioning_view(
             f"claude-{session.session_id.hex}",
@@ -1800,7 +1810,7 @@ async def test_a_reclaimed_claim_is_reported_as_gone_rather_than_as_nothing(
 ) -> None:
     """`_cleanup_terminal_claim` deletes the claim once a session ends, so the cluster has nothing
     to show — a claim that is gone being a fact rather than an absence of one."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     recording_claims.answer(provisioning_view(f"claude-{session.session_id.hex}", step=ProvisioningStep.CLAIM_ABSENT))
     await chat_store.closed(session.session_id)
 
@@ -1815,7 +1825,7 @@ async def test_a_cluster_that_cannot_be_read_says_so_instead_of_failing_the_requ
 ) -> None:
     """The other answer a reader must tell apart from "the claim is gone": "I could not look" — the
     one it must not act on."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
     recording_claims.fail(RuntimeError("kubernetes: connection refused"))
 
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
@@ -1828,7 +1838,7 @@ async def test_polling_provisioning_reads_the_cluster_at_a_bounded_rate(
 ) -> None:
     """One poll is up to three Kubernetes reads, and the browser's refresh rate is not the API
     server's problem — so polls inside one observation's budget cost one look at the cluster."""
-    session = await chat_service.create(operator_id)
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
 
     with patch("haku.console.x.session_runtime.OBSERVATION_TTL", timedelta(hours=1)):
         for _ in range(5):
