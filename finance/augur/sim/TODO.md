@@ -241,10 +241,10 @@ recovery cashouts. Still missing:
 
 ## Trades & ledger
 
-- **Explicit portfolio trade events**: scheduled asset purchases/sales
-  beyond the existing month-0 property purchase. Needs buy-side
-  accounting in sim (today only sales are modeled, via liquidity policy
-  or PE tender).
+- **Explicit portfolio trade events**: richer trade-event reporting beyond the existing
+  target-allocation policy and scheduled-sale disposition frames. The buy-side accounting
+  substrate now exists for policy-driven purchases; event reporting can be added when a
+  consumer needs it.
 - **Ordered policy-program surface** — only if richer decisions need it.
   Existing obligations + liquidity policies cover today's use cases;
   missing behavior should land as typed sim decisions/events with

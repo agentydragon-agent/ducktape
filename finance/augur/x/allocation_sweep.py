@@ -357,9 +357,9 @@ def _print_diagnostics() -> None:
     )
 
     # 2. Did the rebalance fire, and does the tolerance matter? Measured as the equity share
-    # over time, NOT as a count of `asset_purchases`: that frame carries scheduled purchases
-    # only and is empty for policy-driven buys, so counting it reported a confident zero for
-    # every tolerance including one that provably fired (it demanded 123 purchase slots).
+    # over time, not as a count of the `asset_purchases` frame: policy-driven buys are
+    # represented by their lot slots and disposition frames, so counting that frame would report
+    # a confident zero for every tolerance including one that provably fired.
     middle = MONTHLY_SPENDS[1]
     narrow = _sample(REBALANCE_ROLLOUTS)
     months = (0, 120, 240, 359)

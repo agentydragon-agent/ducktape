@@ -68,24 +68,6 @@ class _PropertyCashflowInputs(NamedTuple):
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=("month", "amount_quanta", "price_fixed", "price_series", "quantity_scale"),
-    meta_fields=("lot_slot", "cash_slot"),
-)
-@dataclass(frozen=True)
-class _AssetPurchaseProgram:
-    """Scheduled asset-purchase values and the static slots that interpret them."""
-
-    month: jax.Array
-    amount_quanta: jax.Array
-    price_fixed: jax.Array
-    price_series: jax.Array
-    quantity_scale: jax.Array
-    lot_slot: tuple[int, ...]
-    cash_slot: tuple[int, ...]
-
-
-@partial(
-    jax.tree_util.register_dataclass,
     data_fields=(
         "month",
         "quantity",
