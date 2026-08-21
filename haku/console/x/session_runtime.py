@@ -251,10 +251,8 @@ class SessionService:
         origin: PromptOrigin,
         records: PromptRecords | None = None,
     ) -> UUID:
-        """Accept a prompt and allocate its idle session, if this is the first demand."""
-        item_id = await self._store.enqueue_prompt(operator_id, session_id, prompt_text, origin, records)
-        await self.allocate(operator_id, session_id)
-        return item_id
+        """Accept a prompt; the channel-neutral allocator reconciles its durable demand."""
+        return await self._store.enqueue_prompt(operator_id, session_id, prompt_text, origin, records)
 
     async def allocate(self, operator_id: UUID, session_id: UUID) -> bool:
         """Create the SandboxClaim for queued work exactly once across competing replicas."""

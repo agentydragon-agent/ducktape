@@ -513,36 +513,29 @@ Each step is independently reviewable, and every one is worth having even if the
 built. The dependency edges are at the end.
 
 1.  **Allocate a sandbox because there is something to do.** A quiet room holds a sandbox
-    permanently: the supervisor provisions whenever the room has no live session, and the warm pool
-    is `replicas: 0` so every claim is a cold start. That is ~1 CPU / 2Gi of an 8 CPU / 16Gi quota
-    standing idle for a room nobody speaks in. The SPA has a gesture that means "I want a session"
-    and Matrix has none, so the supervisor substitutes by assuming demand permanently; the prompt is
-    the honest substitute.
+    permanently under the old supervisor rule, and the warm pool is `replicas: 0`, so every claim
+    is a cold start. That was ~1 CPU / 2Gi of an 8 CPU / 16Gi quota standing idle for a room nobody
+    speaks in.
 
-    **The demand lives on the conversation, not on a session.** The conversation holds an incoming
-    prompt until a session provisions, so a session is created only where there is demand and is
-    created straight into `provisioning` — an unclaimed prompt against a conversation with no live
-    session is the signal, and it is the same on every surface. It is swept by a channel-neutral
-    `SandboxAllocator` (`x/sandbox_allocation.py`) under its own `SBOX` election — never from the
-    request path, and never from a channel's supervisor, which now only announces what it sees.
-    `POST /api/conversations` therefore returns a conversation holding no sandbox, exactly as a quiet
-    room does. The rejected alternative was a session created in an `idle` status that a prompt then
-    bought a sandbox for (#4231, closed): it made "exists" and "is wanted" two different facts about
-    one row, and the enum member it needed is gone again. **Cost, stated plainly:** the first message
-    after quiet pays the full cold start. Measure it rather than assume it away. **Done when** a
-    quiet room holds no sandbox, the first message provisions one, and a prompt sent while it
-    provisions is answered rather than refused.
+    **The deployed model is an idle session plus conversation-owned demand.** Opening either a SPA
+    conversation or a Matrix-bound conversation writes an `idle` session with no bridge credential,
+    provisioning lease or `SandboxClaim`. The first accepted prompt is an unclaimed
+    `conversation_prompt`; it is durable before any Kubernetes write and survives the replica that
+    admitted it. The session row remains the allocation mutex: `idle → provisioning`, bridge
+    fingerprint, provisioning lease and lifecycle event commit together before claim creation.
 
-    **The SPA posts to a session-addressed route** (`POST /api/sessions/{session_id}/messages`), so
-    a conversation-addressed route has to ship and be adopted across a `maxUnavailable: 0` roll.
+    **Allocation is reconciled, not requested.** `x/sandbox_allocation.py` sweeps idle sessions with
+    unclaimed prompts oldest-first under its own `SBOX` election. `SessionEventKind.PROMPT` wakes the
+    leader quickly; a periodic pass recovers missed notifications and restarts. Neither the SPA
+    request nor `MatrixSessionSupervisor` creates a claim. A Kubernetes failure records that session
+    failed and does not stop unrelated demand from being served; a replacement session in the same
+    conversation sees the still-unclaimed prompt. **Cost, stated plainly:** the first message after
+    quiet pays the full cold start. Measure it rather than assume it away.
 
-    **The sweep can be lifted rather than written.** `x/sandbox_allocation.py` and its test on
-    `claude/haku-idle-sessions` already carry the election, a wake on `SessionEventKind.PROMPT`
-    with a periodic backstop, and failure backoff. Only the query changes.
-
-    **What it retires.** `PromptRejection.NO_SESSION` and `SESSION_NOT_READY` lose their reason: a
-    conversation with no live session becomes a thread that will provision one rather than a refusal
-    to record.
+    The compatibility rollout for the closed status enum and nullable idle credential/lease landed
+    before production began writing `idle`; the writer and first-prompt behavior then rolled under
+    `maxUnavailable: 0`. The reconciler is the crash-recovery completion of that model, not a return
+    to #4231's superseded schema.
 
 2.  **Notices as spans** (§ 4): one work notice per turn, one lifecycle notice per
     session, **each body a fold over the subscription stream**, each retired or sealed. This is
@@ -1008,7 +1001,7 @@ SQLAlchemy still names in every `SELECT` is unmapped in R2 and dropped in R3.
 
 **Purge on both sides of R2's roll.** `DELETE FROM sessions` is the whole operation: `ON DELETE
 CASCADE` takes `session_{frames,messages,turns,prompts,events,outbox}`, and
-`matrix_conversation.session_id` is set NULL, after which the supervisor provisions a replacement
+`matrix_conversation.session_id` is set NULL, after which the supervisor opens a replacement
 session against the same room. Run it before, so no live session carries identity-numbered frames
 into the roll; and again once R2 has converged, because the roll is itself a window in which an old
 replica can create a session and record identity frames into it. The window is the roll's length and

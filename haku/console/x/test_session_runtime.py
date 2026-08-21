@@ -417,7 +417,7 @@ async def _allocated_session(chat_service: SessionService, recording_claims: Rec
 
 
 async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim(
-    chat_store, chat_service, recording_claims, operator_id
+    allocator, chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     websocket = _LifecycleWebSocket()
 
@@ -425,6 +425,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     session_id = session.session_id
     assert recording_claims.created == [], "an empty session owns no sandbox"
     await chat_service.enqueue_prompt(operator_id, session_id, "start", SPA_ORIGIN)
+    await allocator.allocate_once()
     _ClosingClaudeClient.on_connect = lambda: chat_store.request_close(operator_id, session_id)
     with patch("haku.console.x.session_runtime.cli_over_websocket", _ClosingClaudeClient):
         await chat_service.handle_runner(cast(Any, websocket), session_id, recording_claims.tokens[session_id])
@@ -454,13 +455,17 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
 
 
 async def test_the_first_idle_prompt_creates_the_claim_once(
-    chat_store, chat_service, recording_claims, operator_id
+    allocator, chat_store, chat_service, recording_claims, operator_id
 ) -> None:
     session = await chat_service.create(operator_id)
     assert await chat_store.status(session.session_id) == SessionStatus.IDLE
     assert recording_claims.created == []
 
     item_id = await chat_service.enqueue_prompt(operator_id, session.session_id, "start now", SPA_ORIGIN)
+    assert await chat_store.status(session.session_id) == SessionStatus.IDLE
+    assert recording_claims.created == []
+
+    await allocator.allocate_once()
     allocated_again = await chat_service.allocate(operator_id, session.session_id)
 
     assert item_id is not None

@@ -83,7 +83,7 @@ from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallInd
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tools import gmail as gmail_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import conversation_follow, sandbox_claims, session_runtime, subscription
+from haku.console.x import conversation_follow, sandbox_allocation, sandbox_claims, session_runtime, subscription
 
 # Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
 # already talks about (the console's own conversation record, the index sweeps, the push queue).
@@ -365,6 +365,11 @@ def create_app(
         )
     else:
         session_service = None
+    sandbox_allocator = (
+        sandbox_allocation.SandboxAllocator(session_service, session_store, session_notifications, db_engine)
+        if session_service is not None
+        else None
+    )
     # A followed conversation's own socket. Behind the Claude runtime because a follower opens on
     # the same read `GET /api/conversations/{id}` serves, which is the service's — a replica
     # without one answers neither.
@@ -373,9 +378,9 @@ def create_app(
         if session_service is None
         else conversation_follow.ConversationFollow(session_store, session_service, session_notifications)
     )
-    # The supervisor comes after the Claude runtime it provisions through, and announces via
-    # the sync service, which holds the only Matrix credential — one login, one device,
-    # whoever is speaking.
+    # The supervisor comes after the Claude runtime whose sessions it opens and observes, and
+    # announces via the sync service, which holds the only Matrix credential — one login, one
+    # device, whoever is speaking. Sandbox allocation is composed separately above.
     matrix_supervisor: matrix_conversation.MatrixSessionSupervisor | None = None
     if (
         matrix_config is not None
@@ -577,14 +582,16 @@ def create_app(
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
-        # A sibling of the sync loop, not a child of it: sharing the advisory lock keeps one
-        # replica provisioning, while staying a separate task keeps a stalled sandbox claim from
-        # wedging ingress, which must keep reading the room and answering it with no sandbox up.
+        # A sibling of the sync loop, not a child of it: its own advisory lock keeps room/session
+        # replacement single, while the channel-neutral allocator below owns provisioning.
         supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
         noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
         following = follow.run() if follow is not None else contextlib.nullcontext()
+        # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
+        # the notification listener is live; the first sweep is also the restart backstop.
+        allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
         indexing = index_maintenance.run() if index_maintenance is not None else contextlib.nullcontext()
         embedding = embedding_maintenance.run() if embedding_maintenance is not None else contextlib.nullcontext()
         async with (
@@ -605,7 +612,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), following, mcp_asgi.lifespan(app):
+                async with session_live_updates.run(), following, allocating, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the

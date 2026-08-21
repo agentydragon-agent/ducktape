@@ -11,6 +11,10 @@ conversation record; projecting that record consistently onto both channels is w
 Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
+The allocation prerequisite is complete: both surfaces persist the same first-prompt demand, and
+the leader-elected `SandboxAllocator` reconciles it independently of request and channel-supervisor
+lifetimes. The remaining checklist starts at channel reconciliation, not sandbox creation.
+
 1. **Reconcile a channel against the conversation** rather than sending to it: one loop per
    `(channel, conversation)` over its own cursor. `RoomNotices` is that loop for one event kind;
    every other outbound fact is still pushed at the room by whoever noticed it.

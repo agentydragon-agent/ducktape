@@ -390,6 +390,14 @@ class SessionAllocation:
     bridge_token: str
 
 
+@dataclass(frozen=True, slots=True)
+class SandboxDemand:
+    """An idle Operator-owned session whose conversation has an unclaimed prompt."""
+
+    operator_id: UUID
+    session_id: UUID
+
+
 class PositionUnusableError(Exception):
     """An update cannot be served from a follower's position; it must be sent the conversation whole.
 
@@ -579,6 +587,25 @@ class SessionStore:
             writer.authored(session_events.SessionProvisioningBody())
             await notify(db, SessionEventKind.UPDATE, session_id)
             return SessionAllocation(session_id=session_id, bridge_token=bridge_token)
+
+    async def sessions_awaiting_sandbox(self) -> tuple[SandboxDemand, ...]:
+        """Return every idle session with durable demand, longest-waiting first.
+
+        The prompt belongs to the conversation, so a replacement idle session sees work its
+        predecessor never claimed. The result deliberately names no surface: SPA and Matrix
+        prompts leave the same conversation-prompt row and follow the same allocation rule.
+
+        This read does not lock. It is a work hint for the reconciler; ``allocate`` locks the
+        session and repeats both predicates before minting a credential.
+        """
+        async with self._sessions() as db:
+            rows = await db.execute(
+                select(Session.operator_id, Session.session_id)
+                .join(ConversationPrompt, ConversationPrompt.conversation_id == Session.conversation_id)
+                .where(Session.status == SessionStatus.IDLE, ConversationPrompt.claimed_at.is_(None))
+                .order_by(ConversationPrompt.queued_at, Session.created_at, Session.session_id)
+            )
+            return tuple(SandboxDemand(operator_id=row.operator_id, session_id=row.session_id) for row in rows)
 
     async def get(self, operator_id: UUID, session_id: UUID) -> SessionView:
         async with self._sessions() as db:
