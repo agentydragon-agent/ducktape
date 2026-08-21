@@ -259,6 +259,7 @@ def _private_equity_events(
     plan: CompiledSimulation, *, rollout_index: int, primary_agent_code: int, asset_label_by_id: dict[str, str]
 ) -> tuple[RolloutEvent, ...]:
     primary_issuers = _primary_private_equity_issuers(plan, primary_agent_code)
+    channels = plan.pe_channels.execution
     rows: list[tuple[int, str, PrivateEquityMarkerEvent]] = []
     for issuer_index, issuer_id in enumerate(plan.pe_issuers.issuer_ids):
         if issuer_id not in primary_issuers:
@@ -270,7 +271,7 @@ def _private_equity_events(
             )
             if event_kind == PrivateEquityEventKindCode.NONE:
                 continue
-            regime = PrivateEquityRegimeCode(int(plan.pe_channels.regime_codes[issuer_index, rollout_index, month]))
+            regime = PrivateEquityRegimeCode(int(channels.regime_codes[issuer_index, rollout_index, month]))
             rows.append(
                 (
                     month,
@@ -283,19 +284,15 @@ def _private_equity_events(
                         asset_label=asset_label_by_id.get(asset.wire_id),
                         event_kind=event_kind.name.lower(),
                         regime=regime.name.lower(),
-                        mark_quanta=_quanta(plan.pe_channels.mark_quanta[issuer_index, rollout_index, month]),
+                        mark_quanta=_quanta(channels.mark_quanta[issuer_index, rollout_index, month]),
                         sale_capacity_fraction=float(
-                            plan.pe_channels.sale_capacity_fractions[issuer_index, rollout_index, month]
+                            channels.sale_capacity_fractions[issuer_index, rollout_index, month]
                         ),
-                        eligible_fraction=float(
-                            plan.pe_channels.eligible_fractions[issuer_index, rollout_index, month]
-                        ),
-                        forced_sale_fraction=float(
-                            plan.pe_channels.forced_sale_fractions[issuer_index, rollout_index, month]
-                        ),
-                        liquidity_blocked=bool(plan.pe_channels.liquidity_blocked[issuer_index, rollout_index, month]),
+                        eligible_fraction=float(channels.eligible_fractions[issuer_index, rollout_index, month]),
+                        forced_sale_fraction=float(channels.forced_sale_fractions[issuer_index, rollout_index, month]),
+                        liquidity_blocked=bool(channels.liquidity_blocked[issuer_index, rollout_index, month]),
                         forced_recovery_cashout_quanta=_quanta(
-                            plan.pe_channels.forced_recovery_cashout_quanta[issuer_index, rollout_index, month]
+                            channels.forced_recovery_cashout_quanta[issuer_index, rollout_index, month]
                         ),
                     ),
                 )
@@ -312,6 +309,7 @@ def _private_equity_opportunity_events(
     asset_label_by_id: dict[str, str],
 ) -> tuple[RolloutEvent, ...]:
     primary_issuers = _primary_private_equity_issuers(plan, primary_agent_code)
+    channels = plan.pe_channels.execution
     rows: list[tuple[int, str, PrivateEquityOpportunityEvent]] = []
     for month, issuer_index in np.argwhere(output.private_equity.opportunities.active[:, :, rollout_index]):
         issuer_id = plan.pe_issuers.issuer_ids[int(issuer_index)]
@@ -321,7 +319,7 @@ def _private_equity_opportunity_events(
         event_kind = PrivateEquityEventKindCode(
             int(plan.pe_channels.event_kind_codes[issuer_index, rollout_index, month])
         )
-        regime = PrivateEquityRegimeCode(int(plan.pe_channels.regime_codes[issuer_index, rollout_index, month]))
+        regime = PrivateEquityRegimeCode(int(channels.regime_codes[issuer_index, rollout_index, month]))
         outcome = PrivateEquityOpportunityOutcome(
             int(output.private_equity.opportunities.outcome[month, issuer_index, rollout_index])
         )
@@ -335,10 +333,10 @@ def _private_equity_opportunity_events(
             event_kind=event_kind.name.lower(),
             regime=regime.name.lower(),
             outcome=outcome.name.lower(),
-            mark_quanta=_quanta(plan.pe_channels.mark_quanta[issuer_index, rollout_index, month]),
-            sale_capacity_fraction=float(plan.pe_channels.sale_capacity_fractions[issuer_index, rollout_index, month]),
-            eligible_fraction=float(plan.pe_channels.eligible_fractions[issuer_index, rollout_index, month]),
-            liquidity_blocked=bool(plan.pe_channels.liquidity_blocked[issuer_index, rollout_index, month]),
+            mark_quanta=_quanta(channels.mark_quanta[issuer_index, rollout_index, month]),
+            sale_capacity_fraction=float(channels.sale_capacity_fractions[issuer_index, rollout_index, month]),
+            eligible_fraction=float(channels.eligible_fractions[issuer_index, rollout_index, month]),
+            liquidity_blocked=bool(channels.liquidity_blocked[issuer_index, rollout_index, month]),
             floor_quanta=_quanta(output.private_equity.opportunities.floor[month, issuer_index, rollout_index]),
             liquid_net_worth_quanta=_quanta(
                 output.private_equity.opportunities.liquid_net_worth[month, issuer_index, rollout_index]
