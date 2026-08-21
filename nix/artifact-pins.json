@@ -13,8 +13,8 @@
       "sha256": "F3+qWLWCTER7YVAApOnAnMx30rOdfH0jPGw+UW5kJ4o="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-d2a3c94634ab/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "0qPJRjSrf3hqgXlhaEht5rYZOS1RX8Z/KDfAXxyu0kg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-64acfeda27fa/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "ZKz+2if690BxV5kCcL6soVeqQJ9gaZ7DiS7czoVEh1o="
     },
     "ducktape-git-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-d2108b229806/ducktape_git_hooks-0.1.0-py3-none-any.whl",
@@ -85,8 +85,8 @@
       "sha256": "NTGXdF2Z6tjlglPbLexfxttd3Df6p726XGXwsjHEvzE="
     },
     "skill-web_selfcheck": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-d56a206605bc/web_selfcheck.skill",
-      "sha256": "1WogZgW8/eHz1tUMO4zdh5cALCeg/tUhd5AiwrJ1nU0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-860e1dd68edd/web_selfcheck.skill",
+      "sha256": "hg4d1o7dVXogY7l2SBMn/bmn849jNUxNF3qNbJtT6I0="
     },
     "skill-workspace-gc": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-45d0482d059f/workspace-gc.skill",
