@@ -17,16 +17,14 @@ from typing import Any, cast
 import jax
 import numpy as np
 import pytest_bazel
-from numpy.typing import NDArray
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import compile_simulation
 from finance.augur.sim.compiler.plan import CompiledSimulation
-from finance.augur.sim.engine import _allocate_buffers
 from finance.augur.sim.engine.jax_engine import _build_program, _program_impl, run_jax_scan
 from finance.augur.sim.external_series import materialize_external_series
 from finance.augur.sim.locations import Location
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
@@ -135,10 +133,8 @@ def _compile(scenario: Scenario, *, rollout_count: int, locations: dict[str, Loc
     )
 
 
-def _run_jax(plan: CompiledSimulation) -> SimulationBuffers:
-    buffers = _allocate_buffers(plan)
-    run_jax_scan(plan, buffers)
-    return buffers
+def _run_jax(plan: CompiledSimulation) -> DenseSimulationOutput:
+    return run_jax_scan(plan)
 
 
 def _program_cache_size() -> int:
@@ -148,7 +144,7 @@ def _program_cache_size() -> int:
 def _assert_value_sweep_takes_effect(
     scenario: Scenario,
     perturb: Callable[[CompiledSimulation], CompiledSimulation],
-    extract: Callable[[SimulationBuffers], NDArray[np.int64]],
+    extract: Callable[[DenseSimulationOutput], jax.Array | np.ndarray],
     *,
     locations: dict[str, Location] | None = None,
 ) -> None:
@@ -183,7 +179,7 @@ def test_cost_basis_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _sale_scenario(),
         lambda p: replace(p, lot_cost_basis_per_unit=p.lot_cost_basis_per_unit // np.int64(2)),
-        lambda b: b.state.capital_gain_state,
+        lambda b: b.state.capital_gain_ytd,
     )
 
 
@@ -191,7 +187,7 @@ def test_asset_sale_price_sweep_takes_effect() -> None:
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
         return replace(p, sales=replace(p.sales, price_fixed=p.sales.price_fixed + np.int64(1_000)))
 
-    _assert_value_sweep_takes_effect(_sale_scenario(), perturb, lambda b: b.state.cash_state)
+    _assert_value_sweep_takes_effect(_sale_scenario(), perturb, lambda b: b.state.cash)
 
 
 def _reroute_asset_sale(plan: CompiledSimulation) -> CompiledSimulation:
@@ -203,11 +199,11 @@ def _reroute_asset_sale(plan: CompiledSimulation) -> CompiledSimulation:
 
 def test_asset_sale_static_slot_change_recompiles() -> None:
     plan = _compile(_sale_scenario(), rollout_count=2, locations={})
-    original_cash = _run_jax(plan).state.cash_state.copy()
+    original_cash = _run_jax(plan).state.cash.copy()
     base_cache_size = _program_cache_size()
 
     rerouted = _reroute_asset_sale(plan)
-    rerouted_cash = _run_jax(rerouted).state.cash_state
+    rerouted_cash = _run_jax(rerouted).state.cash
 
     assert not np.array_equal(rerouted_cash, original_cash)
     assert _program_cache_size() == base_cache_size + 1
@@ -217,7 +213,7 @@ def test_initial_balance_sweep_takes_effect() -> None:
     _assert_value_sweep_takes_effect(
         _tax_scenario(),
         lambda p: replace(p, cash_initial_balance=p.cash_initial_balance + np.int64(5_000_000)),
-        lambda b: b.state.cash_state,
+        lambda b: b.state.cash,
     )
 
 
@@ -287,9 +283,7 @@ def test_property_cashflow_amount_sweep_takes_effect() -> None:
             ),
         )
 
-    _assert_value_sweep_takes_effect(
-        _property_cashflow_scenario(), perturb, lambda b: b.state.cash_state, locations=_SF
-    )
+    _assert_value_sweep_takes_effect(_property_cashflow_scenario(), perturb, lambda b: b.state.cash, locations=_SF)
 
 
 def test_property_basis_sweep_takes_effect() -> None:
@@ -298,7 +292,7 @@ def test_property_basis_sweep_takes_effect() -> None:
         lambda p: replace(
             p, properties=replace(p.properties, adjusted_basis=p.properties.adjusted_basis * np.int64(6) // np.int64(5))
         ),
-        lambda b: b.state.property_basis_state,
+        lambda b: b.state.property_basis,
         locations=_SF,
     )
 
@@ -309,7 +303,7 @@ def test_mortgage_principal_sweep_takes_effect() -> None:
         lambda p: replace(
             p, liabilities=replace(p.liabilities, principal=p.liabilities.principal * np.int64(11) // np.int64(10))
         ),
-        lambda b: b.state.liability_principal_state,
+        lambda b: b.state.liability_principal,
         locations=_SF,
     )
 

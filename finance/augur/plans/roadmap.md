@@ -17,7 +17,7 @@ Augur is a structured financial simulator:
 The app should not use a flat browser-side scenario row as the source of truth.
 Frontend controls may be friendly, but they should compile into typed backend
 objects: agents, accounts, assets, liabilities, obligations, lifecycle events,
-policies, sampled exogenous paths, dense state buffers, event frames, and read
+policies, sampled exogenous paths, dense state outputs, event frames, and read
 models.
 
 ## Standing Decisions

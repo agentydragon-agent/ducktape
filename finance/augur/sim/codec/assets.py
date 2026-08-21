@@ -9,7 +9,6 @@ import polars as pl
 
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import (
     asset_code_column,
     code_column,
@@ -26,21 +25,22 @@ from finance.augur.sim.codec.helpers import (
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.enums import PrivateEquityDispositionKind, PrivateEquityOpportunityOutcome
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.state import ASSET_LOT_FRAME, CASH_BALANCES_FRAME
 
 
-def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+def decode_cash(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
     """Cash held by the scenario's AGENTS, month by month.
 
     The engine's cash array has one more row than this frame: the external account every
     unmodeled counterparty settles against. It is an accounting device, not somebody's bank
     account, and surfacing it here would put a fictitious agent in every consumer of this
     frame — including the UI. Callers that want it (a conservation check, "where did the
-    money go") read `buffers.state.cash_state` directly, where it is row
+    money go") read `output.state.cash` directly, where it is row
     `plan.external_cash_slot`.
     """
 
-    state = r_first_view(buffers.state.cash_state)[:, :, : plan.external_cash_slot]  # (H+1, r, s)
+    state = r_first_view(output.state.cash)[:, :, : plan.external_cash_slot]  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(
@@ -55,18 +55,18 @@ def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Data
     )
 
 
-def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = r_first_view(buffers.state.lot_state)  # (H+1, r, s)
+def decode_asset_lots(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    state = r_first_view(output.state.lots)  # (H+1, r, s)
     h1, r, s = state.shape
     # Basis is per-rollout, not a plan column: a lot bought mid-horizon carries the price its
     # rollout paid, and reading the compile-time column would report 0 for every purchased lot.
-    # It is also write-once, so the buffer is `(lot, rollout)` and every month of the frame repeats
+    # It is also write-once, so the output is `(lot, rollout)` and every month of the frame repeats
     # it — including the months before the lot's purchase, where `remaining_quantity` is 0 and the
     # basis column is meaningless either way.
-    basis = np.broadcast_to(buffers.state.lot_cost_basis_state.T[None, :, :], (h1, r, s))  # (H+1, r, s)
+    basis = np.broadcast_to(output.state.lot_cost_basis.T[None, :, :], (h1, r, s))  # (H+1, r, s)
     # The purchase month is per-rollout for the same reason: a slot a policy chose to fill is bought
     # in whatever month its own rollout crossed the band, and the plan's column holds 0 for it.
-    purchase_month = np.broadcast_to(buffers.state.lot_purchase_month_state.T[None, :, :], (h1, r, s))
+    purchase_month = np.broadcast_to(output.state.lot_purchase_month.T[None, :, :], (h1, r, s))
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(
         {
@@ -86,8 +86,8 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
     )
 
 
-def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.lot_dispositions.scheduled.active  # (sale, lot, R) — horizon collapsed
+def decode_sched_dispositions(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.scheduled_dispositions.active  # (sale, lot, R) — horizon collapsed
     if active.any():
         sales, lots, rollouts = np.argwhere(active).T
     else:
@@ -104,18 +104,18 @@ def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffe
         source_account_codes=plan.sales.source_account[sales],
         asset_codes=plan.sales.asset[sales],
         lots=lots,
-        units=buffers.lot_dispositions.scheduled.units[sales, lots, rollouts],
-        basis=buffers.lot_dispositions.scheduled.basis[sales, lots, rollouts],
-        proceeds=buffers.lot_dispositions.scheduled.proceeds[sales, lots, rollouts],
+        units=output.scheduled_dispositions.units[sales, lots, rollouts],
+        basis=output.scheduled_dispositions.basis[sales, lots, rollouts],
+        proceeds=output.scheduled_dispositions.proceeds[sales, lots, rollouts],
         proceeds_account_codes=plan.sales.proceeds_account[sales],
     )
 
 
-def decode_target_allocation_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+def decode_target_allocation_dispositions(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
     """Lot dispositions from the target-allocation policy: one row per (month, policy, sleeve,
     lot, rollout) the engine actually sold from."""
 
-    active = buffers.lot_dispositions.target_allocation.active  # (M, policy, sleeve, lot, R)
+    active = output.target_allocation.dispositions.active  # (M, policy, sleeve, lot, R)
     # A padded sleeve column carries asset_code < 0 and can never have sold anything; masking it
     # here keeps the argwhere from having to be trusted to agree.
     sleeve_valid = plan.target_allocation_policies.sleeve_assets >= 0  # (policy, sleeve)
@@ -139,15 +139,15 @@ def decode_target_allocation_dispositions(plan: CompiledSimulation, buffers: Sim
         source_account_codes=plan.lot_account_codes[lots],
         asset_codes=asset_codes,
         lots=lots,
-        units=buffers.lot_dispositions.target_allocation.units[months, policies, sleeve_idxs, lots, rollouts],
-        basis=buffers.lot_dispositions.target_allocation.basis[months, policies, sleeve_idxs, lots, rollouts],
-        proceeds=buffers.lot_dispositions.target_allocation.proceeds[months, policies, sleeve_idxs, lots, rollouts],
+        units=output.target_allocation.dispositions.units[months, policies, sleeve_idxs, lots, rollouts],
+        basis=output.target_allocation.dispositions.basis[months, policies, sleeve_idxs, lots, rollouts],
+        proceeds=output.target_allocation.dispositions.proceeds[months, policies, sleeve_idxs, lots, rollouts],
         proceeds_account_codes=plan.target_allocation_policies.account[policies],
     )
 
 
-def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.lot_dispositions.pe.active  # (M, issuer, kind, lot, R)
+def decode_pe_dispositions(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.private_equity.dispositions.active  # (M, issuer, kind, lot, R)
     if active.any():
         months, issuers, kinds, lots, rollouts = np.argwhere(active).T
     else:
@@ -170,9 +170,9 @@ def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers)
         source_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
         asset_codes=asset_codes,
         lots=lots,
-        units=buffers.lot_dispositions.pe.units[months, issuers, kinds, lots, rollouts],
-        basis=buffers.lot_dispositions.pe.basis[months, issuers, kinds, lots, rollouts],
-        proceeds=buffers.lot_dispositions.pe.proceeds[months, issuers, kinds, lots, rollouts],
+        units=output.private_equity.dispositions.units[months, issuers, kinds, lots, rollouts],
+        basis=output.private_equity.dispositions.basis[months, issuers, kinds, lots, rollouts],
+        proceeds=output.private_equity.dispositions.proceeds[months, issuers, kinds, lots, rollouts],
         proceeds_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
     )
 
@@ -217,8 +217,8 @@ def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
     return EVENT_FRAMES.private_equity_events.normalize(pl.DataFrame(rows))
 
 
-def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.private_equity_opportunities.active
+def decode_pe_opportunity_events(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.private_equity.opportunities.active
     if not active.any():
         return EVENT_FRAMES.private_equity_opportunities.empty()
     months, issuers, rollouts = np.argwhere(active).T
@@ -230,7 +230,7 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
         event_code = PrivateEquityEventKindCode(int(channels.event_kind_codes[issuer_idx, rollout, month]))
         regime_code = PrivateEquityRegimeCode(int(channels.regime_codes[issuer_idx, rollout, month]))
         outcome = PrivateEquityOpportunityOutcome(
-            int(buffers.private_equity_opportunities.outcome[month, issuer_idx, rollout])
+            int(output.private_equity.opportunities.outcome[month, issuer_idx, rollout])
         )
         rows.append(
             {
@@ -246,30 +246,30 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
                 "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
                 "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
                 "liquidity_blocked": bool(channels.liquidity_blocked[issuer_idx, rollout, month]),
-                "floor_quanta": int(buffers.private_equity_opportunities.floor[month, issuer_idx, rollout]),
+                "floor_quanta": int(output.private_equity.opportunities.floor[month, issuer_idx, rollout]),
                 "liquid_net_worth_quanta": int(
-                    buffers.private_equity_opportunities.liquid_net_worth[month, issuer_idx, rollout]
+                    output.private_equity.opportunities.liquid_net_worth[month, issuer_idx, rollout]
                 ),
-                "shortfall_quanta": int(buffers.private_equity_opportunities.shortfall[month, issuer_idx, rollout]),
+                "shortfall_quanta": int(output.private_equity.opportunities.shortfall[month, issuer_idx, rollout]),
                 "units_held": float(
                     quantity_column(
-                        buffers.private_equity_opportunities.units_held[month, issuer_idx, rollout],
+                        output.private_equity.opportunities.units_held[month, issuer_idx, rollout],
                         _pe_issuer_scale(plan, issuer_idx),
                     )
                 ),
                 "sellable_units": float(
                     quantity_column(
-                        buffers.private_equity_opportunities.sellable_units[month, issuer_idx, rollout],
+                        output.private_equity.opportunities.sellable_units[month, issuer_idx, rollout],
                         _pe_issuer_scale(plan, issuer_idx),
                     )
                 ),
                 "target_units": float(
                     quantity_column(
-                        buffers.private_equity_opportunities.target_units[month, issuer_idx, rollout],
+                        output.private_equity.opportunities.target_units[month, issuer_idx, rollout],
                         _pe_issuer_scale(plan, issuer_idx),
                     )
                 ),
-                "proceeds_quanta": int(buffers.private_equity_opportunities.proceeds[month, issuer_idx, rollout]),
+                "proceeds_quanta": int(output.private_equity.opportunities.proceeds[month, issuer_idx, rollout]),
             }
         )
     return EVENT_FRAMES.private_equity_opportunities.normalize(pl.DataFrame(rows))

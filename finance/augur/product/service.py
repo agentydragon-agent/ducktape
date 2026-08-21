@@ -46,7 +46,6 @@ from finance.augur.product.wire import (
     TerminalDistributionResponse,
     TerminalMetrics,
 )
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import CompiledSimulation, compile_simulation
 from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import (
@@ -59,6 +58,7 @@ from finance.augur.sim.engine.jax_engine import (
 )
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.runtime import load_jurisdictions_for
 from finance.augur.sim.scenario import HarvestPolicy, Scenario
 from finance.augur.sim.simulate import simulate_with_external_series_and_product_metrics
@@ -155,10 +155,10 @@ class ProductService:
 
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         self._validate_scenario_key(scenario)
-        plan, buffers, metrics, model_id = self._simulate_dense(scenario, (seed,))
+        plan, output, metrics, model_id = self._simulate_dense(scenario, (seed,))
         projection = project_product_rollout(
             plan,
-            buffers,
+            output,
             metrics,
             rollout_index=0,
             primary_agent_id=self._primary_agent_id,
@@ -252,16 +252,16 @@ class ProductService:
 
     def _simulate_dense(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[CompiledSimulation, SimulationBuffers, ProductMetricArrays, str]:
+    ) -> tuple[CompiledSimulation, DenseSimulationOutput, ProductMetricArrays, str]:
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        plan, buffers, metrics = simulate_with_external_series_and_product_metrics(
+        plan, output, metrics = simulate_with_external_series_and_product_metrics(
             scenario,
             rollout_count=len(seeds),
             external_series=materialize_sampled_exogenous(sampled),
             locations=self._locations,
             primary_agent_id=self._primary_agent_id,
         )
-        return plan, buffers, metrics, model_id
+        return plan, output, metrics, model_id
 
     def _scenario_and_sample(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]

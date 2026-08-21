@@ -6,7 +6,6 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import (
     codes_to_strings,
     currency_quanta_column,
@@ -17,12 +16,13 @@ from finance.augur.sim.codec.helpers import (
 )
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.state import PROPERTY_STAKE_FRAME, PROPERTY_STATE_FRAME
 
 
-def decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    basis = r_first_view(buffers.state.property_basis_state)  # (H+1, r, p)
-    active = r_first_view(buffers.state.property_active_state)
+def decode_property_state(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    basis = r_first_view(output.state.property_basis)  # (H+1, r, p)
+    active = r_first_view(output.state.property_active)
     h1, r, p = basis.shape
     months, rollouts, props = state_axes(h1, r, p)
     mask = active.reshape(-1)
@@ -41,17 +41,17 @@ def decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) 
     )
 
 
-def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = r_first_view(buffers.state.property_active_state)  # (H+1, r, p)
+def decode_property_stakes(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = r_first_view(output.state.property_active)  # (H+1, r, p)
     h1, r, p = active.shape
     months, rollouts, props = state_axes(h1, r, p)
     mask = active.reshape(-1)
     # The mask + (month, rollout, property) axes are in R-first order, so the per-property
-    # state buffers must be viewed R-first too before flattening — the raw buffers are
+    # state output must be viewed R-first too before flattening — the raw output are
     # (snapshot, property, rollout). Flattening them raw and applying the R-first mask
     # cross-assigns stake values between properties once property_count > 1.
-    contribution = r_first_view(buffers.state.property_contribution_state)
-    equity = r_first_view(buffers.state.property_equity_state)
+    contribution = r_first_view(output.state.property_contribution)
+    equity = r_first_view(output.state.property_equity)
     property_ids = codes_to_strings(plan, plan.properties.id)
     buyer_ids = codes_to_strings(plan, plan.properties.buyer_agent)
     return state_history_frame_from_columns(
@@ -68,7 +68,7 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
 
 
 def decode_property_purchases(
-    plan: CompiledSimulation, buffers: SimulationBuffers
+    plan: CompiledSimulation, output: DenseSimulationOutput
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Returns (property_purchases_frame, derived_transfers_frame).
 
@@ -76,7 +76,7 @@ def decode_property_purchases(
     the buyer-cash transfer that goes alongside the purchase event.
     """
 
-    active = buffers.properties.purchase_active  # (M, P, R)
+    active = output.property_purchases  # (M, P, R)
     if active.any():
         months, props, rollouts = np.argwhere(active).T
     else:

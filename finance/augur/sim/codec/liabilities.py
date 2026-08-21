@@ -7,7 +7,6 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import (
     code_column,
     codes_to_strings,
@@ -19,12 +18,13 @@ from finance.augur.sim.codec.helpers import (
 )
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.state import LIABILITY_FRAME
 
 
-def decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    principal = r_first_view(buffers.state.liability_principal_state)  # (H+1, R, n_liab)
-    active = r_first_view(buffers.state.liability_active_state)
+def decode_liabilities(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    principal = r_first_view(output.state.liability_principal)  # (H+1, R, n_liab)
+    active = r_first_view(output.state.liability_active)
     h1, r, n_liab = principal.shape
     months, rollouts, liabs = state_axes(h1, r, n_liab)
     mask = active.reshape(-1)
@@ -47,21 +47,21 @@ def decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> 
             "term_months": plan.liabilities.term_months.astype(np.int64)[liab_idx],
             "origination_month_index": origination_per_liab[liab_idx],
             "monthly_payment_quanta": currency_quanta_column(
-                r_first_view(buffers.state.liability_monthly_payment_state).reshape(-1)[mask]
+                r_first_view(output.state.liability_monthly_payment).reshape(-1)[mask]
             ),
             "interest_paid_ytd_quanta": currency_quanta_column(
-                r_first_view(buffers.state.liability_interest_ytd_state).reshape(-1)[mask]
+                r_first_view(output.state.liability_interest_ytd).reshape(-1)[mask]
             ),
             "principal_paid_ytd_quanta": currency_quanta_column(
-                r_first_view(buffers.state.liability_principal_ytd_state).reshape(-1)[mask]
+                r_first_view(output.state.liability_principal_ytd).reshape(-1)[mask]
             ),
         },
         LIABILITY_FRAME,
     )
 
 
-def decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.properties.mortgage_origination_active  # (M, liab, R)
+def decode_mortgage_originations(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.mortgages.origination_active  # (M, liab, R)
     if active.any():
         months, liabs, rollouts = np.argwhere(active).T
     else:
@@ -88,8 +88,8 @@ def decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationBu
     )
 
 
-def decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.properties.mortgage_payment_active  # (M, liab, R)
+def decode_mortgage_payments(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
+    active = output.mortgages.payment_active  # (M, liab, R)
     if active.any():
         months, liabs, rollouts = np.argwhere(active).T
     else:
@@ -108,7 +108,7 @@ def decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffer
         property_id=codes_to_strings(plan, plan.properties.id)[props],
         from_account_id=codes_to_strings(plan, plan.liabilities.payment_account)[liabs],
         to_account_id=codes_to_strings(plan, plan.liabilities.counterparty_account)[liabs],
-        interest_quanta=currency_quanta_column(buffers.properties.mortgage_payment_interest[months, liabs, rollouts]),
-        principal_quanta=currency_quanta_column(buffers.properties.mortgage_payment_principal[months, liabs, rollouts]),
-        total_payment_quanta=currency_quanta_column(buffers.properties.mortgage_payment_total[months, liabs, rollouts]),
+        interest_quanta=currency_quanta_column(output.mortgages.payment_interest[months, liabs, rollouts]),
+        principal_quanta=currency_quanta_column(output.mortgages.payment_principal[months, liabs, rollouts]),
+        total_payment_quanta=currency_quanta_column(output.mortgages.payment_total[months, liabs, rollouts]),
     )

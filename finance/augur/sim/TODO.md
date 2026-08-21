@@ -30,15 +30,6 @@ Anything fully shipped is removed — git history is the record of done work.
     2020), and Vanguard, "Tax-loss harvesting: Why a personalized approach is
     important" (July 2024).
 
-- Replace the `dense.decode()` → `SimulationRun` polars materialization
-  step on the rollout-detail endpoint with `ProjectionRun` read models
-  (`augur/sim/projections.py`). The metric-fan path already bypasses
-  polars (`monthly_metric_arrays` returns numpy direct from
-  `dense.buffers.*`); rollout-detail still calls `dense.decode()` to
-  materialize event-log polars frames before the product layer projects
-  them. The durable API should expose compact scenario metadata +
-  distribution-first projections instead of the `SimulationRun` shape
-  entirely.
 - Make liquidity policies an account-keyed simulator program internally.
   Config/wire shape can stay list-friendly, but the runtime/compiler
   should consume `{(agent_id, account_id): policy}` so "one policy per
@@ -293,9 +284,9 @@ recovery cashouts. Still missing:
 The NumPy backend was removed in `cdf0ea1fe`; the leftover indirection is now
 cleared: naming/comment vestiges and the unused `slice.py` (#1924/#1925/#1926),
 and `DenseSimulationResult` collapsed into `SimulationRun` (one lazy run handle
-exposing the raw `(plan, buffers, external_series)` triple plus decoded frames).
+exposing the raw `(plan, output, external_series)` triple plus decoded frames).
 
-State buffers intentionally stay **R-last**: the engine's hot rollout math is
+State outputs intentionally stay **R-last**: the engine's hot rollout math is
 memory-bandwidth-bound on the R axis and the metric-fan reduces over R, so R as
 the contiguous trailing axis is correct. `r_first_view` is a cheap `np.moveaxis`
 view, not a real cost. The actual dense-decode wins are orthogonal to layout —

@@ -2,7 +2,7 @@
 
 The dense backend's month-step phases run as a JAX `lax.scan` over month, with
 JAX array operations over the rollout axis `R`, not as scalar per-rollout loops.
-Event and state decoders are likewise vectorized over host NumPy buffers. This
+Event and state decoders are likewise vectorized over the host NumPy output tree. This
 doc records the design (goals, invariants, phase algorithms) and what's still
 open.
 
@@ -32,7 +32,7 @@ shape cold-compiled in about `15.6s`.
 The chosen design:
 
 - NumPy-style tensor operations over `R` for monthly state transitions.
-- Dense active-mask event buffers for human-readable event traces.
+- Dense active-mask event arrays for human-readable event traces.
 - Polars at table/API boundaries.
 - JAX for the hot simulator program.
 - Host NumPy arrays for the stable engine/codec boundary.
@@ -50,8 +50,9 @@ workload while compiling the whole month loop into one reusable program:
 
 The cost is cold compile behavior and the need to keep static plan structure
 separate from traced numeric inputs. The codec boundary intentionally remains
-host-side: `run_jax_scan` writes into preallocated NumPy buffers so decoders and
-Polars/API surfaces keep a stable interface.
+host-side: `run_jax_scan` transfers the named output PyTree once, prepends the
+month-zero snapshot, and returns one `DenseSimulationOutput` consumed directly
+by decoders and product projection.
 
 Do not reintroduce a second numeric backend as an experiment. Prototype narrow
 JAX kernels or host-side codecs if a phase needs cleanup; the production
@@ -105,7 +106,7 @@ liability_principal[R, B]
 failed[R]
 ```
 
-Event buffers keep their event-first layout for decode simplicity:
+Event outputs keep their event-first layout for decode simplicity:
 
 ```python
 transfer_active[H, T, R]
@@ -171,7 +172,7 @@ Event decoders (`_decode_transfers`, `_decode_property_purchases`,
 `_decode_tax_accruals`, `_decode_obligations`,
 `_decode_mortgage_originations`, `_decode_mortgage_payments`,
 `_decode_tax_settlements`) gather sparse events via `np.argwhere(active)`,
-then bool-gather value buffers and index per-axis ID lookups. Dynamic
+then bool-gather value arrays and index per-axis ID lookups. Dynamic
 cause-ID f-strings are O(N gathered events) comp, not the dense iteration
 space. `_frame_from_columns` passes `schema=spec.schema` to
 `pl.DataFrame()` so object-dtype string columns cast to `pl.Utf8`,
@@ -179,7 +180,7 @@ keeping `pl.concat` across families dtype-clean.
 
 ### Product fan bypasses polars entirely
 
-`monthly_metric_arrays` reads `dense.buffers.*` directly and returns
+`monthly_metric_arrays` reads the product metric output directly and returns
 `{name: (H+1,) ndarray}`. `_DecodedRollout` caches that dict, not a
 polars frame. The fan endpoint never calls `dense.decode()`; the
 rollout-detail endpoint calls `dense.decode()` only for the event log
@@ -360,13 +361,13 @@ grouping explicit.
 
 ### Event Materialization
 
-Events remain dense buffers plus active masks. Tensorized phases write the
+Events remain dense arrays plus active masks. Tensorized phases write the
 same event facts the semantic transition produces: active mask,
 amount/due/paid/shortfall, lot units/basis/proceeds, tax breakdowns,
 source slot/policy attempt metadata where applicable.
 
 Metric-fan requests never force full event decode. The core writes dense
-event buffers unconditionally (cheap), but API/product layers decode events
+event arrays unconditionally (cheap), but API/product layers decode events
 only for selected rollout detail.
 
 ## Open work

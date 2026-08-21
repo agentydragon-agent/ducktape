@@ -6,20 +6,20 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import codes_to_strings, currency_quanta_column, frame_from_columns
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.enums import LifecycleKind
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 
 
 def decode_lifecycle_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers
+    plan: CompiledSimulation, output: DenseSimulationOutput
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Decode `buffers.lifecycle` into per-kind polars frames.
+    """Decode `output.lifecycle` into per-kind polars frames.
 
     Each lifecycle event is fanned out to one row per active (rollout, event) pair using
-    `buffers.lifecycle.fired`. The compile-time `lifecycle_event_kind` selects which schema
+    `output.lifecycle.fired`. The compile-time `lifecycle_event_kind` selects which schema
     each event belongs to; sale events additionally pull per-rollout dollar figures from the
     `sale_*` arrays.
     """
@@ -31,7 +31,7 @@ def decode_lifecycle_events(
             EVENT_FRAMES.capital_improvement_events.empty(),
             EVENT_FRAMES.property_sale_events.empty(),
         )
-    fired = buffers.lifecycle.fired[:event_count]  # (E, R)
+    fired = output.lifecycle.fired[:event_count]  # (E, R)
     events_idx, rollouts = np.argwhere(fired).T if fired.any() else (np.array([], dtype=np.int64),) * 2
     if events_idx.size == 0:
         return (
@@ -68,25 +68,25 @@ def decode_lifecycle_events(
         month_index=months[sale_mask],
         property_id=property_ids[sale_mask],
         gross_proceeds_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_gross_proceeds[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.gross_proceeds[events_idx[sale_mask], rollouts[sale_mask]]
         ),
         mortgage_payoff_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_mortgage_payoff[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.mortgage_payoff[events_idx[sale_mask], rollouts[sale_mask]]
         ),
         net_cash_to_owner_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_net_cash[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.net_cash[events_idx[sale_mask], rollouts[sale_mask]]
         ),
         realized_gain_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_realized_gain[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.realized_gain[events_idx[sale_mask], rollouts[sale_mask]]
         ),
         depreciation_recapture_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_recapture[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.depreciation_recapture[events_idx[sale_mask], rollouts[sale_mask]]
         ),
         section_121_exclusion_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_section_121_exclusion[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.section_121_exclusion[events_idx[sale_mask], rollouts[sale_mask]]
         ),
         long_term_capital_gain_quanta=currency_quanta_column(
-            buffers.lifecycle.sale_long_term_gain[events_idx[sale_mask], rollouts[sale_mask]]
+            output.lifecycle.property_sales.long_term_capital_gain[events_idx[sale_mask], rollouts[sale_mask]]
         ),
     )
     return set_rented_fraction_frame, capital_improvement_frame, property_sale_frame

@@ -419,7 +419,7 @@ def test_fan_and_selected_rollout_metrics_share_the_jax_reducer(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
-    _plan, _buffers, metrics, _model_id = product._simulate_dense(scenario_key, seeds)
+    _plan, _output, metrics, _model_id = product._simulate_dense(scenario_key, seeds)
     expected_metrics = metrics.metric_arrays()
     expected_failed = metrics.failed_month
     percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)

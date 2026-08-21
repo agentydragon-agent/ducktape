@@ -1,8 +1,8 @@
-"""Product rollout read model projected directly from compiled plan + dense buffers.
+"""Product rollout read model projected directly from compiled plan + dense output.
 
 The analytics codec remains available through ``SimulationRun`` for consumers that need
 long-form Polars frames.  Product rollout detail is a selected-trajectory read model: it
-reads only one rollout's dense event buffers and the JAX-emitted product metric arrays,
+reads only one rollout's dense event output and the JAX-emitted product metric arrays,
 without materializing broad state/event frames first.
 """
 
@@ -38,10 +38,10 @@ from finance.augur.product.wire import (
     TaxAccrualEvent,
     TaxPaymentEvent,
 )
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.engine.jax_engine import ProductMetricArrays
 from finance.augur.sim.enums import LifecycleKind, PrivateEquityOpportunityOutcome
+from finance.augur.sim.output import DenseSimulationOutput
 from finance.augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = frozenset((ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP))
@@ -80,7 +80,7 @@ class _HoldingSaleTotals:
 
 def project_product_rollout(
     plan: CompiledSimulation,
-    buffers: SimulationBuffers,
+    output: DenseSimulationOutput,
     metrics: ProductMetricArrays,
     *,
     rollout_index: int,
@@ -100,16 +100,16 @@ def project_product_rollout(
     }
     failed_month = int(metrics.failed_month[rollout_index])
     primary_agent_code = _string_code(plan, primary_agent_id)
-    obligations = _obligation_rows(plan, buffers, rollout_index=rollout_index, primary_agent_code=primary_agent_code)
+    obligations = _obligation_rows(plan, output, rollout_index=rollout_index, primary_agent_code=primary_agent_code)
     events = [
         *_holding_sale_events(
             plan,
-            buffers,
+            output,
             rollout_index=rollout_index,
             primary_agent_code=primary_agent_code,
             asset_label_by_id=asset_label_by_id,
         ),
-        *_property_purchase_events(plan, buffers, rollout_index=rollout_index, primary_agent_code=primary_agent_code),
+        *_property_purchase_events(plan, output, rollout_index=rollout_index, primary_agent_code=primary_agent_code),
         *_private_equity_events(
             plan,
             rollout_index=rollout_index,
@@ -118,27 +118,27 @@ def project_product_rollout(
         ),
         *_private_equity_opportunity_events(
             plan,
-            buffers,
+            output,
             rollout_index=rollout_index,
             primary_agent_code=primary_agent_code,
             asset_label_by_id=asset_label_by_id,
         ),
-        *_mortgage_payment_events(plan, buffers, rollout_index=rollout_index, primary_agent_code=primary_agent_code),
+        *_mortgage_payment_events(plan, output, rollout_index=rollout_index, primary_agent_code=primary_agent_code),
         *_payment_events(obligations, ObligationType.PROPERTY_TAX, PropertyTaxPaymentEvent),
         *_payment_events(obligations, ObligationType.HOA_DUES, HoaDuesPaymentEvent),
         *_payment_events(obligations, ObligationType.HOMEOWNERS_INSURANCE, HomeownersInsurancePaymentEvent),
         *_payment_events(obligations, ObligationType.PROPERTY_MAINTENANCE, PropertyMaintenancePaymentEvent),
-        *_tax_accrual_events(plan, buffers, rollout_index=rollout_index, primary_agent_code=primary_agent_code),
+        *_tax_accrual_events(plan, output, rollout_index=rollout_index, primary_agent_code=primary_agent_code),
         *_tax_payment_events(obligations),
         *_payment_events(obligations, ObligationType.CASH_SPEND, MonthlyExpenseEvent),
         *_payment_events(obligations, ObligationType.OUTSIDE_RENT, OutsideRentPaymentEvent),
         *_failure_events(obligations),
-        *_set_rented_fraction_events(plan, buffers, rollout_index=rollout_index),
+        *_set_rented_fraction_events(plan, output, rollout_index=rollout_index),
         *_set_primary_residence_events(
-            plan, buffers, rollout_index=rollout_index, primary_agent_code=primary_agent_code
+            plan, output, rollout_index=rollout_index, primary_agent_code=primary_agent_code
         ),
-        *_capital_improvement_events(plan, buffers, rollout_index=rollout_index),
-        *_property_sale_events(plan, buffers, rollout_index=rollout_index),
+        *_capital_improvement_events(plan, output, rollout_index=rollout_index),
+        *_property_sale_events(plan, output, rollout_index=rollout_index),
     ]
     return ProductRolloutProjection(
         currency_code=plan.currency_code,
@@ -151,7 +151,7 @@ def project_product_rollout(
 
 def _holding_sale_events(
     plan: CompiledSimulation,
-    buffers: SimulationBuffers,
+    output: DenseSimulationOutput,
     *,
     rollout_index: int,
     primary_agent_code: int,
@@ -167,7 +167,7 @@ def _holding_sale_events(
         row.basis += basis
         row.proceeds += proceeds
 
-    scheduled = buffers.lot_dispositions.scheduled
+    scheduled = output.scheduled_dispositions
     for sale, lot in np.argwhere(scheduled.active[:, :, rollout_index]):
         if int(plan.sales.agent[sale]) != primary_agent_code:
             continue
@@ -179,7 +179,7 @@ def _holding_sale_events(
             int(scheduled.proceeds[sale, lot, rollout_index]),
         )
 
-    target = buffers.lot_dispositions.target_allocation
+    target = output.target_allocation.dispositions
     for month, policy, sleeve, lot in np.argwhere(target.active[..., rollout_index]):
         if int(plan.target_allocation_policies.agent[policy]) != primary_agent_code:
             continue
@@ -191,7 +191,7 @@ def _holding_sale_events(
             int(target.proceeds[month, policy, sleeve, lot, rollout_index]),
         )
 
-    private_equity = buffers.lot_dispositions.pe
+    private_equity = output.private_equity.dispositions
     for month, _issuer, kind, lot in np.argwhere(private_equity.active[..., rollout_index]):
         if int(plan.lot_agent_codes[lot]) != primary_agent_code:
             continue
@@ -223,15 +223,15 @@ def _holding_sale_events(
 
 
 def _property_purchase_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int, primary_agent_code: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int, primary_agent_code: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[RolloutEvent] = []
-    for month, prop in np.argwhere(buffers.properties.purchase_active[:, :, rollout_index]):
+    for month, prop in np.argwhere(output.property_purchases[:, :, rollout_index]):
         if int(plan.properties.buyer_agent[prop]) != primary_agent_code:
             continue
         mortgage_principal = 0
         liability = int(plan.properties.mortgage_slot[prop])
-        if liability >= 0 and buffers.properties.mortgage_origination_active[month, liability, rollout_index]:
+        if liability >= 0 and output.mortgages.origination_active[month, liability, rollout_index]:
             mortgage_principal = int(plan.liabilities.principal[liability])
         property_id = _required_text(plan, int(plan.properties.id[prop]))
         purchase_price = int(plan.properties.purchase_price[prop])
@@ -305,7 +305,7 @@ def _private_equity_events(
 
 def _private_equity_opportunity_events(
     plan: CompiledSimulation,
-    buffers: SimulationBuffers,
+    output: DenseSimulationOutput,
     *,
     rollout_index: int,
     primary_agent_code: int,
@@ -313,7 +313,7 @@ def _private_equity_opportunity_events(
 ) -> tuple[RolloutEvent, ...]:
     primary_issuers = _primary_private_equity_issuers(plan, primary_agent_code)
     rows: list[tuple[int, str, PrivateEquityOpportunityEvent]] = []
-    for month, issuer_index in np.argwhere(buffers.private_equity_opportunities.active[:, :, rollout_index]):
+    for month, issuer_index in np.argwhere(output.private_equity.opportunities.active[:, :, rollout_index]):
         issuer_id = plan.pe_issuers.issuer_ids[int(issuer_index)]
         if issuer_id not in primary_issuers:
             continue
@@ -323,12 +323,12 @@ def _private_equity_opportunity_events(
         )
         regime = PrivateEquityRegimeCode(int(plan.pe_channels.regime_codes[issuer_index, rollout_index, month]))
         outcome = PrivateEquityOpportunityOutcome(
-            int(buffers.private_equity_opportunities.outcome[month, issuer_index, rollout_index])
+            int(output.private_equity.opportunities.outcome[month, issuer_index, rollout_index])
         )
         scale = _private_equity_scale(plan, int(issuer_index))
         event = PrivateEquityOpportunityEvent(
             month_index=int(month),
-            amount_quanta=_quanta(buffers.private_equity_opportunities.proceeds[month, issuer_index, rollout_index]),
+            amount_quanta=_quanta(output.private_equity.opportunities.proceeds[month, issuer_index, rollout_index]),
             issuer_id=issuer_id,
             asset=asset,
             asset_label=asset_label_by_id.get(asset.wire_id),
@@ -339,73 +339,65 @@ def _private_equity_opportunity_events(
             sale_capacity_fraction=float(plan.pe_channels.sale_capacity_fractions[issuer_index, rollout_index, month]),
             eligible_fraction=float(plan.pe_channels.eligible_fractions[issuer_index, rollout_index, month]),
             liquidity_blocked=bool(plan.pe_channels.liquidity_blocked[issuer_index, rollout_index, month]),
-            floor_quanta=_quanta(buffers.private_equity_opportunities.floor[month, issuer_index, rollout_index]),
+            floor_quanta=_quanta(output.private_equity.opportunities.floor[month, issuer_index, rollout_index]),
             liquid_net_worth_quanta=_quanta(
-                buffers.private_equity_opportunities.liquid_net_worth[month, issuer_index, rollout_index]
+                output.private_equity.opportunities.liquid_net_worth[month, issuer_index, rollout_index]
             ),
-            shortfall_quanta=_quanta(
-                buffers.private_equity_opportunities.shortfall[month, issuer_index, rollout_index]
-            ),
-            units_held=float(buffers.private_equity_opportunities.units_held[month, issuer_index, rollout_index])
+            shortfall_quanta=_quanta(output.private_equity.opportunities.shortfall[month, issuer_index, rollout_index]),
+            units_held=float(output.private_equity.opportunities.units_held[month, issuer_index, rollout_index])
             / scale,
-            sellable_units=float(
-                buffers.private_equity_opportunities.sellable_units[month, issuer_index, rollout_index]
-            )
+            sellable_units=float(output.private_equity.opportunities.sellable_units[month, issuer_index, rollout_index])
             / scale,
-            target_units=float(buffers.private_equity_opportunities.target_units[month, issuer_index, rollout_index])
+            target_units=float(output.private_equity.opportunities.target_units[month, issuer_index, rollout_index])
             / scale,
-            proceeds_quanta=_quanta(buffers.private_equity_opportunities.proceeds[month, issuer_index, rollout_index]),
+            proceeds_quanta=_quanta(output.private_equity.opportunities.proceeds[month, issuer_index, rollout_index]),
         )
         rows.append((int(month), issuer_id, event))
     return tuple(row[2] for row in sorted(rows, key=lambda row: (row[0], row[1], row[2].outcome)))
 
 
 def _mortgage_payment_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int, primary_agent_code: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int, primary_agent_code: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[RolloutEvent] = []
-    for month, liability in np.argwhere(buffers.properties.mortgage_payment_active[:, :, rollout_index]):
+    for month, liability in np.argwhere(output.mortgages.payment_active[:, :, rollout_index]):
         if int(plan.liabilities.agent[liability]) != primary_agent_code:
             continue
         events.append(
             MortgagePaymentEvent(
                 month_index=int(month),
-                amount_quanta=_quanta(buffers.properties.mortgage_payment_total[month, liability, rollout_index]),
-                interest_quanta=_quanta(buffers.properties.mortgage_payment_interest[month, liability, rollout_index]),
-                principal_quanta=_quanta(
-                    buffers.properties.mortgage_payment_principal[month, liability, rollout_index]
-                ),
+                amount_quanta=_quanta(output.mortgages.payment_total[month, liability, rollout_index]),
+                interest_quanta=_quanta(output.mortgages.payment_interest[month, liability, rollout_index]),
+                principal_quanta=_quanta(output.mortgages.payment_principal[month, liability, rollout_index]),
             )
         )
     return tuple(events)
 
 
 def _tax_accrual_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int, primary_agent_code: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int, primary_agent_code: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[TaxAccrualEvent] = []
-    for month, link in np.argwhere(buffers.taxes.accrual_active[:, :, rollout_index]):
+    for month, link in np.argwhere(output.taxes.accrual_active[:, :, rollout_index]):
         profile = int(plan.tax.link_profile[link])
         if int(plan.tax.profile_agent[profile]) != primary_agent_code:
             continue
         events.append(
             TaxAccrualEvent(
                 month_index=int(month),
-                amount_quanta=_quanta(buffers.taxes.accrual_amount[month, link, rollout_index]),
+                amount_quanta=_quanta(output.taxes.accrual_amount[month, link, rollout_index]),
                 jurisdiction_id=_required_text(plan, int(plan.tax.link_jurisdiction[link])),
                 tax_year_end_month=int(month),
-                ordinary_income_quanta=_quanta(buffers.taxes.breakdown_ordinary[month, link, rollout_index]),
-                ltcg_quanta=_quanta(buffers.taxes.breakdown_ltcg[month, link, rollout_index]),
-                stcg_quanta=_quanta(buffers.taxes.breakdown_stcg[month, link, rollout_index]),
-                ordinary_tax_quanta=_quanta(buffers.taxes.breakdown_ordinary_tax[month, link, rollout_index]),
-                capital_gain_tax_quanta=_quanta(buffers.taxes.breakdown_capital_tax[month, link, rollout_index]),
-                total_tax_quanta=_quanta(buffers.taxes.accrual_amount[month, link, rollout_index]),
+                ordinary_income_quanta=_quanta(output.taxes.ordinary_income[month, link, rollout_index]),
+                ltcg_quanta=_quanta(output.taxes.long_term_capital_gain[month, link, rollout_index]),
+                stcg_quanta=_quanta(output.taxes.short_term_capital_gain[month, link, rollout_index]),
+                ordinary_tax_quanta=_quanta(output.taxes.ordinary_tax[month, link, rollout_index]),
+                capital_gain_tax_quanta=_quanta(output.taxes.capital_gain_tax[month, link, rollout_index]),
+                total_tax_quanta=_quanta(output.taxes.accrual_amount[month, link, rollout_index]),
                 mortgage_interest_deduction_quanta=_quanta(
-                    buffers.taxes.breakdown_mortgage_interest_deduction[month, link, rollout_index]
+                    output.taxes.mortgage_interest_deduction[month, link, rollout_index]
                 ),
-                itemized_deduction_quanta=_quanta(
-                    buffers.taxes.breakdown_itemized_deduction[month, link, rollout_index]
-                ),
+                itemized_deduction_quanta=_quanta(output.taxes.itemized_deduction[month, link, rollout_index]),
                 standard_deduction_quanta=_quanta(plan.tax.link_standard_deduction[link]),
             )
         )
@@ -413,10 +405,10 @@ def _tax_accrual_events(
 
 
 def _obligation_rows(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int, primary_agent_code: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int, primary_agent_code: int
 ) -> tuple[_ObligationEvent, ...]:
     rows: list[_ObligationEvent] = []
-    for month, slot in np.argwhere(buffers.obligations.active[:, :, rollout_index]):
+    for month, slot in np.argwhere(output.obligations.active[:, :, rollout_index]):
         if int(plan.obligations.metadata.agent[month, slot]) != primary_agent_code:
             continue
         rows.append(
@@ -425,10 +417,10 @@ def _obligation_rows(
                 slot=int(slot),
                 obligation_id=_required_text(plan, int(plan.obligations.metadata.id[month, slot])),
                 obligation_type=ObligationType(_required_text(plan, int(plan.obligations.metadata.type[month, slot]))),
-                due=int(buffers.obligations.due[month, slot, rollout_index]),
-                paid=int(buffers.obligations.paid[month, slot, rollout_index]),
-                shortfall=int(buffers.obligations.shortfall[month, slot, rollout_index]),
-                failed=bool(buffers.obligations.failure_active[month, slot, rollout_index]),
+                due=int(output.obligations.due[month, slot, rollout_index]),
+                paid=int(output.obligations.paid[month, slot, rollout_index]),
+                shortfall=int(output.obligations.shortfall[month, slot, rollout_index]),
+                failed=bool(output.obligations.failure_active[month, slot, rollout_index]),
             )
         )
     return tuple(rows)
@@ -484,11 +476,11 @@ def _failure_events(obligations: tuple[_ObligationEvent, ...]) -> tuple[RolloutE
 
 
 def _set_rented_fraction_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[SetRentedFractionMarkerEvent] = []
     event_count = int(plan.lifecycle_events.month.shape[0])
-    for event_index in np.flatnonzero(buffers.lifecycle.fired[:event_count, rollout_index]):
+    for event_index in np.flatnonzero(output.lifecycle.fired[:event_count, rollout_index]):
         if int(plan.lifecycle_events.kind[event_index]) != LifecycleKind.FRACTION:
             continue
         prop = int(plan.lifecycle_events.property_slot[event_index])
@@ -504,11 +496,11 @@ def _set_rented_fraction_events(
 
 
 def _set_primary_residence_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int, primary_agent_code: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int, primary_agent_code: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[SetPrimaryResidenceMarkerEvent] = []
     event_count = int(plan.primary_residence_events.month.shape[0])
-    for event_index in np.flatnonzero(buffers.primary_residence.fired[:event_count, rollout_index]):
+    for event_index in np.flatnonzero(output.primary_residence_fired[:event_count, rollout_index]):
         agent_slot = int(plan.primary_residence_events.agent_slot[event_index])
         if int(plan.agent_codes[agent_slot]) != primary_agent_code:
             continue
@@ -528,11 +520,11 @@ def _set_primary_residence_events(
 
 
 def _capital_improvement_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[CapitalImprovementMarkerEvent] = []
     event_count = int(plan.lifecycle_events.month.shape[0])
-    for event_index in np.flatnonzero(buffers.lifecycle.fired[:event_count, rollout_index]):
+    for event_index in np.flatnonzero(output.lifecycle.fired[:event_count, rollout_index]):
         if int(plan.lifecycle_events.kind[event_index]) != LifecycleKind.CAPITAL_IMPROVEMENT:
             continue
         prop = int(plan.lifecycle_events.property_slot[event_index])
@@ -547,29 +539,35 @@ def _capital_improvement_events(
 
 
 def _property_sale_events(
-    plan: CompiledSimulation, buffers: SimulationBuffers, *, rollout_index: int
+    plan: CompiledSimulation, output: DenseSimulationOutput, *, rollout_index: int
 ) -> tuple[RolloutEvent, ...]:
     events: list[PropertySaleMarkerEvent] = []
     event_count = int(plan.lifecycle_events.month.shape[0])
-    for event_index in np.flatnonzero(buffers.lifecycle.fired[:event_count, rollout_index]):
+    for event_index in np.flatnonzero(output.lifecycle.fired[:event_count, rollout_index]):
         if int(plan.lifecycle_events.kind[event_index]) != LifecycleKind.SALE:
             continue
         prop = int(plan.lifecycle_events.property_slot[event_index])
         events.append(
             PropertySaleMarkerEvent(
                 month_index=int(plan.lifecycle_events.month[event_index]),
-                amount_quanta=_quanta(buffers.lifecycle.sale_gross_proceeds[event_index, rollout_index]),
+                amount_quanta=_quanta(output.lifecycle.property_sales.gross_proceeds[event_index, rollout_index]),
                 property_id=_required_text(plan, int(plan.properties.id[prop])),
-                gross_proceeds_quanta=_quanta(buffers.lifecycle.sale_gross_proceeds[event_index, rollout_index]),
-                mortgage_payoff_quanta=_quanta(buffers.lifecycle.sale_mortgage_payoff[event_index, rollout_index]),
-                net_cash_to_owner_quanta=_quanta(buffers.lifecycle.sale_net_cash[event_index, rollout_index]),
-                realized_gain_quanta=_quanta(buffers.lifecycle.sale_realized_gain[event_index, rollout_index]),
-                depreciation_recapture_quanta=_quanta(buffers.lifecycle.sale_recapture[event_index, rollout_index]),
+                gross_proceeds_quanta=_quanta(
+                    output.lifecycle.property_sales.gross_proceeds[event_index, rollout_index]
+                ),
+                mortgage_payoff_quanta=_quanta(
+                    output.lifecycle.property_sales.mortgage_payoff[event_index, rollout_index]
+                ),
+                net_cash_to_owner_quanta=_quanta(output.lifecycle.property_sales.net_cash[event_index, rollout_index]),
+                realized_gain_quanta=_quanta(output.lifecycle.property_sales.realized_gain[event_index, rollout_index]),
+                depreciation_recapture_quanta=_quanta(
+                    output.lifecycle.property_sales.depreciation_recapture[event_index, rollout_index]
+                ),
                 section_121_exclusion_quanta=_quanta(
-                    buffers.lifecycle.sale_section_121_exclusion[event_index, rollout_index]
+                    output.lifecycle.property_sales.section_121_exclusion[event_index, rollout_index]
                 ),
                 long_term_capital_gain_quanta=_quanta(
-                    buffers.lifecycle.sale_long_term_gain[event_index, rollout_index]
+                    output.lifecycle.property_sales.long_term_capital_gain[event_index, rollout_index]
                 ),
             )
         )

@@ -7,14 +7,14 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.buffers import SimulationBuffers
 from finance.augur.sim.codec.helpers import code_column, codes_to_strings, currency_quanta_column, frame_from_columns
 from finance.augur.sim.compiler import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
+from finance.augur.sim.output import DenseSimulationOutput
 
 
 def decode_obligations(
-    plan: CompiledSimulation, buffers: SimulationBuffers
+    plan: CompiledSimulation, output: DenseSimulationOutput
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Returns (accruals, settlements, derived_transfers, failures).
 
@@ -22,7 +22,7 @@ def decode_obligations(
     `obligation_paid > 0`, the failure-row subset on `obligation_failure_active`.
     """
 
-    active = buffers.obligations.active  # (M, S, R)
+    active = output.obligations.active  # (M, S, R)
     if active.any():
         months, slots, rollouts = np.argwhere(active).T
     else:
@@ -35,13 +35,13 @@ def decode_obligations(
     from_account_codes = plan.obligations.metadata.from_account[months, slots]
     to_agent_codes = plan.obligations.metadata.to_agent[months, slots]
     to_account_codes = plan.obligations.metadata.to_account[months, slots]
-    amount_due_quanta = buffers.obligations.due[months, slots, rollouts]
-    amount_paid_quanta = buffers.obligations.paid[months, slots, rollouts]
-    shortfall_quanta = buffers.obligations.shortfall[months, slots, rollouts]
+    amount_due_quanta = output.obligations.due[months, slots, rollouts]
+    amount_paid_quanta = output.obligations.paid[months, slots, rollouts]
+    shortfall_quanta = output.obligations.shortfall[months, slots, rollouts]
     amount_due = currency_quanta_column(amount_due_quanta)
     amount_paid = currency_quanta_column(amount_paid_quanta)
     shortfall = currency_quanta_column(shortfall_quanta)
-    attempt_policy = buffers.obligations.attempt_policy[months, slots, rollouts]
+    attempt_policy = output.target_allocation.obligation_attempt_policy[months, slots, rollouts]
     attempted_sources_per_event = attempted_sources_for_policy_indices(plan, attempt_policy)
 
     accruals = frame_from_columns(
@@ -89,7 +89,7 @@ def decode_obligations(
     else:
         transfers = EVENT_FRAMES.transfers.empty()
     # Subset 2: obligations whose failure flag fired emit a failure row.
-    failure_mask = buffers.obligations.failure_active[months, slots, rollouts]
+    failure_mask = output.obligations.failure_active[months, slots, rollouts]
     if failure_mask.any():
         failed_obligation_ids = codes_to_strings(plan, obligation_id_codes[failure_mask])
         failure_cause_ids = np.array([f"{oid}_failure" for oid in failed_obligation_ids], dtype=object)
