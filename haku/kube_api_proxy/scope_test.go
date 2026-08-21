@@ -2,6 +2,7 @@ package kubeapiproxy
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,34 @@ func TestRequiredGrantScopeDistinguishesEveryScopeKind(t *testing.T) {
 	})
 	if err != nil || nonResource.Kind != grantScopeNonResource || len(nonResource.Namespaces) != 0 {
 		t.Fatalf("non-resource scope = %#v, error = %v", nonResource, err)
+	}
+}
+
+func TestGrantScopeJSONOmitsNamespacesOutsideExactNamespaceScope(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope GrantScope
+		want  string
+	}{
+		{
+			name:  "exact namespaces",
+			scope: GrantScope{Kind: grantScopeNamespaces, Namespaces: []string{"demo"}},
+			want:  `{"kind":"namespaces","namespaces":["demo"]}`,
+		},
+		{name: "all namespaces", scope: GrantScope{Kind: grantScopeAllNamespaces}, want: `{"kind":"all_namespaces"}`},
+		{name: "cluster", scope: GrantScope{Kind: grantScopeCluster}, want: `{"kind":"cluster"}`},
+		{name: "non resource", scope: GrantScope{Kind: grantScopeNonResource}, want: `{"kind":"non_resource"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := json.Marshal(test.scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != test.want {
+				t.Fatalf("GrantScope JSON = %s, want %s", got, test.want)
+			}
+		})
 	}
 }
 
