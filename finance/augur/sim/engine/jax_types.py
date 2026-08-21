@@ -12,21 +12,7 @@ from finance.augur.sim.compiler.plan import SlotPlan
 from finance.augur.sim.output import DenseFinalOutput
 
 
-class _TransferInputs(NamedTuple):
-    cause: jax.Array
-    amount_kind: jax.Array
-    amount_fixed: jax.Array
-    amount_base: jax.Array
-    amount_series: jax.Array
-    amount_base_month: jax.Array
-    amount_period: jax.Array
-    from_slot: jax.Array
-    to_slot: jax.Array
-    income_profile: jax.Array
-    deduction_profile: jax.Array
-
-
-class _PropertyCashflowInputs(NamedTuple):
+class _CashflowInputs(NamedTuple):
     cause: jax.Array
     amount_kind: jax.Array
     amount_fixed: jax.Array
