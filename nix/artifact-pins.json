@@ -41,11 +41,11 @@
       "sha256": "ggIkuj22XjGNEgaTcRmrqGlKa32voJjTqzXgdvmAAak="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-d494d07397a7/aiquota.zip",
-      "sha256": "HiJ4hNWsXzg8DTtjKh28ZDYzlG+cXsWwvAFYYbQpaNs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-4edb74aea3ac/aiquota.zip",
+      "sha256": "Zqde2IZYInn3M/xvsWUnaNfFHUIZjbqfRRzOH8zXp1w="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-d494d07397a7/aiquota-0.1.0-py3-none-any.whl",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-4edb74aea3ac/aiquota-0.1.0-py3-none-any.whl",
       "sha256": "GHEn3R0xL5NgRdXnmCJJoxgPB1fMKTmNEau4bxdvw/M="
     },
     "debundle": {
