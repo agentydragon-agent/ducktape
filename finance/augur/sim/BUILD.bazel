@@ -432,16 +432,6 @@ py_test(
 )
 
 py_library(
-    name = "projections",
-    srcs = ["projections.py"],
-    deps = [
-        ":codec",
-        "//finance/augur:frames",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "simulate",
     srcs = ["simulate.py"],
     deps = [
@@ -743,21 +733,6 @@ py_test(
     deps = [
         ":conftest",
         ":locations",
-        ":scenario",
-        ":simulate",
-        "@pypi//polars",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "projections_test",
-    size = "medium",
-    srcs = ["projections_test.py"],
-    deps = [
-        ":conftest",
-        ":projections",
         ":scenario",
         ":simulate",
         "@pypi//polars",

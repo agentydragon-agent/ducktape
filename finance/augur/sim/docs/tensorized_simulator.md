@@ -379,8 +379,7 @@ Focused gate:
 ```bash
 bazelisk test --config=nolint \
   //augur/sim:simulate_test \
-  //augur/sim:projections_test \
-  //augur/product:projection_fan_test \
+  //augur/product:service_test \
   //augur/api:server_test
 ```
 

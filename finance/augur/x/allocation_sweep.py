@@ -38,7 +38,6 @@ from finance.augur.model.structural_macro import (
 )
 from finance.augur.sim.codec.plan import SimulationRun
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
-from finance.augur.sim.projections import project_net_worth
 from finance.augur.sim.scenario import (
     Agent,
     DistributionTaxSlice,
@@ -268,15 +267,14 @@ def _equity_share_by_month(run: SimulationRun) -> dict[int, float]:
 def _terminal_liquid_amount(run: SimulationRun) -> np.ndarray:
     """Cash plus marked lot value at the final month, per rollout. Nominal, not real."""
 
-    return (
-        project_net_worth(run)
-        .filter((pl.col("agent_id") == "rai") & (pl.col("month_index") == HORIZON_MONTHS))
-        .sort("rollout_index")
-        .get_column("liquid_net_worth_quanta")
-        .cast(pl.Float64)
-        .to_numpy()
-        / 100
-    )
+    agent = run.plan.strings.index("rai")
+    cash = run.output.state.cash[-1, run.plan.cash_agent_codes == agent].sum(axis=0)
+    lot_mask = (run.plan.lot_agent_codes == agent) & (run.plan.lot_asset_series_index >= 0)
+    quantity = run.output.state.lots[-1, lot_mask]
+    scale = run.plan.lot_quantity_scale[lot_mask, None]
+    price = run.plan.external_money_values[run.plan.lot_asset_series_index[lot_mask], :, -1]
+    lot_value = (quantity // scale) * price + ((2 * (quantity % scale) * price + scale) // (2 * scale))
+    return np.asarray((cash + lot_value.sum(axis=0)) / 100, dtype=np.float64)
 
 
 def _print_parameter_summary(config: StructuralMacroProviderConfig) -> None:

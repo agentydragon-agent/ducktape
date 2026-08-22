@@ -6,9 +6,9 @@ asks for backward compatibility.
 
 The backend now executes through `augur/sim`; do not revive deleted
 `augur/core` execution or market-bundle adapters. When extending API
-responses, prefer native `ProjectionRun` read models
-(`augur/sim/projections.py`) over deriving more tables from
-`SimulationRun`'s long-form polars frames.
+responses, project the compiler plan and dense output directly, as
+`augur/product/projection.py` does, instead of adding parallel read-model
+tables over `SimulationRun`'s long-form polars frames.
 
 ## numpy vs jnp
 

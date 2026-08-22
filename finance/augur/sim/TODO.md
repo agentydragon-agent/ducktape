@@ -242,15 +242,15 @@ recovery cashouts. Still missing:
   explicit cause IDs (not as a generic policy interpreter).
 - **Ledger / double-entry read model** — only if consumers need
   double-entry projections. Sim should keep event/state frames as the
-  source of truth and derive compact `ProjectionRun` slices first.
+  source of truth and derive compact consumer-specific slices directly.
 - **Declarative posting-schema layer** — only if ledger projections
   need repeated double-entry templates.
 
 ## Frontend / API
 
-- Add API serialization, compact scenario metadata, and a frontend
-  adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
-  contract over matching legacy compatibility-table names.
+- Keep API serialization and compact scenario metadata on the direct
+  `plan + dense output -> product wire` boundary. Prefer a clean
+  `model -> sim -> api` contract over matching legacy compatibility-table names.
 - Expand the backend sim smoke harness beyond the current slices.
   Today `//augur/api:server_test` proves `ScenarioKey` requests
   translate, sample, complete, and return the product response shape;
@@ -326,8 +326,6 @@ tree at merge time.
 
 ### P3
 
-- **Rollout detail still materializes selected dense results through the old
-  frame path** — already tracked as the `ProjectionRun` product cutover above.
 - **Lifecycle and obligation discriminators are still raw SoA fields.**
   `LifecycleEventCompileOutput` reuses one `amount` field by `kind`;
   `ObligationCompileOutput` carries `source_kind` / `source_index` with

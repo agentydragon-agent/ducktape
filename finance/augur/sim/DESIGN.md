@@ -570,26 +570,10 @@ At end of `simulate(...)`:
 - The per-month log rows (transactions, obligations, lot
   dispositions, failures, policy decisions, tax breakdowns) are
   concatenated into the long-form append-only log frames.
-- `ProjectionRun` read models are computed on demand from the
-  state-over-time and event-log frames:
-  - Net-worth time series per `(rollout, month, agent)`, split into
-    cash, liquid asset market value, asset book value, property book
-    value, liability principal, liquid net worth, and book net worth.
-    Property value is adjusted basis until `augur/model` supplies
-    market-valued real-estate paths.
-  - Account-balance rows for cash and liabilities.
-  - Transaction/audit rows from cash transfers, lot dispositions,
-    obligation settlements, and tax-liability settlements.
-  - Tax breakdown, obligation lifecycle, failure, and rollout-summary
-    rows for API/frontend validation.
-
-The returned `SimulationRun` wraps the state-over-time frames, log
-frames, accepted scenario-set identity, and exogenous trajectory
-provenance. `ProjectionRun` is a read model over that output; `augur/api`
-adapts it into the frontend response shape. During migration the API may
-expose a compatibility adapter for old consumers, but the durable seam
-should be the clean simulation-run/projection contract, not the old
-compatibility-table layout.
+  The returned `SimulationRun` owns the compiled plan, host-side dense output,
+  external trajectories, and lazily decoded analytics frames. Product/API
+  rollout detail projects its selected trajectory directly from the plan and
+  dense output instead of building a second family of broad Polars tables.
 
 ## Failure modes
 
