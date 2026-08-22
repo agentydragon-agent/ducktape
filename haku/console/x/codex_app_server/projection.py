@@ -4,8 +4,7 @@ Pinned protocol evidence: ``@openai/codex@0.144.1`` / upstream tag ``rust-v0.144
 schema and source references are recorded in ``docs/protocol_evidence.md``.
 
 This is a dormant adapter.  Nothing in the session runtime imports or registers it.  A later
-runtime-selection change can give it recorded server messages and the same neutral
-``ProjectionState`` used by the Claude adapter.
+runtime-selection change can give it recorded server messages behind a Codex-owned turn handler.
 
 Only facts represented by the existing conversation vocabulary are projected:
 
@@ -38,16 +37,34 @@ from haku.console.x.conversation_events import (
     Json,
     MessageCompleted,
     MessageStarted,
-    OpenItem,
     OpenRef,
     Projection,
-    ProjectionState,
     ReasoningCompleted,
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class OpenItem:
+    """A Codex item seen starting but not ending."""
+
+    opened_at_frame_seq: int
+    last_frame_seq: int
+    backend_item_id: str | None
+    delivered: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionState:
+    """Codex-private state carried between app-server message batches."""
+
+    open_message: OpenItem | None = None
+    open_reasoning: OpenItem | None = None
+    seen_call_ids: frozenset[str] = frozenset()
+
 
 _IGNORED_METHODS = frozenset(
     {
@@ -87,7 +104,6 @@ def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[Pr
         ProjectionState(
             open_message=projector.open_message,
             open_reasoning=projector.open_reasoning,
-            open_tool_call=state.open_tool_call,
             seen_call_ids=frozenset(projector.seen_call_ids),
         ),
         projector.projected(),

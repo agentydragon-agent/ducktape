@@ -22,7 +22,6 @@ change of route:
 from __future__ import annotations
 
 import json
-from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from uuid import UUID
@@ -47,11 +46,7 @@ class ExportedSession:
 
     def summary(self) -> str:
         """One line saying what came out, so an operator sees the export ran before reading it."""
-        counted = Counter(_kind(record) for record in self.records)
-        return (
-            f"session {self.session_id}: {len(self.records)} frame(s) — "
-            f"{' '.join(f'{kind}×{count}' for kind, count in counted.most_common()) or 'nothing'}"
-        )
+        return f"session {self.session_id}: {len(self.records)} frame(s)"
 
 
 async def export_session(db: AsyncSession, session_id: UUID) -> ExportedSession:
@@ -81,13 +76,3 @@ def _records(frames: Sequence[SessionFrame]) -> Iterator[dict[str, Json]]:
 
 def _encoded(payload: dict[str, Json]) -> str:
     return json.dumps(payload, separators=(",", ":"))
-
-
-def _kind(record: dict[str, Json]) -> str:
-    frame = record["frame"]
-    if not isinstance(frame, dict):
-        raise ValueError("export row does not contain a native harness JSON object")
-    for field in ("type", "method"):
-        if isinstance(kind := frame.get(field), str):
-            return kind
-    return "<untyped>"

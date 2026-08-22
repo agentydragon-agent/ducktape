@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import patch
@@ -31,6 +31,7 @@ from haku.console.chat_models import (
     FrameDirection,
     ItemStatus,
     ItemType,
+    RuntimeKind,
     SessionStatus,
     ToolOutcome,
     TurnOutcome,
@@ -38,6 +39,7 @@ from haku.console.chat_models import (
 from haku.console.config import ChatRuntimesConfig, ClaudeRuntimeConfig
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session, SessionFrame
 from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.x import reprojection
 from haku.console.x.claude_code.client import ClaudeCli
 from haku.console.x.claude_code.frames import DELTA_FRAME_KIND
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
@@ -55,9 +57,25 @@ from haku.console.x.claude_code.testing.wire import (
     tool_use_start,
 )
 from haku.console.x.conftest import age_lease, answers, attach_channel, configured_runtimes, lease_of, runtime_config
-from haku.console.x.conversation_events import ProjectionState
+from haku.console.x.conversation_events import (
+    ConversationEvent as NeutralConversationEvent,
+    FrameRange,
+    ItemSegment,
+    MessageCompleted,
+    MessageStarted,
+    OpenRef,
+    Projection,
+    TurnCompleted,
+)
 from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.frame_projection import projected
+from haku.console.x.runtime import (
+    EMPTY_TURN_PROJECTION_SEED,
+    Checkpoint,
+    FrameEffects,
+    RuntimeRegistry,
+    TurnCompletion,
+    TurnProjectionSeed,
+)
 from haku.console.x.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import GOING_AWAY_CODE, RolloutRecorder, SessionService, _replaying
@@ -165,7 +183,7 @@ class _FakeCli:
     async def query(self, text: str) -> SentPrompt:
         self.prompts.append(text)
         self.replay()
-        return SentPrompt(command_uuid="fake-command", frame_seq=self.prompt_frame_seq)
+        return SentPrompt(frame_seq=self.prompt_frame_seq)
 
     def replay(self) -> None:
         """Deliver the script with nothing having been asked, as the runner's replay window does.
@@ -207,6 +225,121 @@ class _FakeCli:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class _UnrelatedTurnHandler:
+    """A stateful native fold whose wire shares no vocabulary with Claude or JSON-RPC."""
+
+    def __init__(self, seed: TurnProjectionSeed):
+        self._opened_at = None if seed.open_message is None else seed.open_message.first_frame_seq
+        self._last = None if seed.open_message is None else seed.open_message.last_frame_seq
+
+    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
+        payload = frame.frame
+        if payload.get("阶段") == "碎片":
+            provenance = FrameRange(frame_seq, frame_seq)
+            fragment_events: list[NeutralConversationEvent] = []
+            if self._opened_at is None:
+                self._opened_at = frame_seq
+                fragment_events.append(MessageStarted(provenance=provenance))
+            self._last = frame_seq
+            fragment_events.append(
+                ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=str(payload["正文"]), provenance=provenance)
+            )
+            return FrameEffects(events=tuple(fragment_events))
+        if payload.get("阶段") == "最终":
+            provenance = FrameRange(frame_seq, frame_seq)
+            final_events: list[NeutralConversationEvent] = []
+            if self._opened_at is None and payload.get("正文"):
+                final_events.extend(
+                    (
+                        MessageStarted(provenance=provenance),
+                        ItemSegment(
+                            item=OpenRef(item_type=ItemType.MESSAGE), text=str(payload["正文"]), provenance=provenance
+                        ),
+                    )
+                )
+            if tail := payload.get("尾声"):
+                final_events.append(
+                    ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=str(tail), provenance=provenance)
+                )
+            if self._opened_at is not None or payload.get("正文"):
+                final_events.append(MessageCompleted(backend_item_id=None, provenance=provenance))
+            final_events.append(TurnCompleted(outcome=TurnOutcome.ANSWERED, provenance=provenance))
+            return FrameEffects(
+                events=tuple(final_events),
+                completion=TurnCompletion(
+                    outcome=TurnOutcome.ANSWERED, final_text=str(payload.get("正文") or "").strip()
+                ),
+            )
+        return FrameEffects()
+
+
+class _UnrelatedRuntimeAdapter:
+    kind = RuntimeKind.CLAUDE_CODE
+    display_name = "Unrelated test harness"
+
+    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> _UnrelatedTurnHandler:
+        return _UnrelatedTurnHandler(seed)
+
+    def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection:
+        handler = self.turn_handler()
+        events: list[NeutralConversationEvent] = []
+        for frame_seq, frame in frames:
+            events.extend(handler.apply(frame_seq=frame_seq, frame=frame).events)
+        return Projection(events=tuple(events), unprojected={})
+
+    def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
+        return any(frame.frame.get("动作") == "输入" for frame in frames)
+
+    def build_launch(self, launch):
+        raise AssertionError("this projection-only test must not launch a runner")
+
+    def client(self, websocket, launch, progress, frames_to):
+        raise AssertionError("this projection-only test must not construct a runner client")
+
+
+async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
+    chat_store, migrated_sessions, notifications, operator_id
+) -> None:
+    """Unrelated keys survive dedup/storage while only the integration assigns semantics."""
+    view, token = await chat_store.create(operator_id)
+    assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    await chat_store.enqueue_prompt(operator_id, view.session_id, "say hello", SPA_ORIGIN)
+    turn = await chat_store.next_prompt(view.session_id)
+    assert turn is not None
+
+    recorder = RolloutRecorder(chat_store, view.session_id)
+    prompt_frame_seq = await recorder.sent(HarnessFrame(frame={"动作": "输入", "正文": "say hello"}, seq=10))
+    native = [
+        HarnessFrame(frame={"阶段": "碎片", "正文": "你"}, seq=11),
+        HarnessFrame(frame={"阶段": "碎片", "正文": "好"}, seq=12),
+        HarnessFrame(frame={"阶段": "最终", "正文": "你好!", "尾声": "!", "成功": True}, seq=13),
+    ]
+    recorded = [await recorder.received(frame) for frame in native]
+    duplicate = await recorder.received(native[1])
+    assert duplicate.frame_seq == recorded[1].frame_seq
+
+    runtimes = RuntimeRegistry({RuntimeKind.CLAUDE_CODE: _UnrelatedRuntimeAdapter()})
+    service = SessionService(runtimes, chat_store, notifications)
+    client = _FakeCli(
+        [frame.frame for frame in native],
+        frame_seqs=[frame.frame_seq for frame in recorded],
+        prompt_frame_seq=prompt_frame_seq,
+    )
+    await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
+
+    assert await answers(migrated_sessions, view.session_id) == ["你好!"]
+    raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25)
+    assert [frame.payload for frame in raw] == [
+        {"动作": "输入", "正文": "say hello"},
+        {"阶段": "碎片", "正文": "你"},
+        {"阶段": "碎片", "正文": "好"},
+        {"阶段": "最终", "正文": "你好!", "尾声": "!", "成功": True},
+    ]
+    async with migrated_sessions() as db:
+        report = await reprojection.check_session(db, view.session_id, runtimes=runtimes)
+    assert one(report.turns).outcome == reprojection.Agrees()
 
 
 _TOOL_USE_SCRIPT = [
@@ -340,10 +473,10 @@ async def test_projected_assistant_message_points_to_the_frames_that_built_it(
     items = (await chat_store.get(operator_id, view.session_id)).items
     said = one(item for item in items if item.item_type is ItemType.MESSAGE)
     # **The item carries no frame numbers.** They are one session's coordinates, so what an operator
-    # appeals to is the log rows the item's prose was written from: the delta that opened it, the
-    # `assistant` frame that repeated it, and the `result` frame — nothing in an `assistant` frame
-    # says the message is finished, so the frame ending the turn is also what ends the message.
-    assert await _frames_behind(migrated_sessions, said.item_id) == (frame_seqs[0], frame_seqs[2])
+    # appeals to is the log rows that actually built the message: the delta that opened it and the
+    # `assistant` frame that completed it. The later `result` closes the turn but adds no message
+    # effect, so it does not widen this item's provenance.
+    assert await _frames_behind(migrated_sessions, said.item_id) == (frame_seqs[0], frame_seqs[1])
     # A prompt is authored: it was accepted before anything crossed a wire, so it names no frames
     # at all rather than naming the one it went out as.
     asked = one(item for item in items if item.item_type is ItemType.PROMPT)
@@ -557,16 +690,16 @@ async def _folded(chat_store: SessionStore, session_id: UUID, turn_id: UUID, *pa
     """Record these frames and apply what they mean, the way the turn loop does — what a departed
     holder leaves behind, written through the same path rather than into the rows directly. The fold
     is threaded across them for the same reason the loop threads it: a message spans frames."""
-    folding = ProjectionState()
+    handler = ClaudeRuntimeAdapter().turn_handler()
     for payload in payloads:
         recorded = await chat_store.record_frame(
             session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
         )
-        folding, events = projected(folding, frame_seq=recorded.frame_seq, payload=payload)
-        if folding.open_tool_call is None:
-            await chat_store.apply_frame(session_id, turn_id, recorded.frame_seq, events)
+        effects = handler.apply(frame_seq=recorded.frame_seq, frame=HarnessFrame(frame=payload))
+        if effects.checkpoint is Checkpoint.ADVANCE:
+            await chat_store.apply_frame(session_id, turn_id, recorded.frame_seq, effects.events)
         else:
-            assert not events
+            assert not effects.events
 
 
 async def test_adoption_picks_the_answer_up_where_it_stopped(
@@ -1066,8 +1199,10 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     opened_at = await chat_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, delta
     )
-    _, events = projected(ProjectionState(), frame_seq=opened_at.frame_seq, payload=delta)
-    await chat_store.apply_frame(session_id, started.turn_id, opened_at.frame_seq, events)
+    effects = (
+        ClaudeRuntimeAdapter().turn_handler().apply(frame_seq=opened_at.frame_seq, frame=HarnessFrame(frame=delta))
+    )
+    await chat_store.apply_frame(session_id, started.turn_id, opened_at.frame_seq, effects.events)
     half_answered = one(await _open_items(migrated_sessions, session_id))
 
     resumed = await chat_store.adopt_open_turn(session_id)
@@ -1119,8 +1254,8 @@ async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
     recorded = await chat_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, delta
     )
-    _, events = projected(ProjectionState(), frame_seq=recorded.frame_seq, payload=delta)
-    await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
+    effects = ClaudeRuntimeAdapter().turn_handler().apply(frame_seq=recorded.frame_seq, frame=HarnessFrame(frame=delta))
+    await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
     # Recorded and then nothing: the pod went between the sink writing the row and the loop acting
     # on what it meant.
     unprojected = await chat_store.record_frame(

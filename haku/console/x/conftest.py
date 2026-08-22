@@ -27,7 +27,7 @@ from haku.console.database_schema import ChatAttachment, ConversationItem, Sessi
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
-from haku.console.x.runtime_catalog import claude_registry
+from haku.console.x.runtime_catalog import claude_registry, projection_registry
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -90,7 +90,7 @@ class _ProvisioningTestStore(SessionStore):
 
 @pytest.fixture
 def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
-    return _ProvisioningTestStore(migrated_sessions)
+    return _ProvisioningTestStore(migrated_sessions, projection_registry())
 
 
 @pytest.fixture

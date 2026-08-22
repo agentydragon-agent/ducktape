@@ -189,7 +189,7 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
 
     prompt = await cli.query("hello")
 
-    assert channel.written[-1]["uuid"] == prompt.command_uuid
+    assert isinstance(channel.written[-1]["uuid"], str)
     # The number the prompt reports is the sink's own for the frame just written, which is what
     # lets the console point the operator's message row at the frame it went out as.
     assert sink.numbered[-1] == (prompt.frame_seq, HarnessFrame(frame=channel.written[-1]))

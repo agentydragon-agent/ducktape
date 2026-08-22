@@ -18,7 +18,16 @@ import pytest
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.claude_code.projection import DeltaSource, RecordedFrame, finish, project, project_log, undelivered
+from haku.console.x.claude_code.projection import (
+    DeltaSource,
+    OpenItem,
+    ProjectionState,
+    RecordedFrame,
+    finish,
+    project,
+    project_log,
+    undelivered,
+)
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     command_lifecycle,
@@ -43,10 +52,8 @@ from haku.console.x.conversation_events import (
     Json,
     MessageCompleted,
     MessageStarted,
-    OpenItem,
     OpenRef,
     Projection,
-    ProjectionState,
     ReasoningCompleted,
     ReasoningStarted,
     ToolCallCompleted,

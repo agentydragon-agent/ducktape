@@ -30,11 +30,8 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import ConversationItem, Session, SessionFrame
 from haku.console.x.conversation_records import ChannelAttachment
-from haku.console.x.runtime import RuntimeRegistry
-from haku.console.x.runtime_catalog import projection_registry
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
-from haku.runtime.x.bridge.protocol import HarnessFrame
 
 
 class ConversationItemView(BaseModel):
@@ -345,17 +342,8 @@ class SessionFrameView(BaseModel):
     frame_seq: int
     direction: FrameDirection
     kind: BridgeFrameKind
-    native_kind: str | None = Field(
-        default=None, description="The native payload's `type` or JSON-RPC method when present; diagnostic only."
-    )
     created_at: datetime
     payload: dict[str, Any]
-    unprojected: dict[str, int] | None = Field(
-        default=None,
-        description="What the adapter's fold read nothing from in this frame, by the frame class it "
-        "calls it — absent when it read the whole frame. Diagnostic only: no rendering, notice or "
-        "delivery decision reads it.",
-    )
 
 
 class SessionFramePage(BaseModel):
@@ -372,47 +360,21 @@ class SessionFramePage(BaseModel):
     )
 
 
-def _unprojected(row: SessionFrame, *, runtime_kind: RuntimeKind, runtimes: RuntimeRegistry) -> dict[str, int] | None:
-    """`Projection.unprojected` for one frame, or nothing — never an empty map standing in for "none".
-
-    **The keys are the adapter's on purpose.** They are the selected backend's own frame class
-    names (for Claude, `system/vcs_state_changed` or `user/text`): what the fold could not read is
-    only sayable in the wire's own words, so they must not be renamed into the neutral vocabulary.
-
-    Folding one frame at a time is exact here, unlike for the events: a count keys off the frame's
-    own class and content blocks, never off what the fold accumulated before it, so per frame sums
-    to what a whole-session fold reports. `setup_output` is the bridge's own envelope rather than a
-    CLI frame — the fold refuses it, and it has no class the adapter could fail to read.
-    """
-    if row.kind == SETUP_OUTPUT_KIND:
-        return None
-    folded = runtimes[runtime_kind].project_log([(row.frame_seq, HarnessFrame(frame=row.payload, seq=row.runner_seq))])
-    return dict(folded.unprojected) or None
-
-
 def frame_page(
-    rows: Sequence[SessionFrame],
-    *,
-    limit: int,
-    conversation_id: UUID,
-    runtime_kind: RuntimeKind,
-    runtimes: RuntimeRegistry | None = None,
+    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: RuntimeKind
 ) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
     A short page is the first one, the same rule the MCP reader uses in the other direction:
     cheaper than a second count query, for the only question a caller has.
     """
-    registry = runtimes if runtimes is not None else projection_registry()
     frames = [
         SessionFrameView(
             frame_seq=row.frame_seq,
             direction=row.direction,
             kind=row.kind,
-            native_kind=_native_kind(row),
             created_at=row.created_at,
             payload=row.payload,
-            unprojected=_unprojected(row, runtime_kind=runtime_kind, runtimes=registry),
         )
         for row in rows
     ]
@@ -422,15 +384,6 @@ def frame_page(
         runtime_kind=runtime_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
-
-
-def _native_kind(row: SessionFrame) -> str | None:
-    if row.kind != BridgeFrameKind.HARNESS_FRAME:
-        return None
-    for field in ("type", "method"):
-        if isinstance(value := row.payload.get(field), str):
-            return value
-    return None
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:

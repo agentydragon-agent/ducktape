@@ -148,7 +148,21 @@ buffering work against no benefit. R5.5a takes the same reasoning the other way,
 the rollout as **wire frames** rather than parsed objects, precisely so design B's "read the
 stream directly for an adopted turn" does not turn the store into a migration.
 
-### What B needs
+### Historical adoption sketch — superseded by bridge v3
+
+The remainder of this adoption sketch records the alternatives considered before the incompatible
+bridge-v3/frame-log cutover. It is **not the current protocol**. Bridge v3 gives every native frame,
+deltas included, a runner-owned position in the typed outer `HarnessFrame`; the console records the
+exact opaque JSON and deduplicates `(session_id, runner_seq)`. The selected provider's stateful
+`RuntimeTurnHandler` alone interprets that JSON, and `Checkpoint.HOLD` keeps the durable projection
+cursor before provider-private partial state until replay can reproduce it. There is no native
+`frame_uid`, no delta exception, and no v2/v3 negotiation: the v3 migration deliberately cleared
+pre-cutover session state.
+
+The sections below are retained as design archaeology for why the rejected payload-identity and
+negotiated-version approaches were not used.
+
+### What B needed — [superseded]
 
 - **The runner owns the `initialize` handshake.** It is per-connection state today, but
   the CLI now outlives the connection, so an adopting console must not re-handshake a process
@@ -167,7 +181,7 @@ stream directly for an adopted turn" does not turn the store into a migration.
 - **An idle timeout in the runner.** A CLI held open for a console that never returns trades a
   wedged room for a wedged sandbox.
 
-### Replay is safe because frames have identity — with one exception
+### Replay by payload identity — [superseded]
 
 The first version of the resume point above wanted an exact, durable cursor: a monotonic sequence
 number on the envelope, and an acknowledgement the runner could trust. That is the expensive part —
@@ -214,7 +228,7 @@ Two consequences worth building deliberately:
   transaction ids does not apply here: it is about derived counters resetting across a restart, and
   an agent-assigned message id does not reset.)
 
-### The bridge protocol is versioned; the versioning is pointed the wrong way
+### Negotiated bridge versions — [superseded]
 
 `PROTOCOL_VERSION` is 2, it rides on the `start` frame, and `ClaudeLaunch.protocol_version` is
 `Literal[2]` so a peer on another version fails validation immediately rather than further in with a

@@ -422,7 +422,6 @@ const conversationFrames = {
       frame_seq: 412,
       direction: "to_agent",
       kind: "harness_frame",
-      native_kind: "user",
       created_at: "2026-08-01T03:00:20Z",
       payload: claudeFrame({
         type: "user",
@@ -433,7 +432,6 @@ const conversationFrames = {
       frame_seq: 413,
       direction: "from_agent",
       kind: "harness_frame",
-      native_kind: "assistant",
       created_at: "2026-08-01T03:00:21Z",
       payload: claudeFrame({
         type: "assistant",
@@ -457,7 +455,6 @@ const conversationFrames = {
       frame_seq: 414,
       direction: "from_agent",
       kind: "harness_frame",
-      native_kind: "user",
       created_at: "2026-08-01T03:00:23Z",
       payload: claudeFrame({
         type: "user",
@@ -478,7 +475,6 @@ const conversationFrames = {
       frame_seq: 416,
       direction: "from_agent",
       kind: "harness_frame",
-      native_kind: "result",
       created_at: "2026-08-01T03:00:24Z",
       payload: claudeFrame({
         type: "result",

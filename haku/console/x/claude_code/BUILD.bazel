@@ -1,6 +1,6 @@
 """Claude Code as one CLI harness: everything that knows its wire format."""
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # Only the runtime folds a harness's wire, so a channel that came to know Claude's frames fails to
 # build rather than being caught in review.
@@ -16,6 +16,7 @@ py_library(
         "//haku/console/x/channels/matrix/testing:__pkg__",
         "//haku/console/x/claude_code/testing:__pkg__",
     ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -49,6 +50,7 @@ py_library(
     srcs = ["runtime.py"],
     deps = [
         ":client",
+        ":frames",
         ":projection",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
@@ -77,6 +79,58 @@ py_test(
 py_library(
     name = "redaction",
     srcs = ["redaction.py"],
+)
+
+py_library(
+    name = "frame_export",
+    srcs = ["frame_export.py"],
+    deps = [
+        ":redaction",
+        "//haku/console:database_schema",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:reprojection",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "frame_export_main",
+    srcs = ["frame_export_main.py"],
+    deps = [
+        ":frame_export",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "frame_export_bin",
+    main_module = "haku.console.x.claude_code.frame_export_main",
+    deps = [":frame_export_main"],
+)
+
+py_test(
+    name = "test_frame_export",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_frame_export.py"],
+    deps = [
+        ":frame_export",
+        ":frames",
+        ":projection",
+        ":runtime",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console/x:conftest",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:session_store",
+        "//haku/console/x:setup_output",
+        "//haku/runtime/x/bridge:protocol",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

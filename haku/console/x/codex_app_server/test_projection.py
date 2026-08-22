@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.codex_app_server.projection import RecordedFrame, project, project_log
+from haku.console.x.codex_app_server.projection import ProjectionState, RecordedFrame, project, project_log
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.conversation_events import (
     CallRef,
@@ -12,7 +12,6 @@ from haku.console.x.conversation_events import (
     MessageCompleted,
     MessageStarted,
     OpenRef,
-    ProjectionState,
     ReasoningCompleted,
     ReasoningStarted,
     ToolCallCompleted,

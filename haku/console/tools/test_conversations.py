@@ -107,7 +107,6 @@ def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> Ro
         frame_seq=seq,
         direction="from_agent",
         kind=BridgeFrameKind.HARNESS_FRAME,
-        native_kind=kind,
         created_at=NOW,
         payload=payload if payload is not None else {"type": kind},
     )
@@ -153,10 +152,15 @@ class _Reader:
         ][:limit]
 
     async def read_frames(
-        self, session_id: UUID, *, cursor: FrameCursor | None, limit: int, kinds: Sequence[str] | None
+        self,
+        session_id: UUID,
+        *,
+        cursor: FrameCursor | None,
+        limit: int,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[RolloutFrame]:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit, "kinds": kinds})
-        selected = [frame for frame in self._frames if kinds is None or frame.native_kind in kinds]
+        selected = [frame for frame in self._frames if kinds is None or frame.kind in kinds]
         if cursor is not None:
             selected = [frame for frame in selected if frame.frame_seq >= cursor.frame_seq]
         return selected[:limit]
@@ -305,6 +309,16 @@ async def test_a_short_page_is_the_last_one() -> None:
     assert result.data.next_cursor is None
 
 
+async def test_rollout_returns_discriminator_free_native_json_unchanged() -> None:
+    native = {"阶段": "最终", "正文": "你好", "成功": True}
+    reader = _Reader(_frame(1, payload=native))
+
+    async with Client(_mcp(reader)) as client:
+        result = await _call(client, "read_rollout", {"session_id": str(SESSION)})
+
+    assert result.data.items[0].payload == native
+
+
 async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() -> None:
     """Paging has to happen in the query; filtering a page after the fact would return
     fewer rows than asked for and read as the end of the log."""
@@ -312,12 +326,17 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
 
     async with Client(_mcp(reader)) as client:
         await _call(
-            client, "read_rollout", {"session_id": str(SESSION), "cursor": {"frame_seq": 2}, "kinds": ["assistant"]}
+            client, "read_rollout", {"session_id": str(SESSION), "cursor": {"frame_seq": 2}, "kinds": ["harness_frame"]}
         )
 
     # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
     assert reader.queries == [
-        {"session_id": SESSION, "cursor": FrameCursor(frame_seq=2), "limit": 26, "kinds": ["assistant"]}
+        {
+            "session_id": SESSION,
+            "cursor": FrameCursor(frame_seq=2),
+            "limit": 26,
+            "kinds": [BridgeFrameKind.HARNESS_FRAME],
+        }
     ]
 
 
@@ -372,20 +391,18 @@ async def test_one_named_frame_comes_back_whole_however_large() -> None:
     assert result.data.clipped_bytes is None
 
 
-async def test_a_named_frame_is_read_including_the_kinds_a_page_leaves_out() -> None:
-    """`read_rollout`'s default view drops deltas, and a caller that named a `frame_seq` has
-    already chosen its row — so the filter must not decide for it."""
+async def test_a_named_frame_is_read_whole_without_native_classification() -> None:
     reader = _Reader(_frame(7, kind="stream_event"))
 
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 7})
 
     assert result.data.kind == BridgeFrameKind.HARNESS_FRAME
-    assert result.data.native_kind == "stream_event"
+    assert result.data.payload == {"type": "stream_event"}
     assert reader.queries == [{"session_id": SESSION, "frame_seq": 7}]
 
 
-async def test_a_named_method_only_frame_is_not_limited_to_the_known_kind_vocabulary() -> None:
+async def test_a_named_method_only_frame_is_returned_as_opaque_json() -> None:
     frame = _frame(
         8,
         kind="codex/event/unknown",
@@ -396,7 +413,6 @@ async def test_a_named_method_only_frame_is_not_limited_to_the_known_kind_vocabu
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 8})
 
-    assert result.data.native_kind == "codex/event/unknown"
     assert result.data.payload == frame.payload
 
 

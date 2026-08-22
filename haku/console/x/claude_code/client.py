@@ -108,7 +108,6 @@ class ClaudeCli:
         """
         command_uuid = str(uuid.uuid4())
         return SentPrompt(
-            command_uuid=command_uuid,
             frame_seq=await self._write(
                 {
                     "type": "user",
@@ -116,7 +115,7 @@ class ClaudeCli:
                     "parent_tool_use_id": None,
                     "uuid": command_uuid,
                 }
-            ),
+            )
         )
 
     async def interrupt(self) -> None:

@@ -8,7 +8,6 @@ comparison rather than in the projection.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import patch
 from uuid import UUID
 
 import pytest_bazel
@@ -25,11 +24,14 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import ConversationEvent, ConversationItem, Session
 from haku.console.x import reprojection
+from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
-from haku.console.x.conversation_events import ProjectionState
-from haku.console.x.frame_projection import projected
+from haku.console.x.runtime import Checkpoint
 from haku.console.x.runtime_catalog import projection_registry
 from haku.console.x.session_store import BridgeAuthentication
+from haku.runtime.x.bridge.protocol import HarnessFrame
+
+RUNTIMES = projection_registry()
 
 
 def _assistant(*blocks: dict[str, Any], message_id: str = "msg_1") -> dict[str, Any]:
@@ -53,17 +55,17 @@ async def _turn_through_the_write_path(chat_store, operator_id, frames: list[dic
     await chat_store.enqueue_prompt(operator_id, session_id, "what is in here?", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    state = ProjectionState()
+    handler = ClaudeRuntimeAdapter().turn_handler()
     for payload in frames:
         frame = payload
         recorded = await chat_store.record_frame(
             session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame
         )
-        state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
-        if state.open_tool_call is None:
-            await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
+        effects = handler.apply(frame_seq=recorded.frame_seq, frame=HarnessFrame(frame=payload))
+        if effects.checkpoint is Checkpoint.ADVANCE:
+            await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
         else:
-            assert not events
+            assert not effects.events
     return session_id, started.turn_id
 
 
@@ -83,13 +85,8 @@ async def test_a_session_the_write_path_projected_agrees_with_itself(
         ],
     )
 
-    runtimes = projection_registry()
     async with migrated_sessions() as db:
-        with patch(
-            "haku.console.x.reprojection.projection_registry",
-            side_effect=AssertionError("explicit reprojection registry was ignored"),
-        ):
-            report = await reprojection.check_session(db, session_id, runtimes=runtimes)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     turn = one(report.turns)
     assert (turn.turn_id, turn.outcome) == (turn_id, reprojection.Agrees())
@@ -116,7 +113,7 @@ async def test_a_streamed_tool_declaration_agrees_with_its_multiframe_provenance
     )
 
     async with migrated_sessions() as db:
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     assert one(report.turns).outcome == reprojection.Agrees()
 
@@ -132,7 +129,7 @@ async def test_an_aborted_turn_still_agrees_with_its_frames(chat_store, migrated
     await chat_store.end_turn(turn_id, TurnOutcome.ABORTED)
 
     async with migrated_sessions() as db:
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     assert one(report.turns).outcome == reprojection.Agrees()
 
@@ -157,7 +154,7 @@ async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
             .values(body={"item_type": "tool_call", "call_id": "toolu_1", "tool_name": "Write", "arguments": {}})
         )
         await db.commit()
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     outcome = one(report.turns).outcome
     assert isinstance(outcome, reprojection.Drifted)
@@ -190,7 +187,7 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
             )
         )
         await db.commit()
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     outcome = one(report.turns).outcome
     assert isinstance(outcome, reprojection.Drifted)
@@ -213,7 +210,7 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(chat_store, migrated_sess
     async with migrated_sessions() as db:
         await db.execute(delete(ConversationEvent).where(ConversationEvent.session_id == session_id))
         await db.commit()
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     outcome = one(report.turns).outcome
     assert isinstance(outcome, reprojection.Drifted)
@@ -237,7 +234,7 @@ async def test_a_turn_the_cursor_never_reached_is_skipped_rather_than_re_project
     async with migrated_sessions() as db:
         await db.execute(update(Session).where(Session.session_id == session_id).values(projected_frame_seq=0))
         await db.commit()
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     turn = one(report.turns)
     assert turn.outcome == reprojection.Skipped(reason=reprojection.SkipReason.CURSOR_NEVER_REACHED)
@@ -261,7 +258,7 @@ async def test_a_frame_recorded_past_the_cursor_is_counted_and_not_reported(
     )
 
     async with migrated_sessions() as db:
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     turn = one(report.turns)
     assert turn.outcome == reprojection.Agrees()
@@ -284,7 +281,7 @@ async def test_an_items_text_edited_out_from_under_its_segments_is_a_finding(
             .values(item_text="two files")
         )
         await db.commit()
-        report = await reprojection.check_session(db, session_id)
+        report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
 
     drifted = one(report.items)
     assert (drifted.folded, drifted.stored) == ("one file", "two files")

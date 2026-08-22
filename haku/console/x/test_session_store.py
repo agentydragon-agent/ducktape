@@ -66,19 +66,21 @@ from haku.console.x.session_store import (
     SessionStore,
     TurnState,
 )
+from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 ROOM = "!room:example.org"
 
 
 class _AlternateFrameVocabulary:
-    """Claude projection with non-Claude discriminator names, for store dispatch tests."""
+    """A harness whose native JSON has no conventional discriminator keys."""
 
     kind = RuntimeKind.CLAUDE_CODE
-    delta_frame_kind = "future_delta"
-    prompt_frame_kinds = frozenset({"future_prompt"})
+
+    def prompt_submitted(self, outbound) -> bool:
+        return any(frame.frame.get("动作") == "提问" for frame in outbound)
 
 
-async def test_store_uses_the_injected_runtime_frame_vocabulary(migrated_sessions, operator_id) -> None:
+async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(migrated_sessions, operator_id) -> None:
     runtime = cast(RuntimeAdapter, _AlternateFrameVocabulary())
     store = SessionStore(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: runtime}))
     view, token = await store._create_provisioning_for_test(operator_id)
@@ -86,27 +88,22 @@ async def test_store_uses_the_injected_runtime_frame_vocabulary(migrated_session
     await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
     assert await store.next_prompt(view.session_id) is not None
     await store.record_frame(
-        view.session_id,
-        FrameDirection.TO_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
-        {"jsonrpc": "2.0", "method": "future_prompt"},
+        view.session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"动作": "提问", "正文": "hello"}
     )
     await store.record_frame(
-        view.session_id,
-        FrameDirection.FROM_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
-        {"jsonrpc": "2.0", "method": "future_delta"},
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "碎片", "正文": "你"}
     )
     await store.record_frame(
-        view.session_id,
-        FrameDirection.FROM_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
-        {"jsonrpc": "2.0", "method": "future_event"},
+        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "最终", "正文": "你好"}
     )
 
     assert await store.adopt_open_turn(view.session_id) is not None
-    frames = await store.read_frames(view.session_id, cursor=None, limit=25, kinds=None)
-    assert [frame.native_kind for frame in frames] == ["future_prompt", "future_event"]
+    frames = await store.read_frames(view.session_id, cursor=None, limit=25)
+    assert [frame.payload for frame in frames] == [
+        {"动作": "提问", "正文": "hello"},
+        {"阶段": "碎片", "正文": "你"},
+        {"阶段": "最终", "正文": "你好"},
+    ]
 
 
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
@@ -293,9 +290,9 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
             session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": kind}
         )
 
-    first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2, kinds=None)
+    first = await chat_store.read_frames(str(session.session_id), cursor=None, limit=2)
     rest = await chat_store.read_frames(
-        str(session.session_id), cursor=FrameCursor(frame_seq=first[-1].frame_seq + 1), limit=2, kinds=None
+        str(session.session_id), cursor=FrameCursor(frame_seq=first[-1].frame_seq + 1), limit=2
     )
 
     assert [frame.kind for frame in first] == ["harness_frame", "harness_frame"]
@@ -303,17 +300,24 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(chat_st
     assert [frame.payload["type"] for frame in rest] == ["result"]
 
 
-async def test_the_kinds_filter_skims_without_paging_through_everything(chat_store, operator_id) -> None:
+async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
-    for kind in ("user", "system", "assistant", "system", "result"):
-        await chat_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": kind}
-        )
+    await chat_store.record_frame(session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, {"text": "booting"})
+    await chat_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "最终"}
+    )
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=["assistant", "result"])
+    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
+    setup = await chat_store.read_frames(
+        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.SETUP_OUTPUT]
+    )
+    harness = await chat_store.read_frames(
+        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.HARNESS_FRAME]
+    )
 
-    assert [frame.kind for frame in frames] == ["harness_frame", "harness_frame"]
-    assert [frame.payload["type"] for frame in frames] == ["assistant", "result"]
+    assert [(frame.kind, frame.payload) for frame in default] == [("harness_frame", {"阶段": "最终"})]
+    assert [(frame.kind, frame.payload) for frame in setup] == [("setup_output", {"text": "booting"})]
+    assert [(frame.kind, frame.payload) for frame in harness] == [("harness_frame", {"阶段": "最终"})]
 
 
 async def test_method_only_native_frames_are_visible_and_filterable(chat_store, operator_id) -> None:
@@ -324,17 +328,12 @@ async def test_method_only_native_frames_are_visible_and_filterable(chat_store, 
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=None)
-    filtered = await chat_store.read_frames(
-        str(session.session_id), cursor=None, limit=25, kinds=["codex/event/unknown"]
-    )
+    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
     exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
     transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=25)
 
-    assert [(frame.native_kind, frame.payload) for frame in default] == [("codex/event/unknown", inner)]
-    assert [(frame.native_kind, frame.payload) for frame in filtered] == [("codex/event/unknown", inner)]
+    assert [frame.payload for frame in default] == [inner]
     assert exact is not None
-    assert exact.native_kind == "codex/event/unknown"
     assert exact.payload == inner
     assert transcript.entries == []
     assert transcript.unreadable == {"codex/event/unknown": 1}
@@ -350,13 +349,12 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
         session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
     )
 
-    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=None)
+    default = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
     exact = await chat_store.read_frame(session.session_id, recorded.frame_seq)
     transcript = await chat_store.read_transcript(session.session_id, cursor=None, limit=25)
 
-    assert [(frame.native_kind, frame.payload) for frame in default] == [(None, inner)]
+    assert [frame.payload for frame in default] == [inner]
     assert exact is not None
-    assert exact.native_kind is None
     assert exact.payload == inner
     assert transcript.entries == []
     assert transcript.unreadable == {"<undiscriminated>": 1}
@@ -380,7 +378,7 @@ async def test_a_replayed_frame_is_recorded_once(chat_store, operator_id) -> Non
         )
     ).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
     assert [frame.kind for frame in frames] == ["harness_frame"]
     assert [frame.payload["type"] for frame in frames] == ["assistant"]
 
@@ -450,14 +448,11 @@ async def test_frames_with_no_identity_are_never_collapsed(chat_store, operator_
         )
     ).fresh
 
-    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25, kinds=["stream_event"])
+    frames = await chat_store.read_frames(str(session.session_id), cursor=None, limit=25)
     assert len(frames) == 2
 
 
-async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, operator_id) -> None:
-    """A turn streams them in the hundreds and the completed `assistant` frame repeats all of it,
-    so "everything" means the frames rather than the typing — and naming the kind is how a reader
-    asking how far a cut-off answer got says so."""
+async def test_the_raw_log_returns_every_native_frame_without_classifying_it(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
     session_id = session.session_id
     await chat_store.record_frame(
@@ -467,13 +462,10 @@ async def test_deltas_are_in_the_log_but_not_in_the_default_view(chat_store, ope
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
-    default = await chat_store.read_frames(str(session_id), cursor=None, limit=25, kinds=None)
-    asked = await chat_store.read_frames(str(session_id), cursor=None, limit=25, kinds=["stream_event"])
+    default = await chat_store.read_frames(str(session_id), cursor=None, limit=25)
 
-    assert [frame.kind for frame in default] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in default] == ["result"]
-    assert [frame.kind for frame in asked] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in asked] == ["stream_event"]
+    assert [frame.kind for frame in default] == ["harness_frame", "harness_frame"]
+    assert [frame.payload["type"] for frame in default] == ["stream_event", "result"]
 
 
 async def test_one_session_never_reads_another_session_frames(chat_store, operator_id) -> None:
@@ -486,7 +478,7 @@ async def test_one_session_never_reads_another_session_frames(chat_store, operat
         theirs.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
-    frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25, kinds=None)
+    frames = await chat_store.read_frames(str(mine.session_id), cursor=None, limit=25)
 
     assert [frame.kind for frame in frames] == ["harness_frame"]
     assert [frame.payload["type"] for frame in frames] == ["assistant"]
@@ -518,8 +510,7 @@ async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(ch
     assert earlier.next_before_seq == earlier.frames[0].frame_seq
 
 
-async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(chat_store, operator_id) -> None:
-    """The same default view the MCP reader gets, for the same reason — one policy, one place."""
+async def test_the_frame_inspector_dumps_native_frames_without_classifying_them(chat_store, operator_id) -> None:
     session, _ = await chat_store.create(operator_id)
     session_id = session.session_id
     await chat_store.record_frame(
@@ -529,15 +520,10 @@ async def test_the_frame_inspector_leaves_deltas_out_until_they_are_asked_for(ch
         session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
-    default = await chat_store.read_operator_frames(operator_id, session_id, before_seq=None, limit=25, kinds=None)
-    asked = await chat_store.read_operator_frames(
-        operator_id, session_id, before_seq=None, limit=25, kinds=["stream_event"]
-    )
+    default = await chat_store.read_operator_frames(operator_id, session_id, before_seq=None, limit=25)
 
-    assert [frame.kind for frame in default.frames] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in default.frames] == ["result"]
-    assert [frame.kind for frame in asked.frames] == ["harness_frame"]
-    assert [frame.payload["type"] for frame in asked.frames] == ["stream_event"]
+    assert [frame.kind for frame in default.frames] == ["harness_frame", "harness_frame"]
+    assert [frame.payload["type"] for frame in default.frames] == ["stream_event", "result"]
     assert default.next_before_seq is None
 
 
@@ -1090,7 +1076,10 @@ async def test_abort_reaches_the_replica_running_the_turn(
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
-        requesting = SessionStore(async_sessionmaker(other_engine, expire_on_commit=False))
+        requesting = SessionStore(
+            async_sessionmaker(other_engine, expire_on_commit=False),
+            RuntimeRegistry({RuntimeKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
+        )
         async with notifications.subscribe(SessionEventKind.ABORT, view.session_id) as aborted:
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):

@@ -64,16 +64,15 @@ all, which is the only confirmation of a mid-turn fold rather than an inference 
 what makes the prompt reachable by `interrupt`'s `cancel_queued`. Measured in
 <../../cli_protocol/probes/steering.py>.
 
-## The runner replays everything except deltas
+## The runner replays every native frame by wire position
 
-`ClaudeBackend.DELTA_TYPE` is excluded from the replay window because a delta is the one frame class
-that cannot survive being sent twice. Everything a resumed turn needs that predates its adoption
-therefore has to come from the console's own record, not from the replay.
+Bridge v3 gives every outbound native harness frame a dense runner sequence and retains it without
+classifying the inner JSON. On reconnect, the console supplies the highest runner sequence it has
+durably recorded and the runner offers every later frame again with its original position. The
+console's unique `(session_id, runner_seq)` record then makes replay idempotent, including deltas.
 
-Which frames those are is a backend's answer, not the runner's: `CliBackend.replayable` is the seam,
-because the runner decides what to retain at the moment it sends — long before any adopting console
-exists — and "has no agent-assigned identity, and is accumulated rather than replaced" is a fact
-about one CLI's protocol.
+Whether a frame emits live-only, durable, both, or no neutral conversation effects is the selected
+integration's stateful turn handler's answer. Retention and deduplication do not need to know.
 
 ## Investigations, which are not this
 

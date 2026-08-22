@@ -8,7 +8,7 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.x import conversation_records, transcript_entries
-from haku.console.x.claude_code.projection import RecordedFrame, project, project_log
+from haku.console.x.claude_code.projection import ProjectionState, RecordedFrame, project, project_log
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     recorded,
@@ -18,7 +18,6 @@ from haku.console.x.claude_code.testing.wire import (
     tool_result,
     tool_use_block,
 )
-from haku.console.x.conversation_events import ProjectionState
 
 
 def _result(frame_seq: int) -> RecordedFrame:

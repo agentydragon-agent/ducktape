@@ -3,7 +3,7 @@
 `check_session` returns findings; it prints nothing and decides nothing, so a caller chooses what a
 per-turn disagreement is worth.
 
-**The fold is the write path's own** (`frame_projection.projected`) and each event is spelled by
+**The fold is the selected integration's live turn handler** and each event is spelled by
 the write path's own mapping (`session_events.stored`), so the only thing added here is the
 alignment. That alignment is **by the first frame in the event's provenance**. Most events name one
 frame; a message completion and a streamed tool declaration can span several, and the stored row
@@ -57,10 +57,10 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
-from haku.console.x import frame_projection, session_events
-from haku.console.x.conversation_events import FrameRange, ProjectionState
+from haku.console.x import session_events
+from haku.console.x.conversation_events import FrameRange
 from haku.console.x.runtime import RuntimeRegistry
-from haku.console.x.runtime_catalog import projection_registry
+from haku.runtime.x.bridge.protocol import HarnessFrame
 from util.sqlalchemy_types import UnknownValue
 
 
@@ -192,11 +192,9 @@ class SessionReport:
     items: tuple[ItemTextMismatch, ...]
 
 
-async def check_session(
-    db: AsyncSession, session_id: UUID, *, runtimes: RuntimeRegistry | None = None
-) -> SessionReport:
+async def check_session(db: AsyncSession, session_id: UUID, *, runtimes: RuntimeRegistry) -> SessionReport:
     """Every turn of one session, re-projected and aligned against its rows."""
-    registry = runtimes if runtimes is not None else projection_registry()
+    registry = runtimes
     row = (
         await db.execute(
             select(Session, Conversation.runtime_kind)
@@ -375,25 +373,21 @@ def _differences(projected: ProjectedRow, stored: ConversationEvent) -> list[Fie
 
 
 def _expected(
-    frames: Sequence[SessionFrame],
-    *,
-    runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
-    runtimes: RuntimeRegistry | None = None,
+    frames: Sequence[SessionFrame], *, runtime_kind: RuntimeKind, runtimes: RuntimeRegistry
 ) -> dict[int, tuple[ProjectedRow, ...]]:
     """What each of a turn's recorded frames would be written as, through the writer's own two
     functions — folded with one state across the turn, because that is how the writer folds it.
     """
-    state = ProjectionState()
-    registry = runtimes if runtimes is not None else projection_registry()
+    handler = runtimes[runtime_kind].turn_handler()
     said: defaultdict[int, list[ProjectedRow]] = defaultdict(list)
     for frame in frames:
         # A frame with no events still belongs in coverage and can have stored rows to disagree
         # with, so retain an empty bucket for it.
         said[frame.frame_seq]
-        state, events = frame_projection.projected(
-            state, frame_seq=frame.frame_seq, payload=frame.payload, runtime_kind=runtime_kind, runtimes=registry
+        effects = handler.apply(
+            frame_seq=frame.frame_seq, frame=HarnessFrame(frame=frame.payload, seq=frame.runner_seq)
         )
-        for event in events:
+        for event in effects.events:
             if (row := session_events.stored(event)) is None:
                 continue
             if not isinstance(provenance := event.provenance, FrameRange):

@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import SecretStr
 
-from haku.console.chat_models import RuntimeKind
-from haku.console.x.conversation_events import ConversationEvent, Projection, ProjectionState
+from haku.console.chat_models import RuntimeKind, TurnOutcome
+from haku.console.x.conversation_events import ConversationEvent, Projection
 from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
@@ -64,8 +65,64 @@ class RuntimeMcpServer:
 class TurnCompletion:
     """Provider-neutral interpretation of the native frame that ended a turn."""
 
+    outcome: TurnOutcome
     final_text: str
     failure: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OpenMessageSeed:
+    """Durable part of a message a replacement session handler inherits."""
+
+    text: str
+    first_frame_seq: int
+    last_frame_seq: int
+
+
+@dataclass(frozen=True, slots=True)
+class TurnProjectionSeed:
+    """Provider-neutral durable facts from which one turn handler resumes."""
+
+    open_message: OpenMessageSeed | None = None
+    seen_call_ids: frozenset[str] = frozenset()
+
+
+EMPTY_TURN_PROJECTION_SEED = TurnProjectionSeed()
+
+
+class Checkpoint(StrEnum):
+    """Whether a frame's effects and projection cursor may commit yet."""
+
+    ADVANCE = "advance"
+    HOLD = "hold"
+
+
+@dataclass(frozen=True, slots=True)
+class FrameEffects:
+    """One native frame's neutral effects, produced by its harness integration.
+
+    ``events`` remain durable even when the same frame supplies ``completion``; the terminal write
+    commits them atomically with the turn close. ``HOLD`` is for provider state that is not durably
+    representable yet, such as partial JSON tool arguments. It is only valid with no emitted events
+    or completion; replay then starts before the composition and the integration rebuilds its
+    private state from the same raw frames.
+    """
+
+    events: tuple[ConversationEvent, ...] = ()
+    completion: TurnCompletion | None = None
+    checkpoint: Checkpoint = Checkpoint.ADVANCE
+
+    def __post_init__(self) -> None:
+        if self.checkpoint is Checkpoint.HOLD and self.events:
+            raise ValueError("a held frame cannot emit durable conversation events")
+        if self.checkpoint is Checkpoint.HOLD and self.completion is not None:
+            raise ValueError("a terminal frame cannot hold the durable projection cursor")
+
+
+class RuntimeTurnHandler(Protocol):
+    """Stateful provider-owned interpretation of one turn's native frames."""
+
+    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects: ...
 
 
 class RuntimeAdapter(Protocol):
@@ -83,19 +140,13 @@ class RuntimeAdapter(Protocol):
         self, websocket: TextWebSocket, launch: HarnessLaunch, progress: ProgressSink | None, frames_to: FrameSink
     ) -> RuntimeClient: ...
 
-    def project_frame(
-        self, state: ProjectionState, *, frame_seq: int, frame: HarnessFrame
-    ) -> tuple[ProjectionState, tuple[ConversationEvent, ...]]: ...
+    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler: ...
 
     def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection: ...
 
-    @property
-    def delta_frame_kind(self) -> str: ...
-
-    @property
-    def prompt_frame_kinds(self) -> frozenset[str]: ...
-
-    def complete_turn(self, frame: HarnessFrame) -> TurnCompletion: ...
+    def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
+        """Whether these outbound native frames include the turn's prompt submission."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,8 +194,6 @@ class RuntimeRegistry:
         for kind, adapter in self._adapters.items():
             if adapter.kind is not kind:
                 raise ValueError(f"runtime adapter key {kind!r} disagrees with adapter kind {adapter.kind!r}")
-            if not adapter.prompt_frame_kinds:
-                raise ValueError(f"runtime adapter {kind!r} declares no outbound prompt frame kind")
         unknown_resources = self._resources.keys() - self._adapters.keys()
         if unknown_resources:
             raise ValueError(f"runtime resources have no adapter: {sorted(kind.value for kind in unknown_resources)}")

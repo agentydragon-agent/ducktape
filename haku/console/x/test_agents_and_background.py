@@ -14,8 +14,8 @@ hypothesis — the forwarded subagent frame above all — the test says so, and
 (<README.md> § Recording a session as a fixture).
 
 **Both folds are asserted, because they answer different questions.** `project_log` reads a whole
-session and declares it over; `frame_projection.projected` is the write path's own, threading one
-state across a turn's frames as they arrive, and what it emits is what the log gets a row for.
+session and declares it over; the runtime's turn handler is the write path's own stateful fold, and
+what it emits is what the log gets a row for.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from more_itertools import one
 from haku.console.chat_models import ConversationEventKind, ToolOutcome
 from haku.console.x import session_events
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
+from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import (
     assistant,
     recorded,
@@ -43,11 +44,10 @@ from haku.console.x.conversation_events import (
     FrameRange,
     ItemSegment,
     MessageCompleted,
-    ProjectionState,
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.console.x.frame_projection import projected
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 # What the CLI answers a backgrounded `Bash` with: the call returns at once, naming a shell.
 BACKGROUND_SHELL = {"shellId": "bash_1", "command": "sleep 60 && echo done", "stdout": "", "stderr": ""}
@@ -56,11 +56,11 @@ BACKGROUND_SHELL = {"shellId": "bash_1", "command": "sleep 60 && echo done", "st
 def _write_path(frames: Sequence[RecordedFrame]) -> tuple[ConversationEvent, ...]:
     """Every event the turn loop acts on, folded exactly as `_run_turn` folds — one frame at a time,
     with one state threaded across them."""
-    state = ProjectionState()
+    handler = ClaudeRuntimeAdapter().turn_handler()
     said: list[ConversationEvent] = []
     for frame in frames:
-        state, events = projected(state, frame_seq=frame.frame_seq, payload=frame.payload)
-        said.extend(events)
+        effects = handler.apply(frame_seq=frame.frame_seq, frame=HarnessFrame(frame=frame.payload))
+        said.extend(effects.events)
     return tuple(said)
 
 

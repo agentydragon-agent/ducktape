@@ -12,13 +12,11 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
-from more_itertools import first
 from pydantic import BaseModel, Field
 
 from haku.console.chat_models import (
@@ -32,9 +30,19 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.x.conversation_events import OpenItem, ProjectionState, TurnCompleted
+from haku.console.x.conversation_events import ConversationEvent
 from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.runtime import ConfiguredRuntime, RuntimeAdapter, RuntimeClient, RuntimeLaunch, RuntimeRegistry
+from haku.console.x.runtime import (
+    Checkpoint,
+    ConfiguredRuntime,
+    OpenMessageSeed,
+    RuntimeAdapter,
+    RuntimeClient,
+    RuntimeLaunch,
+    RuntimeRegistry,
+    TurnCompletion,
+    TurnProjectionSeed,
+)
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import (
@@ -119,9 +127,10 @@ class StarletteTextWebSocket(TextWebSocket):
 class RolloutRecorder:
     """One session's `FrameSink`: every protocol frame either way, into `session_frames`.
 
-    No exclusions — control frames, because an interrupt that did not take is diagnosable from
-    nothing else, and deltas, because a log with a hole in it cannot be folded over. Not burying
-    the reader is the read's job: `read_frames` leaves deltas out of its default view.
+    No native exclusions — control frames, because an interrupt that did not take is diagnosable
+    from nothing else, and deltas, because a log with a hole in it cannot be folded over. Generic
+    readers bound pages without classifying the payload; provider-aware interpretation stays in the
+    selected integration.
     """
 
     def __init__(self, store: SessionStore, session_id: UUID):
@@ -155,17 +164,7 @@ class RolloutRecorder:
         return await self._store.record_frame(self._session_id, direction, kind, payload, runner_seq=runner_seq)
 
 
-@dataclass(frozen=True)
-class _CompletedTurn:
-    """The event that ended a turn, and the frame it was projected from."""
-
-    event: TurnCompleted
-    # Read for the two things the neutral event does not carry: the failure's reason (an outcome is
-    # not a message) and the prose of a turn that said nothing anywhere else.
-    frame: ReceivedFrame
-
-
-def _inherited(turn: TurnStart | ResumedTurn) -> ProjectionState:
+def _inherited(turn: TurnStart | ResumedTurn) -> TurnProjectionSeed:
     """Where an adopting replica's fold picks the turn up.
 
     Empty only for a turn this process opened. What the store hands back is the open message, when
@@ -175,15 +174,14 @@ def _inherited(turn: TurnStart | ResumedTurn) -> ProjectionState:
     compatibility blocks arriving after a roll stay duplicates rather than new calls.
     """
     if isinstance(turn, TurnStart):
-        return ProjectionState()
+        return TurnProjectionSeed()
     if turn.streaming is None:
-        return ProjectionState(seen_call_ids=turn.seen_call_ids)
-    return ProjectionState(
-        open_message=OpenItem(
-            opened_at_frame_seq=turn.streaming.first_frame_seq,
+        return TurnProjectionSeed(seen_call_ids=turn.seen_call_ids)
+    return TurnProjectionSeed(
+        open_message=OpenMessageSeed(
+            first_frame_seq=turn.streaming.first_frame_seq,
             last_frame_seq=turn.streaming.last_frame_seq,
-            backend_item_id=None,
-            delivered=turn.streaming.text,
+            text=turn.streaming.text,
         ),
         seen_call_ids=turn.seen_call_ids,
     )
@@ -525,9 +523,7 @@ class SessionService:
                             # kill this turn on arrival.
                             abort_event.clear()
                             try:
-                                await self._run_turn(
-                                    client, frames, session_id, turn, abort_event=abort_event, runtime=runtime
-                                )
+                                await self._run_turn(client, frames, session_id, turn, abort_event=abort_event)
                             except Exception as error:
                                 logger.exception("turn failed for session %s", session_id)
                                 await self._store.fail(session_id, str(error))
@@ -633,14 +629,13 @@ class SessionService:
         turn: TurnStart | ResumedTurn,
         *,
         abort_event: asyncio.Event,
-        runtime: RuntimeAdapter | None = None,
     ) -> None:
         """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
         completes.
 
         **Project, then act.** Every frame goes through the selected runtime adapter and this loop
         acts on the neutral events that come back, so what it knows about is prose, messages, tool calls
-        and a completed turn — not `assistant`, `stream_event` and `result`
+        and a completed turn rather than any harness's native frame vocabulary
         (<README.md> § The neutral projection).
 
         *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
@@ -648,32 +643,32 @@ class SessionService:
         close it, which is what a replica losing its pod mid-exchange looks like from outside and
         what `ResumedTurn` picks back up.
 
-        **No turn state is held here at all.** How far the turn has got is derived from the items
-        it opened, so the loop never carries a copy that could disagree; each frame's effects are
-        written with the projection cursor in one transaction (`SessionStore.apply_frame`), so a
-        process dying anywhere in this loop leaves the items saying what had happened and the
-        session saying which frame it had got through — which is what makes adoption a read and its
-        effects exactly-once (<README.md> § The cursor).
+        **No provider protocol state is interpreted here.** The selected handler privately carries
+        the native fold for this turn; the loop sees only neutral effects and checkpoint decisions.
+        Each non-terminal frame's effects are written with the projection cursor in one transaction
+        (`SessionStore.apply_frame`), and `complete_frame` does the same for the terminal frame and
+        turn close. A process dying anywhere therefore leaves the items saying what happened and
+        the session saying which frame it got through — what makes adoption a replay from a durable
+        position and its effects exactly-once (<README.md> § The cursor).
         """
-        runtime = runtime or await self._runtime(session_id)
+        runtime = await self._runtime(session_id)
         turn_id = turn.turn_id
         if isinstance(turn, TurnStart):
             # A resumed turn's question was asked by a process that is gone; only its answer is
             # still coming.
             await client.query(turn.prompt)
-        # Threaded across the turn's frames rather than seeded per frame: a delta carries no
-        # `message.id`, so an empty seed would make an item of every one of them
-        # (`frame_projection`). A turn's own state, because a turn is what a message belongs to —
-        # and an inherited turn starts from what its predecessor had already said, so the block
-        # that finishes the answer is not stored on top of the half of it already there.
-        folding = _inherited(turn)
-        completed: _CompletedTurn | None = None
+        # The provider owns every bit of protocol state. The generic loop gives it only durable
+        # neutral facts inherited from the open turn and acts on the neutral effects it returns.
+        handler = runtime.turn_handler(_inherited(turn))
+        completion: TurnCompletion | None = None
+        completion_frame_seq: int | None = None
+        terminal_events: tuple[ConversationEvent, ...] = ()
         aborted = asyncio.ensure_future(abort_event.wait())
-        # Set once the abort has been seen and the CLI interrupted, from which point this loop
-        # stops racing the abort event and drains what is left of the turn to its `result`.
+        # Set once the abort has been seen and the harness interrupted, from which point this loop
+        # stops racing the abort event and drains what is left of the turn to its terminal frame.
         interrupted = False
         try:
-            while completed is None:
+            while completion is None:
                 # Exactly one `anext` in flight, and the drain consumes the one it finds rather
                 # than starting another: an async generator refuses to be advanced twice at once,
                 # and an abort always arrives while this call is parked here.
@@ -683,9 +678,9 @@ class SessionService:
                     if interrupted := abort_event.is_set():
                         with contextlib.suppress(Exception):
                             await client.interrupt()
-                # **The drain is this loop, not a second one beside it.** The CLI finishes the
-                # message it is mid-way through, so an `assistant` frame between the interrupt and
-                # the `result` is the normal case and is applied like any other
+                # **The drain is this loop, not a second one beside it.** A harness may finish the
+                # message it is mid-way through between the interrupt and its terminal frame; each
+                # intervening frame is applied like any other
                 # (<../debug/message_drops.md> E3). It therefore moves `said_anything` and
                 # `queued_reply`, which is what keeps the tail below from owing the room the turn's
                 # final text as well.
@@ -694,63 +689,43 @@ class SessionService:
                 # ends a turn rather than the conversation.
                 received = await next_frame
                 frame_seq = received.frame_seq
-                folding, events = runtime.project_frame(folding, frame_seq=frame_seq, frame=received.envelope)
+                effects = handler.apply(frame_seq=frame_seq, frame=received.envelope)
                 # The frame that ends the turn goes no further: what is left of the exchange is
                 # written below and `end_turn` is the transaction that closes it and carries the
                 # cursor past this frame, so projecting it into `apply_frame` would advance the
                 # cursor ahead of the turn's own last word.
-                finished = first((event for event in events if isinstance(event, TurnCompleted)), None)
-                if finished is not None:
-                    completed = _CompletedTurn(finished, received)
-                elif folding.open_tool_call is not None:
-                    # A partial call is not a conversation event yet. Keep the durable cursor before
-                    # its first stream frame so another replica replays the whole composition rather
-                    # than inheriting half a JSON value that no row can represent.
-                    if events:
-                        raise AssertionError("a composing tool call emitted a conversation event")
+                if effects.completion is not None:
+                    completion = effects.completion
+                    completion_frame_seq = frame_seq
+                    terminal_events = effects.events
+                elif effects.checkpoint is Checkpoint.HOLD:
+                    # The integration has private state that is not durably representable yet. Keep
+                    # the cursor before it so adoption rebuilds that state from the raw frames.
+                    pass
                 else:
-                    await self._store.apply_frame(session_id, turn_id, frame_seq, events)
-            completion = runtime.complete_turn(completed.frame.envelope)
+                    await self._store.apply_frame(session_id, turn_id, frame_seq, effects.events)
+            assert completion_frame_seq is not None
             failed = completion.failure is not None and not abort_event.is_set()
-            # `result.result` is deliberately not projected — it repeats the turn's last message on
-            # every result frame, so minting prose from it would double every answer. It is handed
-            # over as the fallback for the one case that is not a repeat: a turn whose text arrived
-            # nowhere else. Which of the three cases this is, is `close_answer`'s to decide.
-            #
-            # **Before the turn is closed, not after.** Closing it makes it unadoptable, so a
-            # replica dying between the two would strand the answer with nothing left to re-derive
-            # it. **And before the failure is raised**, for the same reason at a shorter range: a
-            # turn that produced text and then failed still produced the text, and the message it
-            # is on is closed nowhere else — the ending frame's own events are not applied
-            # (<../debug/message_drops.md> E4).
-            await self._store.close_answer(
+            # The terminal frame can carry ordinary durable effects as well as completion. They,
+            # the answer close, the turn outcome and the cursor belong to one transaction: a split
+            # would either lose terminal effects or let the cursor outrun the close on replica
+            # death. The completion text remains only a fallback for a provider whose prose first
+            # appears on that frame.
+            await self._store.complete_frame(
                 session_id,
                 turn_id,
-                # A failing result's `result` is the failure rather than an answer, so nothing is
-                # minted from it; what the turn already said stands on its own items.
+                completion_frame_seq,
+                terminal_events,
+                outcome=TurnOutcome.ABORTED if abort_event.is_set() else completion.outcome,
                 final_text="" if failed else completion.final_text,
-                frame_seq=completed.frame.frame_seq,
             )
             if failed:
-                # Quoted from the frame rather than the event: *why* a turn failed is
-                # provider-specific by nature, and the neutral vocabulary carries an outcome
-                # rather than a message on purpose.
                 assert completion.failure is not None
                 raise RuntimeError(completion.failure)
-            await self._store.end_turn(
-                turn_id,
-                TurnOutcome.ABORTED if abort_event.is_set() else completed.event.outcome,
-                # One frame, said twice because it means two things here: where this turn's frames
-                # end, and that this transaction is the one taking the cursor past it.
-                last_frame_seq=completed.frame.frame_seq,
-                projected_frame_seq=completed.frame.frame_seq,
-            )
         except Exception as error:
-            # Bounded only where the failure was diagnosed from the `result` frame; otherwise this
+            # Bounded only where the failure was diagnosed from a terminal frame; otherwise this
             # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
-            await self._store.end_turn(
-                turn_id, TurnOutcome.FAILED, last_frame_seq=completed.frame.frame_seq if completed is not None else None
-            )
+            await self._store.end_turn(turn_id, TurnOutcome.FAILED, last_frame_seq=completion_frame_seq)
             await self._store.fail(session_id, str(error))
             raise
         finally:
@@ -861,7 +836,7 @@ async def read_session_frames(
     store: SessionStoreDep,
     before_seq: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
-    kind: Annotated[list[str] | None, Query()] = None,
+    kind: Annotated[list[BridgeFrameKind] | None, Query()] = None,
 ) -> SessionFramePage:
     """The native harness protocol frames behind one session, newest page first.
 
@@ -872,10 +847,8 @@ async def read_session_frames(
     Omitting `before_seq` opens on the end of the log; the response's `next_before_seq` walks back
     from there.
 
-    `kind` is repeatable and open, because the column is: the CLI may send a `type` this release
-    has never heard of, and an inspector limited to a closed list would hide exactly the frame
-    worth looking at. Omitting it means everything except `stream_event` — see
-    `session_store._frames_of_kinds`.
+    Every native harness frame is returned without classification. The payload is forensic JSON;
+    only the selected integration interprets its shape for conversation behavior.
     """
     try:
         return await store.read_operator_frames(

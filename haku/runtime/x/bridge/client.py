@@ -28,7 +28,6 @@ class FrameSink(Protocol):
 class SentPrompt:
     """One provider prompt and the durable frame position assigned to it."""
 
-    command_uuid: str
     frame_seq: int
 
 

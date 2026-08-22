@@ -13,10 +13,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.x.claude_code import projection
+from haku.console.x.claude_code import frames, projection
 from haku.console.x.claude_code.client import cli_over_websocket
-from haku.console.x.conversation_events import ConversationEvent, Projection, ProjectionState
-from haku.console.x.runtime import RuntimeClient, RuntimeClientFactory, RuntimeLaunch, TurnCompletion
+from haku.console.x.conversation_events import Projection, TurnCompleted
+from haku.console.x.runtime import (
+    EMPTY_TURN_PROJECTION_SEED,
+    Checkpoint,
+    FrameEffects,
+    RuntimeClient,
+    RuntimeClientFactory,
+    RuntimeLaunch,
+    RuntimeTurnHandler,
+    TurnCompletion,
+    TurnProjectionSeed,
+)
 from haku.runtime.x.bridge.client import FrameSink
 from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
@@ -56,36 +66,59 @@ class ClaudeRuntimeAdapter:
     ) -> RuntimeClient:
         return self.client_factory(websocket, launch, progress, frames_to)
 
-    def project_frame(
-        self, state: ProjectionState, *, frame_seq: int, frame: HarnessFrame
-    ) -> tuple[ProjectionState, tuple[ConversationEvent, ...]]:
-        folded, result = projection.project(
-            state,
-            [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)],
-            delta_source=projection.DeltaSource.STREAM_EVENTS,
+    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler:
+        return ClaudeTurnHandler(
+            state=projection.ProjectionState(
+                open_message=(
+                    None
+                    if seed.open_message is None
+                    else projection.OpenItem(
+                        opened_at_frame_seq=seed.open_message.first_frame_seq,
+                        last_frame_seq=seed.open_message.last_frame_seq,
+                        backend_item_id=None,
+                        delivered=seed.open_message.text,
+                    )
+                ),
+                seen_call_ids=seed.seen_call_ids,
+            )
         )
-        return folded, result.events
 
     def project_log(self, frames: Iterable[tuple[int, HarnessFrame]]) -> Projection:
         return projection.project_log(
             projection.RecordedFrame(frame_seq=seq, payload=frame.frame) for seq, frame in frames
         )
 
-    @property
-    def delta_frame_kind(self) -> str:
-        return "stream_event"
+    def prompt_submitted(self, outbound: Iterable[HarnessFrame]) -> bool:
+        return any(frames.frame_kind(frame.frame) == frames.PROMPT_FRAME_KIND for frame in outbound)
 
-    @property
-    def prompt_frame_kinds(self) -> frozenset[str]:
-        return frozenset({"user"})
 
-    def complete_turn(self, frame: HarnessFrame) -> TurnCompletion:
-        payload = frame.frame
-        if payload.get("subtype") == "success":
-            return TurnCompletion(final_text=str(payload.get("result") or "").strip())
-        return TurnCompletion(
-            final_text="",
-            failure=(
-                f"the agent's turn failed: {payload.get('subtype')}: {payload.get('stop_reason') or 'unknown error'}"
-            ),
+@dataclass(slots=True)
+class ClaudeTurnHandler:
+    """Claude's stateful fold for one live or replayed turn."""
+
+    state: projection.ProjectionState
+
+    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
+        self.state, result = projection.project(
+            self.state,
+            [projection.RecordedFrame(frame_seq=frame_seq, payload=frame.frame)],
+            delta_source=projection.DeltaSource.STREAM_EVENTS,
         )
+        terminal = next((event for event in result.events if isinstance(event, TurnCompleted)), None)
+        completion = None if terminal is None else _completion(frame, terminal)
+        return FrameEffects(
+            events=result.events,
+            completion=completion,
+            checkpoint=Checkpoint.HOLD if self.state.open_tool_call is not None else Checkpoint.ADVANCE,
+        )
+
+
+def _completion(frame: HarnessFrame, terminal: TurnCompleted) -> TurnCompletion:
+    result = frames.ResultFrame.model_validate(frame.frame)
+    if result.subtype == "success":
+        return TurnCompletion(outcome=terminal.outcome, final_text=str(result.result or "").strip())
+    return TurnCompletion(
+        outcome=terminal.outcome,
+        final_text="",
+        failure=f"the agent's turn failed: {result.subtype}: {result.stop_reason or 'unknown error'}",
+    )

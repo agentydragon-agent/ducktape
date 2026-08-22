@@ -1,11 +1,11 @@
-import { Badge, Button, Group, Loader, Paper, SegmentedControl, Text, Title } from "@mantine/core";
+import { Badge, Button, Group, Loader, Paper, Text, Title } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { displayableError, fetchSessionFrames, type SessionFrame, type SessionFramePage } from "../client";
 import { JsonPreview } from "../json_preview";
 import { conversationPath, navigateToConsolePath } from "../routing";
 import { useVariant, VariantControl } from "../variant_control";
-import { frameSummary, kindsForMode, prependEarlierPage, unprojectedSummary, type FrameMode } from "./frame_log";
+import { prependEarlierPage } from "./frame_log";
 
 // Matches the server's own default page. Held here too so "Load earlier frames" asks for the same
 // size as the first read; a frame carries a whole tool result, and each one on screen builds a
@@ -16,8 +16,6 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
   // Per-row verbosity, as on the history page: compact auto-folds the payload to fill the block,
   // full shows it whole with line numbers. Frames are read by skimming until one looks wrong.
   const [variant, setVariant] = useVariant("compact");
-  const summary = frameSummary(frame);
-  const unprojected = unprojectedSummary(frame);
   const outbound = frame.direction === "to_agent";
   return (
     <Paper withBorder p="sm">
@@ -34,19 +32,6 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
           <Badge size="sm" variant="outline">
             {frame.kind}
           </Badge>
-          {frame.native_kind && (
-            <Badge size="sm" variant="outline" color="gray">
-              {frame.native_kind}
-            </Badge>
-          )}
-          {/* The one thing the transcript is silently missing, said where it can be acted on: this
-              frame reached the fold and the fold had no branch for it. Orange rather than red —
-              a class the CLI added is news, not a failure. */}
-          {unprojected && (
-            <Badge size="sm" variant="light" color="orange" title="The projection has no branch for this frame">
-              unprojected: {unprojected}
-            </Badge>
-          )}
         </Group>
         <Group gap="xs" wrap="nowrap">
           {/* Wall-clock rather than the relative form the tool-call surfaces use: frames are read
@@ -57,17 +42,12 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
           <VariantControl variant={variant} onChange={setVariant} />
         </Group>
       </Group>
-      {summary && (
-        <Text size="xs" c="dimmed" lineClamp={1} mb={4}>
-          {summary}
-        </Text>
-      )}
       <JsonPreview value={frame.payload} variant={variant} />
     </Paper>
   );
 }
 
-/** Claude Code's raw protocol frames behind one conversation — what the console's transcript is a
+/** The selected harness's raw protocol frames behind one conversation — what the transcript is a
  * lossy projection *of*. Reached from the conversation it belongs to and deep-linkable at its own
  * route, so "look at frame 412" is a link.
  *
@@ -83,7 +63,6 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
  * backwards is not reading it. Each row's payload builds its editor only once it nears the
  * viewport, which keeps a page of fifty JSON blocks off the main thread. */
 export function SessionFramesPage({ sessionId }: { sessionId: string }) {
-  const [mode, setMode] = useState<FrameMode>("frames");
   const [reloads, setReloads] = useState(0);
   const [loaded, setLoaded] = useState<SessionFramePage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +72,7 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
     let alive = true;
     setLoaded(null);
     setError(null);
-    fetchSessionFrames(sessionId, FRAME_PAGE_SIZE, undefined, kindsForMode(mode))
+    fetchSessionFrames(sessionId, FRAME_PAGE_SIZE)
       .then((page) => {
         if (alive) setLoaded(page);
       })
@@ -103,14 +82,14 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
     return () => {
       alive = false;
     };
-  }, [sessionId, mode, reloads]);
+  }, [sessionId, reloads]);
 
   const loadEarlier = useCallback(async () => {
     const cursor = loaded?.next_before_seq;
     if (cursor == null || loadingEarlier) return;
     setLoadingEarlier(true);
     try {
-      const page = await fetchSessionFrames(sessionId, FRAME_PAGE_SIZE, cursor, kindsForMode(mode));
+      const page = await fetchSessionFrames(sessionId, FRAME_PAGE_SIZE, cursor);
       setLoaded((previous) => prependEarlierPage(page, previous));
       setError(null);
     } catch (reason: unknown) {
@@ -118,7 +97,7 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
     } finally {
       setLoadingEarlier(false);
     }
-  }, [loaded?.next_before_seq, loadingEarlier, mode, sessionId]);
+  }, [loaded?.next_before_seq, loadingEarlier, sessionId]);
 
   const frames = loaded?.frames;
   return (
@@ -137,25 +116,12 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
               ← Conversation
             </Button>
             <Title order={1}>Raw frames</Title>
-            {/* Whose wire this is, said where the reader is: the frames are Claude Code's own and
-                nothing else in the console shows a backend's shapes, so a surface that only said
-                "the agent protocol" would read as the conversation itself. */}
             <Text c="dimmed" size="sm">
-              Claude Code&apos;s own protocol as it crossed the wire — one backend&apos;s frames, which the transcript
-              is a neutral projection of.
+              {loaded?.runtime_kind ?? "The selected harness"}&apos;s protocol as it crossed the wire — raw JSON that
+              the transcript projects into neutral conversation events.
             </Text>
           </div>
           <Group gap="sm" wrap="nowrap" align="center">
-            <SegmentedControl
-              size="xs"
-              value={mode}
-              onChange={(next) => setMode(next as FrameMode)}
-              aria-label="Frame view"
-              data={[
-                { value: "frames", label: "Frames" },
-                { value: "deltas", label: "Stream deltas" },
-              ]}
-            />
             <Button size="xs" variant="light" loading={!frames && !error} onClick={() => setReloads((n) => n + 1)}>
               Refresh
             </Button>
@@ -176,9 +142,7 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
           )}
           {frames && frames.length === 0 && (
             <Text c="dimmed" size="sm">
-              {mode === "deltas"
-                ? "No stream deltas recorded — only the SPA chat surface streams them."
-                : "No frames recorded for this session."}
+              No frames recorded for this session.
             </Text>
           )}
           {loaded?.next_before_seq != null && (

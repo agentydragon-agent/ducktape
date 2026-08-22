@@ -1,16 +1,6 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
-
-py_library(
-    name = "frame_projection",
-    srcs = ["frame_projection.py"],
-    deps = [
-        ":conversation_events",
-        ":runtime",
-        ":runtime_catalog",
-    ],
-)
 
 py_library(
     name = "runtime",
@@ -56,40 +46,11 @@ py_test(
 )
 
 py_library(
-    name = "frame_export",
-    srcs = ["frame_export.py"],
-    deps = [
-        ":conversation_events",
-        ":reprojection",
-        "//haku/console:database_schema",
-        "//haku/console/x/claude_code:redaction",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "frame_export_main",
-    srcs = ["frame_export_main.py"],
-    deps = [
-        ":frame_export",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_binary(
-    name = "frame_export_bin",
-    main_module = "haku.console.x.frame_export_main",
-    deps = [":frame_export_main"],
-)
-
-py_library(
     name = "session_runtime",
     srcs = ["session_runtime.py"],
     deps = [
         ":conversation_events",
         ":conversation_history",
-        ":frame_projection",
         ":runtime",
         ":sandbox_claims",
         ":session_notifications",
@@ -103,7 +64,6 @@ py_library(
         "//haku/console/x/claude_code:frames",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )
@@ -122,12 +82,13 @@ py_library(
     name = "reprojection",
     srcs = ["reprojection.py"],
     deps = [
-        ":frame_projection",
+        ":runtime",
         ":runtime_catalog",
         ":session_events",
         ":setup_output",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/runtime/x/bridge:protocol",
         "//util:sqlalchemy_types",
         "@pypi//sqlalchemy",
     ],
@@ -453,8 +414,10 @@ py_test(
     srcs = ["test_session_runtime.py"],
     deps = [
         ":conftest",
+        ":conversation_events",
         ":conversation_history",
-        ":frame_projection",
+        ":reprojection",
+        ":runtime",
         ":sandbox_claims",
         ":session_notifications",
         ":session_runtime",
@@ -486,37 +449,15 @@ py_test(
     srcs = ["test_agents_and_background.py"],
     deps = [
         ":conversation_events",
-        ":frame_projection",
         ":session_events",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code:runtime",
         "//haku/console/x/claude_code/testing:wire",
+        "//haku/runtime/x/bridge:protocol",
         "//util:sqlalchemy_types",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_frame_export",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_frame_export.py"],
-    deps = [
-        ":conftest",
-        ":conversation_events",
-        ":frame_export",
-        ":frame_projection",
-        ":session_store",
-        ":setup_output",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console/x/claude_code:frames",
-        "//haku/console/x/claude_code:projection",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
 )
@@ -527,7 +468,6 @@ py_test(
     srcs = ["test_reprojection.py"],
     deps = [
         ":conftest",
-        ":frame_projection",
         ":reprojection",
         ":runtime",
         ":session_store",
@@ -535,7 +475,9 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/x/claude_code:runtime",
         "//haku/console/x/claude_code/testing:wire",
+        "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

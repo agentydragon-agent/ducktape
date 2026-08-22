@@ -653,12 +653,11 @@ not establish that a field has no reader when a projection renames it at a layer
 `TranscriptSlice.unreadable`, `TranscriptPage.unreadable` — so grepping the name finds only tests,
 and deleting it would have removed a live wire field an agent already receives.
 
-**What enforces the rule does not exist yet.** `x/frame_projection.py` imports
-`x/claude_code/projection` directly, so there is no seam at which a second backend's adapter could
-be selected — the fold is spelled in terms of one provider by construction
-(<../../runtime/x/bridge/docs/second_backend.md>). Until `CliBackend` grows that member, the
-invariant is a convention held by review rather than by the type system, which is the same shape of
-gap that let the turn loop become a frame interpreter in the first place.
+**The runtime seam now enforces the rule.** `RuntimeAdapter.turn_handler()` returns a provider-owned,
+typed stateful reducer, and each native frame crosses back into generic Console code only as neutral
+`FrameEffects`. The turn loop, adoption and reprojection all drive that interface; no generic layer
+selects a branch from the native JSON. Exact payloads remain separately addressable in the raw-frame
+inspector for forensic review.
 
 ### What still disappears
 

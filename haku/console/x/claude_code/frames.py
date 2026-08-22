@@ -10,11 +10,13 @@ Everything here is about the wire's shapes, so it holds no session state and tou
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict
 
 # One token batch of an answer still being written. Hundreds per turn, and the completed
-# `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
-# view.
+# `assistant` frame repeats all of it; Claude's projector decides which copy becomes a neutral
+# segment while the generic raw-frame reader preserves both.
 DELTA_FRAME_KIND = "stream_event"
 
 # The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
@@ -26,6 +28,21 @@ PROMPT_FRAME_KIND = "user"
 # replayed, rather than being reconstructed out of the log.
 RESULT_FRAME_KIND = "result"
 ASSISTANT_FRAME_KIND = "assistant"
+
+
+class ResultFrame(BaseModel):
+    """The typed fields Console reads from Claude Code's turn-ending frame.
+
+    Extra fields remain accepted because the raw ``HarnessFrame`` is the durable wire record and a
+    newer CLI adding telemetry must not make an otherwise readable result fail closed.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["result"]
+    subtype: str
+    result: Any = None
+    stop_reason: str | None = None
 
 
 def frame_kind(payload: dict[str, Any]) -> str:
