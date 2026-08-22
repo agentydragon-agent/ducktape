@@ -513,35 +513,6 @@ py_test(
 )
 
 py_library(
-    name = "private_equity_trajectories",
-    srcs = ["private_equity_trajectories.py"],
-    deps = [
-        ":exogenous",
-        ":private_equity_bundle",
-        ":private_equity_protocol",
-        ":series",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "private_equity_trajectories_test",
-    srcs = ["private_equity_trajectories_test.py"],
-    deps = [
-        ":conftest",
-        ":exogenous",
-        ":private_equity_trajectories",
-        ":series",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//util/testing:jsonl",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "private_equity_bundle",
     srcs = ["private_equity_bundle.py"],
     deps = [
