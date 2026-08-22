@@ -1,7 +1,7 @@
 """The console's Matrix sync loop.
 
 Logs in as the bot, long-polls `/sync`, binds the one room Haku services, and hands what the
-operator types to the session behind that room.
+operator types to the conversation attached to that room.
 
 **Every pass acknowledges what it read.** A batch the session will not take is rejected rather than
 held: the operator is told so and sends it again, so nothing queues behind a running turn and the
@@ -16,9 +16,9 @@ An accepted batch is the one thing that commits *before* the watermark, so a cra
 re-delivers it. That is what `ingress_ledger` is for: the loop asks the record which events a
 prompt already carries rather than trusting its own position.
 
-It is also the only holder of a Matrix credential, so the supervisor's lifecycle notices go out
-through `announce` rather than a second login, and an answer — a row until it has been said — is
-drained into the room from here (`outbox`).
+It is also the only holder of a Matrix credential. Channel-owned notices go out through `announce`
+rather than a second login; runtime lifecycle is projected from durable conversation events. An
+answer — a row until it has been said — is drained into the room from here (`outbox`).
 
 """
 
@@ -201,10 +201,9 @@ class MatrixSyncService:
     async def _operator_id(self) -> UUID:
         """The canonical Operator behind the configured MXID.
 
-        Resolved per call rather than cached at startup, for the reason
-        `MatrixSessionSupervisor._operator_id` gives: the console comes up with the Matrix surface
-        configured even where identity resolution is not yet possible, and a cached failure would
-        never recover.
+        Resolved per call rather than cached at startup: the console comes up with the Matrix
+        surface configured even where identity resolution is not yet possible, and a cached
+        failure would never recover.
         """
         return await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
 
@@ -331,11 +330,11 @@ class MatrixSyncService:
         self.pacer.send(retire)
 
     async def announce(self, body: str, kind: RoomEventKind = RoomEventKind.LIFECYCLE) -> None:
-        """Post a lifecycle notice into the live room, if there is one.
+        """Post one channel-owned notice into the live room, if there is one.
 
-        The supervisor's outbound path (`session.Announce`): it owns session lifecycle but never a
-        Matrix credential, so it speaks through the loop that has one. A no-op before any room is
-        bound — there is genuinely nowhere to say it.
+        Runtime lifecycle is projected from durable conversation events. This direct path remains
+        for Matrix's own room adoption/refusal notices. A no-op before any room is bound — there is
+        genuinely nowhere to say it.
         """
         if (binding := await self._conversations.bound_room()) is None:
             logger.info("Matrix: no room bound yet, dropping notice: %s", body)

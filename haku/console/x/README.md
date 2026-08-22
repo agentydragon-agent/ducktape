@@ -402,10 +402,10 @@ the test that reads it, as `test_diverse_session` has.
 
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.
 - `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku services, and hands
-  what the operator types to the session behind it. Holds the only Matrix credential, so everything
-  that speaks into the room speaks through it.
-- `conversation.py` — the room's attachment to a conversation, ingress (`MatrixTurns`), and the
-  supervisor that keeps a session running under it.
+  what the operator types to its attached conversation. Holds the only Matrix credential, so
+  everything that speaks into the room speaks through it.
+- `conversation.py` — the room's attachment to a conversation and ingress (`MatrixTurns`). It does
+  not create, replace, resolve or tend runtime sessions.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `matrix_outbox` rows, and the drain that says them.
 - `revisions.py` — which homeserver event the channel is currently editing for a revisable subject
@@ -453,21 +453,19 @@ Behaviours worth knowing before reading the code:
   it. There is deliberately **no row per delivered message** — a flushed-up-to position materialised
   one row at a time is what `channel_cursor` holds properly.
 
-- **A rejected batch is not queued anywhere.** `enqueue_prompt` accepts on an idle or ready session
-  with no turn open and nothing pending, and a refusal is the answer: the room is told the messages were
+- **A rejected batch is not queued anywhere.** Conversation admission accepts with no session or on
+  an idle/ready session, provided no turn is open and nothing is pending; a refusal is the answer: the room is told the messages were
   not delivered and what to wait for, and the watermark advances past them so the homeserver does
   not offer them again. **Admission is that one transaction's alone**: `MatrixTurns.offer` asks no
   status question of its own, because an answer read outside `enqueue_prompt`'s
   `SELECT … FOR UPDATE` could only agree with a decision that had not been made yet. It turns the
-  refusal into a `PromptRejected` carrying the reason and the fact that records it —
-  `PromptRefusedError` for a session that cannot take the batch, `KeyError` for a session row that
-  has gone.
+  refusal into a `PromptRejected` carrying the reason and the fact that records it.
 - **The rejection is a row, written with the watermark.** `AuthoredEventKind.PROMPT_REJECTED`
   carries the reason and the text, and `MatrixSyncStore.advance` appends it in the transaction that
   acknowledges the batch — so a crash cannot acknowledge a message while losing both the record of
   it and the operator's only account of what happened. The room notice is a rendering of that row.
-  **Every refusal reaches one**, including a room whose sandbox has not been provisioned: what a
-  refusal is about is the conversation, which exists from the moment the room is bound.
+  What a refusal is about is the conversation, which exists from the moment the room is bound; the
+  absence of a session is durable runtime demand rather than a Matrix refusal.
 - **An accepted batch is acknowledged at once, and the prompt is the conversation's.** Nothing
   re-delivers a message the homeserver has been acknowledged for, so what protects the operator's
   question is that the queue outlives the session that took it: a sandbox dying before the turn
@@ -486,10 +484,11 @@ Behaviours worth knowing before reading the code:
   itself an event.
 - **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a batch.
-  The supervisor is a sibling task holding a **second** lock (`MXSE`) for room/session observation
-  and replacement. Sandbox allocation is a channel-neutral sibling under a **third** lock (`SBOX`).
-  The three are elected independently and can land on different replicas, so a stalled claim cannot
-  wedge ingress or make Matrix the only surface capable of recovering durable demand.
+  Conversation runtime supervision is a channel-neutral sibling under `CRUN`; it creates or
+  replaces the one idle session durable prompt demand needs and performs global lease/claim
+  maintenance. Sandbox allocation is another neutral sibling under `SBOX`. They are elected
+  independently and can land on different replicas, so a stalled claim cannot wedge ingress or
+  make Matrix the only surface capable of recovering durable demand.
 
 ## Tests run against a real database
 

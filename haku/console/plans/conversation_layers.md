@@ -37,23 +37,16 @@ rule leaves this plan with the last step that achieves it.
 
 ### The edges that are bugs
 
-Every line here is an edge the invariant forbids, in the code today.
+Every line here is an edge the invariant still forbids after neutral runtime supervision landed.
 
 **A channel that knows a session.**
 
-- `MatrixSessionSupervisor` creates, replaces and tends sessions — `SessionService.create`,
-  `expire_stale_leases`, `reconcile_terminal_claims`. A channel owning session lifecycle is the
-  deepest of these, and § 9 step 3 removes the need for it.
 - The editable status line's `EventTag.session_id` leaves a permanent, federated channel artifact
   addressed by a runner incarnation that a replacement invalidates.
 - **The wake itself is session-keyed.** `pg_notify` carries `{kind, session_id}`, so a subscriber to
   a conversation subscribes by session.
-- The SPA is a channel too: it posts to `POST /api/sessions/{session_id}/messages`, reads
-  `/api/sessions/{session_id}/provisioning`, and takes its setup narration from a query over
-  `session_frames`.
-
-`MatrixSessionSupervisor._last_announced` still stands in for state that has no row, so a leader
-handover can re-announce it. § 3.
+- The SPA's raw-frame, abort, close and provisioning inspection remain correctly session-addressed;
+  prompt admission itself now uses `POST /api/conversations/{conversation_id}/messages`.
 
 ### The edge that still cannot simply be deleted
 
@@ -513,7 +506,6 @@ fail silently rather than merely run more slowly.
 - Stable multi-event subjects and bounded folds for work and session-lifecycle spans.
 - A record-derived delivery path for relayed prompts and silent turns, plus a durable home for
   Matrix-only attachment narration.
-- Channel-neutral session creation/replacement; `MatrixSessionSupervisor` still tends runtime rows.
 - One attachment owner coordinating cursor, outbox, revisions and send budget, followed by more than
   one live room.
 
@@ -532,14 +524,14 @@ mixed into these PRs.
 2. **Turn notices into spans** (§ 4). Give the fold stable turn/session subjects and have it produce
    bounded `(subject, body, lifecycle)` output. Generalise the `LiveStatus` create/edit/retire path;
    seal facts that should remain in scrollback and redact live state that is spent. Relayed prompts,
-   silent turns and supervisor lifecycle narration move off `_queue_notice` here. The pure fold and
+   silent turns move off `_queue_notice` here. The pure fold and
    the Matrix effect stay separate and are tested separately.
 
-3. **Move session supervision behind the conversation.** Remove session creation, replacement and
-   lifecycle dedup from `MatrixSessionSupervisor`. A channel binds a conversation and offers input;
-   channel-neutral runtime code ensures that queued demand has an idle or replacement session and
-   records its lifecycle. The Matrix subscriber only renders those facts. This may use the runtime
-   registry from #4431 after it lands, but Matrix must not select or understand a backend.
+3. **Completed — session supervision is behind the conversation.** `ConversationRuntime` owns
+   global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
+   conversation row lock. Web and Matrix admit prompts by conversation; Matrix has no session
+   supervisor, lifecycle latch or `MXSE` lock. The runtime identity seam from #4431 may later inform
+   which session implementation is created, but no provider choice leaks into the channel.
 
 4. **Make reconciliation attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner
    for the user-wide token and dispatch its room events by attachment. One owner per attachment then
@@ -684,11 +676,9 @@ record (§ 5).
 
 **Mechanisms**
 
-- `MatrixSessionSupervisor` (`MXSE`) — session creation/replacement becomes conversation-runtime
-  reconciliation, not a channel task.
 - `RoomOutboxDrain` (`MXOB`) and `RoomNotices` (`MXNT`) as separate attachment owners — one
   reconciler owns delivery instead.
-- Every per-process latch that stands in for durable state: `_status_body`, `_last_announced`.
+- Every remaining per-process latch that stands in for durable state: `_status_body`.
 - `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
   closures it cannot inspect or squash.
 

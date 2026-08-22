@@ -10,7 +10,6 @@ their cross-session threads; the reader itself is channel-neutral.
 from __future__ import annotations
 
 import datetime
-from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -25,17 +24,15 @@ from haku.console.chat_models import (
     MatrixOrigin,
     PromptRejection,
     RuntimeKind,
-    SessionStatus,
     TurnOutcome,
 )
-from haku.console.database_schema import ChatAttachment, Conversation, ConversationEvent, ConversationItem, Session
+from haku.console.database_schema import Conversation, ConversationEvent, ConversationItem, Session
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import (
     ConversationFacts,
     MatrixConversationStore,
-    MatrixSessionSupervisor,
     MatrixTurns,
     PromptAccepted,
     PromptRejected,
@@ -51,227 +48,7 @@ from haku.console.x.conversation_events import (
 )
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.session_events import PromptStartedBody
-from haku.console.x.session_notifications import SessionNotifications
-from haku.console.x.session_runtime import SessionService
-from haku.console.x.session_store import ADOPTION_GRACE, BridgeAuthentication, SessionStore
-
-
-async def session_behind_the_room(conversations: MatrixConversationStore) -> UUID | None:
-    return await conversations.session_serving()
-
-
-@pytest.fixture
-def announced() -> list[str]:
-    """What the supervisor said into the room."""
-    return []
-
-
-@pytest.fixture
-def supervisor(
-    conversations: MatrixConversationStore,
-    chat_store: SessionStore,
-    chat_service: SessionService,
-    notifications: SessionNotifications,
-    migrated_identity_store,
-    announced: list[str],
-) -> MatrixSessionSupervisor:
-    """The supervisor over real stores, with only Kubernetes and the announce sink stood in."""
-
-    async def _announce(body: str) -> None:
-        announced.append(body)
-
-    return MatrixSessionSupervisor(
-        MATRIX_CONFIG,
-        conversations,
-        chat_service,
-        chat_store,
-        notifications,
-        migrated_identity_store,
-        _announce,
-        engine=cast(Any, None),  # only `run()` takes the advisory lock; these drive `supervise_once`
-    )
-
-
-async def test_does_nothing_before_a_room_is_bound(supervisor, recording_claims, announced) -> None:
-    """Nothing to serve, and nowhere to say so — provisioning here would be a sandbox nobody can reach."""
-
-    await supervisor.supervise_once()
-
-    assert (recording_claims.created, announced) == ([], [])
-
-
-async def test_opens_an_idle_session_for_a_freshly_bound_room(
-    supervisor, conversations, operator_id, chat_store, recording_claims, announced
-) -> None:
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-
-    await supervisor.supervise_once()
-
-    assert recording_claims.created == []
-    session_id = await session_behind_the_room(conversations)
-    assert await session_behind_the_room(conversations) == session_id
-    assert await chat_store.status(session_id) == SessionStatus.IDLE
-    assert "waiting for the first prompt" in announced[0]
-
-
-async def test_leaves_a_live_session_alone(supervisor, conversations, operator_id, recording_claims) -> None:
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-    await supervisor.supervise_once()
-
-    await supervisor.supervise_once()
-
-    assert recording_claims.created == [], "an empty idle session unexpectedly bought a sandbox"
-
-
-async def test_matrix_only_persists_demand_and_the_channel_neutral_allocator_serves_it(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims
-) -> None:
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-    await supervisor.supervise_once()
-    session_id = await session_behind_the_room(conversations)
-    assert recording_claims.created == [], "an empty room owns no sandbox"
-
-    admitted = await turns.offer([operator_message("wake up", event_id="$wake", at=1)])
-    assert isinstance(admitted, PromptAccepted)
-    await supervisor.supervise_once()
-    assert recording_claims.created == [], "the Matrix supervisor must not allocate"
-    assert await chat_store.status(session_id) == SessionStatus.IDLE
-
-    await allocator.allocate_once()
-
-    assert recording_claims.created == [session_id]
-    assert await chat_store.status(session_id) == SessionStatus.PROVISIONING
-
-
-async def allocated_room_session(allocator, supervisor, conversations, turns, operator_id) -> UUID:
-    """Bind the room and create the demand that buys its first sandbox."""
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-    await supervisor.supervise_once()
-    session_id = await session_behind_the_room(conversations)
-    assert session_id is not None
-    admitted = await turns.offer([operator_message("start", event_id=f"${uuid4()}", at=1)])
-    assert isinstance(admitted, PromptAccepted)
-    await allocator.allocate_once()
-    return session_id
-
-
-async def test_replaces_a_failed_session(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, announced
-) -> None:
-    """A dead session over Matrix is invisible — the room would just stop answering."""
-    dead = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
-    await chat_store.fail(dead, "the sandbox went away")
-
-    await supervisor.supervise_once()
-
-    replacement = await session_behind_the_room(conversations)
-    assert recording_claims.created == [dead]
-    assert replacement not in (None, dead)
-    assert await chat_store.status(replacement) == SessionStatus.IDLE
-    assert dead in recording_claims.deleted, "the dead session's claim must be swept before a new one is made"
-    assert any("ended" in line for line in announced)
-    # The status alone says a session died; only the reason says which failure it was, and the
-    # room is the one place an operator is looking.
-    assert any("the sandbox went away" in line for line in announced)
-
-
-async def test_which_session_serves_the_room_is_read_off_the_thread(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims
-) -> None:
-    """Nothing points the room at a session: the answer is the newest session of the conversation
-    the room's attachment names, which is what makes replacement invisible to the channel."""
-    first = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
-    await chat_store.fail(first, "the sandbox went away")
-
-    await supervisor.supervise_once()
-
-    second = await session_behind_the_room(conversations)
-    assert second is not None
-    assert await session_behind_the_room(conversations) == second
-
-
-async def test_a_replacement_session_joins_the_room_s_conversation_and_the_attachment_stays_put(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
-) -> None:
-    """Session replacement is the supervisor's normal job, and the room's attachment is not touched
-    by it: the successor joins the thread the attachment names."""
-    first = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
-    await chat_store.fail(first, "the sandbox went away")
-
-    await supervisor.supervise_once()
-
-    async with migrated_sessions() as db:
-        threads = {row.session_id: row.conversation_id for row in await db.scalars(select(Session))}
-        attachments = (
-            await db.execute(select(ChatAttachment.conversation_id, ChatAttachment.address, ChatAttachment.detached_at))
-        ).all()
-    assert len(threads) == 2, "the failed session was replaced"
-    assert len(set(threads.values())) == 1, "both sessions run one conversation"
-    assert attachments == [(threads[first], MATRIX_ROOM, None)], "one live attachment, never re-pointed"
-
-
-async def test_replaces_a_session_whose_replica_stopped_renewing_its_lease(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions, announced
-) -> None:
-    """A replica that went away without recording anything leaves a live status nothing is working
-    on, and supervision has to reclaim it rather than believe it — but only once the lease has been
-    adoptable for a whole `ADOPTION_GRACE` and no runner took it, which is what makes a console
-    roll survivable rather than fatal.
-    """
-    orphan = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
-    async with migrated_sessions.begin() as db:
-        chat = await db.get(Session, orphan)
-        assert chat is not None
-        chat.lease_expires_at = datetime.datetime.now(datetime.UTC) - ADOPTION_GRACE - datetime.timedelta(seconds=1)
-
-    await supervisor.supervise_once()
-
-    replacement = await session_behind_the_room(conversations)
-    assert recording_claims.created == [orphan]
-    assert replacement not in (None, orphan), "the orphaned session was believed rather than replaced"
-    assert await chat_store.status(replacement) == SessionStatus.IDLE
-    assert any("ended" in line for line in announced)
-
-
-async def test_replaces_a_session_whose_row_is_gone(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, migrated_sessions
-) -> None:
-    """A deleted session leaves the room's thread unserved, and the next pass re-provisions.
-
-    What the schema allows is the session row being deleted underneath the conversation, which
-    leaves it with no session rather than a dangling reference.
-    """
-    vanished = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
-
-    async with migrated_sessions.begin() as db:
-        await db.execute(delete(Session).where(Session.session_id == vanished))
-    assert await session_behind_the_room(conversations) is None, "the thread should be left with no session"
-
-    await supervisor.supervise_once()
-
-    replacement = await session_behind_the_room(conversations)
-    assert recording_claims.created == [vanished]
-    assert replacement not in (None, vanished)
-    assert await chat_store.status(replacement) == SessionStatus.IDLE
-
-
-async def test_does_not_repeat_an_unchanged_status(
-    allocator, supervisor, conversations, turns, operator_id, chat_store, recording_claims, announced
-) -> None:
-    """Every transition is reported, but a poll that changes nothing must not spam the room."""
-    session_id = await allocated_room_session(allocator, supervisor, conversations, turns, operator_id)
-    # The allocator moved it through provisioning; the runner connecting is the next state this
-    # deliberately delayed supervisor pass observes.
-    assert (
-        await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
-        == BridgeAuthentication.ACCEPTED
-    )
-    announced.clear()
-
-    await supervisor.supervise_once()
-    await supervisor.supervise_once()
-
-    assert announced == [f"session {session_id} is ready"]
+from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
 
 @pytest.fixture
@@ -539,36 +316,28 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
     assert isinstance(admitted, PromptRejected)
     assert admitted.reason is PromptRejection.TURN_IN_FLIGHT
     assert admitted.facts is not None
-    assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, session_id)
+    assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, None)
     assert admitted.facts.bodies == (
         session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and another thing"),
     )
 
 
-async def test_a_batch_offered_before_a_session_exists_is_still_recorded(
-    turns: MatrixTurns, conversations: MatrixConversationStore, chat_store: SessionStore, operator_id: UUID
+async def test_a_batch_offered_before_a_session_exists_becomes_conversation_demand(
+    turns: MatrixTurns, conversations: MatrixConversationStore, migrated_sessions, operator_id: UUID
 ) -> None:
-    """A room bound before the supervisor has provisioned anything.
-
-    What a refusal is about is the conversation, which exists as soon as the room is bound — so this
-    is a row like any other refusal's, with no session named because there was none. What it used to
-    be was the one case the record could not carry, said into the room by ingress and nowhere else.
-    """
+    """Binding a room creates no session; its first prompt is still accepted durably."""
     bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
 
     admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
-    assert admitted == PromptRejected(
-        reason=PromptRejection.NO_SESSION,
-        facts=ConversationFacts(
-            conversation_id=bound.conversation_id,
-            session_id=None,
-            bodies=(session_events.PromptRejectedBody(reason=PromptRejection.NO_SESSION, text="hi"),),
-        ),
-    )
+    assert isinstance(admitted, PromptAccepted)
+    async with migrated_sessions() as db:
+        prompt = await db.get(ConversationItem, admitted.item_id)
+    assert prompt is not None
+    assert (prompt.conversation_id, prompt.session_id, prompt.item_text) == (bound.conversation_id, None, "hi")
 
 
-async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than_raised(
+async def test_a_batch_offered_after_a_session_is_gone_becomes_replacement_demand(
     turns: MatrixTurns,
     conversations: MatrixConversationStore,
     chat_store: SessionStore,
@@ -576,12 +345,7 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
     operator_id: UUID,
     thread: UUID,
 ) -> None:
-    """The supervisor is between sessions, which the room must survive.
-
-    `enqueue_prompt` answers a vanished session with `KeyError`; raising that into the sync loop
-    would cost the operator an answer. It reads as the case above — recorded against the
-    conversation with no session named, because there is none.
-    """
+    """The room offers to its conversation, so a vanished session is not an ingress outage."""
     session_id = await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
     async with migrated_sessions.begin() as db:
@@ -589,10 +353,7 @@ async def test_a_batch_offered_to_a_session_that_is_gone_is_rejected_rather_than
 
     admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
 
-    assert isinstance(admitted, PromptRejected)
-    assert admitted.reason is PromptRejection.NO_SESSION
-    assert admitted.facts is not None
-    assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, None)
+    assert isinstance(admitted, PromptAccepted)
 
 
 async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became(
@@ -671,14 +432,14 @@ async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
 ) -> None:
     """One fact per event, for the caller to append in the transaction that acknowledges the batch
     (<../../../debug/channel_write_audit.md> row 12)."""
-    session_id = await serving_session(chat_store, operator_id, thread)
+    await serving_session(chat_store, operator_id, thread)
     await serving_room(conversations, operator_id)
 
     facts = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
 
     assert facts == ConversationFacts(
         conversation_id=thread,
-        session_id=session_id,
+        session_id=None,
         bodies=(
             session_events.UnreadableInputBody(media_type="m.image"),
             session_events.UnreadableInputBody(media_type="m.audio"),

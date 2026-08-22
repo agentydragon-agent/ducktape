@@ -90,10 +90,10 @@ from haku.console.x.subscription import (
 
 logger = logging.getLogger(__name__)
 
-# Distinct from the sync loop's lock, the supervisor's, the outbox drain's and the OAuth sweep's.
+# Distinct from the sync loop's lock, the runtime reconciler's, the outbox drain's and the OAuth sweep's.
 _NOTICES_ADVISORY_LOCK = 0x4D58_4E54  # "MXNT"
 
-# Saying one notice into a room. Wider than `conversation.Announce`, whose caller is the supervisor
+# Saying one notice into a room. Wider than the channel's direct `announce` path because projected
 # and always means the same kind: what this renders spans several, and the kind is what the room
 # event states about itself.
 Notify = Callable[[str, RoomEventKind], Awaitable[None]]

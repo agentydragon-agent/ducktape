@@ -147,9 +147,9 @@ export async function fetchSessionFrames(
  */
 export class PromptRefused extends Error {}
 
-export async function sendChatPrompt(sessionId: string, text: string): Promise<void> {
-  const { data, error, response } = await api.POST("/api/sessions/{session_id}/messages", {
-    params: { path: { session_id: sessionId } },
+export async function sendChatPrompt(conversationId: string, text: string): Promise<void> {
+  const { data, error, response } = await api.POST("/api/conversations/{conversation_id}/messages", {
+    params: { path: { conversation_id: conversationId } },
     body: { text },
   });
   if (response.status === 409) throw new PromptRefused(errorDetail(error, "The session would not take that prompt"));

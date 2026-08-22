@@ -1097,6 +1097,7 @@ py_library(
         "//haku/console/tools:routine",
         "//haku/console/x:conversation_follow",
         "//haku/console/x:conversation_history",
+        "//haku/console/x:conversation_runtime",
         "//haku/console/x:sandbox_allocation",
         "//haku/console/x:session_live_updates",
         "//haku/console/x:session_runtime",

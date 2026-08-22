@@ -226,6 +226,17 @@ py_library(
 )
 
 py_library(
+    name = "conversation_runtime",
+    srcs = ["conversation_runtime.py"],
+    deps = [
+        ":session_notifications",
+        ":session_runtime",
+        ":session_store",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "conversation_follow",
     srcs = ["conversation_follow.py"],
     deps = [
@@ -247,6 +258,24 @@ py_library(
         ":session_notifications",
         "//haku/console:console_events",
         "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_conversation_runtime",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_conversation_runtime.py"],
+    deps = [
+        ":conftest",
+        ":conversation_runtime",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

@@ -254,6 +254,17 @@ class SessionService:
         """Accept a prompt; the channel-neutral allocator reconciles its durable demand."""
         return await self._store.enqueue_prompt(operator_id, session_id, prompt_text, origin, records)
 
+    async def enqueue_conversation_prompt(
+        self,
+        operator_id: UUID,
+        conversation_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin,
+        records: PromptRecords | None = None,
+    ) -> UUID:
+        """Accept conversation-owned work without requiring a session to exist first."""
+        return await self._store.enqueue_conversation_prompt(operator_id, conversation_id, prompt_text, origin, records)
+
     async def allocate(self, operator_id: UUID, session_id: UUID) -> bool:
         """Create the SandboxClaim for queued work exactly once across competing replicas."""
         allocation = await self._store.allocate(operator_id, session_id)
@@ -924,6 +935,28 @@ async def send_message(
         )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
+    except PromptRefusedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@router.post("/api/conversations/{conversation_id}/messages")
+async def send_conversation_message(
+    conversation_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
+) -> PromptAccepted:
+    """Offer a prompt to a conversation even while no session is serving it.
+
+    The session-addressed route remains during rollout for older bundles. New surfaces use this
+    route, and the neutral conversation-runtime reconciler creates or reuses the session before the
+    existing sandbox allocator provisions its container.
+    """
+    try:
+        return PromptAccepted(
+            item_id=await service.enqueue_conversation_prompt(actor.operator_id, conversation_id, body.text, SPA_ORIGIN)
+        )
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="conversation not found") from error
     except PromptRefusedError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except Exception as error:

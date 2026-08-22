@@ -30,7 +30,6 @@ receipts, profile writes, room-state writes, invites sent by Haku or `leave` cal
 | Silent-turn narration (`send_notice`)                         | `RoomNotices._silent` → `announce`                                                      | Completed turn/items are durable                                                                                       | Same queued, cursor-detached delivery as the relay                                                                                                     |
 | Status create/edit/redact                                     | `RoomNotices` folds `LiveStatus` → `show_status` / `clear_status`                       | Desired state is reconstructible from conversation events; `matrix_revision` keeps the current remote event id         | No own-event correspondence reader; the tag still names a session; duplicate/stale remote state is not compared with desired state after a long outage |
 | Typing (`set_typing`)                                         | `RoomNotices` folds `LiveStatus` → `set_typing`                                         | Desired state is reconstructible; Synapse expires the effect                                                           | Deliberately best effort; it must become attachment-scoped before more than one room is served                                                         |
-| Session lifecycle narration (`send_notice`)                   | `MatrixSessionSupervisor` → `announce`                                                  | Session rows/events hold some facts                                                                                    | The channel still creates/replaces sessions, deduplicates narration in `_last_announced`, and queues the Matrix effect directly                        |
 | Invite refusal / joined / adopted-room notice (`send_notice`) | `_handle_invite` / sync adoption → `_queue_notice`                                      | `chat_attachment` records the binding decision                                                                         | The announcement has no durable Matrix-side subject; the one-room refusal is itself scheduled for removal                                              |
 | Membership (`join`)                                           | `_handle_invite` after `bind_room`                                                      | Attachment is committed before the effect; Synapse retains a failed invite for retry                                   | No explicit attachment membership state or general repair loop                                                                                         |
 
@@ -59,14 +58,10 @@ placing an unrelated closure in `RoomPacer`. They are record-derived but not yet
 
 ## What remains direct
 
-### Matrix still owns session rows
-
-`MatrixSessionSupervisor` creates the initial idle session, reports each observed status, reconciles
-terminal claims and creates replacements. `_last_announced` is process-local, so a leadership change
-can narrate the same state again. More importantly, a channel still knows that sessions exist. The
-replacement is channel-neutral supervision behind the conversation: Matrix binds/offers input and
-renders lifecycle events, while runtime code ensures durable demand has an idle or replacement
-session.
+Matrix no longer owns session rows or lifecycle narration. It offers prompts by `conversation_id`;
+the elected `ConversationRuntime` creates or replaces the one idle session durable demand needs,
+performs global lease expiry and terminal-claim cleanup, and wakes `SandboxAllocator`. The former
+`MXSE` lock, `_last_announced` deduplication and supervisor `announce` path are gone.
 
 ### Attachment narration has no neutral event
 
@@ -91,12 +86,10 @@ as channel state, never offered as prompts.
 
 1. **Read correspondence before depending on edits.** The source tag from #4532 is the stable key;
    reading it turns transaction-window replay protection into durable reconciliation.
-2. **Fold stable spans.** Generalise `LiveStatus` to bounded work/session subjects and move relay,
-   silence and supervisor narration off direct sends.
-3. **Remove channel-owned session lifecycle.** Otherwise a many-room Matrix implementation merely
-   multiplies a forbidden edge.
-4. **Unify delivery per attachment, then add rooms.** `MXSY`, `MXOB`, `MXNT` and `MXSE` currently
-   elect independently; `bound_room()`, `_status_body` and one `RoomPacer` status slot are global.
+2. **Fold stable spans.** Generalise `LiveStatus` to bounded work/session subjects and move relay
+   and silence off direct sends.
+3. **Unify delivery per attachment, then add rooms.** `MXSY`, `MXOB` and `MXNT` currently elect
+   independently; `bound_room()`, `_status_body` and one `RoomPacer` status slot are global.
    A second room would cross wires silently.
 
 Commands and channel links do not block this spine. They remain separate affordances in the TODO.

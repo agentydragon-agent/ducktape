@@ -2,7 +2,7 @@
 **did every message I sent get an answer?**
 
 Everything below this runs as itself. A real Synapse in a container, a console replica as its own
-process (`testing/console_replica.py`) with the real `/sync` loop and session supervisor, a real
+process (`testing/console_replica.py`) with the real `/sync` loop and neutral runtime supervisor, a real
 runner process per sandbox with a stub `claude` behind it, and a real Postgres under all of it.
 The operator's side is a Matrix client of its own (`testing/operator_room.py`, `nio` against the
 same homeserver), so what a test reads back is the room, not the console's account of the room.
@@ -90,14 +90,15 @@ async def room(operator: AsyncClient, deployment: Deployment) -> OperatorRoom:
 
 
 async def start_serving(deployment: Deployment, room: OperatorRoom) -> UUID:
-    """Open the idle room session, then let its first prompt buy the sandbox.
+    """Bind the room, then let its first prompt create the session and buy the sandbox.
 
-    Waiting for the idle notice is the pre-prompt sync barrier: the console has joined and bound
-    the room, but lazy allocation has deliberately created no claim yet. The operator's first
-    message is durable demand; only after sending it can this helper wait for a runner to connect.
+    The room-joined notice is the pre-prompt sync barrier: the console has attached the durable
+    conversation, but neutral supervision has deliberately created neither session nor claim yet.
+    The operator's first message is durable demand; only after sending it can this helper wait for
+    a runner to connect.
     """
     await deployment.start_console("console-1")
-    await room.wait_for_notice("waiting for the first prompt")
+    await room.wait_for_notice("joined — this is now Haku's room")
     await room.say("one")
     session_id = await deployment.serving()
     await room.wait_for_reply("re: one")

@@ -86,7 +86,14 @@ from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallInd
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tools import gmail as gmail_tools, kubernetes as kubernetes_tools, routine as routine_tools
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import conversation_follow, sandbox_allocation, sandbox_claims, session_runtime, subscription
+from haku.console.x import (
+    conversation_follow,
+    conversation_runtime,
+    sandbox_allocation,
+    sandbox_claims,
+    session_runtime,
+    subscription,
+)
 
 # Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
 # already talks about (the console's own conversation record, the index sweeps, the push queue).
@@ -306,7 +313,7 @@ def create_app(
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     # Matrix chat surface, absent when unconfigured: the console serves its approval queue
-    # without it and simply does not run the sync loop. The supervisor is composed after the
+    # without it and simply does not run the sync loop. Neutral runtime supervision is composed after the
     # channel-neutral Claude runtime because it provisions sessions through that service.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
@@ -374,6 +381,11 @@ def create_app(
         if session_service is not None
         else None
     )
+    runtime_supervisor = (
+        conversation_runtime.ConversationRuntime(session_service, session_store, session_notifications, db_engine)
+        if session_service is not None
+        else None
+    )
     # A followed conversation's own socket. Behind the Claude runtime because a follower opens on
     # the same read `GET /api/conversations/{id}` serves, which is the service's — a replica
     # without one answers neither.
@@ -382,27 +394,6 @@ def create_app(
         if session_service is None
         else conversation_follow.ConversationFollow(session_store, session_service, session_notifications)
     )
-    # The supervisor comes after the Claude runtime whose sessions it opens and observes, and
-    # announces via the sync service, which holds the only Matrix credential — one login, one
-    # device, whoever is speaking. Sandbox allocation is composed separately above.
-    matrix_supervisor: matrix_conversation.MatrixSessionSupervisor | None = None
-    if (
-        matrix_config is not None
-        and matrix_sync_service is not None
-        and matrix_conversation_store is not None
-        and session_service is not None
-    ):
-        matrix_supervisor = matrix_conversation.MatrixSessionSupervisor(
-            matrix_config,
-            matrix_conversation_store,
-            session_service,
-            session_store,
-            session_notifications,
-            operator_identity_store,
-            matrix_sync_service.announce,
-            db_engine,
-        )
-
     if static_agent_definitions is not None:
         static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
     else:
@@ -605,9 +596,10 @@ def create_app(
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
         matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
-        # A sibling of the sync loop, not a child of it: its own advisory lock keeps room/session
-        # replacement single, while the channel-neutral allocator below owns provisioning.
-        supervising = matrix_supervisor.run() if matrix_supervisor is not None else contextlib.nullcontext()
+        # Conversation demand owns session creation and replacement. It is a sibling of every
+        # channel and of sandbox allocation, so browser-only and unattached conversations receive
+        # the same maintenance as Matrix-bound ones.
+        supervising = runtime_supervisor.run() if runtime_supervisor is not None else contextlib.nullcontext()
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
         noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
@@ -622,7 +614,6 @@ def create_app(
             oauth_maintenance.run(),
             catalogs.run(),
             matrix_running,
-            supervising,
             noticing,
             indexing,
             embedding,
@@ -635,7 +626,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), following, allocating, mcp_asgi.lifespan(app):
+                async with session_live_updates.run(), following, supervising, allocating, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the

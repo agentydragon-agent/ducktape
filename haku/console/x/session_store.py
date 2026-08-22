@@ -241,7 +241,7 @@ async def _item_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID,
 async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, LiveSession]:
     """The session holding each of *conversations*, for those a session is holding.
 
-    At most one per conversation — the rule the supervisor keeps — so a duplicate is a bug. No
+    At most one per conversation — the rule neutral runtime supervision keeps — so a duplicate is a bug. No
     index enforces it and a listing is the wrong place to raise over it, so the newest wins.
 
     **`responding` is derived, not read**, the same way `session_view` derives it: the column
@@ -398,6 +398,14 @@ class SandboxDemand:
     session_id: UUID
 
 
+@dataclass(frozen=True, slots=True)
+class ConversationDemand:
+    """An Operator-owned conversation with queued work and no open session."""
+
+    operator_id: UUID
+    conversation_id: UUID
+
+
 class PositionUnusableError(Exception):
     """An update cannot be served from a follower's position; it must be sent the conversation whole.
 
@@ -476,8 +484,105 @@ class SessionStore:
                 # Flushed before the session that points at it: a `ForeignKey` carrying no
                 # `relationship()` does not order the unit of work.
                 await db.flush()
+            else:
+                conversation = await db.scalar(
+                    select(Conversation)
+                    .where(Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id)
+                    .with_for_update()
+                )
+                if conversation is None:
+                    raise KeyError(conversation_id)
+                # Rolling coexistence: an older Matrix supervisor and the neutral reconciler use
+                # different advisory locks. The durable conversation lock is therefore the shared
+                # mutex, and an old writer reaching this method after the new one reuses its winner
+                # rather than opening a second live session.
+                existing = await db.scalar(
+                    select(Session.session_id)
+                    .where(Session.conversation_id == conversation_id, Session.status.in_(OPEN_SESSION_STATUSES))
+                    .order_by(Session.created_at.desc(), Session.session_id.desc())
+                    .limit(1)
+                )
+                if existing is not None:
+                    session_id = existing
+            if await db.get(Session, session_id) is None:
+                db.add(
+                    Session(
+                        session_id=session_id,
+                        operator_id=operator_id,
+                        conversation_id=conversation_id,
+                        status=SessionStatus.IDLE,
+                        bridge_token_fingerprint=None,
+                        bridge_connected_at=None,
+                        error=None,
+                        lease_expires_at=None,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        # Keep the historical tuple shape while making the absence explicit: this is not a bearer
+        # and cannot authenticate. The real credential exists only in `SessionAllocation`.
+        return await self.get(operator_id, session_id), ""
+
+    async def conversations_awaiting_session(self) -> tuple[ConversationDemand, ...]:
+        """Return conversation-owned prompt demand that no open session can serve.
+
+        This is an unlocked work hint for the neutral runtime reconciler. Creation repeats both
+        predicates while holding the conversation row lock, which is the exactly-once mutex across
+        replicas and across channels offering prompts concurrently.
+        """
+        open_session = (
+            select(Session.session_id)
+            .where(
+                Session.conversation_id == ConversationPrompt.conversation_id, Session.status.in_(OPEN_SESSION_STATUSES)
+            )
+            .exists()
+        )
+        async with self._sessions() as db:
+            rows = await db.execute(
+                select(
+                    Conversation.operator_id,
+                    ConversationPrompt.conversation_id,
+                    func.min(ConversationPrompt.queued_at).label("oldest_prompt"),
+                )
+                .join(Conversation, Conversation.conversation_id == ConversationPrompt.conversation_id)
+                .where(ConversationPrompt.claimed_at.is_(None), ~open_session)
+                .group_by(Conversation.operator_id, ConversationPrompt.conversation_id)
+                .order_by("oldest_prompt", ConversationPrompt.conversation_id)
+            )
+            return tuple(
+                ConversationDemand(operator_id=row.operator_id, conversation_id=row.conversation_id) for row in rows
+            )
+
+    async def ensure_session_for_demand(self, operator_id: UUID, conversation_id: UUID) -> SandboxDemand | None:
+        """Create the one idle session queued conversation work needs, or observe its winner.
+
+        The conversation row lock serializes every prompt writer and every competing reconciler.
+        The queued prompt's item is attached to the new session in this transaction so readers do
+        not briefly lose the operator's text between admission and the runner claiming it.
+        """
+        now = datetime.now(UTC)
+        session_id = uuid4()
+        async with self._sessions.begin() as db:
+            conversation = await db.scalar(
+                select(Conversation)
+                .where(Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id)
+                .with_for_update()
+            )
+            if conversation is None:
+                return None
+            if await _queued_prompt(db, conversation_id) is None:
+                return None
+            if (
+                await db.scalar(
+                    select(Session.session_id)
+                    .where(Session.conversation_id == conversation_id, Session.status.in_(OPEN_SESSION_STATUSES))
+                    .limit(1)
+                )
+                is not None
+            ):
+                return None
             db.add(
-                Session(
+                session := Session(
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
@@ -490,9 +595,22 @@ class SessionStore:
                     updated_at=now,
                 )
             )
-        # Keep the historical tuple shape while making the absence explicit: this is not a bearer
-        # and cannot authenticate. The real credential exists only in `SessionAllocation`.
-        return await self.get(operator_id, session_id), ""
+            await db.flush([session])
+            await db.execute(
+                update(ConversationItem)
+                .where(
+                    ConversationItem.item_id.in_(
+                        select(ConversationPrompt.item_id).where(
+                            ConversationPrompt.conversation_id == conversation_id,
+                            ConversationPrompt.claimed_at.is_(None),
+                        )
+                    )
+                )
+                .values(session_id=session_id, updated_at=now)
+            )
+            await notify(db, SessionEventKind.PROMPT, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id)
+        return SandboxDemand(operator_id=operator_id, session_id=session_id)
 
     async def _create_provisioning_for_test(
         self, operator_id: UUID, *, conversation_id: UUID | None = None
@@ -557,7 +675,7 @@ class SessionStore:
     async def allocate(self, operator_id: UUID, session_id: UUID) -> SessionAllocation | None:
         """Start provisioning an idle session once its conversation has work queued.
 
-        The row lock is the allocation mutex. A browser request and the Matrix supervisor may both
+        The row lock is the allocation mutex. A prompt request and the runtime reconciler may both
         observe the same accepted prompt, but exactly one moves ``idle`` to ``provisioning`` and
         receives a credential with which to create the SandboxClaim. The prompt, status, bridge
         fingerprint, provisioning lease and lifecycle event are therefore durable before the
@@ -1031,38 +1149,89 @@ class SessionStore:
         the reader this exists for would post that prompt into every room including the one it came
         from. Silent, and in the one direction that matters, so the type system holds it instead.
         """
+        async with self._sessions() as db:
+            chat = await db.scalar(
+                select(Session).where(Session.session_id == session_id, Session.operator_id == operator_id)
+            )
+        if chat is None:
+            raise KeyError(session_id)
+        return await self._enqueue_conversation_prompt(
+            operator_id, chat.conversation_id, prompt_text, origin, records, required_session_id=session_id
+        )
+
+    async def enqueue_conversation_prompt(
+        self,
+        operator_id: UUID,
+        conversation_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin,
+        records: PromptRecords | None = None,
+    ) -> UUID:
+        """Accept a prompt for a conversation, whether or not it has a session yet."""
+        return await self._enqueue_conversation_prompt(
+            operator_id, conversation_id, prompt_text, origin, records, required_session_id=None
+        )
+
+    async def _enqueue_conversation_prompt(
+        self,
+        operator_id: UUID,
+        conversation_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin,
+        records: PromptRecords | None,
+        *,
+        required_session_id: UUID | None,
+    ) -> UUID:
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:
-            chat = await db.scalar(
-                select(Session)
-                .where(Session.session_id == session_id, Session.operator_id == operator_id)
+            conversation = await db.scalar(
+                select(Conversation)
+                .where(Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id)
                 .with_for_update()
             )
-            if chat is None:
-                raise KeyError(session_id)
-            if chat.status not in {SessionStatus.IDLE, SessionStatus.READY}:
+            if conversation is None:
+                raise KeyError(conversation_id)
+            if required_session_id is None:
+                chat = await db.scalar(
+                    select(Session)
+                    .where(Session.conversation_id == conversation_id, Session.status.in_(OPEN_SESSION_STATUSES))
+                    .order_by(Session.created_at.desc(), Session.session_id.desc())
+                    .limit(1)
+                )
+            else:
+                chat = await db.scalar(
+                    select(Session).where(
+                        Session.session_id == required_session_id,
+                        Session.operator_id == operator_id,
+                        Session.conversation_id == conversation_id,
+                    )
+                )
+                if chat is None:
+                    raise KeyError(required_session_id)
+            if chat is not None and chat.status not in {SessionStatus.IDLE, SessionStatus.READY}:
                 raise PromptRefusedError(PromptRejection.SESSION_NOT_READY)
-            # Admission asks about the turn as well as the session's state: `READY` may have an
-            # exchange in flight, while `IDLE` has no runner yet and this prompt is what buys one.
-            # Asked of the conversation, because that is where the rule lives.
-            if await _open_turn(db, chat.conversation_id) is not None:
+            if await _open_turn(db, conversation_id) is not None:
                 raise PromptRefusedError(PromptRejection.TURN_IN_FLIGHT)
-            if await _queued_prompt(db, chat.conversation_id) is not None:
+            if await _queued_prompt(db, conversation_id) is not None:
                 raise PromptRefusedError(PromptRejection.PROMPT_QUEUED)
             writer = await conversation_log.writer_for(
-                db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
+                db, conversation_id, session_id=chat.session_id if chat is not None else None, turn_id=None, now=now
             )
             item_id = await writer.authored_prompt(prompt_text, origin)
             db.add(
-                ConversationPrompt(
-                    prompt_id=uuid4(), conversation_id=chat.conversation_id, item_id=item_id, queued_at=now
-                )
+                ConversationPrompt(prompt_id=uuid4(), conversation_id=conversation_id, item_id=item_id, queued_at=now)
             )
-            chat.updated_at = now
+            if chat is not None:
+                chat.updated_at = now
             if records is not None:
                 await records(db, item_id)
-            await notify(db, SessionEventKind.PROMPT, session_id)
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            # A neutral supervisor consumes conversation demand. Once a session exists, the
+            # historical prompt/update wakes retain their exact meaning for allocators, runners,
+            # followers and older rolling replicas.
+            await notify(db, SessionEventKind.RUNTIME_DEMAND, conversation_id)
+            if chat is not None:
+                await notify(db, SessionEventKind.PROMPT, chat.session_id)
+                await notify(db, SessionEventKind.UPDATE, chat.session_id)
         return item_id
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
