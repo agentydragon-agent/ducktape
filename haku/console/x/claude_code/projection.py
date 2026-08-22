@@ -1,8 +1,8 @@
 """Claude CLI frames into neutral conversation events.
 
 A **reducer**: `project(state, frames)` returns the state after those frames and what they
-produced. The state is neutral (`ProjectionState`, in <../conversation_events.py>), the frames are
-Claude's — generic over its state, not over its wire. It is resumable from a cursor: a position
+produced. Both the state and frames are Claude's; only the emitted conversation events are neutral.
+It is resumable from a cursor: a position
 in the frame log is the whole of what a fold needs to carry on from.
 
 That is what makes live and recovery one code path: steady state projects each frame as it lands,
@@ -44,7 +44,7 @@ is the case `ReasoningDisclosure.WITHHELD` exists to render.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from types import MappingProxyType
@@ -60,17 +60,48 @@ from haku.console.x.conversation_events import (
     Json,
     MessageCompleted,
     MessageStarted,
-    OpenItem,
     OpenRef,
-    OpenToolCall,
     Projection,
-    ProjectionState,
     ReasoningCompleted,
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
     TurnCompleted,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class OpenItem:
+    """A Claude item seen starting but not ending, including already-delivered prose."""
+
+    opened_at_frame_seq: int
+    last_frame_seq: int
+    backend_item_id: str | None
+    delivered: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class OpenToolCall:
+    """A Claude tool call whose streamed JSON arguments are not complete yet."""
+
+    call_id: str
+    tool_name: str
+    block_index: int
+    opened_at_frame_seq: int
+    last_frame_seq: int
+    initial_arguments: Mapping[str, Json]
+    partial_json: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionState:
+    """Claude-private state carried between native frame batches."""
+
+    open_message: OpenItem | None = None
+    open_reasoning: OpenItem | None = None
+    open_tool_call: OpenToolCall | None = None
+    seen_call_ids: frozenset[str] = frozenset()
+
 
 # Frame classes that say nothing about the conversation, listed rather than discovered so that a
 # class the CLI adds lands in the default branch instead of here:
@@ -131,8 +162,8 @@ def project(
 
     Pure and order-dependent — the events are a function of the sequence, not of any one frame —
     and the state holds everything that order-dependence needs, which is why a batch boundary is
-    not an event. Raises `ValueError` on a payload with no `type`: that is a caller handing it a
-    row the CLI never sent, not anything the wire can do.
+    not an event. Unknown envelopes are counted as unprojected native evidence rather than making
+    a forensic read fail.
     """
     projector = _Projector(
         delta_source=delta_source,

@@ -213,19 +213,19 @@ const SCENES = [
     frame: true,
   },
   {
-    // The frame inspector, which opens on the tail of the log — so the visible rows are the last
-    // ones.
+    // The frame inspector, which opens on the tail of the log — prove the response arrived by
+    // waiting for its runtime label. Native payload details may be folded in compact JSON blocks.
     name: "session-frames",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    expectVisible: "::-p-text(error_during_execution)",
+    expectVisible: "::-p-text(claude_code)",
     frame: true,
   },
   {
     name: "session-frames-mobile",
     viewport: { width: 390, height: 900 },
     closeApprovals: true,
-    expectVisible: "::-p-text(error_during_execution)",
+    expectVisible: "::-p-text(claude_code)",
     frame: true,
   },
   {

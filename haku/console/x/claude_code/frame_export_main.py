@@ -6,7 +6,7 @@ it writes that session's foldable frames as a JSONL fixture in the form
 <claude_code/redaction.py> for what survives redaction and what does not).
 
 ```bash
-bb run //haku/console/x:frame_export_bin -- \\
+bb run //haku/console/x/claude_code:frame_export_bin -- \\
     --session <uuid> --output haku/console/x/claude_code/testdata/<name>.jsonl
 ```
 
@@ -24,7 +24,7 @@ from uuid import UUID
 import typer
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.x import frame_export
+from haku.console.x.claude_code import frame_export
 
 app = typer.Typer(help=__doc__)
 

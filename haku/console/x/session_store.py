@@ -56,8 +56,6 @@ from haku.console.database_schema import (
     SessionFrame,
 )
 from haku.console.x import conversation_log, session_events, transcript_entries
-from haku.console.x.claude_code import projection
-from haku.console.x.claude_code.frames import DELTA_FRAME_KIND, PROMPT_FRAME_KIND
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
@@ -77,6 +75,7 @@ from haku.console.x.conversation_records import (
     TurnCursor,
     TurnRecord,
 )
+from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_notifications import SessionEventKind, notify
 from haku.console.x.session_views import (
     ConversationCursor,
@@ -99,7 +98,8 @@ from haku.console.x.session_views import (
 )
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.x.subscription import stream_head
-from haku.runtime.x.bridge.cli_client import ReceivedFrame, RecordedFrame
+from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 logger = logging.getLogger(__name__)
 
@@ -122,57 +122,21 @@ ADOPTION_GRACE = timedelta(seconds=45)
 REPLICA = os.environ.get("HOSTNAME", "unknown")
 
 
-def _frames_of_kinds(query: Select[tuple[SessionFrame]], kinds: Sequence[str] | None) -> Select[tuple[SessionFrame]]:
-    """Restrict a frame query to *kinds*, or to everything a reader means by "everything".
+def _bridge_frames(
+    query: Select[tuple[SessionFrame]], kinds: Sequence[BridgeFrameKind] | None = None
+) -> Select[tuple[SessionFrame]]:
+    """Restrict a frame query using only Haku's outer bridge discriminator.
 
-    **Deltas are in the log but not in the default view.** A turn streams them in the hundreds and
-    each carries a few characters of an answer that arrives whole a moment later. Naming the kind
-    is how a caller reading a truncated answer asks for them anyway — for the MCP reader and the
-    console's frame inspector alike, which is why the policy lives here rather than in either one.
+    The default rollout is the selected harness's native wire. Console-authored setup narration is
+    available when explicitly requested, and through its dedicated narration view, but is not a
+    native harness frame merely because it shares the append-only table.
     """
-    native_kind = func.coalesce(
-        SessionFrame.payload["payload"]["type"].astext, SessionFrame.payload["payload"]["method"].astext
-    )
-    if kinds:
-        return query.where(
-            or_(
-                SessionFrame.kind == SETUP_OUTPUT_KIND if SETUP_OUTPUT_KIND in kinds else literal(False),
-                (SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME) & native_kind.in_(kinds),
-            )
-        )
-    return query.where(
-        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME, or_(native_kind.is_(None), native_kind != DELTA_FRAME_KIND)
-    )
+    selected = [BridgeFrameKind.HARNESS_FRAME] if kinds is None else list(kinds)
+    return query.where(SessionFrame.kind.in_(selected))
 
 
-def _native_kind(row: SessionFrame) -> str | None:
-    if row.kind != BridgeFrameKind.HARNESS_FRAME:
-        return None
-    payload = _native_payload(row.payload)
-    for field in ("type", "method"):
-        if isinstance(value := payload.get(field), str):
-            return value
-    return None
-
-
-def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
-    """Return only the native payload from a complete nested harness frame.
-
-    Migration 0089 clears the incompatible v2 log, so every surviving harness row has this shape.
-    Refusing a malformed row is safer than silently treating a flattened record as v3 evidence.
-    """
-    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
-        return payload
-    raise ValueError("harness-frame log row does not contain a complete inner frame")
-
-
-def _inner_frame(kind: BridgeFrameKind, frame: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a harness record to the complete inner frame kept in the forensic log."""
-    if kind == BridgeFrameKind.HARNESS_FRAME and not (
-        isinstance(frame.get("kind"), str) and isinstance(frame.get("payload"), dict)
-    ):
-        return {"kind": "claude", "payload": frame}
-    return frame
+def _harness_frames(query: Select[tuple[SessionFrame]]) -> Select[tuple[SessionFrame]]:
+    return _bridge_frames(query, [BridgeFrameKind.HARNESS_FRAME])
 
 
 class PromptRecords(Protocol):
@@ -427,8 +391,9 @@ class _MovedRows:
 class SessionStore:
     """Async Postgres store for agent sessions."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]):
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], runtime_registry: RuntimeRegistry):
         self._sessions = sessions
+        self._runtime_registry = runtime_registry
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
@@ -1055,8 +1020,8 @@ class SessionStore:
         question is asked here: **was the prompt ever asked?** No prompt frame means the previous
         holder claimed the prompt and died before writing it, so it goes back on the queue. A
         projection cursor cannot answer that — the console's own outbound write is the evidence,
-        and the fold projects an outbound prompt to nothing on purpose
-        (`claude_code.projection._user`).
+        and the fold projects the selected runtime adapter's outbound prompt frames to nothing on
+        purpose.
 
         Everything else is the fold's. The turn resumes with the frames past its cursor, and if one
         of them is the turn's ending then projecting it closes the turn; how far the answer got is
@@ -1067,6 +1032,13 @@ class SessionStore:
         which is what stops `next_prompt` opening a second beside the inherited one.
         """
         async with self._sessions.begin() as db:
+            runtime_kind = await db.scalar(
+                select(Conversation.runtime_kind)
+                .join(Session, Session.conversation_id == Conversation.conversation_id)
+                .where(Session.session_id == session_id)
+            )
+            if runtime_kind is None:
+                raise KeyError(session_id)
             turn = await db.scalar(
                 select(ConversationTurn)
                 .where(ConversationTurn.session_id == session_id, ConversationTurn.ended_at.is_(None))
@@ -1075,7 +1047,9 @@ class SessionStore:
             if turn is None:
                 return None
             turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            if not await _prompt_left(db, session_id, first_frame_seq or 0):
+            if not await _prompt_left(
+                db, session_id, first_frame_seq or 0, runtime=self._runtime_registry[runtime_kind]
+            ):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
             else:
@@ -1302,11 +1276,12 @@ class SessionStore:
     ) -> None:
         """Close *turn_id* at the frame it ended on.
 
-        *last_frame_seq* is the turn's own last frame, and only the caller knows which that is: the
-        CLI emits a `command_lifecycle` frame just after the `result` one, so a bound re-derived
-        here from the head of the log lands on a frame the turn did not produce. A turn that ended
-        on no frame at all — a failure, or an abort whose result never arrived — passes none, and
-        the bound is then the last frame recorded since the turn opened, which
+        *last_frame_seq* is the turn's own last frame, and only the runtime adapter knows which
+        native frame produced its terminal effect. A provider may emit session-level bookkeeping
+        immediately after that frame, so a bound re-derived here from the head of the log can land
+        beyond the turn. A turn that ended on no frame at all — a failure, or an abort before a
+        terminal effect arrived — passes none, and the bound is then the last frame recorded since
+        the turn opened, which
         `uq_session_turns_open` keeps inside this turn because no second turn can have opened. NULL
         still means a turn that recorded nothing.
 
@@ -1438,7 +1413,7 @@ class SessionStore:
                 session_id=session_id,
                 direction=direction,
                 kind=kind,
-                payload=_inner_frame(kind, payload),
+                payload=payload,
                 runner_seq=runner_seq,
                 created_at=now,
                 updated_at=now,
@@ -1543,7 +1518,12 @@ class SessionStore:
         ]
 
     async def read_frames(
-        self, session_id: UUID, *, cursor: FrameCursor | None, limit: int, kinds: Sequence[str] | None
+        self,
+        session_id: UUID,
+        *,
+        cursor: FrameCursor | None,
+        limit: int,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[RolloutFrame]:
         """One page of a session's rollout, in wire order, from the start of the log onwards.
 
@@ -1552,7 +1532,7 @@ class SessionStore:
         The cursor names the first frame to return rather than the last one already returned, so
         a transcript entry's `first_frame_seq` is a cursor as it stands.
         """
-        query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+        query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if cursor is not None:
             query = query.where(SessionFrame.frame_seq >= cursor.frame_seq)
         async with self._sessions() as db:
@@ -1562,7 +1542,6 @@ class SessionStore:
                 frame_seq=row.frame_seq,
                 direction=row.direction,
                 kind=row.kind,
-                native_kind=_native_kind(row),
                 created_at=row.created_at,
                 payload=row.payload,
             )
@@ -1572,10 +1551,8 @@ class SessionStore:
     async def read_frame(self, session_id: UUID, frame_seq: int) -> RolloutFrame | None:
         """One exact native or console-authored frame, without a page-view filter.
 
-        A caller naming the sequence has already selected the row. In particular, this must keep
-        method-only JSON-RPC frames, harness payloads with no known discriminator, setup narration,
-        and stream deltas available as forensic evidence even though the default rollout page
-        suppresses the noisy last category.
+        A caller naming the sequence has already selected the row. In particular, this keeps native
+        payloads with any JSON shape and setup narration available as exact forensic evidence.
         """
         async with self._sessions() as db:
             row = await db.scalar(
@@ -1587,7 +1564,6 @@ class SessionStore:
             frame_seq=row.frame_seq,
             direction=row.direction,
             kind=row.kind,
-            native_kind=_native_kind(row),
             created_at=row.created_at,
             payload=row.payload,
         )
@@ -1603,25 +1579,16 @@ class SessionStore:
         whole session does not end there, so the same entry would read differently depending on
         which page it landed on. That costs one read of the session's projectable frames per page.
 
-        Two kinds are excluded in SQL rather than by the fold. `setup_output` is the console's own
-        envelope and carries no protocol `type` at all, so the fold would refuse it; deltas are
-        hundreds per turn of prose that arrives again whole. Everything else is passed through, so
-        a frame class the CLI adds still lands in `Projection.unprojected` and is reported.
+        Console-authored `setup_output` is excluded using Haku's outer bridge discriminator. Every
+        native frame is handed to the selected integration intact; only that integration decides
+        which are deltas, durable facts, protocol noise, or unknown evidence.
         """
+        runtime_kind = await self.runtime_kind_of(session_id)
+        query = _harness_frames(select(SessionFrame).where(SessionFrame.session_id == session_id))
         async with self._sessions() as db:
-            rows = (
-                await db.scalars(
-                    select(SessionFrame)
-                    .where(
-                        SessionFrame.session_id == session_id,
-                        SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
-                        SessionFrame.payload["payload"]["type"].astext != DELTA_FRAME_KIND,
-                    )
-                    .order_by(SessionFrame.frame_seq)
-                )
-            ).all()
-        projected = projection.project_log(
-            projection.RecordedFrame(frame_seq=row.frame_seq, payload=_native_payload(row.payload)) for row in rows
+            rows = (await db.scalars(query.order_by(SessionFrame.frame_seq))).all()
+        projected = self._runtime_registry[runtime_kind].project_log(
+            (row.frame_seq, HarnessFrame(frame=row.payload, seq=row.runner_seq)) for row in rows
         )
         entries = transcript_entries.entries(projected)
         start = cursor.index if cursor is not None else 0
@@ -1630,7 +1597,13 @@ class SessionStore:
         )
 
     async def read_operator_frames(
-        self, operator_id: UUID, session_id: UUID, *, before_seq: int | None, limit: int, kinds: Sequence[str] | None
+        self,
+        operator_id: UUID,
+        session_id: UUID,
+        *,
+        before_seq: int | None,
+        limit: int,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> SessionFramePage:
         """The tail of an Operator-owned session's rollout, for the console's frame inspector.
 
@@ -1644,9 +1617,7 @@ class SessionStore:
         already its upper half, so per-message provenance is a filter over this view rather than a
         second read path.
         """
-        query = _frames_of_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
-        if before_seq is not None:
-            query = query.where(SessionFrame.frame_seq < before_seq)
+        before = before_seq
         async with self._sessions() as db:
             owned = (
                 await db.execute(
@@ -1657,6 +1628,10 @@ class SessionStore:
             ).one_or_none()
             if owned is None:
                 raise KeyError(session_id)
+            runtime_kind = owned[1]
+            query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+            if before is not None:
+                query = query.where(SessionFrame.frame_seq < before)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
         session, runtime_kind = owned
         return frame_page(
@@ -1700,6 +1675,71 @@ class SessionStore:
             chat.updated_at = now
             await notify(db, SessionEventKind.UPDATE, session_id)
 
+    async def complete_frame(
+        self,
+        session_id: UUID,
+        turn_id: UUID,
+        frame_seq: int,
+        events: Sequence[ConversationEvent],
+        *,
+        outcome: TurnOutcome,
+        final_text: str,
+    ) -> bool:
+        """Commit a terminal frame's neutral effects, answer close and turn close together.
+
+        A provider may put durable conversation facts on the same native frame that ends a turn.
+        Dropping those effects would make the live write differ from replay; committing them first
+        in a separate transaction would let the projection cursor outrun the turn's close. This is
+        therefore the terminal counterpart of :meth:`apply_frame`: every event, any neutral
+        fallback message, the turn outcome and the cursor advance commit or roll back as one.
+
+        ``final_text`` is only a fallback for a provider whose terminal frame is the first place
+        its prose appears. If the effects already completed a message, or left one open after
+        streaming segments, it is not repeated.
+        """
+        now = datetime.now(UTC)
+        provenance = FrameRange(first_frame_seq=frame_seq, last_frame_seq=frame_seq)
+        async with self._sessions.begin() as db:
+            turn = await db.get(ConversationTurn, turn_id, with_for_update=True)
+            if turn is None:
+                raise KeyError(turn_id)
+            if turn.ended_at is not None:
+                return (await _turn_state(db, turn_id)).said_anything
+            chat = await db.get(Session, session_id)
+            if chat is None:
+                raise KeyError(session_id)
+            writer = await conversation_log.writer_for(
+                db, turn.conversation_id, session_id=session_id, turn_id=turn_id, now=now
+            )
+            for event in events:
+                await writer.append(event)
+
+            state = await _turn_state(db, turn_id)
+            if state.streaming is None and state.said_anything:
+                said = True
+            elif state.streaming is not None:
+                await writer.append(MessageCompleted(backend_item_id=None, provenance=provenance))
+                said = bool(state.streaming.strip())
+            elif final_text:
+                await writer.append(MessageStarted(provenance=provenance))
+                await writer.append(
+                    ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=final_text, provenance=provenance)
+                )
+                await writer.append(MessageCompleted(backend_item_id=None, provenance=provenance))
+                said = True
+            else:
+                said = False
+
+            turn.last_seq = writer.conversation.next_event_seq
+            turn.last_frame_seq = frame_seq
+            turn.ended_at = now
+            turn.outcome = outcome
+            writer.authored(session_events.TurnEndedBody(outcome=outcome), turn_id=turn_id)
+            _advance_cursor(chat, frame_seq)
+            chat.updated_at = now
+            await notify(db, SessionEventKind.UPDATE, session_id)
+            return said
+
     async def close_answer(self, session_id: UUID, turn_id: UUID, *, final_text: str, frame_seq: int) -> bool:
         """Bring the turn's answer to a close, and say whether the turn said anything at all.
 
@@ -1707,13 +1747,12 @@ class SessionStore:
         calls the loop chooses between:
 
         - **A message the stream left open** closes on its own segments. Nothing is appended,
-          because `final_text` is `result.result` repeating what the stream already carried, and
+          because the adapter's terminal `final_text` repeats what the stream already carried, and
           minting it again would say the answer twice.
         - **A turn that already completed a message** needs nothing: its prose is on its items and
-          `result.result` repeats the last of them.
-        - **A turn whose prose arrived only on the `result` frame** — no stream, no completed
-          block — gets that text as one whole message, opened and closed on that frame. It is the
-          one case where the result frame genuinely is where the words came from.
+          the terminal effect repeats the last of them.
+        - **A turn whose prose arrived only with the terminal effect** — no stream, no completed
+          block — gets that text as one whole message, opened and closed on that effect's frame.
 
         Empty prose mints nothing: a turn that only ran tools said nothing, and an empty message
         item would be an answer the room owes a copy of.
@@ -1833,6 +1872,18 @@ class SessionStore:
     async def status(self, session_id: UUID) -> SessionStatus | None:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
+
+    async def runtime_kind_of(self, session_id: UUID) -> RuntimeKind:
+        """Return the immutable runtime discriminator of a session's conversation."""
+        async with self._sessions() as db:
+            kind = await db.scalar(
+                select(Conversation.runtime_kind)
+                .join(Session, Session.conversation_id == Conversation.conversation_id)
+                .where(Session.session_id == session_id)
+            )
+            if kind is None:
+                raise KeyError(session_id)
+            return kind
 
     async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
         """The immutable conversation identity behind one Operator-owned session."""
@@ -1985,7 +2036,10 @@ async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -
         )
         .order_by(SessionFrame.frame_seq)
     )
-    return tuple(ReceivedFrame(payload=_native_payload(row.payload), frame_seq=row.frame_seq) for row in rows)
+    return tuple(
+        ReceivedFrame(envelope=HarnessFrame(frame=row.payload, seq=row.runner_seq), frame_seq=row.frame_seq)
+        for row in rows
+    )
 
 
 async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool = False) -> ConversationPrompt | None:
@@ -2165,31 +2219,30 @@ async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:
     return turn_id
 
 
-async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int) -> bool:
+async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int, *, runtime: RuntimeAdapter) -> bool:
     """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
 
-    **The console's own record is the evidence, not the CLI's acknowledgement.** `sent()` records
-    the frame before `channel.write` (`cli_client._write`), so a row here means this end committed
-    to sending the prompt. The CLI's `command_lifecycle` — the only thing that would say whether
-    the *CLI* has it — may still be sitting unrecorded in the runner's replay window, since replay
+    **The console's own record is the evidence, not the harness's acknowledgement.** `sent()` records
+    the frame before `channel.write` (`claude_code.client._write`), so a row here means this end committed
+    to sending the prompt. A native lifecycle frame — the only thing that would say whether the
+    *harness* has it — may still be sitting unrecorded in the runner's replay window, since replay
     does not begin until the socket is accepted and this runs before that.
 
     So the ambiguous middle — recorded, and then the write or the replica died — is deliberately
     treated as delivered: a duplicate turn is the worse of the two failures. What this closes is
     the window where nothing was recorded at all.
     """
-    written = await db.scalar(
-        select(SessionFrame.frame_seq)
+    written = await db.scalars(
+        select(SessionFrame)
         .where(
             SessionFrame.session_id == session_id,
             SessionFrame.frame_seq >= first_frame_seq,
             SessionFrame.direction == FrameDirection.TO_AGENT,
             SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
-            SessionFrame.payload["payload"]["type"].astext == PROMPT_FRAME_KIND,
         )
-        .limit(1)
+        .order_by(SessionFrame.frame_seq)
     )
-    return written is not None
+    return runtime.prompt_submitted(HarnessFrame(frame=row.payload, seq=row.runner_seq) for row in written.all())
 
 
 async def _requeue(db: AsyncSession, turn_id: UUID) -> None:

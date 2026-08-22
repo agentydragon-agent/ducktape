@@ -88,8 +88,8 @@ resuming mid-message finds the item its predecessor left open rather than openin
 **The rollout is recorded by `RolloutRecorder`, a `FrameSink` the protocol client calls.** Every
 frame either way, both channels, verbatim — the control channel included, since an interrupt that
 did not take is diagnosable from nothing else. **Deltas included**, because a log with a hole in it
-cannot be folded over; not burying the reader is answered at the read instead, where `read_frames`
-leaves `stream_event` out of its default view. They are also what makes an interrupted turn's
+cannot be folded over; readers are bounded by row and byte budgets rather than by classifying the
+native payload. Deltas are also what makes an interrupted turn's
 half-answer survive: an answer no `assistant` frame ever completed is in the log as the deltas that
 wrote it. Tool argument deltas are load-bearing too: some Claude Code builds can execute a call and
 return its result before writing the completed `assistant` block, so the stream's block start,
@@ -188,20 +188,17 @@ Decisions worth knowing before changing it:
   reverse keyset of `read_frames`, which the MCP reader uses forwards. The frames an operator opens
   this for are a session's last ones, and paging forward from frame one to reach them is what would
   make a long session expensive to debug. Each page still comes back in wire order.
-- **Deltas are a mode, not a checkbox.** The default view is `read_frames`' own — everything except
-  `stream_event` — because a turn streams those in the hundreds and completed blocks normally
-  repeat their content. Interleaving them would bury the coarser frames, so "Stream deltas" asks
-  for that kind alone. They answer how far an answer got before it was cut off and, for a tool
-  result with no preceding completed `assistant` block, where its call and arguments were declared.
+- **The inspector does not classify native JSON.** Every native harness frame is shown in wire
+  order, including deltas and payloads with no conventional discriminator. The only filter is
+  Haku's outer bridge class; setup narration is available explicitly and through its dedicated
+  view. Provider-aware summaries belong in provider tooling, not this generic surface.
 - **Nothing is clipped, and the page size is what bounds the response.** The MCP reader clips a
   frame to a context budget; here the wire is the answer, so clipping would be the lossy projection
   again one level down. The browser's other cost is drawn down instead: a payload builds its
   syntax-highlighted editor only once it nears the viewport (`frontend/code_block.tsx`).
-- **A frame the fold had no branch for says so.** Each row carries its own `Projection.unprojected`,
-  badged in the inspector — the transcript is silently missing whatever the adapter did not map, and
-  the key is the frame class to go and write a branch for. Diagnostic only: no rendering, notice or
-  delivery decision reads it. The keys stay the backend's own class names, because the adapter is
-  the one component allowed to be provider-shaped; neutralizing them would delete the answer.
+- **Unreadable counts belong to the projected transcript, not a raw row.** Whole-log projection
+  reports classes the selected integration did not map; the inspector itself displays exact JSON
+  without inventing a native kind or folding one frame in isolation.
 
 **Where per-message provenance lands** (`agent/claude-frame-provenance`, #4105): a message's
 inclusive `frame_seq` range is a bound on the same query — `before_seq` is already its upper half —
@@ -256,11 +253,11 @@ it answers. It is not restated here; what follows is who reads it and what is no
 `SessionStore.read_transcript` calls `project_log` and `transcript_entries.py` maps the result
 onto the read models in `conversation_records.py`. And the live path reads them too.
 
-**One interpreter, with one explicit backend escape hatch.** `_run_turn` projects each frame and
-acts on neutral item events; status folds those rows and adoption replays from the cursor. Turn
-completion still inspects Claude's `result` payload for failure detail and for prose that arrived
-only on that frame. `_CompletedTurn.frame` makes that dependency explicit; a second runner needs a
-sibling completion adapter before this last backend-specific read can move below the runtime.
+**One typed integration boundary.** `_run_turn` gives each exact native frame to the selected
+runtime's stateful `RuntimeTurnHandler` and acts only on its neutral `FrameEffects`. The integration
+also owns prompt-submission recognition and completion/failure interpretation. Adoption drives the
+same handler from the durable cursor, and reprojection drives it again to check the stored rows; no
+generic layer reads a provider discriminator.
 
 ### The events, stored — `conversation_event`
 
@@ -314,27 +311,28 @@ being consulted.
 
 Four things to know before changing it:
 
-- **The turn loop seeds a fresh state per frame** (`frame_projection.projected` calls
-  `project_log`), which is what the cursor rests on: the fold carries nothing across a frame
-  boundary, so the state at any cursor position is the empty one and a position is the whole of
-  what resuming needs. Threading one state across the turn would make that false — it breaks two
-  things in the _loop_, both written up in `projected`'s docstring — and
-  `conversation_turn.first_frame_seq` is the answer waiting for it: re-project one turn.
+- **One provider-owned handler folds the whole turn.** `RuntimeAdapter.turn_handler` owns typed
+  native protocol state and returns neutral `FrameEffects`; the generic loop never reads native
+  discriminators. Adoption seeds that handler only with durable neutral facts (the open message
+  and seen call ids), then replays every raw frame after the cursor. A handler returns
+  `Checkpoint.HOLD` while private state such as partial tool JSON cannot be represented durably, so
+  the cursor stays before the composition and a replacement rebuilds it from the same frames.
 - **`next_prompt` anchors the cursor** at the frame before the turn it opens, in that same
   transaction. That is what lets adoption tell a position inside this turn from one left behind by
   a writer that does not advance it — a replica on the previous image, for the length of a roll —
   and refuse the second (`projected_frame_seq < first_frame_seq - 1`).
-- **`end_turn` carries the cursor past the frame that ended the turn**, not `apply_frame`. The
-  turn's last word is written between the two, so advancing when that frame was projected would
-  put the cursor ahead of writes still to come.
+- **`complete_frame` carries the cursor past the frame that ended the turn**, not `apply_frame`.
+  Its terminal neutral effects, fallback answer close, outcome and cursor advance are one
+  transaction, so a provider may put durable facts on its terminal frame without losing them or
+  letting the cursor outrun the turn close.
 - **A turn is resumed from its cursor or not at all.** A cursor from before the turn — or none at
   all — is a position re-projecting from would redo effects that did commit, so `adopt_open_turn`
   ends such a turn as failed rather than resuming it. No session that can still acquire a frame is
   in that state (<../debug/2026_08_16_legacy_purge.md>).
 
-**`read_transcript` has no cursor and is not this one.** It re-reads the session and seeds an empty
-state per page, so it folds from the first frame every time; that is a read path with nowhere to
-keep a position, not the durable one.
+**`read_transcript` has no durable handler checkpoint and is not this cursor.** It re-reads the
+session from the first frame through the selected integration's whole-log projection every time;
+that is a read path with nowhere to keep provider state, not the durable writer position.
 
 Four properties hold the design up, each stated where it is kept — break one and the rest stop
 meaning anything:
@@ -343,8 +341,9 @@ meaning anything:
 - One batch and any split of batches project alike (`Projection.then`).
 - Every event carries provenance, and it is a union, so a rebuild cannot delete an authored event
   (`conversation_events.Authored`).
-- The default branch is counted, not dropped (`Projection.unprojected`) — and the count is read:
-  per session as `read_transcript`'s `unreadable`, per frame as the inspector's `unprojected` badge.
+- The default branch is counted, not dropped (`Projection.unprojected`) and the session-wide count
+  is exposed as `read_transcript`'s `unreadable`. The raw-frame inspector itself presents exact JSON
+  and does not classify native frames.
 
 Before changing the adapter, read <../debug/frame_shape_census.md>: every rule in it is a measured
 fact rather than a reading of `protocol.md`, so what looks like belt and braces mostly is not.
@@ -357,10 +356,9 @@ with the era it cannot speak about — and, separately, every item whose `text` 
 segments concatenate to. It is a function rather than a command, and has no caller in the
 tree.
 
-- **It folds through `frame_projection.projected`**, which is why that function is not the turn
-  loop's private one. A checker driving `project_log` over a whole session instead would merge the
-  frames sharing one `message.id` and cut its deltas from completed blocks — a different, equally
-  correct, event sequence, and it would report drift everywhere.
+- **It folds through the selected integration's `RuntimeTurnHandler`**, the same stateful reducer
+  the live turn loop drives. That keeps partial native composition, deduplication and terminal-frame
+  effects identical between the writer and the checker.
 - **It aligns by frame.** One frame's rows are written in one transaction and each event's range is
   `(frame_seq, frame_seq)`, so which rows a frame owns is a lookup. It reads a turn's rows on the
   `frame_range` arm only, so the authored category is out of scope — which is what stops a rebuild
@@ -370,16 +368,16 @@ tree.
   frames the cursor never reached (#4178's era). A turn with frames and no rows at all is not that
   — nothing writes a projected frame without its rows — so it is drift, and is reported as drift.
 
-### Recording a session as a fixture — `frame_export.py`
+### Recording a Claude session as a fixture — `claude_code/frame_export.py`
 
 `claude_code/testdata/diverse_session.jsonl` was captured off the CLI's stdout in a throwaway
 directory, so it can only ever hold a session somebody ran for the purpose. The shapes still
 unrecorded are the ones a console session produces — a `Task` subagent, a backgrounded `Bash`, the
-`BashOutput` loop watching it — and those exist in `session_frames`. `frame_export.py` is the
+`BashOutput` loop watching it — and those exist in `session_frames`. The Claude-owned exporter is the
 second route to the same file format:
 
 ```bash
-bb run //haku/console/x:frame_export_bin -- \
+bb run //haku/console/x/claude_code:frame_export_bin -- \
     --session <uuid> --output haku/console/x/claude_code/testdata/<name>.jsonl
 ```
 

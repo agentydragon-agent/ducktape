@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
 import pytest_bazel
 
-from haku.runtime.x.bridge.cli_client import ClaudeCli, ClaudeCliError, RecordedFrame
-from haku.runtime.x.bridge.protocol import ClaudeFrame, HarnessFrame
+from haku.console.x.claude_code.client import ClaudeCli, ClaudeCliError
+from haku.runtime.x.bridge.client import RecordedFrame
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 # The gap between one frame's number and the next. Deliberately not 1: the real sink is a Postgres
 # `Identity` column, which skips, so nothing may come to depend on adjacency.
@@ -26,24 +26,24 @@ class CountingSink:
     """
 
     def __init__(self) -> None:
-        self.numbered: list[tuple[int, dict[str, Any]]] = []
+        self.numbered: list[tuple[int, HarnessFrame]] = []
         # What the runner said each received frame's number was, which the sink keeps rather than
         # mints — None where the frame came from nowhere that numbers.
         self.runner_seqs: list[int | None] = []
         self._next = 1
 
-    def _number(self, payload: dict[str, Any]) -> int:
+    def _number(self, frame: HarnessFrame) -> int:
         seq = self._next
         self._next += _SEQ_STRIDE
-        self.numbered.append((seq, payload))
+        self.numbered.append((seq, frame))
         return seq
 
-    async def sent(self, payload: dict[str, Any]) -> int:
-        return self._number(payload)
+    async def sent(self, frame: HarnessFrame) -> int:
+        return self._number(frame)
 
-    async def received(self, payload: dict[str, Any], *, runner_seq: int | None) -> RecordedFrame:
-        self.runner_seqs.append(runner_seq)
-        return RecordedFrame(fresh=True, frame_seq=self._number(payload))
+    async def received(self, frame: HarnessFrame) -> RecordedFrame:
+        self.runner_seqs.append(frame.seq)
+        return RecordedFrame(fresh=True, frame_seq=self._number(frame))
 
 
 class ScriptedChannel:
@@ -54,18 +54,16 @@ class ScriptedChannel:
         self.closed = False
         self._inbound: asyncio.Queue[HarnessFrame | None] = asyncio.Queue()
         for frame in frames:
-            self._inbound.put_nowait(HarnessFrame(frame=ClaudeFrame(payload=frame).model_dump()))
+            self._inbound.put_nowait(HarnessFrame(frame=frame))
 
     def deliver(self, frame: dict[str, Any] | None, *, seq: int | None = None) -> None:
-        self._inbound.put_nowait(
-            None if frame is None else HarnessFrame(frame=ClaudeFrame(payload=frame).model_dump(), seq=seq)
-        )
+        self._inbound.put_nowait(None if frame is None else HarnessFrame(frame=frame, seq=seq))
 
     async def connect(self) -> None:
         pass
 
-    async def write(self, data: str) -> None:
-        self.written.append(json.loads(data))
+    async def write(self, frame: HarnessFrame) -> None:
+        self.written.append(frame.frame)
 
     async def read_messages(self) -> AsyncIterator[HarnessFrame]:
         while (message := await self._inbound.get()) is not None:
@@ -113,11 +111,11 @@ async def test_conversation_frames_are_delivered_verbatim_and_control_is_not() -
     frames = cli.frames()
 
     first, second = await anext(frames), await anext(frames)
-    assert (first.payload, second.payload["type"]) == (assistant, "result")
+    assert (first.envelope.frame, second.envelope.frame["type"]) == (assistant, "result")
     # Each carries the sink's number for it, which is what a reader addresses a frame by. The
     # control response the sink numbered before them is plumbing and reached nobody.
-    assert [(first.frame_seq, first.payload), (second.frame_seq, second.payload)] == [
-        (seq, frame["payload"]) for seq, frame in sink.numbered[-2:]
+    assert [(first.frame_seq, first.envelope.frame), (second.frame_seq, second.envelope.frame)] == [
+        (seq, frame.frame) for seq, frame in sink.numbered[-2:]
     ]
     await cli.aclose()
 
@@ -157,23 +155,23 @@ async def test_a_written_frame_is_numbered_before_it_can_be_answered() -> None:
     class RecordingCosts(CountingSink):
         """A sink whose write side takes a turn of the loop, as a Postgres round trip does."""
 
-        async def sent(self, payload: dict[str, Any]) -> int:
+        async def sent(self, frame: HarnessFrame) -> int:
             await asyncio.sleep(0)
-            return self._number(payload)
+            return self._number(frame)
 
     class AnsweringChannel(ScriptedChannel):
         """A peer that answers as the request lands, closing the round-trip margin this race would
         otherwise be decided by."""
 
-        async def write(self, data: str) -> None:
-            await super().write(data)
+        async def write(self, frame: HarnessFrame) -> None:
+            await super().write(frame)
             self.deliver(_answer(self.written[-1]))
 
     channel, sink = AnsweringChannel(), RecordingCosts()
     cli = ClaudeCli(channel, sink, control_timeout=5)
     await cli.connect()
 
-    numbered = {frame["payload"]["type"]: seq for seq, frame in sink.numbered}
+    numbered = {frame.frame["type"]: seq for seq, frame in sink.numbered}
     assert numbered["control_request"] < numbered["control_response"]
     await cli.aclose()
 
@@ -191,10 +189,10 @@ async def test_a_prompt_carries_the_id_its_lifecycle_will_be_reported_under() ->
 
     prompt = await cli.query("hello")
 
-    assert channel.written[-1]["uuid"] == prompt.command_uuid
+    assert isinstance(channel.written[-1]["uuid"], str)
     # The number the prompt reports is the sink's own for the frame just written, which is what
     # lets the console point the operator's message row at the frame it went out as.
-    assert sink.numbered[-1] == (prompt.frame_seq, ClaudeFrame(payload=channel.written[-1]).model_dump())
+    assert sink.numbered[-1] == (prompt.frame_seq, HarnessFrame(frame=channel.written[-1]))
     assert channel.written[-1]["message"] == {"role": "user", "content": "hello"}
     await cli.aclose()
 

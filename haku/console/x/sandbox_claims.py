@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -23,7 +24,6 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
-from haku.console.config import ClaudeRuntimeConfig
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class ProvisioningStep(StrEnum):
     WAITING_FOR_RUNNER = "waiting_for_runner"
 
 
-class ClaudeSandboxProvisioningView(BaseModel):
+class SandboxProvisioningView(BaseModel):
     """Non-secret Kubernetes state explaining what sandbox provisioning is waiting on."""
 
     model_config = ConfigDict(extra="forbid")
@@ -88,6 +88,21 @@ class KubernetesClients:
     core_v1: CoreV1Api
 
 
+@dataclass(frozen=True, slots=True)
+class SandboxClaimSpec:
+    """Generic desired state for one runtime's session claims.
+
+    The claim implementation knows Kubernetes and the shared runner bootstrap only. Which native
+    harness image/pool is selected and how claims are labelled is deploy-time runtime composition.
+    """
+
+    namespace: str
+    warm_pool: str
+    claim_prefix: str
+    runtime_label: str
+    runner_environment: Mapping[str, str]
+
+
 class SandboxClaims(Protocol):
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None: ...
 
@@ -95,7 +110,9 @@ class SandboxClaims(Protocol):
 
     async def delete(self, *, session_id: UUID) -> None: ...
 
-    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView: ...
+    async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView: ...
+
+    def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView: ...
 
     async def aclose(self) -> None: ...
 
@@ -103,8 +120,8 @@ class SandboxClaims(Protocol):
 class KubernetesSandboxClaims:
     """Create the narrow declarative SandboxClaim used by one chat session."""
 
-    def __init__(self, config: ClaudeRuntimeConfig, clients: KubernetesClients | None = None):
-        self._config = config
+    def __init__(self, spec: SandboxClaimSpec, clients: KubernetesClients | None = None):
+        self._spec = spec
         self._clients = clients
         self._lock = asyncio.Lock()
 
@@ -128,7 +145,7 @@ class KubernetesSandboxClaims:
             return self._clients
 
     def _claim_name(self, session_id: UUID) -> str:
-        return f"claude-{session_id.hex}"
+        return f"{self._spec.claim_prefix}-{session_id.hex}"
 
     async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
         body = {
@@ -138,20 +155,21 @@ class KubernetesSandboxClaims:
                 "name": self._claim_name(session_id),
                 "labels": {
                     "app.kubernetes.io/managed-by": "haku-console",
-                    "haku.allegedly.works/runtime": "claude-chat",
+                    "haku.allegedly.works/runtime": self._spec.runtime_label,
                 },
             },
             "spec": {
-                "warmPoolRef": {"name": self._config.warm_pool},
+                "warmPoolRef": {"name": self._spec.warm_pool},
                 "lifecycle": {"shutdownPolicy": "DeleteForeground", "shutdownTime": _format_shutdown_time(expires_at)},
                 "env": [
-                    {"name": "HAKU_CLAUDE_SESSION_ID", "value": str(session_id)},
+                    *({"name": name, "value": value} for name, value in self._spec.runner_environment.items()),
+                    {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
                     {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": bridge_token},
                 ],
             },
         }
         client = (await self._connected()).custom_objects
-        await client.create_namespaced_custom_object(*_CLAIM_API, self._config.namespace, _CLAIMS_PLURAL, body)
+        await client.create_namespaced_custom_object(*_CLAIM_API, self._spec.namespace, _CLAIMS_PLURAL, body)
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
         """Slide this session's sandbox shutdown deadline forward while a replica is tending it.
@@ -170,7 +188,7 @@ class KubernetesSandboxClaims:
         for attempt in range(_RENEW_ATTEMPTS):
             try:
                 claim = await client.get_namespaced_custom_object(
-                    *_CLAIM_API, self._config.namespace, _CLAIMS_PLURAL, name
+                    *_CLAIM_API, self._spec.namespace, _CLAIMS_PLURAL, name
                 )
             except k8s_client.ApiException as error:
                 if error.status != 404:
@@ -187,7 +205,7 @@ class KubernetesSandboxClaims:
             try:
                 await client.patch_namespaced_custom_object(
                     *_CLAIM_API,
-                    self._config.namespace,
+                    self._spec.namespace,
                     _CLAIMS_PLURAL,
                     name,
                     patch,
@@ -206,7 +224,7 @@ class KubernetesSandboxClaims:
             await client.delete_namespaced_custom_object(
                 "extensions.agents.x-k8s.io",
                 "v1beta1",
-                self._config.namespace,
+                self._spec.namespace,
                 "sandboxclaims",
                 self._claim_name(session_id),
                 body=k8s_client.V1DeleteOptions(propagation_policy="Foreground"),
@@ -215,12 +233,12 @@ class KubernetesSandboxClaims:
             if error.status != 404:
                 raise
 
-    async def inspect(self, *, session_id: UUID) -> ClaudeSandboxProvisioningView:
+    async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView:
         claim_name = self._claim_name(session_id)
         clients = await self._connected()
         try:
             claim = await clients.custom_objects.get_namespaced_custom_object(
-                "extensions.agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxclaims", claim_name
+                "extensions.agents.x-k8s.io", "v1beta1", self._spec.namespace, "sandboxclaims", claim_name
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
@@ -242,7 +260,7 @@ class KubernetesSandboxClaims:
 
         try:
             sandbox = await clients.custom_objects.get_namespaced_custom_object(
-                "agents.x-k8s.io", "v1beta1", self._config.namespace, "sandboxes", sandbox_name
+                "agents.x-k8s.io", "v1beta1", self._spec.namespace, "sandboxes", sandbox_name
             )
         except k8s_client.ApiException as error:
             if error.status == 404:
@@ -260,7 +278,7 @@ class KubernetesSandboxClaims:
         annotations = sandbox.get("metadata", {}).get("annotations", {}) or {}
         pod_name = str(annotations.get("agents.x-k8s.io/pod-name") or sandbox_name)
         try:
-            pod = await clients.core_v1.read_namespaced_pod(pod_name, self._config.namespace)
+            pod = await clients.core_v1.read_namespaced_pod(pod_name, self._spec.namespace)
         except k8s_client.ApiException as error:
             if error.status == 404:
                 return provisioning_view(
@@ -303,9 +321,14 @@ class KubernetesSandboxClaims:
             await self._clients.api.close()
             self._clients = None
 
+    def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
+        return provisioning_view(
+            self._claim_name(session_id), step=ProvisioningStep.CLAIM_CREATED, observation_error=error
+        )
 
-def provisioning_view(claim_name: str, *, step: ProvisioningStep, **values: Any) -> ClaudeSandboxProvisioningView:
-    return ClaudeSandboxProvisioningView(claim_name=claim_name, step=step, inspected_at=datetime.now(UTC), **values)
+
+def provisioning_view(claim_name: str, *, step: ProvisioningStep, **values: Any) -> SandboxProvisioningView:
+    return SandboxProvisioningView(claim_name=claim_name, step=step, inspected_at=datetime.now(UTC), **values)
 
 
 def _condition(resource: dict[str, Any], condition_type: str) -> dict[str, Any] | None:

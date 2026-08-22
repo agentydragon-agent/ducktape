@@ -128,8 +128,8 @@ pinning it against the SDK's `SubprocessCLITransport` with a compatibility test.
 
 **Built, and the SDK is out of the loop entirely** — <cli_protocol_ownership.md> is the decision and
 its reasoning. The bridge is `//haku/runtime/x/bridge:runner_bin`, which starts the pinned Claude
-Code executable the sandbox image supplies; the console drives the wire itself (`cli_client.py`
-replaces `ClaudeSDKClient`, `options.py` replaces `ClaudeAgentOptions` plus that private argv
+Code executable the sandbox image supplies; the console drives the wire itself
+(`console/x/claude_code/client.py` replaces `ClaudeSDKClient`, `runtime/x/bridge/options.py` replaces `ClaudeAgentOptions` plus that private argv
 builder, and `test_options.py` pins the argv where the compatibility test used to). The WebSocket
 still adds only launch and lifecycle framing — it defines no second prompt, turn, or tool protocol —
 and the SDK wheel survives as a build dependency for one reason: `extract_claude.py` pulls the CLI

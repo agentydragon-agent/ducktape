@@ -112,7 +112,7 @@ def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> Se
         session_id=uuid4(),
         direction=FrameDirection.FROM_AGENT,
         kind=kind,
-        payload={"kind": "claude", "payload": payload} if kind is BridgeFrameKind.HARNESS_FRAME else payload,
+        payload=payload,
         created_at=now,
         updated_at=now,
     )
@@ -129,40 +129,14 @@ _INSPECTED = [
 ]
 
 
-def test_the_inspector_says_which_frames_the_fold_had_no_branch_for() -> None:
-    """A frame class this release does not map is what a transcript is silently missing, and the key
-    is the string to add a branch for."""
+def test_the_inspector_keeps_native_payloads_opaque() -> None:
     page = session_views.frame_page(
         _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
     )
 
-    assert {frame.frame_seq: frame.unprojected for frame in page.frames} == {
-        1: None,
-        2: None,
-        3: {"system/vcs_state_changed": 1},
-        4: {"user/text": 1},
-        5: None,
-    }
-
-
-def test_the_per_frame_counts_are_what_a_whole_session_fold_reports() -> None:
-    """Per frame is exact rather than an approximation of the session-wide tally: a count keys off
-    the frame's own class, never off what the fold accumulated before it. `setup_output` is the
-    bridge's own envelope, which the fold refuses, so both sides exclude it."""
-    page = session_views.frame_page(
-        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
-    )
-    whole = projection.project_log(
-        projection.RecordedFrame(frame_seq=row.frame_seq, payload=row.payload["payload"])
-        for row in _INSPECTED
-        if row.kind != SETUP_OUTPUT_KIND
-    )
-
-    tallied: dict[str, int] = {}
-    for frame in page.frames:
-        for kind, count in (frame.unprojected or {}).items():
-            tallied[kind] = tallied.get(kind, 0) + count
-    assert tallied == dict(whole.unprojected)
+    assert [(frame.kind, frame.payload) for frame in page.frames] == [(row.kind, row.payload) for row in _INSPECTED]
+    assert all("native_kind" not in frame.model_fields_set for frame in page.frames)
+    assert all("unprojected" not in frame.model_fields_set for frame in page.frames)
 
 
 if __name__ == "__main__":

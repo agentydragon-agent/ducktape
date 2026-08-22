@@ -4,9 +4,8 @@ The v3 cutover makes `session_frames` a forensic log of the bridge, not a projec
 harness vocabulary.
 
 - `kind` is only `harness_frame` or `setup_output`.
-- `payload` is the complete inner harness frame. For Claude it is `{kind: "claude", payload: <native JSON>}`;
-  its `kind`, native `type`, JSON-RPC method, and unknown fields are preserved and are not copied
-  into the outer `kind`.
+- `payload` is exactly the native harness JSON object. Claude `type` values, Codex JSON-RPC
+  methods, and unknown fields are preserved and are not copied into the outer `kind`.
 - `direction`, `created_at`, `updated_at`, and the runner's `runner_seq` are retained for replay and
   ordering analysis.
 - Reconnect deduplication is positional (`session_id`, `runner_seq`), so native deltas and
@@ -20,6 +19,6 @@ chat-derived rows while preserving Operators, credentials, approvals, provider c
 conversations, and Matrix room attachments. The Matrix supervisor creates replacement sessions
 against the preserved conversation/room association.
 
-The frame inspector derives the native payload type as a presentation detail, while filtering and
+The frame inspector derives the native frame type as a presentation detail, while filtering and
 storage continue to use the bridge class. Exports include `bridge_kind` and `wire_seq` alongside the
-redacted, otherwise complete inner `frame`.
+redacted, otherwise unchanged native `frame`.

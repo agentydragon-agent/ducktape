@@ -13,7 +13,6 @@ from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
     RUNNER_TO_CONSOLE,
     SUPPORTED_VERSIONS,
-    ClaudeFrame,
     EndInput,
     HarnessFrame,
     HarnessLaunch,
@@ -67,9 +66,7 @@ def memory_websocket_pair() -> tuple[MemoryWebSocket, MemoryWebSocket]:
 
 
 def test_every_frame_kind_round_trips() -> None:
-    message = HarnessFrame(
-        frame=ClaudeFrame(payload={"type": "user", "message": {"role": "user", "content": "hi"}}).model_dump()
-    )
+    message = HarnessFrame(frame={"type": "user", "message": {"role": "user", "content": "hi"}})
 
     for outbound in (
         HarnessLaunch(arguments=("-v",), cwd="/workspace", environment={"SAFE": "v"}),
@@ -83,7 +80,7 @@ def test_every_frame_kind_round_trips() -> None:
     wire = json.loads(message.model_dump_json())
     assert wire == {
         "kind": "harness_frame",
-        "frame": {"kind": "claude", "payload": {"type": "user", "message": {"role": "user", "content": "hi"}}},
+        "frame": {"type": "user", "message": {"role": "user", "content": "hi"}},
         "seq": None,
     }
 
@@ -100,9 +97,7 @@ def test_each_direction_refuses_the_other_direction_only_frames() -> None:
 
 def test_an_sdk_payload_naming_our_control_frames_is_still_a_conversation_frame() -> None:
     """The whole point of the envelope: the SDK's vocabulary cannot collide with ours."""
-    impostor = HarnessFrame(
-        frame=ClaudeFrame(payload={"kind": "end_input", "type": "haku_transport", "subtype": "start"}).model_dump()
-    )
+    impostor = HarnessFrame(frame={"kind": "end_input", "type": "haku_transport", "subtype": "start"})
 
     assert RUNNER_TO_CONSOLE.validate_json(impostor.model_dump_json()) == impostor
 
@@ -216,10 +211,8 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
             assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
 
     prompt = {"type": "user", "message": {"role": "user", "content": "search"}}
-    await transport.write(encode_object(prompt) + "\n")
-    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == HarnessFrame(
-        frame=ClaudeFrame(payload=prompt).model_dump()
-    )
+    await transport.write(HarnessFrame(frame=prompt))
+    assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == HarnessFrame(frame=prompt)
 
     partial_events = [
         {
@@ -256,9 +249,9 @@ async def test_transport_preserves_fine_grained_tool_input_stream_events() -> No
 
     messages = transport.read_messages()
     for event in partial_events:
-        await runner_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=event).model_dump()).model_dump_json())
+        await runner_socket.send_text(HarnessFrame(frame=event).model_dump_json())
         with anyio.fail_after(1):
-            assert (await anext(messages)).frame["payload"] == event
+            assert (await anext(messages)).frame == event
 
     await transport.end_input()
     assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == EndInput()
@@ -285,13 +278,11 @@ async def test_the_cursor_goes_out_on_start_and_the_runners_number_comes_back_on
             assert CONSOLE_TO_RUNNER.validate_json(await runner_socket.receive_text()) == launch
 
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(
-        HarnessFrame(frame=ClaudeFrame(payload=answer).model_dump(), seq=42).model_dump_json()
-    )
+    await runner_socket.send_text(HarnessFrame(frame=answer, seq=42).model_dump_json())
     with anyio.fail_after(1):
         message = await anext(transport.read_messages())
 
-    assert (message.frame["payload"], message.seq) == (answer, 42)
+    assert (message.frame, message.seq) == (answer, 42)
     await transport.close()
 
 
@@ -326,11 +317,11 @@ async def test_progress_reaches_the_sink_and_not_the_conversation() -> None:
     messages = transport.read_messages()
     await runner_socket.send_text(SetupOutput(data=b"Cloning into '/workspace/haku-state'...\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=answer).model_dump()).model_dump_json())
+    await runner_socket.send_text(HarnessFrame(frame=answer).model_dump_json())
 
     with anyio.fail_after(1):
         # The progress frame is consumed on the way to this, not yielded before it.
-        assert (await anext(messages)).frame["payload"] == answer
+        assert (await anext(messages)).frame == answer
     assert reported == ["Cloning into '/workspace/haku-state'..."]
 
     await transport.close()
@@ -356,10 +347,10 @@ async def test_setup_output_is_reassembled_across_chunks() -> None:
     for chunk in (b"Clon", b"ing into 'haku-state'...\nresolving \xc3", b"\xa9tape\n\nworkspace ready\n"):
         await runner_socket.send_text(SetupOutput(data=chunk).model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=answer).model_dump()).model_dump_json())
+    await runner_socket.send_text(HarnessFrame(frame=answer).model_dump_json())
 
     with anyio.fail_after(1):
-        assert (await anext(messages)).frame["payload"] == answer
+        assert (await anext(messages)).frame == answer
     assert reported == ["Cloning into 'haku-state'...", "resolving étape", "workspace ready"]
 
     await transport.close()
@@ -374,10 +365,10 @@ async def test_progress_with_nowhere_to_go_is_dropped_not_fatal() -> None:
     messages = transport.read_messages()
     await runner_socket.send_text(SetupOutput(data=b"ignored\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=answer).model_dump()).model_dump_json())
+    await runner_socket.send_text(HarnessFrame(frame=answer).model_dump_json())
 
     with anyio.fail_after(1):
-        assert (await anext(messages)).frame["payload"] == answer
+        assert (await anext(messages)).frame == answer
 
     await transport.close()
 
@@ -399,10 +390,10 @@ async def test_a_failing_progress_sink_does_not_end_the_conversation() -> None:
     messages = transport.read_messages()
     await runner_socket.send_text(SetupOutput(data=b"Cloning into '/workspace/haku-state'...\n").model_dump_json())
     answer = {"type": "assistant", "message": {"role": "assistant", "content": "hi"}}
-    await runner_socket.send_text(HarnessFrame(frame=ClaudeFrame(payload=answer).model_dump()).model_dump_json())
+    await runner_socket.send_text(HarnessFrame(frame=answer).model_dump_json())
 
     with anyio.fail_after(1):
-        assert (await anext(messages)).frame["payload"] == answer
+        assert (await anext(messages)).frame == answer
 
     await transport.close()
 

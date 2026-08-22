@@ -29,8 +29,9 @@ still describes 0.144.1.
 ## Projection boundary
 
 The adapter consumes server notifications and produces the existing types from
-`haku.console.x.conversation_events`. It does not define a new event vocabulary and is not imported
-by `frame_projection.py` or any production runtime.
+`haku.console.x.conversation_events`. It does not define a new event vocabulary and is not
+registered in the production `runtime_catalog`; it remains dormant projection evidence rather than
+a launchable runtime.
 
 Supported now:
 

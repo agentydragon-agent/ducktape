@@ -26,9 +26,6 @@ them while reporting green.
 
 **Approvals are not modelled here.** They travel over MCP to the approval queue.
 
-**`ProjectionState` is here rather than beside the adapter**: a second backend adapter has to be
-able to produce one.
-
 Every shape claim below was read off production frames; the measurements are in
 <../debug/frame_shape_census.md> § What will break a naive fold.
 """
@@ -238,64 +235,3 @@ class Projection:
             events=self.events + later.events,
             unprojected=MappingProxyType(dict(Counter(self.unprojected) + Counter(later.unprojected))),
         )
-
-
-@dataclass(frozen=True, slots=True)
-class OpenItem:
-    """An item the fold has seen the start of and not the end of.
-
-    The two frame numbers are **provenance**, not identity: they are the span the item's completion
-    reports as the frames it was read from, which is what lets an operator appeal the folded text to
-    the raw JSON.
-    """
-
-    opened_at_frame_seq: int
-    last_frame_seq: int
-    backend_item_id: str | None
-    # The prose of this item already emitted as segments. What it exists for is that a completed
-    # block repeats what its deltas delivered, so the fold emits only the part nobody has seen —
-    # empty wherever a backend does not stream, which is what makes the two `DeltaSource`s one rule.
-    # Text rather than a count because a fold resuming an item another process opened inherits the
-    # item's whole prose, of which only a suffix belongs to the block now in flight
-    # (`claude_code.projection.undelivered`).
-    delivered: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class OpenToolCall:
-    """A tool call whose arguments are still arriving from the backend.
-
-    Tool arguments are complete or the call has not started in the neutral event vocabulary, but
-    two backend protocols stream the JSON that will become those arguments. Keeping the partial
-    value in projection state lets a fold emit one `ToolCallStarted` only when the JSON is whole,
-    and lets a live writer keep its durable cursor before the composition until then.
-    """
-
-    call_id: str
-    tool_name: str
-    block_index: int
-    opened_at_frame_seq: int
-    last_frame_seq: int
-    initial_arguments: Mapping[str, Json]
-    partial_json: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class ProjectionState:
-    """What a fold carries from one batch of frames to the next.
-
-    A value, not a session: it says only what is mid-flight when a batch ends, so one state serves
-    both a live consumer between frames and a cursor-driven one reloading. The default is a stream
-    nothing has been read from yet.
-
-    A streaming prose item holds what has been said rather than a transcript to join later. A tool
-    call being composed holds its partial arguments until they become a complete call; once it has
-    started, its id stays in `seen_call_ids` for the rest of the turn so a backend that later emits
-    a completed copy of the same block cannot open it twice. A call answered in another batch needs
-    no pointer: its completion names its `call_id`, which is what the store looks the item up by.
-    """
-
-    open_message: OpenItem | None = None
-    open_reasoning: OpenItem | None = None
-    open_tool_call: OpenToolCall | None = None
-    seen_call_ids: frozenset[str] = frozenset()

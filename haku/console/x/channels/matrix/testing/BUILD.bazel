@@ -49,12 +49,10 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x:session_store",
-        "//haku/console/x/claude_code:frames",
         "//haku/console/x/testing:waiting",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
-        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )

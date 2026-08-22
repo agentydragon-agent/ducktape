@@ -17,7 +17,7 @@ running it, and much of it the CLI marks `@internal`. Treat it as pinned to a CL
 | <probes/>                                | Runnable experiments, each printing every frame in both directions |
 | <testdata/>                              | One scrubbed capture of a real session, kept as evidence           |
 
-The client that uses all this is `haku/runtime/x/bridge/cli_client.py`.
+The Claude provider client that uses all this is `haku/console/x/claude_code/client.py`.
 
 ## Running a probe
 

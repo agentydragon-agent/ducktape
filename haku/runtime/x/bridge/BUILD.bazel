@@ -20,6 +20,23 @@ py_library(
 )
 
 py_library(
+    name = "backend_registry",
+    srcs = ["backend_registry.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":backend",
+        ":options",
+    ],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [":protocol"],
+)
+
+py_library(
     name = "options",
     srcs = ["options.py"],
     visibility = ["//haku:__subpackages__"],
@@ -45,7 +62,7 @@ py_library(
     visibility = ["//haku:__subpackages__"],
     deps = [
         ":backend",
-        ":options",
+        ":backend_registry",
         ":protocol",
         "@pypi//anyio",
         "@pypi//tenacity",
@@ -60,7 +77,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":backend",
-        ":options",
+        ":backend_registry",
         ":protocol",
         "@pypi//anyio",
         "@pypi//tenacity",
@@ -146,7 +163,7 @@ oci_image(
         binary_name = "runner_image_bin",
         extra_env = {
             "HAKU_CLAUDE_PATH": "/usr/local/bin/claude",
-            "HAKU_CLAUDE_SETUP": "/usr/local/bin/haku-sandbox-setup.sh",
+            "HAKU_RUNNER_SETUP": "/usr/local/bin/haku-sandbox-setup.sh",
             "HOME": "/home/runner",
             "CLAUDE_CONFIG_DIR": "/claude-config",
         },
@@ -204,31 +221,6 @@ py_test(
         "//:conftest",
         "@pypi//anyio",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "cli_client",
-    srcs = ["cli_client.py"],
-    visibility = ["//haku:__subpackages__"],
-    deps = [
-        ":protocol",
-        ":transport",
-        "//haku/cli_protocol:frames",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_cli_client",
-    srcs = ["test_cli_client.py"],
-    deps = [
-        ":cli_client",
-        ":protocol",
-        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",

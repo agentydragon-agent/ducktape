@@ -70,6 +70,7 @@ from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
+from haku.console.chat_models import BridgeFrameKind
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
 from haku.console.x.conversation_records import (
@@ -94,6 +95,10 @@ _EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 MAX_PAGE = 100
 DEFAULT_PAGE = 25
 
+# Haku's own outer frame classes. Native harness discriminators remain inside opaque JSON and are
+# deliberately not an argument vocabulary here.
+FrameKind = Literal["harness_frame", "setup_output"]
+
 # Bytes of payload one page will hand back before it stops and points its cursor at where it
 # stopped. A row limit alone does not bound a response, because one `tool_result` can be an entire
 # file — as a frame, and equally as the `structured` half of a transcript entry.
@@ -110,25 +115,6 @@ DEFAULT_PAGE = 25
 # 200 KB because that was the old regime's worst case (25 × 8 KB), so the ceiling on a response
 # does not move — only what a reader can spend it on.
 MAX_PAGE_BYTES = 200_000
-
-# What a session's `kind` column actually holds, so a caller can filter for any of it. Every
-# entry was observed in production; `tool_progress` is absent from the CLI's `protocol.md`, and
-# `setup_output` is the console's own (`haku/console/x/setup_output.py`). Spelled here because
-# it is this tool's argument vocabulary — an enum in the generated schema — rather than anything
-# the store constrains: `read_frames` takes whatever strings it is handed.
-FrameKind = Literal[
-    "assistant",
-    "user",
-    "result",
-    "system",
-    "command_lifecycle",
-    "control_request",
-    "control_response",
-    "rate_limit_event",
-    "setup_output",
-    "stream_event",
-    "tool_progress",
-]
 
 
 class Page[ItemT, CursorT](BaseModel):
@@ -182,10 +168,13 @@ class ConversationReader(Protocol):
 
     async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]: ...
 
-    # `Sequence` rather than `list` so the tool can narrow `kinds` to a Literal union for its
-    # generated schema: `list` is invariant, so `list[Literal[...]]` would not satisfy `list[str]`.
     async def read_frames(
-        self, session_id: UUID, *, cursor: FrameCursor | None, limit: int, kinds: Sequence[str] | None
+        self,
+        session_id: UUID,
+        *,
+        cursor: FrameCursor | None,
+        limit: int,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[RolloutFrame]: ...
 
     async def read_frame(self, session_id: UUID, frame_seq: int) -> RolloutFrame | None: ...
@@ -334,10 +323,8 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         happened, oldest first, and every one says which frames it was read off — follow that
         `provenance` into `read_frame` when a normalization looks wrong.
 
-        **Deltas are not on this surface.** A conversation being read back is finished, and the
-        increments of a message concatenate to exactly the `text` its `message` entry already
-        carries — so streaming them here would double every answer for no information. A reader
-        that genuinely wants the typing asks `read_rollout` for `stream_event` frames by name.
+        Native streaming details are not on this surface. A conversation being read back is
+        finished, and its integration has already reduced the raw wire to these neutral entries.
 
         A tool call and its result are two entries, joined by `call_id`, not one entry with the
         answer folded in: the call is real while it is still running, and a page that waited for
@@ -369,10 +356,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
             list[FrameKind] | None,
             Field(
                 default=None,
-                description="Only these frame types. `assistant` and `user` together are the conversation "
-                "with its tool calls and results; omit for everything except `stream_event`, which is "
-                "one token batch of an answer that arrives whole a moment later and so has to be asked "
-                "for by name — worth doing only to see how far an answer got before it was cut off.",
+                description="Only these Haku bridge classes. Native harness frame shapes are not classified here.",
             ),
         ] = None,
     ) -> RolloutPage:
@@ -384,7 +368,12 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         """
         require_conversation_access(execution)
         frames, more = take_page(
-            await reader.read_frames(session_id, cursor=cursor, limit=limit + 1, kinds=kinds),
+            await reader.read_frames(
+                session_id,
+                cursor=cursor,
+                limit=limit + 1,
+                kinds=None if kinds is None else [BridgeFrameKind(kind) for kind in kinds],
+            ),
             limit=limit,
             size=payload_bytes,
             clip=clip_frame,
@@ -406,8 +395,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         Use it when a page returned `clipped_bytes` instead of a payload, and when a transcript
         entry's normalization needs checking against what actually arrived.
 
-        Deltas (`stream_event`) are readable here too, but never need to be — one is a few
-        characters of an answer.
+        Streaming frames are readable here too, in whatever native shape this harness uses.
         """
         require_conversation_access(execution)
         frame = await reader.read_frame(session_id, frame_seq)

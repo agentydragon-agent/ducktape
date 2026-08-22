@@ -1132,6 +1132,8 @@ py_library(
         "//haku/console/x:session_live_updates",
         "//haku/console/x:session_runtime",
         "//haku/console/x:session_store",
+        "//haku/console/x:runtime",
+        "//haku/console/x:runtime_catalog",
         "//haku/console/x:subscription",
         "//haku/console/x:system_prompt",
         "//haku/console/x/channels/matrix:ingress_ledger",

@@ -15,13 +15,13 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
-from haku.console.x import frame_export
-from haku.console.x.claude_code import frames
+from haku.console.x.claude_code import frame_export, frames
 from haku.console.x.claude_code.projection import RecordedFrame, project_log
-from haku.console.x.conversation_events import ProjectionState, ToolCallCompleted, ToolCallStarted
-from haku.console.x.frame_projection import projected
+from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
+from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 # A bearer smuggled into the log the only realistic way one gets there: an operator ran a command
 # that carried it. If this string reaches an exported line, the export is unusable.
@@ -81,13 +81,13 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
     await chat_store.enqueue_prompt(operator_id, session_id, "start the build", SPA_ORIGIN)
     started = await chat_store.next_prompt(session_id)
     assert started is not None
-    state = ProjectionState()
+    handler = ClaudeRuntimeAdapter().turn_handler()
     for payload in SESSION_FRAMES:
         recorded = await chat_store.record_frame(
             session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
         )
-        state, events = projected(state, frame_seq=recorded.frame_seq, payload=payload)
-        await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, events)
+        effects = handler.apply(frame_seq=recorded.frame_seq, frame=HarnessFrame(frame=payload))
+        await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
     async with migrated_sessions() as db:
         return await frame_export.export_session(db, session_id)
 
@@ -95,8 +95,7 @@ async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.E
 def _reread(exported: frame_export.ExportedSession) -> list[RecordedFrame]:
     """The fixture as `test_diverse_session.py` reads one: a record's index is its `frame_seq`."""
     return [
-        RecordedFrame(frame_seq=index, payload=json.loads(line)["frame"]["payload"])
-        for index, line in enumerate(exported.lines())
+        RecordedFrame(frame_seq=index, payload=json.loads(line)["frame"]) for index, line in enumerate(exported.lines())
     ]
 
 
@@ -160,8 +159,7 @@ def test_the_offsets_are_relative_to_the_first_exported_frame(exported) -> None:
 
 
 def test_the_summary_counts_what_it_wrote(exported) -> None:
-    assert str(exported.session_id) in exported.summary()
-    assert "assistant×2" in exported.summary()
+    assert exported.summary() == f"session {exported.session_id}: {len(exported.records)} frame(s)"
 
 
 if __name__ == "__main__":

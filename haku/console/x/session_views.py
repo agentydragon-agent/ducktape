@@ -29,9 +29,8 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.database_schema import ConversationItem, Session, SessionFrame
-from haku.console.x.claude_code import projection
 from haku.console.x.conversation_records import ChannelAttachment
-from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
+from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 
@@ -177,7 +176,7 @@ class ConversationSessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    provisioning: ClaudeSandboxProvisioningView | None = None
+    provisioning: SandboxProvisioningView | None = None
     narration: list[SetupNarrationView]
     items: list[ConversationItemView]
     turns: list[ConversationTurnView]
@@ -257,7 +256,7 @@ class ConversationUpdate(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    provisioning: ClaudeSandboxProvisioningView | None = Field(
+    provisioning: SandboxProvisioningView | None = Field(
         default=None,
         description="The cluster's account of the sandbox this session is waiting on, while it is still waiting.",
     )
@@ -313,7 +312,7 @@ class SessionProvisioningView(BaseModel):
         description="The session's stored status. `responding` never appears here: it is derived "
         "from an open turn by `session_view` and is not on the row."
     )
-    sandbox: ClaudeSandboxProvisioningView | None = Field(
+    sandbox: SandboxProvisioningView | None = Field(
         description="The cluster's account of this session's sandbox. Null only while the session "
         "is idle and has never asked for one; `claim_absent` means one was requested but Kubernetes "
         "does not have it now."
@@ -328,14 +327,14 @@ MAX_FRAME_PAGE = 200
 
 
 class SessionFrameView(BaseModel):
-    """One row of the rollout, as the console's frame inspector reads it — Claude Code's own frame.
+    """One row of the rollout, as the console's frame inspector reads the selected harness's wire.
 
     **This is one backend's wire and must be presented as such**, never as the conversation: it is
     the only shape the console serves that names a backend.
 
-    The payload is the complete inner frame, wire whole. This surface exists because `conversation_item` is a lossy
-    projection of the frame log, so clipping here would reintroduce that one level down; bounding a
-    response is the page's job.
+    The payload is the complete native frame, wire whole. This surface exists because
+    `conversation_item` is a lossy projection of the frame log, so clipping here would reintroduce
+    that one level down; bounding a response is the page's job.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -343,17 +342,8 @@ class SessionFrameView(BaseModel):
     frame_seq: int
     direction: FrameDirection
     kind: BridgeFrameKind
-    native_kind: str | None = Field(
-        default=None, description="The native payload's `type` or JSON-RPC method when present; diagnostic only."
-    )
     created_at: datetime
     payload: dict[str, Any]
-    unprojected: dict[str, int] | None = Field(
-        default=None,
-        description="What the adapter's fold read nothing from in this frame, by the frame class it "
-        "calls it — absent when it read the whole frame. Diagnostic only: no rendering, notice or "
-        "delivery decision reads it.",
-    )
 
 
 class SessionFramePage(BaseModel):
@@ -370,26 +360,6 @@ class SessionFramePage(BaseModel):
     )
 
 
-def _unprojected(row: SessionFrame) -> dict[str, int] | None:
-    """`Projection.unprojected` for one frame, or nothing — never an empty map standing in for "none".
-
-    **The keys are the adapter's on purpose.** They are Claude's own frame class names
-    (`system/vcs_state_changed`, `user/text`): what the fold could not read is only sayable in the
-    wire's own words, so they must not be renamed into the neutral vocabulary.
-
-    Folding one frame at a time is exact here, unlike for the events: a count keys off the frame's
-    own class and content blocks, never off what the fold accumulated before it, so per frame sums
-    to what a whole-session fold reports. `setup_output` is the bridge's own envelope rather than a
-    CLI frame — the fold refuses it, and it has no class the adapter could fail to read.
-    """
-    if row.kind == SETUP_OUTPUT_KIND:
-        return None
-    folded = projection.project_log(
-        [projection.RecordedFrame(frame_seq=row.frame_seq, payload=_native_payload(row.payload))]
-    )
-    return dict(folded.unprojected) or None
-
-
 def frame_page(
     rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: RuntimeKind
 ) -> SessionFramePage:
@@ -403,10 +373,8 @@ def frame_page(
             frame_seq=row.frame_seq,
             direction=row.direction,
             kind=row.kind,
-            native_kind=_native_kind(row),
             created_at=row.created_at,
             payload=row.payload,
-            unprojected=_unprojected(row),
         )
         for row in rows
     ]
@@ -416,23 +384,6 @@ def frame_page(
         runtime_kind=runtime_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
-
-
-def _native_kind(row: SessionFrame) -> str | None:
-    if row.kind != BridgeFrameKind.HARNESS_FRAME:
-        return None
-    payload = _native_payload(row.payload)
-    for field in ("type", "method"):
-        if isinstance(value := payload.get(field), str):
-            return value
-    return None
-
-
-def _native_payload(frame: dict[str, Any]) -> dict[str, Any]:
-    """Project a stored complete inner harness frame to its native payload for display helpers."""
-    if isinstance(frame.get("kind"), str) and isinstance(payload := frame.get("payload"), dict):
-        return payload
-    raise ValueError("harness-frame view row does not contain a complete inner frame")
 
 
 async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:

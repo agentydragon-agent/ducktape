@@ -483,9 +483,10 @@ A map, not a diff.
 
 **Rewritten.** `x/session_store.py` splits along the seams it currently hides — a log writer, a
 conversation read, the prompt queue, session lifecycle. `x/session_events.py` becomes the log's one
-encoder. `x/conversation_events.py` takes the item shape. `x/claude_code/projection.py` and
-`x/frame_projection.py` emit items and segments. `x/session_runtime.py`'s turn loop stops holding
-message identity and stops writing the transcript on paths the log does not see.
+encoder. `x/conversation_events.py` takes the item shape. Provider-owned `RuntimeTurnHandler`s (Claude's in
+`x/claude_code/runtime.py`) emit neutral items and segments through `FrameEffects`.
+`x/session_runtime.py`'s turn loop stops holding message identity and stops writing the transcript
+on paths the log does not see.
 `x/session_views.py`, `x/transcript_entries.py`, `x/conversation_records.py` and `x/subscription.py`
 read items instead of messages. `x/conversation_follow.py` sends appends instead of whole rows.
 `x/reprojection.py` becomes the two-fold checker. In the Matrix channel, `outbox.py`,

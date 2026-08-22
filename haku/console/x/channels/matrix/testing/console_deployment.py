@@ -15,16 +15,14 @@ import json
 import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import IO, Annotated, Any, Literal
+from typing import IO
 from uuid import UUID
 
-from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ItemType, SessionStatus
 from haku.console.database_schema import ConversationItem, MatrixSyncWatermark
-from haku.console.x.claude_code.frames import ASSISTANT_FRAME_KIND
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
 from util.bazel.runfiles import get_required_path
@@ -35,34 +33,6 @@ CONSOLE_BIN = "_main/haku/console/x/channels/matrix/testing/console_replica_bin"
 RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
 STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
 SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/chat_system_prompt.md.j2"
-
-
-class _TextBlock(BaseModel):
-    type: Literal["text"]
-    text: str
-
-
-class _OtherBlock(BaseModel):
-    """A block that is not text — a tool call, a thinking block. Here so the union is total."""
-
-    type: str
-
-
-class _AssistantMessage(BaseModel):
-    # Left to right, so the exact shape wins over the catch-all rather than the union's scoring
-    # deciding which of two models a text block resembles more.
-    content: list[Annotated[_TextBlock | _OtherBlock, Field(union_mode="left_to_right")]]
-
-
-class _AssistantFrame(BaseModel):
-    """Enough of a recorded `assistant` frame to read the answer back out of it."""
-
-    message: _AssistantMessage
-
-
-def _assistant_text(payload: dict[str, Any]) -> str:
-    message = _AssistantFrame.model_validate(payload).message
-    return "".join(block.text for block in message.content if isinstance(block, _TextBlock))
 
 
 async def _exists(path: Path) -> bool:
@@ -240,24 +210,21 @@ class Deployment:
         return session_id
 
     async def wait_until_recorded(self, session_id: UUID, text: str) -> None:
-        """Wait until *text* is an `assistant` frame in the session's rollout: the moment the
-        console has the answer and has written it down.
-        """
+        """Wait until *text* is durable neutral conversation content for this session."""
 
         async def recorded() -> bool:
-            frames = await self._store.read_frames(session_id, cursor=None, limit=200, kinds=[ASSISTANT_FRAME_KIND])
-            for frame in frames:
-                stored_frame = frame.payload
-                if not isinstance(stored_frame, dict):
-                    continue
-                native_payload = stored_frame.get("payload")
-                if (
-                    stored_frame.get("kind") == "claude"
-                    and isinstance(native_payload, dict)
-                    and _assistant_text(native_payload) == text
-                ):
-                    return True
-            return False
+            async with self._db() as db:
+                return (
+                    await db.scalar(
+                        select(ConversationItem.item_id)
+                        .where(
+                            ConversationItem.session_id == session_id,
+                            ConversationItem.item_type == ItemType.MESSAGE,
+                            ConversationItem.item_text == text,
+                        )
+                        .limit(1)
+                    )
+                ) is not None
 
         await self._wait_until(f"{text!r} to be recorded in the rollout", recorded)
 
@@ -327,7 +294,7 @@ class Deployment:
                 self._runners[session_id] = await self._spawn(
                     f"runner-{len(self._session_ids)}",
                     get_required_path(RUNNER_BIN),
-                    {"HAKU_CLAUDE_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
+                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
                     "--harness",
                     "claude",
                 )

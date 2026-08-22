@@ -124,17 +124,15 @@ export async function fetchConversation(conversationId: string): Promise<Convers
 /** One page of a conversation's raw protocol frames, in wire order.
  *
  * Omitting `beforeSeq` reads the *tail* of the log; the response's `next_before_seq` walks back
- * from there. `kinds` restricts the frame types, and omitting it means everything except the
- * stream deltas — the server owns that default, so a frame kind this bundle predates still shows.
+ * from there. Every native frame is returned verbatim without a generic discriminator or filter.
  */
 export async function fetchSessionFrames(
   sessionId: string,
   limit: number,
-  beforeSeq?: number,
-  kinds?: string[]
+  beforeSeq?: number
 ): Promise<SessionFramePage> {
   const { data, error } = await api.GET("/api/sessions/{session_id}/frames", {
-    params: { path: { session_id: sessionId }, query: { limit, before_seq: beforeSeq, kind: kinds } },
+    params: { path: { session_id: sessionId }, query: { limit, before_seq: beforeSeq } },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load session frames"));
   return data;

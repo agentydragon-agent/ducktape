@@ -413,7 +413,7 @@ const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
           : conversationDetail;
 // The rollout behind that conversation, as the frame inspector reads it: one exchange in wire
 // order, with a tool call and the result it got, as the frames themselves carried them.
-const claudeFrame = (payload: Record<string, unknown>) => ({ kind: "claude" as const, payload });
+const claudeFrame = (payload: Record<string, unknown>) => payload;
 
 const conversationFrames = {
   conversation_id: conversationId,
@@ -423,7 +423,6 @@ const conversationFrames = {
       frame_seq: 412,
       direction: "to_agent",
       kind: "harness_frame",
-      native_kind: "user",
       created_at: "2026-08-01T03:00:20Z",
       payload: claudeFrame({
         type: "user",
@@ -434,7 +433,6 @@ const conversationFrames = {
       frame_seq: 413,
       direction: "from_agent",
       kind: "harness_frame",
-      native_kind: "assistant",
       created_at: "2026-08-01T03:00:21Z",
       payload: claudeFrame({
         type: "assistant",
@@ -458,7 +456,6 @@ const conversationFrames = {
       frame_seq: 414,
       direction: "from_agent",
       kind: "harness_frame",
-      native_kind: "user",
       created_at: "2026-08-01T03:00:23Z",
       payload: claudeFrame({
         type: "user",
@@ -479,7 +476,6 @@ const conversationFrames = {
       frame_seq: 416,
       direction: "from_agent",
       kind: "harness_frame",
-      native_kind: "result",
       created_at: "2026-08-01T03:00:24Z",
       payload: claudeFrame({
         type: "result",

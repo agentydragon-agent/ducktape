@@ -25,11 +25,15 @@ from haku.console.chat_models import ChatSurface, ItemStatus, ItemType
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.database_schema import ChatAttachment, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.x.claude_code.client import cli_over_websocket
+from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
+from haku.console.x.runtime_catalog import claude_registry, projection_registry
 from haku.console.x.sandbox_allocation import SandboxAllocator
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import SessionStore
 from haku.console.x.session_views import SessionView
+from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 OPERATOR_SUBJECT = "authentik-user-id"
@@ -56,6 +60,22 @@ def runtime_config(**overrides: object) -> ClaudeRuntimeConfig:
 MCP_TOKEN = SecretStr("haku-static-bearer")
 
 
+def configured_runtimes(
+    claims: RecordingClaims,
+    *,
+    config: ClaudeRuntimeConfig | None = None,
+    system_prompt: SystemPromptTemplate | None = None,
+    client_factory: RuntimeClientFactory = cli_over_websocket,
+) -> RuntimeRegistry:
+    return claude_registry(
+        config or runtime_config(),
+        claims,
+        mcp_token=MCP_TOKEN,
+        system_prompt=system_prompt or SystemPromptTemplate(""),
+        client_factory=client_factory,
+    )
+
+
 @pytest.fixture
 def recording_claims() -> RecordingClaims:
     return RecordingClaims()
@@ -70,7 +90,7 @@ class _ProvisioningTestStore(SessionStore):
 
 @pytest.fixture
 def chat_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
-    return _ProvisioningTestStore(migrated_sessions)
+    return _ProvisioningTestStore(migrated_sessions, projection_registry())
 
 
 @pytest.fixture
@@ -88,7 +108,7 @@ async def notifications(migrated_db_url: str) -> AsyncIterator[SessionNotificati
 def chat_service(
     chat_store: SessionStore, recording_claims: RecordingClaims, notifications: SessionNotifications
 ) -> SessionService:
-    return SessionService(runtime_config(), chat_store, recording_claims, notifications, mcp_token=MCP_TOKEN)
+    return SessionService(configured_runtimes(recording_claims), chat_store, notifications)
 
 
 @pytest.fixture

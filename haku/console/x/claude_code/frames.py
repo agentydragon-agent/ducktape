@@ -1,20 +1,22 @@
 """The CLI's own frame vocabulary, and the readers that pick a value out of one.
 
 The `type` values Claude Code puts at the top of a frame, and the shapes underneath them. The
-console stores these in `session_frames.kind` alongside the bridge's own envelope discriminator
-(<../setup_output.py>), which is the two-vocabulary collision that giving the CLI's type its own
-column resolves (<../../plans/conversation_layers.md> § 13).
+console stores the complete native object in `session_frames.payload`; `session_frames.kind` remains
+only the bridge envelope class. Native kinds are derived when an inspection or projection needs
+them, so a later CLI value remains preserved even before this module learns its meaning.
 
 Everything here is about the wire's shapes, so it holds no session state and touches no table.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict
 
 # One token batch of an answer still being written. Hundreds per turn, and the completed
-# `assistant` frame repeats all of it, which is why `read_frames` leaves them out of its default
-# view.
+# `assistant` frame repeats all of it; Claude's projector decides which copy becomes a neutral
+# segment while the generic raw-frame reader preserves both.
 DELTA_FRAME_KIND = "stream_event"
 
 # The frame a prompt crosses the wire as. Only meaningful with a direction beside it: the CLI
@@ -28,11 +30,27 @@ RESULT_FRAME_KIND = "result"
 ASSISTANT_FRAME_KIND = "assistant"
 
 
+class ResultFrame(BaseModel):
+    """The typed fields Console reads from Claude Code's turn-ending frame.
+
+    Extra fields remain accepted because the raw ``HarnessFrame`` is the durable wire record and a
+    newer CLI adding telemetry must not make an otherwise readable result fail closed.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["result"]
+    subtype: str
+    result: Any = None
+    stop_reason: str | None = None
+
+
 def frame_kind(payload: dict[str, Any]) -> str:
     kind = payload.get("type")
-    if not isinstance(kind, str):
-        raise ValueError(f"protocol frame has no type: {payload=}")
-    return kind
+    if isinstance(kind, str):
+        return kind
+    method = payload.get("method")
+    return method if isinstance(method, str) else "<undiscriminated>"
 
 
 def agent_message_id(frame: dict[str, Any]) -> str | None:

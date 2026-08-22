@@ -128,8 +128,7 @@ which belongs to no message row.
 - **`update_assistant` and the per-delta session write.** It set `status = RESPONDING` on every
   stream delta, which is one session-row write per token batch to hold true a flag the open turn
   already stated.
-- **The per-frame fold's freshness** (`frame_projection.projected`). One frame at a time, a new
-  projection each time, because a
-  projector held across the turn would merge the frames sharing a `message.id` into a single row
-  and defer every completion by one frame. Both are improvements; both change what is stored, so
-  neither belongs to a change that stores nothing new.
+- **The then-current per-frame fold's freshness.** At the time of this archaeology, one fresh
+  projection per frame avoided changing stored event grouping. The later runtime seam superseded
+  that mechanism with a provider-owned stateful turn handler plus explicit durable checkpoints;
+  this bullet records the old constraint rather than instructions for the current writer.

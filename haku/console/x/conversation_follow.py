@@ -60,7 +60,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from haku.console import operator_auth
 from haku.console.chat_models import SessionStatus
 from haku.console.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
-from haku.console.x.sandbox_claims import ClaudeSandboxProvisioningView
+from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
 from haku.console.x.session_store import PositionUnusableError, SessionStore
 from haku.console.x.session_views import (
@@ -101,9 +101,7 @@ class ConversationReader(Protocol):
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView: ...
 
-    async def provisioning_of(
-        self, session_id: UUID, status: SessionStatus
-    ) -> ClaudeSandboxProvisioningView | None: ...
+    async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> SandboxProvisioningView | None: ...
 
 
 class ConversationFollow:
