@@ -132,8 +132,10 @@ The capability-neutral production cutover deploys this proxy at
 `haku-kubeapi.allegedly.works`. Public Coder reaches it only through its mandatory
 iron-proxy, which substitutes the Agent's Haku bearer for that exact hostname.
 The Agent has no Kubernetes credential and its NetworkPolicy has no direct
-kube-apiserver path. The proxy uses a rotating projected ServiceAccount token
-whose initial RBAC ceiling equals Public Coder's existing standing SAR subject.
+kube-apiserver path. The proxy uses a rotating projected ServiceAccount token. Its baseline RBAC
+ceiling equals Public Coder's standing SAR subject; an additional cluster-wide ceiling for core
+`pods` `get` and `list` can be exercised only when Console authorizes the request through an active
+Agent-owned grant.
 
 Flux orders the cutover so the fixed SAR subject, Console configuration, proxy
 Deployment/route, and cross-namespace execution bindings exist before the Agent

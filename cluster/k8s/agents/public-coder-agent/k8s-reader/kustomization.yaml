@@ -5,3 +5,4 @@ resources:
   - role.yaml
   - node-reader.yaml
   - proxy-ceiling.yaml
+  - all-pods-read-ceiling.yaml
