@@ -1,10 +1,4 @@
-"""Bench script for the spike-1 representative scenario.
-
-Runs `build_bench_scenario()` end-to-end at 1000 rollouts and
-reports wall-clock time. No specific perf target this round —
-the goal is to establish the baseline that later waves' bench
-targets are set against. Invoke via `bb run`.
-"""
+"""Bench script for the representative dense simulator scenario."""
 
 from __future__ import annotations
 
@@ -16,7 +10,7 @@ from finance.augur.sim.simulate import simulate
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Spike-1 augur sim bench")
+    parser = argparse.ArgumentParser(description="Augur sim bench")
     parser.add_argument("--rollouts", type=int, default=1000)
     parser.add_argument("--horizon-months", type=int, default=60)
     args = parser.parse_args()
@@ -30,9 +24,8 @@ def main() -> None:
     print(f"rollouts: {args.rollouts}")
     print(f"horizon_months: {args.horizon_months}")
     print(f"wall_clock_sec: {elapsed:.3f}")
-    print(f"cash_balances_rows: {result.cash_balances.height}")
-    print(f"asset_lots_rows: {result.asset_lots.height}")
-    print(f"series_values_rows: {result.series_values.height}")
+    print(f"cash_state_elements: {result.output.state.cash.size}")
+    print(f"lot_state_elements: {result.output.state.lots.size}")
     print(f"transfers: {result.events_log.transfers.height}")
     print(f"lot_dispositions: {result.events_log.lot_dispositions.height}")
     print(f"tax_accruals: {result.events_log.tax_accruals.height}")

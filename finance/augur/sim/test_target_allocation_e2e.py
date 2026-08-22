@@ -33,6 +33,7 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
 )
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import asset_lots, cash_balances, rollout_status
 
 _HORIZON = 4
 _STOCK = SecurityKey(symbol=SecuritySymbol("vti"))
@@ -153,7 +154,8 @@ def _cash(scenario: Scenario) -> list[int]:
     run = _run(scenario)
     return [
         int(v)
-        for v in run.cash_balances.filter(pl.col("agent_id") == "alice")
+        for v in cash_balances(run)
+        .filter(pl.col("agent_id") == "alice")
         .sort("month_index")
         .get_column("balance_quanta")
         .to_list()
@@ -162,7 +164,7 @@ def _cash(scenario: Scenario) -> list[int]:
 
 def _lots(scenario: Scenario, *, month: int) -> dict[str, float]:
     run = _run(scenario)
-    rows = run.asset_lots.filter(pl.col("month_index") == month).to_dicts()
+    rows = asset_lots(run).filter(pl.col("month_index") == month).to_dicts()
     return {str(row["lot_id"]): float(row["remaining_quantity"]) for row in rows}
 
 
@@ -223,7 +225,7 @@ def test_the_band_is_measured_after_the_months_obligations() -> None:
     assert _lots(scenario, month=1) == {"stock": 900.0, "bond": 100.0}
     assert _lots(scenario, month=2) == {"stock": 670.0, "bond": 100.0}
     assert _cash(scenario)[2] == 3_000_000
-    assert _run(scenario).rollout_status.get_column("status").to_list() == ["active"]
+    assert rollout_status(_run(scenario)).get_column("status").to_list() == ["active"]
 
 
 def test_a_sale_the_sleeves_cannot_cover_does_not_mint_money() -> None:
@@ -327,9 +329,11 @@ def test_a_purchase_records_the_price_its_rollout_paid() -> None:
     would report 0, making the whole proceeds a gain on the eventual sale."""
 
     run = _run(_scenario(opening_cash=100_000, floor=10_000, ceiling=20_000, purchase_slots=1))
-    bought = run.asset_lots.filter(
-        (pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1)
-    ).to_dicts()[0]
+    bought = (
+        asset_lots(run)
+        .filter((pl.col("lot_id") == "allocation_sale_buy_p0_s1_0") & (pl.col("month_index") == 1))
+        .to_dicts()[0]
+    )
 
     assert int(bought["cost_basis_per_unit_quanta"]) == 10_000
 
@@ -358,10 +362,8 @@ def test_successive_purchases_fill_successive_slots() -> None:
 
     scenario = _scenario(opening_cash=0, floor=0, ceiling=1_000, income=30_000, purchase_slots=2)
     lots = (
-        _run(scenario)
-        .asset_lots.filter(
-            pl.col("lot_id").str.starts_with("allocation_sale_buy_p0_s1_") & (pl.col("month_index") == _HORIZON)
-        )
+        asset_lots(_run(scenario))
+        .filter(pl.col("lot_id").str.starts_with("allocation_sale_buy_p0_s1_") & (pl.col("month_index") == _HORIZON))
         .sort("lot_id")
         .to_dicts()
     )

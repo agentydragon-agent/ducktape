@@ -7,57 +7,10 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.codec.helpers import (
-    code_column,
-    codes_to_strings,
-    currency_quanta_column,
-    frame_from_columns,
-    r_first_view,
-    state_axes,
-    state_history_frame_from_columns,
-)
+from finance.augur.sim.codec.helpers import codes_to_strings, currency_quanta_column, frame_from_columns
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
-from finance.augur.sim.state import LIABILITY_FRAME
-
-
-def decode_liabilities(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    principal = r_first_view(output.state.liability_principal)  # (H+1, R, n_liab)
-    active = r_first_view(output.state.liability_active)
-    h1, r, n_liab = principal.shape
-    months, rollouts, liabs = state_axes(h1, r, n_liab)
-    mask = active.reshape(-1)
-    liab_idx = liabs[mask]
-    property_slot = plan.liabilities.property_slot.astype(np.int64)
-    property_id_codes = plan.properties.id[property_slot]
-    origination_per_liab = plan.properties.month.astype(np.int64)[property_slot]
-    return state_history_frame_from_columns(
-        {
-            "rollout_index": rollouts[mask],
-            "month_index": months[mask],
-            "liability_id": code_column(plan, plan.liabilities.codes[liab_idx]),
-            "agent_id": code_column(plan, plan.liabilities.agent[liab_idx]),
-            "payment_account_id": code_column(plan, plan.liabilities.payment_account[liab_idx]),
-            "counterparty_agent_id": code_column(plan, plan.liabilities.counterparty_agent[liab_idx]),
-            "counterparty_account_id": code_column(plan, plan.liabilities.counterparty_account[liab_idx]),
-            "property_id": code_column(plan, property_id_codes[liab_idx]),
-            "principal_quanta": currency_quanta_column(principal.reshape(-1)[mask]),
-            "annual_interest_rate": plan.liabilities.annual_rate.astype(np.float64)[liab_idx],
-            "term_months": plan.liabilities.term_months.astype(np.int64)[liab_idx],
-            "origination_month_index": origination_per_liab[liab_idx],
-            "monthly_payment_quanta": currency_quanta_column(
-                r_first_view(output.state.liability_monthly_payment).reshape(-1)[mask]
-            ),
-            "interest_paid_ytd_quanta": currency_quanta_column(
-                r_first_view(output.state.liability_interest_ytd).reshape(-1)[mask]
-            ),
-            "principal_paid_ytd_quanta": currency_quanta_column(
-                r_first_view(output.state.liability_principal_ytd).reshape(-1)[mask]
-            ),
-        },
-        LIABILITY_FRAME,
-    )
 
 
 def decode_mortgage_originations(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:

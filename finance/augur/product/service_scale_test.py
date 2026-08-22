@@ -52,7 +52,7 @@ def test_metric_fan_scale(make_product_service: MakeProductService, augur_config
         profiler.disable()
     fan_elapsed = time.perf_counter() - start
 
-    # A single-rollout detail view exercises the lazy decode path (events_log + asset_lots only).
+    # A single-rollout detail view exercises the retained lazy event decode path.
     rollout_start = time.perf_counter()
     service.rollout(RolloutRequest(scenario=scenario, seed=0))
     rollout_elapsed = time.perf_counter() - rollout_start

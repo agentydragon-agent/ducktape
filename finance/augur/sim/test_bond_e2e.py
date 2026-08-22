@@ -18,6 +18,7 @@ import pytest_bazel
 
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import cash_balances, ordinary_income_ytd
 
 _HORIZON_MONTHS = 13
 _FACE_VALUE = Decimal(1_000_000)
@@ -85,7 +86,8 @@ def _alice_cash_by_month(*, issuer: str | None, maturity_month_index: int = 120)
     )
     balances = [
         int(value)
-        for value in run.cash_balances.filter(pl.col("agent_id") == "alice")
+        for value in cash_balances(run)
+        .filter(pl.col("agent_id") == "alice")
         .sort("month_index")
         .get_column("balance_quanta")
         .to_list()
@@ -127,7 +129,7 @@ def test_corporate_coupon_is_taxed_by_both() -> None:
 
 def test_coupon_accrues_as_interest_not_ordinary_income() -> None:
     run = simulate(_scenario(issuer="federal_us"), rollout_count=1, locations={})
-    december = run.ordinary_income_ytd.filter(
+    december = ordinary_income_ytd(run).filter(
         (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
     )
 
@@ -169,7 +171,7 @@ def test_redemption_returns_the_face_as_cash_without_being_income() -> None:
     # coupons in SOME row, whichever row that is.
     run = simulate(_scenario(issuer="federal_us", maturity_month_index=maturity), rollout_count=1, locations={})
     income = (
-        run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").get_column("ordinary_income_quanta").to_list()
+        ordinary_income_ytd(run).filter(pl.col("agent_id") == "alice").get_column("ordinary_income_quanta").to_list()
     )
 
     assert max(income) == 2_500_000

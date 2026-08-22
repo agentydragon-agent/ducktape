@@ -202,9 +202,7 @@ def main() -> None:
         "--materialize",
         choices=["all", "rollout", "none"],
         default="all",
-        help="which lazy SimulationRun frames to force-decode: 'all' (every frame), 'rollout' "
-        "(only what the single-rollout detail view reads: events_log + asset_lots), or 'none' "
-        "(decode nothing — the lazy default)",
+        help="whether to force-decode the event log ('all'/'rollout') or decode nothing ('none')",
     )
     args = parser.parse_args()
 
@@ -218,25 +216,7 @@ def main() -> None:
     def _materialize(result: object) -> None:
         if args.materialize == "none":
             return
-        if args.materialize == "rollout":
-            _ = result.events_log  # type: ignore[attr-defined]
-            _ = result.asset_lots  # type: ignore[attr-defined]
-            return
-        for frame in (
-            "cash_balances",
-            "asset_lots",
-            "ordinary_income_ytd",
-            "capital_gains_ytd",
-            "tax_liabilities",
-            "property_state",
-            "property_stakes",
-            "liabilities",
-            "rollout_status_history",
-            "rollout_status",
-            "series_values",
-            "events_log",
-        ):
-            getattr(result, frame)
+        _ = result.events_log  # type: ignore[attr-defined]
 
     def run(rollout_count: int) -> None:
         if args.dense_only:

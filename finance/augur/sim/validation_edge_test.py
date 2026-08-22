@@ -33,6 +33,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
+from finance.augur.sim.test_state_helpers import rollout_status
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
@@ -270,7 +271,7 @@ def test_an_invalid_sleeve_price_leaves_the_obligation_unfunded(bad_price: float
 
     assert result.events_log.lot_dispositions.is_empty()
     assert result.events_log.rollout_failures.row(0, named=True)["month_index"] == 0
-    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert rollout_status(result).row(0, named=True)["status"] == "failed_insufficient_cash"
 
 
 if __name__ == "__main__":

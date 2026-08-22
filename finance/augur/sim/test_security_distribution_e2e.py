@@ -33,6 +33,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import cash_balances, ordinary_income_ytd
 
 _HORIZON = 13
 _SYMBOL = SecuritySymbol("bnd")
@@ -124,7 +125,8 @@ def _cash_by_month(*, tax_character: tuple[DistributionTaxSlice, ...], distribut
     )
     balances = [
         int(value)
-        for value in run.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("account_id") == "checking"))
+        for value in cash_balances(run)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("account_id") == "checking"))
         .sort("month_index")
         .get_column("balance_quanta")
         .to_list()
@@ -193,9 +195,13 @@ def test_a_mixed_fund_is_exempt_only_on_its_treasury_slice() -> None:
 
 def test_the_payout_accrues_as_interest_per_issuer_not_as_one_lump() -> None:
     run = simulate(_scenario(tax_character=_AGGREGATE), rollout_count=1, locations={})
-    december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
-    ).sort("income_source")
+    december = (
+        ordinary_income_ytd(run)
+        .filter(
+            (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
+        )
+        .sort("income_source")
+    )
 
     assert december.get_column("income_source").to_list() == ["interest:corporate", "interest:federal_us"]
     # Row `m` of the YTD frame is the OPENING snapshot of month `m`, so month 11 has months

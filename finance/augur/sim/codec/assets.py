@@ -10,80 +10,17 @@ import polars as pl
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.codec.helpers import (
-    asset_code_column,
-    code_column,
     codes_to_asset_wire_ids,
     codes_to_strings,
     currency_quanta_column,
     frame_from_columns,
     lot_quantity_column,
     quantity_column,
-    r_first_view,
-    state_axes,
-    state_history_frame_from_columns,
 )
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.enums import PrivateEquityDispositionKind, PrivateEquityOpportunityOutcome
 from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
-from finance.augur.sim.state import ASSET_LOT_FRAME, CASH_BALANCES_FRAME
-
-
-def decode_cash(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    """Cash held by the scenario's AGENTS, month by month.
-
-    The engine's cash array has one more row than this frame: the external account every
-    unmodeled counterparty settles against. It is an accounting device, not somebody's bank
-    account, and surfacing it here would put a fictitious agent in every consumer of this
-    frame — including the UI. Callers that want it (a conservation check, "where did the
-    money go") read `output.state.cash` directly, where it is row
-    `plan.external_cash_slot`.
-    """
-
-    state = r_first_view(output.state.cash)[:, :, : plan.external_cash_slot]  # (H+1, r, s)
-    h1, r, s = state.shape
-    months, rollouts, slots = state_axes(h1, r, s)
-    return state_history_frame_from_columns(
-        {
-            "rollout_index": rollouts,
-            "month_index": months,
-            "agent_id": code_column(plan, plan.cash_agent_codes[slots]),
-            "account_id": code_column(plan, plan.cash_account_codes[slots]),
-            "balance_quanta": currency_quanta_column(state.reshape(-1)),
-        },
-        CASH_BALANCES_FRAME,
-    )
-
-
-def decode_asset_lots(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    state = r_first_view(output.state.lots)  # (H+1, r, s)
-    h1, r, s = state.shape
-    # Basis is per-rollout, not a plan column: a lot bought mid-horizon carries the price its
-    # rollout paid, and reading the compile-time column would report 0 for every purchased lot.
-    # It is also write-once, so the output is `(lot, rollout)` and every month of the frame repeats
-    # it — including the months before the lot's purchase, where `remaining_quantity` is 0 and the
-    # basis column is meaningless either way.
-    basis = np.broadcast_to(output.state.lot_cost_basis.T[None, :, :], (h1, r, s))  # (H+1, r, s)
-    # The purchase month is per-rollout for the same reason: a slot a policy chose to fill is bought
-    # in whatever month its own rollout crossed the band, and the plan's column holds 0 for it.
-    purchase_month = np.broadcast_to(output.state.lot_purchase_month.T[None, :, :], (h1, r, s))
-    months, rollouts, slots = state_axes(h1, r, s)
-    return state_history_frame_from_columns(
-        {
-            "rollout_index": rollouts,
-            "month_index": months,
-            "lot_id": code_column(plan, plan.lot_id_codes[slots]),
-            "agent_id": code_column(plan, plan.lot_agent_codes[slots]),
-            "account_id": code_column(plan, plan.lot_account_codes[slots]),
-            "asset_id": asset_code_column(plan, plan.lot_asset_codes[slots]),
-            "purchase_month_index": purchase_month.reshape(-1),
-            "cost_basis_per_unit_quanta": currency_quanta_column(basis.reshape(-1)),
-            "remaining_quantity_quanta": np.asarray(state.reshape(-1), dtype=np.int64),
-            "quantity_scale": np.asarray(plan.lot_quantity_scale[slots], dtype=np.int64),
-            "remaining_quantity": lot_quantity_column(plan, slots, state.reshape(-1)),
-        },
-        ASSET_LOT_FRAME,
-    )
 
 
 def decode_sched_dispositions(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:

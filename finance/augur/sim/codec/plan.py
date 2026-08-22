@@ -1,112 +1,50 @@
-"""Top-level codec orchestrator: `SimulationRun` is a lazy facade over the
-per-domain decoders, producing each long-form Polars frame from a
-(plan, output, external_series) triple on first access. The triple is exposed
-as public attributes for callers (product metrics, profiling) that read the raw
-dense output directly instead of the decoded frames."""
+"""Simulation handoff and event-log codec.
+
+``SimulationRun`` keeps the compiled plan, dense output, and external-series context
+that form the simulator's canonical contract. Event decoding remains available as a
+lazy convenience; state histories are read directly from the dense output instead of
+being mirrored into long-form Polars frames.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
 
-import numpy as np
 import polars as pl
 
 from finance.augur.sim.codec.assets import (
-    decode_asset_lots,
-    decode_cash,
     decode_pe_dispositions,
     decode_pe_opportunity_events,
     decode_pe_protocol_events,
     decode_sched_dispositions,
     decode_target_allocation_dispositions,
 )
-from finance.augur.sim.codec.liabilities import (
-    decode_liabilities,
-    decode_mortgage_originations,
-    decode_mortgage_payments,
-)
+from finance.augur.sim.codec.liabilities import decode_mortgage_originations, decode_mortgage_payments
 from finance.augur.sim.codec.lifecycle import decode_lifecycle_events
 from finance.augur.sim.codec.obligations import decode_obligations
 from finance.augur.sim.codec.primary_residence import decode_primary_residence_events
-from finance.augur.sim.codec.properties import decode_property_purchases, decode_property_stakes, decode_property_state
-from finance.augur.sim.codec.series import decode_money_series_values, decode_series_values
-from finance.augur.sim.codec.tax import (
-    decode_capital_gains,
-    decode_ordinary_income,
-    decode_tax_accruals,
-    decode_tax_liabilities,
-    decode_tax_settlements,
-)
+from finance.augur.sim.codec.properties import decode_property_purchases
+from finance.augur.sim.codec.tax import decode_tax_accruals, decode_tax_settlements
 from finance.augur.sim.codec.transfers import decode_cashflows
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES, EventLog
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.output import DenseSimulationOutput
-from finance.augur.sim.state import ROLLOUT_STATUS_FRAME
 
 
-# eq=False: a run is a handle around its (plan, output, external_series) triple, so identity
-# equality is what callers want; field-wise __eq__/__hash__ would also choke on the numpy arrays
-# inside `output`. frozen so the triple can't be swapped out from under the cached frames.
 @dataclass(frozen=True, eq=False)
 class SimulationRun:
-    """Lazy view of a simulation's outputs: each long-form Polars frame (and the event log) is
-    decoded from the dense output on first access and cached, so a caller only pays to materialize
-    the frames it actually reads. The `(plan, output, external_series)` triple is public for callers
-    that read the raw dense output directly."""
+    """Handle around the canonical simulation handoff.
+
+    State arrays are intentionally not projected into Polars mirrors. Consumers should
+    use ``run.output.state`` together with ``run.plan``; the event log is the only lazy
+    decoded read model retained here.
+    """
 
     plan: CompiledSimulation
     output: DenseSimulationOutput
     external_series: ExternalSeriesContext
-
-    @cached_property
-    def cash_balances(self) -> pl.DataFrame:
-        return decode_cash(self.plan, self.output)
-
-    @cached_property
-    def asset_lots(self) -> pl.DataFrame:
-        return decode_asset_lots(self.plan, self.output)
-
-    @cached_property
-    def ordinary_income_ytd(self) -> pl.DataFrame:
-        return decode_ordinary_income(self.plan, self.output)
-
-    @cached_property
-    def capital_gains_ytd(self) -> pl.DataFrame:
-        return decode_capital_gains(self.plan, self.output)
-
-    @cached_property
-    def tax_liabilities(self) -> pl.DataFrame:
-        return decode_tax_liabilities(self.plan, self.output)
-
-    @cached_property
-    def property_state(self) -> pl.DataFrame:
-        return decode_property_state(self.plan, self.output)
-
-    @cached_property
-    def property_stakes(self) -> pl.DataFrame:
-        return decode_property_stakes(self.plan, self.output)
-
-    @cached_property
-    def liabilities(self) -> pl.DataFrame:
-        return decode_liabilities(self.plan, self.output)
-
-    @cached_property
-    def rollout_status_history(self) -> pl.DataFrame:
-        return decode_rollout_status_history(self.plan, self.output)
-
-    @cached_property
-    def rollout_status(self) -> pl.DataFrame:
-        return decode_final_rollout_status(self.plan, self.output)
-
-    @cached_property
-    def series_values(self) -> pl.DataFrame:
-        return decode_series_values(self.external_series.levels)
-
-    @cached_property
-    def money_series_values(self) -> pl.DataFrame:
-        return decode_money_series_values(self.plan)
 
     @cached_property
     def events_log(self) -> EventLog:
@@ -147,52 +85,4 @@ def decode_events(plan: CompiledSimulation, output: DenseSimulationOutput) -> Ev
             "private_equity_events": decode_pe_protocol_events(plan),
             "private_equity_opportunities": decode_pe_opportunity_events(plan, output),
         }
-    )
-
-
-# Status categories indexed by the rollout's `failed` flag (0 = active, 1 = failed).
-_ROLLOUT_STATUS_CATEGORIES = pl.Series("status", ["active", "failed_insufficient_cash"], dtype=pl.Utf8())
-
-
-def _status_series(failed: np.ndarray) -> pl.Series:
-    """Vectorized `failed`-flag → status string via Arrow take (avoids per-element `new_str`)."""
-    return _ROLLOUT_STATUS_CATEGORIES.gather(failed.astype(np.int64)).rename("status")
-
-
-def _failed_month_series(failed_month: np.ndarray) -> pl.Series:
-    """`failed_month` int array → Int64 column with NO_CODE (-1) mapped to null, no Python loop."""
-    values = failed_month.astype(np.int64)
-    return pl.Series("failed_month", values).set(pl.Series(values < 0), None)
-
-
-def decode_rollout_status_history(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    failed_state = output.state.failed  # (H+1, r) bool
-    failed_month_state = output.state.failed_month  # (H+1, r) int
-    h1, r = failed_state.shape
-    months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None], (h1, r)).ravel()
-    rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :], (h1, r)).ravel()
-    return pl.DataFrame(
-        {
-            "rollout_index": rollouts,
-            "month_index": months,
-            "status": _status_series(failed_state.reshape(-1)),
-            "failed_month": _failed_month_series(failed_month_state.reshape(-1)),
-        }
-    )
-
-
-def decode_final_rollout_status(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    month = plan.horizon_months
-    failed = output.state.failed[month]  # (r,) bool
-    r = failed.shape[0]
-    if r == 0:
-        return ROLLOUT_STATUS_FRAME.empty()
-    return ROLLOUT_STATUS_FRAME.normalize(
-        pl.DataFrame(
-            {
-                "rollout_index": np.arange(r, dtype=np.int64),
-                "status": _status_series(failed),
-                "failed_month": _failed_month_series(output.state.failed_month[month]),
-            }
-        )
     )
