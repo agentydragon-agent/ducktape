@@ -1,0 +1,23 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: clickhouse-analytics
+  namespace: analytics
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse
+      app.kubernetes.io/instance: analytics
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: clickhouse-analytics-keeper
+  namespace: analytics
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clickhouse-keeper
+      app.kubernetes.io/instance: analytics

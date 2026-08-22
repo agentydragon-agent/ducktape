@@ -5,6 +5,7 @@ resources:
   - deployment.yaml
   - httproute.yaml
   - service.yaml
+  - servicemonitor.yaml
 configMapGenerator:
   - name: aiquota-api-config
     namespace: cli-proxy-api

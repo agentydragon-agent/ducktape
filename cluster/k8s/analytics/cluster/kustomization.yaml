@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - admin-credentials.sops.yaml
+  - aiquota-credentials.sops.yaml
+  - grafana-credentials.sops.yaml
+  - keeper.yaml
+  - clickhouse.yaml
+  - networkpolicy.yaml
+  - pdb.yaml
+  - podmonitor.yaml
+
+configMapGenerator:
+  - name: clickhouse-analytics-config
+    namespace: analytics
+    files:
+      - system_logs.xml
+      - startup_scripts.xml
+
+configurations:
+  - kustomizeconfig

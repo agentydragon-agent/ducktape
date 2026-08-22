@@ -7,8 +7,13 @@ files or persists quota snapshots.
 """
 
 import asyncio
+import base64
+import hashlib
 import hmac
 import json
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,19 +22,22 @@ from typing import Annotated, Protocol, cast
 import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, SecretStr
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aiquota.cache import _assemble, _instantiate
+from aiquota.clickhouse import ClickHouseSnapshotSink
 from aiquota.config import Config, load as load_config
-from aiquota.models import AllQuotas
+from aiquota.models import AllQuotas, FetchSuccess
 from aiquota.providers.client import ProviderClientFactory
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
 _bearer = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 class RawUpstreamResponse(BaseModel):
@@ -42,6 +50,9 @@ class RawUpstreamResponse(BaseModel):
     status_code: int
     content_type: str | None = None
     body: object | None = None
+    body_base64: str | None = None
+    body_sha256: str | None = None
+    body_size_bytes: int | None = None
     truncated: bool = False
 
 
@@ -52,15 +63,96 @@ class QuotaSnapshot:
 
 
 class SnapshotFetcher(Protocol):
-    async def fetch(self) -> QuotaSnapshot: ...
+    async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot: ...
+
+
+class SnapshotSink(Protocol):
+    async def write(self, snapshot: QuotaSnapshot) -> int: ...
+
+
+class CollectorMetrics:
+    def __init__(self, registry: CollectorRegistry | None = None) -> None:
+        self.registry = registry or CollectorRegistry()
+        self.polls = Counter(
+            "aiquota_poll_total", "Background quota collection attempts", ["result"], registry=self.registry
+        )
+        self.provider_success = Gauge(
+            "aiquota_provider_scrape_success",
+            "Whether the latest provider fetch succeeded",
+            ["provider"],
+            registry=self.registry,
+        )
+        self.last_success = Gauge(
+            "aiquota_last_persisted_timestamp_seconds",
+            "Unix timestamp of the latest snapshot persisted to ClickHouse",
+            registry=self.registry,
+        )
+        self.clickhouse_writes = Counter(
+            "aiquota_clickhouse_write_total", "ClickHouse batch writes", ["result"], registry=self.registry
+        )
+        self.clickhouse_rows = Counter(
+            "aiquota_clickhouse_rows_total", "Rows appended to ClickHouse", registry=self.registry
+        )
+        self.ready = Gauge(
+            "aiquota_collector_ready",
+            "Whether at least one snapshot has been persisted to ClickHouse",
+            registry=self.registry,
+        )
+
+
+class BackgroundCollector:
+    """Continuously refresh providers and append each snapshot to a sink."""
+
+    def __init__(
+        self, fetcher: SnapshotFetcher, sink: SnapshotSink, *, interval: timedelta, metrics: CollectorMetrics
+    ) -> None:
+        self._fetcher = fetcher
+        self._sink = sink
+        self._interval = interval
+        self.metrics = metrics
+        self.has_persisted = False
+
+    async def run(self) -> None:
+        while True:
+            await self.poll_once()
+            await asyncio.sleep(self._interval.total_seconds())
+
+    async def poll_once(self) -> None:
+        try:
+            snapshot = await self._fetcher.fetch(force_refresh=True)
+            for provider in snapshot.quotas.providers:
+                self.metrics.provider_success.labels(provider=provider.provider).set(
+                    1 if isinstance(provider.last_output.result, FetchSuccess) else 0
+                )
+            rows = await self._sink.write(snapshot)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.metrics.polls.labels(result="error").inc()
+            self.metrics.clickhouse_writes.labels(result="error").inc()
+            logger.exception("aiquota background collection failed")
+            return
+        self.metrics.polls.labels(result="success").inc()
+        self.metrics.clickhouse_writes.labels(result="success").inc()
+        self.metrics.clickhouse_rows.inc(rows)
+        self.metrics.last_success.set(datetime.now(UTC).timestamp())
+        self.metrics.ready.set(1)
+        self.has_persisted = True
 
 
 class _CapturingClientFactory:
     """Provider HTTP client factory which captures only quota endpoint bodies."""
 
-    def __init__(self, *, claude_proxy: str | None, claude_proxy_ca: Path | None) -> None:
+    def __init__(
+        self,
+        *,
+        claude_proxy: str | None,
+        claude_proxy_ca: Path | None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._claude_proxy = claude_proxy
         self._claude_proxy_ca = claude_proxy_ca
+        self._transport = transport
         self.responses: dict[str, RawUpstreamResponse] = {}
 
     def __call__(self, provider: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
@@ -94,7 +186,13 @@ class _CapturingClientFactory:
             except (json.JSONDecodeError, UnicodeDecodeError):
                 body = captured.decode("utf-8", errors="replace")
             self.responses[provider] = RawUpstreamResponse(
-                status_code=status_code, content_type=content_type, body=body, truncated=truncated
+                status_code=status_code,
+                content_type=content_type,
+                body=body,
+                body_base64=base64.b64encode(captured).decode(),
+                body_sha256=hashlib.sha256(content).hexdigest(),
+                body_size_bytes=len(content),
+                truncated=truncated,
             )
 
         kwargs: dict[str, object] = {
@@ -106,6 +204,8 @@ class _CapturingClientFactory:
             # in-cluster service.
             "trust_env": False,
         }
+        if self._transport is not None:
+            kwargs["transport"] = self._transport
         if provider == "claude" and self._claude_proxy:
             kwargs["proxy"] = self._claude_proxy
             if self._claude_proxy_ca is not None:
@@ -133,12 +233,12 @@ class QuotaAPIService:
         self._snapshot: QuotaSnapshot | None = None
         self._lock = asyncio.Lock()
 
-    async def fetch(self) -> QuotaSnapshot:
-        if self._is_fresh(self._snapshot):
+    async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
+        if not force_refresh and self._is_fresh(self._snapshot):
             assert self._snapshot is not None
             return self._snapshot
         async with self._lock:
-            if self._is_fresh(self._snapshot):
+            if not force_refresh and self._is_fresh(self._snapshot):
                 assert self._snapshot is not None
                 return self._snapshot
             factory: ProviderClientFactory = _CapturingClientFactory(
@@ -175,6 +275,19 @@ class Settings(BaseSettings):
     claude_proxy: str | None = None
     claude_proxy_ca: Path | None = None
     cli_proxy_api_key: SecretStr | None = Field(default=None, validation_alias="AIQUOTA_CLIPROXY_API_KEY")
+    clickhouse_url: str | None = None
+    clickhouse_username: str = "aiquota_ingest"
+    clickhouse_password: SecretStr | None = None
+    clickhouse_database: str = "aiquota"
+    clickhouse_raw_table: str = "raw_http_observations"
+    clickhouse_windows_table: str = "aiquota_windows"
+    poll_interval_seconds: int = Field(default=300, gt=0)
+
+    @model_validator(mode="after")
+    def validate_clickhouse(self) -> "Settings":
+        if self.clickhouse_url and self.clickhouse_password is None:
+            raise ValueError("AIQUOTA_CLICKHOUSE_PASSWORD is required when AIQUOTA_CLICKHOUSE_URL is set")
+        return self
 
     @property
     def cache_ttl(self) -> timedelta:
@@ -225,14 +338,42 @@ def _normalized_payload(quotas: AllQuotas) -> dict[str, object]:
     return payload
 
 
-def create_app(*, bearer_token: str, fetcher: SnapshotFetcher) -> FastAPI:
-    app = FastAPI(title="aiquota API", version="1")
+def create_app(
+    *,
+    bearer_token: str,
+    fetcher: SnapshotFetcher,
+    collector: BackgroundCollector | None = None,
+    metrics: CollectorMetrics | None = None,
+) -> FastAPI:
+    app_metrics = metrics or (collector.metrics if collector else CollectorMetrics())
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(collector.run(), name="aiquota-clickhouse-collector") if collector else None
+        try:
+            yield
+        finally:
+            if task:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    app = FastAPI(title="aiquota API", version="1", lifespan=lifespan)
     app.state.bearer_token = bearer_token
     app.state.fetcher = fetcher
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/readyz")
+    async def readyz() -> JSONResponse:
+        ready = collector is None or collector.has_persisted
+        return JSONResponse({"status": "ready" if ready else "collecting"}, status_code=200 if ready else 503)
+
+    @app.get("/metrics")
+    async def prometheus_metrics() -> PlainTextResponse:
+        return PlainTextResponse(generate_latest(app_metrics.registry).decode(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/v1/quotas", dependencies=[Depends(_require_bearer)])
     async def quotas(service: Annotated[SnapshotFetcher, Depends(_fetcher)]) -> JSONResponse:
@@ -268,7 +409,26 @@ def main() -> None:
         claude_proxy_ca=settings.claude_proxy_ca,
         cli_proxy_api_key=settings.cli_proxy_api_key.get_secret_value() if settings.cli_proxy_api_key else None,
     )
-    uvicorn.run(create_app(bearer_token=settings.api_bearer_token, fetcher=service), host="0.0.0.0", port=8080)
+    metrics = CollectorMetrics()
+    collector: BackgroundCollector | None = None
+    if settings.clickhouse_url:
+        assert settings.clickhouse_password is not None
+        sink = ClickHouseSnapshotSink(
+            url=settings.clickhouse_url,
+            username=settings.clickhouse_username,
+            password=settings.clickhouse_password.get_secret_value(),
+            database=settings.clickhouse_database,
+            raw_table=settings.clickhouse_raw_table,
+            windows_table=settings.clickhouse_windows_table,
+        )
+        collector = BackgroundCollector(
+            service, sink, interval=timedelta(seconds=settings.poll_interval_seconds), metrics=metrics
+        )
+    uvicorn.run(
+        create_app(bearer_token=settings.api_bearer_token, fetcher=service, collector=collector, metrics=metrics),
+        host="0.0.0.0",
+        port=8080,
+    )
 
 
 if __name__ == "__main__":

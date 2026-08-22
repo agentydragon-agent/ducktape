@@ -1,3 +1,4 @@
+import base64
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,7 +8,7 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from aiquota.api import QuotaSnapshot, RawUpstreamResponse, Settings, create_app
+from aiquota.api import QuotaSnapshot, RawUpstreamResponse, Settings, _CapturingClientFactory, create_app
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 
 if __name__ == "__main__":
@@ -44,7 +45,7 @@ class FakeFetcher:
             },
         )
 
-    async def fetch(self) -> QuotaSnapshot:
+    async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot:
         self.calls += 1
         return self.snapshot
 
@@ -64,6 +65,9 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     monkeypatch.setenv("AIQUOTA_CLAUDE_PROXY", "http://proxy:8180")
     monkeypatch.setenv("AIQUOTA_CLAUDE_PROXY_CA", "/tmp/proxy-ca.pem")
     monkeypatch.setenv("AIQUOTA_CLIPROXY_API_KEY", "management-key")
+    monkeypatch.setenv("AIQUOTA_CLICKHOUSE_URL", "http://clickhouse:8123")
+    monkeypatch.setenv("AIQUOTA_CLICKHOUSE_PASSWORD", "clickhouse-password")
+    monkeypatch.setenv("AIQUOTA_POLL_INTERVAL_SECONDS", "300")
 
     settings = Settings()
 
@@ -74,12 +78,28 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     assert settings.claude_proxy_ca == Path("/tmp/proxy-ca.pem")
     assert settings.cli_proxy_api_key is not None
     assert settings.cli_proxy_api_key.get_secret_value() == "management-key"
+    assert settings.clickhouse_url == "http://clickhouse:8123"
+    assert settings.clickhouse_password is not None
+    assert settings.clickhouse_password.get_secret_value() == "clickhouse-password"
+    assert settings.poll_interval_seconds == 300
 
 
 async def test_health_is_public(client: httpx.AsyncClient) -> None:
     response = await client.get("/healthz")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+async def test_ready_is_public_when_background_collection_is_disabled(client: httpx.AsyncClient) -> None:
+    response = await client.get("/readyz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+async def test_metrics_are_public(client: httpx.AsyncClient) -> None:
+    response = await client.get("/metrics")
+    assert response.status_code == 200
+    assert "aiquota_collector_ready" in response.text
 
 
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic test-bearer"}])
@@ -108,6 +128,9 @@ async def test_raw_provider_response_is_available_to_authenticated_callers(clien
         "status_code": 200,
         "content_type": "application/json",
         "body": {"five_hour": {"utilization": 45.0, "internal_detail": "upstream-only"}},
+        "body_base64": None,
+        "body_sha256": None,
+        "body_size_bytes": None,
         "truncated": False,
     }
 
@@ -115,3 +138,23 @@ async def test_raw_provider_response_is_available_to_authenticated_callers(clien
 async def test_unknown_provider_is_not_found(client: httpx.AsyncClient) -> None:
     response = await client.get("/v1/providers/codex/raw", headers={"Authorization": "Bearer test-bearer"})
     assert response.status_code == 404
+
+
+async def test_capture_preserves_exact_bounded_upstream_bytes() -> None:
+    body = b'{"value": 1, "spacing": "preserved"}\n'
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body, headers={"Content-Type": "application/json"}, request=request)
+
+    factory = _CapturingClientFactory(claude_proxy=None, claude_proxy_ca=None, transport=httpx.MockTransport(handler))
+    url = "https://provider.example/usage"
+    async with factory("test", {url}, 5.0) as upstream:
+        response = await upstream.get(url)
+        response.raise_for_status()
+
+    raw = factory.responses["test"]
+    assert raw.body == {"value": 1, "spacing": "preserved"}
+    assert raw.body_base64 is not None
+    assert base64.b64decode(raw.body_base64) == body
+    assert raw.body_size_bytes == len(body)
+    assert raw.truncated is False

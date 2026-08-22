@@ -84,14 +84,25 @@ py_library(
     imports = [".."],
     deps = [
         ":cache",
+        ":clickhouse",
         ":config",
         ":models",
         "//aiquota/providers:client",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "clickhouse",
+    srcs = ["clickhouse.py"],
+    deps = [
+        ":models",
+        "@pypi//httpx",
     ],
 )
 
@@ -211,6 +222,21 @@ py_test(
     imports = [".."],
     deps = [
         ":api",
+        ":models",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_clickhouse",
+    srcs = ["test_clickhouse.py"],
+    imports = [".."],
+    deps = [
+        ":api",
+        ":clickhouse",
         ":models",
         "@pypi//httpx",
         "@pypi//pytest",

@@ -24,7 +24,7 @@ spec:
       password: ${GF_DATABASE_PASSWORD}
       ssl_mode: require
     plugins:
-      preinstall: grafana-clock-panel
+      preinstall: grafana-clock-panel,grafana-clickhouse-datasource@4.20.0
     auth.generic_oauth:
       enabled: "true"
       name: Authentik
