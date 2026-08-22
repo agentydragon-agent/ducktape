@@ -580,16 +580,17 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
   // Before the conversation detail below, which its path is a prefix of.
   if (url.includes("/frames")) return jsonResponse(conversationFrames);
-  if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
-  if (url.includes("/api/conversations")) return jsonResponse(conversationPage);
   // The refusal the composer has to render: `enqueue_prompt` answers 409 and records nothing, so
-  // the operator's text has to survive it. Before the session read below, whose path this extends.
+  // the operator's text has to survive it. Before the conversation detail below, whose path this
+  // now extends.
   if (scene === "conversation-prompt-refused" && url.includes("/messages")) {
     return new Response(JSON.stringify({ detail: "a prompt is already queued" }), {
       status: 409,
       headers: { "Content-Type": "application/json" },
     });
   }
+  if (url.includes("/api/conversations/")) return jsonResponse(conversationDetailForScene);
+  if (url.includes("/api/conversations")) return jsonResponse(conversationPage);
   // Push is configured and one *other* device is enrolled. The headless browser has no real
   // subscription, so "this browser" renders Off while the second device fills the per-device list.
   if (url.includes("/api/push/config")) return jsonResponse({ application_server_key: "BEl62iUYgUivxIkv69yViEuiBIa" });
