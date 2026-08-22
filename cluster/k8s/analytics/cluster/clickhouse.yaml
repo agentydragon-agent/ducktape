@@ -1,0 +1,170 @@
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseInstallation
+metadata:
+  name: analytics
+  namespace: analytics
+spec:
+  configuration:
+    zookeeper:
+      # The CHK operator exposes its three-member ensemble behind this stable
+      # service. Using the service address keeps the CHI compatible with the
+      # versioned CRD schema while Kubernetes removes unavailable endpoints.
+      nodes:
+        - host: keeper-analytics-keeper.analytics.svc.cluster.local
+          port: 2181
+      session_timeout_ms: 30000
+      operation_timeout_ms: 10000
+    users:
+      default/networks/ip:
+        - 127.0.0.1/32
+        - ::1/128
+      admin/password:
+        valueFrom:
+          secretKeyRef:
+            name: clickhouse-admin-credentials
+            key: password
+      admin/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      admin/profile: default
+      admin/quota: default
+      admin/access_management: 1
+      aiquota_ingest/password:
+        valueFrom:
+          secretKeyRef:
+            name: clickhouse-aiquota-credentials
+            key: password
+      aiquota_ingest/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      aiquota_ingest/profile: ingest
+      aiquota_ingest/quota: ingest
+      aiquota_ingest/grants/query:
+        - GRANT INSERT ON aiquota.raw_http_observations
+        - GRANT INSERT ON aiquota.aiquota_windows
+      grafana/password:
+        valueFrom:
+          secretKeyRef:
+            name: clickhouse-grafana-credentials
+            key: password
+      grafana/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      grafana/profile: readonly
+      grafana/quota: readonly
+      grafana/grants/query:
+        - GRANT SELECT ON aiquota.*
+    profiles:
+      readonly/readonly: 1
+      readonly/max_memory_usage: 1073741824
+      readonly/max_threads: 4
+      readonly/max_execution_time: 60
+      ingest/async_insert: 1
+      ingest/wait_for_async_insert: 1
+      ingest/async_insert_busy_timeout_ms: 5000
+      ingest/max_memory_usage: 536870912
+      ingest/max_threads: 2
+      ingest/max_execution_time: 30
+    quotas:
+      ingest/interval/duration: 3600
+      ingest/interval/queries: 100000
+      ingest/interval/errors: 1000
+      readonly/interval/duration: 3600
+      readonly/interval/queries: 10000
+      readonly/interval/errors: 1000
+    settings:
+      prometheus/endpoint: /metrics
+      prometheus/port: 9363
+      prometheus/metrics: "true"
+      prometheus/events: "true"
+      prometheus/asynchronous_metrics: "true"
+      prometheus/status_info: "true"
+    clusters:
+      - name: analytics
+        secure: "true"
+        secret:
+          valueFrom:
+            secretKeyRef:
+              name: clickhouse-admin-credentials
+              key: cluster-secret
+        layout:
+          shardsCount: 1
+          replicasCount: 2
+  defaults:
+    templates:
+      podTemplate: clickhouse
+      dataVolumeClaimTemplate: data
+  templates:
+    podTemplates:
+      - name: clickhouse
+        metadata:
+          labels:
+            app.kubernetes.io/name: clickhouse
+            app.kubernetes.io/instance: analytics
+        spec:
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+            storage.allegedly.works/tier: hdd
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: clickhouse
+                      app.kubernetes.io/instance: analytics
+                  topologyKey: kubernetes.io/hostname
+          terminationGracePeriodSeconds: 120
+          securityContext:
+            fsGroup: 101
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: clickhouse
+              image: clickhouse/clickhouse-server:26.3.20.7@sha256:c22a4aba84a1ea83e320a6f8620b87100649e04995b61d7dde160fc1ca33bc76
+              imagePullPolicy: IfNotPresent
+              ports:
+                - name: metrics
+                  containerPort: 9363
+                  protocol: TCP
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 2Gi
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                runAsNonRoot: true
+                runAsUser: 101
+                runAsGroup: 101
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                # Project the source-controlled configMapGenerator output
+                # together with the operator's generated common config.
+                - name: config-volume
+                  mountPath: /etc/clickhouse-server/config.d
+                  readOnly: true
+          volumes:
+            - name: config-volume
+              projected:
+                sources:
+                  - configMap:
+                      name: clickhouse-analytics-config
+                  - configMap:
+                      name: chi-analytics-common-configd
+    volumeClaimTemplates:
+      - name: data
+        reclaimPolicy: Retain
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: local-path-ovh-hdd
+          resources:
+            requests:
+              # Raw responses are retained for one year; the generous HDD
+              # volume leaves headroom for MergeTree parts and future tenants.
+              storage: 500Gi

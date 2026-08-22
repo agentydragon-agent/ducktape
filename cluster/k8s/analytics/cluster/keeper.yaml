@@ -1,0 +1,73 @@
+apiVersion: clickhouse-keeper.altinity.com/v1
+kind: ClickHouseKeeperInstallation
+metadata:
+  name: analytics-keeper
+  namespace: analytics
+spec:
+  configuration:
+    clusters:
+      - name: keeper
+        layout:
+          replicasCount: 3
+    settings:
+      logger/level: information
+      logger/console: "true"
+      listen_host: 0.0.0.0
+      keeper_server/coordination_settings/raft_logs_level: warning
+  defaults:
+    templates:
+      podTemplate: keeper
+      dataVolumeClaimTemplate: keeper-data
+  templates:
+    podTemplates:
+      - name: keeper
+        metadata:
+          labels:
+            app.kubernetes.io/name: clickhouse-keeper
+            app.kubernetes.io/instance: analytics
+        spec:
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+            storage.allegedly.works/tier: hdd
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: clickhouse-keeper
+                      app.kubernetes.io/instance: analytics
+                  topologyKey: kubernetes.io/hostname
+          securityContext:
+            fsGroup: 101
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: clickhouse-keeper
+              image: clickhouse/clickhouse-keeper:26.3.20.7@sha256:4e8d13c17390e1e941ac265a26b773141cdeb6cf783915088df009b1730c88dc
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                runAsNonRoot: true
+                runAsUser: 101
+                runAsGroup: 101
+                seccompProfile:
+                  type: RuntimeDefault
+    volumeClaimTemplates:
+      - name: keeper-data
+        reclaimPolicy: Retain
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: local-path-ovh-hdd
+          resources:
+            requests:
+              storage: 2Gi

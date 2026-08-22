@@ -9,21 +9,26 @@ integration; it does not mount or access CLIProxyAPI's OAuth PVC.
 
 ```text
 GET /healthz
+GET /readyz
+GET /metrics
 GET /v1/quotas
 GET /v1/providers/{provider}/raw
 ```
 
-`/healthz` is public for Kubernetes probes. Every other endpoint requires:
+`/healthz`, `/readyz`, and `/metrics` are public for Kubernetes and Alloy.
+Quota endpoints require:
 
 ```http
 Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 ```
 
 `/v1/quotas` returns aiquota's normalized provider data plus
-`remaining_percent` for every quota window. `/raw` returns the exact response
-body from the provider's usage endpoint, with fetch status and content type.
-It never returns request or response headers, OAuth refresh responses, cookies,
-or credentials.
+`remaining_percent` for every quota window. `/raw` returns the response body
+from the provider's usage endpoint, with fetch status and content type. It also
+carries the bounded exact response bytes as base64, their full-body SHA-256 and
+original byte length. The exact-byte field is truncated only when the response
+exceeds the 1 MiB capture cap. It never returns request or response headers,
+OAuth refresh responses, cookies, or credentials.
 
 ## Local clients
 
@@ -38,8 +43,27 @@ cached snapshot so the CLI and GNOME panel still show the most recent known
 quotas while offline.
 
 Responses use `Cache-Control: no-store`. The service keeps the most recent
-snapshot only in process memory (default 120 seconds); it does not write quota
-or raw-response data to disk.
+snapshot in process memory (default 120 seconds).
+
+## Historical collection
+
+The in-cluster Deployment refreshes Claude and Codex every five minutes even
+when no API client is active. Each provider snapshot is appended to the shared
+analytics ClickHouse cluster:
+
+- `aiquota.raw_http_observations` stores bounded exact upstream bytes,
+  integrity metadata, errors, normalized provider JSON, and the quota-window
+  values used by the typed projection.
+- `aiquota.aiquota_windows` stores typed quota-window and extra-spend fields
+  for direct Grafana queries. A ClickHouse materialized view projects these
+  rows from the raw insert, avoiding a partial two-table write.
+
+Raw response rows retain one year; typed quota observations retain five years.
+ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with
+asynchronous inserts enabled, so small periodic batches are combined before
+creating MergeTree parts. Collection failures do not kill the API; `/readyz`
+becomes successful after the first persisted snapshot and Prometheus metrics
+report subsequent provider or ClickHouse failures.
 
 ## Credential ownership
 

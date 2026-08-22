@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: clickhouse-operator-values
+    namespace: analytics
+type: Opaque
+stringData:
+    values.yaml: ENC[AES256_GCM,data:SCmf0amZC7tRGcJwFLvgYHnSc8EgZvGZr4W7t/akxtboJjVJRo4JrrSvcYfxvc+lIdNms3mrmJ3hVcdaSLqdQejJ7Y5wtL7cr3eaLWJkK0dgEJvUHgERAr96FbvRvC+9sWU7pKhpL0FNAkM54YVYJcuII2bxsGs8bmI0nLxrqU7VLkfG,iv:hk0dPdHY7BF117ra33poJ79kXbOgSMkTqn1Y1aGWmKQ=,tag:JjlW3YgpnNOtagI3Nde3og==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPdFBlWVB0RjNSMmVtSTNn
+            SEdaRlQ2T2w4L2c0NzVFYXNGemZqZDFENENjCk9aUnBCYnRWSmZ1RGJvUWZ3UXhr
+            Q2pCM24xUWZoWWc5WE5qZzdlUFNQMTgKLS0tIE1Sa0ZiUzY2aER5WFpmTGpVNld5
+            NVRYODdybDc4RkE0bVZER0RCZDFpYU0KHRoT/IqBS/8pXqboL36j2MlvkVmXZ1QU
+            olMYxUART2qUJUYP9ARRP+eRr8r9Kh6/0P2EaGRpbR8W8LsmCF1hWw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBqaXlTTjRlb1BOQVFoYkFu
+            SFJFVlpGaHFkTEVwbzZXN1lqOGVjNXlTa0hBCmxiZnhnc3JFOE1DZUVnTjY4ZHZD
+            MjgydkFtZFYrU0xTUkpXTlJYSkFNNTQKLS0tIGFETEpuSkdqdEdSZk1Ed0JOd0xK
+            MkU3RlZXNWVCOGJLb3dGTVdnMXZlZzgK+pbQQ1x7pfnB4r9Z3VQqlvK6+k2BPIpl
+            mMbiesrmp1+BrGGzGjHLTUhSBmthricaCJFkA7mqxWELM38/odflqQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-22T01:35:09Z"
+    mac: ENC[AES256_GCM,data:j7Af8pBzklGIcO4GgXA7zMino7Ap8QUeBtdydUBQ7vtJnTwA8q4PXEtPvUo2Qx3+PBDZKxNBwmSD7x1HPIfVkxhqvtk0Q1ZlzmiABCRrlxsUuWNlZenSj8QHQwcyabayUb1AJwQ+LKDO4XOdoRj7MdD8tfv2vLUwd7ULqZ1Mxq0=,iv:GKfkD0LR4PY+EyqaSu8iUHJfniACAFFZSEvZnUyrqO8=,tag:Oz6D7Zey/n8OEEO6ZSbg2w==,type:str]
+    version: 3.13.3
