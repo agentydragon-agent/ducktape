@@ -56,6 +56,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
+from finance.augur.sim.test_state_helpers import capital_gains_ytd, cash_balances, property_state, rollout_status
 
 # Constants mirroring the product translator. Kept in-test to avoid
 # cross-package import dependencies from the sim layer.
@@ -203,7 +204,7 @@ class TestRentalIncome:
         transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
         assert transfers["month_index"].sort().to_list() == list(range(12))
         assert (transfers["amount_quanta"] / 100).to_list() == pytest.approx([5_000] * 12)
-        terminal_owner_cash = run.cash_balances.filter(
+        terminal_owner_cash = cash_balances(run).filter(
             (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == 12)
         )
         assert (terminal_owner_cash["balance_quanta"] / 100)[0] == pytest.approx(100_000 + 60_000)
@@ -217,7 +218,7 @@ class TestRentalIncome:
         transfers = run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
         assert transfers["month_index"].sort().to_list() == list(range(12))
         assert (transfers["amount_quanta"] / 100).to_list() == pytest.approx([0] * 12)
-        terminal = run.cash_balances.filter(pl.col("month_index") == 12)
+        terminal = cash_balances(run).filter(pl.col("month_index") == 12)
         balances = dict(zip(terminal["agent_id"].to_list(), (terminal["balance_quanta"] / 100).to_list(), strict=True))
         assert balances[OWNER_AGENT_ID] == pytest.approx(100_000)
         assert balances[TENANT_AGENT_ID] == pytest.approx(0)
@@ -254,7 +255,7 @@ class TestManagementFee:
         assert mgmt["from_agent_id"].unique().to_list() == [OWNER_AGENT_ID]
         assert mgmt["to_agent_id"].unique().to_list() == [MGMT_AGENT_ID]
 
-        terminal = run.cash_balances.filter(pl.col("month_index") == 12)
+        terminal = cash_balances(run).filter(pl.col("month_index") == 12)
         balances = dict(zip(terminal["agent_id"].to_list(), (terminal["balance_quanta"] / 100).to_list(), strict=True))
         assert balances[MGMT_AGENT_ID] == pytest.approx(4_560)
         assert balances[OWNER_AGENT_ID] == pytest.approx(100_000 + 60_000 - 4_560)
@@ -595,7 +596,7 @@ class TestRentalIncomeTaxation:
         )
         # Cumulative depreciation grows monotonically; at month 12 (post-horizon snapshot) it's
         # accrued 12 months worth = $400,000 / 27.5 = $14,545.45.
-        terminal_dep = run.property_state.filter(pl.col("month_index") == 12)
+        terminal_dep = property_state(run).filter(pl.col("month_index") == 12)
         assert terminal_dep.height == 1
         # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
@@ -1474,7 +1475,7 @@ class TestRentalIncomeTaxation:
             lambda q: q / 100, return_dtype=pl.Float64
         ).to_list() == pytest.approx([monthly_hoa] * sale_month)
 
-        terminal_hoa_cash = run.cash_balances.filter(
+        terminal_hoa_cash = cash_balances(run).filter(
             (pl.col("agent_id") == "hoa") & (pl.col("month_index") == scenario.horizon_months)
         )
         assert terminal_hoa_cash.get_column("balance_quanta").map_elements(
@@ -1843,7 +1844,7 @@ class TestRentalIncomeTaxation:
         assert sale["section_121_exclusion_quanta"] / 100 == pytest.approx(expected_exclusion_usd, abs=1)
         assert sale["long_term_capital_gain_quanta"] / 100 == pytest.approx(expected_ltcg_usd, abs=1)
 
-        post_sale_ltcg = run.capital_gains_ytd.filter(
+        post_sale_ltcg = capital_gains_ytd(run).filter(
             (pl.col("agent_id") == OWNER_AGENT_ID)
             & (pl.col("classification") == "ltcg")
             & (pl.col("month_index") == sale_month + 1)
@@ -2438,7 +2439,7 @@ class TestRentalIncomeTaxation:
             scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
         )
         # Debug: surface any rollout failure before asserting on tax flows.
-        status = run.rollout_status
+        status = rollout_status(run)
         assert status["status"][0] != "failed", (
             f"rollout failed at month {status['failed_month'][0]}; "
             f"failures: {run.events_log.rollout_failures.to_dicts()}"
@@ -2543,7 +2544,7 @@ class TestRentalCashflowReconciliation:
             transfers.filter(pl.col("to_agent_id") == OWNER_AGENT_ID)["amount_quanta"].sum() / 100
         ) - float(transfers.filter(pl.col("from_agent_id") == OWNER_AGENT_ID)["amount_quanta"].sum() / 100)
         # cash_balances has snapshot_months = horizon + 1, so terminal state is at month_index == horizon.
-        cash = run.cash_balances.filter(
+        cash = cash_balances(run).filter(
             (pl.col("agent_id") == OWNER_AGENT_ID) & (pl.col("month_index") == scenario.horizon_months)
         )
         assert cash.height == 1

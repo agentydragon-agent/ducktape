@@ -6,65 +6,10 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from finance.augur.sim.codec.helpers import (
-    codes_to_strings,
-    currency_quanta_column,
-    frame_from_columns,
-    r_first_view,
-    state_axes,
-    state_history_frame_from_columns,
-)
+from finance.augur.sim.codec.helpers import codes_to_strings, currency_quanta_column, frame_from_columns
 from finance.augur.sim.compiler.plan import CompiledSimulation
 from finance.augur.sim.events import EVENT_FRAMES
 from finance.augur.sim.output import DenseSimulationOutput
-from finance.augur.sim.state import PROPERTY_STAKE_FRAME, PROPERTY_STATE_FRAME
-
-
-def decode_property_state(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    basis = r_first_view(output.state.property_basis)  # (H+1, r, p)
-    active = r_first_view(output.state.property_active)
-    h1, r, p = basis.shape
-    months, rollouts, props = state_axes(h1, r, p)
-    mask = active.reshape(-1)
-    property_ids = codes_to_strings(plan, plan.properties.id)
-    location_ids = codes_to_strings(plan, plan.properties.location_id)
-    return state_history_frame_from_columns(
-        {
-            "rollout_index": rollouts[mask],
-            "month_index": months[mask],
-            "property_id": property_ids[props[mask]],
-            "location_id": location_ids[props[mask]],
-            "purchase_month_index": plan.properties.month.astype(np.int64)[props[mask]],
-            "adjusted_basis_quanta": currency_quanta_column(basis.reshape(-1)[mask]),
-        },
-        PROPERTY_STATE_FRAME,
-    )
-
-
-def decode_property_stakes(plan: CompiledSimulation, output: DenseSimulationOutput) -> pl.DataFrame:
-    active = r_first_view(output.state.property_active)  # (H+1, r, p)
-    h1, r, p = active.shape
-    months, rollouts, props = state_axes(h1, r, p)
-    mask = active.reshape(-1)
-    # The mask + (month, rollout, property) axes are in R-first order, so the per-property
-    # state output must be viewed R-first too before flattening — the raw output are
-    # (snapshot, property, rollout). Flattening them raw and applying the R-first mask
-    # cross-assigns stake values between properties once property_count > 1.
-    contribution = r_first_view(output.state.property_contribution)
-    equity = r_first_view(output.state.property_equity)
-    property_ids = codes_to_strings(plan, plan.properties.id)
-    buyer_ids = codes_to_strings(plan, plan.properties.buyer_agent)
-    return state_history_frame_from_columns(
-        {
-            "rollout_index": rollouts[mask],
-            "month_index": months[mask],
-            "property_id": property_ids[props[mask]],
-            "agent_id": buyer_ids[props[mask]],
-            "contribution_used_quanta": currency_quanta_column(contribution.reshape(-1)[mask]),
-            "equity_ledger_quanta": currency_quanta_column(equity.reshape(-1)[mask]),
-        },
-        PROPERTY_STAKE_FRAME,
-    )
 
 
 def decode_property_purchases(

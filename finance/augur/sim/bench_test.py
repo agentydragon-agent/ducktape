@@ -18,6 +18,7 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.bench_scenario import build_bench_scenario
 from finance.augur.sim.scenario import InitialLot, SleeveTarget
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import asset_lots, rollout_status, series_values
 
 
 def test_bench_scenario_runs_at_low_rollout_count() -> None:
@@ -38,11 +39,11 @@ def test_bench_scenario_runs_at_low_rollout_count() -> None:
     assert result.events_log.tax_accruals.height == 2 * 2 * 10
 
     # External series values: 3 assets x 25 months (0..24) x 10 rollouts.
-    assert result.series_values.height == 3 * 25 * 10
+    assert series_values(result).height == 3 * 25 * 10
 
     # Rollout status frame has one row per rollout, all active or
     # failed (no other states).
-    statuses = set(result.rollout_status.get_column("status").unique().to_list())
+    statuses = set(rollout_status(result).get_column("status").unique().to_list())
     assert statuses.issubset({"active", "failed_insufficient_cash"})
 
 
@@ -96,10 +97,10 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     result = simulate(extended, rollout_count=10, locations={})
 
     # The new asset shows up in lots:
-    efv_lots = result.asset_lots.filter(pl.col("asset_id") == "security:efv")
+    efv_lots = asset_lots(result).filter(pl.col("asset_id") == "security:efv")
     assert efv_lots.height > 0
     # And in external series values:
-    efv_values = result.series_values.filter(pl.col("series_id") == "security:efv")
+    efv_values = series_values(result).filter(pl.col("series_id") == "security:efv")
     assert efv_values.height == 25 * 10  # months x rollouts
 
 

@@ -31,12 +31,14 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import capital_gains_ytd, cash_balances, tax_liabilities
 
 
 def _cash(run, agent_id: str, month_index: int) -> int:
     # `.item()` is typed Any; coerce so the lint aspect's mypy doesn't flag no-any-return.
     return int(
-        run.cash_balances.filter(
+        cash_balances(run)
+        .filter(
             (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_index") == 0)
         )
         .get_column("balance_quanta")
@@ -171,12 +173,16 @@ def test_obligation_failure_scan() -> None:
 
 
 def _gain(run, agent_id: str, classification: str, month_index: int) -> int:
-    rows = run.capital_gains_ytd.filter(
-        (pl.col("agent_id") == agent_id)
-        & (pl.col("classification") == classification)
-        & (pl.col("month_index") == month_index)
-        & (pl.col("rollout_index") == 0)
-    ).get_column("gain_quanta")
+    rows = (
+        capital_gains_ytd(run)
+        .filter(
+            (pl.col("agent_id") == agent_id)
+            & (pl.col("classification") == classification)
+            & (pl.col("month_index") == month_index)
+            & (pl.col("rollout_index") == 0)
+        )
+        .get_column("gain_quanta")
+    )
     return int(rows.item()) if len(rows) else 0
 
 
@@ -371,9 +377,11 @@ def test_financed_purchase_scan() -> None:
 
 
 def _federal_tax(run) -> int:
-    rows = run.tax_liabilities.filter(
-        (pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_index") == 0)
-    ).get_column("amount_owed_quanta")
+    rows = (
+        tax_liabilities(run)
+        .filter((pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_index") == 0))
+        .get_column("amount_owed_quanta")
+    )
     return int(rows.sum())
 
 

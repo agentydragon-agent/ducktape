@@ -23,6 +23,7 @@ from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import cash_balances, ordinary_income_ytd
 
 _HORIZON = 14
 _FACE = 1_000_000
@@ -90,7 +91,8 @@ def _cash_by_month(scenario: Scenario) -> dict[int, int]:
     run = simulate(scenario, rollout_count=1, locations={})
     balances = [
         int(v)
-        for v in run.cash_balances.filter(pl.col("agent_id") == "alice")
+        for v in cash_balances(run)
+        .filter(pl.col("agent_id") == "alice")
         .sort("month_index")
         .get_column("balance_quanta")
         .to_list()
@@ -102,7 +104,8 @@ def _income_by_month(scenario: Scenario) -> list[int]:
     run = simulate(scenario, rollout_count=1, locations={})
     return [
         int(v)
-        for v in run.ordinary_income_ytd.filter(pl.col("agent_id") == "alice")
+        for v in ordinary_income_ytd(run)
+        .filter(pl.col("agent_id") == "alice")
         .sort("month_index")
         .get_column("ordinary_income_quanta")
         .to_list()

@@ -24,7 +24,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 import numpy as np
-import polars as pl
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
@@ -229,11 +228,8 @@ def _first_failure_month(run: SimulationRun, rollout_count: int) -> np.ndarray:
     """
 
     survived = np.full(rollout_count, HORIZON_MONTHS, dtype=np.float64)
-    failures = run.events_log.rollout_failures
-    if failures.is_empty():
-        return survived
-    first = failures.group_by("rollout_index").agg(pl.col("month_index").min())
-    survived[first.get_column("rollout_index").to_numpy()] = first.get_column("month_index").to_numpy()
+    failed_month = np.asarray(run.output.state.failed_month[-1], dtype=np.int64)
+    survived[failed_month >= 0] = failed_month[failed_month >= 0]
     return survived
 
 
@@ -245,23 +241,26 @@ def _equity_share_by_month(run: SimulationRun) -> dict[int, float]:
     """Median equity share of marked lot value, by month. Cash is excluded — the cash band is
     a separate mechanism and folding it in would blur the sleeve drift this measures."""
 
-    priced = run.asset_lots.join(
-        run.series_values,
-        left_on=["rollout_index", "month_index", "asset_id"],
-        right_on=["rollout_index", "month_index", "series_id"],
-        how="left",
-    ).with_columns(value=pl.col("remaining_quantity") * pl.col("value").fill_null(0.0))
-    by_rollout_month = priced.group_by(["rollout_index", "month_index"]).agg(
-        equity_value=pl.col("value").filter(pl.col("asset_id") == f"security:{EQUITY}").sum(),
-        total_value=pl.col("value").sum(),
-    )
-    median = (
-        by_rollout_month.filter(pl.col("total_value") > 0.0)
-        .with_columns(share=pl.col("equity_value") / pl.col("total_value"))
-        .group_by("month_index")
-        .agg(pl.col("share").median())
-    )
-    return dict(zip(median.get_column("month_index").to_list(), median.get_column("share").to_list(), strict=True))
+    plan = run.plan
+    lots = run.output.state.lots
+    lot_mask = plan.lot_asset_series_index >= 0
+    equity_code = next(i for i, asset in enumerate(plan.assets) if asset.wire_id == f"security:{EQUITY}")
+    equity_mask = lot_mask & (plan.lot_asset_codes == equity_code)
+    values_by_month: dict[int, float] = {}
+    for month in range(lots.shape[0]):
+        prices = np.zeros((int(lot_mask.sum()), run.output.state.lots.shape[-1]), dtype=np.float64)
+        active_lots = np.flatnonzero(lot_mask)
+        for row, lot in enumerate(active_lots):
+            series = int(plan.lot_asset_series_index[lot])
+            prices[row] = np.asarray(plan.external_money_values[series, :, month], dtype=np.float64)
+        quantities = lots[month, active_lots].astype(np.float64) / plan.lot_quantity_scale[active_lots, None]
+        marked = quantities * prices
+        total = marked.sum(axis=0)
+        equity = marked[equity_mask[active_lots]].sum(axis=0)
+        valid = total > 0.0
+        if valid.any():
+            values_by_month[month] = float(np.median(equity[valid] / total[valid]))
+    return values_by_month
 
 
 def _terminal_liquid_amount(run: SimulationRun) -> np.ndarray:

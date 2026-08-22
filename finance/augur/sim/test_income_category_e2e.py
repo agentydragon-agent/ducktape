@@ -35,6 +35,7 @@ from finance.augur.sim.scenario import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.simulate import simulate
+from finance.augur.sim.test_state_helpers import ordinary_income_ytd
 
 # December of the first year, so the year-end accrual has fired.
 _HORIZON_MONTHS = 13
@@ -150,9 +151,13 @@ def test_interest_and_wages_accrue_to_separate_buckets() -> None:
     """
 
     run = simulate(_scenario(ORDINARY_INCOME, _TREASURY), rollout_count=1, locations={})
-    december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
-    ).sort("income_source")
+    december = (
+        ordinary_income_ytd(run)
+        .filter(
+            (pl.col("month_index") == 11) & (pl.col("agent_id") == "alice") & (pl.col("ordinary_income_quanta") > 0)
+        )
+        .sort("income_source")
+    )
 
     assert december.get_column("income_source").to_list() == ["interest:federal_us", "ordinary"]
     assert december.get_column("ordinary_income_quanta").to_list() == [10_000_000, 10_000_000]
@@ -160,9 +165,11 @@ def test_interest_and_wages_accrue_to_separate_buckets() -> None:
 
 def _december_income(payments: Sequence[_Payment]) -> list[tuple[str, str, int]]:
     run = simulate(_scenario_for(payments), rollout_count=1, locations={})
-    december = run.ordinary_income_ytd.filter(
-        (pl.col("month_index") == 11) & (pl.col("ordinary_income_quanta") > 0)
-    ).sort("agent_id", "income_source")
+    december = (
+        ordinary_income_ytd(run)
+        .filter((pl.col("month_index") == 11) & (pl.col("ordinary_income_quanta") > 0))
+        .sort("agent_id", "income_source")
+    )
     return [
         (str(row["agent_id"]), str(row["income_source"]), int(row["ordinary_income_quanta"]))
         for row in december.to_dicts()

@@ -40,6 +40,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
+from finance.augur.sim.test_state_helpers import liabilities, property_stakes, property_state
 
 LOCATION_ID = "loc"
 LOCATIONS = {
@@ -115,7 +116,7 @@ def test_property_stakes_not_cross_assigned_across_properties() -> None:
     # Two properties × several rollouts is the exact shape that the (snapshot, rollout, property)
     # vs (snapshot, property, rollout) flattening mismatch scrambles.
     run = simulate(_two_property_scenario(), rollout_count=4, locations=LOCATIONS)
-    stakes = run.property_stakes
+    stakes = property_stakes(run)
 
     # equity_ledger = purchase_price - mortgage_principal (no mortgage here);
     # contribution_used_usd = down_payment + closing_cost.
@@ -336,12 +337,12 @@ def test_multi_property_lifecycle_tax_and_sale_state_is_property_scoped() -> Non
     assert sale["section_121_exclusion_quanta"] == 0
     assert sale["long_term_capital_gain_quanta"] == pytest.approx(expected_ltcg * 100, abs=100)
 
-    terminal_properties = run.property_state.filter(pl.col("month_index") == horizon)
+    terminal_properties = property_state(run).filter(pl.col("month_index") == horizon)
     assert terminal_properties.get_column("property_id").to_list() == ["home"]
     terminal_home = terminal_properties.row(0, named=True)
     assert terminal_home["adjusted_basis_quanta"] == 50_000_000
 
-    terminal_mortgage = run.liabilities.filter(
+    terminal_mortgage = liabilities(run).filter(
         (pl.col("month_index") == horizon) & (pl.col("liability_id") == "home_mortgage")
     )
     assert terminal_mortgage.height == 1

@@ -29,6 +29,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
+from finance.augur.sim.test_state_helpers import capital_gains_ytd
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 # A high peak yield + strong drawdown sensitivity makes the harvested losses large enough to read
@@ -112,7 +113,7 @@ def _harvest_scenario(
 
 
 def _ytd_gain(result, *, month_index: int, classification: str, rollout_index: int = 0) -> float:
-    rows = result.capital_gains_ytd.filter(
+    rows = capital_gains_ytd(result).filter(
         (pl.col("month_index") == month_index)
         & (pl.col("rollout_index") == rollout_index)
         & (pl.col("agent_id") == "alice")
@@ -330,7 +331,7 @@ def test_harvest_off_reproduces_baseline_capital_gains_exactly() -> None:
         scenario, rollout_count=1, external_series=_sp500_levels([levels]), locations={}
     )
     # No sales, no harvest → no capital-gain rows at all.
-    assert result.capital_gains_ytd.filter(pl.col("agent_id") == "alice").is_empty()
+    assert capital_gains_ytd(result).filter(pl.col("agent_id") == "alice").is_empty()
 
 
 if __name__ == "__main__":

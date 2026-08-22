@@ -2,8 +2,8 @@
 
 These are the codec-side counterparts to the string table + slot maps the compiler
 emits: every decoder lifts integer codes back to string IDs, derives flat (month,
-rollout, slot) index columns from state output, and builds Polars frames that
-match the event/state-frame schemas declared in `augur.sim.state` + `augur.sim.events`.
+rollout, slot) event index columns from dense output, and builds Polars frames that
+match the event schemas declared in `augur.sim.events`.
 """
 
 from __future__ import annotations
@@ -98,13 +98,6 @@ def codes_to_asset_wire_ids(plan: CompiledSimulation, codes: np.ndarray) -> np.n
     return out.reshape(np.asarray(codes).shape)
 
 
-def r_first_view(state: np.ndarray) -> np.ndarray:
-    """Move R from the trailing axis (the layout the JAX scan emits) to axis 1, so decoders can
-    iterate `(h1, r, count[, ...])` row-major over the resulting flat array."""
-
-    return np.moveaxis(state, -1, 1)
-
-
 def currency_quanta_column(quanta: Any) -> np.ndarray:
     """Return an authoritative integer scenario-currency quantum column.
 
@@ -121,39 +114,6 @@ def quantity_column(quanta: Any, scales: Any) -> np.ndarray:
 
 def lot_quantity_column(plan: CompiledSimulation, lots: np.ndarray, quanta: Any) -> np.ndarray:
     return quantity_column(quanta, plan.lot_quantity_scale[np.asarray(lots, dtype=np.int64)])
-
-
-def state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Ravelled (month, rollout, slot) index columns for a state array of shape `(h1, r, s)`.
-
-    Order is row-major over `(month, rollout, slot)` — matches the iteration order the
-    old list-of-dicts decoders used so the resulting frame's row order is preserved.
-    """
-
-    months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None, None], (h1, r, s)).ravel()
-    rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :, None], (h1, r, s)).ravel()
-    slots = np.broadcast_to(np.arange(s, dtype=np.int64)[None, None, :], (h1, r, s)).ravel()
-    return months, rollouts, slots
-
-
-def state_history_frame_from_columns(columns: dict[str, Any], spec: Any) -> pl.DataFrame:
-    """Build a state-history frame from pre-built numpy column arrays. State-history specs
-    don't carry `month_index` in their schema (the cross-section is one month wide); decode
-    adds month_index in front of every column the spec declares, so this helper threads
-    `rollout_index`, `month_index`, and the spec's remaining columns in the expected order.
-    Empty input produces a correctly-typed empty frame."""
-
-    state_schema = pl.Schema(
-        {
-            "rollout_index": pl.Int64(),
-            "month_index": pl.Int64(),
-            **{name: dtype for name, dtype in spec.schema.items() if name != "rollout_index"},
-        }
-    )
-    n = _column_size(next(iter(columns.values())))
-    if n == 0:
-        return state_schema.to_frame()
-    return pl.DataFrame(_columns_to_polars(columns), schema=state_schema).select(list(state_schema.names()))
 
 
 def frame_from_columns(spec: Any, **columns: Any) -> pl.DataFrame:

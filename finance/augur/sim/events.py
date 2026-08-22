@@ -47,7 +47,7 @@ TRANSFER_EVENT_SCHEMA = pl.Schema(
 # in-sim buy in a later layer will be paired with a transfer that
 # debits cash. The lot the purchase creates is keyed by
 # `(rollout_index, lot_id)` and shows up as a new row in
-# `state.asset_lots` with `remaining_quantity = quantity`.
+# the dense lot state with `remaining_quantity = quantity`.
 ASSET_PURCHASE_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),

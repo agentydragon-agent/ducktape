@@ -65,6 +65,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
+from finance.augur.sim.test_state_helpers import cash_balances
 
 _VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 _ACME = PrivateEquityAssetKey(issuer_id=IssuerId("acme"))
@@ -412,7 +413,7 @@ def test_agent_facing_cash_excludes_the_external_account() -> None:
 
     run = simulate(_scenario(), rollout_count=1, locations={})
 
-    assert set(run.cash_balances.get_column("agent_id").to_list()) == {"alice", "bob", "irs"}
+    assert set(cash_balances(run).get_column("agent_id").to_list()) == {"alice", "bob", "irs"}
 
 
 def test_a_scheduled_sale_does_not_mint_cash() -> None:

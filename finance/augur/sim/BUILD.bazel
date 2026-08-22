@@ -12,6 +12,15 @@ py_library(
 )
 
 py_library(
+    name = "test_state_helpers",
+    srcs = ["test_state_helpers.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
     name = "events",
     srcs = ["events.py"],
     deps = [
@@ -263,6 +272,7 @@ py_test(
         ":locations",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:private_equity_bundle",
@@ -283,6 +293,7 @@ py_test(
         ":engine",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series",
@@ -300,6 +311,7 @@ py_test(
     deps = [
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series",
@@ -317,6 +329,7 @@ py_test(
     deps = [
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -329,6 +342,7 @@ py_test(
     deps = [
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series",
@@ -511,7 +525,6 @@ py_library(
         "codec/plan.py",
         "codec/primary_residence.py",
         "codec/properties.py",
-        "codec/series.py",
         "codec/tax.py",
         "codec/transfers.py",
     ],
@@ -614,6 +627,7 @@ py_library(
 )
 
 SIMULATE_TEST_DEPS = [
+    ":test_state_helpers",
     ":conftest",
     ":external_series",
     ":scenario",
@@ -651,6 +665,7 @@ py_test(
         ":runtime",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "//finance/augur/product:asset_key",
         "@pypi//polars",
         "@pypi//pytest",
@@ -667,6 +682,7 @@ py_test(
         ":external_series",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         ":tlh_harvest",
         "//finance/augur/model:series",
         "//finance/augur/product:asset_key",
@@ -685,6 +701,7 @@ py_test(
         ":external_series",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         ":tlh_harvest",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
@@ -707,6 +724,7 @@ py_test(
         ":locations",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -721,6 +739,7 @@ py_test(
         ":conftest",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
@@ -735,6 +754,7 @@ py_test(
         ":locations",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -785,6 +805,7 @@ py_test(
         ":bench_scenario",
         ":scenario",
         ":simulate",
+        ":test_state_helpers",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:series_model",
         "@pypi//polars",

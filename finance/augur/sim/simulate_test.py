@@ -64,6 +64,18 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
+from finance.augur.sim.test_state_helpers import (
+    asset_lots,
+    capital_gains_ytd,
+    cash_balances,
+    liabilities,
+    ordinary_income_ytd,
+    property_stakes,
+    property_state,
+    rollout_status,
+    series_values,
+    tax_liabilities,
+)
 
 CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
@@ -891,13 +903,13 @@ def test_alice_gives_bob_five_dollars_one_rollout(alice_bob_scenario: Scenario) 
     system is conserved at every month."""
     result = simulate(alice_bob_scenario, rollout_count=1, locations={})
 
-    initial = result.cash_balances.filter(pl.col("month_index") == 0).sort("agent_id")
+    initial = cash_balances(result).filter(pl.col("month_index") == 0).sort("agent_id")
     assert initial.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list() == [
         10.0,
         20.0,
     ]
 
-    post = result.cash_balances.filter(pl.col("month_index") == 1).sort("agent_id")
+    post = cash_balances(result).filter(pl.col("month_index") == 1).sort("agent_id")
     assert post.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list() == [
         15.0,
         15.0,
@@ -905,7 +917,8 @@ def test_alice_gives_bob_five_dollars_one_rollout(alice_bob_scenario: Scenario) 
 
     # Conservation invariant: total cash unchanged at every month.
     totals = (
-        result.cash_balances.group_by("month_index")
+        cash_balances(result)
+        .group_by("month_index")
         .agg((pl.col("balance_quanta").sum() / 100).alias("total"))
         .sort("month_index")
     )
@@ -934,9 +947,12 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     # Six rows: initial month 0 through end-of-horizon month 5.
-    assert result.cash_balances.height == 6
+    assert cash_balances(result).height == 6
     assert (
-        result.cash_balances.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
+        cash_balances(result)
+        .get_column("balance_quanta")
+        .map_elements(quanta_to_usd, return_dtype=pl.Float64)
+        .to_list()
         == [100.0] * 6
     )
     assert result.events_log.transfers.is_empty()
@@ -976,7 +992,8 @@ def test_recurring_paycheck_accrues_monthly() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
 
     alice_final = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -985,7 +1002,8 @@ def test_recurring_paycheck_accrues_monthly() -> None:
 
     # Conservation: payroll sink goes negative by the same amount.
     payroll_final = (
-        result.cash_balances.filter((pl.col("agent_id") == "payroll") & (pl.col("month_index") == 12))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "payroll") & (pl.col("month_index") == 12))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -1029,7 +1047,8 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
 
     # Alice's balance plateaus at 500.0 from month 5 onward.
     balances = (
-        result.cash_balances.filter(pl.col("agent_id") == "alice")
+        cash_balances(result)
+        .filter(pl.col("agent_id") == "alice")
         .sort("month_index")
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
@@ -1069,8 +1088,10 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     result = simulate(scenario, rollout_count=rollout_count, locations={})
 
     # Every rollout: Alice ends at 1000 + 24×2000 = 49000.
-    alice_final = result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 24)).sort(
-        "rollout_index"
+    alice_final = (
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 24))
+        .sort("rollout_index")
     )
     assert alice_final.height == rollout_count
     assert (
@@ -1083,7 +1104,8 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
 
     # Conservation at every month, across every rollout.
     totals = (
-        result.cash_balances.group_by(["rollout_index", "month_index"])
+        cash_balances(result)
+        .group_by(["rollout_index", "month_index"])
         .agg((pl.col("balance_quanta").sum() / 100).alias("total"))
         .sort(["rollout_index", "month_index"])
     )
@@ -1134,7 +1156,8 @@ def test_combined_one_off_and_recurring() -> None:
 
     # Alice at end-of-horizon: 10 × $1000 paychecks + $5000 bonus = $15000.
     alice_final = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 10))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 10))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -1181,17 +1204,18 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
 
     # Pre-sale: month 3 cross-section still has 100 units (apply for
     # month M produces the M+1 cross-section).
-    lots_at_m3 = result.asset_lots.filter(pl.col("month_index") == 3)
+    lots_at_m3 = asset_lots(result).filter(pl.col("month_index") == 3)
     assert lots_at_m3.get_column("remaining_quantity").to_list() == [100.0]
 
     # Post-sale: month 4 onward, 70 units remain.
     for month in (4, 5, 6):
-        snapshot = result.asset_lots.filter(pl.col("month_index") == month)
+        snapshot = asset_lots(result).filter(pl.col("month_index") == month)
         assert snapshot.get_column("remaining_quantity").to_list() == [70.0]
 
     # Cash: 0 at month 0..3, then $3600 at month 4 onward.
     cash_trajectory = (
-        result.cash_balances.filter(pl.col("agent_id") == "alice")
+        cash_balances(result)
+        .filter(pl.col("agent_id") == "alice")
         .sort("month_index")
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
@@ -1246,7 +1270,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    remaining_after = result.asset_lots.filter(pl.col("month_index") == 3).get_column("remaining_quantity").item()
+    remaining_after = asset_lots(result).filter(pl.col("month_index") == 3).get_column("remaining_quantity").item()
     assert remaining_after == 0.0
 
     assert result.events_log.lot_dispositions.height == 1
@@ -1293,7 +1317,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
     # Every rollout has one disposition.
     assert result.events_log.lot_dispositions.height == rollout_count
     # Every rollout's lot row at end-of-horizon has 30 units remaining.
-    end_state = result.asset_lots.filter(pl.col("month_index") == 2)
+    end_state = asset_lots(result).filter(pl.col("month_index") == 2)
     assert end_state.height == rollout_count
     assert end_state.get_column("remaining_quantity").unique().to_list() == [30.0]
 
@@ -1357,7 +1381,8 @@ def test_fifo_sale_crossing_two_lots() -> None:
 
     # Post-sale lot snapshot: lot A is empty, lot B has 30 units.
     post = (
-        result.asset_lots.filter(pl.col("month_index") == 9)
+        asset_lots(result)
+        .filter(pl.col("month_index") == 9)
         .sort("lot_id")
         .select("lot_id", "remaining_quantity")
         .to_dicts()
@@ -1369,7 +1394,8 @@ def test_fifo_sale_crossing_two_lots() -> None:
 
     # Cash credited with full $24000.
     assert (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 9))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 9))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -1432,13 +1458,14 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
         {"cause_id": "second_sale", "lot_id": "new", "units_sold": pytest.approx(40.0)},
     ]
 
-    end_lots = result.asset_lots.filter(pl.col("month_index") == 2).sort("lot_id")
+    end_lots = asset_lots(result).filter(pl.col("month_index") == 2).sort("lot_id")
     assert end_lots.select("lot_id", "remaining_quantity").to_dicts() == [
         {"lot_id": "new", "remaining_quantity": pytest.approx(60.0)},
         {"lot_id": "old", "remaining_quantity": pytest.approx(0.0)},
     ]
     final_cash = (
-        result.cash_balances.filter(pl.col("month_index") == 2)
+        cash_balances(result)
+        .filter(pl.col("month_index") == 2)
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -1557,13 +1584,14 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     result = simulate(scenario, rollout_count=1, locations={})
     assert result.events_log.lot_dispositions.height == 2
 
-    end_lots = result.asset_lots.filter(pl.col("month_index") == 6).sort("lot_id")
+    end_lots = asset_lots(result).filter(pl.col("month_index") == 6).sort("lot_id")
     by_lot = {row["lot_id"]: row["remaining_quantity"] for row in end_lots.iter_rows(named=True)}
     assert by_lot == {"qqq_lot": 7.0, "vti_lot": 6.0}
 
     # Cash: 4×150 + 3×250 = $1350.
     assert (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -1618,7 +1646,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
     assert disposition["lot_id"] == "taxable_vti"
     assert disposition["units_sold"] == pytest.approx(8.0)
 
-    end_lots = result.asset_lots.filter(pl.col("month_index") == 2).sort("lot_id")
+    end_lots = asset_lots(result).filter(pl.col("month_index") == 2).sort("lot_id")
     assert end_lots.select("lot_id", "account_id", "remaining_quantity").to_dicts() == [
         {"lot_id": "ira_vti", "account_id": "ira", "remaining_quantity": pytest.approx(10.0)},
         {"lot_id": "taxable_vti", "account_id": "taxable", "remaining_quantity": pytest.approx(2.0)},
@@ -1704,7 +1732,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
     assert disp["proceeds_quanta"] / 100 == 600.0
 
     # External series values on the run match the configured path.
-    vti = result.series_values.filter(pl.col("series_id") == "security:vti").sort("month_index")
+    vti = series_values(result).filter(pl.col("series_id") == "security:vti").sort("month_index")
     assert vti.get_column("value").to_list() == [100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]
 
 
@@ -1753,15 +1781,18 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
     result_b = simulate(scenario, rollout_count=200, locations={})
 
     # Reproducibility: same seed -> same values across two runs.
-    assert result_a.series_values.sort(["rollout_index", "month_index"]).equals(
-        result_b.series_values.sort(["rollout_index", "month_index"])
+    assert (
+        series_values(result_a)
+        .sort(["rollout_index", "month_index"])
+        .equals(series_values(result_b).sort(["rollout_index", "month_index"]))
     )
 
     # Divergence: distinct per-rollout proceeds — far more than one
     # cluster, but bounded by the GBM variance. Loose check: at
     # least 100 distinct cash balances across 200 rollouts.
     cash_at_end = (
-        result_a.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
+        cash_balances(result_a)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
     )
@@ -1836,7 +1867,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
 
     # tax_liabilities at end-of-horizon has two rows (one per
     # jurisdiction) with matching amounts.
-    end_liabilities = result.tax_liabilities.filter(pl.col("month_index") == 12).sort("jurisdiction_id")
+    end_liabilities = tax_liabilities(result).filter(pl.col("month_index") == 12).sort("jurisdiction_id")
     assert end_liabilities.height == 2
     assert end_liabilities.get_column("amount_owed_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
@@ -1849,7 +1880,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     # reset at month 11 (visible at month_index 12) drops it back
     # to 0. At month_index 11 (post-month-10) Alice has had 11
     # paychecks.
-    ytd_alice = result.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").sort("month_index")
+    ytd_alice = ordinary_income_ytd(result).filter(pl.col("agent_id") == "alice").sort("month_index")
     ytd_values = (
         ytd_alice.get_column("ordinary_income_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
     )
@@ -1938,7 +1969,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     assert breakdowns["california"]["capital_gain_tax_quanta"] / 100 == 0.0
 
     # YTD captured the LTCG ($20k) before year-end reset.
-    cg_at_month_11 = result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
+    cg_at_month_11 = capital_gains_ytd(result).filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
     assert cg_at_month_11.height == 1
     row = cg_at_month_11.row(0, named=True)
     assert row["classification"] == "ltcg"
@@ -2034,14 +2065,16 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     assert tax_settlement["tax_year_end_month"] == 11
     assert tax_settlement["amount_quanta"] / 100 == pytest.approx(7_984.62, abs=0.02)
     liabilities_due = (
-        result.tax_liabilities.filter(pl.col("month_index") == 12)
+        tax_liabilities(result)
+        .filter(pl.col("month_index") == 12)
         .get_column("amount_owed_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
     )
     assert liabilities_due == pytest.approx(7_984.62, abs=0.02)
     liabilities_settled = (
-        result.tax_liabilities.filter(pl.col("month_index") == 13)
+        tax_liabilities(result)
+        .filter(pl.col("month_index") == 13)
         .get_column("amount_owed_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
@@ -2049,14 +2082,15 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     assert liabilities_settled == pytest.approx(0.0, abs=0.02)
 
     final_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert final_cash == pytest.approx(71_015.42, abs=0.02)
 
-    final_lot = result.asset_lots.filter((pl.col("lot_id") == "alice_long_vti") & (pl.col("month_index") == 13))
+    final_lot = asset_lots(result).filter((pl.col("lot_id") == "alice_long_vti") & (pl.col("month_index") == 13))
     assert final_lot.get_column("remaining_quantity").item() == 0.0
 
 
@@ -2153,7 +2187,8 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
 
     gains = {
         row["classification"]: row["gain_quanta"] / 100
-        for row in result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
+        for row in capital_gains_ytd(result)
+        .filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
         .sort("classification")
         .iter_rows(named=True)
     }
@@ -2257,27 +2292,30 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     ]
 
     final_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
     )
     assert final_cash == pytest.approx(0.0, abs=0.02)
     remaining_vti = (
-        result.asset_lots.filter((pl.col("lot_id") == "alice_vti_seed") & (pl.col("month_index") == 13))
+        asset_lots(result)
+        .filter((pl.col("lot_id") == "alice_vti_seed") & (pl.col("month_index") == 13))
         .get_column("remaining_quantity")
         .item()
     )
     # 100 - (5+5+5+25.16) = 59.84 units remaining.
     assert remaining_vti == pytest.approx(59.84, abs=0.02)
     final_due = (
-        result.tax_liabilities.filter(pl.col("month_index") == 13)
+        tax_liabilities(result)
+        .filter(pl.col("month_index") == 13)
         .get_column("amount_owed_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
     )
     assert final_due == pytest.approx(0.0, abs=0.02)
-    assert result.rollout_status.row(0, named=True)["status"] == "active"
+    assert rollout_status(result).row(0, named=True)["status"] == "active"
 
 
 def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
@@ -2306,7 +2344,7 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
 
     result = simulate(scenario, rollout_count=1, locations={})
     assert result.events_log.tax_accruals.is_empty()
-    assert result.tax_liabilities.is_empty()
+    assert tax_liabilities(result).is_empty()
 
 
 def test_year_end_tax_payment_debits_agent_cash() -> None:
@@ -2362,14 +2400,16 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     assert settlement["amount_quanta"] / 100 == pytest.approx(52_292.60, abs=0.02)
 
     due_before_payment = (
-        result.tax_liabilities.filter(pl.col("month_index") == 12)
+        tax_liabilities(result)
+        .filter(pl.col("month_index") == 12)
         .get_column("amount_owed_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
     )
     assert due_before_payment == pytest.approx(52_292.60, abs=0.02)
     due_after_payment = (
-        result.tax_liabilities.filter(pl.col("month_index") == 13)
+        tax_liabilities(result)
+        .filter(pl.col("month_index") == 13)
         .get_column("amount_owed_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .sum()
@@ -2378,7 +2418,8 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
 
     # Cash flow: $200,000.04 income - $52,292.60 tax = $147,707.44 at end of horizon.
     alice_end_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -2386,7 +2427,8 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     assert alice_end_cash == pytest.approx(147_707.44, abs=0.02)
     # The IRS sink accumulates the tax inflows.
     irs_end_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 13))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 13))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -2449,7 +2491,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     failures = result.events_log.rollout_failures
     assert failures.height == 1
     assert failures.row(0, named=True)["month_index"] == 12
-    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert rollout_status(result).row(0, named=True)["status"] == "failed_insufficient_cash"
 
 
 def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle) -> None:
@@ -2513,7 +2555,8 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
     assert funding_sale["proceeds_quanta"] / 100 == pytest.approx(400.0)
 
     final_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -2636,7 +2679,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
     assert disposition["lot_id"] == "alice_taxable_vti"
     assert disposition["units_sold"] == pytest.approx(4.0)
 
-    end_lots = result.asset_lots.filter(pl.col("month_index") == 1).sort("lot_id")
+    end_lots = asset_lots(result).filter(pl.col("month_index") == 1).sort("lot_id")
     assert end_lots.select("lot_id", "account_id", "remaining_quantity").to_dicts() == [
         {"lot_id": "alice_ira_vti", "account_id": "ira", "remaining_quantity": pytest.approx(100.0)},
         {"lot_id": "alice_taxable_vti", "account_id": "taxable", "remaining_quantity": pytest.approx(1.0)},
@@ -2746,7 +2789,7 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
     )
     assert reset_amounts == pytest.approx([1_100.0, 900.0])
 
-    final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort(["rollout_index", "agent_id"])
+    final_cash = cash_balances(result).filter(pl.col("month_index") == 13).sort(["rollout_index", "agent_id"])
     assert final_cash.get_column("balance_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
     ).to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
@@ -2791,7 +2834,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
         quanta_to_usd, return_dtype=pl.Float64
     ).item() == pytest.approx(1_800.0)
 
-    final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort("agent_id")
+    final_cash = cash_balances(result).filter(pl.col("month_index") == 13).sort("agent_id")
     assert final_cash.get_column("balance_quanta").map_elements(
         quanta_to_usd, return_dtype=pl.Float64
     ).to_list() == pytest.approx([19_800.0, 200.0])
@@ -2834,7 +2877,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     assert failure["obligation_id"] == "rent_due_m0"
     assert failure["obligation_type"] == "rent"
     assert failure["shortfall_quanta"] / 100 == pytest.approx(500.0)
-    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert rollout_status(result).row(0, named=True)["status"] == "failed_insufficient_cash"
 
 
 def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(deterministic_series_bundle) -> None:
@@ -2939,7 +2982,8 @@ def test_the_band_is_measured_after_the_months_hard_demands(deterministic_series
     assert sale["units_sold"] == pytest.approx(50.0)
     assert sale["proceeds_quanta"] / 100 == pytest.approx(5000.0)
     alice_final = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -2998,7 +3042,8 @@ def test_the_band_does_not_fire_when_the_projected_balance_clears_the_floor(dete
 
     assert result.events_log.lot_dispositions.is_empty()
     alice_final = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -3033,7 +3078,7 @@ def test_a_band_it_cannot_refill_does_not_fail_the_rollout() -> None:
 
     assert result.events_log.lot_dispositions.is_empty()
     assert result.events_log.rollout_failures.is_empty()
-    assert result.rollout_status.row(0, named=True)["status"] == "active"
+    assert rollout_status(result).row(0, named=True)["status"] == "active"
 
 
 def test_same_account_hard_demands_settle_all_or_none() -> None:
@@ -3177,24 +3222,25 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
 
     result = simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
 
-    final_property = result.property_state.filter(pl.col("month_index") == 2).row(0, named=True)
+    final_property = property_state(result).filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_property["location_id"] == "san_francisco"
     assert final_property["purchase_month_index"] == 0
     assert final_property["adjusted_basis_quanta"] / 100 == pytest.approx(510_000.0)
 
-    final_stake = result.property_stakes.filter(pl.col("month_index") == 2).row(0, named=True)
+    final_stake = property_stakes(result).filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_stake["agent_id"] == "alice"
     assert final_stake["contribution_used_quanta"] / 100 == pytest.approx(110_000.0)
     assert final_stake["equity_ledger_quanta"] / 100 == pytest.approx(100_000.0)
 
     mortgage_payment = _engine_usd(400_000.0 * 0.005 / (1.0 - (1.005**-360)))
-    final_liability = result.liabilities.filter(pl.col("month_index") == 2).row(0, named=True)
+    final_liability = liabilities(result).filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_liability["principal_quanta"] / 100 == pytest.approx(400_000.0 - (mortgage_payment - 2_000.0))
     assert final_liability["interest_paid_ytd_quanta"] / 100 == pytest.approx(2_000.0)
     assert final_liability["principal_paid_ytd_quanta"] / 100 == pytest.approx(mortgage_payment - 2_000.0)
 
     final_cash = (
-        result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "alice"))
+        cash_balances(result)
+        .filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "alice"))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -3282,7 +3328,8 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_fra
 
     # SF: 500_000 * 0.01180 / 12 = 491.6666..., rounded to cents at the obligation boundary.
     sf_tax = (
-        result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "sf_tax_collector"))
+        cash_balances(result)
+        .filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "sf_tax_collector"))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -3332,7 +3379,8 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_m
     # Mare Island: 500_000 * 0.0115 / 12 + 2300 / 12 per month, rounded to cents.
     expected_monthly = _engine_usd(500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0)
     tax_collected = (
-        result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "vallejo_tax_collector"))
+        cash_balances(result)
+        .filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "vallejo_tax_collector"))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -3398,7 +3446,8 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
 
     # End-of-horizon (month 3) cash for Alice should be at the floor (0).
     end_cash = (
-        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 3))
+        cash_balances(result)
+        .filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 3))
         .get_column("balance_quanta")
         .map_elements(quanta_to_usd, return_dtype=pl.Float64)
         .item()
@@ -3460,16 +3509,16 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     assert failure["deficit_quanta"] / 100 == pytest.approx(1000.0, abs=0.02)
     assert failure["agent_id"] == "alice"
 
-    status_row = result.rollout_status.row(0, named=True)
+    status_row = rollout_status(result).row(0, named=True)
     assert status_row["status"] == "failed_insufficient_cash"
     assert status_row["failed_month"] == 0
 
-    failed_cash = result.cash_balances.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
+    failed_cash = cash_balances(result).filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
     assert failed_cash.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list() == [
         0.0,
         0.0,
     ]
-    failed_lots = result.asset_lots.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
+    failed_lots = asset_lots(result).filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
     assert failed_lots.get_column("remaining_quantity").to_list() == [0.0]
 
 
@@ -3530,9 +3579,9 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
 
     result = simulate(scenario, rollout_count=1, locations={})
 
-    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert rollout_status(result).row(0, named=True)["status"] == "failed_insufficient_cash"
     assert result.events_log.transfers.is_empty()
-    failed_cash = result.cash_balances.filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
+    failed_cash = cash_balances(result).filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
     assert (
         failed_cash.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).to_list()
         == [0.0] * failed_cash.height
@@ -4286,14 +4335,16 @@ def _pe_single_month_code_matrix(*, horizon_months: int, month: int, value: int,
 
 
 def _pe_lot_remaining_at(result, *, lot_id: str, month_index: int) -> float:
-    row = result.asset_lots.filter((pl.col("lot_id") == lot_id) & (pl.col("month_index") == month_index)).row(
-        0, named=True
+    row = (
+        asset_lots(result)
+        .filter((pl.col("lot_id") == lot_id) & (pl.col("month_index") == month_index))
+        .row(0, named=True)
     )
     return float(row["remaining_quantity"])
 
 
 def _alice_cash_at(result, *, month_index: int) -> float:
-    rows = result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == month_index))
+    rows = cash_balances(result).filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == month_index))
     return float(rows.get_column("balance_quanta").map_elements(quanta_to_usd, return_dtype=pl.Float64).sum())
 
 
