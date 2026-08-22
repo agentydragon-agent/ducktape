@@ -434,7 +434,15 @@ def compile_simulation(
     sales = compile_sales(scenario, strings, assets, account_slots, series_index_by_id)
 
     obligations = compile_obligation_slots(
-        scenario, strings, account_slots, series_index_by_id, properties, property_slot_by_id, liabilities, tax
+        scenario,
+        strings,
+        account_slots,
+        series_index_by_id,
+        properties,
+        property_slot_by_id,
+        liabilities,
+        tax,
+        tax_liabilities,
     )
 
     target_allocation_policies = compile_target_allocation_policies(

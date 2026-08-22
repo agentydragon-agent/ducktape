@@ -8,6 +8,7 @@ from typing import NamedTuple
 
 import jax
 
+from finance.augur.sim.compiler.obligations import ObligationMetadataExecution
 from finance.augur.sim.compiler.plan import SlotPlan
 from finance.augur.sim.output import DenseFinalOutput
 
@@ -41,71 +42,12 @@ class _AssetSaleProgram:
     ordered_lots: tuple[tuple[int, ...], ...]
 
 
-class _ObligationMetadataInputs(NamedTuple):
-    agent: jax.Array
-    from_slot: jax.Array
-    to_slot: jax.Array
-    deduction_profile: jax.Array
-    deductible_fraction: jax.Array
-    property_tax_profile: jax.Array
-    property_slot: jax.Array
-
-
 class _PaymentBatch(NamedTuple):
     """Common source output consumed by the shared funding/settlement phase."""
 
     active: jax.Array
     due: jax.Array
-    metadata: _ObligationMetadataInputs
-
-
-class _ConfiguredObligationInputs(NamedTuple):
-    active: jax.Array
-    amount_kind: jax.Array
-    amount_fixed: jax.Array
-    amount_base: jax.Array
-    amount_series: jax.Array
-    amount_base_month: jax.Array
-    amount_period: jax.Array
-
-
-class _PropertyTaxObligationInputs(NamedTuple):
-    active: jax.Array
-    property_slot: jax.Array
-    amount: jax.Array
-    property_purchase_month: jax.Array
-
-
-class _MortgageObligationInputs(NamedTuple):
-    active: jax.Array
-    liability_slot: jax.Array
-    property_slot: jax.Array
-    annual_rate: jax.Array
-    property_purchase_month: jax.Array
-
-
-class _EstimatedTaxObligationInputs(NamedTuple):
-    active: jax.Array
-    profile_index: jax.Array
-    quarterly_amount: jax.Array
-
-
-class _PriorYearTaxObligationInputs(NamedTuple):
-    active: jax.Array
-    profile_index: jax.Array
-    prior_year_tax: jax.Array
-    tax_liability_selector: jax.Array
-    tax_year_end_month: jax.Array
-
-
-class _ObligationInputs(NamedTuple):
-    metadata: _ObligationMetadataInputs
-    configured: _ConfiguredObligationInputs
-    property_tax: _PropertyTaxObligationInputs
-    mortgage: _MortgageObligationInputs
-    estimated_tax: _EstimatedTaxObligationInputs
-    q4_estimated_tax: _PriorYearTaxObligationInputs
-    tax_true_up: _PriorYearTaxObligationInputs
+    metadata: ObligationMetadataExecution[jax.Array]
 
 
 class _PurchaseInputs(NamedTuple):
