@@ -27,9 +27,10 @@ spec:
     rbac:
       namespaceScoped: true
     crdHook:
+      # The chart invokes /bin/sh in this image; the official kubectl image is distroless.
       image:
-        repository: registry.k8s.io/kubectl
-        tag: v1.33.4
+        repository: bitnamilegacy/kubectl
+        tag: "1.33.4@sha256:ed0b31a0508da84ee655c5c6e01bd3897fc56ad6cf69debb27fa1893a06d2246"
       resources:
         requests:
           cpu: 25m
