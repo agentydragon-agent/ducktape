@@ -48,6 +48,8 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
+export type OperatorKubernetesGrant = components["schemas"]["OperatorKubernetesGrant"];
+export type KubernetesGrantListResponse = components["schemas"]["KubernetesGrantListResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -209,6 +211,25 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
   return data;
 }
 
+export async function fetchKubernetesGrants(): Promise<KubernetesGrantListResponse> {
+  const { data, error } = await api.GET("/api/kubernetes-grants");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load Kubernetes grants"));
+  return data;
+}
+
+export async function revokeKubernetesGrant(
+  agentId: string,
+  grantId: string,
+  reason: string
+): Promise<OperatorKubernetesGrant> {
+  const { data, error } = await api.POST("/api/kubernetes-grants/{agent_id}/{grant_id}/revoke", {
+    params: { path: { agent_id: agentId, grant_id: grantId } },
+    body: { reason },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke Kubernetes grant"));
+  return data;
+}
+
 export async function getAgentEnrollment(interactionId: string): Promise<EnrollmentView> {
   const { data, error } = await api.GET("/api/agent-enrollment/{interaction_id}", {
     params: { path: { interaction_id: interactionId } },
@@ -241,6 +262,14 @@ export async function fetchPendingApprovals(): Promise<ToolCallRecord[]> {
   const { data, error } = await api.GET("/api/approvals/pending");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load pending approvals"));
   return data.approvals ?? [];
+}
+
+export async function fetchToolCall(toolCallId: string): Promise<ToolCallRecord> {
+  const { data, error } = await api.GET("/api/tool-calls/{tool_call_id}", {
+    params: { path: { tool_call_id: toolCallId } },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load tool call"));
+  return data;
 }
 
 /** One page of the ledger, plus the position to resume from (null once the page is the last). */

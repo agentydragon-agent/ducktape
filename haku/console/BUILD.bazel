@@ -248,6 +248,35 @@ py_library(
 )
 
 py_library(
+    name = "kubernetes_grant_routes",
+    srcs = ["kubernetes_grant_routes.py"],
+    deps = [
+        ":kubernetes_grant_models",
+        ":kubernetes_grant_service",
+        ":operator_auth",
+        "//haku/console/agents:enrollment",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes_grant_routes",
+    srcs = ["test_kubernetes_grant_routes.py"],
+    deps = [
+        ":kubernetes_grant_models",
+        ":kubernetes_grant_routes",
+        ":operator_auth",
+        ":tool_call_actor",
+        "//haku/console/agents:enrollment",
+        "//haku/console/agents:models",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "chat_models",
     srcs = ["chat_models.py"],
     deps = ["@pypi//pydantic"],
@@ -1067,6 +1096,7 @@ py_library(
         ":kube_proxy_authorization",
         ":kubernetes_authorization",
         ":kubernetes_grant_repository",
+        ":kubernetes_grant_routes",
         ":kubernetes_grant_service",
         ":mcp_agent_auth",
         ":mcp_approval",

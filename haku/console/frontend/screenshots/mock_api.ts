@@ -7,6 +7,7 @@ import {
   SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
   SAMPLE_INDEX_STATUS,
+  SAMPLE_KUBERNETES_GRANTS,
   SAMPLE_MCP_PROBES,
   SAMPLE_MCP_SERVERS,
   SAMPLE_PENDING,
@@ -515,6 +516,7 @@ const mcpServers =
 
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = requestUrl(input);
+  if (url.includes("/api/kubernetes-grants")) return jsonResponse(SAMPLE_KUBERNETES_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
     const body = JSON.parse(String(init.body)) as { access_profile_id: string };
     return jsonResponse({

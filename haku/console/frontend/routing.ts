@@ -36,6 +36,10 @@ export function conversationPath(conversationId: string): string {
   return `${CONVERSATIONS_PATH}/${conversationId}`;
 }
 
+export function toolCallPath(toolCallId: string): string {
+  return `${TOOL_CALLS_PATH}/${toolCallId}`;
+}
+
 export function sessionFramesPath(sessionId: string): string {
   return `${CONSOLE_ROOT_PATH}/sessions/${sessionId}/frames`;
 }

@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
-import type { DeploymentInfo, ToolCallRecord } from "../client";
+import type { DeploymentInfo, KubernetesGrantListResponse, ToolCallRecord } from "../client";
 import type { DaemonStatus, IndexStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
@@ -317,6 +317,64 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
     },
   ])
 );
+
+export const SAMPLE_KUBERNETES_GRANTS = {
+  grants: [
+    {
+      agent_display_name: "Public Coder",
+      grant: {
+        grant_id: "50000000-0000-4000-8000-000000000005",
+        agent_id: "30000000-0000-4000-8000-000000000003",
+        source_tool_call_id: "tc_0123456789abcdef01234567",
+        scope: { kind: "namespaces", namespaces: ["public-coder-agent"] },
+        rules: [
+          {
+            api_groups: [""],
+            resources: ["pods/log"],
+            verbs: ["get"],
+            resource_names: [],
+            non_resource_urls: [],
+          },
+          {
+            api_groups: ["apps"],
+            resources: ["deployments"],
+            verbs: ["get", "list"],
+            resource_names: [],
+            non_resource_urls: [],
+          },
+        ],
+        status: "active",
+        created_at: "2026-08-22T00:35:00Z",
+        expires_at: "2026-08-22T02:05:00Z",
+        ended_at: null,
+        end_reason: null,
+      },
+    },
+    {
+      agent_display_name: "Public Coder",
+      grant: {
+        grant_id: "50000000-0000-4000-8000-000000000006",
+        agent_id: "30000000-0000-4000-8000-000000000003",
+        source_tool_call_id: "tc_1123456789abcdef01234567",
+        scope: { kind: "cluster" },
+        rules: [
+          {
+            api_groups: [""],
+            resources: ["nodes"],
+            verbs: ["get"],
+            resource_names: ["wyrm2"],
+            non_resource_urls: [],
+          },
+        ],
+        status: "revoked",
+        created_at: "2026-08-21T21:00:00Z",
+        expires_at: "2026-08-21T22:00:00Z",
+        ended_at: "2026-08-21T21:20:00Z",
+        end_reason: "Pilot complete; return to standing diagnostics.",
+      },
+    },
+  ],
+} satisfies KubernetesGrantListResponse;
 
 export const SAMPLE_DAEMONS: DaemonStatus[] = [
   {

@@ -14,7 +14,7 @@ import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/pro
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
 import { ConversationsPage } from "./x/conversations_page";
 import { SessionFramesPage } from "./x/session_frames_page";
-import { displayableError, fetchPendingApprovals, launchRoutine, type ToolCallRecord } from "./client";
+import { displayableError, fetchPendingApprovals, fetchToolCall, launchRoutine, type ToolCallRecord } from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation";
@@ -127,10 +127,20 @@ export function HakuUiEmbed({
   // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
   // closed, while closing it on the same call leaves it closed.
   useEffect(() => {
-    if (toolCallId) {
-      approvalsOpenedAutomaticallyRef.current = true;
-      setApprovalsOpen(true);
-    }
+    if (!toolCallId) return;
+    // Following a deep link is an explicit operator gesture, so keep the drawer open even when the
+    // pending queue is empty (a provenance link commonly points at an already-finished call).
+    approvalsOpenedAutomaticallyRef.current = false;
+    setApprovalsOpen(true);
+    // A notification normally points at a pending call already in the queue. Audit/provenance links
+    // may point at an older terminal call instead; fetch that exact record so the same canonical
+    // deep link can render it in Recent after a reload rather than opening an empty drawer.
+    void fetchToolCall(toolCallId).then(
+      (record) => {
+        if (record.status !== "pending_approval") addRecentToolCall(record);
+      },
+      (e: unknown) => toastError("Couldn't load tool call", e)
+    );
   }, [toolCallId]);
 
   function setApprovalsOpenFromUser(open: boolean) {

@@ -35,6 +35,7 @@ from haku.console import (
     connection_metrics,
     console_events,
     kube_proxy_authorization,
+    kubernetes_grant_routes,
     mcp_agent_auth,
     mcp_approval,
     mcp_catalog_reconciler,
@@ -675,6 +676,7 @@ def create_app(
     app.state.push_subscription_store = push_subscription_store
     app.state.web_push_identity = web_push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
+    app.state.kubernetes_grants = kubernetes_grants
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -717,6 +719,7 @@ def create_app(
     app.include_router(conversation_follow.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(mcp_approval.router, dependencies=operator_only)
+    app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(oauth_connection_result.router, dependencies=operator_only)

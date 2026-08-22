@@ -15,6 +15,7 @@ import {
   SETTINGS_PATH,
   TOOL_CALLS_PATH,
   toolCallIdForPathname,
+  toolCallPath,
   conversationIdForPathname,
   viewForPathname,
 } from "./routing";
@@ -52,7 +53,8 @@ describe("viewForPathname", () => {
 
   it("resolves a deep-linked tool call to the shell, which opens the drawer on that call", () => {
     const id = "tc_0123456789abcdef01234567";
-    expect(toolCallIdForPathname(`${TOOL_CALLS_PATH}/${id}`)).toBe(id);
+    expect(toolCallPath(id)).toBe(`${TOOL_CALLS_PATH}/${id}`);
+    expect(toolCallIdForPathname(toolCallPath(id))).toBe(id);
     // Not the history page: a pending call is decided in the approvals drawer, which floats over
     // the ordinary embed view.
     expect(viewForPathname(`${TOOL_CALLS_PATH}/${id}`)).toBe("embed");
