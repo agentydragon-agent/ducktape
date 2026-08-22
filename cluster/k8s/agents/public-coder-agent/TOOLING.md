@@ -76,7 +76,13 @@ read-only and excludes Secrets, Pod exec, live writes, and unbound namespaces/re
 Node and cross-namespace projections may be available. Trust `kubectl auth can-i` and the API
 server's decision over this prose summary.
 
-A Haku-backed kubectl and temporary-grant workflow is tracked separately. Do not invent a competing
+The Haku-backed temporary-grant workflow is the escalation path when standing SAR denies a needed
+Kubernetes request. Use the `kubernetes` MCP server's `can_i` first, then submit the narrowest
+approval-gated `create_grant` scope and rules. The proxy's static maximum additionally includes core
+`pods` `get` and `list` across all namespaces, but the standing SAR identity does not. Cluster-wide
+pod listing therefore remains denied unless an operator approves a matching active `all_namespaces`
+grant; individual pod reads likewise require an active grant covering the pod's namespace. This
+ceiling does not include pod `watch`, logs, Secrets, or writes. Do not invent a competing
 cluster-access mechanism in response to an approval stall.
 
 ### Haku Console availability and policy

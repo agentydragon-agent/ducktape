@@ -9,11 +9,15 @@ evaluates the deploy-owned `public-coder` standing SAR subject, strips all calle
 uses its own rotating projected ServiceAccount token upstream.
 
 The `public-coder-agent-reader` ServiceAccount is only the fixed standing-policy SAR identity.
-`haku-kube-api-proxy` has an independent execution ceiling, initially bound to the same diagnostic
-roles. The proxy deliberately continues to reject long-running `watch`/log-follow and upgrade
-protocols, so the neutral baseline here means bounded read-only diagnostics without any new
-authority. The standing identity has `automountServiceAccountToken: false` and no token Secret; only
-Console may evaluate it through SubjectAccessReview.
+`haku-kube-api-proxy` has an independent execution ceiling: the same baseline diagnostic roles plus
+cluster-wide `get` and `list` on core `pods`, which are usable only when Console authorizes the
+request through an active Agent-owned grant. That additional ceiling can reveal workload metadata
+across namespaces after explicit operator approval, but it does not include pod `watch`, logs,
+Secrets, or writes.
+
+The proxy deliberately continues to reject long-running `watch`/log-follow and upgrade protocols.
+The standing identity has `automountServiceAccountToken: false` and no token Secret; only Console may
+evaluate it through SubjectAccessReview.
 
 Flux's ordinary dependencies keep the standing subject, complete execution ceiling, Console SAR
 configuration, and authorization proxy Ready before credential-mediation changes roll out. The
