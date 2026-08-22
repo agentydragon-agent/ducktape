@@ -138,6 +138,16 @@ py_test(
 )
 
 py_library(
+    name = "tensor_types",
+    srcs = ["tensor_types.py"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
     name = "actor_view",
     srcs = ["actor_view.py"],
     deps = [
