@@ -77,13 +77,6 @@ spec:
                 secretKeyRef:
                   name: haku-console-public-coder-agent
                   key: token
-            # Temporary rollback-only reader credential. The cutover iron.yaml contains no rule
-            # that selects it, so Agent traffic cannot use it. Remove after live verification.
-            - name: KUBERNETES_READER_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: public-coder-agent-reader-token
-                  key: token
             # Matrix password login is the one credential that lives in a JSON
             # body rather than Authorization. iron.yaml swaps the app's
             # placeholder only on the Matrix login endpoint.

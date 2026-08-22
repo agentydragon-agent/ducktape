@@ -153,7 +153,7 @@ def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
 
 
-def test_public_coder_kubernetes_proxy_cutover_contract(k8s_dir: Path) -> None:
+def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     """Agent traffic, standing SAR identity, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
     console_dir = k8s_dir / "haku" / "console"
@@ -204,13 +204,11 @@ def test_public_coder_kubernetes_proxy_cutover_contract(k8s_dir: Path) -> None:
     proxy_deployment = yaml.safe_load((agent_dir / "proxy" / "deployment.yaml").read_text())
     proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
     proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
-    # Kept only so the staged rollback can restore the old transform before removing Haku.
-    assert proxy_env["KUBERNETES_READER_TOKEN"]["valueFrom"]["secretKeyRef"]["name"] == (
-        "public-coder-agent-reader-token"
-    )
+    assert "KUBERNETES_READER_TOKEN" not in proxy_env
     reader_objects = list(yaml.safe_load_all((agent_dir / "k8s-reader" / "serviceaccount.yaml").read_text()))
-    rollback_secret = one(obj for obj in reader_objects if obj["kind"] == "Secret")
-    assert rollback_secret["metadata"]["name"] == "public-coder-agent-reader-token"
+    assert [obj["kind"] for obj in reader_objects] == ["ServiceAccount"]
+    assert reader_objects[0]["metadata"]["name"] == "public-coder-agent-reader"
+    assert reader_objects[0]["automountServiceAccountToken"] is False
 
     console_config = yaml.safe_load((console_dir / "config.yaml").read_text())
     subject = console_config["kubernetes_authorization"]["subjects_by_access_profile"]["public-coder"]
@@ -278,16 +276,12 @@ def test_public_coder_kubernetes_proxy_cutover_contract(k8s_dir: Path) -> None:
     proxy_flux = yaml.safe_load((agent_dir / "proxy" / "flux-kustomization.yaml").read_text())
     console_flux = yaml.safe_load((console_dir / "flux-kustomization.yaml").read_text())
     cutover_label = "haku.allegedly.works/kubernetes-cutover"
-    assert {
-        reader_flux["metadata"]["labels"][cutover_label],
-        proxy_flux["metadata"]["labels"][cutover_label],
-        console_flux["metadata"]["labels"][cutover_label],
-    } == {"proxy-v1"}
+    assert all(
+        cutover_label not in flux["metadata"].get("labels", {}) for flux in (reader_flux, proxy_flux, console_flux)
+    )
     dependency_by_name = {entry["name"]: entry for entry in proxy_flux["spec"]["dependsOn"]}
     for dependency_name in ("public-coder-agent-k8s-reader", "haku-console"):
-        expression = dependency_by_name[dependency_name]["readyExpr"]
-        assert cutover_label in expression
-        assert "dep.metadata.generation == dep.status.observedGeneration" in expression
+        assert "readyExpr" not in dependency_by_name[dependency_name]
     assert proxy_flux["spec"]["wait"] is True
     assert proxy_flux["spec"]["retryInterval"] == "1m"
     assert proxy_flux["spec"]["healthChecks"] == [

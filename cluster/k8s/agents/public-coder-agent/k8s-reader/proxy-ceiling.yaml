@@ -1,9 +1,8 @@
 # Capability-neutral execution ceiling for the Haku Kubernetes proxy.
 #
-# Keep these bindings separate from the standing SAR subject. The public-coder proxy
-# cutover depends on this Kustomization reaching its new generation, so all baseline bindings are
-# present before the Agent starts using the Haku request path. Future temporary capabilities widen
-# only this execution identity and remain separately constrained by Haku grants.
+# Keep these bindings separate from the standing SAR subject. They permanently bound the maximum
+# authority the proxy can execute; Haku grants may authorize only capabilities already present on
+# this identity, and future temporary capabilities remain separately constrained by both layers.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
