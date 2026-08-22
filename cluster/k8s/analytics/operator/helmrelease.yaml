@@ -83,7 +83,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
     podSecurityContext:
+      # Altinity images declare USER nobody; use its numeric UID for runAsNonRoot validation.
       runAsNonRoot: true
+      runAsUser: 65534
       seccompProfile:
         type: RuntimeDefault
     serviceMonitor:
