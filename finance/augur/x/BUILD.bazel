@@ -9,7 +9,6 @@ py_library(
         "//finance/augur/model:structural_macro",
         "//finance/augur/sim:codec",
         "//finance/augur/sim:external_series",
-        "//finance/augur/sim:projections",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:simulate",
         "@pypi//numpy",
