@@ -36,8 +36,9 @@ arrive.
 from __future__ import annotations
 
 import numpy as np
-import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from finance.augur.sim.tensor_types import HostRolloutF64
 
 _MONTHS_PER_YEAR = 12.0
 
@@ -78,8 +79,8 @@ class HarvestYieldParams(BaseModel):
 
 
 def monthly_harvest_fraction(
-    period_return: npt.NDArray[np.float64], embedded_gain_fraction: npt.NDArray[np.float64], params: HarvestYieldParams
-) -> npt.NDArray[np.float64]:
+    period_return: HostRolloutF64, embedded_gain_fraction: HostRolloutF64, params: HarvestYieldParams
+) -> HostRolloutF64:
     """Fraction of market value harvested as gross realized loss this month, per rollout.
 
     `period_return` and `embedded_gain_fraction` are `(R,)` arrays; the result is `(R,)`.

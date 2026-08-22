@@ -46,11 +46,20 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 from beartype import beartype
-from jaxtyping import Array, Int64, jaxtyped
+from jaxtyping import jaxtyped
 
-SleeveWeights = Int64[Array | np.ndarray, " sleeve"]
-RolloutMoney = Int64[Array, " rollout"]
-SleeveRolloutMoney = Int64[Array, " sleeve rollout"]
+from finance.augur.sim.tensor_types import (
+    HostSleeveI64,
+    JaxF64,
+    JaxI64,
+    JaxRolloutI64,
+    JaxSleeveI64,
+    JaxSleeveRolloutI64,
+)
+
+SleeveWeights = HostSleeveI64 | JaxSleeveI64
+RolloutMoney = JaxRolloutI64
+SleeveRolloutMoney = JaxSleeveRolloutI64
 
 
 @jaxtyped(typechecker=beartype)
@@ -244,7 +253,7 @@ def _settle_residual(
     return jnp.clip(adjusted, 0, value_quanta)
 
 
-def _round_half_up(values: Array) -> Array:
+def _round_half_up(values: JaxF64) -> JaxI64:
     return jnp.floor(values + 0.5).astype(jnp.int64)
 
 

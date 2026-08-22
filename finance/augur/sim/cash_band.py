@@ -41,6 +41,8 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 
+from finance.augur.sim.tensor_types import JaxRolloutI64
+
 
 class CashOrder(NamedTuple):
     """What the band asks for this month, in currency quanta, per rollout.
@@ -52,8 +54,8 @@ class CashOrder(NamedTuple):
     this from traced code, and a plain dataclass is not a valid jit output.
     """
 
-    raise_quanta: jnp.ndarray
-    invest_quanta: jnp.ndarray
+    raise_quanta: JaxRolloutI64
+    invest_quanta: JaxRolloutI64
 
 
 def validate_band_bounds(*, floor: Decimal | int, ceiling: Decimal | int) -> None:
@@ -77,10 +79,10 @@ def validate_band_bounds(*, floor: Decimal | int, ceiling: Decimal | int) -> Non
 
 def cash_order(
     *,
-    cash_quanta: jnp.ndarray,
-    scheduled_outflow_quanta: jnp.ndarray,
-    floor_quanta: jnp.ndarray,
-    ceiling_quanta: jnp.ndarray,
+    cash_quanta: JaxRolloutI64,
+    scheduled_outflow_quanta: JaxRolloutI64,
+    floor_quanta: JaxRolloutI64,
+    ceiling_quanta: JaxRolloutI64,
 ) -> CashOrder:
     """Size this month's raise or investment from the projected end-of-month balance.
 

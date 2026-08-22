@@ -99,6 +99,7 @@ py_library(
     name = "tlh_harvest",
     srcs = ["tlh_harvest.py"],
     deps = [
+        ":tensor_types",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -108,6 +109,7 @@ py_library(
     name = "fixed_point",
     srcs = ["fixed_point.py"],
     deps = [
+        ":tensor_types",
         "//finance/augur/product:asset_key",
         "@pypi//numpy",
     ],
@@ -151,6 +153,7 @@ py_library(
     name = "actor_view",
     srcs = ["actor_view.py"],
     deps = [
+        ":tensor_types",
         "@pypi//jax",
         "@pypi//numpy",
     ],
@@ -172,7 +175,10 @@ py_test(
 py_library(
     name = "payment_policy",
     srcs = ["payment_policy.py"],
-    deps = ["@pypi//jax"],
+    deps = [
+        ":tensor_types",
+        "@pypi//jax",
+    ],
 )
 
 py_test(
@@ -191,6 +197,7 @@ py_library(
     name = "allocation",
     srcs = ["allocation.py"],
     deps = [
+        ":tensor_types",
         "@pypi//beartype",
         "@pypi//jax",
         "@pypi//jaxtyping",
@@ -216,7 +223,10 @@ py_test(
 py_library(
     name = "cash_band",
     srcs = ["cash_band.py"],
-    deps = ["@pypi//jax"],
+    deps = [
+        ":tensor_types",
+        "@pypi//jax",
+    ],
 )
 
 py_test(
@@ -239,6 +249,7 @@ py_library(
         ":actor_view",
         ":allocation",
         ":cash_band",
+        ":tensor_types",
         "@pypi//jax",
         "@pypi//numpy",
     ],

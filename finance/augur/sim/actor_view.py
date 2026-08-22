@@ -48,7 +48,18 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
+
+from finance.augur.sim.tensor_types import (
+    HostI64,
+    HostLotI64,
+    JaxCashRolloutI64,
+    JaxI64Scalar,
+    JaxInstrumentI64,
+    JaxInstrumentRolloutI64,
+    JaxLotRolloutI64,
+    JaxRolloutI64,
+    JaxSleeveRolloutI64,
+)
 
 
 @dataclass(frozen=True)
@@ -93,29 +104,29 @@ class ActorView(NamedTuple):
     `(lot, R)`; the rest are `(R,)`. Account and lot axes are in `ActorSlots` order.
     """
 
-    month: jnp.ndarray
-    cash_quanta: jnp.ndarray
-    lot_quantity: jnp.ndarray
+    month: JaxI64Scalar
+    cash_quanta: JaxCashRolloutI64
+    lot_quantity: JaxLotRolloutI64
     # Marked at this month's price, NOT held at cost — a policy reasoning about allocation
     # needs what a sleeve is worth now, not what it was bought for.
-    lot_value_quanta: jnp.ndarray
-    lot_cost_basis_per_unit_quanta: jnp.ndarray
+    lot_value_quanta: JaxLotRolloutI64
+    lot_cost_basis_per_unit_quanta: JaxLotRolloutI64
     # Months since acquisition, so a policy can weigh the long/short capital-gain boundary
     # without reaching into the engine's classification.
-    lot_holding_months: jnp.ndarray
-    scheduled_outflow_quanta: jnp.ndarray
+    lot_holding_months: JaxLotRolloutI64
+    scheduled_outflow_quanta: JaxRolloutI64
     # What the market charges this month, per tradable instrument, `(instrument, R)`. Zero
     # means unpriceable — no modeled price series — rather than free.
-    instrument_price_quanta: jnp.ndarray
+    instrument_price_quanta: JaxInstrumentRolloutI64
     # Quanta per unit, `(instrument,)`. A market convention about divisibility, not a fact
     # about the position, which is why it sits on the instrument axis and not the lot one.
-    instrument_quantity_scale: jnp.ndarray
+    instrument_quantity_scale: JaxInstrumentI64
 
     @property
-    def total_cash_quanta(self) -> jnp.ndarray:
+    def total_cash_quanta(self) -> JaxRolloutI64:
         return self.cash_quanta.sum(axis=0)
 
-    def sleeve_value_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
+    def sleeve_value_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> JaxSleeveRolloutI64:
         """Aggregate lot values into `(sleeve, R)` using compile-time row groups.
 
         Rows index the VIEW's lot axis, not the plan's — the view has already narrowed to
@@ -126,7 +137,7 @@ class ActorView(NamedTuple):
             [self.lot_value_quanta[np.asarray(rows, dtype=np.int64)].sum(axis=0) for rows in sleeve_lot_rows]
         )
 
-    def sleeve_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> jnp.ndarray:
+    def sleeve_quanta(self, sleeve_lot_rows: tuple[tuple[int, ...], ...]) -> JaxSleeveRolloutI64:
         """Aggregate lot quantities into `(sleeve, R)`, same row groups as the value aggregate.
 
         What a sell order has to be capped by: a policy may want to raise more than a sleeve
@@ -138,16 +149,16 @@ class ActorView(NamedTuple):
 
 def build_actor_view(
     *,
-    month: jnp.ndarray,
+    month: JaxI64Scalar,
     slots: ActorSlots,
-    cash_quanta: jnp.ndarray,
-    lot_quantity: jnp.ndarray,
-    lot_cost_basis_per_unit_quanta: jnp.ndarray,
-    lot_value_quanta: jnp.ndarray,
-    lot_purchase_month: jnp.ndarray | NDArray[np.int64],
-    scheduled_outflow_quanta: jnp.ndarray,
-    instrument_price_quanta: jnp.ndarray,
-    instrument_quantity_scale: jnp.ndarray | NDArray[np.int64],
+    cash_quanta: JaxCashRolloutI64,
+    lot_quantity: JaxLotRolloutI64,
+    lot_cost_basis_per_unit_quanta: JaxLotRolloutI64,
+    lot_value_quanta: JaxLotRolloutI64,
+    lot_purchase_month: JaxLotRolloutI64 | HostLotI64,
+    scheduled_outflow_quanta: JaxRolloutI64,
+    instrument_price_quanta: JaxInstrumentRolloutI64,
+    instrument_quantity_scale: JaxInstrumentI64 | HostI64,
 ) -> ActorView:
     """Narrow full engine state to one agent's observation.
 

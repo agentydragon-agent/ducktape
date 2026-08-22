@@ -16,6 +16,8 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 
+from finance.augur.sim.tensor_types import JaxObligationRolloutBool, JaxObligationRolloutI64
+
 
 class PaymentView(NamedTuple):
     """Environment facts visible to a payment policy for one month.
@@ -25,8 +27,8 @@ class PaymentView(NamedTuple):
     this view contains only the due-now state that can vary by rollout.
     """
 
-    invoice_active: jnp.ndarray
-    invoice_due_quanta: jnp.ndarray
+    invoice_active: JaxObligationRolloutBool
+    invoice_due_quanta: JaxObligationRolloutI64
 
 
 class PayActions(NamedTuple):
@@ -37,8 +39,8 @@ class PayActions(NamedTuple):
     the action boundary treats it as the configured currency's money quantum.
     """
 
-    active: jnp.ndarray
-    amount_quanta: jnp.ndarray
+    active: JaxObligationRolloutBool
+    amount_quanta: JaxObligationRolloutI64
 
 
 def decide(view: PaymentView) -> PayActions:
