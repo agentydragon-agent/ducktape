@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: aiquota-api
-          image: ghcr.io/agentydragon/aiquota-api:devel-20260821123148-c0d594e # {"$imagepolicy": "flux-system:aiquota-api"}
+          image: ghcr.io/agentydragon/aiquota-api:devel-20260822105536-f5938ba # {"$imagepolicy": "flux-system:aiquota-api"}
           imagePullPolicy: Always
           ports:
             - name: http
