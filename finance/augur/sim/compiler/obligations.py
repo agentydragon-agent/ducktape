@@ -8,6 +8,7 @@ funding/settlement operation without a source discriminator union.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,7 +24,7 @@ from finance.augur.sim.compiler.helpers import (
     empty_month_matrix,
 )
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
-from finance.augur.sim.compiler.tax import TaxCompileOutput
+from finance.augur.sim.compiler.tax import TaxCompileOutput, TaxLiabilityCompileOutput
 from finance.augur.sim.scenario import RecurringObligation, Scenario, ScheduledObligation
 
 
@@ -46,56 +47,74 @@ class ObligationPaymentMetadata:
     deductible_fraction: NDArray[np.float64]
 
 
-@dataclass(frozen=True)
-class ConfiguredObligationPlan:
-    active: NDArray[np.bool_]
-    amount_kind: NDArray[np.int64]
-    amount_fixed: NDArray[np.int64]
-    amount_base: NDArray[np.int64]
-    amount_series: NDArray[np.int64]
-    amount_base_month: NDArray[np.int64]
-    amount_period: NDArray[np.int64]
+class ConfiguredObligationExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    amount_kind: ArrayT
+    amount_fixed: ArrayT
+    amount_base: ArrayT
+    amount_series: ArrayT
+    amount_base_month: ArrayT
+    amount_period: ArrayT
 
 
-@dataclass(frozen=True)
-class PropertyTaxObligationPlan:
-    active: NDArray[np.bool_]
-    property_slot: NDArray[np.int64]
-    annual_rate: NDArray[np.float64]
+class PropertyTaxObligationExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    amount: ArrayT
+    property_purchase_month: ArrayT
 
 
-@dataclass(frozen=True)
-class MortgageObligationPlan:
-    active: NDArray[np.bool_]
-    liability_slot: NDArray[np.int64]
+class MortgageObligationExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    liability_slot: ArrayT
+    annual_rate: ArrayT
+    property_purchase_month: ArrayT
 
 
-@dataclass(frozen=True)
-class EstimatedTaxObligationPlan:
-    active: NDArray[np.bool_]
-    profile_index: NDArray[np.int64]
-    prior_year_tax: NDArray[np.int64]
+class EstimatedTaxObligationExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    quarterly_amount: ArrayT
 
 
-@dataclass(frozen=True)
-class PriorYearTaxObligationPlan:
-    active: NDArray[np.bool_]
-    profile_index: NDArray[np.int64]
-    prior_year_tax: NDArray[np.int64]
-    tax_year_end_month: NDArray[np.int64]
+class Q4EstimatedTaxObligationExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    prior_year_tax: ArrayT
+    tax_liability_selector: ArrayT
+
+
+class PriorYearTaxObligationExecution[ArrayT](NamedTuple):
+    active: ArrayT
+    profile_index: ArrayT
+    prior_year_tax: ArrayT
+    tax_liability_selector: ArrayT
+    tax_year_end_month: ArrayT
+
+
+class ObligationMetadataExecution[ArrayT](NamedTuple):
+    agent: ArrayT
+    from_slot: ArrayT
+    to_slot: ArrayT
+    deduction_profile: ArrayT
+    deductible_fraction: ArrayT
+    property_tax_profile: ArrayT
+    property_slot: ArrayT
+
+
+class ObligationExecution[ArrayT](NamedTuple):
+    metadata: ObligationMetadataExecution[ArrayT]
+    configured: ConfiguredObligationExecution[ArrayT]
+    property_tax: PropertyTaxObligationExecution[ArrayT]
+    mortgage: MortgageObligationExecution[ArrayT]
+    estimated_tax: EstimatedTaxObligationExecution[ArrayT]
+    q4_estimated_tax: Q4EstimatedTaxObligationExecution[ArrayT]
+    tax_true_up: PriorYearTaxObligationExecution[ArrayT]
 
 
 @dataclass(frozen=True)
 class ObligationCompileOutput:
-    """Common payment metadata plus one narrow plan per obligation source."""
+    """Decode metadata plus the canonical execution PyTree."""
 
     metadata: ObligationPaymentMetadata
-    configured: ConfiguredObligationPlan
-    property_tax: PropertyTaxObligationPlan
-    mortgage: MortgageObligationPlan
-    estimated_tax: EstimatedTaxObligationPlan
-    q4_estimated_tax: PriorYearTaxObligationPlan
-    tax_true_up: PriorYearTaxObligationPlan
+    execution: ObligationExecution[np.ndarray]
 
 
 def estimated_tax_quarter(month: int) -> int | None:
@@ -120,6 +139,7 @@ def compile_obligation_slots(
     property_slot_by_id: dict[str, int],
     liabilities: LiabilityCompileOutput,
     tax: TaxCompileOutput,
+    tax_liabilities: TaxLiabilityCompileOutput,
 ) -> ObligationCompileOutput:
     horizon = int(scenario.horizon_months)
     profile_count = len(tax.profile_prior_year_tax)
@@ -176,25 +196,26 @@ def compile_obligation_slots(
     amount_period = ints(1)
 
     property_tax_active = bools()
-    property_tax_slot = ints(0)
-    property_tax_annual_rate = floats(np.nan)
+    property_tax_amount = ints(0)
 
     mortgage_active = bools()
     mortgage_liability_slot = ints(0)
+    mortgage_annual_rate = floats()
+    mortgage_property_purchase_month = ints(0)
 
     estimated_active = bools()
-    estimated_profile = ints(0)
-    estimated_prior = ints(0)
+    estimated_quarterly = ints(0)
 
     q4_active = bools()
-    q4_profile = ints(0)
     q4_prior = ints(0)
-    q4_year_end = ints(0)
+    tax_liability_count = tax_liabilities.profile_index.shape[0]
+    q4_selector = np.zeros((horizon, max_slots, tax_liability_count), dtype=np.int64)
 
     true_up_active = bools()
     true_up_profile = ints(0)
     true_up_prior = ints(0)
     true_up_year_end = ints(0)
+    true_up_selector = np.zeros_like(q4_selector)
 
     agent_to_profile_index = {
         strings.require(profile.agent_id): index for index, profile in enumerate(scenario.tax_profiles)
@@ -274,6 +295,9 @@ def compile_obligation_slots(
                     )
                     mortgage_active[month, slot] = True
                     mortgage_liability_slot[month, slot] = liability_slot
+                    mortgage_annual_rate[month, slot] = liabilities.annual_rate[liability_slot]
+                    mortgage_property_purchase_month[month, slot] = properties.month[property_slot]
+                    property_slot_matrix[month, slot] = property_slot
             slot += 1
 
         for property_slot, _property_code in enumerate(properties.id.tolist()):
@@ -299,9 +323,17 @@ def compile_obligation_slots(
                         payee_account_id=policy.tax_authority_account_id,
                     )
                     property_tax_active[month, slot] = True
-                    property_tax_slot[month, slot] = property_slot
-                    property_tax_annual_rate[month, slot] = (
-                        float(policy.annual_tax_rate) if policy.annual_tax_rate is not None else np.nan
+                    rate = (
+                        float(policy.annual_tax_rate)
+                        if policy.annual_tax_rate is not None
+                        else properties.location_tax_rate[property_slot]
+                    )
+                    raw_amount = (
+                        properties.initial_assessed_value[property_slot] * rate
+                        + properties.special_assessment_annual[property_slot]
+                    ) / 12.0
+                    property_tax_amount[month, slot] = np.int64(
+                        np.sign(raw_amount) * np.floor(np.abs(raw_amount) + 0.5)
                     )
                     owner_profile = agent_to_profile_index.get(strings.require(policy.owner_agent_id), NO_CODE)
                     property_tax_profile[month, slot] = owner_profile
@@ -328,8 +360,9 @@ def compile_obligation_slots(
                     payee_account_id=profile.tax_authority_account_id,
                 )
                 estimated_active[month, slot] = True
-                estimated_profile[month, slot] = profile_index
-                estimated_prior[month, slot] = prior_year_tax
+                estimated_quarterly[month, slot] = np.int64(
+                    np.sign(prior_year_tax / 4.0) * np.floor(np.abs(prior_year_tax / 4.0) + 0.5)
+                )
                 slot += 1
         elif quarter == 4:
             tax_year = month // 12 - 1
@@ -337,6 +370,9 @@ def compile_obligation_slots(
                 year_end_month = tax_year * 12 + 11
                 for profile_index, profile in enumerate(scenario.tax_profiles):
                     prior_year_tax = int(tax.profile_prior_year_tax[profile_index])
+                    selector = (tax_liabilities.profile_index == profile_index) & (
+                        tax_liabilities.year_end_month == year_end_month
+                    )
                     set_payment_metadata(
                         month,
                         slot,
@@ -348,9 +384,8 @@ def compile_obligation_slots(
                         payee_account_id=profile.tax_authority_account_id,
                     )
                     q4_active[month, slot] = True
-                    q4_profile[month, slot] = profile_index
                     q4_prior[month, slot] = prior_year_tax
-                    q4_year_end[month, slot] = year_end_month
+                    q4_selector[month, slot] = selector
                     slot += 1
 
                     set_payment_metadata(
@@ -367,47 +402,55 @@ def compile_obligation_slots(
                     true_up_profile[month, slot] = profile_index
                     true_up_prior[month, slot] = prior_year_tax
                     true_up_year_end[month, slot] = year_end_month
+                    true_up_selector[month, slot] = selector
                     slot += 1
 
+    metadata = ObligationPaymentMetadata(
+        cause=cause,
+        id=obligation_id,
+        type=obligation_type,
+        agent=agent,
+        from_account=from_account,
+        from_slot=from_slot,
+        to_agent=to_agent,
+        to_account=to_account,
+        to_slot=to_slot,
+        property_tax_profile=property_tax_profile,
+        property_slot=property_slot_matrix,
+        deduction_profile=deduction_profile,
+        deductible_fraction=deductible_fraction,
+    )
     return ObligationCompileOutput(
-        metadata=ObligationPaymentMetadata(
-            cause=cause,
-            id=obligation_id,
-            type=obligation_type,
-            agent=agent,
-            from_account=from_account,
-            from_slot=from_slot,
-            to_agent=to_agent,
-            to_account=to_account,
-            to_slot=to_slot,
-            property_tax_profile=property_tax_profile,
-            property_slot=property_slot_matrix,
-            deduction_profile=deduction_profile,
-            deductible_fraction=deductible_fraction,
-        ),
-        configured=ConfiguredObligationPlan(
-            active=configured_active,
-            amount_kind=amount_kind,
-            amount_fixed=amount_fixed,
-            amount_base=amount_base,
-            amount_series=amount_series,
-            amount_base_month=amount_base_month,
-            amount_period=amount_period,
-        ),
-        property_tax=PropertyTaxObligationPlan(
-            active=property_tax_active, property_slot=property_tax_slot, annual_rate=property_tax_annual_rate
-        ),
-        mortgage=MortgageObligationPlan(active=mortgage_active, liability_slot=mortgage_liability_slot),
-        estimated_tax=EstimatedTaxObligationPlan(
-            active=estimated_active, profile_index=estimated_profile, prior_year_tax=estimated_prior
-        ),
-        q4_estimated_tax=PriorYearTaxObligationPlan(
-            active=q4_active, profile_index=q4_profile, prior_year_tax=q4_prior, tax_year_end_month=q4_year_end
-        ),
-        tax_true_up=PriorYearTaxObligationPlan(
-            active=true_up_active,
-            profile_index=true_up_profile,
-            prior_year_tax=true_up_prior,
-            tax_year_end_month=true_up_year_end,
+        metadata=metadata,
+        execution=ObligationExecution(
+            metadata=ObligationMetadataExecution(
+                agent=metadata.agent,
+                from_slot=metadata.from_slot,
+                to_slot=metadata.to_slot,
+                deduction_profile=metadata.deduction_profile,
+                deductible_fraction=metadata.deductible_fraction,
+                property_tax_profile=metadata.property_tax_profile,
+                property_slot=metadata.property_slot,
+            ),
+            configured=ConfiguredObligationExecution(
+                active=configured_active,
+                amount_kind=amount_kind,
+                amount_fixed=amount_fixed,
+                amount_base=amount_base,
+                amount_series=amount_series,
+                amount_base_month=amount_base_month,
+                amount_period=amount_period,
+            ),
+            property_tax=PropertyTaxObligationExecution(
+                property_tax_active, property_tax_amount, properties.month[np.maximum(metadata.property_slot, 0)]
+            ),
+            mortgage=MortgageObligationExecution(
+                mortgage_active, mortgage_liability_slot, mortgage_annual_rate, mortgage_property_purchase_month
+            ),
+            estimated_tax=EstimatedTaxObligationExecution(estimated_active, estimated_quarterly),
+            q4_estimated_tax=Q4EstimatedTaxObligationExecution(q4_active, q4_prior, q4_selector),
+            tax_true_up=PriorYearTaxObligationExecution(
+                true_up_active, true_up_profile, true_up_prior, true_up_selector, true_up_year_end
+            ),
         ),
     )
