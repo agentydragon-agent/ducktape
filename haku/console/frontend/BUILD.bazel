@@ -575,6 +575,22 @@ ts_library(
 )
 
 ts_library(
+    name = "kubernetes_grants_panel",
+    srcs = ["kubernetes_grants_panel.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":approval_state",
+        ":client",
+        ":link",
+        ":routing",
+        ":toast",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "settings_panel",
     srcs = ["settings_panel.tsx"],
     tsconfig = TSCONFIG,
@@ -582,6 +598,7 @@ ts_library(
         ":approval_state",
         ":client",
         ":console_events",
+        ":kubernetes_grants_panel",
         ":link",
         ":mcp_status_client",
         ":open_external",
@@ -715,6 +732,7 @@ filegroup(
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
+        "kubernetes_grants_panel.tsx",
         "main.tsx",
         "oauth_result_announcement.ts",
         "oauth_result_page.tsx",

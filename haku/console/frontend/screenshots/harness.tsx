@@ -119,6 +119,9 @@ function sceneElement(scene: string) {
     case "settings":
     case "settings-mobile":
     case "settings-agents":
+    case "settings-kubernetes":
+    case "settings-kubernetes-history":
+    case "settings-kubernetes-revoke":
     case "settings-notifications":
     case "settings-nodes":
     case "settings-system":
