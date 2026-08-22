@@ -12,16 +12,14 @@ The `public-coder-agent-reader` ServiceAccount is only the fixed standing-policy
 `haku-kube-api-proxy` has an independent execution ceiling, initially bound to the same diagnostic
 roles. The proxy deliberately continues to reject long-running `watch`/log-follow and upgrade
 protocols, so the neutral baseline here means bounded read-only diagnostics without any new
-authority. The reader identity's legacy bearer is temporarily retained inside iron-proxy for
-staged rollback, but no transform can attach it to Agent traffic; a cleanup PR removes that Secret
-and env reference after live verification.
+authority. The standing identity has `automountServiceAccountToken: false` and no token Secret; only
+Console may evaluate it through SubjectAccessReview.
 
-Flux uses a lockstep cutover label and dependency readiness expressions: the Console SAR config,
-compatible proxy image/route, and all baseline execution bindings must reach their new observed
-generation before iron-proxy changes the Agent request path. Validate the ordinary `get`/`list`,
-non-following logs, metrics, Flux, node, and VM-image metadata matrix after rollout. For rollback,
-restore and verify the old reader-token substitution and kubeconfig first; remove the Haku proxy
-and ceiling only in a later reconciliation.
+Flux's ordinary dependencies keep the standing subject, complete execution ceiling, Console SAR
+configuration, and authorization proxy Ready before credential-mediation changes roll out. The
+proxy Kustomization additionally health-checks the iron-proxy Deployment and its root certificate.
+Rollback stays inside the Haku-mediated architecture by reverting the proxy/configuration change in
+Git; there is no direct reader-token path to restore.
 
 A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate
 from the personal agent at `openclaw.allegedly.works`. Its job is opening pull

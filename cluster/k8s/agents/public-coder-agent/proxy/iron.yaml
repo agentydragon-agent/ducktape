@@ -87,8 +87,8 @@ transforms:
             - host: "haku.allegedly.works"
             # kubectl presents the same non-secret placeholder to the dedicated Haku proxy.
             # The proxy authenticates this original Agent bearer with Console, then uses its own
-            # short-lived projected ServiceAccount credential upstream. No transform selects the
-            # temporarily retained reader token; it exists only for staged rollback.
+            # short-lived projected ServiceAccount credential upstream. The standing SAR identity
+            # has no bearer credential and cannot be selected by this transform.
             - host: "haku-kubeapi.allegedly.works"
         - source:
             type: env
