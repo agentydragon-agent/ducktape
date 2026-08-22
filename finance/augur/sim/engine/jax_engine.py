@@ -549,6 +549,12 @@ def _dense_output_from_device(
     state = host_ys.state
     cash0 = np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r))
     lot0 = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))
+    state_history = cast(StateOutput[np.ndarray], jax.tree.map(_prepend_zero_snapshot, state))._replace(
+        cash=_prepend_snapshot(state.cash, cash0),
+        lots=_prepend_snapshot(state.lots, lot0),
+        property_owner_occupied_months=_prepend_zero_snapshot(state.property_owner_occupied_months, dtype=np.int64),
+        failed_month=_prepend_snapshot(state.failed_month, np.full((r,), NO_CODE, dtype=np.int64), dtype=np.int64),
+    )
     # Purchase output already uses the compiler's full property axis, including its zero-property
     # sentinel row. Keep that axis intact through the scan and host boundary; there is no folded
     # purchase remap to reconstruct here.
@@ -591,26 +597,9 @@ def _dense_output_from_device(
     )
     return DenseSimulationOutput(
         state=DenseStateOutput(
-            cash=_prepend_snapshot(state.cash, cash0),
-            ordinary=_prepend_zero_snapshot(state.ordinary),
-            lots=_prepend_snapshot(state.lots, lot0),
             lot_cost_basis=np.asarray(host_final_state.lot_cost_basis),
             lot_purchase_month=np.asarray(host_final_state.lot_purchase_month, dtype=np.int64),
-            capital_gain_active=_prepend_zero_snapshot(state.capital_gain_active),
-            capital_gain_ytd=_prepend_zero_snapshot(state.capital_gain_ytd),
-            property_active=_prepend_zero_snapshot(state.property_active),
-            property_basis=_prepend_zero_snapshot(state.property_basis),
-            property_contribution=_prepend_zero_snapshot(state.property_contribution),
-            property_equity=_prepend_zero_snapshot(state.property_equity),
-            property_cumulative_depreciation=_prepend_zero_snapshot(state.property_cumulative_depreciation),
-            property_owner_occupied_months=_prepend_zero_snapshot(state.property_owner_occupied_months, dtype=np.int64),
-            liability_active=_prepend_zero_snapshot(state.liability_active),
-            liability_principal=_prepend_zero_snapshot(state.liability_principal),
-            liability_monthly_payment=_prepend_zero_snapshot(state.liability_monthly_payment),
-            liability_interest_ytd=_prepend_zero_snapshot(state.liability_interest_ytd),
-            liability_principal_ytd=_prepend_zero_snapshot(state.liability_principal_ytd),
-            failed=_prepend_zero_snapshot(state.failed),
-            failed_month=_prepend_snapshot(state.failed_month, np.full((r,), NO_CODE, dtype=np.int64), dtype=np.int64),
+            **state_history._asdict(),
         ),
         cashflows=host_ys.cashflows,
         obligations=host_ys.obligations,
