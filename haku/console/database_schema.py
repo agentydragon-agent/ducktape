@@ -517,11 +517,13 @@ class KubernetesGrantRow(Base):
         ),
         CheckConstraint(
             "jsonb_typeof(scope) = 'object' "
-            "AND scope ? 'kind' AND scope ? 'namespaces' "
+            "AND scope ? 'kind' "
             "AND scope->>'kind' IN ('namespaces', 'all_namespaces', 'cluster', 'non_resource') "
+            "AND ((scope->>'kind' = 'namespaces' "
+            "AND scope ? 'namespaces' "
             "AND jsonb_typeof(scope->'namespaces') = 'array' "
-            "AND ((scope->>'kind' = 'namespaces' AND jsonb_array_length(scope->'namespaces') > 0) "
-            "OR (scope->>'kind' <> 'namespaces' AND jsonb_array_length(scope->'namespaces') = 0))",
+            "AND jsonb_array_length(scope->'namespaces') > 0) "
+            "OR (scope->>'kind' <> 'namespaces' AND NOT (scope ? 'namespaces')))",
             name="ck_kubernetes_grants_scope_shape",
         ),
         CheckConstraint("expires_at > created_at", name="ck_kubernetes_grants_expiration_after_creation"),
