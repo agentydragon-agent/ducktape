@@ -45,10 +45,16 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
+from beartype import beartype
+from jaxtyping import Array, Int64, jaxtyped
+
+SleeveWeights = Int64[Array | np.ndarray, " sleeve"]
+RolloutMoney = Int64[Array, " rollout"]
+SleeveRolloutMoney = Int64[Array, " sleeve rollout"]
 
 
-def target_value_quanta(*, weights: NDArray[np.int64] | jnp.ndarray, total_quanta: jnp.ndarray) -> jnp.ndarray:
+@jaxtyped(typechecker=beartype)
+def target_value_quanta(*, weights: SleeveWeights, total_quanta: RolloutMoney) -> SleeveRolloutMoney:
     """Each sleeve's on-target value: `total * weight_i / sum(weight)`, floored.
 
     `weights` is `(sleeve,)`, `total_quanta` is `(rollout,)`, result is `(sleeve, rollout)`.
@@ -64,9 +70,10 @@ def target_value_quanta(*, weights: NDArray[np.int64] | jnp.ndarray, total_quant
     return (weights[:, None] * total_quanta[None, :]) // jnp.sum(weights)
 
 
+@jaxtyped(typechecker=beartype)
 def withdrawal_by_sleeve(
-    *, value_quanta: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, raise_quanta: jnp.ndarray
-) -> jnp.ndarray:
+    *, value_quanta: SleeveRolloutMoney, weights: SleeveWeights, raise_quanta: RolloutMoney
+) -> SleeveRolloutMoney:
     """Split a cash-raise across sleeves so what remains is as close to target as possible.
 
     `value_quanta` is `(sleeve, rollout)`, `weights` is `(sleeve,)`, `raise_quanta` is
@@ -115,9 +122,10 @@ def withdrawal_by_sleeve(
     return _settle_residual(taken=taken, value_quanta=value_quanta, wanted=wanted)
 
 
+@jaxtyped(typechecker=beartype)
 def deposit_by_sleeve(
-    *, value_quanta: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, invest_quanta: jnp.ndarray
-) -> jnp.ndarray:
+    *, value_quanta: SleeveRolloutMoney, weights: SleeveWeights, invest_quanta: RolloutMoney
+) -> SleeveRolloutMoney:
     """Split cash to invest across sleeves so the result is as close to target as possible.
 
     The mirror of `withdrawal_by_sleeve`: fill the most UNDERWEIGHT sleeve first, which is
@@ -162,9 +170,10 @@ def deposit_by_sleeve(
     return _settle_residual(taken=given, value_quanta=given + wanted[None, :], wanted=wanted)
 
 
+@jaxtyped(typechecker=beartype)
 def rebalance_by_sleeve(
-    *, value_quanta: jnp.ndarray, weights: NDArray[np.int64] | jnp.ndarray, tolerance: float
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    *, value_quanta: SleeveRolloutMoney, weights: SleeveWeights, tolerance: float
+) -> tuple[SleeveRolloutMoney, SleeveRolloutMoney]:
     """Trim every sleeve above target and top up every sleeve below it — or trade nothing at all.
 
     The mechanism neither `withdrawal_by_sleeve` nor `deposit_by_sleeve` can express: those two
@@ -205,7 +214,10 @@ def rebalance_by_sleeve(
     return jnp.where(fires, jnp.maximum(drift, 0), 0), jnp.where(fires, jnp.maximum(-drift, 0), 0)
 
 
-def _settle_residual(*, taken: jnp.ndarray, value_quanta: jnp.ndarray, wanted: jnp.ndarray) -> jnp.ndarray:
+@jaxtyped(typechecker=beartype)
+def _settle_residual(
+    *, taken: SleeveRolloutMoney, value_quanta: SleeveRolloutMoney, wanted: RolloutMoney
+) -> SleeveRolloutMoney:
     """Absorb the cent that rounding the water level costs, so the split is exact.
 
     The level is fractional, so per-sleeve amounts round and the total drifts from `wanted`
@@ -232,11 +244,11 @@ def _settle_residual(*, taken: jnp.ndarray, value_quanta: jnp.ndarray, wanted: j
     return jnp.clip(adjusted, 0, value_quanta)
 
 
-def _round_half_up(values: jnp.ndarray) -> jnp.ndarray:
+def _round_half_up(values: Array) -> Array:
     return jnp.floor(values + 0.5).astype(jnp.int64)
 
 
-def _validate_weights(weights: NDArray[np.int64] | jnp.ndarray) -> None:
+def _validate_weights(weights: SleeveWeights) -> None:
     """Shape always; POSITIVITY whenever the values are concrete.
 
     `weights` may arrive TRACED — the engine passes a device array so that sweeping an allocation

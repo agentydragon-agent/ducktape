@@ -181,7 +181,9 @@ py_library(
     name = "allocation",
     srcs = ["allocation.py"],
     deps = [
+        "@pypi//beartype",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -192,7 +194,9 @@ py_test(
     srcs = ["allocation_test.py"],
     deps = [
         ":allocation",
+        ":conftest",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
