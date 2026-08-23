@@ -135,7 +135,6 @@ def minimal_config(tmp_path: Path) -> MinimalConfig:
             else PortfolioSourcesConfig(
                 fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
             ),
-            default_rollout_samples=128,
             max_rollout_samples=1_000_000,
             models=models if models is not None else default_models,
             default_model_id="current_model",
@@ -188,7 +187,6 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
             portfolio_sources=PortfolioSourcesConfig(
                 fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash=12_345))
             ),
-            default_rollout_samples=8,
             max_rollout_samples=128,
             locations=fixture_locations,
             location_selection=location_selection,

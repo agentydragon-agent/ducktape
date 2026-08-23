@@ -8,7 +8,9 @@ sample without re-fitting from source CSVs."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 import pytest_bazel
@@ -33,6 +35,8 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
 
     assert out_manifest.exists()
     assert out_blob.exists()
+    with ZipFile(out_blob) as artifact:
+        assert "n_factors.npy" not in artifact.namelist()
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
     # Trainer only emits the active trained provider config; narrow away the
@@ -76,6 +80,10 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
 
     assert out_manifest.exists()
     assert out_blob.exists()
+    artifact = json.loads(out_blob.read_text(encoding="utf-8"))
+    assert artifact["schema_version"] == 2
+    assert "filtered_log_state_mean" not in artifact
+    assert "filtered_log_state_cov" not in artifact
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
     assert isinstance(parsed, StateSpaceProviderConfig)

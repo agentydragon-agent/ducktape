@@ -67,7 +67,6 @@ def _schema_export_config(properties_path: Path, calibration_catalog_path: Path)
         portfolio_sources=PortfolioSourcesConfig(
             fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-01-01"))
         ),
-        default_rollout_samples=1,
         max_rollout_samples=1,
         locations=(
             LocationConfig(
