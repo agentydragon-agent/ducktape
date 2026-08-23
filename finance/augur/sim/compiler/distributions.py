@@ -13,17 +13,18 @@ ragged structure and no scan carry.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
+from jaxtyping import Int64
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey
 from finance.augur.product.asset_key import asset_price_key
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable, StringTable
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.scenario import InterestIncome, Scenario, SecurityDistribution
-from finance.augur.sim.tensor_types import HostI64, HostLotI64
 
 
 class DistributionExecution[ArrayT](NamedTuple):
@@ -65,13 +66,13 @@ def compile_distributions(
     buckets: IncomeBuckets,
     series_index_by_id: dict[LevelSeriesKey, int],
     *,
-    lot_agent_codes: HostLotI64,
-    lot_account_codes: HostLotI64,
-    lot_asset_codes: HostLotI64,
-    lot_quantity_scale: HostLotI64,
+    lot_agent_codes: Int64[np.ndarray, " lot"],
+    lot_account_codes: Int64[np.ndarray, " lot"],
+    lot_asset_codes: Int64[np.ndarray, " lot"],
+    lot_quantity_scale: Int64[np.ndarray, " lot"],
 ) -> DistributionCompileOutput:
     lot_count = len(lot_agent_codes)
-    masks: list[HostI64] = []
+    masks: list[Int64[np.ndarray, " lot"]] = []
     series: list[int] = []
     quantity_scale: list[int] = []
     fraction: list[float] = []
@@ -122,10 +123,10 @@ def _pool_lot_mask(
     *,
     strings: StringTable,
     assets: AssetTable,
-    lot_agent_codes: HostLotI64,
-    lot_account_codes: HostLotI64,
-    lot_asset_codes: HostLotI64,
-) -> HostI64:
+    lot_agent_codes: Int64[np.ndarray, " lot"],
+    lot_account_codes: Int64[np.ndarray, " lot"],
+    lot_asset_codes: Int64[np.ndarray, " lot"],
+) -> Int64[np.ndarray, " lot"]:
     """Lots this pool pays on — including slots a policy has not bought into yet.
 
     Empty purchase slots carry their eventual agent/account/asset from compile time and hold
@@ -137,7 +138,7 @@ def _pool_lot_mask(
     almost certainly is.
     """
 
-    mask: HostI64 = (
+    mask: Int64[np.ndarray, " lot"] = (
         (lot_agent_codes == strings.require(distribution.agent_id))
         & (lot_account_codes == strings.require(distribution.holding_account_id))
         & (lot_asset_codes == assets.require(distribution.asset))

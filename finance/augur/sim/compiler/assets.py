@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 
 import numpy as np
+from jaxtyping import Int64
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable, StringTable
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.scenario import Scenario
-from finance.augur.sim.tensor_types import HostI64, HostSaleI64
 
 
 @dataclass(frozen=True)
@@ -20,17 +21,17 @@ class SaleCompileOutput:
     NaN when the sale price comes from a sampled series — `price_series[i]` is that
     series index, NO_CODE otherwise."""
 
-    cause: HostI64
-    month: HostSaleI64
-    agent: HostSaleI64
-    source_account: HostSaleI64
-    asset: HostSaleI64
-    quantity: HostSaleI64
-    quantity_scale: HostSaleI64
-    proceeds_account: HostSaleI64
-    proceeds_slot: HostSaleI64
-    price_fixed: HostSaleI64
-    price_series: HostSaleI64
+    cause: Int64[np.ndarray, " month scheduled_sale"]
+    month: Int64[np.ndarray, " scheduled_sale"]
+    agent: Int64[np.ndarray, " scheduled_sale"]
+    source_account: Int64[np.ndarray, " scheduled_sale"]
+    asset: Int64[np.ndarray, " scheduled_sale"]
+    quantity: Int64[np.ndarray, " scheduled_sale"]
+    quantity_scale: Int64[np.ndarray, " scheduled_sale"]
+    proceeds_account: Int64[np.ndarray, " scheduled_sale"]
+    proceeds_slot: Int64[np.ndarray, " scheduled_sale"]
+    price_fixed: Int64[np.ndarray, " scheduled_sale"]
+    price_series: Int64[np.ndarray, " scheduled_sale"]
 
 
 def compile_sales(

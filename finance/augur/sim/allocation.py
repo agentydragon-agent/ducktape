@@ -43,23 +43,15 @@ Two consequences worth naming:
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 import jax.numpy as jnp
 import numpy as np
 from beartype import beartype
-from jaxtyping import jaxtyped
+from jaxtyping import Array, Float64, Int64, jaxtyped
 
-from finance.augur.sim.tensor_types import (
-    HostSleeveI64,
-    JaxF64,
-    JaxI64,
-    JaxRolloutI64,
-    JaxSleeveI64,
-    JaxSleeveRolloutI64,
-)
-
-SleeveWeights = HostSleeveI64 | JaxSleeveI64
-RolloutMoney = JaxRolloutI64
-SleeveRolloutMoney = JaxSleeveRolloutI64
+SleeveWeights = Int64[np.ndarray, " sleeve"] | Int64[Array, " sleeve"]
+RolloutMoney = Int64[Array, " rollout"]
+SleeveRolloutMoney = Int64[Array, " sleeve rollout"]
 
 
 @jaxtyped(typechecker=beartype)
@@ -253,7 +245,7 @@ def _settle_residual(
     return jnp.clip(adjusted, 0, value_quanta)
 
 
-def _round_half_up(values: JaxF64) -> JaxI64:
+def _round_half_up(values: Float64[Array, " *shape"]) -> Int64[Array, " *shape"]:
     return jnp.floor(values + 0.5).astype(jnp.int64)
 
 

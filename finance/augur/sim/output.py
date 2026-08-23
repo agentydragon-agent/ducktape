@@ -2,26 +2,11 @@
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from typing import NamedTuple
 
 import numpy as np
-
-from finance.augur.sim.tensor_types import (
-    HostEventRolloutBool,
-    HostLotRolloutI64,
-    HostMonthPropertyRolloutBool,
-    HostSnapshotCapitalGainClassRolloutBool,
-    HostSnapshotCapitalGainClassRolloutI64,
-    HostSnapshotCashRolloutI64,
-    HostSnapshotIncomeBucketRolloutI64,
-    HostSnapshotLiabilityRolloutBool,
-    HostSnapshotLiabilityRolloutI64,
-    HostSnapshotLotRolloutI64,
-    HostSnapshotPropertyRolloutBool,
-    HostSnapshotPropertyRolloutI64,
-    HostSnapshotRolloutBool,
-    HostSnapshotRolloutI64,
-)
+from jaxtyping import Bool, Int64
 
 
 class StateOutput[ArrayT](NamedTuple):
@@ -143,26 +128,26 @@ class DenseFinalOutput[ArrayT](NamedTuple):
 class DenseStateOutput(NamedTuple):
     """Host-side state history, including the month-zero snapshot."""
 
-    cash: HostSnapshotCashRolloutI64
-    ordinary: HostSnapshotIncomeBucketRolloutI64
-    lots: HostSnapshotLotRolloutI64
-    lot_cost_basis: HostLotRolloutI64
-    lot_purchase_month: HostLotRolloutI64
-    capital_gain_active: HostSnapshotCapitalGainClassRolloutBool
-    capital_gain_ytd: HostSnapshotCapitalGainClassRolloutI64
-    property_active: HostSnapshotPropertyRolloutBool
-    property_basis: HostSnapshotPropertyRolloutI64
-    property_contribution: HostSnapshotPropertyRolloutI64
-    property_equity: HostSnapshotPropertyRolloutI64
-    property_cumulative_depreciation: HostSnapshotPropertyRolloutI64
-    property_owner_occupied_months: HostSnapshotPropertyRolloutI64
-    liability_active: HostSnapshotLiabilityRolloutBool
-    liability_principal: HostSnapshotLiabilityRolloutI64
-    liability_monthly_payment: HostSnapshotLiabilityRolloutI64
-    liability_interest_ytd: HostSnapshotLiabilityRolloutI64
-    liability_principal_ytd: HostSnapshotLiabilityRolloutI64
-    failed: HostSnapshotRolloutBool
-    failed_month: HostSnapshotRolloutI64
+    cash: Int64[np.ndarray, " snapshot cash rollout"]
+    ordinary: Int64[np.ndarray, " snapshot income_bucket rollout"]
+    lots: Int64[np.ndarray, " snapshot lot rollout"]
+    lot_cost_basis: Int64[np.ndarray, " lot rollout"]
+    lot_purchase_month: Int64[np.ndarray, " lot rollout"]
+    capital_gain_active: Bool[np.ndarray, " snapshot capital_gain_profile gain_class rollout"]
+    capital_gain_ytd: Int64[np.ndarray, " snapshot capital_gain_profile gain_class rollout"]
+    property_active: Bool[np.ndarray, " snapshot property rollout"]
+    property_basis: Int64[np.ndarray, " snapshot property rollout"]
+    property_contribution: Int64[np.ndarray, " snapshot property rollout"]
+    property_equity: Int64[np.ndarray, " snapshot property rollout"]
+    property_cumulative_depreciation: Int64[np.ndarray, " snapshot property rollout"]
+    property_owner_occupied_months: Int64[np.ndarray, " snapshot property rollout"]
+    liability_active: Bool[np.ndarray, " snapshot liability rollout"]
+    liability_principal: Int64[np.ndarray, " snapshot liability rollout"]
+    liability_monthly_payment: Int64[np.ndarray, " snapshot liability rollout"]
+    liability_interest_ytd: Int64[np.ndarray, " snapshot liability rollout"]
+    liability_principal_ytd: Int64[np.ndarray, " snapshot liability rollout"]
+    failed: Bool[np.ndarray, " snapshot rollout"]
+    failed_month: Int64[np.ndarray, " snapshot rollout"]
 
 
 class DenseSimulationOutput(NamedTuple):
@@ -171,11 +156,11 @@ class DenseSimulationOutput(NamedTuple):
     state: DenseStateOutput
     cashflows: CashflowOutput[np.ndarray]
     obligations: ObligationOutput[np.ndarray]
-    property_purchases: HostMonthPropertyRolloutBool
+    property_purchases: Bool[np.ndarray, " month property rollout"]
     mortgages: MortgageOutput[np.ndarray]
     taxes: TaxOutput[np.ndarray]
     scheduled_dispositions: DispositionOutput[np.ndarray]
     target_allocation: TargetAllocationOutput[np.ndarray]
     private_equity: PrivateEquityOutput[np.ndarray]
     lifecycle: LifecycleOutput[np.ndarray]
-    primary_residence_fired: HostEventRolloutBool
+    primary_residence_fired: Bool[np.ndarray, " event rollout"]

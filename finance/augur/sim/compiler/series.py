@@ -8,9 +8,11 @@ fields."""
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from typing import Any, NamedTuple
 
 import numpy as np
+from jaxtyping import Bool, Float64, Int64
 
 from finance.augur.model.series import (
     HomeValueKey,
@@ -23,13 +25,6 @@ from finance.augur.model.series import (
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.fixed_point import sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
-from finance.augur.sim.tensor_types import (
-    HostMaterializedSeriesBool,
-    HostMaterializedSeriesF64,
-    HostMaterializedSeriesI64,
-    HostSeriesCubeF64,
-    HostSeriesCubeI64,
-)
 
 
 def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]:
@@ -102,11 +97,11 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
 
 class MaterializedLevelRows(NamedTuple):
     key: LevelSeriesKey
-    rollout_index: HostMaterializedSeriesI64
-    month_index: HostMaterializedSeriesI64
-    values: HostMaterializedSeriesF64
-    present: HostMaterializedSeriesBool
-    in_bounds: HostMaterializedSeriesBool
+    rollout_index: Int64[np.ndarray, " observation"]
+    month_index: Int64[np.ndarray, " observation"]
+    values: Float64[np.ndarray, " observation"]
+    present: Bool[np.ndarray, " observation"]
+    in_bounds: Bool[np.ndarray, " observation"]
 
 
 def materialize_level_rows(
@@ -186,7 +181,12 @@ def _add_amount_series_key(amount: Any, add: Any) -> None:
 
 def _frame_values(
     frame: Any, rollout_count: int, horizon_months: int
-) -> tuple[HostMaterializedSeriesI64, HostMaterializedSeriesI64, HostMaterializedSeriesF64, HostMaterializedSeriesBool]:
+) -> tuple[
+    Int64[np.ndarray, " observation"],
+    Int64[np.ndarray, " observation"],
+    Float64[np.ndarray, " observation"],
+    Bool[np.ndarray, " observation"],
+]:
     rollout_index = frame.get_column("rollout_index").to_numpy()
     month_index = frame.get_column("month_index").to_numpy()
     raw_values = frame.get_column("value").to_numpy()
@@ -203,7 +203,7 @@ def external_series_cubes(
     rollout_count: int,
     horizon_months: int,
     currency_quantum: object,
-) -> tuple[HostSeriesCubeF64, HostSeriesCubeI64]:
+) -> tuple[Float64[np.ndarray, " series rollout snapshot"], Int64[np.ndarray, " series rollout snapshot"]]:
     """Materialize heterogeneous and money values together.
 
     Each sampled series is split and indexed once. The float cube carries rates and index ratios;

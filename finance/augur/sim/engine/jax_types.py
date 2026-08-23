@@ -2,28 +2,17 @@
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from functools import partial
 from typing import NamedTuple
 
 import jax
+from jaxtyping import Array, Bool, Int32, Int64
 
 from finance.augur.sim.compiler.obligations import ObligationMetadataExecution
 from finance.augur.sim.compiler.plan import SlotPlan
 from finance.augur.sim.output import DenseFinalOutput
-from finance.augur.sim.tensor_types import (
-    JaxBoolScalar,
-    JaxHarvestPolicyLotI64,
-    JaxObligationRolloutBool,
-    JaxObligationRolloutI64,
-    JaxPolicySleeveRolloutI64,
-    JaxPropertyI64,
-    JaxRolloutI64,
-    JaxSaleCapitalGainProfileI64,
-    JaxSaleI32,
-    JaxSaleI64,
-    JaxSaleSaleI64,
-)
 
 
 @partial(
@@ -43,13 +32,13 @@ from finance.augur.sim.tensor_types import (
 class _AssetSaleProgram:
     """Scheduled asset-sale values and the static FIFO topology that interprets them."""
 
-    month: JaxSaleI32
-    quantity: JaxSaleI64
-    same_pool_prior: JaxSaleSaleI64
-    capital_gain_map: JaxSaleCapitalGainProfileI64
-    tlh_policy_lot_mask: JaxHarvestPolicyLotI64
-    price_fixed: JaxSaleI64
-    price_series: JaxSaleI64
+    month: Int32[Array, " scheduled_sale"]
+    quantity: Int64[Array, " scheduled_sale"]
+    same_pool_prior: Int64[Array, " scheduled_sale prior_sale"]
+    capital_gain_map: Int64[Array, " scheduled_sale capital_gain_profile"]
+    tlh_policy_lot_mask: Int64[Array, " harvest_policy lot"]
+    price_fixed: Int64[Array, " scheduled_sale"]
+    price_series: Int64[Array, " scheduled_sale"]
     proceeds_slot: tuple[int, ...]
     buffer_index: tuple[int, ...]
     ordered_lots: tuple[tuple[int, ...], ...]
@@ -58,32 +47,32 @@ class _AssetSaleProgram:
 class _PaymentBatch(NamedTuple):
     """Common source output consumed by the shared funding/settlement phase."""
 
-    active: JaxObligationRolloutBool
-    due: JaxObligationRolloutI64
+    active: Bool[Array, " obligation rollout"]
+    due: Int64[Array, " obligation rollout"]
     metadata: ObligationMetadataExecution[jax.Array]
 
 
 class _PurchaseInputs(NamedTuple):
     """Scheduled purchase columns, kept on the full property axis."""
 
-    month: JaxPropertyI64
-    stake_contribution: JaxPropertyI64
-    buyer_slot: JaxPropertyI64
-    seller_slot: JaxPropertyI64
-    mortgage_slot: JaxPropertyI64
-    mortgage_principal: JaxPropertyI64
-    mortgage_monthly_payment: JaxPropertyI64
+    month: Int64[Array, " property"]
+    stake_contribution: Int64[Array, " property"]
+    buyer_slot: Int64[Array, " property"]
+    seller_slot: Int64[Array, " property"]
+    mortgage_slot: Int64[Array, " property"]
+    mortgage_principal: Int64[Array, " property"]
+    mortgage_monthly_payment: Int64[Array, " property"]
 
 
 class _ProductTailOutput(NamedTuple):
-    sale_oversell: JaxBoolScalar
-    failed_month: JaxRolloutI64
-    target_allocation_buy_count: JaxPolicySleeveRolloutI64
+    sale_oversell: Bool[Array, ""]
+    failed_month: Int64[Array, " rollout"]
+    target_allocation_buy_count: Int64[Array, " policy sleeve rollout"]
 
 
 class _DenseProductTailOutput(NamedTuple):
     dense: DenseFinalOutput[jax.Array]
-    failed_month: JaxRolloutI64
+    failed_month: Int64[Array, " rollout"]
 
 
 @dataclass(frozen=True)

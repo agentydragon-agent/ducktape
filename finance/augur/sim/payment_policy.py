@@ -12,11 +12,11 @@ of invoice view.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from typing import NamedTuple
 
 import jax.numpy as jnp
-
-from finance.augur.sim.tensor_types import JaxObligationRolloutBool, JaxObligationRolloutI64
+from jaxtyping import Array, Bool, Int64
 
 
 class PaymentView(NamedTuple):
@@ -27,8 +27,8 @@ class PaymentView(NamedTuple):
     this view contains only the due-now state that can vary by rollout.
     """
 
-    invoice_active: JaxObligationRolloutBool
-    invoice_due_quanta: JaxObligationRolloutI64
+    invoice_active: Bool[Array, " obligation rollout"]
+    invoice_due_quanta: Int64[Array, " obligation rollout"]
 
 
 class PayActions(NamedTuple):
@@ -39,8 +39,8 @@ class PayActions(NamedTuple):
     the action boundary treats it as the configured currency's money quantum.
     """
 
-    active: JaxObligationRolloutBool
-    amount_quanta: JaxObligationRolloutI64
+    active: Bool[Array, " obligation rollout"]
+    amount_quanta: Int64[Array, " obligation rollout"]
 
 
 def decide(view: PaymentView) -> PayActions:

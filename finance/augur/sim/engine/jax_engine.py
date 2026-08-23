@@ -41,6 +41,8 @@ that credits proceeds with no debit leaves net worth correct while it mints mone
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
+
 # JAX x64 must be enabled before importing jax.numpy, so this module intentionally
 # configures JAX between imports.
 # ruff: noqa: E402, I001
@@ -56,6 +58,7 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 import numpy as np
+from jaxtyping import Array, Bool, Float64, Int, Int64
 
 from finance.augur.model.series import PrivateEquityRegimeCode
 from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
@@ -117,86 +120,6 @@ from finance.augur.sim.enums import (
 )
 from finance.augur.sim.payment_policy import PayActions, PaymentView, decide as decide_payments
 from finance.augur.sim.target_allocation import SleeveUniverse, decide
-from finance.augur.sim.tensor_types import (
-    HostPercentileI64,
-    HostRolloutI64,
-    HostSnapshotI64,
-    HostSnapshotPercentileI64,
-    HostSnapshotRolloutI64,
-    JaxBoolScalar,
-    JaxBracketF64,
-    JaxBracketI64,
-    JaxBondBool,
-    JaxBondI64,
-    JaxCapitalGainProfileRolloutI64,
-    JaxCapitalGainProfileI64,
-    JaxCapitalGainClassRolloutBool,
-    JaxCapitalGainClassRolloutI64,
-    JaxCashI64,
-    JaxCashBool,
-    JaxCashRolloutI64,
-    JaxCashflowRolloutBool,
-    JaxCashflowRolloutI64,
-    JaxEventRolloutBool,
-    JaxF64,
-    JaxHarvestPolicyRolloutI64,
-    JaxI64,
-    JaxI64Scalar,
-    JaxIncomeBucketRolloutI64,
-    JaxInt,
-    JaxIntScalar,
-    JaxLiabilityRolloutBool,
-    JaxLiabilityRolloutI64,
-    JaxLiabilityI64,
-    JaxLotRolloutI64,
-    JaxLotBool,
-    JaxLotI64,
-    JaxOwnerOccupancyWindowBool,
-    JaxPolicySleeveRolloutI64,
-    JaxPercentileI64,
-    JaxPropertyRolloutBool,
-    JaxPropertyRolloutF64,
-    JaxPropertyRolloutI64,
-    JaxPropertyI64,
-    JaxPropertyBool,
-    JaxRolloutBool,
-    JaxRolloutF64,
-    JaxRolloutI64,
-    JaxRolloutLotI64,
-    JaxRolloutTaxLinkI64,
-    JaxSaleLotRolloutI64,
-    JaxSeriesCubeF64,
-    JaxSeriesCubeI64,
-    JaxSnapshotPercentileI64,
-    JaxSnapshotRolloutI64,
-    JaxSleeveI64,
-    JaxSleeveRolloutI64,
-    JaxSlotI64,
-    JaxSlotRolloutI64,
-    JaxTaxLiabilityRolloutBool,
-    JaxTaxLiabilityRolloutI64,
-    JaxTaxLinkBracketF64,
-    JaxTaxLinkBracketI64,
-    JaxTaxLinkI64,
-    JaxTaxLinkIncomeBucketI64,
-    JaxTaxLinkLiabilityI64,
-    JaxTaxLinkTaxLinkI64,
-    JaxTaxProfileRolloutI64,
-    JaxLiabilityBool,
-    JaxObligationBool,
-    JaxObligationI64,
-    JaxObligationObligationI64,
-    JaxObligationRolloutBool,
-    JaxObligationRolloutI64,
-    JaxMonthBondBool,
-    JaxMonthRolloutI64,
-    JaxMonthPropertyBool,
-    JaxMonthTaxLinkI64,
-    JaxPolicyCashBool,
-    JaxPolicyLotRolloutI64,
-    JaxPolicyLotI64,
-    JaxTaxLinkMonthI64,
-)
 
 # Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
 # survive across processes so the ~6400-instruction scan program need not recompile each run. A no-op
@@ -214,24 +137,26 @@ SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
 
 
-def _round_int64(value: JaxF64) -> JaxI64:
+def _round_int64(value: Float64[Array, " *shape"]) -> Int64[Array, " *shape"]:
     value_f = value.astype(jnp.float64)
     rounded = jnp.sign(value_f) * jnp.floor(jnp.abs(value_f) + 0.5)
     return rounded.astype(jnp.int64)
 
 
-def _zeros_i64(shape: tuple[int, ...]) -> JaxI64:
+def _zeros_i64(shape: tuple[int, ...]) -> Int64[Array, " ..."]:
     return jnp.zeros(shape, dtype=jnp.int64)
 
 
-def _scale_money(amount_quanta: JaxI64, factor: JaxF64 | float) -> JaxI64:
+def _scale_money(amount_quanta: Int64[Array, " ..."], factor: Float64[Array, " ..."] | float) -> Int64[Array, " ..."]:
     """Apply a dimensionless factor without converting money to floating point."""
 
     factor_numerator = _round_int64(jnp.asarray(factor, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
     return _scale_quanta_by_ratio(amount_quanta, factor_numerator, jnp.int64(MONEY_FACTOR_SCALE))
 
 
-def _sum_money_with_factors(amount_quanta: JaxI64, factor_numerator: JaxI64, *, axis: int) -> JaxI64:
+def _sum_money_with_factors(
+    amount_quanta: Int64[Array, " ..."], factor_numerator: Int64[Array, " ..."], *, axis: int
+) -> Int64[Array, " ..."]:
     """Sum non-negative scaled-money terms, then round the aggregate once."""
 
     amount_quotient = amount_quanta // MONEY_FACTOR_SCALE
@@ -249,12 +174,16 @@ def _sum_money_with_factors(amount_quanta: JaxI64, factor_numerator: JaxI64, *, 
     )
 
 
-def _sum_scaled_money(amount_quanta: JaxI64, factor: JaxF64, *, axis: int) -> JaxI64:
+def _sum_scaled_money(
+    amount_quanta: Int64[Array, " ..."], factor: Float64[Array, " ..."], *, axis: int
+) -> Int64[Array, " ..."]:
     factor_numerator = _round_int64(jnp.asarray(factor, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
     return _sum_money_with_factors(amount_quanta, factor_numerator, axis=axis)
 
 
-def _scale_money_by_float_ratio(amount_quanta: JaxI64 | int, numerator: JaxF64, denominator: JaxF64) -> JaxI64:
+def _scale_money_by_float_ratio(
+    amount_quanta: Int64[Array, " ..."] | int, numerator: Float64[Array, " ..."], denominator: Float64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     """Apply a sampled non-money level ratio while money remains integer quanta."""
 
     amount = jnp.asarray(amount_quanta, dtype=jnp.int64)
@@ -263,19 +192,25 @@ def _scale_money_by_float_ratio(amount_quanta: JaxI64 | int, numerator: JaxF64, 
     return _scale_quanta_by_ratio(amount, numerator_fixed, denominator_fixed)
 
 
-def _value_quanta_from_quantity(quantity_quanta: JaxI64, unit_price_quanta: JaxI64, quantity_scale: JaxI64) -> JaxI64:
+def _value_quanta_from_quantity(
+    quantity_quanta: Int64[Array, " ..."], unit_price_quanta: Int64[Array, " ..."], quantity_scale: Int64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     """Nearest-half-up money value with no float or overflowing direct product."""
 
     return _scale_quanta_by_ratio(quantity_quanta, unit_price_quanta, quantity_scale)
 
 
-def _ceil_quantity_for_quanta(value_quanta: JaxI64, unit_price_quanta: JaxI64, quantity_scale: JaxI64) -> JaxI64:
+def _ceil_quantity_for_quanta(
+    value_quanta: Int64[Array, " ..."], unit_price_quanta: Int64[Array, " ..."], quantity_scale: Int64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     denominator = jnp.where(unit_price_quanta > 0, unit_price_quanta, 1)
     numerator = jnp.maximum(value_quanta, 0) * quantity_scale
     return (numerator + denominator - 1) // denominator
 
 
-def _scale_quanta_by_ratio(amount_quanta: JaxI64, numerator: JaxI64, denominator: JaxI64) -> JaxI64:
+def _scale_quanta_by_ratio(
+    amount_quanta: Int64[Array, " ..."], numerator: Int64[Array, " ..."], denominator: Int64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     """Apply an integer ratio with nearest-half-up rounding and no large money product.
 
     Quotient/remainder decomposition avoids evaluating ``amount * numerator`` directly.
@@ -303,55 +238,57 @@ class _ScanState(NamedTuple):
     """`run_jax_scan`'s carry pytree (NamedTuple → native JAX pytree). Grown field-by-field as the
     fold covers more phases; per-rollout state is `(entity, rollouts)` except the failure vectors."""
 
-    cash: JaxCashRolloutI64
-    ordinary_ytd: JaxIncomeBucketRolloutI64
-    property_tax_ytd: JaxTaxProfileRolloutI64
-    lot_remaining: JaxLotRolloutI64
+    cash: Int64[Array, " cash rollout"]
+    ordinary_ytd: Int64[Array, " income_bucket rollout"]
+    property_tax_ytd: Int64[Array, " tax_profile rollout"]
+    lot_remaining: Int64[Array, " lot rollout"]
     # `(lot, R)`: per-rollout because a purchased lot's basis is the price its rollout paid.
     # Initial lots broadcast their configured basis and never change it.
-    cost_basis_per_unit: JaxLotRolloutI64
+    cost_basis_per_unit: Int64[Array, " lot rollout"]
     # `(lot, R)`, and per-rollout for the same reason: once a policy decides WHEN to buy, a
     # slot fills in a different month in each rollout, and the holding period that decides
     # long vs short gain is measured from it. FIFO ORDER does not depend on this — a sleeve's
     # slots fill monotonically, so slot index is the order in every rollout, and an unfilled
     # slot holds zero units so a walk reaching it early takes nothing.
-    lot_purchase_month: JaxLotRolloutI64
-    capital_gain_active: JaxCapitalGainClassRolloutBool
-    capital_gain_ytd: JaxCapitalGainClassRolloutI64
-    tlh: JaxHarvestPolicyRolloutI64
-    property_active: JaxPropertyRolloutBool
-    property_basis: JaxPropertyRolloutI64
-    property_contribution: JaxPropertyRolloutI64
-    property_equity: JaxPropertyRolloutI64
-    property_cumulative_depreciation: JaxPropertyRolloutI64
-    property_owner_occupied_months: JaxPropertyRolloutI64
-    property_depreciation_ytd: JaxPropertyRolloutI64
-    property_rented_fraction: JaxPropertyRolloutF64  # mutable: lifecycle FRACTION/SALE events change it
-    property_building_basis: JaxPropertyRolloutI64  # mutable: lifecycle CAPITAL_IMPROVEMENT/SALE events change it
-    owner_occupied_window: JaxOwnerOccupancyWindowBool  # ring of monthly owner-occupancy flags (§121)
-    liability_active: JaxLiabilityRolloutBool
-    liability_principal: JaxLiabilityRolloutI64
-    liability_monthly_payment: JaxLiabilityRolloutI64
-    liability_interest_ytd: JaxLiabilityRolloutI64
-    liability_principal_ytd: JaxLiabilityRolloutI64
-    liability_rental_interest_ytd: JaxLiabilityRolloutI64
-    capital_loss_carryforward: JaxCapitalGainProfileRolloutI64
-    recapture_section_1250_ytd: JaxTaxProfileRolloutI64
-    tax_liability_active: JaxTaxLiabilityRolloutBool
-    tax_liability_amount: JaxTaxLiabilityRolloutI64
-    failed: JaxRolloutBool
-    failed_month: JaxRolloutI64
+    lot_purchase_month: Int64[Array, " lot rollout"]
+    capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"]
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"]
+    tlh: Int64[Array, " harvest_policy rollout"]
+    property_active: Bool[Array, " property rollout"]
+    property_basis: Int64[Array, " property rollout"]
+    property_contribution: Int64[Array, " property rollout"]
+    property_equity: Int64[Array, " property rollout"]
+    property_cumulative_depreciation: Int64[Array, " property rollout"]
+    property_owner_occupied_months: Int64[Array, " property rollout"]
+    property_depreciation_ytd: Int64[Array, " property rollout"]
+    property_rented_fraction: Float64[Array, " property rollout"]  # mutable: lifecycle FRACTION/SALE events change it
+    property_building_basis: Int64[
+        Array, " property rollout"
+    ]  # mutable: lifecycle CAPITAL_IMPROVEMENT/SALE events change it
+    owner_occupied_window: Bool[Array, " lookback property rollout"]  # ring of monthly owner-occupancy flags (§121)
+    liability_active: Bool[Array, " liability rollout"]
+    liability_principal: Int64[Array, " liability rollout"]
+    liability_monthly_payment: Int64[Array, " liability rollout"]
+    liability_interest_ytd: Int64[Array, " liability rollout"]
+    liability_principal_ytd: Int64[Array, " liability rollout"]
+    liability_rental_interest_ytd: Int64[Array, " liability rollout"]
+    capital_loss_carryforward: Int64[Array, " capital_gain_profile rollout"]
+    recapture_section_1250_ytd: Int64[Array, " tax_profile rollout"]
+    tax_liability_active: Bool[Array, " tax_liability rollout"]
+    tax_liability_amount: Int64[Array, " tax_liability rollout"]
+    failed: Bool[Array, " rollout"]
+    failed_month: Int64[Array, " rollout"]
     # Scheduled-sale dispositions accumulated in-carry (`(scheduled_sale, lot, R)`): each sale fires
     # once, so accumulating at the firing month collapses the per-month horizon axis the old ys emitted.
-    sale_disp_units: JaxSaleLotRolloutI64
-    sale_disp_basis: JaxSaleLotRolloutI64
-    sale_disp_proceeds: JaxSaleLotRolloutI64
-    sale_oversell: JaxBoolScalar  # any scheduled sale oversold its pool (post-scan hard error)
+    sale_disp_units: Int64[Array, " scheduled_sale lot rollout"]
+    sale_disp_basis: Int64[Array, " scheduled_sale lot rollout"]
+    sale_disp_proceeds: Int64[Array, " scheduled_sale lot rollout"]
+    sale_oversell: Bool[Array, ""]  # any scheduled sale oversold its pool (post-scan hard error)
     # `(policy, sleeve, R)`: how many purchases a target-allocation sleeve has WANTED so far.
     # The cursor and the exhaustion counter are the same number — it names the next slot to
     # fill, and it keeps counting past the last one, so a run that needed more slots than it
     # was configured says so (post-scan hard error) instead of silently dropping purchases.
-    ta_buy_count: JaxPolicySleeveRolloutI64
+    ta_buy_count: Int64[Array, " policy sleeve rollout"]
 
 
 class _TracedConfig(NamedTuple):
@@ -361,21 +298,21 @@ class _TracedConfig(NamedTuple):
     concrete `plan` — so nothing puns a traced array into the compiler's NumPy-typed plan fields. Each
     field is a swept numeric value (not baked structure), so sweeping it reuses the compiled program."""
 
-    link_standard_deduction: JaxTaxLinkI64
-    link_income_mask: JaxTaxLinkIncomeBucketI64
-    link_ordinary_upper: JaxTaxLinkBracketI64
-    link_ordinary_rate: JaxTaxLinkBracketF64
-    link_ltcg_upper: JaxTaxLinkBracketI64
-    link_ltcg_rate: JaxTaxLinkBracketF64
-    mid_principal_factor: JaxTaxLinkLiabilityI64
-    cost_basis_per_unit: JaxLotI64
+    link_standard_deduction: Int64[Array, " tax_link"]
+    link_income_mask: Int64[Array, " tax_link income_bucket"]
+    link_ordinary_upper: Int64[Array, " tax_link bracket"]
+    link_ordinary_rate: Float64[Array, " tax_link bracket"]
+    link_ltcg_upper: Int64[Array, " tax_link bracket"]
+    link_ltcg_rate: Float64[Array, " tax_link bracket"]
+    mid_principal_factor: Int64[Array, " tax_link liability"]
+    cost_basis_per_unit: Int64[Array, " lot"]
     # Month-0 opening value of the carried per-rollout purchase month; policy-chosen
     # purchases overwrite their slot's entry when they fill it.
-    lot_purchase_month: JaxLotI64
-    cash_initial_balance: JaxCashI64
-    lot_initial_quantity: JaxLotI64
-    property_adjusted_basis: JaxPropertyI64
-    property_equity_ledger: JaxPropertyI64
+    lot_purchase_month: Int64[Array, " lot"]
+    cash_initial_balance: Int64[Array, " cash"]
+    lot_initial_quantity: Int64[Array, " lot"]
+    property_adjusted_basis: Int64[Array, " property"]
+    property_equity_ledger: Int64[Array, " property"]
 
 
 @dataclass(frozen=True)
@@ -387,27 +324,27 @@ class _ProductSummaryStatic:
 
 
 class _ProductSummaryInputs(NamedTuple):
-    cash_mask: JaxCashBool
-    public_lot_mask: JaxLotBool
-    pe_lot_mask: JaxLotBool
-    pe_lot_issuer: JaxLotI64
-    property_mask: JaxPropertyBool
-    property_purchase_month: JaxPropertyI64
-    property_purchase_price: JaxPropertyI64
-    property_home_value_series: JaxPropertyI64
-    liability_mask: JaxLiabilityBool
-    primary_obligation_mask: JaxObligationBool
+    cash_mask: Bool[Array, " cash"]
+    public_lot_mask: Bool[Array, " lot"]
+    pe_lot_mask: Bool[Array, " lot"]
+    pe_lot_issuer: Int64[Array, " lot"]
+    property_mask: Bool[Array, " property"]
+    property_purchase_month: Int64[Array, " property"]
+    property_purchase_price: Int64[Array, " property"]
+    property_home_value_series: Int64[Array, " property"]
+    liability_mask: Bool[Array, " liability"]
+    primary_obligation_mask: Bool[Array, " obligation"]
     # Face in cents, zeroed for bonds the primary agent does not hold, and the (H+1, bond)
     # on-books mask. Both compile-time constants — a par bond held to maturity has no
     # rollout-varying value.
-    bond_face: JaxBondI64
-    bond_on_books: JaxMonthBondBool
+    bond_face: Int64[Array, " bond"]
+    bond_on_books: Bool[Array, " month bond"]
     # Indexation inputs, so a TIPS is carried at its CPI-scaled principal rather than at par.
     # Valuing an indexed bond at face would understate it in exactly the inflationary
     # scenarios the ladder is held for.
-    bond_indexed: JaxBondBool
-    bond_cpi_series: JaxBondI64
-    bond_index_base_month: JaxBondI64
+    bond_indexed: Bool[Array, " bond"]
+    bond_cpi_series: Int64[Array, " bond"]
+    bond_index_base_month: Int64[Array, " bond"]
 
 
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
@@ -493,15 +430,15 @@ class _Operands(NamedTuple):
     """
 
     # Carry-init device constants.
-    ordinary0: JaxIncomeBucketRolloutI64
-    property_tax_ytd0: JaxTaxProfileRolloutI64
-    cg_active0: JaxCapitalGainClassRolloutBool
-    cg_ytd0: JaxCapitalGainClassRolloutI64
-    tlh0: JaxHarvestPolicyRolloutI64
-    property_rented_fraction_0: JaxPropertyRolloutF64
-    property_building_basis_0: JaxPropertyRolloutI64
-    prop0: JaxPropertyRolloutBool
-    liab0: JaxLiabilityRolloutBool
+    ordinary0: Int64[Array, " income_bucket rollout"]
+    property_tax_ytd0: Int64[Array, " tax_profile rollout"]
+    cg_active0: Bool[Array, " capital_gain_profile gain_class rollout"]
+    cg_ytd0: Int64[Array, " capital_gain_profile gain_class rollout"]
+    tlh0: Int64[Array, " harvest_policy rollout"]
+    property_rented_fraction_0: Float64[Array, " property rollout"]
+    property_building_basis_0: Int64[Array, " property rollout"]
+    prop0: Bool[Array, " property rollout"]
+    liab0: Bool[Array, " liability rollout"]
     # Whole-horizon static tables sliced by the traced month.
     cashflows: CashflowExecution[jax.Array]
     bonds: BondExecution[jax.Array]
@@ -509,39 +446,39 @@ class _Operands(NamedTuple):
     obligations: ObligationExecution[jax.Array]
     purchases: _PurchaseInputs
     # Year-end / property tables.
-    property_is_primary_table: JaxMonthPropertyBool
-    tax_slot_table: JaxMonthTaxLinkI64
-    salt_cap_table: JaxTaxLinkMonthI64
+    property_is_primary_table: Bool[Array, " month property"]
+    tax_slot_table: Int64[Array, " month tax_link"]
+    salt_cap_table: Int64[Array, " tax_link month"]
     # Device arrays the bodies + de-`plan`-ed cores read directly.
-    capital_gain_agent_codes: JaxCapitalGainProfileI64
-    cg_rep_profile: JaxCapitalGainProfileI64
-    property_owner_profile_index: JaxPropertyI64
-    liability_owner_profile_index: JaxLiabilityI64
-    salt_contributing_mask: JaxTaxLinkTaxLinkI64
-    lot_asset_series_index: JaxLotI64
-    lot_quantity_scale: JaxLotI64
-    pe_owner_cash_mask: JaxPolicyCashBool
+    capital_gain_agent_codes: Int64[Array, " capital_gain_profile"]
+    cg_rep_profile: Int64[Array, " capital_gain_profile"]
+    property_owner_profile_index: Int64[Array, " property"]
+    liability_owner_profile_index: Int64[Array, " liability"]
+    salt_contributing_mask: Int64[Array, " tax_link other_tax_link"]
+    lot_asset_series_index: Int64[Array, " lot"]
+    lot_quantity_scale: Int64[Array, " lot"]
+    pe_owner_cash_mask: Bool[Array, " policy cash"]
     # Series-axis row indices, traced (dynamic gather), in phase-loop order. See `_build_program`.
-    pe_floor_series: JaxI64
-    harvest_series: JaxI64
-    lifecycle_sale_series: JaxI64
-    ta_floor_series: JaxI64
-    ta_ceiling_series: JaxI64
+    pe_floor_series: Int64[Array, " issuer"]
+    harvest_series: Int64[Array, " harvest_policy"]
+    lifecycle_sale_series: Int64[Array, " event"]
+    ta_floor_series: Int64[Array, " policy"]
+    ta_ceiling_series: Int64[Array, " policy"]
     # Per-policy, per-sleeve, per-pool price rows. Ragged twice over, so a list of lists.
     # Per policy, a `(sleeve,)` series row. Per SLEEVE, not per pool: every pool in a sleeve
     # holds the same asset, so a per-pool list was the same price repeated.
-    ta_sleeve_series: list[JaxSleeveI64]
+    ta_sleeve_series: list[Int64[Array, " sleeve"]]
     # Per policy, a `(sleeve,)` weight row. TRACED, not folded into `_Static`: a sleeve weight is
     # swept numeric config, and baking it into the static key made every distinct weight vector a
     # separate XLA compile — so an allocation sweep paid one full compile PER ARM.
-    ta_sleeve_weights: list[JaxSleeveI64]
+    ta_sleeve_weights: list[Int64[Array, " sleeve"]]
 
 
 class _ProgramDynamic(NamedTuple):
     """Traced components; registered children may carry their own static topology."""
 
-    external_values: JaxSeriesCubeF64
-    external_money_values: JaxSeriesCubeI64
+    external_values: Float64[Array, " series rollout snapshot"]
+    external_money_values: Int64[Array, " series rollout snapshot"]
     pe_channels: PEExecutionChannels[jax.Array]
     swept: _TracedConfig
     asset_sales: _AssetSaleProgram
@@ -727,23 +664,23 @@ def _check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.n
 class ProductMetricFanSummary:
     """Exact percentile reductions for one product metric."""
 
-    month_index: HostSnapshotI64
+    month_index: Int64[np.ndarray, " snapshot"]
     failed_count: int
     currency_code: str
     currency_quantum: str
     percentiles: tuple[float, ...]
-    terminal_percentiles: HostPercentileI64
-    monthly_percentiles: HostSnapshotPercentileI64
+    terminal_percentiles: Int64[np.ndarray, " percentile"]
+    monthly_percentiles: Int64[np.ndarray, " snapshot percentile"]
 
 
 @dataclass(frozen=True)
 class ProductTerminalSummary:
     """Per-rollout terminal samples for one product metric."""
 
-    failed_month: HostRolloutI64
+    failed_month: Int64[np.ndarray, " rollout"]
     currency_code: str
     currency_quantum: str
-    terminal_samples: HostRolloutI64
+    terminal_samples: Int64[np.ndarray, " rollout"]
 
 
 @dataclass(frozen=True)
@@ -757,24 +694,24 @@ class ProductProjectionSummaries:
 class _ProductMetricFanDeviceSummary(NamedTuple):
     """Device-side order statistics needed to build one exact metric fan."""
 
-    failed_count: JaxI64Scalar
-    monthly_lower: JaxSnapshotPercentileI64
-    monthly_upper: JaxSnapshotPercentileI64
-    terminal_lower: JaxPercentileI64
-    terminal_upper: JaxPercentileI64
+    failed_count: Int64[Array, ""]
+    monthly_lower: Int64[Array, " snapshot percentile"]
+    monthly_upper: Int64[Array, " snapshot percentile"]
+    terminal_lower: Int64[Array, " percentile"]
+    terminal_upper: Int64[Array, " percentile"]
 
 
 @dataclass(frozen=True)
 class ProductMetricArrays:
     """Base product series emitted by JAX for selected-rollout detail."""
 
-    month_index: HostSnapshotI64
-    failed_month: HostRolloutI64
+    month_index: Int64[np.ndarray, " snapshot"]
+    failed_month: Int64[np.ndarray, " rollout"]
     currency_code: str
     currency_quantum: str
-    base_series: tuple[HostSnapshotRolloutI64, ...]
+    base_series: tuple[Int64[np.ndarray, " snapshot rollout"], ...]
 
-    def metric_arrays(self) -> dict[str, HostSnapshotRolloutI64]:
+    def metric_arrays(self) -> dict[str, Int64[np.ndarray, " snapshot rollout"]]:
         base = dict(zip(_PRODUCT_BASE_METRICS, self.base_series, strict=True))
         return {
             "month_index": self.month_index,
@@ -792,15 +729,17 @@ _PRODUCT_BASE_INDEX = {name: index for index, name in enumerate(_PRODUCT_BASE_ME
 
 
 def _product_metric_series(
-    metric: str, initial_ys: tuple[JaxRolloutI64, ...], monthly_ys: tuple[JaxMonthRolloutI64, ...]
-) -> JaxSnapshotRolloutI64:
+    metric: str,
+    initial_ys: tuple[Int64[Array, " rollout"], ...],
+    monthly_ys: tuple[Int64[Array, " month rollout"], ...],
+) -> Int64[Array, " snapshot rollout"]:
     """Full (H+1, R) device series for one product metric.
 
     `base` is passed as a callable so only the series the requested metric needs are
     assembled: a single-metric fan never materializes all of them.
     """
 
-    def base(name: str) -> JaxSnapshotRolloutI64:
+    def base(name: str) -> Int64[Array, " snapshot rollout"]:
         index = _PRODUCT_BASE_INDEX[name]
         return jnp.concatenate([jnp.asarray(initial_ys[index])[None, :], jnp.asarray(monthly_ys[index])], axis=0)
 
@@ -809,9 +748,9 @@ def _product_metric_series(
 
 def _product_metric_arrays_from_device(
     plan: CompiledSimulation,
-    initial_ys: tuple[JaxRolloutI64, ...],
-    monthly_ys: tuple[JaxMonthRolloutI64, ...],
-    final_failed_month: JaxRolloutI64,
+    initial_ys: tuple[Int64[Array, " rollout"], ...],
+    monthly_ys: tuple[Int64[Array, " month rollout"], ...],
+    final_failed_month: Int64[Array, " rollout"],
 ) -> ProductMetricArrays:
     """Copy JAX-emitted base series into the selected-rollout host read model."""
 
@@ -846,7 +785,7 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
 
 def _run_jax_product_series(
     plan: CompiledSimulation, *, primary_agent_id: str, metric: str
-) -> tuple[JaxSnapshotRolloutI64, _ProductTailOutput]:
+) -> tuple[Int64[Array, " snapshot rollout"], _ProductTailOutput]:
     """Execute the product reducer once and materialize the requested metric series."""
     validate_seed_dependent_inputs(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
@@ -856,7 +795,7 @@ def _run_jax_product_series(
     return _product_metric_series(metric, initial_ys, monthly_ys), product_tail
 
 
-def _product_terminal_series(metric: str, series: JaxSnapshotRolloutI64) -> JaxRolloutI64:
+def _product_terminal_series(metric: str, series: Int64[Array, " snapshot rollout"]) -> Int64[Array, " rollout"]:
     """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
     return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
 
@@ -866,9 +805,9 @@ def _product_metric_fan_device_summary(
     *,
     metric: str,
     percentiles: tuple[float, ...],
-    series: JaxSnapshotRolloutI64,
-    terminal: JaxRolloutI64,
-    failed_month: JaxRolloutI64,
+    series: Int64[Array, " snapshot rollout"],
+    terminal: Int64[Array, " rollout"],
+    failed_month: Int64[Array, " rollout"],
 ) -> tuple[tuple[CurrencyQuantileInterpolation, ...], _ProductMetricFanDeviceSummary]:
     """Select exact quantile brackets on-device for one metric fan."""
     quantile_plan = currency_quantile_plan(plan.rollout_count, percentiles)
@@ -1405,7 +1344,7 @@ def _build_program(
     # non-deterministic series order can't trigger a recompile (see the determinism note in
     # `collect_level_series_keys`). Each array is in the SAME order its phase loop iterates the
     # matching folded tuple; `ta_pool_series` is a per-policy list of per-sleeve arrays (ragged).
-    def _series_ops(values: list[int]) -> JaxI64:
+    def _series_ops(values: list[int]) -> Int64[Array, " item"]:
         return jnp.asarray(np.asarray(values, dtype=np.int64))
 
     pe_floor_series = _series_ops(
@@ -1635,10 +1574,10 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     def product_metrics(
         s: _ScanState,
         *,
-        snapshot_month: JaxIntScalar,
-        obligation_shortfall: JaxObligationRolloutI64,
-        obligation_mask: JaxObligationBool,
-    ) -> tuple[JaxRolloutI64, ...]:
+        snapshot_month: Int[Array, ""],
+        obligation_shortfall: Int64[Array, " obligation rollout"],
+        obligation_mask: Bool[Array, " obligation"],
+    ) -> tuple[Int64[Array, " rollout"], ...]:
         assert product_summary is not None
         assert product_inputs is not None
         cash_quanta = jnp.where(product_inputs.cash_mask[:, None], s.cash, 0).sum(axis=0)
@@ -1690,18 +1629,18 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         return (cash_quanta, holding_quanta, pe_quanta, property_quanta, mortgage_quanta, shortfall_quanta, bond_quanta)
 
     def december_tax(
-        ordinary: JaxIncomeBucketRolloutI64,
-        cg_ytd: JaxCapitalGainClassRolloutI64,
-        carryforward: JaxCapitalGainProfileRolloutI64,
-        recapture: JaxTaxProfileRolloutI64,
-        property_tax_ytd: JaxTaxProfileRolloutI64,
-        liab_interest_ytd: JaxLiabilityRolloutI64,
-        liab_rental_ytd: JaxLiabilityRolloutI64,
-        property_dep_ytd: JaxPropertyRolloutI64,
-        taxliab_active: JaxTaxLiabilityRolloutBool,
-        taxliab_amount: JaxTaxLiabilityRolloutI64,
-        active: JaxRolloutBool,
-        month: JaxIntScalar,
+        ordinary: Int64[Array, " income_bucket rollout"],
+        cg_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+        carryforward: Int64[Array, " capital_gain_profile rollout"],
+        recapture: Int64[Array, " tax_profile rollout"],
+        property_tax_ytd: Int64[Array, " tax_profile rollout"],
+        liab_interest_ytd: Int64[Array, " liability rollout"],
+        liab_rental_ytd: Int64[Array, " liability rollout"],
+        property_dep_ytd: Int64[Array, " property rollout"],
+        taxliab_active: Bool[Array, " tax_liability rollout"],
+        taxliab_amount: Int64[Array, " tax_liability rollout"],
+        active: Bool[Array, " rollout"],
+        month: Int[Array, ""],
     ):
         """Branch-free December (`month % 12 == 11`) year-end tax pass, gated per-rollout by `dec`.
 
@@ -1746,7 +1685,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         zero_salt = _zeros_i64((r,))
         breakdown = [_zeros_i64((max(1, link_count), r)) for _ in range(11)]
 
-        def run_link(link: int, salt_deduction: JaxRolloutI64, ann: JaxRolloutTaxLinkI64) -> JaxRolloutTaxLinkI64:
+        def run_link(
+            link: int, salt_deduction: Int64[Array, " rollout"], ann: Int64[Array, " rollout tax_link"]
+        ) -> Int64[Array, " rollout tax_link"]:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
                 link_tax_static[link],
                 cfg,
@@ -1821,7 +1762,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             tuple(breakdown),
         )
 
-    def step(s: _ScanState, month: JaxIntScalar) -> tuple[_ScanState, Any]:
+    def step(s: _ScanState, month: Int[Array, ""]) -> tuple[_ScanState, Any]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
         cost_basis_per_unit = s.cost_basis_per_unit
         lot_purchase_month = s.lot_purchase_month
@@ -1851,7 +1792,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # its static month equals the traced month, masked per-rollout. is_primary is precomputed
         # per-month host-side; the SALE path uses the §121 owner-occupancy window for the exclusion.
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
-        le_fired: list[JaxEventRolloutBool] = []
+        le_fired: list[Bool[Array, " event rollout"]] = []
         sale_traces: list[PropertySaleTraceOutput[jax.Array]] = []
         for evi, ev in enumerate(folded_lifecycle):
             ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
@@ -2137,7 +2078,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         ta_disp_proceeds = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         # Buy orders are DECIDED here and EXECUTED after settlement, so they wait in this list.
         # `(policy, sleeve, wanted quanta, unit price)`, one entry per sleeve that ordered.
-        ta_buy_orders: list[tuple[_FoldedTargetAllocation, _FoldedSleeve, JaxRolloutI64, JaxRolloutI64]] = []
+        ta_buy_orders: list[
+            tuple[_FoldedTargetAllocation, _FoldedSleeve, Int64[Array, " rollout"], Int64[Array, " rollout"]]
+        ] = []
         if folded_target_allocation:
             # Marks for every lot, once for the month rather than once per pool: the observation
             # needs a value for each of the policy's lots, and `_value_quanta_from_quantity` is the
@@ -2866,13 +2809,13 @@ def _amount_values(
     amount_kind: int,
     amount_fixed: int,
     amount_base: int,
-    amount_series: JaxIntScalar,
+    amount_series: Int[Array, ""],
     amount_base_month: int,
     amount_period: int,
-    external_values: JaxSeriesCubeF64,
-    month: int | JaxIntScalar,
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
     rollout_count: int,
-) -> JaxRolloutI64:
+) -> Int64[Array, " rollout"]:
     """A fixed or series-indexed per-rollout amount. `amount_series` is
     a TRACED scalar row index (gathered dynamically), so its value never changes the compiled program —
     see the series-index determinism note in `collect_level_series_keys`. `amount_kind` stays static (a
@@ -2888,11 +2831,11 @@ def _amount_values(
 
 def _amount_values_tuple(
     spec: tuple[int, int, int, int, int],
-    series_op: JaxIntScalar,
-    external_values: JaxSeriesCubeF64,
-    month: int | JaxIntScalar,
+    series_op: Int[Array, ""],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
     r: int,
-) -> JaxRolloutI64:
+) -> Int64[Array, " rollout"]:
     """`_amount_values` from a `(kind, fixed, base, base_month, period)` tuple plus a TRACED series row
     index (`series_op`, gathered dynamically — kept out of the static structure)."""
     kind, fixed, base, base_month, period = spec
@@ -2910,13 +2853,13 @@ def _amount_values_tuple(
 
 
 def _move_cash(
-    cash: JaxCashRolloutI64,
+    cash: Int64[Array, " cash rollout"],
     *,
-    debit: JaxInt | np.ndarray | int,
-    credit: JaxInt | np.ndarray | int,
-    amount: JaxI64,
+    debit: Int[Array, ""] | Int[Array, " flow"] | Int[np.ndarray, ""] | Int[np.ndarray, " flow"] | int,
+    credit: Int[Array, ""] | Int[Array, " flow"] | Int[np.ndarray, ""] | Int[np.ndarray, " flow"] | int,
+    amount: Int64[Array, " rollout"] | Int64[Array, " flow rollout"],
     row_of_world: int,
-) -> JaxCashRolloutI64:
+) -> Int64[Array, " cash rollout"]:
     """Move `amount` from the `debit` rows to the `credit` rows. The only way cash moves.
 
     Every phase that used to write `cash.at[...]` twice and hope the two lines stayed adjacent
@@ -2937,14 +2880,18 @@ def _move_cash(
 
     flow = jnp.asarray(amount).reshape(-1, cash.shape[-1])
 
-    def rows(side: JaxInt | np.ndarray | int) -> JaxInt:
+    def rows(
+        side: Int[Array, ""] | Int[Array, " flow"] | Int[np.ndarray, ""] | Int[np.ndarray, " flow"] | int,
+    ) -> Int[Array, " flow"]:
         resolved = jnp.where(jnp.asarray(side).reshape(-1) < 0, row_of_world, jnp.asarray(side).reshape(-1))
         return jnp.broadcast_to(resolved, (flow.shape[0],))
 
     return cash.at[rows(debit)].add(-flow).at[rows(credit)].add(flow)
 
 
-def _scatter_rows(target: JaxI64, indices: JaxInt, values: JaxI64) -> JaxI64:
+def _scatter_rows(
+    target: Int64[Array, " row rollout"], indices: Int[Array, " source"], values: Int64[Array, " source rollout"]
+) -> Int64[Array, " row rollout"]:
     """Sentinel-aware segment scatter-add: add `values[s]` into `target[indices[s]]`, ignoring
     rows where `indices[s] < 0`. Duplicate indices accumulate. Branch-free (no per-row Python
     loop / `if idx >= 0`): a `-1` index is redirected to a padding row that is then sliced off."""
@@ -2962,7 +2909,7 @@ def _np_gather(arr: np.ndarray, idx: np.ndarray, fill: float) -> np.ndarray:
     return np.asarray(arr[idx])
 
 
-def _gather_rows(source: jax.Array, idx: JaxInt) -> jax.Array:
+def _gather_rows(source: jax.Array, idx: Int[Array, " source"]) -> jax.Array:
     """Gather `source[idx[s]]` into `(slots, rollouts)`, tolerating an empty source (`idx` is
     expected pre-clamped to valid rows; rows for inapplicable slots are masked off by the caller).
     A 0-row source (e.g. a scenario with no properties/liabilities) yields zeros."""
@@ -2972,16 +2919,16 @@ def _gather_rows(source: jax.Array, idx: JaxInt) -> jax.Array:
 
 
 def _amount_values_vec(
-    amount_kind: JaxSlotI64,
-    amount_fixed: JaxSlotI64,
-    amount_base: JaxSlotI64,
-    amount_series: JaxSlotI64,
-    amount_base_month: JaxSlotI64,
-    amount_period: JaxSlotI64,
-    external_values: JaxSeriesCubeF64,
-    month: JaxIntScalar,
+    amount_kind: Int64[Array, " slot"],
+    amount_fixed: Int64[Array, " slot"],
+    amount_base: Int64[Array, " slot"],
+    amount_series: Int64[Array, " slot"],
+    amount_base_month: Int64[Array, " slot"],
+    amount_period: Int64[Array, " slot"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     rollout_count: int,
-) -> JaxSlotRolloutI64:
+) -> Int64[Array, " slot rollout"]:
     """`_amount_values` vectorized over slots (branch-free): returns `(slots, rollouts)`.
 
     The series path is computed for every slot and selected against the fixed amount by the
@@ -3005,14 +2952,19 @@ def _amount_values_vec(
 @partial(jax.jit, static_argnames=("row_of_world",))
 def _cashflows_jit(
     cashflows: CashflowExecution[jax.Array],
-    property_active: JaxPropertyRolloutBool,
-    cash: JaxCashRolloutI64,
-    ordinary_ytd: JaxIncomeBucketRolloutI64,
-    active: JaxRolloutBool,
-    external_values: JaxSeriesCubeF64,
-    month: JaxIntScalar,
+    property_active: Bool[Array, " property rollout"],
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    active: Bool[Array, " rollout"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     row_of_world: int,
-) -> tuple[JaxCashRolloutI64, JaxIncomeBucketRolloutI64, JaxCashflowRolloutBool, JaxCashflowRolloutI64]:
+) -> tuple[
+    Int64[Array, " cash rollout"],
+    Int64[Array, " income_bucket rollout"],
+    Bool[Array, " cashflow rollout"],
+    Int64[Array, " cashflow rollout"],
+]:
     rollout_count = cash.shape[1]
     cashflow = jax.tree.map(lambda value: value[month], cashflows)
     property_gated = cashflow.property_slot >= 0
@@ -3042,14 +2994,14 @@ def _cashflows_jit(
 @partial(jax.jit, static_argnames=("row_of_world", "has_indexed"))
 def _bond_cashflows_jit(
     bonds: BondExecution[jax.Array],
-    cash: JaxCashRolloutI64,
-    ordinary_ytd: JaxIncomeBucketRolloutI64,
-    active: JaxRolloutBool,
-    external_values: JaxSeriesCubeF64,
-    month: JaxIntScalar,
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    active: Bool[Array, " rollout"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     row_of_world: int,
     has_indexed: bool,
-) -> tuple[JaxCashRolloutI64, JaxIncomeBucketRolloutI64]:
+) -> tuple[Int64[Array, " cash rollout"], Int64[Array, " income_bucket rollout"]]:
     """This month's bond cashflows. `coupon`/`redemption` are `(bond,)` slices of compile-time
     tables — at par and held to maturity nothing about a bond depends on a rollout, so there is
     no per-rollout arithmetic here and no bond state in the carry.
@@ -3113,14 +3065,14 @@ def _bond_cashflows_jit(
 
 def _distribution_payouts_jit(
     distributions: DistributionExecution[jax.Array],
-    lot_remaining: JaxLotRolloutI64,
-    cash: JaxCashRolloutI64,
-    ordinary_ytd: JaxIncomeBucketRolloutI64,
-    active: JaxRolloutBool,
-    external_money_values: JaxSeriesCubeI64,
-    month: JaxIntScalar,
+    lot_remaining: Int64[Array, " lot rollout"],
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    active: Bool[Array, " rollout"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     row_of_world: int,
-) -> tuple[JaxCashRolloutI64, JaxIncomeBucketRolloutI64]:
+) -> tuple[Int64[Array, " cash rollout"], Int64[Array, " income_bucket rollout"]]:
     """This month's fund distributions, one row per (pool, tax slice).
 
     `units * dollars_per_unit` — the same multiplication the engine performs to mark a
@@ -3147,8 +3099,10 @@ def _distribution_payouts_jit(
 
 
 def _sleeve_prices_quanta(
-    sleeve_series: JaxSleeveI64, external_money_values: JaxSeriesCubeI64, month: int | JaxIntScalar
-) -> JaxSleeveRolloutI64:
+    sleeve_series: Int64[Array, " sleeve"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
+) -> Int64[Array, " sleeve rollout"]:
     """This month's market price per sleeve, `(sleeve, R)`, in cents per unit.
 
     One read, shared by the observation the policy sizes against and the execution that
@@ -3164,13 +3118,13 @@ def _sleeve_prices_quanta(
 
 
 def _fifo_sell(
-    lot_remaining: JaxRolloutLotI64,
+    lot_remaining: Int64[Array, " rollout lot"],
     ordered_lots: np.ndarray,
-    target: JaxRolloutI64,
-    unit_price: JaxRolloutI64,
-    cost_basis_per_unit: JaxLotRolloutI64,
-    lot_quantity_scale: JaxLotI64,
-) -> tuple[JaxRolloutLotI64, JaxRolloutLotI64, JaxRolloutLotI64]:
+    target: Int64[Array, " rollout"],
+    unit_price: Int64[Array, " rollout"],
+    cost_basis_per_unit: Int64[Array, " lot rollout"],
+    lot_quantity_scale: Int64[Array, " lot"],
+) -> tuple[Int64[Array, " rollout lot"], Int64[Array, " rollout lot"], Int64[Array, " rollout lot"]]:
     """FIFO-sell a quanta target down a pool's lots, returning sold quanta plus cent values.
 
     Quanta is the only denomination. A caller wanting to raise a dollar amount converts it
@@ -3202,11 +3156,11 @@ def _fifo_sell(
 
 def _apply_tlh_give_back(
     folded_harvest: tuple[_FoldedHarvest, ...],
-    tlh_cumulative_harvest: JaxHarvestPolicyRolloutI64,
-    lot_remaining: JaxLotRolloutI64,
-    sold_units: JaxRolloutLotI64,
-    gains: JaxRolloutLotI64,
-) -> tuple[JaxRolloutLotI64, JaxHarvestPolicyRolloutI64]:
+    tlh_cumulative_harvest: Int64[Array, " harvest_policy rollout"],
+    lot_remaining: Int64[Array, " lot rollout"],
+    sold_units: Int64[Array, " rollout lot"],
+    gains: Int64[Array, " rollout lot"],
+) -> tuple[Int64[Array, " rollout lot"], Int64[Array, " harvest_policy rollout"]]:
     """Repay deferred harvested loss as extra gain on sold
     harvest-policy lots. The fraction of the policy's pre-sale units sold here realizes that share
     of `tlh_cumulative_harvest`, distributed across the sold policy-lots by sold units (preserving
@@ -3231,16 +3185,20 @@ def _apply_tlh_give_back(
 
 def _record_capital_gains(
     folded_harvest: tuple[_FoldedHarvest, ...],
-    lot_purchase_month: JaxLotRolloutI64,
+    lot_purchase_month: Int64[Array, " lot rollout"],
     cg_profiles: tuple[int, ...],
-    capital_gain_active: JaxCapitalGainClassRolloutBool,
-    capital_gain_ytd: JaxCapitalGainClassRolloutI64,
-    tlh_cumulative_harvest: JaxHarvestPolicyRolloutI64,
-    lot_remaining: JaxLotRolloutI64,
-    month: int | JaxIntScalar,
-    sold_units: JaxRolloutLotI64,
-    gains: JaxRolloutLotI64,
-) -> tuple[JaxCapitalGainClassRolloutBool, JaxCapitalGainClassRolloutI64, JaxHarvestPolicyRolloutI64]:
+    capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"],
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    tlh_cumulative_harvest: Int64[Array, " harvest_policy rollout"],
+    lot_remaining: Int64[Array, " lot rollout"],
+    month: int | Int[Array, ""],
+    sold_units: Int64[Array, " rollout lot"],
+    gains: Int64[Array, " rollout lot"],
+) -> tuple[
+    Bool[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " harvest_policy rollout"],
+]:
     """TLH give-back, then classify each lot's gain
     long/short and accrue.
 
@@ -3270,22 +3228,24 @@ def _record_capital_gains(
 @jax.jit
 def _obligation_accruals_jit(
     inputs: ObligationExecution[jax.Array],
-    property_active: JaxPropertyRolloutBool,
-    liab_principal: JaxLiabilityRolloutI64,
-    liab_monthly: JaxLiabilityRolloutI64,
-    liab_active: JaxLiabilityRolloutBool,
-    taxliab_active: JaxTaxLiabilityRolloutBool,
-    taxliab_amount: JaxTaxLiabilityRolloutI64,
-    active: JaxRolloutBool,
-    external_values: JaxSeriesCubeF64,
-    month: JaxIntScalar,
+    property_active: Bool[Array, " property rollout"],
+    liab_principal: Int64[Array, " liability rollout"],
+    liab_monthly: Int64[Array, " liability rollout"],
+    liab_active: Bool[Array, " liability rollout"],
+    taxliab_active: Bool[Array, " tax_liability rollout"],
+    taxliab_amount: Int64[Array, " tax_liability rollout"],
+    active: Bool[Array, " rollout"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
 ) -> _PaymentBatch:
     """Compute one typed payment batch per source, then merge the disjoint slot rows."""
 
     rollout_count = active.shape[0]
 
     def batch(
-        source_active: JaxObligationBool, due: JaxObligationRolloutI64, source_mask: JaxObligationRolloutBool
+        source_active: Bool[Array, " obligation"],
+        due: Int64[Array, " obligation rollout"],
+        source_mask: Bool[Array, " obligation rollout"],
     ) -> _PaymentBatch:
         payment_active = source_active[:, None] & active[None, :] & source_mask & (due > 0)
         return _PaymentBatch(active=payment_active, due=jnp.where(payment_active, due, 0), metadata=inputs.metadata)
@@ -3356,12 +3316,12 @@ def _obligation_accruals_jit(
 
 @jax.jit
 def _obligation_group_funded_jit(
-    group_matrix: JaxObligationObligationI64,
-    from_slot: JaxObligationI64,
-    cash: JaxCashRolloutI64,
-    payment_active: JaxObligationRolloutBool,
-    payment_amount: JaxObligationRolloutI64,
-) -> JaxObligationRolloutBool:
+    group_matrix: Int64[Array, " obligation other_obligation"],
+    from_slot: Int64[Array, " obligation"],
+    cash: Int64[Array, " cash rollout"],
+    payment_active: Bool[Array, " obligation rollout"],
+    payment_amount: Int64[Array, " obligation rollout"],
+) -> Bool[Array, " obligation rollout"]:
     """Branch-free funding check for one emitted Pay batch.
 
     Every same-agent/source-account group must have enough cash for its complete active batch;
@@ -3379,25 +3339,25 @@ def _obligation_group_funded_jit(
 def _settlement_core_jit(
     metadata: ObligationMetadataExecution[jax.Array],
     actions: PayActions,
-    funded: JaxObligationRolloutBool,
-    cash: JaxCashRolloutI64,
-    ordinary_ytd: JaxIncomeBucketRolloutI64,
-    property_tax_ytd: JaxTaxProfileRolloutI64,
-    property_rented_fraction: JaxPropertyRolloutF64,
-    failed: JaxRolloutBool,
-    failed_month: JaxRolloutI64,
-    month: JaxIntScalar,
+    funded: Bool[Array, " obligation rollout"],
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    property_tax_ytd: Int64[Array, " tax_profile rollout"],
+    property_rented_fraction: Float64[Array, " property rollout"],
+    failed: Bool[Array, " rollout"],
+    failed_month: Int64[Array, " rollout"],
+    month: Int[Array, ""],
     row_of_world: int,
 ) -> tuple[
-    JaxObligationRolloutBool,
-    JaxObligationRolloutI64,
-    JaxCashRolloutI64,
-    JaxIncomeBucketRolloutI64,
-    JaxTaxProfileRolloutI64,
-    JaxObligationRolloutI64,
-    JaxObligationRolloutBool,
-    JaxRolloutBool,
-    JaxRolloutI64,
+    Bool[Array, " obligation rollout"],
+    Int64[Array, " obligation rollout"],
+    Int64[Array, " cash rollout"],
+    Int64[Array, " income_bucket rollout"],
+    Int64[Array, " tax_profile rollout"],
+    Int64[Array, " obligation rollout"],
+    Bool[Array, " obligation rollout"],
+    Bool[Array, " rollout"],
+    Int64[Array, " rollout"],
 ]:
     """Branch-free settlement of an emitted Pay batch: per-slot pay/fail, the funded cash move,
     property-tax owner-share YTD accumulation, and Schedule-E/itemized deduction — all
@@ -3435,15 +3395,15 @@ def _settlement_core_jit(
 
 
 def _compute_liquid_net_worth(
-    owner_cash_mask: JaxCashBool,
-    lot_asset_series_index: JaxLotI64,
+    owner_cash_mask: Bool[Array, " cash"],
+    lot_asset_series_index: Int64[Array, " lot"],
     owner_non_pe_lot_indices: tuple[int, ...],
-    cash: JaxCashRolloutI64,
-    lot_remaining: JaxLotRolloutI64,
-    lot_quantity_scale: JaxLotI64,
-    external_money_values: JaxSeriesCubeI64,
-    month: int | JaxIntScalar,
-) -> JaxRolloutI64:
+    cash: Int64[Array, " cash rollout"],
+    lot_remaining: Int64[Array, " lot rollout"],
+    lot_quantity_scale: Int64[Array, " lot"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
+) -> Int64[Array, " rollout"]:
     """Owner cash + non-PE lot value at current marks.
     `owner_cash_mask` (this policy's row, device) and `lot_asset_series_index` (device) come from
     `_Operands`; `owner_non_pe_lot_indices` is the resolved (host) non-PE lot list (no `plan` reference)."""
@@ -3474,16 +3434,16 @@ def _compute_liquid_net_worth(
     ),
 )
 def _tlh_harvest_policy_jit(
-    remaining_lots: JaxPolicyLotRolloutI64,
-    cost_basis_lots: JaxPolicyLotRolloutI64,
-    quantity_scale_lots: JaxPolicyLotI64,
-    price_quanta: JaxRolloutI64,
-    price_level: JaxRolloutF64,
-    prior_price_level: JaxRolloutF64,
-    cumulative: JaxRolloutI64,
-    capital_gain_ytd: JaxCapitalGainClassRolloutI64,
-    capital_gain_active: JaxCapitalGainClassRolloutBool,
-    active: JaxRolloutBool,
+    remaining_lots: Int64[Array, " policy_lot rollout"],
+    cost_basis_lots: Int64[Array, " policy_lot rollout"],
+    quantity_scale_lots: Int64[Array, " policy_lot"],
+    price_quanta: Int64[Array, " rollout"],
+    price_level: Float64[Array, " rollout"],
+    prior_price_level: Float64[Array, " rollout"],
+    cumulative: Int64[Array, " rollout"],
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"],
+    active: Bool[Array, " rollout"],
     *,
     gain_profile: int,
     has_prior: bool,
@@ -3492,7 +3452,11 @@ def _tlh_harvest_policy_jit(
     gamma: float,
     drawdown_sensitivity: float,
     short_term_fraction: float,
-) -> tuple[JaxCapitalGainClassRolloutI64, JaxCapitalGainClassRolloutBool, JaxRolloutI64]:
+) -> tuple[
+    Int64[Array, " capital_gain_profile gain_class rollout"],
+    Bool[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " rollout"],
+]:
     """Apply one `HarvestPolicy`'s reduced-form monthly harvest, vectorized over rollouts:
     book a calibrated capital loss as a NEGATIVE in
     `capital_gain_ytd` and accumulate it into the give-back ledger `cumulative`. Per-policy params
@@ -3531,7 +3495,9 @@ def _tlh_harvest_policy_jit(
     return capital_gain_ytd, capital_gain_active, cumulative + gross
 
 
-def _apply_brackets(amount: JaxRolloutI64, *, upper: JaxBracketI64, rate: JaxBracketF64, count: int) -> JaxRolloutI64:
+def _apply_brackets(
+    amount: Int64[Array, " rollout"], *, upper: Int64[Array, " bracket"], rate: Float64[Array, " bracket"], count: int
+) -> Int64[Array, " rollout"]:
     """Progressive bracket tax on `amount`, in int64 cents rounded to the whole cent."""
     if count <= 0:
         return jnp.zeros_like(amount)
@@ -3544,13 +3510,13 @@ def _apply_brackets(amount: JaxRolloutI64, *, upper: JaxBracketI64, rate: JaxBra
 
 
 def _apply_ltcg_brackets(
-    ltcg_amount: JaxRolloutI64,
-    ordinary_taxable: JaxRolloutI64,
+    ltcg_amount: Int64[Array, " rollout"],
+    ordinary_taxable: Int64[Array, " rollout"],
     *,
-    upper: JaxBracketI64,
-    rate: JaxBracketF64,
+    upper: Int64[Array, " bracket"],
+    rate: Float64[Array, " bracket"],
     count: int,
-) -> JaxRolloutI64:
+) -> Int64[Array, " rollout"]:
     """LTCG bracket walk with the gain stacked on top of ordinary taxable income (§1(h)): each
     bracket taxes the slice of the combined stack that lies above the ordinary income."""
     if count <= 0:
@@ -3566,12 +3532,12 @@ def _apply_ltcg_brackets(
 
 
 def _net_capital_gains_jnp(
-    short_term: JaxRolloutI64,
-    long_term: JaxRolloutI64,
-    carryforward_in: JaxRolloutI64,
+    short_term: Int64[Array, " rollout"],
+    long_term: Int64[Array, " rollout"],
+    carryforward_in: Int64[Array, " rollout"],
     *,
     max_ordinary_offset_quanta: int = 300_000,
-) -> tuple[JaxRolloutI64, JaxRolloutI64, JaxRolloutI64, JaxRolloutI64]:
+) -> tuple[Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"]]:
     """Branch-free §1211/§1212 capital-loss netting for one tax year: cross-net ST against LT, consume
     the prior-year carryforward (short-term first, taxpayer-favorable), then split any residual loss
     into this year's ordinary-income offset and the balance carried forward."""
@@ -3594,15 +3560,22 @@ def _net_capital_gains_jnp(
 def _compute_tax_for_link(
     static: _LinkTaxStatic,
     tcfg: _TracedConfig,
-    ordinary_ytd: JaxIncomeBucketRolloutI64,
-    capital_gain_ytd: JaxCapitalGainClassRolloutI64,
-    recapture_section_1250_ytd: JaxTaxProfileRolloutI64,
-    liability_interest_ytd: JaxLiabilityRolloutI64,
-    liability_rental_interest_ytd: JaxLiabilityRolloutI64,
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    recapture_section_1250_ytd: Int64[Array, " tax_profile rollout"],
+    liability_interest_ytd: Int64[Array, " liability rollout"],
+    liability_rental_interest_ytd: Int64[Array, " liability rollout"],
     *,
-    salt_deduction: JaxRolloutI64,
+    salt_deduction: Int64[Array, " rollout"],
     rollout_count: int,
-) -> tuple[JaxRolloutI64, JaxRolloutI64, JaxRolloutI64, JaxRolloutI64, JaxRolloutI64, JaxRolloutI64]:
+) -> tuple[
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+]:
     """One link's bracket math (MID + SALT + §1250 + LTCG).
     Bracket values / rates / deduction / MID ratio come from the traced `tcfg`; feature flags, counts
     and the §1250 style rate are read from the hashable `_LinkTaxStatic` (no `plan` reference)."""
@@ -3666,34 +3639,34 @@ def _compute_tax_for_link(
 
 def _scan_property_sale(
     ev: _FoldedLifecycleEvent,
-    home_value_series: JaxIntScalar,
-    external_values: JaxSeriesCubeF64,
+    home_value_series: Int[Array, ""],
+    external_values: Float64[Array, " series rollout snapshot"],
     *,
-    cash: JaxCashRolloutI64,
-    property_active: JaxPropertyRolloutBool,
-    property_rented_fraction: JaxPropertyRolloutF64,
-    property_building_basis: JaxPropertyRolloutI64,
-    property_cum_dep: JaxPropertyRolloutI64,
-    oo_window: JaxOwnerOccupancyWindowBool,
-    liab_active: JaxLiabilityRolloutBool,
-    liab_principal: JaxLiabilityRolloutI64,
-    recapture_ytd: JaxTaxProfileRolloutI64,
-    cg_active: JaxCapitalGainClassRolloutBool,
-    cg_ytd: JaxCapitalGainClassRolloutI64,
-    month: JaxIntScalar,
-    active_property: JaxRolloutBool,
+    cash: Int64[Array, " cash rollout"],
+    property_active: Bool[Array, " property rollout"],
+    property_rented_fraction: Float64[Array, " property rollout"],
+    property_building_basis: Int64[Array, " property rollout"],
+    property_cum_dep: Int64[Array, " property rollout"],
+    oo_window: Bool[Array, " lookback property rollout"],
+    liab_active: Bool[Array, " liability rollout"],
+    liab_principal: Int64[Array, " liability rollout"],
+    recapture_ytd: Int64[Array, " tax_profile rollout"],
+    cg_active: Bool[Array, " capital_gain_profile gain_class rollout"],
+    cg_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    month: Int[Array, ""],
+    active_property: Bool[Array, " rollout"],
     rollout_count: int,
     external_cash_slot: int,
 ) -> tuple[
-    JaxCashRolloutI64,
-    JaxPropertyRolloutBool,
-    JaxPropertyRolloutF64,
-    JaxPropertyRolloutI64,
-    JaxLiabilityRolloutBool,
-    JaxLiabilityRolloutI64,
-    JaxTaxProfileRolloutI64,
-    JaxCapitalGainClassRolloutBool,
-    JaxCapitalGainClassRolloutI64,
+    Int64[Array, " cash rollout"],
+    Bool[Array, " property rollout"],
+    Float64[Array, " property rollout"],
+    Int64[Array, " property rollout"],
+    Bool[Array, " liability rollout"],
+    Int64[Array, " liability rollout"],
+    Int64[Array, " tax_profile rollout"],
+    Bool[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " capital_gain_profile gain_class rollout"],
     PropertySaleTraceOutput[jax.Array],
 ]:
     """Branch-free `lax.scan` port of `_apply_property_sale`: §1250 recapture + §121 exclusion (via the
@@ -3774,13 +3747,13 @@ def _scan_property_sale(
 
 @jax.jit
 def _apply_depreciation_accrual(
-    property_active: JaxPropertyRolloutBool,
-    property_rented_fraction: JaxPropertyRolloutF64,
-    property_building_basis: JaxPropertyRolloutI64,
-    property_cumulative_depreciation: JaxPropertyRolloutI64,
-    property_depreciation_ytd: JaxPropertyRolloutI64,
-    failed: JaxRolloutBool,
-) -> tuple[JaxPropertyRolloutI64, JaxPropertyRolloutI64]:
+    property_active: Bool[Array, " property rollout"],
+    property_rented_fraction: Float64[Array, " property rollout"],
+    property_building_basis: Int64[Array, " property rollout"],
+    property_cumulative_depreciation: Int64[Array, " property rollout"],
+    property_depreciation_ytd: Int64[Array, " property rollout"],
+    failed: Bool[Array, " rollout"],
+) -> tuple[Int64[Array, " property rollout"], Int64[Array, " property rollout"]]:
     """§168 straight-line monthly depreciation,
     branch-free over all properties (one masked elementwise accrual)."""
     monthly_dep = jnp.where(

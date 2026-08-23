@@ -8,12 +8,14 @@ capital-gain-agent index also live here since they're tax-routing concerns."""
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
 import numpy as np
+from jaxtyping import Float64, Int64
 
 from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
@@ -22,16 +24,6 @@ from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.jurisdictions import BracketUpper, Jurisdiction, JurisdictionLevel, load_jurisdiction
 from finance.augur.sim.scenario import FilingStatus, InterestIncome, Scenario, TransferIncomeCategory
-from finance.augur.sim.tensor_types import (
-    HostCapitalGainProfileI64,
-    HostTaxLiabilityI64,
-    HostTaxLinkBracketF64,
-    HostTaxLinkBracketI64,
-    HostTaxLinkF64,
-    HostTaxLinkI64,
-    HostTaxLinkIncomeBucketI64,
-    HostTaxProfileI64,
-)
 
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
 SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
@@ -79,22 +71,22 @@ class TaxCompileOutput:
       federal-style flat rate (0.25 for `federal_us`); 0.0 ⇒ no separate cap, recapture
       is taxed as ordinary inside the standard bracket walk (state-style, e.g. CA)."""
 
-    profile_agent: HostTaxProfileI64
-    profile_prior_year_tax: HostTaxProfileI64
-    profile_section_121_exclusion: HostTaxProfileI64
-    link_profile: HostTaxLinkI64
-    link_jurisdiction: HostTaxLinkI64
-    link_standard_deduction: HostTaxLinkI64
-    link_has_ltcg: HostTaxLinkI64
-    link_section_1250_rate: HostTaxLinkF64
-    link_ordinary_upper: HostTaxLinkBracketI64
-    link_ordinary_rate: HostTaxLinkBracketF64
-    link_ordinary_count: HostTaxLinkI64
-    link_ltcg_upper: HostTaxLinkBracketI64
-    link_ltcg_rate: HostTaxLinkBracketF64
-    link_ltcg_count: HostTaxLinkI64
+    profile_agent: Int64[np.ndarray, " tax_profile"]
+    profile_prior_year_tax: Int64[np.ndarray, " tax_profile"]
+    profile_section_121_exclusion: Int64[np.ndarray, " tax_profile"]
+    link_profile: Int64[np.ndarray, " tax_link"]
+    link_jurisdiction: Int64[np.ndarray, " tax_link"]
+    link_standard_deduction: Int64[np.ndarray, " tax_link"]
+    link_has_ltcg: Int64[np.ndarray, " tax_link"]
+    link_section_1250_rate: Float64[np.ndarray, " tax_link"]
+    link_ordinary_upper: Int64[np.ndarray, " tax_link bracket"]
+    link_ordinary_rate: Float64[np.ndarray, " tax_link bracket"]
+    link_ordinary_count: Int64[np.ndarray, " tax_link"]
+    link_ltcg_upper: Int64[np.ndarray, " tax_link bracket"]
+    link_ltcg_rate: Float64[np.ndarray, " tax_link bracket"]
+    link_ltcg_count: Int64[np.ndarray, " tax_link"]
     buckets: IncomeBuckets
-    link_income_mask: HostTaxLinkIncomeBucketI64
+    link_income_mask: Int64[np.ndarray, " tax_link income_bucket"]
 
 
 class IncomeTagged(Protocol):
@@ -266,7 +258,7 @@ def compile_tax(
 
 def compile_capital_gain_agents(
     scenario: Scenario, strings: StringTable
-) -> tuple[HostCapitalGainProfileI64, HostTaxProfileI64]:
+) -> tuple[Int64[np.ndarray, " capital_gain_profile"], Int64[np.ndarray, " tax_profile"]]:
     agent_ids: list[str] = []
     seen: set[str] = set()
 
@@ -298,9 +290,9 @@ class TaxLiabilityCompileOutput:
     (link, year-end-month) pair where a tax liability accrues. Engine looks up the
     profile + link + payment month to schedule estimated-tax/true-up obligations."""
 
-    profile_index: HostTaxLiabilityI64
-    link_index: HostTaxLiabilityI64
-    year_end_month: HostTaxLiabilityI64
+    profile_index: Int64[np.ndarray, " tax_liability"]
+    link_index: Int64[np.ndarray, " tax_liability"]
+    year_end_month: Int64[np.ndarray, " tax_liability"]
 
 
 def compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> TaxLiabilityCompileOutput:

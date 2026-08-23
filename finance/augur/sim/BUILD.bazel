@@ -33,11 +33,11 @@ py_library(
     name = "external_series",
     srcs = ["external_series.py"],
     deps = [
-        ":tensor_types",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
+        "@pypi//jaxtyping",
     ],
 )
 
@@ -99,7 +99,7 @@ py_library(
     name = "tlh_harvest",
     srcs = ["tlh_harvest.py"],
     deps = [
-        ":tensor_types",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -109,8 +109,8 @@ py_library(
     name = "fixed_point",
     srcs = ["fixed_point.py"],
     deps = [
-        ":tensor_types",
         "//finance/augur/product:asset_key",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -140,21 +140,11 @@ py_test(
 )
 
 py_library(
-    name = "tensor_types",
-    srcs = ["tensor_types.py"],
-    deps = [
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "actor_view",
     srcs = ["actor_view.py"],
     deps = [
-        ":tensor_types",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -176,8 +166,8 @@ py_library(
     name = "payment_policy",
     srcs = ["payment_policy.py"],
     deps = [
-        ":tensor_types",
         "@pypi//jax",
+        "@pypi//jaxtyping",
     ],
 )
 
@@ -197,7 +187,6 @@ py_library(
     name = "allocation",
     srcs = ["allocation.py"],
     deps = [
-        ":tensor_types",
         "@pypi//beartype",
         "@pypi//jax",
         "@pypi//jaxtyping",
@@ -224,8 +213,8 @@ py_library(
     name = "cash_band",
     srcs = ["cash_band.py"],
     deps = [
-        ":tensor_types",
         "@pypi//jax",
+        "@pypi//jaxtyping",
     ],
 )
 
@@ -249,8 +238,8 @@ py_library(
         ":actor_view",
         ":allocation",
         ":cash_band",
-        ":tensor_types",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -520,11 +509,11 @@ py_library(
         ":locations",
         ":runtime",
         ":scenario",
-        ":tensor_types",
         ":tlh_harvest",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/product:asset_key",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -534,8 +523,8 @@ py_library(
     name = "output",
     srcs = ["output.py"],
     deps = [
-        ":tensor_types",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -592,11 +581,11 @@ py_library(
         ":runtime",
         ":scenario",
         ":target_allocation",
-        ":tensor_types",
         "//finance/augur/model:series",
         "//finance/augur/product:metric_composition",
         "//finance/augur/product:quantiles",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )

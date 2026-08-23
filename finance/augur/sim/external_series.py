@@ -14,13 +14,16 @@ decoded read model (`sim/codec/series.py`), which is a serialization boundary.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass, field
+
+import numpy as np
+from jaxtyping import Float64
 
 from finance.augur.model.exogenous import LevelFrames, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
-from finance.augur.sim.tensor_types import HostRolloutSnapshotF64
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,7 @@ class ExternalSeriesContext:
     @classmethod
     def from_level_blocks(
         cls,
-        blocks: list[tuple[LevelSeriesKey, HostRolloutSnapshotF64]],
+        blocks: list[tuple[LevelSeriesKey, Float64[np.ndarray, " rollout snapshot"]]],
         *,
         rollout_count: int,
         horizon_months: int,
