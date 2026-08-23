@@ -228,6 +228,19 @@ export async function revokeKubernetesGrant(
   return data;
 }
 
+export async function revokeKubernetesGrantSet(
+  agentId: string,
+  sourceToolCallId: string,
+  reason: string
+): Promise<KubernetesGrantListResponse> {
+  const { data, error } = await api.POST("/api/kubernetes-grants/{agent_id}/source/{source_tool_call_id}/revoke", {
+    params: { path: { agent_id: agentId, source_tool_call_id: sourceToolCallId } },
+    body: { reason },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke Kubernetes grant set"));
+  return data;
+}
+
 export async function getAgentEnrollment(interactionId: string): Promise<EnrollmentView> {
   const { data, error } = await api.GET("/api/agent-enrollment/{interaction_id}", {
     params: { path: { interaction_id: interactionId } },

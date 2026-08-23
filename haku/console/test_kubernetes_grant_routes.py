@@ -76,6 +76,7 @@ class _FakeGrantService:
     current: KubernetesGrant = field(default_factory=_grant)
     listed: list[tuple[UUID, bool]] = field(default_factory=list)
     revoked: list[tuple[UUID, UUID, str]] = field(default_factory=list)
+    revoked_sets: list[tuple[UUID, str, str]] = field(default_factory=list)
 
     async def list_grants(self, *, agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
         self.listed.append((agent_id, include_terminal))
@@ -87,6 +88,15 @@ class _FakeGrantService:
             raise KubernetesGrantNotFoundError(str(grant_id))
         self.current = _grant(status=KubernetesGrantStatus.REVOKED)
         return self.current
+
+    async def revoke_grant_set(
+        self, *, agent_id: UUID, source_tool_call_id: str, reason: str
+    ) -> tuple[KubernetesGrant, ...]:
+        if agent_id != AGENT_ID or source_tool_call_id != self.current.source_tool_call_id:
+            raise KubernetesGrantNotFoundError(source_tool_call_id)
+        self.revoked_sets.append((agent_id, source_tool_call_id, reason))
+        self.current = _grant(status=KubernetesGrantStatus.REVOKED)
+        return (self.current,)
 
 
 def _client() -> tuple[TestClient, _FakeAgentService, _FakeGrantService]:
@@ -157,6 +167,34 @@ def test_revoke_requires_a_non_blank_reason_and_owned_agent() -> None:
     assert response.status_code == 200
     assert grants.revoked == [(AGENT_ID, GRANT_ID, "pilot complete")]
     assert response.json()["grant"]["status"] == "revoked"
+
+
+def test_revoke_source_set_requires_reason_and_owned_agent() -> None:
+    client, _agents, grants = _client()
+    source = "tc_0123456789abcdef01234567"
+    path = f"/api/kubernetes-grants/{AGENT_ID}/source/{source}/revoke"
+    headers = {"Origin": "https://haku.test"}
+
+    assert client.post(path, json={"reason": "risk"}).status_code == 403
+    assert client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
+    assert (
+        client.post(
+            f"/api/kubernetes-grants/{OTHER_AGENT_ID}/source/{source}/revoke", json={"reason": "risk"}, headers=headers
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/kubernetes-grants/{AGENT_ID}/source/tc_unknown/revoke", json={"reason": "risk"}, headers=headers
+        ).status_code
+        == 404
+    )
+
+    response = client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
+
+    assert response.status_code == 200
+    assert grants.revoked_sets == [(AGENT_ID, source, "pilot complete")]
+    assert [item["grant"]["status"] for item in response.json()["grants"]] == ["revoked"]
 
 
 if __name__ == "__main__":

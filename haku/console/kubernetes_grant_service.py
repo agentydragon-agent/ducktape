@@ -54,6 +54,10 @@ class KubernetesGrantRepository(Protocol):
         self, *, agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
     ) -> KubernetesGrant: ...
 
+    async def revoke_source(
+        self, *, agent_id: UUID, source_tool_call_id: str, reason: str, ended_at: datetime.datetime
+    ) -> tuple[KubernetesGrant, ...]: ...
+
     async def expire(self, *, now: datetime.datetime, agent_id: UUID | None = None) -> int: ...
 
     async def active_for_agent(self, *, agent_id: UUID, now: datetime.datetime) -> tuple[KubernetesGrant, ...]: ...
@@ -228,9 +232,46 @@ class KubernetesGrantService:
             agent_id=agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
         )
 
+    async def release_grants(
+        self, *, agent_id: UUID, grant_ids: Sequence[UUID], reason: str = "released"
+    ) -> tuple[KubernetesGrant, ...]:
+        """Release a bounded list sequentially, retaining every durable grant ID.
+
+        This is deliberately not an atomic database operation. If a later release fails, earlier
+        releases remain effective and visible; callers can reconcile with ``list_grants``.
+        """
+
+        grant_ids = tuple(grant_ids)
+        if not grant_ids:
+            raise ValueError("grant_ids must not be empty")
+        if len(grant_ids) > 32:
+            raise ValueError("at most 32 grants may be released by one ToolCall")
+        if len(set(grant_ids)) != len(grant_ids):
+            raise ValueError("grant_ids must not contain duplicates")
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("grant end reason must not be empty")
+        ended_at = self._clock()
+        released = [
+            await self._repository.release(agent_id=agent_id, grant_id=grant_id, reason=reason, ended_at=ended_at)
+            for grant_id in grant_ids
+        ]
+        return tuple(released)
+
     async def revoke_grant(self, *, agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
         return await self._repository.revoke(
             agent_id=agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
+        )
+
+    async def revoke_grant_set(
+        self, *, agent_id: UUID, source_tool_call_id: str, reason: str
+    ) -> tuple[KubernetesGrant, ...]:
+        """Revoke the durable grant set sharing one approval source ToolCall."""
+
+        if not source_tool_call_id:
+            raise ValueError("source_tool_call_id must not be empty")
+        return await self._repository.revoke_source(
+            agent_id=agent_id, source_tool_call_id=source_tool_call_id, reason=reason, ended_at=self._clock()
         )
 
     async def expire_grants(self, *, agent_id: UUID | None = None) -> int:

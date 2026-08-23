@@ -14,13 +14,25 @@ import {
 } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { displayableError, fetchKubernetesGrants, revokeKubernetesGrant, type OperatorKubernetesGrant } from "./client";
+import {
+  displayableError,
+  fetchKubernetesGrants,
+  revokeKubernetesGrantSet,
+  type OperatorKubernetesGrant,
+} from "./client";
 import { formatTimestamp } from "./approval_state";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
+
+type KubernetesGrantSet = {
+  agentId: string;
+  agentDisplayName: string;
+  sourceToolCallId: string;
+  grants: OperatorKubernetesGrant[];
+};
 
 const STATUS_DISPLAY: Record<OperatorKubernetesGrant["grant"]["status"], { label: string; color: string }> = {
   active: { label: "Active", color: "teal" },
@@ -66,49 +78,60 @@ function RuleLine({ rule }: { rule: OperatorKubernetesGrant["grant"]["rules"][nu
   );
 }
 
-function GrantCard({
-  item,
-  onRevoke,
-}: {
-  item: OperatorKubernetesGrant;
-  onRevoke: (item: OperatorKubernetesGrant) => void;
-}) {
-  const { grant } = item;
-  const status = STATUS_DISPLAY[grant.status];
-  const created = formatTimestamp(grant.created_at);
-  const expires = formatTimestamp(grant.expires_at);
-  const ended = grant.ended_at ? formatTimestamp(grant.ended_at) : null;
+function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: (item: KubernetesGrantSet) => void }) {
+  const first = item.grants[0];
+  if (!first) return null;
+  const activeCount = item.grants.filter(({ grant }) => grant.status === "active").length;
+  const created = formatTimestamp(first.grant.created_at);
+  const expires = formatTimestamp(first.grant.expires_at);
   return (
     <section className="haku-shell-card">
       <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
         <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{item.agent_display_name}</Text>
+          <Text fw={600}>{item.agentDisplayName}</Text>
           <Text size="xs" c="dimmed" ff="monospace">
-            {grant.grant_id}
+            {item.grants.length} grant{item.grants.length === 1 ? "" : "s"} from one approval
           </Text>
         </Stack>
-        <Badge color={status.color} variant="light" style={{ flexShrink: 0 }}>
-          {status.label}
+        <Badge color={activeCount > 0 ? "teal" : "gray"} variant="light" style={{ flexShrink: 0 }}>
+          {activeCount > 0 ? `${activeCount} active` : "Ended"}
         </Badge>
       </Group>
 
       <Stack gap="xs" mt="sm">
-        <div>
-          <Text size="xs" fw={600}>
-            Scope
-          </Text>
-          <Text size="sm">{scopeLabel(grant.scope)}</Text>
-        </div>
-        <div>
-          <Text size="xs" fw={600}>
-            Rules
-          </Text>
-          <Stack gap={4} mt={2}>
-            {grant.rules.map((rule, index) => (
-              <RuleLine key={index} rule={rule} />
-            ))}
-          </Stack>
-        </div>
+        {item.grants.map(({ grant }) => {
+          const status = STATUS_DISPLAY[grant.status];
+          const ended = grant.ended_at ? formatTimestamp(grant.ended_at) : null;
+          return (
+            <Stack
+              key={grant.grant_id}
+              gap={4}
+              p="xs"
+              style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: 6 }}
+            >
+              <Group justify="space-between" gap="sm" wrap="nowrap">
+                <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+                  {grant.grant_id}
+                </Text>
+                <Badge size="xs" color={status.color} variant="light" style={{ flexShrink: 0 }}>
+                  {status.label}
+                </Badge>
+              </Group>
+              <Text size="sm">{scopeLabel(grant.scope)}</Text>
+              <Stack gap={4}>
+                {grant.rules.map((rule, index) => (
+                  <RuleLine key={index} rule={rule} />
+                ))}
+              </Stack>
+              {ended && (
+                <Text size="xs" c="dimmed" title={ended.title}>
+                  Ended {ended.text}
+                  {grant.end_reason ? ` · ${grant.end_reason}` : ""}
+                </Text>
+              )}
+            </Stack>
+          );
+        })}
         <Group gap="md" wrap="wrap">
           <Text size="xs" title={created.title}>
             <Text span c="dimmed">
@@ -122,27 +145,14 @@ function GrantCard({
             </Text>
             {expires.text}
           </Text>
-          {ended && (
-            <Text size="xs" title={ended.title}>
-              <Text span c="dimmed">
-                Ended{" "}
-              </Text>
-              {ended.text}
-            </Text>
-          )}
         </Group>
-        {grant.end_reason && (
-          <Text size="xs" c="dimmed">
-            Reason: {grant.end_reason}
-          </Text>
-        )}
         <Group justify="space-between" align="center" gap="sm" wrap="wrap">
-          <ExternalLink href={toolCallPath(grant.source_tool_call_id)} size="xs" ff="monospace">
-            Source tool call {grant.source_tool_call_id}
+          <ExternalLink href={toolCallPath(item.sourceToolCallId)} size="xs" ff="monospace">
+            Source tool call {item.sourceToolCallId}
           </ExternalLink>
-          {grant.status === "active" && (
+          {activeCount > 0 && (
             <Button size="compact-sm" color="red" variant="light" onClick={() => onRevoke(item)}>
-              Revoke…
+              Revoke active set…
             </Button>
           )}
         </Group>
@@ -157,29 +167,30 @@ function RevokeDialog({
   onClose,
   onConfirm,
 }: {
-  item: OperatorKubernetesGrant | null;
+  item: KubernetesGrantSet | null;
   busy: boolean;
   onClose: () => void;
   onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState("");
-  useEffect(() => setReason(""), [item?.grant.grant_id]);
+  useEffect(() => setReason(""), [item?.sourceToolCallId]);
+  const activeCount = item?.grants.filter(({ grant }) => grant.status === "active").length ?? 0;
   return (
     <Modal
       opened={item !== null}
       onClose={busy ? () => undefined : onClose}
-      title="Revoke Kubernetes grant"
+      title="Revoke Kubernetes grant set"
       centered
       returnFocus
     >
       <Stack gap="sm">
         <Text size="sm">
-          End this temporary grant for <strong>{item?.agent_display_name}</strong> immediately. The Agent can still
-          release its other active grants.
+          End all {activeCount} active grants created by this approval for <strong>{item?.agentDisplayName}</strong>
+          immediately.
         </Text>
         {item && (
           <Text size="xs" c="dimmed" ff="monospace">
-            {item.grant.grant_id}
+            {item.sourceToolCallId}
           </Text>
         )}
         <Textarea
@@ -199,7 +210,7 @@ function RevokeDialog({
             Cancel
           </Button>
           <Button color="red" onClick={() => onConfirm(reason.trim())} disabled={!reason.trim()} loading={busy}>
-            Revoke grant
+            Revoke grant set
           </Button>
         </Group>
       </Stack>
@@ -213,7 +224,7 @@ export function KubernetesGrantsPanel() {
   const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<GrantHistoryFilter>("active");
   const [agentId, setAgentId] = useState<string | null>(null);
-  const [revoking, setRevoking] = useState<OperatorKubernetesGrant | null>(null);
+  const [revoking, setRevoking] = useState<KubernetesGrantSet | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -240,33 +251,58 @@ export function KubernetesGrantsPanel() {
     return [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [grants]);
 
+  const grantSets = useMemo(() => {
+    const sets = new Map<string, KubernetesGrantSet>();
+    for (const item of grants ?? []) {
+      const key = `${item.grant.agent_id}:${item.grant.source_tool_call_id}`;
+      const current = sets.get(key);
+      if (current) {
+        current.grants.push(item);
+      } else {
+        sets.set(key, {
+          agentId: item.grant.agent_id,
+          agentDisplayName: item.agent_display_name,
+          sourceToolCallId: item.grant.source_tool_call_id,
+          grants: [item],
+        });
+      }
+    }
+    return [...sets.values()].map((set) => ({
+      ...set,
+      grants: set.grants.sort((left, right) => left.grant.grant_id.localeCompare(right.grant.grant_id)),
+    }));
+  }, [grants]);
+
   const visible = useMemo(
     () =>
-      (grants ?? []).filter((item) => {
-        if (agentId !== null && item.grant.agent_id !== agentId) return false;
-        if (historyFilter === "active") return item.grant.status === "active";
-        if (historyFilter === "history") return item.grant.status !== "active";
+      grantSets.filter((item) => {
+        if (agentId !== null && item.agentId !== agentId) return false;
+        const active = item.grants.some(({ grant }) => grant.status === "active");
+        if (historyFilter === "active") return active;
+        if (historyFilter === "history") return !active;
         return true;
       }),
-    [agentId, grants, historyFilter]
+    [agentId, grantSets, historyFilter]
   );
 
   function confirmRevoke(reason: string) {
     if (!revoking || !reason) return;
     const target = revoking;
     setRevokeBusy(true);
-    void revokeKubernetesGrant(target.grant.agent_id, target.grant.grant_id, reason).then(
-      (updated) => {
-        setGrants(
-          (current) => current?.map((item) => (item.grant.grant_id === updated.grant.grant_id ? updated : item)) ?? null
-        );
+    void revokeKubernetesGrantSet(target.agentId, target.sourceToolCallId, reason).then(
+      (response) => {
+        const updates = new Map(response.grants.map((item) => [item.grant.grant_id, item]));
+        setGrants((current) => current?.map((item) => updates.get(item.grant.grant_id) ?? item) ?? null);
         setRevokeBusy(false);
         setRevoking(null);
-        toastSuccess("Kubernetes grant revoked", `${updated.agent_display_name} no longer has this temporary grant.`);
+        toastSuccess(
+          "Kubernetes grant set revoked",
+          `${target.agentDisplayName} no longer has the active grants from this approval.`
+        );
       },
       (e: unknown) => {
         setRevokeBusy(false);
-        toastError("Couldn't revoke Kubernetes grant", e);
+        toastError("Couldn't revoke Kubernetes grant set", e);
       }
     );
   }
@@ -334,7 +370,7 @@ export function KubernetesGrantsPanel() {
         </section>
       )}
       {visible.map((item) => (
-        <GrantCard key={item.grant.grant_id} item={item} onRevoke={setRevoking} />
+        <GrantSetCard key={`${item.agentId}:${item.sourceToolCallId}`} item={item} onRevoke={setRevoking} />
       ))}
       <RevokeDialog item={revoking} busy={revokeBusy} onClose={() => setRevoking(null)} onConfirm={confirmRevoke} />
     </Stack>

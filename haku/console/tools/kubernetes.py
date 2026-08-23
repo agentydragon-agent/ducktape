@@ -86,6 +86,13 @@ class KubernetesToolsService:
     async def get_grant(self, *, context: McpExecutionContext, grant_id: UUID) -> KubernetesGrant:
         return await self.grants.get_grant(agent_id=self._caller(context).agent_id, grant_id=grant_id)
 
+    async def release_grants(
+        self, *, context: McpExecutionContext, grant_ids: list[UUID], reason: str = "released"
+    ) -> tuple[KubernetesGrant, ...]:
+        return await self.grants.release_grants(
+            agent_id=self._caller(context).agent_id, grant_ids=grant_ids, reason=reason
+        )
+
     async def release_grant(
         self, *, context: McpExecutionContext, grant_id: UUID, reason: str = "released"
     ) -> KubernetesGrant:
@@ -127,6 +134,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
         instructions=(
             "Inspect Kubernetes access with can_i, or create/release explicit Agent-owned temporary "
             "RBAC-like grants. One create_grant call may create multiple exact grants with a shared expiry. "
+            "One release_grants call may release up to 32 durable grant IDs sequentially. "
             "Agent identity and tool-call provenance are trusted request metadata, "
             "never tool arguments. Kubernetes SAR is checked before temporary grants."
         ),
@@ -182,5 +190,20 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
         context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> KubernetesGrant:
         return await service.release_grant(context=context, grant_id=grant_id, reason=reason)
+
+    @mcp.tool
+    async def release_grants(
+        grant_ids: Annotated[
+            list[UUID],
+            Field(
+                min_length=1,
+                max_length=32,
+                description="Grant UUIDs returned by create_grant; released sequentially in the supplied order.",
+            ),
+        ],
+        reason: Annotated[str, Field(min_length=1, max_length=500)] = "released",
+        context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+    ) -> list[KubernetesGrant]:
+        return list(await service.release_grants(context=context, grant_ids=grant_ids, reason=reason))
 
     return mcp
