@@ -8,7 +8,17 @@ spec:
     clusters:
       - name: keeper
         layout:
-          replicasCount: 3
+          replicas:
+            - name: "0"
+            - name: "1"
+            - name: "2"
+              # Replica 2's original local PV was bound to ovh-ns102453 before
+              # the control-plane toleration existed, where replica 0 already
+              # satisfies the required hostname anti-affinity. Give only this
+              # replica a fresh claim so WaitForFirstConsumer can place it on
+              # the third HDD node, ovh-ns103656.
+              templates:
+                dataVolumeClaimTemplate: keeper-data-control-plane
     settings:
       logger/level: information
       logger/console: "true"
@@ -70,6 +80,15 @@ spec:
                   type: RuntimeDefault
     volumeClaimTemplates:
       - name: keeper-data
+        reclaimPolicy: Retain
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: local-path-ovh-hdd
+          resources:
+            requests:
+              storage: 2Gi
+      - name: keeper-data-control-plane
         reclaimPolicy: Retain
         spec:
           accessModes:
