@@ -19,7 +19,7 @@ func TestParseEnvironmentConfig(t *testing.T) {
 	if config.AuthorizationURL.String() != "https://console.test/api/internal/kubernetes/authorize" {
 		t.Fatalf("authorization URL = %q", config.AuthorizationURL.String())
 	}
-	if config.ListenAddress != ":8080" || config.AuthorizationTimeout != 3*time.Second || config.RequestTimeout != 30*time.Second || config.MaxRequestBytes != 10<<20 {
+	if config.ListenAddress != ":8080" || config.AuthorizationTimeout != 3*time.Second || config.RequestTimeout != 30*time.Second || config.StreamRevalidationInterval != 5*time.Second || config.MaxRequestBytes != 10<<20 {
 		t.Fatalf("unexpected defaults: %#v", config)
 	}
 	if config.kubernetesServicePort() != "6443" {
@@ -34,10 +34,11 @@ func TestParseEnvironmentConfigRejectsInvalidValues(t *testing.T) {
 		"KUBERNETES_SERVICE_PORT":     "443",
 	}
 	for name, value := range map[string]string{
-		"HAKU_KUBE_AUTHORIZATION_URL":     "/relative/authorize",
-		"HAKU_KUBE_AUTHORIZATION_TIMEOUT": "0s",
-		"HAKU_KUBE_REQUEST_TIMEOUT":       "not-a-duration",
-		"HAKU_KUBE_MAX_REQUEST_BYTES":     "0",
+		"HAKU_KUBE_AUTHORIZATION_URL":            "/relative/authorize",
+		"HAKU_KUBE_AUTHORIZATION_TIMEOUT":        "0s",
+		"HAKU_KUBE_REQUEST_TIMEOUT":              "not-a-duration",
+		"HAKU_KUBE_STREAM_REVALIDATION_INTERVAL": "0s",
+		"HAKU_KUBE_MAX_REQUEST_BYTES":            "0",
 	} {
 		t.Run(name, func(t *testing.T) {
 			environment := make(map[string]string, len(base)+1)

@@ -1,11 +1,20 @@
 package kubeapiproxy
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +28,7 @@ type recordingAuthority struct {
 	headers  []http.Header
 	decision AuthorizationResponse
 	status   int
+	decide   func(int) (AuthorizationResponse, int)
 }
 
 func (a *recordingAuthority) ServeHTTP(w http.ResponseWriter, request *http.Request) {
@@ -30,12 +40,18 @@ func (a *recordingAuthority) ServeHTTP(w http.ResponseWriter, request *http.Requ
 	a.mu.Lock()
 	a.requests = append(a.requests, body)
 	a.headers = append(a.headers, request.Header.Clone())
-	a.mu.Unlock()
+	call := len(a.requests)
+	decision := a.decision
 	status := a.status
+	decide := a.decide
+	a.mu.Unlock()
+	if decide != nil {
+		decision, status = decide(call)
+	}
 	if status == 0 {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, a.decision)
+	writeJSON(w, status, decision)
 }
 
 func allowedDecision() AuthorizationResponse {
@@ -93,6 +109,94 @@ func request(t *testing.T, client *http.Client, method string, rawURL string, to
 		t.Fatal(err)
 	}
 	return response
+}
+
+func openExecUpgrade(t *testing.T, proxyURL string) (net.Conn, *bufio.Reader, http.Header) {
+	t.Helper()
+	target, err := url.Parse(proxyURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := net.Dial("tcp", target.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	_, err = fmt.Fprintf(
+		connection,
+		"POST %s HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer caller-secret\r\nConnection: Upgrade\r\nUpgrade: test-stream\r\nX-Stream-Protocol-Version: v5.channel.k8s.io\r\nImpersonate-User: cluster-admin\r\n\r\n",
+		target.RequestURI(),
+		target.Host,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(connection)
+	status, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, " 101 ") {
+		t.Fatalf("upgrade status = %q", strings.TrimSpace(status))
+	}
+	headers, err := textproto.NewReader(reader).ReadMIMEHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return connection, reader, http.Header(headers)
+}
+
+func waitForConnectionClose(t *testing.T, connection net.Conn, reader *bufio.Reader, timeout time.Duration) {
+	t.Helper()
+	if err := connection.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := reader.ReadByte()
+	if err == nil {
+		t.Fatal("upgraded connection remained open and returned unexpected data")
+	}
+	if timeoutError, ok := err.(net.Error); ok && timeoutError.Timeout() {
+		t.Fatal("upgraded connection remained open past its cancellation bound")
+	}
+}
+
+func execUpgradeUpstream(t *testing.T, disconnected chan<- struct{}) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if got := request.Header.Get("Authorization"); got != "Bearer proxy-kubernetes-token" {
+			t.Errorf("upstream authorization = %q", got)
+		}
+		if got := request.Header.Get("Upgrade"); got != "test-stream" {
+			t.Errorf("upstream Upgrade = %q", got)
+		}
+		if !headerContainsToken(request.Header, "Connection", "upgrade") {
+			t.Errorf("upstream Connection = %q", request.Header.Get("Connection"))
+		}
+		if got := request.Header.Get("X-Stream-Protocol-Version"); got != "v5.channel.k8s.io" {
+			t.Errorf("upstream stream protocol = %q", got)
+		}
+		if got := request.Header.Get("Impersonate-User"); got != "" {
+			t.Errorf("upstream received impersonation header %q", got)
+		}
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("upstream response writer cannot hijack")
+			return
+		}
+		connection, buffered, err := hijacker.Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.Close()
+		_, _ = buffered.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: test-stream\r\nX-Stream-Protocol-Version: v5.channel.k8s.io\r\n\r\n")
+		if err := buffered.Flush(); err != nil {
+			t.Error(err)
+			return
+		}
+		_, _ = io.Copy(io.Discard, buffered)
+		close(disconnected)
+	})
 }
 
 func TestAuthorizationContractUsesSnakeCaseJSON(t *testing.T) {
@@ -454,6 +558,171 @@ func TestExpiredTemporaryDecisionIsNotForwarded(t *testing.T) {
 	}
 }
 
+func TestExecUpgradeUsesKubernetesAuthorizationAndHardExpiry(t *testing.T) {
+	validUntil := time.Now().Add(250 * time.Millisecond)
+	authority := &recordingAuthority{decision: AuthorizationResponse{
+		Allowed: true, DecisionID: "grant:exec", ValidUntil: &validUntil,
+	}}
+	upstreamDisconnected := make(chan struct{})
+	proxy := newTestProxy(t, authority, execUpgradeUpstream(t, upstreamDisconnected), func(config *Config) {
+		config.RequestTimeout = 20 * time.Millisecond
+		config.StreamRevalidationInterval = time.Hour
+	})
+
+	started := time.Now()
+	connection, reader, headers := openExecUpgrade(
+		t,
+		proxy.URL+"/api/v1/namespaces/demo/pods/web/exec?command=%2Fbin%2Ftrue&stdout=true&stderr=true&stdin=false&tty=false",
+	)
+	if got := headers.Get("X-Haku-Kubernetes-Decision-ID"); got != "grant:exec" {
+		t.Errorf("decision header = %q", got)
+	}
+	waitForConnectionClose(t, connection, reader, time.Second)
+	if elapsed := time.Since(started); elapsed < 100*time.Millisecond {
+		t.Fatalf("exec ended after %s; ordinary request timeout incorrectly bounded the stream", elapsed)
+	}
+	select {
+	case <-upstreamDisconnected:
+	case <-time.After(time.Second):
+		t.Fatal("upstream upgraded connection survived grant expiry")
+	}
+
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	if len(authority.requests) != 1 {
+		t.Fatalf("authorization requests = %d", len(authority.requests))
+	}
+	got := authority.requests[0]
+	if got.Attributes.Verb != "create" || got.Attributes.Namespace != "demo" || got.Attributes.Resource != "pods" || got.Attributes.Subresource != "exec" || got.Attributes.Name != "web" {
+		t.Errorf("attributes = %#v", got.Attributes)
+	}
+	rule := got.RequiredRules[0]
+	if strings.Join(rule.Resources, ",") != "pods/exec" || strings.Join(rule.Verbs, ",") != "create" || strings.Join(rule.ResourceNames, ",") != "web" {
+		t.Errorf("rule = %#v", rule)
+	}
+}
+
+func TestExecUpgradeUsesHTTP1ForHTTP2CapableKubernetesUpstream(t *testing.T) {
+	validUntil := time.Now().Add(250 * time.Millisecond)
+	authority := &recordingAuthority{decision: AuthorizationResponse{
+		Allowed: true, DecisionID: "grant:exec", ValidUntil: &validUntil,
+	}}
+	upstreamDisconnected := make(chan struct{})
+	execUpstream := execUpgradeUpstream(t, upstreamDisconnected)
+	upstreamServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.ProtoMajor != 1 {
+			t.Errorf("upstream protocol = %s, want HTTP/1.1 for upgrade", request.Proto)
+		}
+		execUpstream.ServeHTTP(w, request)
+	}))
+	upstreamServer.EnableHTTP2 = true
+	upstreamServer.StartTLS()
+	t.Cleanup(upstreamServer.Close)
+
+	serviceAccountDirectory := t.TempDir()
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: upstreamServer.Certificate().Raw})
+	if err := os.WriteFile(filepath.Join(serviceAccountDirectory, "ca.crt"), caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(serviceAccountDirectory, "token"), []byte("proxy-kubernetes-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	serverURL, _ := url.Parse(upstreamServer.URL)
+	serviceHost, servicePort, err := net.SplitHostPort(serverURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstreamURL, upstreamTransport, err := InClusterUpstream(InClusterConfig{
+		ServiceHost:             serviceHost,
+		ServicePort:             servicePort,
+		ServiceAccountDirectory: serviceAccountDirectory,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorityServer := httptest.NewServer(authority)
+	t.Cleanup(authorityServer.Close)
+	authorityURL, _ := url.Parse(authorityServer.URL + "/api/internal/kubernetes/authorize")
+	handler, err := NewHandler(Config{
+		AuthorizationURL:           authorityURL,
+		AllowInsecureAuthorization: true,
+		Upstream:                   upstreamURL,
+		UpstreamTransport:          upstreamTransport,
+		RequestTimeout:             20 * time.Millisecond,
+		StreamRevalidationInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(handler)
+	t.Cleanup(proxy.Close)
+
+	connection, reader, _ := openExecUpgrade(
+		t,
+		proxy.URL+"/api/v1/namespaces/demo/pods/web/exec?command=%2Fbin%2Ftrue&stdout=true&stderr=true&stdin=false&tty=false",
+	)
+	waitForConnectionClose(t, connection, reader, time.Second)
+	select {
+	case <-upstreamDisconnected:
+	case <-time.After(time.Second):
+		t.Fatal("HTTP/1.1 upstream connection survived grant expiry")
+	}
+}
+
+func TestExecUpgradeRevalidatesAndClosesFailClosed(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		revalidate func() (AuthorizationResponse, int)
+	}{
+		{
+			name: "revoked",
+			revalidate: func() (AuthorizationResponse, int) {
+				return AuthorizationResponse{Allowed: false, Reason: "grant revoked"}, http.StatusOK
+			},
+		},
+		{
+			name: "authority unavailable",
+			revalidate: func() (AuthorizationResponse, int) {
+				return AuthorizationResponse{}, http.StatusServiceUnavailable
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			validUntil := time.Now().Add(5 * time.Second)
+			authority := &recordingAuthority{decide: func(call int) (AuthorizationResponse, int) {
+				if call == 1 {
+					return AuthorizationResponse{Allowed: true, DecisionID: "grant:exec", ValidUntil: &validUntil}, http.StatusOK
+				}
+				return test.revalidate()
+			}}
+			upstreamDisconnected := make(chan struct{})
+			proxy := newTestProxy(t, authority, execUpgradeUpstream(t, upstreamDisconnected), func(config *Config) {
+				config.AuthorizationTimeout = 100 * time.Millisecond
+				config.StreamRevalidationInterval = 25 * time.Millisecond
+			})
+
+			connection, reader, _ := openExecUpgrade(
+				t,
+				proxy.URL+"/api/v1/namespaces/demo/pods/web/exec?command=%2Fbin%2Ftrue&stdout=true&stderr=true&stdin=false&tty=false",
+			)
+			waitForConnectionClose(t, connection, reader, time.Second)
+			select {
+			case <-upstreamDisconnected:
+			case <-time.After(time.Second):
+				t.Fatal("upstream upgraded connection survived failed revalidation")
+			}
+			authority.mu.Lock()
+			defer authority.mu.Unlock()
+			if len(authority.requests) < 2 {
+				t.Fatalf("authorization requests = %d, want initial plus revalidation", len(authority.requests))
+			}
+			if !reflect.DeepEqual(authority.requests[0], authority.requests[1]) {
+				t.Errorf("revalidation request changed: first=%#v second=%#v", authority.requests[0], authority.requests[1])
+			}
+		})
+	}
+}
+
 func TestUnsupportedLongLivedAndInteractiveRequests(t *testing.T) {
 	authority := &recordingAuthority{decision: allowedDecision()}
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -483,6 +752,19 @@ func TestUnsupportedLongLivedAndInteractiveRequests(t *testing.T) {
 	}
 	if len(authority.requests) != 0 {
 		t.Fatalf("authority called for unsupported request")
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, proxy.URL+"/version", nil)
+	req.Header.Set("Authorization", "Bearer caller")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "test-stream")
+	response, err := proxy.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("non-exec upgrade status = %d", response.StatusCode)
 	}
 }
 

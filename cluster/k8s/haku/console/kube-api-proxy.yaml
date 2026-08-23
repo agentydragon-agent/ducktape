@@ -52,6 +52,10 @@ spec:
               value: 3s
             - name: HAKU_KUBE_REQUEST_TIMEOUT
               value: 30s
+            # Active exec streams fail closed within this interval plus the 3s
+            # Console authorization timeout after release or revocation.
+            - name: HAKU_KUBE_STREAM_REVALIDATION_INTERVAL
+              value: 5s
             - name: HAKU_KUBE_MAX_REQUEST_BYTES
               value: "10485760"
           ports:

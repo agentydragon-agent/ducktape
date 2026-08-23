@@ -22,6 +22,7 @@ type environmentConfig struct {
 	ListenAddress                 string        `env:"HAKU_KUBE_LISTEN_ADDRESS" envDefault:":8080"`
 	AuthorizationTimeout          time.Duration `env:"HAKU_KUBE_AUTHORIZATION_TIMEOUT" envDefault:"3s"`
 	RequestTimeout                time.Duration `env:"HAKU_KUBE_REQUEST_TIMEOUT" envDefault:"30s"`
+	StreamRevalidationInterval    time.Duration `env:"HAKU_KUBE_STREAM_REVALIDATION_INTERVAL" envDefault:"5s"`
 	MaxRequestBytes               int64         `env:"HAKU_KUBE_MAX_REQUEST_BYTES" envDefault:"10485760"`
 	ServiceAccountDirectory       string        `env:"HAKU_KUBE_SERVICEACCOUNT_DIRECTORY" envDefault:"/var/run/secrets/kubernetes.io/serviceaccount"`
 	KubernetesServiceHost         string        `env:"KUBERNETES_SERVICE_HOST,required,notEmpty"`
@@ -57,6 +58,7 @@ func run() error {
 		AllowInsecureAuthorization: config.AllowInsecureAuthorization,
 		AuthorizationTimeout:       config.AuthorizationTimeout,
 		RequestTimeout:             config.RequestTimeout,
+		StreamRevalidationInterval: config.StreamRevalidationInterval,
 		MaxRequestBytes:            config.MaxRequestBytes,
 	})
 	if err != nil {
@@ -106,6 +108,9 @@ func parseEnvironmentConfig(options env.Options) (environmentConfig, error) {
 	}
 	if config.RequestTimeout <= 0 {
 		return environmentConfig{}, fmt.Errorf("HAKU_KUBE_REQUEST_TIMEOUT must be positive")
+	}
+	if config.StreamRevalidationInterval <= 0 {
+		return environmentConfig{}, fmt.Errorf("HAKU_KUBE_STREAM_REVALIDATION_INTERVAL must be positive")
 	}
 	if config.MaxRequestBytes <= 0 {
 		return environmentConfig{}, fmt.Errorf("HAKU_KUBE_MAX_REQUEST_BYTES must be positive")
