@@ -109,6 +109,13 @@ decision covers `create` on `pods/portforward` for one named pod. The requested
 `ports` query parameter is forwarded unchanged, but it is not a Kubernetes RBAC
 attribute, so an Haku grant cannot constrain individual remote ports.
 
+Current `kubectl` first attempts a WebSocket `GET` port-forward handshake,
+whereas legacy clients use an upgraded `POST`/SPDY request. Kubernetes
+authorizes both forms as `create pods/portforward`; the proxy therefore maps
+only a WebSocket handshake with a `Sec-WebSocket-Protocol` value to that
+canonical authorization verb. An ordinary `GET` remains a `get` request and is
+rejected before forwarding.
+
 ## Configuration
 
 | Environment                              |            Default | Meaning                                             |

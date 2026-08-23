@@ -182,6 +182,7 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 		return
 	}
 	attributes := attributesFrom(info)
+	attributes = normalizeStreamingAttributes(attributes, request)
 	if reason := unsupportedAttributes(attributes, request); reason != "" {
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": reason})
 		return
@@ -439,6 +440,22 @@ func isExecRequest(attributes RequestAttributes, request *http.Request) bool {
 
 func isPortForwardRequest(attributes RequestAttributes, request *http.Request) bool {
 	return attributes.Resource == "pods" && attributes.Subresource == "portforward" && attributes.Verb == "create" && isUpgradeRequest(request)
+}
+
+// normalizeStreamingAttributes preserves Kubernetes RBAC semantics for the
+// WebSocket port-forward transport. Modern kubectl opens that transport with a
+// GET request, but Kubernetes authorizes port-forward as create on
+// pods/portforward (the same rule as legacy POST/SPDY). Only the WebSocket
+// handshake form is normalized; ordinary GET requests stay get and are denied.
+func normalizeStreamingAttributes(attributes RequestAttributes, request *http.Request) RequestAttributes {
+	if attributes.Resource == "pods" && attributes.Subresource == "portforward" && attributes.Verb == "get" && isWebSocketUpgradeRequest(request) {
+		attributes.Verb = "create"
+	}
+	return attributes
+}
+
+func isWebSocketUpgradeRequest(request *http.Request) bool {
+	return isUpgradeRequest(request) && strings.EqualFold(strings.TrimSpace(request.Header.Get("Upgrade")), "websocket") && request.Header.Get("Sec-Websocket-Protocol") != ""
 }
 
 func isStreamingRequest(attributes RequestAttributes, request *http.Request) bool {
