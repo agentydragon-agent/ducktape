@@ -24,5 +24,5 @@ spec:
     # Provides the shared namespace and the CLIProxyAPI integration Secret.
     - name: cli-proxy-api
       namespace: ducktape-flux
-    - name: analytics-clickhouse
+    - name: analytics-clickhouse-schema
       namespace: ducktape-flux

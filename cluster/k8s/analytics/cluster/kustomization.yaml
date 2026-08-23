@@ -15,6 +15,5 @@ configMapGenerator:
     files:
       - system_logs.xml
       - startup_scripts.xml
-
 configurations:
   - kustomizeconfig

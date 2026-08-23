@@ -148,8 +148,10 @@ spec:
                 seccompProfile:
                   type: RuntimeDefault
               volumeMounts:
-                # Project the source-controlled configMapGenerator output
-                # together with the operator's generated common config.
+                # The operator also injects its generated common-config
+                # directory mount at this path. Tenant schema migrations must
+                # therefore use the versioned Job instead of depending on the
+                # ordering of these overlapping mounts.
                 - name: config-volume
                   mountPath: /etc/clickhouse-server/config.d
                   readOnly: true
