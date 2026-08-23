@@ -42,8 +42,8 @@ Contains:
 
 Service-specific or sensitive agent access has its own `agent-rbac/` directory with an
 independent Flux kustomization. Common `namespace-diagnostics-reader` access is generated
-by Kyverno from the explicit Namespace label, so it does not need one Flux kustomization
-per target namespace.
+by Kyverno from explicit Namespace labels, so it does not need one Flux kustomization per
+target namespace.
 
 This isolation ensures that missing/suspended service namespaces don't block unrelated RBAC
 from applying.
@@ -94,6 +94,12 @@ diagnostics access without duplicating any permission rules:
 The labels are namespace-level access grants for the approved agent identities; the
 ClusterRoles remain the permission source of truth. Adding an agent identity means updating
 the generated subjects once, rather than changing every opted-in Namespace.
+
+The `public-coder` Haku access profile has a separate generated binding and namespace label:
+`rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"`. Its sole subject is the
+fixed `public-coder-agent/public-coder-agent-reader` standing SAR identity. This is intentionally
+not a subject of the generic agent binding: a namespace must opt in separately before the
+public-coder profile receives automatic Kubernetes diagnostics access.
 
 The separate `oidc-ksbx-groups:kubectl-sandbox-users` group belongs to the interactive Claude
 Code Web/kubectl sandbox environment. It is not a parent group of Haku and is granted access

@@ -23,6 +23,10 @@ AGENT_SUBJECTS = [
     {"kind": "Group", "name": "oidc-ksbx-groups:kubectl-sandbox-users", "apiGroup": "rbac.authorization.k8s.io"},
 ]
 
+PUBLIC_CODER_SUBJECTS = [
+    {"kind": "ServiceAccount", "name": "public-coder-agent-reader", "namespace": "public-coder-agent"}
+]
+
 
 def test_namespace_diagnostics_labeled_namespace_gets_shared_reader(agent_diagnostics_policy: Path) -> None:
     result = apply_policy(agent_diagnostics_policy, manifest("namespace_agent_namespace_diagnostics.yaml"))
@@ -33,6 +37,22 @@ def test_namespace_diagnostics_labeled_namespace_gets_shared_reader(agent_diagno
     assert binding["metadata"]["namespace"] == "agent-namespace-diagnostics-fixture"
     assert binding["roleRef"]["name"] == "namespace-diagnostics-reader"
     assert binding["subjects"] == AGENT_SUBJECTS
+
+
+def test_public_coder_labeled_namespace_gets_its_separate_reader(agent_diagnostics_policy: Path) -> None:
+    result = apply_policy(agent_diagnostics_policy, manifest("namespace_public_coder_diagnostics.yaml"))
+    assert result.ok, result.stdout
+
+    [binding] = [resource for resource in result.mutated_resources if resource.get("kind") == "RoleBinding"]
+    assert binding["metadata"]["name"] == "public-coder-namespace-diagnostics-reader"
+    assert binding["metadata"]["namespace"] == "public-coder-diagnostics-fixture"
+    assert binding["metadata"]["labels"]["rbac.ducktape.io/access"] == "public-coder-namespace-diagnostics-reader"
+    assert binding["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "namespace-diagnostics-reader",
+    }
+    assert binding["subjects"] == PUBLIC_CODER_SUBJECTS
 
 
 def test_unlabeled_namespace_does_not_get_agent_reader(agent_diagnostics_policy: Path) -> None:

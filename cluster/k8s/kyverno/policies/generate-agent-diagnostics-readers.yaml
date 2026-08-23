@@ -54,3 +54,36 @@ spec:
             - kind: Group
               name: oidc-ksbx-groups:kubectl-sandbox-users
               apiGroup: rbac.authorization.k8s.io
+    # The public-coder profile's standing SAR subject is deliberately separate
+    # from the Haku and interactive-kubectl identities above. A namespace must
+    # explicitly grant it diagnostics access; adding the generic agent label
+    # must not widen public-coder's Haku auto-approved Kubernetes surface.
+    - name: generate-public-coder-namespace-diagnostics-reader
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              selector:
+                matchLabels:
+                  rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: public-coder-namespace-diagnostics-reader
+        namespace: "{{request.object.metadata.name}}"
+        data:
+          metadata:
+            labels:
+              rbac.ducktape.io/managed-by: kyverno
+              rbac.ducktape.io/access: public-coder-namespace-diagnostics-reader
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: namespace-diagnostics-reader
+          subjects:
+            - kind: ServiceAccount
+              name: public-coder-agent-reader
+              namespace: public-coder-agent
