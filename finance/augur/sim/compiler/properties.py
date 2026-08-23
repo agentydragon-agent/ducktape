@@ -13,13 +13,19 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTable
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.locations import Location
 from finance.augur.sim.runtime import mortgage_monthly_payment
 from finance.augur.sim.scenario import Scenario
+from finance.augur.sim.tensor_types import (
+    HostLiabilityF64,
+    HostLiabilityI64,
+    HostMonthPropertyI64,
+    HostPropertyF64,
+    HostPropertyI64,
+)
 
 
 @dataclass(frozen=True)
@@ -29,25 +35,25 @@ class PropertyCompileOutput:
     `mortgage_slot[idx]` is NO_CODE for cash purchases; otherwise the index into the
     parallel `LiabilityCompileOutput` arrays."""
 
-    cause: NDArray[np.int64]
-    id: NDArray[np.int64]
-    location_id: NDArray[np.int64]
-    location_tax_rate: NDArray[np.float64]
-    special_assessment_annual: NDArray[np.int64]
-    initial_assessed_value: NDArray[np.int64]
-    month: NDArray[np.int64]
-    buyer_agent: NDArray[np.int64]
-    buyer_account: NDArray[np.int64]
-    buyer_slot: NDArray[np.int64]
-    seller_agent: NDArray[np.int64]
-    seller_account: NDArray[np.int64]
-    seller_slot: NDArray[np.int64]
-    purchase_price: NDArray[np.int64]
-    closing_cost: NDArray[np.int64]
-    adjusted_basis: NDArray[np.int64]
-    stake_contribution: NDArray[np.int64]
-    equity_ledger: NDArray[np.int64]
-    mortgage_slot: NDArray[np.int64]
+    cause: HostMonthPropertyI64
+    id: HostPropertyI64
+    location_id: HostPropertyI64
+    location_tax_rate: HostPropertyF64
+    special_assessment_annual: HostPropertyI64
+    initial_assessed_value: HostPropertyI64
+    month: HostPropertyI64
+    buyer_agent: HostPropertyI64
+    buyer_account: HostPropertyI64
+    buyer_slot: HostPropertyI64
+    seller_agent: HostPropertyI64
+    seller_account: HostPropertyI64
+    seller_slot: HostPropertyI64
+    purchase_price: HostPropertyI64
+    closing_cost: HostPropertyI64
+    adjusted_basis: HostPropertyI64
+    stake_contribution: HostPropertyI64
+    equity_ledger: HostPropertyI64
+    mortgage_slot: HostPropertyI64
 
 
 @dataclass(frozen=True)
@@ -56,16 +62,16 @@ class LiabilityCompileOutput:
     points back into `PropertyCompileOutput` so the engine can look up the underlying
     property when settling a mortgage payment or computing MID."""
 
-    codes: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    agent: NDArray[np.int64]
-    payment_account: NDArray[np.int64]
-    counterparty_agent: NDArray[np.int64]
-    counterparty_account: NDArray[np.int64]
-    principal: NDArray[np.int64]
-    annual_rate: NDArray[np.float64]
-    term_months: NDArray[np.int64]
-    monthly_payment: NDArray[np.int64]
+    codes: HostLiabilityI64
+    property_slot: HostLiabilityI64
+    agent: HostLiabilityI64
+    payment_account: HostLiabilityI64
+    counterparty_agent: HostLiabilityI64
+    counterparty_account: HostLiabilityI64
+    principal: HostLiabilityI64
+    annual_rate: HostLiabilityF64
+    term_months: HostLiabilityI64
+    monthly_payment: HostLiabilityI64
 
 
 def compile_properties_and_liabilities(

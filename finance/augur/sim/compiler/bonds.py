@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.model.series import InflationKey, LevelSeriesKey
 from finance.augur.sim.bonds import MONTHS_PER_YEAR, coupon_amount_quanta, coupon_months, is_on_books
@@ -27,6 +26,7 @@ from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, StringTabl
 from finance.augur.sim.compiler.income_buckets import IncomeBuckets
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import BondHolding, InterestIncome, Scenario
+from finance.augur.sim.tensor_types import HostI64
 
 
 class BondExecution[ArrayT](NamedTuple):
@@ -50,8 +50,8 @@ class BondCompileOutput:
 
     # Numeric execution data is one native PyTree; identity remains decoder metadata.
     execution: BondExecution[np.ndarray]
-    bond_id: NDArray[np.int64]
-    agent: NDArray[np.int64]
+    bond_id: HostI64
+    agent: HostI64
 
 
 def bond_income_categories(scenario: Scenario) -> set[InterestIncome]:

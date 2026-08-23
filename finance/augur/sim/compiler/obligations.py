@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.sim.compiler.helpers import (
@@ -26,25 +25,26 @@ from finance.augur.sim.compiler.helpers import (
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
 from finance.augur.sim.compiler.tax import TaxCompileOutput, TaxLiabilityCompileOutput
 from finance.augur.sim.scenario import RecurringObligation, Scenario, ScheduledObligation
+from finance.augur.sim.tensor_types import HostF64, HostMonthObligationBool, HostMonthObligationI64
 
 
 @dataclass(frozen=True)
 class ObligationPaymentMetadata:
     """Wire/scatter metadata and shared settlement routing for payment slots."""
 
-    cause: NDArray[np.int64]
-    id: NDArray[np.int64]
-    type: NDArray[np.int64]
-    agent: NDArray[np.int64]
-    from_account: NDArray[np.int64]
-    from_slot: NDArray[np.int64]
-    to_agent: NDArray[np.int64]
-    to_account: NDArray[np.int64]
-    to_slot: NDArray[np.int64]
-    property_tax_profile: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    deduction_profile: NDArray[np.int64]
-    deductible_fraction: NDArray[np.float64]
+    cause: HostMonthObligationI64
+    id: HostMonthObligationI64
+    type: HostMonthObligationI64
+    agent: HostMonthObligationI64
+    from_account: HostMonthObligationI64
+    from_slot: HostMonthObligationI64
+    to_agent: HostMonthObligationI64
+    to_account: HostMonthObligationI64
+    to_slot: HostMonthObligationI64
+    property_tax_profile: HostMonthObligationI64
+    property_slot: HostMonthObligationI64
+    deduction_profile: HostMonthObligationI64
+    deductible_fraction: HostF64
 
 
 class ConfiguredObligationExecution[ArrayT](NamedTuple):
@@ -164,13 +164,13 @@ def compile_obligation_slots(
         slot_counts.append(len(configured_by_month[month]) + len(liabilities.codes) + len(properties.id) + tax_slots)
     max_slots = max(1, max(slot_counts, default=0))
 
-    def ints(fill: int = NO_CODE) -> NDArray[np.int64]:
+    def ints(fill: int = NO_CODE) -> HostMonthObligationI64:
         return empty_month_matrix(horizon, max_slots, np.int64, fill)
 
-    def floats(fill: float = 0.0) -> NDArray[np.float64]:
+    def floats(fill: float = 0.0) -> HostF64:
         return empty_month_matrix(horizon, max_slots, np.float64, fill)
 
-    def bools() -> NDArray[np.bool_]:
+    def bools() -> HostMonthObligationBool:
         return empty_month_matrix(horizon, max_slots, np.bool_, False)
 
     cause = ints()

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.sim.compiler.helpers import (
@@ -26,6 +25,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyCashflow,
     ScheduledTransfer,
 )
+from finance.augur.sim.tensor_types import HostMonthCashflowI64
 
 type CashflowLike = ScheduledTransfer | RecurringTransfer | ScheduledPropertyCashflow | RecurringPropertyCashflow
 type CashflowRow = tuple[CashflowLike, str | None]
@@ -55,11 +55,11 @@ class CashflowCompileOutput:
     """
 
     execution: CashflowExecution[np.ndarray]
-    cause: NDArray[np.int64]
-    from_agent: NDArray[np.int64]
-    from_account: NDArray[np.int64]
-    to_agent: NDArray[np.int64]
-    to_account: NDArray[np.int64]
+    cause: HostMonthCashflowI64
+    from_agent: HostMonthCashflowI64
+    from_account: HostMonthCashflowI64
+    to_agent: HostMonthCashflowI64
+    to_account: HostMonthCashflowI64
 
 
 def compile_cashflows(

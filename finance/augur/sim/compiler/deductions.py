@@ -7,13 +7,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput
 from finance.augur.sim.compiler.tax import TaxCompileOutput
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, ratio_to_money_factor
 from finance.augur.sim.scenario import MortgageInterestDeductionPolicy, Scenario
+from finance.augur.sim.tensor_types import HostBool, HostI64, HostTaxLinkBool
 
 
 @dataclass(frozen=True)
@@ -28,8 +28,8 @@ class MIDCompileOutput:
       entry; lets the engine skip the matmul + max for jurisdictions or scenarios
       without MID-eligible debt."""
 
-    principal_factor: NDArray[np.int64]
-    link_active: NDArray[np.bool_]
+    principal_factor: HostI64
+    link_active: HostTaxLinkBool
 
 
 @dataclass(frozen=True)
@@ -44,9 +44,9 @@ class SaltCompileOutput:
       (same profile) of the SALT-active federal `link`. Engine sums the first-pass annual
       tax of these state links into the federal SALT total."""
 
-    link_active: NDArray[np.bool_]
-    cap_by_year: NDArray[np.int64]
-    contributing_mask: NDArray[np.bool_]
+    link_active: HostTaxLinkBool
+    cap_by_year: HostI64
+    contributing_mask: HostBool
 
 
 def compile_mortgage_interest_deductions(

@@ -10,11 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.sim.enums import LifecycleKind
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
 from finance.augur.sim.scenario import CapitalImprovementEvent, PropertySaleEvent, Scenario, SetRentedFractionEvent
+from finance.augur.sim.tensor_types import HostEventF64, HostEventI64, HostI64
 
 
 @dataclass(frozen=True)
@@ -29,13 +29,13 @@ class LifecycleEventCompileOutput:
     (kind 2; 0..100), or 0.0 (kind 0). `month_starts` has length `horizon_months + 1`
     so the engine can do `events[starts[M]:starts[M+1]]` for any month M."""
 
-    month: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    kind: NDArray[np.int64]
-    rented_fraction: NDArray[np.float64]
-    amount: NDArray[np.float64]
-    amount_quanta: NDArray[np.int64]
-    month_starts: NDArray[np.int64]
+    month: HostEventI64
+    property_slot: HostEventI64
+    kind: HostEventI64
+    rented_fraction: HostEventF64
+    amount: HostEventF64
+    amount_quanta: HostEventI64
+    month_starts: HostI64
 
 
 def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, int]) -> LifecycleEventCompileOutput:

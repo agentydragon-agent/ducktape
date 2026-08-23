@@ -520,6 +520,7 @@ py_library(
         ":locations",
         ":runtime",
         ":scenario",
+        ":tensor_types",
         ":tlh_harvest",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",

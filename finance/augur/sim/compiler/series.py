@@ -23,6 +23,13 @@ from finance.augur.model.series import (
 from finance.augur.product.asset_key import asset_price_key, asset_price_key_or_none
 from finance.augur.sim.fixed_point import sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario, SeriesIndexedAmount
+from finance.augur.sim.tensor_types import (
+    HostMaterializedSeriesBool,
+    HostMaterializedSeriesF64,
+    HostMaterializedSeriesI64,
+    HostSeriesCubeF64,
+    HostSeriesCubeI64,
+)
 
 
 def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]:
@@ -95,11 +102,11 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
 
 class MaterializedLevelRows(NamedTuple):
     key: LevelSeriesKey
-    rollout_index: np.ndarray
-    month_index: np.ndarray
-    values: np.ndarray
-    present: np.ndarray
-    in_bounds: np.ndarray
+    rollout_index: HostMaterializedSeriesI64
+    month_index: HostMaterializedSeriesI64
+    values: HostMaterializedSeriesF64
+    present: HostMaterializedSeriesBool
+    in_bounds: HostMaterializedSeriesBool
 
 
 def materialize_level_rows(
@@ -177,7 +184,9 @@ def _add_amount_series_key(amount: Any, add: Any) -> None:
         add(amount.series)
 
 
-def _frame_values(frame: Any, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, ...]:
+def _frame_values(
+    frame: Any, rollout_count: int, horizon_months: int
+) -> tuple[HostMaterializedSeriesI64, HostMaterializedSeriesI64, HostMaterializedSeriesF64, HostMaterializedSeriesBool]:
     rollout_index = frame.get_column("rollout_index").to_numpy()
     month_index = frame.get_column("month_index").to_numpy()
     raw_values = frame.get_column("value").to_numpy()
@@ -194,7 +203,7 @@ def external_series_cubes(
     rollout_count: int,
     horizon_months: int,
     currency_quantum: object,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[HostSeriesCubeF64, HostSeriesCubeI64]:
     """Materialize heterogeneous and money values together.
 
     Each sampled series is split and indexed once. The float cube carries rates and index ratios;

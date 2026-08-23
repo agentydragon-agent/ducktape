@@ -19,10 +19,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.helpers import NO_CODE
 from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferIncomeCategory
+from finance.augur.sim.tensor_types import HostI64
 
 
 def income_source_sort_key(category: TransferIncomeCategory) -> tuple[int, str]:
@@ -72,7 +72,7 @@ class IncomeBuckets:
 
         return self.bucket(profile_index, OrdinaryIncome())
 
-    def ordinary_rows(self, profile_indices: NDArray[np.int64]) -> NDArray[np.int64]:
+    def ordinary_rows(self, profile_indices: HostI64) -> HostI64:
         """Vectorized `ordinary_bucket`, preserving `NO_CODE` sentinels.
 
         For the engine's scatter targets, which are arrays of profile indices built before
@@ -83,7 +83,7 @@ class IncomeBuckets:
         offset = self.source_ids.index(OrdinaryIncome())
         return np.where(indices == NO_CODE, NO_CODE, indices * len(self.source_ids) + offset)
 
-    def split_rows(self, rows: NDArray[np.int64]) -> tuple[NDArray[np.int64], NDArray[np.int64]]:
+    def split_rows(self, rows: HostI64) -> tuple[HostI64, HostI64]:
         """Inverse of `bucket`: row indices back to `(profile indices, source indices)`.
 
         The read model has to undo the flattening to label a row, and doing that division

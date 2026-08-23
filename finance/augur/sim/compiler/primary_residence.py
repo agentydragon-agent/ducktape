@@ -10,10 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.sim.compiler.helpers import NO_CODE
 from finance.augur.sim.scenario import Scenario
+from finance.augur.sim.tensor_types import HostAgentI64, HostEventI64, HostI64
 
 
 @dataclass(frozen=True)
@@ -24,16 +24,16 @@ class PrimaryResidenceEventCompileOutput:
     property slot assigned as that agent's primary residence from this event month forward.
     """
 
-    month: NDArray[np.int64]
-    agent_slot: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    month_starts: NDArray[np.int64]
+    month: HostEventI64
+    agent_slot: HostEventI64
+    property_slot: HostEventI64
+    month_starts: HostI64
 
 
 def compile_primary_residences(
     scenario: Scenario, *, agent_slot_by_id: dict[str, int], property_slot_by_id: dict[str, int]
-) -> tuple[NDArray[np.int64], PrimaryResidenceEventCompileOutput]:
-    initial = np.full(len(agent_slot_by_id), NO_CODE, dtype=np.int64)
+) -> tuple[HostAgentI64, PrimaryResidenceEventCompileOutput]:
+    initial: HostAgentI64 = np.full(len(agent_slot_by_id), NO_CODE, dtype=np.int64)
     for assignment in scenario.initial_primary_residences:
         initial[agent_slot_by_id[assignment.agent_id]] = property_slot_by_id[assignment.property_id]
 

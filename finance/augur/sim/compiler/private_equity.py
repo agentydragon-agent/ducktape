@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
@@ -16,6 +15,15 @@ from finance.augur.product.asset_key import PrivateEquityAssetKey
 from finance.augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays_quanta
 from finance.augur.sim.fixed_point import sampled_array_to_quanta
 from finance.augur.sim.scenario import Scenario
+from finance.augur.sim.tensor_types import (
+    HostBool,
+    HostCashI64,
+    HostI64,
+    HostIssuerI64,
+    HostIssuerLotBool,
+    HostLotI64,
+    HostPolicyI64,
+)
 
 
 @dataclass(frozen=True)
@@ -25,10 +33,10 @@ class PEIssuerCompileOutput:
     tenders within horizon); the engine skips it. `lot_mask[i, l]` flags which lots
     belong to issuer `i`."""
 
-    codes: NDArray[np.int64]
+    codes: HostIssuerI64
     issuer_ids: tuple[str, ...]
-    policy_index: NDArray[np.int64]
-    lot_mask: NDArray[np.bool_]
+    policy_index: HostIssuerI64
+    lot_mask: HostIssuerLotBool
 
 
 class PEExecutionChannels[ArrayT](NamedTuple):
@@ -54,7 +62,7 @@ class PEChannels:
     """Engine channels plus the event-kind channel used only by host-side decoders."""
 
     execution: PEExecutionChannels[np.ndarray]
-    event_kind_codes: NDArray[np.int64]
+    event_kind_codes: HostI64
 
 
 @dataclass(frozen=True)
@@ -64,16 +72,16 @@ class PEPolicyCompileOutput:
     + `owner_non_pe_lot_mask` are (policy × slot) masks the engine uses to compute LNW
     from the owner's non-PE liquid assets."""
 
-    owner_agent: NDArray[np.int64]
-    proceeds_cash_slot: NDArray[np.int64]
-    floor_kind: NDArray[np.int64]
-    floor_fixed: NDArray[np.int64]
-    floor_base: NDArray[np.int64]
-    floor_series: NDArray[np.int64]
-    floor_base_month: NDArray[np.int64]
-    floor_period: NDArray[np.int64]
-    owner_cash_mask: NDArray[np.bool_]
-    owner_non_pe_lot_mask: NDArray[np.bool_]
+    owner_agent: HostPolicyI64
+    proceeds_cash_slot: HostPolicyI64
+    floor_kind: HostPolicyI64
+    floor_fixed: HostPolicyI64
+    floor_base: HostPolicyI64
+    floor_series: HostPolicyI64
+    floor_base_month: HostPolicyI64
+    floor_period: HostPolicyI64
+    owner_cash_mask: HostBool
+    owner_non_pe_lot_mask: HostBool
 
 
 def compile_private_equity_tenders(
@@ -82,9 +90,9 @@ def compile_private_equity_tenders(
     *,
     asset_table: AssetTable,
     series_index_by_id: dict[LevelSeriesKey, int],
-    lot_agent_codes: np.ndarray,
-    lot_asset_codes: np.ndarray,
-    cash_agent_codes: np.ndarray,
+    lot_agent_codes: HostLotI64,
+    lot_asset_codes: HostLotI64,
+    cash_agent_codes: HostCashI64,
 ) -> tuple[PEIssuerCompileOutput, PEPolicyCompileOutput]:
     """Compile per-(issuer, policy) arrays driving the PE tender-sale path.
 

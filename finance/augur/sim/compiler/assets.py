@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key
 from finance.augur.sim.compiler.helpers import NO_CODE, AccountSlots, AssetTable, StringTable
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.scenario import Scenario
+from finance.augur.sim.tensor_types import HostI64, HostSaleI64
 
 
 @dataclass(frozen=True)
@@ -20,17 +20,17 @@ class SaleCompileOutput:
     NaN when the sale price comes from a sampled series — `price_series[i]` is that
     series index, NO_CODE otherwise."""
 
-    cause: NDArray[np.int64]
-    month: NDArray[np.int64]
-    agent: NDArray[np.int64]
-    source_account: NDArray[np.int64]
-    asset: NDArray[np.int64]
-    quantity: NDArray[np.int64]
-    quantity_scale: NDArray[np.int64]
-    proceeds_account: NDArray[np.int64]
-    proceeds_slot: NDArray[np.int64]
-    price_fixed: NDArray[np.int64]
-    price_series: NDArray[np.int64]
+    cause: HostI64
+    month: HostSaleI64
+    agent: HostSaleI64
+    source_account: HostSaleI64
+    asset: HostSaleI64
+    quantity: HostSaleI64
+    quantity_scale: HostSaleI64
+    proceeds_account: HostSaleI64
+    proceeds_slot: HostSaleI64
+    price_fixed: HostSaleI64
+    price_series: HostSaleI64
 
 
 def compile_sales(

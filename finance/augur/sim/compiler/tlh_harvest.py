@@ -18,11 +18,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from finance.augur.product.asset_key import asset_price_key
 from finance.augur.sim.compiler.helpers import NO_CODE
 from finance.augur.sim.scenario import Scenario
+from finance.augur.sim.tensor_types import (
+    HostCapitalGainProfileI64,
+    HostHarvestPolicyF64,
+    HostHarvestPolicyI64,
+    HostHarvestPolicyLotBool,
+    HostLotI64,
+)
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 
@@ -34,10 +40,10 @@ class HarvestPolicyCompileOutput:
     case the engine skips the policy). `series_index[p]` indexes `external_values` for the index
     price path. `params` keeps the typed yield curve per policy (small list; no array needed)."""
 
-    gain_profile_index: NDArray[np.int64]
-    series_index: NDArray[np.int64]
-    short_term_fraction: NDArray[np.float64]
-    lot_mask: NDArray[np.bool_]
+    gain_profile_index: HostHarvestPolicyI64
+    series_index: HostHarvestPolicyI64
+    short_term_fraction: HostHarvestPolicyF64
+    lot_mask: HostHarvestPolicyLotBool
     params: tuple[HarvestYieldParams, ...]
 
 
@@ -45,10 +51,10 @@ def compile_harvest_policies(
     scenario: Scenario,
     *,
     series_index_by_id: dict,
-    lot_agent_codes: np.ndarray,
-    lot_account_codes: np.ndarray,
-    lot_asset_codes: np.ndarray,
-    capital_gain_agent_codes: np.ndarray,
+    lot_agent_codes: HostLotI64,
+    lot_account_codes: HostLotI64,
+    lot_asset_codes: HostLotI64,
+    capital_gain_agent_codes: HostCapitalGainProfileI64,
     string_code_of,
     asset_code_of,
 ) -> HarvestPolicyCompileOutput:
