@@ -6,6 +6,23 @@ from typing import NamedTuple
 
 import numpy as np
 
+from finance.augur.sim.tensor_types import (
+    HostEventRolloutBool,
+    HostLotRolloutI64,
+    HostMonthPropertyRolloutBool,
+    HostSnapshotCapitalGainClassRolloutBool,
+    HostSnapshotCapitalGainClassRolloutI64,
+    HostSnapshotCashRolloutI64,
+    HostSnapshotIncomeBucketRolloutI64,
+    HostSnapshotLiabilityRolloutBool,
+    HostSnapshotLiabilityRolloutI64,
+    HostSnapshotLotRolloutI64,
+    HostSnapshotPropertyRolloutBool,
+    HostSnapshotPropertyRolloutI64,
+    HostSnapshotRolloutBool,
+    HostSnapshotRolloutI64,
+)
+
 
 class StateOutput[ArrayT](NamedTuple):
     cash: ArrayT
@@ -126,26 +143,26 @@ class DenseFinalOutput[ArrayT](NamedTuple):
 class DenseStateOutput(NamedTuple):
     """Host-side state history, including the month-zero snapshot."""
 
-    cash: np.ndarray
-    ordinary: np.ndarray
-    lots: np.ndarray
-    lot_cost_basis: np.ndarray
-    lot_purchase_month: np.ndarray
-    capital_gain_active: np.ndarray
-    capital_gain_ytd: np.ndarray
-    property_active: np.ndarray
-    property_basis: np.ndarray
-    property_contribution: np.ndarray
-    property_equity: np.ndarray
-    property_cumulative_depreciation: np.ndarray
-    property_owner_occupied_months: np.ndarray
-    liability_active: np.ndarray
-    liability_principal: np.ndarray
-    liability_monthly_payment: np.ndarray
-    liability_interest_ytd: np.ndarray
-    liability_principal_ytd: np.ndarray
-    failed: np.ndarray
-    failed_month: np.ndarray
+    cash: HostSnapshotCashRolloutI64
+    ordinary: HostSnapshotIncomeBucketRolloutI64
+    lots: HostSnapshotLotRolloutI64
+    lot_cost_basis: HostLotRolloutI64
+    lot_purchase_month: HostLotRolloutI64
+    capital_gain_active: HostSnapshotCapitalGainClassRolloutBool
+    capital_gain_ytd: HostSnapshotCapitalGainClassRolloutI64
+    property_active: HostSnapshotPropertyRolloutBool
+    property_basis: HostSnapshotPropertyRolloutI64
+    property_contribution: HostSnapshotPropertyRolloutI64
+    property_equity: HostSnapshotPropertyRolloutI64
+    property_cumulative_depreciation: HostSnapshotPropertyRolloutI64
+    property_owner_occupied_months: HostSnapshotPropertyRolloutI64
+    liability_active: HostSnapshotLiabilityRolloutBool
+    liability_principal: HostSnapshotLiabilityRolloutI64
+    liability_monthly_payment: HostSnapshotLiabilityRolloutI64
+    liability_interest_ytd: HostSnapshotLiabilityRolloutI64
+    liability_principal_ytd: HostSnapshotLiabilityRolloutI64
+    failed: HostSnapshotRolloutBool
+    failed_month: HostSnapshotRolloutI64
 
 
 class DenseSimulationOutput(NamedTuple):
@@ -154,11 +171,11 @@ class DenseSimulationOutput(NamedTuple):
     state: DenseStateOutput
     cashflows: CashflowOutput[np.ndarray]
     obligations: ObligationOutput[np.ndarray]
-    property_purchases: np.ndarray
+    property_purchases: HostMonthPropertyRolloutBool
     mortgages: MortgageOutput[np.ndarray]
     taxes: TaxOutput[np.ndarray]
     scheduled_dispositions: DispositionOutput[np.ndarray]
     target_allocation: TargetAllocationOutput[np.ndarray]
     private_equity: PrivateEquityOutput[np.ndarray]
     lifecycle: LifecycleOutput[np.ndarray]
-    primary_residence_fired: np.ndarray
+    primary_residence_fired: HostEventRolloutBool

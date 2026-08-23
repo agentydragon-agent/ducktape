@@ -11,6 +11,19 @@ import jax
 from finance.augur.sim.compiler.obligations import ObligationMetadataExecution
 from finance.augur.sim.compiler.plan import SlotPlan
 from finance.augur.sim.output import DenseFinalOutput
+from finance.augur.sim.tensor_types import (
+    JaxBoolScalar,
+    JaxHarvestPolicyLotI64,
+    JaxObligationRolloutBool,
+    JaxObligationRolloutI64,
+    JaxPolicySleeveRolloutI64,
+    JaxPropertyI64,
+    JaxRolloutI64,
+    JaxSaleCapitalGainProfileI64,
+    JaxSaleI32,
+    JaxSaleI64,
+    JaxSaleSaleI64,
+)
 
 
 @partial(
@@ -30,13 +43,13 @@ from finance.augur.sim.output import DenseFinalOutput
 class _AssetSaleProgram:
     """Scheduled asset-sale values and the static FIFO topology that interprets them."""
 
-    month: jax.Array
-    quantity: jax.Array
-    same_pool_prior: jax.Array
-    capital_gain_map: jax.Array
-    tlh_policy_lot_mask: jax.Array
-    price_fixed: jax.Array
-    price_series: jax.Array
+    month: JaxSaleI32
+    quantity: JaxSaleI64
+    same_pool_prior: JaxSaleSaleI64
+    capital_gain_map: JaxSaleCapitalGainProfileI64
+    tlh_policy_lot_mask: JaxHarvestPolicyLotI64
+    price_fixed: JaxSaleI64
+    price_series: JaxSaleI64
     proceeds_slot: tuple[int, ...]
     buffer_index: tuple[int, ...]
     ordered_lots: tuple[tuple[int, ...], ...]
@@ -45,32 +58,32 @@ class _AssetSaleProgram:
 class _PaymentBatch(NamedTuple):
     """Common source output consumed by the shared funding/settlement phase."""
 
-    active: jax.Array
-    due: jax.Array
+    active: JaxObligationRolloutBool
+    due: JaxObligationRolloutI64
     metadata: ObligationMetadataExecution[jax.Array]
 
 
 class _PurchaseInputs(NamedTuple):
     """Scheduled purchase columns, kept on the full property axis."""
 
-    month: jax.Array
-    stake_contribution: jax.Array
-    buyer_slot: jax.Array
-    seller_slot: jax.Array
-    mortgage_slot: jax.Array
-    mortgage_principal: jax.Array
-    mortgage_monthly_payment: jax.Array
+    month: JaxPropertyI64
+    stake_contribution: JaxPropertyI64
+    buyer_slot: JaxPropertyI64
+    seller_slot: JaxPropertyI64
+    mortgage_slot: JaxPropertyI64
+    mortgage_principal: JaxPropertyI64
+    mortgage_monthly_payment: JaxPropertyI64
 
 
 class _ProductTailOutput(NamedTuple):
-    sale_oversell: jax.Array
-    failed_month: jax.Array
-    target_allocation_buy_count: jax.Array
+    sale_oversell: JaxBoolScalar
+    failed_month: JaxRolloutI64
+    target_allocation_buy_count: JaxPolicySleeveRolloutI64
 
 
 class _DenseProductTailOutput(NamedTuple):
     dense: DenseFinalOutput[jax.Array]
-    failed_month: jax.Array
+    failed_month: JaxRolloutI64
 
 
 @dataclass(frozen=True)

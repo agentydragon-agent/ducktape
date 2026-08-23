@@ -16,12 +16,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import numpy as np
-
 from finance.augur.model.exogenous import LevelFrames, SampledExogenousBundle, assemble_level_frames
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.model.series_model import SeriesModelBundle
+from finance.augur.sim.tensor_types import HostRolloutSnapshotF64
 
 
 @dataclass(frozen=True)
@@ -42,7 +41,7 @@ class ExternalSeriesContext:
     @classmethod
     def from_level_blocks(
         cls,
-        blocks: list[tuple[LevelSeriesKey, np.ndarray]],
+        blocks: list[tuple[LevelSeriesKey, HostRolloutSnapshotF64]],
         *,
         rollout_count: int,
         horizon_months: int,

@@ -33,11 +33,11 @@ py_library(
     name = "external_series",
     srcs = ["external_series.py"],
     deps = [
+        ":tensor_types",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
-        "@pypi//numpy",
     ],
 )
 
@@ -533,6 +533,7 @@ py_library(
     name = "output",
     srcs = ["output.py"],
     deps = [
+        ":tensor_types",
         "@pypi//jax",
         "@pypi//numpy",
     ],
@@ -590,6 +591,7 @@ py_library(
         ":runtime",
         ":scenario",
         ":target_allocation",
+        ":tensor_types",
         "//finance/augur/model:series",
         "//finance/augur/product:metric_composition",
         "//finance/augur/product:quantiles",
