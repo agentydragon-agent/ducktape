@@ -121,17 +121,19 @@ def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir:
     assert (namespace, port) in allowed
 
 
-def test_both_haku_runtimes_share_one_grant(k8s_dir: Path) -> None:
-    """Haku runs on two harnesses, and "what can Haku do to the cluster" must have one answer.
+def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None:
+    """Haku's runtimes and durable Agent profile must have one Kubernetes authority.
 
-    A ServiceAccount is namespaced, so the identity exists twice; the authority must not. Both
-    pods' SAs are subjects on the single haku-sandbox-admin binding, and neither namespace
-    grants anything of its own — a second binding would be a second answer, free to drift.
+    A ServiceAccount is namespaced, so the runtime identity exists twice; the authority must not.
+    Both pods' SAs and Console's synthetic access-profile group are subjects on the single
+    haku-sandbox-admin binding, and neither runtime namespace grants anything of its own — a second
+    binding would be a second answer, free to drift.
     """
     binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
     role = yaml.safe_load((k8s_dir / "haku/rbac/role.yaml").read_text())
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    subjects = {(s["kind"], s["name"], s["namespace"]) for s in binding["subjects"]}
+    subjects = {(s["kind"], s["name"], s.get("namespace")) for s in binding["subjects"]}
+    assert ("Group", "haku:access-profile:haku", None) in subjects
 
     for template_name, namespace in (
         ("sandboxtemplate-haku.yaml", "haku-sandbox"),
@@ -197,6 +199,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
 
     haku_subjects = {
         ("Group", "oidc-ksbx-groups:haku", None),
+        ("Group", "haku:access-profile:haku", None),
         ("ServiceAccount", "haku", "haku-sandbox"),
         ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
     }
@@ -414,6 +417,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     }
     haku_standing_subjects = {
         ("Group", "oidc-ksbx-groups:haku", None),
+        ("Group", "haku:access-profile:haku", None),
         ("ServiceAccount", "haku", "haku-sandbox"),
         ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
     }

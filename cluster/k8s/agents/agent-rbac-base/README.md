@@ -73,10 +73,12 @@ grants stay deliberately secret-free.
 
 ### 4. Haku background agent — diagnostics subset
 
-The Haku agent authenticates as group `oidc-ksbx-groups:haku` (see Authentication below) and,
-beyond its full-CRUD `haku-sandbox` Role, receives general cluster diagnostics plus safe log
-reading. The in-cluster `haku` and `haku-claude` ServiceAccounts receive the same durable
-diagnostics access without duplicating any permission rules:
+Haku's durable Console Agent profile is represented to SubjectAccessReview as the synthetic,
+non-login group `haku:access-profile:haku`. The existing OIDC group
+`oidc-ksbx-groups:haku` and in-cluster `haku`/`haku-claude` ServiceAccounts remain the direct
+login/runtime identities. All four are co-subjected onto the same roles: full CRUD in
+`haku-sandbox`, plus general cluster diagnostics and safe log reading. The transport or runtime
+that authenticated Haku therefore does not select a different permission set:
 
 - **`cluster-diagnostics-reader`, cluster-wide** (added as a subject on the shared-rbac
   ClusterRoleBinding). Secret-free: no `secrets`/`pods/log`/`configmaps`, so it grants Haku no
@@ -84,9 +86,8 @@ diagnostics access without duplicating any permission rules:
   exfiltrate.
 - **Metadata and logs in explicitly classified namespaces**. GitOps-owned Namespace labels
   are the source of truth. The `generate-agent-diagnostics-readers` Kyverno policy generates
-  namespaced RoleBindings for the Haku group, both Haku ServiceAccounts,
-  `kubectl-sandbox-users`, and the deploy-owned synthetic
-  `haku:access-profile:public-coder` group.
+  namespaced RoleBindings for both Haku groups, both Haku ServiceAccounts,
+  `kubectl-sandbox-users`, and the deploy-owned synthetic public-coder group.
 
 The labels are namespace-level access grants for the approved agent identities; the
 ClusterRoles remain the permission source of truth. Adding an agent identity means updating
@@ -101,9 +102,9 @@ There are exactly two generated namespace classifications:
   pod logs are readable. A logs label alone generates both bindings; the namespace does not need
   both labels. The additive logs role grants only `get` on `pods/log`.
 
-Both labels use the same agent subject set. This keeps Haku structurally at least as capable as
-public-coder and makes the label a statement about the namespace's data sensitivity, not about a
-particular identity.
+Both labels use the same agent subject set. This keeps Haku's synthetic SAR identity structurally
+at least as capable as public-coder and makes the label a statement about the namespace's data
+sensitivity, not about a particular authentication transport.
 
 The separate `oidc-ksbx-groups:kubectl-sandbox-users` group belongs to the interactive Claude
 Code Web/kubectl sandbox environment. It is not a parent group of Haku, but it participates in
