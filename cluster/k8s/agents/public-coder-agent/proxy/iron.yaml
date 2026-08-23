@@ -92,6 +92,24 @@ transforms:
             - host: "haku-kubeapi.allegedly.works"
         - source:
             type: env
+            var: AIQUOTA_API_BEARER_TOKEN
+          replace:
+            # The API deliberately has one bearer for its normalized and raw
+            # read responses. Restrict its proxy replacement to the two GET
+            # paths rather than turning this into general authenticated access
+            # to aiquota.allegedly.works.
+            proxy_value: "proxy-aiquota-api-bearer-placeholder"
+            match_headers: ["Authorization"]
+          rules:
+            # Explicit HTTPS proxy clients perform this header-less CONNECT
+            # preflight before the inner GET request is visible to Iron.
+            - host: "aiquota.allegedly.works"
+              methods: ["CONNECT"]
+            - host: "aiquota.allegedly.works"
+              methods: ["GET"]
+              paths: ["/v1/quotas", "/v1/providers/*/raw"]
+        - source:
+            type: env
             var: MATRIX_BOT_PASSWORD
           replace:
             # OpenClaw's password login sends this placeholder in the JSON

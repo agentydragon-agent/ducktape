@@ -77,6 +77,14 @@ spec:
                 secretKeyRef:
                   name: haku-console-public-coder-agent
                   key: token
+            # The same bearer used by aiquota-api. It is reflected here solely
+            # for iron-proxy to substitute into the agent's placeholder on the
+            # two read endpoints; the OpenClaw workload never receives it.
+            - name: AIQUOTA_API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-api-bearer-public-coder
+                  key: bearer-token
             # Matrix password login is the one credential that lives in a JSON
             # body rather than Authorization. iron.yaml swaps the app's
             # placeholder only on the Matrix login endpoint.

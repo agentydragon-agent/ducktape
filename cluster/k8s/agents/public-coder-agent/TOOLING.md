@@ -61,6 +61,26 @@ The expected identity and permissions are:
 When behavior matters, verify it through a narrow authenticated GitHub API read. Never print the
 token or probe unrelated repositories.
 
+### AIQuota read API
+
+`AIQUOTA_API_BEARER_TOKEN` is a non-secret placeholder. Through the configured HTTPS proxy, it is
+replaced with AIQuota's single shared bearer only for these exact read routes on
+`https://aiquota.allegedly.works`:
+
+- `GET /v1/quotas`; and
+- `GET /v1/providers/{claude|codex}/raw`.
+
+Use it as a normal bearer without printing it, for example:
+
+```sh
+curl --fail-with-body \
+  -H "Authorization: Bearer $AIQUOTA_API_BEARER_TOKEN" \
+  https://aiquota.allegedly.works/v1/quotas
+```
+
+The actual bearer is reflected only into the trusted egress proxy, never into the OpenClaw
+container. Requests to other hosts, methods, or paths retain the useless placeholder.
+
 ### Kubernetes RBAC
 
 Use the mounted kubeconfig and direct `kubectl`. Check uncertain operations with, for example:

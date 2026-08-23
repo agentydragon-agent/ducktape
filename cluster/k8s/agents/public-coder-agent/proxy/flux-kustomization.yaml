@@ -38,6 +38,10 @@ spec:
     # The proxy reads the reflected Matrix bot password from its namespace.
     - name: matrix-secrets
       namespace: ducktape-flux
+    # aiquota creates the sole bearer, then reflects its constrained mirror to
+    # this namespace for the proxy-only substitution rule.
+    - name: aiquota
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
