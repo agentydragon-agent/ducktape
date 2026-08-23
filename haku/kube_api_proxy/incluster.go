@@ -48,7 +48,9 @@ func InClusterUpstream(config InClusterConfig) (*url.URL, http.RoundTripper, err
 			MinVersion: tls.VersionTLS12,
 			RootCAs:    roots,
 		},
-		ForceAttemptHTTP2: true,
+		// Kubernetes streaming subresources use HTTP/1.1 protocol upgrades.
+		// A custom TLS configuration already disables HTTP/2 unless explicitly
+		// forced; keep it that way so exec can reach an HTTP/2-capable apiserver.
 	}
 	return upstream, &serviceAccountTransport{
 		base:      base,

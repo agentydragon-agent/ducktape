@@ -39,9 +39,14 @@ choose the Kubernetes username or groups.
   identity/impersonation headers are removed; the in-cluster transport supplies
   the upstream credential.
 - Authority failures, malformed decisions and denials all fail closed.
-- Request bodies, authorization calls and Kubernetes requests are bounded.
-- `watch`, log following, resource proxying, upgrades, pod `exec`, `attach` and
-  `portforward` return `501` before authorization or forwarding.
+- Request bodies, authorization calls and ordinary Kubernetes requests are bounded.
+- Noninteractive pod `exec` upgrade requests are forwarded transparently. The
+  initial authorization expiry is a hard stream deadline, and Console is
+  rechecked every five seconds so release, revocation or authority failure
+  closes the stream within the revalidation interval plus the authorization
+  timeout—eight seconds with the deployed defaults.
+- `watch`, log following, resource proxying, `attach`, `portforward` and
+  non-exec upgrades return `501` before authorization or forwarding.
 - Console exposes the typed endpoint contract at
   `POST /api/internal/kubernetes/authorize`. It remains unavailable (and thus
   fail-closed) until standing SAR subjects are explicitly mapped to Agent access
@@ -99,17 +104,18 @@ at that instant.
 
 ## Configuration
 
-| Environment                          |            Default | Meaning                                      |
-| ------------------------------------ | -----------------: | -------------------------------------------- |
-| `HAKU_KUBE_AUTHORIZATION_URL`        |           required | Absolute HTTPS Console authorization URL     |
-| `HAKU_KUBE_ALLOW_INSECURE_AUTHORITY` |            `false` | Development/test-only plain-HTTP opt-in      |
-| `HAKU_KUBE_LISTEN_ADDRESS`           |            `:8080` | Proxy listen address                         |
-| `HAKU_KUBE_AUTHORIZATION_TIMEOUT`    |               `3s` | Maximum Console decision latency             |
-| `HAKU_KUBE_REQUEST_TIMEOUT`          |              `30s` | Maximum ordinary Kubernetes request lifetime |
-| `HAKU_KUBE_MAX_REQUEST_BYTES`        |         `10485760` | Maximum request body size                    |
-| `HAKU_KUBE_SERVICEACCOUNT_DIRECTORY` | Kubernetes default | Projected CA and token directory             |
-| `KUBERNETES_SERVICE_HOST`            |           required | In-cluster Kubernetes API host               |
-| `KUBERNETES_SERVICE_PORT_HTTPS`      |           required | In-cluster API port (`..._PORT` fallback)    |
+| Environment                              |            Default | Meaning                                             |
+| ---------------------------------------- | -----------------: | --------------------------------------------------- |
+| `HAKU_KUBE_AUTHORIZATION_URL`            |           required | Absolute HTTPS Console authorization URL            |
+| `HAKU_KUBE_ALLOW_INSECURE_AUTHORITY`     |            `false` | Development/test-only plain-HTTP opt-in             |
+| `HAKU_KUBE_LISTEN_ADDRESS`               |            `:8080` | Proxy listen address                                |
+| `HAKU_KUBE_AUTHORIZATION_TIMEOUT`        |               `3s` | Maximum Console decision latency                    |
+| `HAKU_KUBE_REQUEST_TIMEOUT`              |              `30s` | Maximum ordinary Kubernetes request lifetime        |
+| `HAKU_KUBE_STREAM_REVALIDATION_INTERVAL` |               `5s` | Interval between active-stream authorization checks |
+| `HAKU_KUBE_MAX_REQUEST_BYTES`            |         `10485760` | Maximum request body size                           |
+| `HAKU_KUBE_SERVICEACCOUNT_DIRECTORY`     | Kubernetes default | Projected CA and token directory                    |
+| `KUBERNETES_SERVICE_HOST`                |           required | In-cluster Kubernetes API host                      |
+| `KUBERNETES_SERVICE_PORT_HTTPS`          |           required | In-cluster API port (`..._PORT` fallback)           |
 
 The Kubernetes API address, CA and rotating projected bearer are loaded from
 Kubernetes' standard in-cluster environment and ServiceAccount files. This is
@@ -149,11 +155,17 @@ request attributes. Console logs the same decision ID with the Agent and grant s
 ships both pods' stdout/stderr to Loki, whose current configuration has no finite age-based
 `retention_period`; the durable grant row completes the grant-to-source-ToolCall link.
 
+Exec intentionally uses Go's standard reverse-proxy upgrade path rather than
+implementing Kubernetes remote-command channel framing. The in-cluster upstream
+transport stays on HTTP/1.1 because Kubernetes streaming subresources use
+protocol upgrades that an HTTP/2 transport rejects. The first support and
+acceptance contract is noninteractive (`stdin=false`, `tty=false`); interactive
+behavior is not yet promised even where transparent forwarding happens to work.
+
 Remaining work:
 
 - TODO(#4564): decide whether to implement Kubernetes `watch` and following
   logs. Any implementation must preserve the standing-policy fail-closed model.
-- TODO(#4566): implement `exec` as a separate reviewed protocol increment.
 - TODO(#4565): implement `portforward` as a separate reviewed protocol increment.
 - TODO(#4562): revisit deeper metrics, alerts and failure hardening if operational experience
   justifies them.

@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	defaultAuthorizationTimeout = 3 * time.Second
-	defaultRequestTimeout       = 30 * time.Second
-	defaultMaxRequestBytes      = 10 << 20
+	defaultAuthorizationTimeout       = 3 * time.Second
+	defaultRequestTimeout             = 30 * time.Second
+	defaultStreamRevalidationInterval = 5 * time.Second
+	defaultMaxRequestBytes            = 10 << 20
 )
 
 // RequestAttributes is the canonical request shape sent to Haku Console.
@@ -56,8 +57,8 @@ type AuthorizationRequest struct {
 	RequiredRules []PolicyRule      `json:"required_rules"`
 }
 
-// AuthorizationResponse is returned by Haku Console after a Kubernetes
-// SubjectAccessReview for the fixed deploy-configured subject.
+// AuthorizationResponse is returned by Haku Console after standing SAR and
+// temporary-grant authorization for the authenticated Agent.
 type AuthorizationResponse struct {
 	Allowed    bool       `json:"allowed"`
 	Reason     string     `json:"reason,omitempty"`
@@ -77,6 +78,7 @@ type Config struct {
 	AllowInsecureAuthorization bool
 	AuthorizationTimeout       time.Duration
 	RequestTimeout             time.Duration
+	StreamRevalidationInterval time.Duration
 	MaxRequestBytes            int64
 	ResourceScopes             ResourceScopeResolver
 	Logger                     *slog.Logger
@@ -112,6 +114,9 @@ func NewHandler(config Config) (http.Handler, error) {
 	if config.RequestTimeout <= 0 {
 		config.RequestTimeout = defaultRequestTimeout
 	}
+	if config.StreamRevalidationInterval <= 0 {
+		config.StreamRevalidationInterval = defaultStreamRevalidationInterval
+	}
 	if config.MaxRequestBytes <= 0 {
 		config.MaxRequestBytes = defaultMaxRequestBytes
 	}
@@ -125,11 +130,14 @@ func NewHandler(config Config) (http.Handler, error) {
 	resolver := newRequestInfoResolver()
 
 	upstream := *config.Upstream
+	// ReverseProxy relays protocol upgrades without interpreting Kubernetes'
+	// channel framing and closes the upgraded backend when the request context
+	// is cancelled. Stream expiry and revalidation therefore share one context.
 	reverseProxy := &httputil.ReverseProxy{
 		Rewrite: func(proxyRequest *httputil.ProxyRequest) {
 			proxyRequest.SetURL(&upstream)
 			proxyRequest.Out.Host = upstream.Host
-			// Forward only ordinary Kubernetes HTTP representation headers. The
+			// Forward only Kubernetes representation and protocol-upgrade headers. The
 			// caller's Haku credential, cookies, proxy metadata, API keys and
 			// identity/impersonation headers must never reach kube-apiserver. The
 			// configured transport adds the proxy's own Kubernetes credential.
@@ -158,8 +166,8 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 		http.Error(w, "Bearer authorization is required", http.StatusUnauthorized)
 		return
 	}
-	if reason := unsupportedReason(request); reason != "" {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": reason})
+	if request.Method == http.MethodConnect {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "CONNECT tunneling is not implemented"})
 		return
 	}
 
@@ -187,11 +195,12 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 		return
 	}
 
-	decision, status, err := authorize(request.Context(), config, authorization, AuthorizationRequest{
+	authorizationRequest := AuthorizationRequest{
 		Attributes:    attributes,
 		RequiredScope: requiredScope,
 		RequiredRules: []PolicyRule{requiredRule(attributes)},
-	})
+	}
+	decision, status, err := authorize(request.Context(), config, authorization, authorizationRequest)
 	if err != nil {
 		config.Logger.Error("Haku authorization failed closed", "error", err)
 		writeJSON(w, status, map[string]string{"error": err.Error()})
@@ -233,18 +242,84 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 	)
 	w.Header().Set("X-Haku-Kubernetes-Decision-ID", decision.DecisionID)
 
-	deadline := time.Now().Add(config.RequestTimeout)
-	if decision.ValidUntil != nil && decision.ValidUntil.Before(deadline) {
-		deadline = *decision.ValidUntil
-	}
-	if !deadline.After(time.Now()) {
+	if decision.ValidUntil != nil && !decision.ValidUntil.After(time.Now()) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "the Haku authorization decision has expired"})
 		return
 	}
 
-	ctx, cancel := context.WithDeadline(request.Context(), deadline)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	streaming := isExecRequest(attributes, request)
+	if streaming {
+		if decision.ValidUntil == nil {
+			ctx, cancel = context.WithCancel(request.Context())
+		} else {
+			ctx, cancel = context.WithDeadline(request.Context(), *decision.ValidUntil)
+		}
+		go revalidateStream(ctx, cancel, config, authorization, authorizationRequest, attributes, decision.DecisionID)
+	} else {
+		deadline := time.Now().Add(config.RequestTimeout)
+		if decision.ValidUntil != nil && decision.ValidUntil.Before(deadline) {
+			deadline = *decision.ValidUntil
+		}
+		ctx, cancel = context.WithDeadline(request.Context(), deadline)
+	}
 	defer cancel()
 	upstream.ServeHTTP(w, request.WithContext(ctx))
+	if streaming {
+		config.Logger.Info(
+			"Kubernetes stream ended",
+			"decision_id", decision.DecisionID,
+			"namespace", attributes.Namespace,
+			"resource", attributes.Resource,
+			"subresource", attributes.Subresource,
+			"name", attributes.Name,
+			"context_error", ctx.Err(),
+		)
+	}
+}
+
+func revalidateStream(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	config Config,
+	bearer string,
+	body AuthorizationRequest,
+	attributes RequestAttributes,
+	initialDecisionID string,
+) {
+	ticker := time.NewTicker(config.StreamRevalidationInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			decision, _, err := authorize(ctx, config, bearer, body)
+			if err == nil && decision.Allowed && (decision.ValidUntil == nil || decision.ValidUntil.After(time.Now())) {
+				continue
+			}
+			reason := "authorization no longer permits this stream"
+			if err != nil {
+				reason = err.Error()
+			} else if decision.Reason != "" {
+				reason = decision.Reason
+			}
+			config.Logger.Warn(
+				"Kubernetes stream authorization ended",
+				"decision_id", initialDecisionID,
+				"reauthorization_decision_id", decision.DecisionID,
+				"verb", attributes.Verb,
+				"namespace", attributes.Namespace,
+				"resource", attributes.Resource,
+				"subresource", attributes.Subresource,
+				"name", attributes.Name,
+				"reason", reason,
+			)
+			cancel()
+			return
+		}
+	}
 }
 
 func authorize(ctx context.Context, config Config, bearer string, body AuthorizationRequest) (AuthorizationResponse, int, error) {
@@ -324,16 +399,6 @@ func requiredRule(attributes RequestAttributes) PolicyRule {
 	return rule
 }
 
-func unsupportedReason(request *http.Request) string {
-	if request.Method == http.MethodConnect {
-		return "CONNECT tunneling is not implemented"
-	}
-	if request.Header.Get("Upgrade") != "" || headerContainsToken(request.Header, "Connection", "upgrade") {
-		return "upgraded connections are not implemented"
-	}
-	return ""
-}
-
 func unsupportedAttributes(attributes RequestAttributes, request *http.Request) string {
 	if attributes.Verb == "" {
 		return "this HTTP method is not mapped to a Kubernetes authorization verb"
@@ -344,10 +409,17 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 	if attributes.Verb == "proxy" || attributes.Subresource == "proxy" {
 		return "Kubernetes resource proxy requests are not implemented"
 	}
+	if isUpgradeRequest(request) && !isExecRequest(attributes, request) {
+		return "upgraded connections other than pod exec are not implemented"
+	}
 	if attributes.Resource == "pods" {
 		switch attributes.Subresource {
-		case "exec", "attach", "portforward":
-			return "interactive pod subresources are not implemented"
+		case "exec":
+			if !isUpgradeRequest(request) {
+				return "pod exec requires an upgraded connection"
+			}
+		case "attach", "portforward":
+			return "pod attach and port-forward are not implemented"
 		case "log":
 			if queryMayEnable(request.URL.Query()["follow"]) {
 				return "following pod logs is not implemented"
@@ -357,19 +429,34 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 	return ""
 }
 
+func isUpgradeRequest(request *http.Request) bool {
+	return request.Header.Get("Upgrade") != "" && headerContainsToken(request.Header, "Connection", "upgrade")
+}
+
+func isExecRequest(attributes RequestAttributes, request *http.Request) bool {
+	return attributes.Resource == "pods" && attributes.Subresource == "exec" && isUpgradeRequest(request)
+}
+
 var forwardedRequestHeaders = map[string]bool{
-	"Accept":            true,
-	"Accept-Encoding":   true,
-	"Accept-Language":   true,
-	"Cache-Control":     true,
-	"Content-Encoding":  true,
-	"Content-Type":      true,
-	"If-Match":          true,
-	"If-Modified-Since": true,
-	"If-None-Match":     true,
-	"Pragma":            true,
-	"Range":             true,
-	"User-Agent":        true,
+	"Accept":                    true,
+	"Accept-Encoding":           true,
+	"Accept-Language":           true,
+	"Cache-Control":             true,
+	"Connection":                true,
+	"Content-Encoding":          true,
+	"Content-Type":              true,
+	"If-Match":                  true,
+	"If-Modified-Since":         true,
+	"If-None-Match":             true,
+	"Pragma":                    true,
+	"Range":                     true,
+	"Sec-Websocket-Extensions":  true,
+	"Sec-Websocket-Key":         true,
+	"Sec-Websocket-Protocol":    true,
+	"Sec-Websocket-Version":     true,
+	"Upgrade":                   true,
+	"User-Agent":                true,
+	"X-Stream-Protocol-Version": true,
 }
 
 func upstreamHeaders(source http.Header) http.Header {
