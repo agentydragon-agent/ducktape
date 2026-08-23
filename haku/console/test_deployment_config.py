@@ -13,12 +13,8 @@ def test_deployed_console_config_is_valid() -> None:
 
     assert config.kubernetes_authorization is not None
     subject = config.kubernetes_authorization.subjects_by_access_profile["public-coder"]
-    assert subject.username == "system:serviceaccount:public-coder-agent:public-coder-agent-reader"
-    assert subject.groups == (
-        "system:serviceaccounts",
-        "system:serviceaccounts:public-coder-agent",
-        "system:authenticated",
-    )
+    assert subject.username == "haku:access-profile:public-coder"
+    assert subject.groups == ("haku:access-profile:public-coder", "system:authenticated")
 
 
 if __name__ == "__main__":

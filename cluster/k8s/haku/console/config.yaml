@@ -362,16 +362,17 @@ access_profiles:
     allowed_chat_runtimes: []
     can_read_profiles: []
 default_access_profile_id: manual-review
-# Evaluate standing Kubernetes access as the dedicated read-only ServiceAccount identity. Username
-# and groups match the original reader identity; they are deploy-owned policy, never caller-supplied
-# request data. Agent requests execute through the separate haku-kube-api-proxy identity.
+# Evaluate standing Kubernetes access as a synthetic, non-login access-profile identity. The
+# username satisfies Console's explicit SAR subject schema; RBAC grants the same deploy-owned group.
+# `system:authenticated` preserves Kubernetes's standard authenticated discovery surface after
+# Console has authenticated the Agent bearer. None of these values is caller-supplied request data.
+# Agent requests execute through the separate haku-kube-api-proxy identity.
 kubernetes_authorization:
   subjects_by_access_profile:
     public-coder:
-      username: system:serviceaccount:public-coder-agent:public-coder-agent-reader
+      username: haku:access-profile:public-coder
       groups:
-        - system:serviceaccounts
-        - system:serviceaccounts:public-coder-agent
+        - haku:access-profile:public-coder
         - system:authenticated
 # One or more temporary grants begin only when an approved create_grant call executes. Every item
 # in that call shares one start and expiry. This deploy-owned bound is authoritative even if a

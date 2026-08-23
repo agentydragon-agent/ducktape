@@ -1,7 +1,7 @@
 # Static maximum execution ceiling for operator-approved Haku grants.
 #
 # This ClusterRoleBinding does not give the Agent standing Kubernetes access. Haku Console still
-# evaluates every request against the fixed standing SAR identity or an active Agent-owned grant
+# evaluates every request against the fixed standing SAR group or an active Agent-owned grant
 # before haku-kube-api-proxy sends it upstream. The personal-cluster deployment deliberately makes
 # that inline authorization boundary authoritative so future useful grants do not each require a
 # separate GitOps RBAC expansion.

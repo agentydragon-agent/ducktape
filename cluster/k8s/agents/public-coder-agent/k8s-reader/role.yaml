@@ -5,15 +5,16 @@
 # are visible here (PVCs, network policies, the proxy deployment). No
 # secrets, no exec, no write verbs.
 #
-# Expand by adding RoleBindings in other namespaces that reference this
-# ServiceAccount, or by graduating to a ClusterRole when the scope warrants it.
+# Expand by adding RoleBindings in other namespaces that reference the
+# deploy-owned access-profile group, or by graduating to a ClusterRole when the
+# scope warrants it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: public-coder-agent-reader
   namespace: public-coder-agent
   annotations:
-    description: Read-only diagnostic access for the public-coder-agent-reader SA.
+    description: Read-only diagnostic access for the public-coder access profile.
 rules:
   - apiGroups: [""]
     resources:
@@ -84,6 +85,6 @@ subjects:
   - kind: ServiceAccount
     name: haku-claude
     namespace: haku-claude-sandbox
-  - kind: ServiceAccount
-    name: public-coder-agent-reader
-    namespace: public-coder-agent
+  - kind: Group
+    name: haku:access-profile:public-coder
+    apiGroup: rbac.authorization.k8s.io

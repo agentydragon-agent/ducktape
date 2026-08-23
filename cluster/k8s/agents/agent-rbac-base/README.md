@@ -85,7 +85,8 @@ diagnostics access without duplicating any permission rules:
 - **Metadata and logs in explicitly classified namespaces**. GitOps-owned Namespace labels
   are the source of truth. The `generate-agent-diagnostics-readers` Kyverno policy generates
   namespaced RoleBindings for the Haku group, both Haku ServiceAccounts,
-  `kubectl-sandbox-users`, and `public-coder-agent-reader`.
+  `kubectl-sandbox-users`, and the deploy-owned synthetic
+  `haku:access-profile:public-coder` group.
 
 The labels are namespace-level access grants for the approved agent identities; the
 ClusterRoles remain the permission source of truth. Adding an agent identity means updating

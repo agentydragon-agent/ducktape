@@ -8,18 +8,22 @@ that hostname. The standalone Haku Kubernetes proxy authenticates the bearer wit
 evaluates the deploy-owned `public-coder` standing SAR subject, strips all caller credentials, and
 uses its own rotating projected ServiceAccount token upstream.
 
-The `public-coder-agent-reader` ServiceAccount is only the fixed standing-policy SAR identity.
-`haku-kube-api-proxy` has an independent `cluster-admin` execution ceiling, usable only when Console
-authorizes each request through standing SAR or an active Agent-owned grant. This deliberately makes
-the inline Haku authorization path the temporary-access policy boundary for this personal cluster;
-the Agent still has no standing cluster-admin authority or direct kube-apiserver credential.
+The synthetic, non-login `haku:access-profile:public-coder` group is the fixed standing-policy SAR
+identity. Console selects it only from the deploy-owned `public-coder` access-profile configuration;
+the caller cannot supply it. Console also includes Kubernetes's standard `system:authenticated`
+group after it authenticates the Agent bearer, preserving normal API discovery without pretending
+the subject is a ServiceAccount. `haku-kube-api-proxy` has an independent `cluster-admin` execution
+ceiling, usable only when Console authorizes each request through standing SAR or an active
+Agent-owned grant. This deliberately makes the inline Haku authorization path the temporary-access
+policy boundary for this personal cluster; the Agent still has no standing cluster-admin authority
+or direct kube-apiserver credential.
 
 The proxy deliberately continues to reject long-running `watch`/log-follow and
 upgrades other than pod `exec` and `portforward`. The supported upgraded streams
 are reauthorized every five seconds and close within the revalidation interval
 plus the Console authorization timeout after a grant is released or revoked.
-The standing identity has `automountServiceAccountToken: false` and no token Secret; only Console may
-evaluate it through SubjectAccessReview.
+The standing group has no login credential or ServiceAccount token; only Console may evaluate it
+through SubjectAccessReview.
 
 Flux's ordinary dependencies keep the standing subject, complete execution ceiling, Console SAR
 configuration, and authorization proxy Ready before credential-mediation changes roll out. The

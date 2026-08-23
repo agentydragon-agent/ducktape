@@ -57,6 +57,6 @@ subjects:
   - kind: ServiceAccount
     name: haku-claude
     namespace: haku-claude-sandbox
-  - kind: ServiceAccount
-    name: public-coder-agent-reader
-    namespace: public-coder-agent
+  - kind: Group
+    name: haku:access-profile:public-coder
+    apiGroup: rbac.authorization.k8s.io
