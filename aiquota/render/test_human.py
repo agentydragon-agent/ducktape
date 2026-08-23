@@ -56,16 +56,19 @@ def test_renders_both_windows_with_reset_and_pace(snapshot: SnapshotAssertion) -
             ),
         ),
         now=_FETCHED_AT,
+        tz=UTC,
     )
     assert out == snapshot
 
 
 @pytest.mark.parametrize("used_percent", [100, 105])
 def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) -> None:
+    # A provider with no burn schedule, so the whole-output equality below stays
+    # about pace suppression rather than also pinning the peak-window lines.
     out = human.render(
         _quotas(
             _pq(
-                "zai",
+                "codex",
                 _success(
                     short_window=QuotaWindow(
                         used_percent=used_percent, reset_seconds=3 * 3600 + 60, window_seconds=5 * 3600
@@ -74,9 +77,10 @@ def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) ->
             )
         ),
         now=_FETCHED_AT,
+        tz=UTC,
     )
 
-    assert out == f"zai\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
+    assert out == f"codex\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
     assert "Δ" not in out
     assert "exhausts" not in out
 
@@ -92,6 +96,7 @@ def test_subthreshold_usage_does_not_render_as_exhausted() -> None:
             )
         ),
         now=_FETCHED_AT,
+        tz=UTC,
     )
 
     assert "5h:  99%" in out
@@ -132,6 +137,7 @@ def test_aligns_reset_and_pace_columns_across_providers() -> None:
             ),
         ),
         now=_FETCHED_AT,
+        tz=UTC,
     )
     lines = out.splitlines()
     delta_columns = [line.index("Δ") for line in lines if "Δ" in line]
@@ -150,7 +156,7 @@ def test_renders_provider_supplied_duration_and_name() -> None:
         ),
     )
 
-    assert "model-specific (1d):  12%" in human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT)
+    assert "model-specific (1d):  12%" in human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC)
 
 
 def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
@@ -164,7 +170,7 @@ def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
         ),
     )
 
-    rendered = human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT)
+    rendered = human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC)
     assert "7d:   7%" in rendered
     assert "Spark" not in rendered
     assert isinstance(output.result, FetchSuccess)
@@ -175,4 +181,4 @@ def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
 def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) -> None:
     fixture_path = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
     quotas = load_quota_fixture(fixture_path, now=_FETCHED_AT)
-    assert human.render(quotas, now=_FETCHED_AT) == snapshot
+    assert human.render(quotas, now=_FETCHED_AT, tz=UTC) == snapshot
