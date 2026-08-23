@@ -205,6 +205,42 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
     proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
     assert "KUBERNETES_READER_TOKEN" not in proxy_env
+    assert proxy_env["AIQUOTA_API_BEARER_TOKEN"]["valueFrom"]["secretKeyRef"] == {
+        "name": "aiquota-api-bearer-public-coder",
+        "key": "bearer-token",
+    }
+
+    app_deployment = yaml.safe_load((agent_dir / "app" / "deployment.yaml").read_text())
+    app_container = one(app_deployment["spec"]["template"]["spec"]["containers"])
+    app_env = {entry["name"]: entry for entry in app_container["env"]}
+    assert app_env["AIQUOTA_API_BEARER_TOKEN"] == {
+        "name": "AIQUOTA_API_BEARER_TOKEN",
+        "value": "proxy-aiquota-api-bearer-placeholder",
+    }
+
+    aiquota_mirror = yaml.safe_load((k8s_dir / "aiquota" / "public-coder-bearer-eso.yaml").read_text())
+    assert aiquota_mirror["metadata"] == {"name": "aiquota-api-bearer-public-coder", "namespace": "cli-proxy-api"}
+    assert aiquota_mirror["spec"]["secretStoreRef"] == {
+        "kind": "ClusterSecretStore",
+        "name": "kubernetes-cli-proxy-api-secret-store",
+    }
+    assert aiquota_mirror["spec"]["target"]["name"] == "aiquota-api-bearer-public-coder"
+    annotations = aiquota_mirror["spec"]["target"]["template"]["metadata"]["annotations"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == "public-coder-agent"
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "public-coder-agent"
+    assert aiquota_mirror["spec"]["data"] == [
+        {"secretKey": "bearer-token", "remoteRef": {"key": "aiquota-api-bearer", "property": "bearer-token"}}
+    ]
+
+    aiquota_secret = secrets_by_env["AIQUOTA_API_BEARER_TOKEN"]
+    assert aiquota_secret["replace"] == {
+        "proxy_value": "proxy-aiquota-api-bearer-placeholder",
+        "match_headers": ["Authorization"],
+    }
+    assert aiquota_secret["rules"] == [
+        {"host": "aiquota.allegedly.works", "methods": ["CONNECT"]},
+        {"host": "aiquota.allegedly.works", "methods": ["GET"], "paths": ["/v1/quotas", "/v1/providers/*/raw"]},
+    ]
     reader_objects = list(yaml.safe_load_all((agent_dir / "k8s-reader" / "serviceaccount.yaml").read_text()))
     assert [obj["kind"] for obj in reader_objects] == ["ServiceAccount"]
     assert reader_objects[0]["metadata"]["name"] == "public-coder-agent-reader"
@@ -282,8 +318,9 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         cutover_label not in flux["metadata"].get("labels", {}) for flux in (reader_flux, proxy_flux, console_flux)
     )
     dependency_by_name = {entry["name"]: entry for entry in proxy_flux["spec"]["dependsOn"]}
-    for dependency_name in ("public-coder-agent-k8s-reader", "haku-console"):
+    for dependency_name in ("public-coder-agent-k8s-reader", "haku-console", "aiquota"):
         assert "readyExpr" not in dependency_by_name[dependency_name]
+    assert dependency_by_name["aiquota"]["namespace"] == "ducktape-flux"
     assert proxy_flux["spec"]["wait"] is True
     assert proxy_flux["spec"]["retryInterval"] == "1m"
     assert proxy_flux["spec"]["healthChecks"] == [

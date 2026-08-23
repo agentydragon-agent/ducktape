@@ -119,6 +119,11 @@ spec:
             # Authorization headers sent to the exact haku.allegedly.works host.
             - name: HAKU_CONSOLE_TOKEN
               value: "proxy-haku-console-placeholder"
+            # This placeholder grants access only when iron-proxy substitutes
+            # it for aiquota.allegedly.works' two read-only API paths. The
+            # actual shared bearer is mounted only into the proxy container.
+            - name: AIQUOTA_API_BEARER_TOKEN
+              value: "proxy-aiquota-api-bearer-placeholder"
             # Unlike the GitHub PAT above, this must be the real credential.
             # Either half of the BuildBuddy setup can use proxy substitution on
             # its own: a local Bazel client sends its authenticated gRPC traffic
