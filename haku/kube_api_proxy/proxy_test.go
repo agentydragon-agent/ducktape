@@ -111,7 +111,7 @@ func request(t *testing.T, client *http.Client, method string, rawURL string, to
 	return response
 }
 
-func openUpgrade(t *testing.T, proxyURL string, upgrade string, streamProtocol string, extraHeaders http.Header) (net.Conn, *bufio.Reader, http.Header) {
+func openUpgrade(t *testing.T, proxyURL string, method string, upgrade string, streamProtocol string, extraHeaders http.Header) (net.Conn, *bufio.Reader, http.Header) {
 	t.Helper()
 	target, err := url.Parse(proxyURL)
 	if err != nil {
@@ -122,13 +122,18 @@ func openUpgrade(t *testing.T, proxyURL string, upgrade string, streamProtocol s
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
+	streamProtocolHeader := ""
+	if streamProtocol != "" {
+		streamProtocolHeader = fmt.Sprintf("X-Stream-Protocol-Version: %s\r\n", streamProtocol)
+	}
 	_, err = fmt.Fprintf(
 		connection,
-		"POST %s HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer caller-secret\r\nConnection: Upgrade\r\nUpgrade: %s\r\nX-Stream-Protocol-Version: %s\r\nImpersonate-User: cluster-admin\r\n",
+		"%s %s HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer caller-secret\r\nConnection: Upgrade\r\nUpgrade: %s\r\n%sImpersonate-User: cluster-admin\r\n",
+		method,
 		target.RequestURI(),
 		target.Host,
 		upgrade,
-		streamProtocol,
+		streamProtocolHeader,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -172,9 +177,12 @@ func waitForConnectionClose(t *testing.T, connection net.Conn, reader *bufio.Rea
 	}
 }
 
-func upgradeUpstream(t *testing.T, disconnected chan<- struct{}, expectedUpgrade string, expectedStreamProtocol string, expectedRequestHeaders http.Header, responseHeaders http.Header) http.Handler {
+func upgradeUpstream(t *testing.T, disconnected chan<- struct{}, expectedMethod string, expectedUpgrade string, expectedStreamProtocol string, expectedRequestHeaders http.Header, responseHeaders http.Header) http.Handler {
 	t.Helper()
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if got := request.Method; got != expectedMethod {
+			t.Errorf("upstream method = %q, want %q", got, expectedMethod)
+		}
 		if got := request.Header.Get("Authorization"); got != "Bearer proxy-kubernetes-token" {
 			t.Errorf("upstream authorization = %q", got)
 		}
@@ -206,7 +214,10 @@ func upgradeUpstream(t *testing.T, disconnected chan<- struct{}, expectedUpgrade
 			return
 		}
 		defer connection.Close()
-		_, _ = fmt.Fprintf(buffered, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: %s\r\nX-Stream-Protocol-Version: %s\r\n", expectedUpgrade, expectedStreamProtocol)
+		_, _ = fmt.Fprintf(buffered, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: %s\r\n", expectedUpgrade)
+		if expectedStreamProtocol != "" {
+			_, _ = fmt.Fprintf(buffered, "X-Stream-Protocol-Version: %s\r\n", expectedStreamProtocol)
+		}
 		for name, values := range responseHeaders {
 			for _, value := range values {
 				_, _ = fmt.Fprintf(buffered, "%s: %s\r\n", name, value)
@@ -587,7 +598,7 @@ func TestExecUpgradeUsesKubernetesAuthorizationAndHardExpiry(t *testing.T) {
 		Allowed: true, DecisionID: "grant:exec", ValidUntil: &validUntil,
 	}}
 	upstreamDisconnected := make(chan struct{})
-	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, "test-stream", "v5.channel.k8s.io", nil, nil), func(config *Config) {
+	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, http.MethodPost, "test-stream", "v5.channel.k8s.io", nil, nil), func(config *Config) {
 		config.RequestTimeout = 20 * time.Millisecond
 		config.StreamRevalidationInterval = time.Hour
 	})
@@ -596,6 +607,7 @@ func TestExecUpgradeUsesKubernetesAuthorizationAndHardExpiry(t *testing.T) {
 	connection, reader, headers := openUpgrade(
 		t,
 		proxy.URL+"/api/v1/namespaces/demo/pods/web/exec?command=%2Fbin%2Ftrue&stdout=true&stderr=true&stdin=false&tty=false",
+		http.MethodPost,
 		"test-stream",
 		"v5.channel.k8s.io",
 		nil,
@@ -634,7 +646,7 @@ func TestExecUpgradeUsesHTTP1ForHTTP2CapableKubernetesUpstream(t *testing.T) {
 		Allowed: true, DecisionID: "grant:exec", ValidUntil: &validUntil,
 	}}
 	upstreamDisconnected := make(chan struct{})
-	execUpstream := upgradeUpstream(t, upstreamDisconnected, "test-stream", "v5.channel.k8s.io", nil, nil)
+	execUpstream := upgradeUpstream(t, upstreamDisconnected, http.MethodPost, "test-stream", "v5.channel.k8s.io", nil, nil)
 	upstreamServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.ProtoMajor != 1 {
 			t.Errorf("upstream protocol = %s, want HTTP/1.1 for upgrade", request.Proto)
@@ -686,6 +698,7 @@ func TestExecUpgradeUsesHTTP1ForHTTP2CapableKubernetesUpstream(t *testing.T) {
 	connection, reader, _ := openUpgrade(
 		t,
 		proxy.URL+"/api/v1/namespaces/demo/pods/web/exec?command=%2Fbin%2Ftrue&stdout=true&stderr=true&stdin=false&tty=false",
+		http.MethodPost,
 		"test-stream",
 		"v5.channel.k8s.io",
 		nil,
@@ -725,7 +738,7 @@ func TestExecUpgradeRevalidatesAndClosesFailClosed(t *testing.T) {
 				return test.revalidate()
 			}}
 			upstreamDisconnected := make(chan struct{})
-			proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, "test-stream", "v5.channel.k8s.io", nil, nil), func(config *Config) {
+			proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, http.MethodPost, "test-stream", "v5.channel.k8s.io", nil, nil), func(config *Config) {
 				config.AuthorizationTimeout = 100 * time.Millisecond
 				config.StreamRevalidationInterval = 25 * time.Millisecond
 			})
@@ -733,6 +746,7 @@ func TestExecUpgradeRevalidatesAndClosesFailClosed(t *testing.T) {
 			connection, reader, _ := openUpgrade(
 				t,
 				proxy.URL+"/api/v1/namespaces/demo/pods/web/exec?command=%2Fbin%2Ftrue&stdout=true&stderr=true&stdin=false&tty=false",
+				http.MethodPost,
 				"test-stream",
 				"v5.channel.k8s.io",
 				nil,
@@ -764,7 +778,7 @@ func TestPortForwardUpgradeIsAuthorizedAndClosesAfterRevocation(t *testing.T) {
 		return AuthorizationResponse{Allowed: false, Reason: "grant withdrawn"}, http.StatusOK
 	}}
 	upstreamDisconnected := make(chan struct{})
-	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, "SPDY/3.1", "portforward.k8s.io", nil, nil), func(config *Config) {
+	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, http.MethodPost, "SPDY/3.1", "portforward.k8s.io", nil, nil), func(config *Config) {
 		config.AuthorizationTimeout = 100 * time.Millisecond
 		config.StreamRevalidationInterval = 25 * time.Millisecond
 	})
@@ -772,6 +786,7 @@ func TestPortForwardUpgradeIsAuthorizedAndClosesAfterRevocation(t *testing.T) {
 	connection, reader, headers := openUpgrade(
 		t,
 		proxy.URL+"/api/v1/namespaces/demo/pods/web/portforward?ports=5432",
+		http.MethodPost,
 		"SPDY/3.1",
 		"portforward.k8s.io",
 		nil,
@@ -810,7 +825,7 @@ func TestPortForwardUpgradeUsesHardExpiry(t *testing.T) {
 		Allowed: true, DecisionID: "grant:portforward", ValidUntil: &validUntil,
 	}}
 	upstreamDisconnected := make(chan struct{})
-	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, "SPDY/3.1", "portforward.k8s.io", nil, nil), func(config *Config) {
+	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, http.MethodPost, "SPDY/3.1", "portforward.k8s.io", nil, nil), func(config *Config) {
 		config.RequestTimeout = 20 * time.Millisecond
 		config.StreamRevalidationInterval = time.Hour
 	})
@@ -819,6 +834,7 @@ func TestPortForwardUpgradeUsesHardExpiry(t *testing.T) {
 	connection, reader, _ := openUpgrade(
 		t,
 		proxy.URL+"/api/v1/namespaces/demo/pods/web/portforward?ports=5432",
+		http.MethodPost,
 		"SPDY/3.1",
 		"portforward.k8s.io",
 		nil,
@@ -838,7 +854,7 @@ func TestPortForwardWebSocketHeadersAreForwarded(t *testing.T) {
 	const webSocketAccept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 	requestHeaders := http.Header{
 		"Sec-WebSocket-Key":      {"dGhlIHNhbXBsZSBub25jZQ=="},
-		"Sec-WebSocket-Protocol": {"v4.channel.k8s.io"},
+		"Sec-WebSocket-Protocol": {"SPDY/3.1+portforward.k8s.io"},
 		"Sec-WebSocket-Version":  {"13"},
 	}
 	responseHeaders := http.Header{
@@ -846,13 +862,14 @@ func TestPortForwardWebSocketHeadersAreForwarded(t *testing.T) {
 	}
 	authority := &recordingAuthority{decision: allowedDecision()}
 	upstreamDisconnected := make(chan struct{})
-	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, "websocket", "portforward.k8s.io", requestHeaders, responseHeaders), nil)
+	proxy := newTestProxy(t, authority, upgradeUpstream(t, upstreamDisconnected, http.MethodGet, "websocket", "", requestHeaders, responseHeaders), nil)
 
 	connection, reader, headers := openUpgrade(
 		t,
 		proxy.URL+"/api/v1/namespaces/demo/pods/web/portforward?ports=5432",
+		http.MethodGet,
 		"websocket",
-		"portforward.k8s.io",
+		"",
 		requestHeaders,
 	)
 	if got := headers.Get("Sec-WebSocket-Accept"); got != webSocketAccept {
@@ -868,6 +885,18 @@ func TestPortForwardWebSocketHeadersAreForwarded(t *testing.T) {
 	}
 	if reader.Buffered() != 0 {
 		t.Errorf("unexpected buffered WebSocket response data: %d bytes", reader.Buffered())
+	}
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	if len(authority.requests) != 1 {
+		t.Fatalf("authorization requests = %d, want 1", len(authority.requests))
+	}
+	request := authority.requests[0]
+	if request.Attributes.Verb != "create" {
+		t.Errorf("WebSocket port-forward authorization verb = %q, want create", request.Attributes.Verb)
+	}
+	if rule := request.RequiredRules[0]; strings.Join(rule.Resources, ",") != "pods/portforward" || strings.Join(rule.Verbs, ",") != "create" {
+		t.Errorf("WebSocket port-forward rule = %#v", rule)
 	}
 }
 
