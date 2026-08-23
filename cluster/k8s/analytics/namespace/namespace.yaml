@@ -10,6 +10,7 @@ metadata:
     # Goldilocks without mutating operator-managed Pods.
     goldilocks.fairwinds.com/vpa-update-mode: "off"
     rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
+    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted

@@ -5,3 +5,4 @@ metadata:
   labels:
     pod-security.kubernetes.io/enforce: privileged
     rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
+    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"
