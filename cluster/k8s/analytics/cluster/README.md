@@ -17,17 +17,22 @@ The first tenant is `aiquota`:
   two independently retried writes.
 
 `replicasUseFQDN: "yes"` makes the operator generate per-replica host entries
-that resolve to each Pod's actual address. This is required for ClickHouse
-`ON CLUSTER` DDL: the operator's short aliases are loopback-only inside their
-respective Pods and are not accepted by ClickHouse's DDLWorker as local members.
+that resolve to each Pod's actual address rather than the operator's loopback
+short aliases. This preserves correct inter-replica connectivity, but the
+ClickHouse DDLWorker still does not accept the generated Service addresses as
+local distributed-DDL members.
 
 The Pod-template generation annotation advances only for an intentional
 operator-managed rematerialization; it is not a persistent restart switch.
-After the FQDN configuration rollout, the versioned `clickhouse-aiquota-schema-v3`
-Job applies the tenant schema with
-`ON CLUSTER analytics`, so every replica receives the same database, tables,
-and materialized view without depending on ClickHouse startup configuration
-mount ordering. Schema Jobs are retained after completion as rollout evidence.
+
+ClickHouse's DDLWorker does not accept the operator's per-replica Service
+addresses as local distributed-DDL members, even when they are FQDNs. The
+versioned `clickhouse-aiquota-schema-v4` Job therefore applies the idempotent
+tenant DDL directly to each headless replica Service in sequence. The tables
+remain ReplicatedMergeTree tables using the same Keeper paths, while every
+replica receives the database, tables, and materialized view without depending
+on ClickHouse startup configuration mount ordering. Schema Jobs are retained
+after completion as rollout evidence.
 A future schema revision must use a new Job name (for example `v2`) so
 Kubernetes never has to mutate a completed Job template.
 

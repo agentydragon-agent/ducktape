@@ -1,6 +1,6 @@
-CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER analytics;
+CREATE DATABASE IF NOT EXISTS aiquota;
 
-CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER analytics
+CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations
 (
   event_id UUID,
   schema_version UInt16,
@@ -34,7 +34,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (dataset, source, observed_at, event_id)
 TTL observed_at + INTERVAL 1 YEAR DELETE;
 
-CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER analytics
+CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows
 (
   event_id UUID,
   observed_at DateTime64(3, 'UTC'),
@@ -55,7 +55,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, window_seconds, window_name, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER analytics
+CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv
 TO aiquota.aiquota_windows
 AS SELECT
   event_id,
