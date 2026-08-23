@@ -17,7 +17,3 @@ spec:
   retryInterval: 1m
   dependsOn:
     - name: public-coder-agent-namespace
-    # The proxy-specific ceiling includes a RoleBinding to the secret-free metadata Role managed
-    # by this Kustomization, so reconcile the Role before applying that binding.
-    - name: vm-images-publisher
-      namespace: ducktape-flux

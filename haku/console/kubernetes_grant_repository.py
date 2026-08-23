@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -18,6 +19,7 @@ from haku.console.kubernetes_grant_models import (
     KubernetesGrantOwnershipError,
     KubernetesGrantScope,
     KubernetesGrantSourceError,
+    KubernetesGrantSpec,
     KubernetesGrantStatus,
     KubernetesRule,
 )
@@ -64,6 +66,7 @@ class PostgresKubernetesGrantRepository:
                 McpToolCall.approved_at.is_not(None),
                 McpToolCall.approval_policy_id.is_(None),
             )
+            .with_for_update(of=McpToolCall)
         )
         if source is None:
             raise KubernetesGrantSourceError(
@@ -81,23 +84,71 @@ class PostgresKubernetesGrantRepository:
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
     ) -> KubernetesGrant:
+        grants = await self.create_many(
+            agent_id=agent_id,
+            source_tool_call_id=source_tool_call_id,
+            grants=(KubernetesGrantSpec(scope=scope, rules=tuple(rules)),),
+            created_at=created_at,
+            expires_at=expires_at,
+        )
+        return grants[0]
+
+    async def create_many(
+        self,
+        *,
+        agent_id: UUID,
+        source_tool_call_id: str,
+        grants: Sequence[KubernetesGrantSpec],
+        created_at: datetime.datetime,
+        expires_at: datetime.datetime,
+    ) -> tuple[KubernetesGrant, ...]:
+        grants = tuple(grants)
+        if not grants:
+            raise ValueError("grants must not be empty")
         async with self._sessions.begin() as session:
             await self._assert_agent_and_source(session, agent_id=agent_id, source_tool_call_id=source_tool_call_id)
-            row = KubernetesGrantRow(
-                grant_id=uuid4(),
-                agent_id=agent_id,
-                source_tool_call_id=source_tool_call_id,
-                scope=scope,
-                rules=list(rules),
-                status=KubernetesGrantStatus.ACTIVE,
-                created_at=created_at,
-                expires_at=expires_at,
-                ended_at=None,
-                end_reason=None,
-            )
-            session.add(row)
+            existing = (
+                await session.scalars(
+                    select(KubernetesGrantRow)
+                    .where(
+                        KubernetesGrantRow.agent_id == agent_id,
+                        KubernetesGrantRow.source_tool_call_id == source_tool_call_id,
+                    )
+                    .order_by(KubernetesGrantRow.grant_id)
+                )
+            ).all()
+            if existing:
+                requested_specs = Counter(grant.model_dump_json() for grant in grants)
+                existing_specs = Counter(
+                    KubernetesGrantSpec(scope=row.scope, rules=tuple(row.rules)).model_dump_json() for row in existing
+                )
+                if existing_specs != requested_specs:
+                    raise KubernetesGrantSourceError(
+                        "source_tool_call_id already created a different Kubernetes grant set"
+                    )
+                rows_by_spec: dict[str, list[KubernetesGrantRow]] = {}
+                for row in existing:
+                    key = KubernetesGrantSpec(scope=row.scope, rules=tuple(row.rules)).model_dump_json()
+                    rows_by_spec.setdefault(key, []).append(row)
+                return tuple(self._row_to_model(rows_by_spec[grant.model_dump_json()].pop()) for grant in grants)
+            rows = [
+                KubernetesGrantRow(
+                    grant_id=uuid4(),
+                    agent_id=agent_id,
+                    source_tool_call_id=source_tool_call_id,
+                    scope=grant.scope,
+                    rules=list(grant.rules),
+                    status=KubernetesGrantStatus.ACTIVE,
+                    created_at=created_at,
+                    expires_at=expires_at,
+                    ended_at=None,
+                    end_reason=None,
+                )
+                for grant in grants
+            ]
+            session.add_all(rows)
             await session.flush()
-            return self._row_to_model(row)
+            return tuple(self._row_to_model(row) for row in rows)
 
     async def list(self, *, agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
         async with self._sessions() as session:

@@ -28,6 +28,7 @@ from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
     KubernetesGrantSourceError,
+    KubernetesGrantSpec,
     KubernetesGrantStatus,
     KubernetesNamespacesGrantScope,
     KubernetesNonResourceGrantScope,
@@ -152,6 +153,76 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
             )
             assert released.status is KubernetesGrantStatus.RELEASED
             assert await repository.active_for_agent(agent_id=agent_id, now=_NOW) == ()
+
+        client.portal.call(exercise)
+
+
+def test_repository_atomically_creates_multiple_grants_from_one_source(make_client: Any) -> None:
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(_default_agent, sessions)
+        source_tool_call_id = client.portal.call(partial(_source_call, sessions, binding_id=binding_id))
+        repository = PostgresKubernetesGrantRepository(sessions)
+
+        async def exercise() -> None:
+            grants = await repository.create_many(
+                agent_id=agent_id,
+                source_tool_call_id=source_tool_call_id,
+                grants=(
+                    KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
+                    KubernetesGrantSpec(scope=KubernetesClusterGrantScope(), rules=(_CLUSTER_RULE,)),
+                ),
+                created_at=_NOW,
+                expires_at=_NOW + timedelta(minutes=5),
+            )
+            assert len(grants) == 2
+            assert len({grant.grant_id for grant in grants}) == 2
+            assert {grant.source_tool_call_id for grant in grants} == {source_tool_call_id}
+            assert {grant.created_at for grant in grants} == {_NOW}
+            assert {grant.expires_at for grant in grants} == {_NOW + timedelta(minutes=5)}
+
+            retried = await repository.create_many(
+                agent_id=agent_id,
+                source_tool_call_id=source_tool_call_id,
+                grants=(
+                    KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
+                    KubernetesGrantSpec(scope=KubernetesClusterGrantScope(), rules=(_CLUSTER_RULE,)),
+                ),
+                created_at=_NOW + timedelta(seconds=10),
+                expires_at=_NOW + timedelta(minutes=10),
+            )
+            assert tuple(grant.grant_id for grant in retried) == tuple(grant.grant_id for grant in grants)
+            assert {grant.created_at for grant in retried} == {_NOW}
+            assert {grant.expires_at for grant in retried} == {_NOW + timedelta(minutes=5)}
+
+            with pytest.raises(KubernetesGrantSourceError, match="already created a different"):
+                await repository.create_many(
+                    agent_id=agent_id,
+                    source_tool_call_id=source_tool_call_id,
+                    grants=(KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),),
+                    created_at=_NOW + timedelta(seconds=10),
+                    expires_at=_NOW + timedelta(minutes=10),
+                )
+
+            async with sessions() as session:
+                rows = (
+                    await session.scalars(
+                        select(KubernetesGrantRow).where(KubernetesGrantRow.source_tool_call_id == source_tool_call_id)
+                    )
+                ).all()
+                source_index = await session.scalar(
+                    text(
+                        "SELECT indexdef FROM pg_indexes "
+                        "WHERE schemaname = current_schema() AND tablename = 'kubernetes_grants' "
+                        "AND indexname = 'idx_kubernetes_grants_source_tool_call'"
+                    )
+                )
+            assert len(rows) == 2
+            assert source_index is not None
+            assert "UNIQUE" not in source_index
+            assert "(source_tool_call_id)" in source_index
 
         client.portal.call(exercise)
 

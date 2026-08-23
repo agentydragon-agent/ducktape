@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -23,6 +23,7 @@ from haku.console.kubernetes_authorization import (
     SubjectAccessReviewResult,
 )
 from haku.console.kubernetes_grant_models import KubernetesGrantDecision, KubernetesGrantScopeKind
+from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.tool_call_actor import AgentActor
 
 REQUEST = {
@@ -144,6 +145,11 @@ async def _async_agent() -> AgentActor:
     return _agent()
 
 
+class EmptyGrantRepository:
+    async def active_for_agent(self, *, agent_id, now):
+        return ()
+
+
 @pytest.mark.asyncio
 async def test_service_uses_fixed_configured_subject_and_request_attributes() -> None:
     sar = FakeSarClient()
@@ -190,6 +196,22 @@ def test_endpoint_returns_sar_decision() -> None:
     assert body["reason"] == "RBAC denied"
     assert body["source"] == "sar"
     assert body["decision_id"].startswith("sar:")
+
+
+@pytest.mark.asyncio
+async def test_clean_sar_denial_with_real_empty_grant_service_remains_denied() -> None:
+    grants = KubernetesGrantService(
+        cast(Any, EmptyGrantRepository()),
+        max_lifetime=datetime.timedelta(hours=1),
+        clock=lambda: datetime.datetime(2026, 8, 23, tzinfo=datetime.UTC),
+    )
+    result = await _service(
+        FakeSarClient(result=SubjectAccessReviewResult(allowed=False, reason="RBAC denied")), grants=grants
+    ).authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))
+
+    assert result.allowed is False
+    assert result.reason == "RBAC denied"
+    assert result.source is KubernetesAuthorizationSource.SAR
 
 
 @pytest.mark.parametrize(
