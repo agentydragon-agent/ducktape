@@ -111,7 +111,6 @@ filegroup(
         "keda/helmrelease.yaml",
         "kustomization.yaml",
         "kyverno/policies/inject-haku-egress-proxy.yaml",
-        "vm-images-publisher/public-coder-agent-metadata-reader.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )
