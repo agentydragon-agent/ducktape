@@ -9,9 +9,10 @@ import (
 
 func TestParseEnvironmentConfig(t *testing.T) {
 	config, err := parseEnvironmentConfig(env.Options{Environment: map[string]string{
-		"HAKU_KUBE_AUTHORIZATION_URL":   "https://console.test/api/internal/kubernetes/authorize",
-		"KUBERNETES_SERVICE_HOST":       "10.0.0.1",
-		"KUBERNETES_SERVICE_PORT_HTTPS": "6443",
+		"HAKU_KUBE_AUTHORIZATION_URL":            "https://console.test/api/internal/kubernetes/authorize",
+		"HAKU_KUBE_STREAM_REVALIDATION_INTERVAL": "7s",
+		"KUBERNETES_SERVICE_HOST":                "10.0.0.1",
+		"KUBERNETES_SERVICE_PORT_HTTPS":          "6443",
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -19,8 +20,11 @@ func TestParseEnvironmentConfig(t *testing.T) {
 	if config.AuthorizationURL.String() != "https://console.test/api/internal/kubernetes/authorize" {
 		t.Fatalf("authorization URL = %q", config.AuthorizationURL.String())
 	}
-	if config.ListenAddress != ":8080" || config.AuthorizationTimeout != 3*time.Second || config.RequestTimeout != 30*time.Second || config.StreamRevalidationInterval != 5*time.Second || config.MaxRequestBytes != 10<<20 {
+	if config.ListenAddress != ":8080" || config.AuthorizationTimeout != 3*time.Second || config.RequestTimeout != 30*time.Second || config.MaxRequestBytes != 10<<20 {
 		t.Fatalf("unexpected defaults: %#v", config)
+	}
+	if config.StreamRevalidationInterval != 7*time.Second {
+		t.Fatalf("stream revalidation interval = %s", config.StreamRevalidationInterval)
 	}
 	if config.kubernetesServicePort() != "6443" {
 		t.Fatalf("Kubernetes service port = %q", config.kubernetesServicePort())
