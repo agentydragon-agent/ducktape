@@ -10,3 +10,7 @@ metadata:
     pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/audit: privileged
     pod-security.kubernetes.io/warn: privileged
+    # Events are included in namespace-diagnostics-reader and are safe for the
+    # public-coder diagnostics surface; the old narrower RoleBinding is no
+    # longer needed here.
+    rbac.ducktape.io/public-coder-namespace-diagnostics-reader: "true"

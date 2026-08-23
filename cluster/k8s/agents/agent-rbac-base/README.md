@@ -35,8 +35,6 @@ Depends on: `agent-rbac-base`, `kyverno-policies`.
 Contains:
 
 - `ClusterRoleBinding` for `cluster-diagnostics-reader` (cluster-wide)
-- `RoleBinding` for `logs-configmaps-reader` in `flux-system` for the interactive
-  Claude Web group and agent-box Codex
 
 ### 3. Per-service `<service>/agent-rbac/` — exceptional namespace-scoped RBAC
 
@@ -112,10 +110,10 @@ unchanged. Haku's full enforcement inventory: <../../../../haku/docs/security.md
 ### 5. agent-box Codex — diagnostics only
 
 The self-hosted Codex user on the `agent-box` VM authenticates as group
-`oidc-ksbx-groups:agent-box-codex`. Its initial access is intentionally smaller
-than Claude web or Haku: it is co-subjected only onto the secret-free
-`cluster-diagnostics-reader` binding plus the `flux-system` logs/configmaps
-binding. It does not receive a writable sandbox namespace.
+`oidc-ksbx-groups:agent-box-codex`. Its access is intentionally smaller than
+Claude web or Haku: it is co-subjected only onto the secret-free
+`cluster-diagnostics-reader` binding. It does not receive a writable sandbox
+namespace or the separate `logs-configmaps-reader` class.
 
 @permissions.md
 

@@ -255,7 +255,6 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         agent_dir / "k8s-reader" / "role.yaml",
         agent_dir / "k8s-reader" / "node-reader.yaml",
         k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
-        k8s_dir / "vm-images-publisher" / "public-coder-agent-metadata-reader.yaml",
     )
     standing_role_refs = {
         (obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"])
@@ -267,7 +266,6 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         ("public-coder-agent", "Role", "public-coder-agent-reader"),
         (None, "ClusterRole", "public-coder-agent-node-reader"),
         ("ducktape-flux", "Role", "ducktape-flux-reader"),
-        ("vm-images-publisher", "Role", "public-coder-agent-metadata-reader"),
     }
     assert standing_subject not in ceiling["subjects"]
 
