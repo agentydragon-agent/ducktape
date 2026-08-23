@@ -3,7 +3,7 @@
 **Status: built** (decided 2026-08-12). The console drives Claude Code's newline-delimited JSON
 protocol itself: <../cli_protocol/frames.py> types the control channel, `ClaudeCli`
 (<../console/x/claude_code/client.py>) reads both channels and owns `initialize` and `interrupt`,
-and `runtime/x/bridge/options.py` builds the launch argv. No Python imports the Agent SDK. Why each of
+and `runtime/x/bridge/claude_options.py` builds the launch argv. No Python imports the Agent SDK. Why each of
 those is ours rather than the SDK's is written where it is now maintained — those modules'
 docstrings — and the wire itself is <../cli_protocol/protocol.md>.
 

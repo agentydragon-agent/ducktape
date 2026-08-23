@@ -5,6 +5,7 @@ from __future__ import annotations
 from haku.console.config import ClaudeRuntimeConfig
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
+from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry, RuntimeResources
 from haku.console.x.sandbox_claims import SandboxClaims
 from haku.console.x.system_prompt import SystemPromptTemplate
@@ -12,8 +13,8 @@ from haku.console.x.system_prompt import SystemPromptTemplate
 
 def projection_registry() -> RuntimeRegistry:
     """All linked provider interpreters, without execution credentials or sandbox resources."""
-    adapter = ClaudeRuntimeAdapter()
-    return RuntimeRegistry({adapter.kind: adapter})
+    adapters = (ClaudeRuntimeAdapter(), CodexRuntimeAdapter())
+    return RuntimeRegistry({adapter.kind: adapter for adapter in adapters})
 
 
 def claude_registry(

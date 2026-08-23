@@ -316,12 +316,12 @@ def create_app(
             system_prompt=SystemPromptTemplate.from_path(claude_runtime.system_prompt_template),
         )
     else:
-        # Runtime-disabled replicas can still inspect the one durable runtime kind the Console
-        # currently knows. This registry has projection only: no claims, credentials, or launcher.
+        # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
+        # registry has projection only: no claims, credentials, or launcher.
         runtime_registry = runtime_catalog.projection_registry()
-    # All production read and write paths share the same catalog. A future adapter registration is
-    # therefore enough for both execution and forensic projection; no hidden Claude fallback can
-    # reinterpret another runtime's immutable conversation rows.
+    # All read and write paths share one registry. Projection-only composition may link dormant
+    # adapters, while launch-capable production composition includes only deliberately supported
+    # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
     session_store = SessionStore(db_sessions, runtime_registry)
 
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
@@ -342,8 +342,8 @@ def create_app(
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     # Matrix chat surface, absent when unconfigured: the console serves its approval queue
-    # without it and simply does not run the sync loop. Neutral runtime supervision is composed after the
-    # channel-neutral Claude runtime because it provisions sessions through that service.
+    # without it and simply does not run the sync loop. Neutral runtime supervision is composed
+    # after the configured runtime catalog because it provisions sessions through that service.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
     matrix_notices: matrix_room_subscription.RoomNotices | None = None

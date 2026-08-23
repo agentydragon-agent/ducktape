@@ -3,8 +3,8 @@
 Pinned protocol evidence: ``@openai/codex@0.144.1`` / upstream tag ``rust-v0.144.1``.  The exact
 schema and source references are recorded in ``docs/protocol_evidence.md``.
 
-This is a dormant adapter.  Nothing in the session runtime imports or registers it.  A later
-runtime-selection change can give it recorded server messages behind a Codex-owned turn handler.
+The provider runtime wraps this reducer for live frames and complete-log reprojection. Native
+methods and item shapes remain private to this package; only neutral conversation events leave it.
 
 Only facts represented by the existing conversation vocabulary are projected:
 
@@ -28,6 +28,7 @@ from types import MappingProxyType
 from typing import Any
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.x.codex_app_server import frames
 from haku.console.x.codex_app_server.protocol import Notification, Request, Response, UnknownMessage, parse_message
 from haku.console.x.conversation_events import (
     CallRef,
@@ -64,6 +65,7 @@ class ProjectionState:
     open_message: OpenItem | None = None
     open_reasoning: OpenItem | None = None
     seen_call_ids: frozenset[str] = frozenset()
+    completed_call_ids: frozenset[str] = frozenset()
 
 
 _IGNORED_METHODS = frozenset(
@@ -96,7 +98,7 @@ def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[Pr
         open_message=state.open_message,
         open_reasoning=state.open_reasoning,
         seen_call_ids=set(state.seen_call_ids),
-        completed_call_ids=set(),
+        completed_call_ids=set(state.completed_call_ids),
     )
     for frame in frames:
         projector.fold(frame)
@@ -105,6 +107,7 @@ def project(state: ProjectionState, frames: Iterable[RecordedFrame]) -> tuple[Pr
             open_message=projector.open_message,
             open_reasoning=projector.open_reasoning,
             seen_call_ids=frozenset(projector.seen_call_ids),
+            completed_call_ids=frozenset(projector.completed_call_ids),
         ),
         projector.projected(),
     )
@@ -167,7 +170,7 @@ class _Projector:
                 self._command_delta(frame.frame_seq, params)
             case "item/completed":
                 self._item_completed(frame.frame_seq, params)
-            case "turn/completed":
+            case frames.TURN_COMPLETED:
                 self._turn_completed(frame.frame_seq, params)
             case _:
                 self._unprojected(message.method)
@@ -182,18 +185,22 @@ class _Projector:
             self._unprojected("item/started/identity")
             return
         if item_type == "agentMessage":
-            if self.open_message is not None and self.open_message.backend_item_id != item_id:
+            if self.open_message is not None and self.open_message.backend_item_id not in (None, item_id):
                 self._close_message()
             if self.open_message is None:
                 self.open_message = OpenItem(frame_seq, frame_seq, item_id)
                 self.events.append(MessageStarted(provenance=FrameRange(frame_seq, frame_seq)))
+            elif self.open_message.backend_item_id is None:
+                self.open_message = replace(self.open_message, last_frame_seq=frame_seq, backend_item_id=item_id)
             return
         if item_type == "reasoning":
-            if self.open_reasoning is not None and self.open_reasoning.backend_item_id != item_id:
+            if self.open_reasoning is not None and self.open_reasoning.backend_item_id not in (None, item_id):
                 self._close_reasoning()
             if self.open_reasoning is None:
                 self.open_reasoning = OpenItem(frame_seq, frame_seq, item_id)
                 self.events.append(ReasoningStarted(provenance=FrameRange(frame_seq, frame_seq)))
+            elif self.open_reasoning.backend_item_id is None:
+                self.open_reasoning = replace(self.open_reasoning, last_frame_seq=frame_seq, backend_item_id=item_id)
             return
         if item_type in {"commandExecution", "mcpToolCall"}:
             self._start_tool(item, frame_seq)
@@ -211,6 +218,8 @@ class _Projector:
         if self.open_message is None:
             self.open_message = OpenItem(frame_seq, frame_seq, item_id)
             self.events.append(MessageStarted(provenance=FrameRange(frame_seq, frame_seq)))
+        elif self.open_message.backend_item_id is None:
+            self.open_message = replace(self.open_message, backend_item_id=item_id)
         if self.open_message.backend_item_id != item_id:
             self._unprojected("item/agentMessage/delta/itemId")
             return
@@ -228,6 +237,8 @@ class _Projector:
         if self.open_reasoning is None:
             self.open_reasoning = OpenItem(frame_seq, frame_seq, item_id)
             self.events.append(ReasoningStarted(provenance=FrameRange(frame_seq, frame_seq)))
+        elif self.open_reasoning.backend_item_id is None:
+            self.open_reasoning = replace(self.open_reasoning, backend_item_id=item_id)
         if self.open_reasoning.backend_item_id != item_id:
             self._unprojected("item/reasoning/summaryTextDelta/itemId")
             return
@@ -280,12 +291,14 @@ class _Projector:
         if not isinstance(text, str):
             self._unprojected("item/completed/agentMessage/text")
             return
-        if self.open_message is None or self.open_message.backend_item_id != item_id:
+        if self.open_message is None or self.open_message.backend_item_id not in (None, item_id):
             if self.open_message is not None:
                 self._close_message()
             self.open_message = OpenItem(frame_seq, frame_seq, item_id)
             self.events.append(MessageStarted(provenance=FrameRange(frame_seq, frame_seq)))
         assert self.open_message is not None
+        if self.open_message.backend_item_id is None:
+            self.open_message = replace(self.open_message, backend_item_id=item_id)
         suffix = _undelivered(text, self.open_message.delivered)
         if suffix:
             self.events.append(ItemSegment(item=_MESSAGE, text=suffix, provenance=FrameRange(frame_seq, frame_seq)))
@@ -301,12 +314,14 @@ class _Projector:
             self._unprojected("item/completed/reasoning/summary")
             return
         text = "\n\n".join(summary)
-        if self.open_reasoning is None or self.open_reasoning.backend_item_id != item_id:
+        if self.open_reasoning is None or self.open_reasoning.backend_item_id not in (None, item_id):
             if self.open_reasoning is not None:
                 self._close_reasoning()
             self.open_reasoning = OpenItem(frame_seq, frame_seq, item_id)
             self.events.append(ReasoningStarted(provenance=FrameRange(frame_seq, frame_seq)))
         assert self.open_reasoning is not None
+        if self.open_reasoning.backend_item_id is None:
+            self.open_reasoning = replace(self.open_reasoning, backend_item_id=item_id)
         suffix = _undelivered(text, self.open_reasoning.delivered)
         if suffix:
             self.events.append(ItemSegment(item=_REASONING, text=suffix, provenance=FrameRange(frame_seq, frame_seq)))

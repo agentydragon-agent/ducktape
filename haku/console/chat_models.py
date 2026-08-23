@@ -36,6 +36,7 @@ class RuntimeKind(StrEnum):
     """
 
     CLAUDE_CODE = "claude_code"
+    CODEX_APP_SERVER = "codex_app_server"
 
 
 class ChatSurface(StrEnum):

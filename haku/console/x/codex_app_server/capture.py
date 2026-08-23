@@ -1,9 +1,9 @@
-"""Bounded, sanitized capture of a real Codex app-server stdio exchange.
+"""Bounded, sanitized capture of the same Codex client used by Console.
 
-The utility writes only direction-labelled protocol JSONL.  It never writes stderr, the child
-environment, or raw protocol messages: every record passes through ``Sanitizer`` before it reaches
-disk.  Sanitization is a safety net, not commit approval; ``testdata/README.md`` requires a human
-review before promoting a capture to a fixture.
+The utility supplies a direct stdio ``FrameChannel`` and a sanitizing ``FrameSink`` to
+``CodexAppServer``.  Initialization, thread creation, request correlation, and turn handling remain
+owned by the runtime client; capture is only another transport/recording composition.  It writes
+neither stderr, the child environment, nor unsanitized protocol messages.
 """
 
 from __future__ import annotations
@@ -13,12 +13,16 @@ import asyncio
 import json
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from haku.console.x.codex_app_server import frames
+from haku.console.x.codex_app_server.client import CodexAppServer, CodexThread
 from haku.console.x.codex_app_server.protocol import Direction
+from haku.runtime.x.bridge.client import RecordedFrame
+from haku.runtime.x.bridge.protocol import HarnessFrame
 
 _SENSITIVE_KEY = re.compile(
     r"^(?:.*(?:authorization|credential|password|secret|api[_-]?key|token|cookie|jwt|signature)|sig)$", re.IGNORECASE
@@ -91,6 +95,8 @@ class Sanitizer:
             return "turn"
         if "sessionId" in parent and "cwd" in parent:
             return "thread"
+        if "method" in parent or "result" in parent or "error" in parent:
+            return "request"
         return None
 
     def _placeholder(self, category: str, value: str) -> str:
@@ -117,49 +123,24 @@ class Sanitizer:
 
 
 @dataclass(slots=True)
-class Capture:
-    process: asyncio.subprocess.Process
+class SanitizingCapture:
+    """A durable-frame sink that emits only bounded sanitized trace records."""
+
     output: Path
     sanitizer: Sanitizer
-    timeout_seconds: float
     max_messages: int
     max_bytes: int = _DEFAULT_MAX_BYTES
     next_seq: int = 1
     messages: int = 0
     bytes_written: int = 0
 
-    async def send(self, message: dict[str, Any]) -> None:
-        assert self.process.stdin is not None
-        encoded = json.dumps(message, separators=(",", ":"), ensure_ascii=False).encode() + b"\n"
-        self.process.stdin.write(encoded)
-        await self.process.stdin.drain()
-        self._record(Direction.CLIENT_TO_SERVER, message)
+    async def sent(self, frame: HarnessFrame) -> int:
+        return self._record(Direction.CLIENT_TO_SERVER, frame.frame)
 
-    async def receive(self) -> dict[str, Any]:
-        if self.messages >= self.max_messages:
-            raise RuntimeError(f"capture exceeded --max-messages={self.max_messages}")
-        assert self.process.stdout is not None
-        line = await asyncio.wait_for(self.process.stdout.readline(), timeout=self.timeout_seconds)
-        if not line:
-            raise RuntimeError("codex app-server closed stdout before turn/completed")
-        try:
-            message = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("codex app-server emitted non-JSON stdout") from exc
-        if not isinstance(message, dict):
-            raise RuntimeError("codex app-server emitted a non-object JSON message")
-        self._record(Direction.SERVER_TO_CLIENT, message)
-        return message
+    async def received(self, frame: HarnessFrame) -> RecordedFrame:
+        return RecordedFrame(fresh=True, frame_seq=self._record(Direction.SERVER_TO_CLIENT, frame.frame))
 
-    async def response(self, request_id: int) -> dict[str, Any]:
-        while True:
-            message = await self.receive()
-            if message.get("id") == request_id and ("result" in message or "error" in message):
-                if "error" in message:
-                    raise RuntimeError(f"app-server request {request_id} failed; inspect sanitized capture")
-                return message
-
-    def _record(self, direction: Direction, message: dict[str, Any]) -> None:
+    def _record(self, direction: Direction, message: dict[str, Any]) -> int:
         if self.messages >= self.max_messages:
             raise RuntimeError(f"capture exceeded --max-messages={self.max_messages}")
         record = {"seq": self.next_seq, "direction": direction.value, "message": self.sanitizer.sanitize(message)}
@@ -167,11 +148,56 @@ class Capture:
         encoded_size = len(serialized.encode())
         if self.bytes_written + encoded_size > self.max_bytes:
             raise RuntimeError(f"capture exceeded --max-bytes={self.max_bytes}")
+        frame_seq = self.next_seq
         self.messages += 1
         self.next_seq += 1
         self.bytes_written += encoded_size
         with self.output.open("a", encoding="utf-8") as stream:
             stream.write(serialized)
+        return frame_seq
+
+
+class StdioFrameChannel:
+    """Codex's JSONL stdio as the runtime client's native frame channel."""
+
+    def __init__(self, process: asyncio.subprocess.Process, timeout_seconds: float):
+        self._process = process
+        self._timeout_seconds = timeout_seconds
+        self._closed = False
+
+    async def connect(self) -> None:
+        return None
+
+    async def write(self, frame: HarnessFrame) -> None:
+        assert self._process.stdin is not None
+        self._process.stdin.write(json.dumps(frame.frame, separators=(",", ":"), ensure_ascii=False).encode() + b"\n")
+        await self._process.stdin.drain()
+
+    async def read_messages(self) -> AsyncIterator[HarnessFrame]:
+        assert self._process.stdout is not None
+        while True:
+            line = await asyncio.wait_for(self._process.stdout.readline(), timeout=self._timeout_seconds)
+            if not line:
+                return
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise RuntimeError("codex app-server emitted non-JSON stdout") from error
+            if not isinstance(message, dict):
+                raise RuntimeError("codex app-server emitted a non-object JSON message")
+            yield HarnessFrame(frame=message)
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._process.stdin is not None:
+            self._process.stdin.close()
+        try:
+            await asyncio.wait_for(self._process.wait(), timeout=2)
+        except TimeoutError:
+            self._process.terminate()
+            await self._process.wait()
 
 
 async def capture(args: argparse.Namespace) -> None:
@@ -190,75 +216,27 @@ async def capture(args: argparse.Namespace) -> None:
         limit=1024 * 1024,
     )
     stderr_drain = asyncio.create_task(_discard_stderr(process))
-    recorder = Capture(
-        process=process,
+    channel = StdioFrameChannel(process, args.timeout_seconds)
+    sink = SanitizingCapture(
         output=output,
         sanitizer=Sanitizer.from_process(workspace=workspace, prompt=args.prompt),
-        timeout_seconds=args.timeout_seconds,
         max_messages=args.max_messages,
         max_bytes=args.max_bytes,
     )
+    client = CodexAppServer(
+        channel,
+        sink,
+        CodexThread(cwd=str(workspace), model=args.model, approval_policy="never", sandbox="workspaceWrite"),
+        request_timeout=args.timeout_seconds,
+    )
     try:
-        await recorder.send(
-            {
-                "method": "initialize",
-                "id": 1,
-                "params": {
-                    "clientInfo": {
-                        "name": "haku_codex_trace_capture",
-                        "title": "Haku Codex trace capture",
-                        "version": "0.1.0",
-                    },
-                    "capabilities": {"experimentalApi": False},
-                },
-            }
-        )
-        await recorder.response(1)
-        await recorder.send({"method": "initialized"})
-
-        thread_params: dict[str, Any] = {
-            "cwd": str(workspace),
-            "approvalPolicy": "never",
-            "sandbox": "workspaceWrite",
-            "ephemeral": True,
-        }
-        if args.model is not None:
-            thread_params["model"] = args.model
-        await recorder.send({"method": "thread/start", "id": 2, "params": thread_params})
-        thread_response = await recorder.response(2)
-        thread_id = _nested_string(thread_response, "result", "thread", "id")
-
-        await recorder.send(
-            {
-                "method": "turn/start",
-                "id": 3,
-                "params": {
-                    "threadId": thread_id,
-                    "input": [{"type": "text", "text": args.prompt, "text_elements": []}],
-                },
-            }
-        )
-        turn_response = await recorder.response(3)
-        turn_id = _nested_string(turn_response, "result", "turn", "id")
-        while True:
-            message = await recorder.receive()
-            params = message.get("params")
-            if (
-                message.get("method") == "turn/completed"
-                and isinstance(params, dict)
-                and params.get("threadId") == thread_id
-                and isinstance(params.get("turn"), dict)
-                and params["turn"].get("id") == turn_id
-            ):
+        await client.connect()
+        await client.query(args.prompt)
+        async for received in client.frames():
+            if frames.terminal_turn(received.envelope.frame) is not None:
                 break
     finally:
-        if process.stdin is not None:
-            process.stdin.close()
-        try:
-            await asyncio.wait_for(process.wait(), timeout=2)
-        except TimeoutError:
-            process.terminate()
-            await process.wait()
+        await client.aclose()
         await stderr_drain
 
 
@@ -272,17 +250,6 @@ async def _discard_stderr(process: asyncio.subprocess.Process) -> None:
 def _capture_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     """Resolve paths outside async code; these operations are immediate and bounded."""
     return Path(args.cwd).resolve(), Path(args.output).resolve()
-
-
-def _nested_string(value: Mapping[str, Any], *path: str) -> str:
-    current: Any = value
-    for key in path:
-        if not isinstance(current, dict):
-            raise RuntimeError(f"missing response field: {'.'.join(path)}")
-        current = current.get(key)
-    if not isinstance(current, str):
-        raise RuntimeError(f"missing response field: {'.'.join(path)}")
-    return current
 
 
 def parser() -> argparse.ArgumentParser:

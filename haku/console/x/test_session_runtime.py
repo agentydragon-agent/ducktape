@@ -61,6 +61,7 @@ from haku.console.x.claude_code.testing.wire import (
 )
 from haku.console.x.conftest import age_lease, answers, attach_channel, configured_runtimes, lease_of, runtime_config
 from haku.console.x.conversation_events import (
+    CallRef,
     ConversationEvent as NeutralConversationEvent,
     FrameRange,
     ItemSegment,
@@ -68,6 +69,9 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenRef,
     Projection,
+    ReasoningStarted,
+    ToolCallCompleted,
+    ToolCallStarted,
     TurnCompleted,
 )
 from haku.console.x.conversation_history import ConversationHistory
@@ -76,6 +80,7 @@ from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
     Checkpoint,
     FrameEffects,
+    OpenItemSeed,
     RuntimeRegistry,
     TurnCompletion,
     TurnProjectionSeed,
@@ -87,6 +92,7 @@ from haku.console.x.session_runtime import (
     ConversationCreateRequest,
     RolloutRecorder,
     SessionService,
+    _inherited,
     _replaying,
     create_conversation,
 )
@@ -129,17 +135,16 @@ class _RecordingLaunchAuthorizer:
 
     async def __call__(
         self,
+        db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
         runtime_kind: RuntimeKind,
         *,
         expected_profile_id: str | None = None,
-        db: AsyncSession | None = None,
     ) -> LaunchIdentity:
-        assert db is not None
         assert db.in_transaction()
         self.calls.append((agent_id, expected_profile_id, db, db.in_transaction()))
-        return await self._delegate(operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id, db=db)
+        return await self._delegate(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
 
 
 async def test_replacement_pins_identity_after_agent_profile_change_and_shares_store_transaction(
@@ -438,9 +443,6 @@ class _UnrelatedRuntimeAdapter:
 
     def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
         return any(frame.frame.get("动作") == "输入" for frame in frames)
-
-    def build_launch(self, launch):
-        raise AssertionError("this projection-only test must not launch a runner")
 
     def client(self, websocket, launch, progress, frames_to):
         raise AssertionError("this projection-only test must not construct a runner client")
@@ -937,6 +939,73 @@ async def test_adoption_deduplicates_a_completed_copy_of_a_streamed_tool_call(
     ]
     assert len(calls) == 1
     assert (calls[0].call_id, calls[0].text, calls[0].status) == ("toolu_01", "ok", ItemStatus.COMPLETE)
+
+
+async def test_adoption_restores_open_reasoning_and_completed_call_ids_for_provider_owned_state(
+    chat_store, chat_service, recording_claims, operator_id
+) -> None:
+    session = await _allocated_session(chat_service, recording_claims, operator_id)
+    session_id = session.session_id
+    await chat_store.authenticate_bridge(session_id, recording_claims.tokens[session_id])
+    await chat_store.enqueue_prompt(operator_id, session_id, "continue", SPA_ORIGIN)
+    started = await chat_store.next_prompt(session_id)
+    assert started is not None
+    await chat_store.record_frame(session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"})
+    reasoning = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"native": "reasoning"}
+    )
+    await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        reasoning.frame_seq,
+        (
+            ReasoningStarted(provenance=FrameRange(reasoning.frame_seq, reasoning.frame_seq)),
+            ItemSegment(
+                item=OpenRef(ItemType.REASONING),
+                text="half thought",
+                provenance=FrameRange(reasoning.frame_seq, reasoning.frame_seq),
+            ),
+        ),
+    )
+    call = await chat_store.record_frame(
+        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"native": "completed-call"}
+    )
+    await chat_store.apply_frame(
+        session_id,
+        started.turn_id,
+        call.frame_seq,
+        (
+            ToolCallStarted(
+                call_id="call-done",
+                tool_name="commandExecution",
+                arguments={"command": "true", "cwd": "/workspace"},
+                provenance=FrameRange(call.frame_seq, call.frame_seq),
+            ),
+            ToolCallCompleted(
+                item=CallRef("call-done"),
+                structured={"exitCode": 0},
+                outcome=ToolOutcome.SUCCEEDED,
+                provenance=FrameRange(call.frame_seq, call.frame_seq),
+            ),
+        ),
+    )
+
+    resumed = await chat_store.adopt_open_turn(session_id)
+
+    assert resumed is not None
+    assert resumed.reasoning is not None
+    assert resumed.reasoning.text == "half thought"
+    assert resumed.seen_call_ids == frozenset({"call-done"})
+    assert resumed.completed_call_ids == frozenset({"call-done"})
+    assert _inherited(resumed) == TurnProjectionSeed(
+        open_reasoning=OpenItemSeed(
+            text="half thought",
+            first_frame_seq=resumed.reasoning.first_frame_seq,
+            last_frame_seq=resumed.reasoning.last_frame_seq,
+        ),
+        seen_call_ids=frozenset({"call-done"}),
+        completed_call_ids=frozenset({"call-done"}),
+    )
 
 
 async def test_adoption_replays_a_tool_call_composition_from_its_start(

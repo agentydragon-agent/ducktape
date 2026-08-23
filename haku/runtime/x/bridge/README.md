@@ -2,8 +2,8 @@
 
 The runner is deliberately thin. It launches the immutable harness selected by `--harness`, copies
 native newline-delimited JSON between the harness stdio and the Console WebSocket, and retains an
-ordered replay window. Claude is the only production harness in this change; Codex is a later
-change.
+ordered replay window. Claude is the only deploy-configured harness; Codex implements the same
+seams but has no production runtime resources yet.
 
 | file                  | role                                              |
 | --------------------- | ------------------------------------------------- |
@@ -12,11 +12,12 @@ change.
 | `client.py`           | provider-neutral client/sink value types          |
 | `backend.py`          | process-launch seam                               |
 | `backend_registry.py` | harnesses linked into the shared runner binary    |
-| `options.py`          | Claude launch material and executable             |
+| `claude_options.py`   | Claude launch material and executable             |
+| `codex_options.py`    | Codex app-server launch material and executable   |
 | `runner.py`           | sandbox process bridge                            |
 
-Claude's control protocol client lives behind the Console adapter in
-`haku/console/x/claude_code/client.py`.
+Provider protocol clients live behind their Console adapters in `haku/console/x/claude_code/` and
+`haku/console/x/codex_app_server/`.
 
 ## v3 framing
 
@@ -28,9 +29,10 @@ Every bridge frame is discriminated by the outer `kind`. Native harness JSON is 
 - `end_input` — Console → runner stdin close
 - `setup_output` — runner bootstrap/stderr bytes
 
-The native frame's Claude `type`, JSON-RPC `method`, and other fields are never copied into the
-outer kind or `session_frames.kind`. For Claude, the wire shape is
-`{"kind":"harness_frame","seq":...,"frame":{"type":"assistant",...}}`.
+The native frame's Claude `type`, Codex `method`, and other fields are never copied into the outer
+kind or `session_frames.kind`. For example, the wire carries either
+`{"kind":"harness_frame","seq":...,"frame":{"type":"assistant",...}}` or
+`{"kind":"harness_frame","seq":...,"frame":{"method":"turn/completed",...}}`.
 The database stores that exact native object in `session_frames.payload` for inspection/export.
 
 Protocol v3 is intentionally incompatible. A runner that only advertises v2 has no common version,

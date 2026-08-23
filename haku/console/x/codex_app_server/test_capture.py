@@ -1,10 +1,7 @@
-import asyncio
-from typing import cast
-
 import pytest
 import pytest_bazel
 
-from haku.console.x.codex_app_server.capture import Capture, Sanitizer
+from haku.console.x.codex_app_server.capture import Sanitizer, SanitizingCapture
 from haku.console.x.codex_app_server.protocol import Direction
 
 
@@ -51,11 +48,9 @@ def test_sanitizer_never_serializes_credentials_environment_paths_or_native_ids(
 def test_capture_refuses_to_write_past_the_total_byte_budget(tmp_path):
     output = tmp_path / "capture.jsonl"
     output.write_text("")
-    capture = Capture(
-        process=cast(asyncio.subprocess.Process, None),
+    capture = SanitizingCapture(
         output=output,
         sanitizer=Sanitizer(workspace="/workspace", prompt="prompt", environment_values=()),
-        timeout_seconds=1,
         max_messages=10,
         max_bytes=20,
     )

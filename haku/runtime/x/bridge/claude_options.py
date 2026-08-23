@@ -4,7 +4,7 @@ Both halves of what `backend.CliBackend` calls a backend, in one module because 
 the flags below only mean anything to the executable `ClaudeBackend` starts. Everything generic
 about running *an* agent CLI is <backend.py>.
 
-`build_claude_launch` is the one place a session's argv is decided, and `test_options.py` pins it
+`build_claude_launch` is the one place a session's argv is decided, and `test_claude_options.py` pins it
 exactly. The flag spellings and their order match what the Agent SDK emitted for these options at
 0.2.128. The CLI's own protocol reference is <../../../cli_protocol/README.md>.
 """

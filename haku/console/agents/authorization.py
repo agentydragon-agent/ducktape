@@ -611,61 +611,22 @@ class PostgresAgentAuthority:
 
     async def launch_authorization(
         self,
+        db: AsyncSession,
         *,
         operator_id: UUID,
         agent_id: UUID,
         access_profile_id: str | None = None,
         binding_id: UUID | None = None,
-        db: AsyncSession | None = None,
     ) -> StaticAgentAuthorization:
-        """Resolve active launch authority, optionally in a caller-owned transaction.
-
-        The caller-owned form is the launch linearization point: the locked Operator, Agent,
-        binding, and static credential are validated in the same transaction that inserts the
-        conversation/session or Matrix attachment.  The default form preserves direct callers that
-        only need an authorization read.
-        """
-        if db is not None:
-            return await self._launch_authorization(
-                db,
-                operator_id=operator_id,
-                agent_id=agent_id,
-                access_profile_id=access_profile_id,
-                binding_id=binding_id,
-            )
-        return await self._database_call(
-            lambda: self._database_launch_authorization(
-                operator_id=operator_id, agent_id=agent_id, access_profile_id=access_profile_id, binding_id=binding_id
-            )
-        )
-
-    async def _database_launch_authorization(
-        self, *, operator_id: UUID, agent_id: UUID, access_profile_id: str | None, binding_id: UUID | None
-    ) -> StaticAgentAuthorization:
-        async with self._sessions.begin() as session:
-            return await self._launch_authorization(
-                session,
-                operator_id=operator_id,
-                agent_id=agent_id,
-                access_profile_id=access_profile_id,
-                binding_id=binding_id,
-            )
-
-    async def _launch_authorization(
-        self,
-        session: AsyncSession,
-        *,
-        operator_id: UUID,
-        agent_id: UUID,
-        access_profile_id: str | None,
-        binding_id: UUID | None,
-    ) -> StaticAgentAuthorization:
+        """Resolve active launch authority at the caller's transaction linearization point."""
+        if not db.in_transaction():
+            raise RuntimeError("launch authorization requires an active caller transaction")
         # Lock in a stable order.  The locks are held until the caller's transaction commits, so a
         # concurrent disable/rotation cannot pass this check and then invalidate the conversation
         # or attachment before it is durable.
-        operator = await session.get(Operator, operator_id, with_for_update=True)
-        agent = await session.get(Agent, agent_id, with_for_update=True)
-        binding = await session.scalar(
+        operator = await db.get(Operator, operator_id, with_for_update=True)
+        agent = await db.get(Agent, agent_id, with_for_update=True)
+        binding = await db.scalar(
             select(CredentialBinding)
             .where(
                 CredentialBinding.agent_id == agent_id,
@@ -678,7 +639,7 @@ class PostgresAgentAuthority:
             .with_for_update()
         )
         credential = (
-            None if binding is None else await session.get(StaticCredential, binding.binding_id, with_for_update=True)
+            None if binding is None else await db.get(StaticCredential, binding.binding_id, with_for_update=True)
         )
         if (
             operator is None

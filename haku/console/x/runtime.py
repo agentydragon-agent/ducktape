@@ -69,8 +69,8 @@ class TurnCompletion:
 
 
 @dataclass(frozen=True, slots=True)
-class OpenMessageSeed:
-    """Durable part of a message a replacement session handler inherits."""
+class OpenItemSeed:
+    """Durable part of an open prose item a replacement turn handler inherits."""
 
     text: str
     first_frame_seq: int
@@ -81,8 +81,10 @@ class OpenMessageSeed:
 class TurnProjectionSeed:
     """Provider-neutral durable facts from which one turn handler resumes."""
 
-    open_message: OpenMessageSeed | None = None
+    open_message: OpenItemSeed | None = None
+    open_reasoning: OpenItemSeed | None = None
     seen_call_ids: frozenset[str] = frozenset()
+    completed_call_ids: frozenset[str] = frozenset()
 
 
 EMPTY_TURN_PROJECTION_SEED = TurnProjectionSeed()
@@ -132,10 +134,8 @@ class RuntimeAdapter(Protocol):
     @property
     def display_name(self) -> str: ...
 
-    def build_launch(self, launch: RuntimeLaunch) -> HarnessLaunch: ...
-
     def client(
-        self, websocket: TextWebSocket, launch: HarnessLaunch, progress: ProgressSink | None, frames_to: FrameSink
+        self, websocket: TextWebSocket, launch: RuntimeLaunch, progress: ProgressSink | None, frames_to: FrameSink
     ) -> RuntimeClient: ...
 
     def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler: ...

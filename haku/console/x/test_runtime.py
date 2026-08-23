@@ -15,11 +15,12 @@ from haku.console.x.runtime_catalog import projection_registry
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
 
-def test_registry_exposes_only_the_registered_claude_runtime() -> None:
+def test_projection_registry_exposes_each_linked_provider_adapter() -> None:
     registry = projection_registry()
 
-    assert registry.kinds == frozenset({RuntimeKind.CLAUDE_CODE})
+    assert registry.kinds == frozenset({RuntimeKind.CLAUDE_CODE, RuntimeKind.CODEX_APP_SERVER})
     assert registry[RuntimeKind.CLAUDE_CODE].kind is RuntimeKind.CLAUDE_CODE
+    assert registry[RuntimeKind.CODEX_APP_SERVER].kind is RuntimeKind.CODEX_APP_SERVER
 
 
 def test_registry_fails_closed_for_a_runtime_kind_that_is_not_registered() -> None:

@@ -1,8 +1,9 @@
-# Dormant Codex app-server adapter
+# Codex app-server runtime adapter
 
 This isolated package parses and projects the app-server protocol shipped by
-`@openai/codex@0.144.1`. It is intentionally unregistered: it adds no runtime selection,
-configuration, database change, sandbox launch, credentials, or production dispatch.
+`@openai/codex@0.144.1`. It implements the same Console runtime and shared-runner seams as Claude,
+but remains unconfigured for production execution: it adds no deploy runtime selection, sandbox
+namespace, credentials, or conversation writer.
 
 The committed `testdata/real_text_command.sanitized.jsonl` is a real, reviewed capture from
 `codex-cli 0.144.1` (two bounded turns: text-only and command execution). Its capture and
