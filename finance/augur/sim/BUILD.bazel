@@ -37,7 +37,7 @@ py_library(
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
-        "@pypi//numpy",
+        "@pypi//jaxtyping",
     ],
 )
 
@@ -99,6 +99,7 @@ py_library(
     name = "tlh_harvest",
     srcs = ["tlh_harvest.py"],
     deps = [
+        "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -109,6 +110,7 @@ py_library(
     srcs = ["fixed_point.py"],
     deps = [
         "//finance/augur/product:asset_key",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -142,6 +144,7 @@ py_library(
     srcs = ["actor_view.py"],
     deps = [
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -162,7 +165,10 @@ py_test(
 py_library(
     name = "payment_policy",
     srcs = ["payment_policy.py"],
-    deps = ["@pypi//jax"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+    ],
 )
 
 py_test(
@@ -181,7 +187,9 @@ py_library(
     name = "allocation",
     srcs = ["allocation.py"],
     deps = [
+        "@pypi//beartype",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -192,7 +200,9 @@ py_test(
     srcs = ["allocation_test.py"],
     deps = [
         ":allocation",
+        ":conftest",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -202,7 +212,10 @@ py_test(
 py_library(
     name = "cash_band",
     srcs = ["cash_band.py"],
-    deps = ["@pypi//jax"],
+    deps = [
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+    ],
 )
 
 py_test(
@@ -226,6 +239,7 @@ py_library(
         ":allocation",
         ":cash_band",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -499,6 +513,7 @@ py_library(
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/product:asset_key",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -509,6 +524,7 @@ py_library(
     srcs = ["output.py"],
     deps = [
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )
@@ -569,6 +585,7 @@ py_library(
         "//finance/augur/product:metric_composition",
         "//finance/augur/product:quantiles",
         "@pypi//jax",
+        "@pypi//jaxtyping",
         "@pypi//numpy",
     ],
 )

@@ -7,10 +7,11 @@ month range via `month_starts` and dispatches on `kind`."""
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Float64, Int64
 
 from finance.augur.sim.enums import LifecycleKind
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
@@ -29,13 +30,13 @@ class LifecycleEventCompileOutput:
     (kind 2; 0..100), or 0.0 (kind 0). `month_starts` has length `horizon_months + 1`
     so the engine can do `events[starts[M]:starts[M+1]]` for any month M."""
 
-    month: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    kind: NDArray[np.int64]
-    rented_fraction: NDArray[np.float64]
-    amount: NDArray[np.float64]
-    amount_quanta: NDArray[np.int64]
-    month_starts: NDArray[np.int64]
+    month: Int64[np.ndarray, " event"]
+    property_slot: Int64[np.ndarray, " event"]
+    kind: Int64[np.ndarray, " event"]
+    rented_fraction: Float64[np.ndarray, " event"]
+    amount: Float64[np.ndarray, " event"]
+    amount_quanta: Int64[np.ndarray, " event"]
+    month_starts: Int64[np.ndarray, " month_boundary"]
 
 
 def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, int]) -> LifecycleEventCompileOutput:

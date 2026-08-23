@@ -7,11 +7,12 @@ funding/settlement operation without a source discriminator union.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Bool, Float64, Int64
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.sim.compiler.helpers import (
@@ -32,19 +33,19 @@ from finance.augur.sim.scenario import RecurringObligation, Scenario, ScheduledO
 class ObligationPaymentMetadata:
     """Wire/scatter metadata and shared settlement routing for payment slots."""
 
-    cause: NDArray[np.int64]
-    id: NDArray[np.int64]
-    type: NDArray[np.int64]
-    agent: NDArray[np.int64]
-    from_account: NDArray[np.int64]
-    from_slot: NDArray[np.int64]
-    to_agent: NDArray[np.int64]
-    to_account: NDArray[np.int64]
-    to_slot: NDArray[np.int64]
-    property_tax_profile: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    deduction_profile: NDArray[np.int64]
-    deductible_fraction: NDArray[np.float64]
+    cause: Int64[np.ndarray, " month obligation"]
+    id: Int64[np.ndarray, " month obligation"]
+    type: Int64[np.ndarray, " month obligation"]
+    agent: Int64[np.ndarray, " month obligation"]
+    from_account: Int64[np.ndarray, " month obligation"]
+    from_slot: Int64[np.ndarray, " month obligation"]
+    to_agent: Int64[np.ndarray, " month obligation"]
+    to_account: Int64[np.ndarray, " month obligation"]
+    to_slot: Int64[np.ndarray, " month obligation"]
+    property_tax_profile: Int64[np.ndarray, " month obligation"]
+    property_slot: Int64[np.ndarray, " month obligation"]
+    deduction_profile: Int64[np.ndarray, " month obligation"]
+    deductible_fraction: Float64[np.ndarray, " month obligation"]
 
 
 class ConfiguredObligationExecution[ArrayT](NamedTuple):
@@ -164,13 +165,13 @@ def compile_obligation_slots(
         slot_counts.append(len(configured_by_month[month]) + len(liabilities.codes) + len(properties.id) + tax_slots)
     max_slots = max(1, max(slot_counts, default=0))
 
-    def ints(fill: int = NO_CODE) -> NDArray[np.int64]:
+    def ints(fill: int = NO_CODE) -> Int64[np.ndarray, " month obligation"]:
         return empty_month_matrix(horizon, max_slots, np.int64, fill)
 
-    def floats(fill: float = 0.0) -> NDArray[np.float64]:
+    def floats(fill: float = 0.0) -> Float64[np.ndarray, " month obligation"]:
         return empty_month_matrix(horizon, max_slots, np.float64, fill)
 
-    def bools() -> NDArray[np.bool_]:
+    def bools() -> Bool[np.ndarray, " month obligation"]:
         return empty_month_matrix(horizon, max_slots, np.bool_, False)
 
     cause = ints()

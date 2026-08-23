@@ -4,10 +4,11 @@ at year-end as part of the federal-itemize-vs-standard-deduction comparison."""
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Bool, Int64
 
 from finance.augur.sim.compiler.helpers import StringTable
 from finance.augur.sim.compiler.properties import LiabilityCompileOutput
@@ -28,8 +29,8 @@ class MIDCompileOutput:
       entry; lets the engine skip the matmul + max for jurisdictions or scenarios
       without MID-eligible debt."""
 
-    principal_factor: NDArray[np.int64]
-    link_active: NDArray[np.bool_]
+    principal_factor: Int64[np.ndarray, " tax_link liability"]
+    link_active: Bool[np.ndarray, " tax_link"]
 
 
 @dataclass(frozen=True)
@@ -44,9 +45,9 @@ class SaltCompileOutput:
       (same profile) of the SALT-active federal `link`. Engine sums the first-pass annual
       tax of these state links into the federal SALT total."""
 
-    link_active: NDArray[np.bool_]
-    cap_by_year: NDArray[np.int64]
-    contributing_mask: NDArray[np.bool_]
+    link_active: Bool[np.ndarray, " tax_link"]
+    cap_by_year: Int64[np.ndarray, " tax_link year"]
+    contributing_mask: Bool[np.ndarray, " tax_link other_tax_link"]
 
 
 def compile_mortgage_interest_deductions(

@@ -8,13 +8,14 @@ capital-gain-agent index also live here since they're tax-routing concerns."""
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Float64, Int64
 
 from finance.augur.sim.compiler.bonds import bond_income_categories
 from finance.augur.sim.compiler.distributions import distribution_income_categories
@@ -70,22 +71,22 @@ class TaxCompileOutput:
       federal-style flat rate (0.25 for `federal_us`); 0.0 ⇒ no separate cap, recapture
       is taxed as ordinary inside the standard bracket walk (state-style, e.g. CA)."""
 
-    profile_agent: NDArray[np.int64]
-    profile_prior_year_tax: NDArray[np.int64]
-    profile_section_121_exclusion: NDArray[np.int64]
-    link_profile: NDArray[np.int64]
-    link_jurisdiction: NDArray[np.int64]
-    link_standard_deduction: NDArray[np.int64]
-    link_has_ltcg: NDArray[np.int64]
-    link_section_1250_rate: NDArray[np.float64]
-    link_ordinary_upper: NDArray[np.int64]
-    link_ordinary_rate: NDArray[np.float64]
-    link_ordinary_count: NDArray[np.int64]
-    link_ltcg_upper: NDArray[np.int64]
-    link_ltcg_rate: NDArray[np.float64]
-    link_ltcg_count: NDArray[np.int64]
+    profile_agent: Int64[np.ndarray, " tax_profile"]
+    profile_prior_year_tax: Int64[np.ndarray, " tax_profile"]
+    profile_section_121_exclusion: Int64[np.ndarray, " tax_profile"]
+    link_profile: Int64[np.ndarray, " tax_link"]
+    link_jurisdiction: Int64[np.ndarray, " tax_link"]
+    link_standard_deduction: Int64[np.ndarray, " tax_link"]
+    link_has_ltcg: Int64[np.ndarray, " tax_link"]
+    link_section_1250_rate: Float64[np.ndarray, " tax_link"]
+    link_ordinary_upper: Int64[np.ndarray, " tax_link bracket"]
+    link_ordinary_rate: Float64[np.ndarray, " tax_link bracket"]
+    link_ordinary_count: Int64[np.ndarray, " tax_link"]
+    link_ltcg_upper: Int64[np.ndarray, " tax_link bracket"]
+    link_ltcg_rate: Float64[np.ndarray, " tax_link bracket"]
+    link_ltcg_count: Int64[np.ndarray, " tax_link"]
     buckets: IncomeBuckets
-    link_income_mask: NDArray[np.int64]
+    link_income_mask: Int64[np.ndarray, " tax_link income_bucket"]
 
 
 class IncomeTagged(Protocol):
@@ -255,7 +256,9 @@ def compile_tax(
     )
 
 
-def compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tuple[np.ndarray, np.ndarray]:
+def compile_capital_gain_agents(
+    scenario: Scenario, strings: StringTable
+) -> tuple[Int64[np.ndarray, " capital_gain_profile"], Int64[np.ndarray, " tax_profile"]]:
     agent_ids: list[str] = []
     seen: set[str] = set()
 
@@ -287,9 +290,9 @@ class TaxLiabilityCompileOutput:
     (link, year-end-month) pair where a tax liability accrues. Engine looks up the
     profile + link + payment month to schedule estimated-tax/true-up obligations."""
 
-    profile_index: NDArray[np.int64]
-    link_index: NDArray[np.int64]
-    year_end_month: NDArray[np.int64]
+    profile_index: Int64[np.ndarray, " tax_liability"]
+    link_index: Int64[np.ndarray, " tax_liability"]
+    year_end_month: Int64[np.ndarray, " tax_liability"]
 
 
 def compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> TaxLiabilityCompileOutput:

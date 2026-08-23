@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import pytest_bazel
+from jaxtyping import TypeCheckError
 
 from finance.augur.sim.allocation import (
     deposit_by_sleeve,
@@ -231,6 +232,24 @@ def test_zero_and_negative_weights_are_rejected() -> None:
         withdrawal_by_sleeve(
             value_quanta=jnp.asarray([[1], [1]], dtype=jnp.int64),
             weights=np.asarray([1, 0], dtype=np.int64),
+            raise_quanta=jnp.asarray([0], dtype=jnp.int64),
+        )
+
+
+def test_array_contract_rejects_mismatched_named_axes() -> None:
+    with pytest.raises(TypeCheckError, match="sleeve"):
+        withdrawal_by_sleeve(
+            value_quanta=jnp.asarray([[1], [1]], dtype=jnp.int64),
+            weights=np.asarray([1, 1, 1], dtype=np.int64),
+            raise_quanta=jnp.asarray([0], dtype=jnp.int64),
+        )
+
+
+def test_array_contract_rejects_wrong_dtype() -> None:
+    with pytest.raises(TypeCheckError, match="weights"):
+        withdrawal_by_sleeve(
+            value_quanta=jnp.asarray([[1], [1]], dtype=jnp.int64),
+            weights=np.asarray([1.0, 1.0], dtype=np.float64),
             raise_quanta=jnp.asarray([0], dtype=jnp.int64),
         )
 

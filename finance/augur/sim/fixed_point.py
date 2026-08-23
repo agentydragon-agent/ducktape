@@ -12,12 +12,13 @@ several subtly different ``round(value * 100)`` calls.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Float64, Int64
 
 from finance.augur.product.asset_key import AssetKey, PrivateEquityAssetKey
 
@@ -116,7 +117,7 @@ def ratio_to_money_factor(numerator: int | np.integer[Any], denominator: int | n
         raise ValueError(f"money factor {factor} does not fit in int64") from exc
 
 
-def sampled_array_to_quanta(values: Any, *, quantum: Any) -> NDArray[np.int64]:
+def sampled_array_to_quanta(values: Any, *, quantum: Any) -> Int64[np.ndarray, " ..."]:
     """Quantize a model-produced monetary path at the simulator boundary."""
 
     arr = np.asarray(values)
@@ -155,7 +156,7 @@ def quantity_to_quanta(value: Any, *, scale: int) -> np.int64:
     return np.int64(quanta)
 
 
-def quantity_array_to_quanta(values: Any, *, scale: int) -> NDArray[np.int64]:
+def quantity_array_to_quanta(values: Any, *, scale: int) -> Int64[np.ndarray, " ..."]:
     arr = np.asarray(values)
     out = np.empty(arr.shape, dtype=np.int64)
     for idx in np.ndindex(arr.shape):
@@ -163,5 +164,5 @@ def quantity_array_to_quanta(values: Any, *, scale: int) -> NDArray[np.int64]:
     return out
 
 
-def quanta_array_to_quantity(values: Any, *, scale: int) -> NDArray[np.float64]:
+def quanta_array_to_quantity(values: Any, *, scale: int) -> Float64[np.ndarray, " ..."]:
     return np.asarray(values, dtype=np.float64) / float(scale)

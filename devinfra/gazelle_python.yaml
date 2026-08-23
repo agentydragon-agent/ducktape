@@ -258,6 +258,7 @@ manifest:
     jaraco.functools: jaraco_functools
     jax: jax
     jaxlib: jaxlib
+    jaxtyping: jaxtyping
     jedi: jedi
     jeepney: jeepney
     jinja2: jinja2
@@ -655,6 +656,7 @@ manifest:
     uvloop: uvloop
     virtualenv: virtualenv
     vulture: vulture
+    wadler_lindig: wadler_lindig
     watchdog: watchdog
     watchfiles: watchfiles
     wcwidth: wcwidth
@@ -675,4 +677,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 4c9e5139ee640b36cc2433bd3148010b2bb66f44b8e689918f007f4c911c5f5a
+integrity: 347afa1b577711dffe7c59ab9839d7d6ad6a5827f73c6976e29a41e88fded590

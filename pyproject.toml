@@ -203,6 +203,10 @@ dependencies = [
     # library); evaluating whether to fold the augur PredictiveSeriesModel /
     # ExogenousPathModel protocols behind a single generative-model API.
     "numpyro>=0.15",
+    # augur — array dtype/shape annotations; mypy treats these as the underlying
+    # array type, while optional runtime checking validates shapes during JAX tracing.
+    "jaxtyping>=0.3.11",
+    "beartype>=0.22.9",
 
     # skills
     "asyncvnc>=1.3.0",

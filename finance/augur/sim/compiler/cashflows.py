@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Int64
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.sim.compiler.helpers import (
@@ -55,11 +56,11 @@ class CashflowCompileOutput:
     """
 
     execution: CashflowExecution[np.ndarray]
-    cause: NDArray[np.int64]
-    from_agent: NDArray[np.int64]
-    from_account: NDArray[np.int64]
-    to_agent: NDArray[np.int64]
-    to_account: NDArray[np.int64]
+    cause: Int64[np.ndarray, " month cashflow"]
+    from_agent: Int64[np.ndarray, " month cashflow"]
+    from_account: Int64[np.ndarray, " month cashflow"]
+    to_agent: Int64[np.ndarray, " month cashflow"]
+    to_account: Int64[np.ndarray, " month cashflow"]
 
 
 def compile_cashflows(

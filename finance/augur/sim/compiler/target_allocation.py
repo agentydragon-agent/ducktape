@@ -9,10 +9,11 @@ ceiling, so the second amount is a destination rather than a size.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Int64
 
 from finance.augur.model.series import LevelSeriesKey
 from finance.augur.product.asset_key import asset_price_key_or_none
@@ -39,29 +40,29 @@ class TargetAllocationCompileOutput:
     and is never sold.
     """
 
-    agent: NDArray[np.int64]
-    account: NDArray[np.int64]
-    cash_slot: NDArray[np.int64]
-    source_accounts: NDArray[np.int64]
-    floor_kind: NDArray[np.int64]
-    floor_fixed: NDArray[np.int64]
-    floor_base: NDArray[np.int64]
-    floor_series: NDArray[np.int64]
-    floor_base_month: NDArray[np.int64]
-    floor_period: NDArray[np.int64]
-    ceiling_kind: NDArray[np.int64]
-    ceiling_fixed: NDArray[np.int64]
-    ceiling_base: NDArray[np.int64]
-    ceiling_series: NDArray[np.int64]
-    ceiling_base_month: NDArray[np.int64]
-    ceiling_period: NDArray[np.int64]
-    sleeve_assets: NDArray[np.int64]
-    sleeve_series: NDArray[np.int64]
+    agent: Int64[np.ndarray, " policy"]
+    account: Int64[np.ndarray, " policy"]
+    cash_slot: Int64[np.ndarray, " policy"]
+    source_accounts: Int64[np.ndarray, " policy source_account"]
+    floor_kind: Int64[np.ndarray, " policy"]
+    floor_fixed: Int64[np.ndarray, " policy"]
+    floor_base: Int64[np.ndarray, " policy"]
+    floor_series: Int64[np.ndarray, " policy"]
+    floor_base_month: Int64[np.ndarray, " policy"]
+    floor_period: Int64[np.ndarray, " policy"]
+    ceiling_kind: Int64[np.ndarray, " policy"]
+    ceiling_fixed: Int64[np.ndarray, " policy"]
+    ceiling_base: Int64[np.ndarray, " policy"]
+    ceiling_series: Int64[np.ndarray, " policy"]
+    ceiling_base_month: Int64[np.ndarray, " policy"]
+    ceiling_period: Int64[np.ndarray, " policy"]
+    sleeve_assets: Int64[np.ndarray, " policy sleeve"]
+    sleeve_series: Int64[np.ndarray, " policy sleeve"]
     # Quanta per unit for each sleeve's asset. Per SLEEVE rather than read off the sleeve's
     # lots, because a sleeve the agent holds none of has no lots to read — and that is
     # precisely the sleeve a target allocation exists to buy into.
-    sleeve_quantity_scale: NDArray[np.int64]
-    weights: NDArray[np.int64]
+    sleeve_quantity_scale: Int64[np.ndarray, " policy sleeve"]
+    weights: Int64[np.ndarray, " policy sleeve"]
     cause_id_prefixes: tuple[str, ...]
     # Per-policy drift tolerance, `None` where the policy never rebalances. A plain tuple rather
     # than a padded array because the engine reads it host-side as a STATIC compile-time value:

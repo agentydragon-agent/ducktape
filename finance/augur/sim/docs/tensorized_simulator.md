@@ -93,26 +93,33 @@ Use the same notation as the engine code, plus:
 - `Q`: target-allocation policies.
 - `A`: sleeve slots per target-allocation policy.
 
-State arrays put rollout first unless there's a strong reason not to:
+Carried state puts rollout last. Entity axes stay first so a phase can gather or
+scatter complete rollout vectors by slot:
 
 ```python
-cash[R, C]
-lot_remaining[R, L]
-ordinary_ytd[R, tax_profile]
-capital_gain_ytd[R, G, 2]
-tax_liability_amount[R, tax_liability]
-property_basis[R, P]
-liability_principal[R, B]
+cash[C, R]
+lot_remaining[L, R]
+ordinary_ytd[income_bucket, R]
+capital_gain_ytd[G, 2, R]
+tax_liability_amount[tax_liability, R]
+property_basis[P, R]
+liability_principal[B, R]
 failed[R]
 ```
 
-Event outputs keep their event-first layout for decode simplicity:
+Monthly scan outputs add the month axis in front. Horizon-collapsed final-carry
+outputs omit it:
 
 ```python
-transfer_active[H, T, R]
-sched_disp_units[H, D, L, R]
-liq_disp_units[H, Q, A, L, R]
+cashflow_active[H, T, R]
+obligation_due[H, O, R]
+target_allocation_disp_units[H, Q, A, L, R]
+scheduled_disp_units[D, L, R]
 ```
+
+The host state history prepends month zero and therefore has
+`(snapshot, entity, rollout)` shape, where `snapshot = H + 1`. The codec moves
+the trailing rollout axis only when it builds rollout-first long-form output.
 
 ## Invariants the engine maintains
 
@@ -125,8 +132,7 @@ the month-step or decode path must preserve them.
   fixed and series-indexed amounts; rollout variation flows from
   `external_values`.
 - Scheduled transfers apply per monthly slot via masked updates to
-  `cash[:, from_slot]`, `cash[:, to_slot]`, and
-  `ordinary_ytd[:, profile]`.
+  `cash[from_slot]`, `cash[to_slot]`, and `ordinary_ytd[profile]`.
 - Property purchases and mortgage originations apply month-active property
   slots across all rollouts in one pass.
 - Scheduled asset sales use the bounded vector FIFO helper (`fifo_sell`)

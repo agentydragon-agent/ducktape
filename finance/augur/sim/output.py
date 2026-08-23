@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from typing import NamedTuple
 
 import numpy as np
+from jaxtyping import Bool, Int64
 
 
 class StateOutput[ArrayT](NamedTuple):
@@ -126,26 +128,26 @@ class DenseFinalOutput[ArrayT](NamedTuple):
 class DenseStateOutput(NamedTuple):
     """Host-side state history, including the month-zero snapshot."""
 
-    cash: np.ndarray
-    ordinary: np.ndarray
-    lots: np.ndarray
-    lot_cost_basis: np.ndarray
-    lot_purchase_month: np.ndarray
-    capital_gain_active: np.ndarray
-    capital_gain_ytd: np.ndarray
-    property_active: np.ndarray
-    property_basis: np.ndarray
-    property_contribution: np.ndarray
-    property_equity: np.ndarray
-    property_cumulative_depreciation: np.ndarray
-    property_owner_occupied_months: np.ndarray
-    liability_active: np.ndarray
-    liability_principal: np.ndarray
-    liability_monthly_payment: np.ndarray
-    liability_interest_ytd: np.ndarray
-    liability_principal_ytd: np.ndarray
-    failed: np.ndarray
-    failed_month: np.ndarray
+    cash: Int64[np.ndarray, " snapshot cash rollout"]
+    ordinary: Int64[np.ndarray, " snapshot income_bucket rollout"]
+    lots: Int64[np.ndarray, " snapshot lot rollout"]
+    lot_cost_basis: Int64[np.ndarray, " lot rollout"]
+    lot_purchase_month: Int64[np.ndarray, " lot rollout"]
+    capital_gain_active: Bool[np.ndarray, " snapshot capital_gain_profile gain_class rollout"]
+    capital_gain_ytd: Int64[np.ndarray, " snapshot capital_gain_profile gain_class rollout"]
+    property_active: Bool[np.ndarray, " snapshot property rollout"]
+    property_basis: Int64[np.ndarray, " snapshot property rollout"]
+    property_contribution: Int64[np.ndarray, " snapshot property rollout"]
+    property_equity: Int64[np.ndarray, " snapshot property rollout"]
+    property_cumulative_depreciation: Int64[np.ndarray, " snapshot property rollout"]
+    property_owner_occupied_months: Int64[np.ndarray, " snapshot property rollout"]
+    liability_active: Bool[np.ndarray, " snapshot liability rollout"]
+    liability_principal: Int64[np.ndarray, " snapshot liability rollout"]
+    liability_monthly_payment: Int64[np.ndarray, " snapshot liability rollout"]
+    liability_interest_ytd: Int64[np.ndarray, " snapshot liability rollout"]
+    liability_principal_ytd: Int64[np.ndarray, " snapshot liability rollout"]
+    failed: Bool[np.ndarray, " snapshot rollout"]
+    failed_month: Int64[np.ndarray, " snapshot rollout"]
 
 
 class DenseSimulationOutput(NamedTuple):
@@ -154,11 +156,11 @@ class DenseSimulationOutput(NamedTuple):
     state: DenseStateOutput
     cashflows: CashflowOutput[np.ndarray]
     obligations: ObligationOutput[np.ndarray]
-    property_purchases: np.ndarray
+    property_purchases: Bool[np.ndarray, " month property rollout"]
     mortgages: MortgageOutput[np.ndarray]
     taxes: TaxOutput[np.ndarray]
     scheduled_dispositions: DispositionOutput[np.ndarray]
     target_allocation: TargetAllocationOutput[np.ndarray]
     private_equity: PrivateEquityOutput[np.ndarray]
     lifecycle: LifecycleOutput[np.ndarray]
-    primary_residence_fired: np.ndarray
+    primary_residence_fired: Bool[np.ndarray, " event rollout"]

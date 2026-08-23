@@ -35,8 +35,9 @@ arrive.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 import numpy as np
-import numpy.typing as npt
+from jaxtyping import Float64
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _MONTHS_PER_YEAR = 12.0
@@ -78,8 +79,10 @@ class HarvestYieldParams(BaseModel):
 
 
 def monthly_harvest_fraction(
-    period_return: npt.NDArray[np.float64], embedded_gain_fraction: npt.NDArray[np.float64], params: HarvestYieldParams
-) -> npt.NDArray[np.float64]:
+    period_return: Float64[np.ndarray, " rollout"],
+    embedded_gain_fraction: Float64[np.ndarray, " rollout"],
+    params: HarvestYieldParams,
+) -> Float64[np.ndarray, " rollout"]:
     """Fraction of market value harvested as gross realized loss this month, per rollout.
 
     `period_return` and `embedded_gain_fraction` are `(R,)` arrays; the result is `(R,)`.
@@ -96,4 +99,4 @@ def monthly_harvest_fraction(
     ) / _MONTHS_PER_YEAR
     # Drawdowns surface more lots below basis; up months get no kicker (drawdown == 0).
     drawdown = np.maximum(0.0, -period_return)
-    return base_monthly * (1.0 + params.drawdown_sensitivity * drawdown)
+    return np.asarray(base_monthly * (1.0 + params.drawdown_sensitivity * drawdown), dtype=np.float64)

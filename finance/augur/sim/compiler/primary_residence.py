@@ -7,10 +7,11 @@ incrementing Section 121 qualifying-use months.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Int64
 
 from finance.augur.sim.compiler.helpers import NO_CODE
 from finance.augur.sim.scenario import Scenario
@@ -24,16 +25,16 @@ class PrimaryResidenceEventCompileOutput:
     property slot assigned as that agent's primary residence from this event month forward.
     """
 
-    month: NDArray[np.int64]
-    agent_slot: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    month_starts: NDArray[np.int64]
+    month: Int64[np.ndarray, " event"]
+    agent_slot: Int64[np.ndarray, " event"]
+    property_slot: Int64[np.ndarray, " event"]
+    month_starts: Int64[np.ndarray, " month_boundary"]
 
 
 def compile_primary_residences(
     scenario: Scenario, *, agent_slot_by_id: dict[str, int], property_slot_by_id: dict[str, int]
-) -> tuple[NDArray[np.int64], PrimaryResidenceEventCompileOutput]:
-    initial = np.full(len(agent_slot_by_id), NO_CODE, dtype=np.int64)
+) -> tuple[Int64[np.ndarray, " agent"], PrimaryResidenceEventCompileOutput]:
+    initial: Int64[np.ndarray, " agent"] = np.full(len(agent_slot_by_id), NO_CODE, dtype=np.int64)
     for assignment in scenario.initial_primary_residences:
         initial[agent_slot_by_id[assignment.agent_id]] = property_slot_by_id[assignment.property_id]
 

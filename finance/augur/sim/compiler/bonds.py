@@ -15,11 +15,12 @@ at all. At par against a par basis it is not a capital gain either.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Int64
 
 from finance.augur.model.series import InflationKey, LevelSeriesKey
 from finance.augur.sim.bonds import MONTHS_PER_YEAR, coupon_amount_quanta, coupon_months, is_on_books
@@ -50,8 +51,8 @@ class BondCompileOutput:
 
     # Numeric execution data is one native PyTree; identity remains decoder metadata.
     execution: BondExecution[np.ndarray]
-    bond_id: NDArray[np.int64]
-    agent: NDArray[np.int64]
+    bond_id: Int64[np.ndarray, " bond"]
+    agent: Int64[np.ndarray, " bond"]
 
 
 def bond_income_categories(scenario: Scenario) -> set[InterestIncome]:

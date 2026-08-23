@@ -41,6 +41,8 @@ that credits proceeds with no debit leaves net worth correct while it mints mone
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
+
 # JAX x64 must be enabled before importing jax.numpy, so this module intentionally
 # configures JAX between imports.
 # ruff: noqa: E402, I001
@@ -56,6 +58,7 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 import numpy as np
+from jaxtyping import Array, Bool, Float64, Int, Int64
 
 from finance.augur.model.series import PrivateEquityRegimeCode
 from finance.augur.product.metric_composition import BASE_METRIC_NAMES, DERIVED_METRIC_NAMES, compose_metric
@@ -134,24 +137,26 @@ SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
 
 
-def _round_int64(value: jnp.ndarray) -> jnp.ndarray:
+def _round_int64(value: Float64[Array, " *shape"]) -> Int64[Array, " *shape"]:
     value_f = value.astype(jnp.float64)
     rounded = jnp.sign(value_f) * jnp.floor(jnp.abs(value_f) + 0.5)
     return rounded.astype(jnp.int64)
 
 
-def _zeros_i64(shape: tuple[int, ...]) -> jnp.ndarray:
+def _zeros_i64(shape: tuple[int, ...]) -> Int64[Array, " ..."]:
     return jnp.zeros(shape, dtype=jnp.int64)
 
 
-def _scale_money(amount_quanta: jnp.ndarray, factor: jnp.ndarray | float) -> jnp.ndarray:
+def _scale_money(amount_quanta: Int64[Array, " ..."], factor: Float64[Array, " ..."] | float) -> Int64[Array, " ..."]:
     """Apply a dimensionless factor without converting money to floating point."""
 
     factor_numerator = _round_int64(jnp.asarray(factor, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
     return _scale_quanta_by_ratio(amount_quanta, factor_numerator, jnp.int64(MONEY_FACTOR_SCALE))
 
 
-def _sum_money_with_factors(amount_quanta: jnp.ndarray, factor_numerator: jnp.ndarray, *, axis: int) -> jnp.ndarray:
+def _sum_money_with_factors(
+    amount_quanta: Int64[Array, " ..."], factor_numerator: Int64[Array, " ..."], *, axis: int
+) -> Int64[Array, " ..."]:
     """Sum non-negative scaled-money terms, then round the aggregate once."""
 
     amount_quotient = amount_quanta // MONEY_FACTOR_SCALE
@@ -169,14 +174,16 @@ def _sum_money_with_factors(amount_quanta: jnp.ndarray, factor_numerator: jnp.nd
     )
 
 
-def _sum_scaled_money(amount_quanta: jnp.ndarray, factor: jnp.ndarray, *, axis: int) -> jnp.ndarray:
+def _sum_scaled_money(
+    amount_quanta: Int64[Array, " ..."], factor: Float64[Array, " ..."], *, axis: int
+) -> Int64[Array, " ..."]:
     factor_numerator = _round_int64(jnp.asarray(factor, dtype=jnp.float64) * MONEY_FACTOR_SCALE)
     return _sum_money_with_factors(amount_quanta, factor_numerator, axis=axis)
 
 
 def _scale_money_by_float_ratio(
-    amount_quanta: jnp.ndarray | int, numerator: jnp.ndarray, denominator: jnp.ndarray
-) -> jnp.ndarray:
+    amount_quanta: Int64[Array, " ..."] | int, numerator: Float64[Array, " ..."], denominator: Float64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     """Apply a sampled non-money level ratio while money remains integer quanta."""
 
     amount = jnp.asarray(amount_quanta, dtype=jnp.int64)
@@ -186,22 +193,24 @@ def _scale_money_by_float_ratio(
 
 
 def _value_quanta_from_quantity(
-    quantity_quanta: jnp.ndarray, unit_price_quanta: jnp.ndarray, quantity_scale: jnp.ndarray
-) -> jnp.ndarray:
+    quantity_quanta: Int64[Array, " ..."], unit_price_quanta: Int64[Array, " ..."], quantity_scale: Int64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     """Nearest-half-up money value with no float or overflowing direct product."""
 
     return _scale_quanta_by_ratio(quantity_quanta, unit_price_quanta, quantity_scale)
 
 
 def _ceil_quantity_for_quanta(
-    value_quanta: jnp.ndarray, unit_price_quanta: jnp.ndarray, quantity_scale: jnp.ndarray
-) -> jnp.ndarray:
+    value_quanta: Int64[Array, " ..."], unit_price_quanta: Int64[Array, " ..."], quantity_scale: Int64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     denominator = jnp.where(unit_price_quanta > 0, unit_price_quanta, 1)
     numerator = jnp.maximum(value_quanta, 0) * quantity_scale
     return (numerator + denominator - 1) // denominator
 
 
-def _scale_quanta_by_ratio(amount_quanta: jnp.ndarray, numerator: jnp.ndarray, denominator: jnp.ndarray) -> jnp.ndarray:
+def _scale_quanta_by_ratio(
+    amount_quanta: Int64[Array, " ..."], numerator: Int64[Array, " ..."], denominator: Int64[Array, " ..."]
+) -> Int64[Array, " ..."]:
     """Apply an integer ratio with nearest-half-up rounding and no large money product.
 
     Quotient/remainder decomposition avoids evaluating ``amount * numerator`` directly.
@@ -229,55 +238,57 @@ class _ScanState(NamedTuple):
     """`run_jax_scan`'s carry pytree (NamedTuple → native JAX pytree). Grown field-by-field as the
     fold covers more phases; per-rollout state is `(entity, rollouts)` except the failure vectors."""
 
-    cash: jnp.ndarray
-    ordinary_ytd: jnp.ndarray
-    property_tax_ytd: jnp.ndarray
-    lot_remaining: jnp.ndarray
+    cash: Int64[Array, " cash rollout"]
+    ordinary_ytd: Int64[Array, " income_bucket rollout"]
+    property_tax_ytd: Int64[Array, " tax_profile rollout"]
+    lot_remaining: Int64[Array, " lot rollout"]
     # `(lot, R)`: per-rollout because a purchased lot's basis is the price its rollout paid.
     # Initial lots broadcast their configured basis and never change it.
-    cost_basis_per_unit: jnp.ndarray
+    cost_basis_per_unit: Int64[Array, " lot rollout"]
     # `(lot, R)`, and per-rollout for the same reason: once a policy decides WHEN to buy, a
     # slot fills in a different month in each rollout, and the holding period that decides
     # long vs short gain is measured from it. FIFO ORDER does not depend on this — a sleeve's
     # slots fill monotonically, so slot index is the order in every rollout, and an unfilled
     # slot holds zero units so a walk reaching it early takes nothing.
-    lot_purchase_month: jnp.ndarray
-    capital_gain_active: jnp.ndarray
-    capital_gain_ytd: jnp.ndarray
-    tlh: jnp.ndarray
-    property_active: jnp.ndarray
-    property_basis: jnp.ndarray
-    property_contribution: jnp.ndarray
-    property_equity: jnp.ndarray
-    property_cumulative_depreciation: jnp.ndarray
-    property_owner_occupied_months: jnp.ndarray
-    property_depreciation_ytd: jnp.ndarray
-    property_rented_fraction: jnp.ndarray  # mutable: lifecycle FRACTION/SALE events change it
-    property_building_basis: jnp.ndarray  # mutable: lifecycle CAPITAL_IMPROVEMENT/SALE events change it
-    owner_occupied_window: jnp.ndarray  # (60, property, R) ring of monthly owner-occupancy flags (§121)
-    liability_active: jnp.ndarray
-    liability_principal: jnp.ndarray
-    liability_monthly_payment: jnp.ndarray
-    liability_interest_ytd: jnp.ndarray
-    liability_principal_ytd: jnp.ndarray
-    liability_rental_interest_ytd: jnp.ndarray
-    capital_loss_carryforward: jnp.ndarray
-    recapture_section_1250_ytd: jnp.ndarray
-    tax_liability_active: jnp.ndarray
-    tax_liability_amount: jnp.ndarray
-    failed: jnp.ndarray
-    failed_month: jnp.ndarray
+    lot_purchase_month: Int64[Array, " lot rollout"]
+    capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"]
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"]
+    tlh: Int64[Array, " harvest_policy rollout"]
+    property_active: Bool[Array, " property rollout"]
+    property_basis: Int64[Array, " property rollout"]
+    property_contribution: Int64[Array, " property rollout"]
+    property_equity: Int64[Array, " property rollout"]
+    property_cumulative_depreciation: Int64[Array, " property rollout"]
+    property_owner_occupied_months: Int64[Array, " property rollout"]
+    property_depreciation_ytd: Int64[Array, " property rollout"]
+    property_rented_fraction: Float64[Array, " property rollout"]  # mutable: lifecycle FRACTION/SALE events change it
+    property_building_basis: Int64[
+        Array, " property rollout"
+    ]  # mutable: lifecycle CAPITAL_IMPROVEMENT/SALE events change it
+    owner_occupied_window: Bool[Array, " lookback property rollout"]  # ring of monthly owner-occupancy flags (§121)
+    liability_active: Bool[Array, " liability rollout"]
+    liability_principal: Int64[Array, " liability rollout"]
+    liability_monthly_payment: Int64[Array, " liability rollout"]
+    liability_interest_ytd: Int64[Array, " liability rollout"]
+    liability_principal_ytd: Int64[Array, " liability rollout"]
+    liability_rental_interest_ytd: Int64[Array, " liability rollout"]
+    capital_loss_carryforward: Int64[Array, " capital_gain_profile rollout"]
+    recapture_section_1250_ytd: Int64[Array, " tax_profile rollout"]
+    tax_liability_active: Bool[Array, " tax_liability rollout"]
+    tax_liability_amount: Int64[Array, " tax_liability rollout"]
+    failed: Bool[Array, " rollout"]
+    failed_month: Int64[Array, " rollout"]
     # Scheduled-sale dispositions accumulated in-carry (`(scheduled_sale, lot, R)`): each sale fires
     # once, so accumulating at the firing month collapses the per-month horizon axis the old ys emitted.
-    sale_disp_units: jnp.ndarray
-    sale_disp_basis: jnp.ndarray
-    sale_disp_proceeds: jnp.ndarray
-    sale_oversell: jnp.ndarray  # () bool: any scheduled sale oversold its pool (post-scan hard error)
+    sale_disp_units: Int64[Array, " scheduled_sale lot rollout"]
+    sale_disp_basis: Int64[Array, " scheduled_sale lot rollout"]
+    sale_disp_proceeds: Int64[Array, " scheduled_sale lot rollout"]
+    sale_oversell: Bool[Array, ""]  # any scheduled sale oversold its pool (post-scan hard error)
     # `(policy, sleeve, R)`: how many purchases a target-allocation sleeve has WANTED so far.
     # The cursor and the exhaustion counter are the same number — it names the next slot to
     # fill, and it keeps counting past the last one, so a run that needed more slots than it
     # was configured says so (post-scan hard error) instead of silently dropping purchases.
-    ta_buy_count: jnp.ndarray
+    ta_buy_count: Int64[Array, " policy sleeve rollout"]
 
 
 class _TracedConfig(NamedTuple):
@@ -287,21 +298,21 @@ class _TracedConfig(NamedTuple):
     concrete `plan` — so nothing puns a traced array into the compiler's NumPy-typed plan fields. Each
     field is a swept numeric value (not baked structure), so sweeping it reuses the compiled program."""
 
-    link_standard_deduction: jnp.ndarray
-    link_income_mask: jnp.ndarray
-    link_ordinary_upper: jnp.ndarray
-    link_ordinary_rate: jnp.ndarray
-    link_ltcg_upper: jnp.ndarray
-    link_ltcg_rate: jnp.ndarray
-    mid_principal_factor: jnp.ndarray
-    cost_basis_per_unit: jnp.ndarray
+    link_standard_deduction: Int64[Array, " tax_link"]
+    link_income_mask: Int64[Array, " tax_link income_bucket"]
+    link_ordinary_upper: Int64[Array, " tax_link bracket"]
+    link_ordinary_rate: Float64[Array, " tax_link bracket"]
+    link_ltcg_upper: Int64[Array, " tax_link bracket"]
+    link_ltcg_rate: Float64[Array, " tax_link bracket"]
+    mid_principal_factor: Int64[Array, " tax_link liability"]
+    cost_basis_per_unit: Int64[Array, " lot"]
     # Month-0 opening value of the carried per-rollout purchase month; policy-chosen
     # purchases overwrite their slot's entry when they fill it.
-    lot_purchase_month: jnp.ndarray
-    cash_initial_balance: jnp.ndarray
-    lot_initial_quantity: jnp.ndarray
-    property_adjusted_basis: jnp.ndarray
-    property_equity_ledger: jnp.ndarray
+    lot_purchase_month: Int64[Array, " lot"]
+    cash_initial_balance: Int64[Array, " cash"]
+    lot_initial_quantity: Int64[Array, " lot"]
+    property_adjusted_basis: Int64[Array, " property"]
+    property_equity_ledger: Int64[Array, " property"]
 
 
 @dataclass(frozen=True)
@@ -313,27 +324,27 @@ class _ProductSummaryStatic:
 
 
 class _ProductSummaryInputs(NamedTuple):
-    cash_mask: jnp.ndarray
-    public_lot_mask: jnp.ndarray
-    pe_lot_mask: jnp.ndarray
-    pe_lot_issuer: jnp.ndarray
-    property_mask: jnp.ndarray
-    property_purchase_month: jnp.ndarray
-    property_purchase_price: jnp.ndarray
-    property_home_value_series: jnp.ndarray
-    liability_mask: jnp.ndarray
-    primary_obligation_mask: jnp.ndarray
+    cash_mask: Bool[Array, " cash"]
+    public_lot_mask: Bool[Array, " lot"]
+    pe_lot_mask: Bool[Array, " lot"]
+    pe_lot_issuer: Int64[Array, " lot"]
+    property_mask: Bool[Array, " property"]
+    property_purchase_month: Int64[Array, " property"]
+    property_purchase_price: Int64[Array, " property"]
+    property_home_value_series: Int64[Array, " property"]
+    liability_mask: Bool[Array, " liability"]
+    primary_obligation_mask: Bool[Array, " obligation"]
     # Face in cents, zeroed for bonds the primary agent does not hold, and the (H+1, bond)
     # on-books mask. Both compile-time constants — a par bond held to maturity has no
     # rollout-varying value.
-    bond_face: jnp.ndarray
-    bond_on_books: jnp.ndarray
+    bond_face: Int64[Array, " bond"]
+    bond_on_books: Bool[Array, " month bond"]
     # Indexation inputs, so a TIPS is carried at its CPI-scaled principal rather than at par.
     # Valuing an indexed bond at face would understate it in exactly the inflationary
     # scenarios the ladder is held for.
-    bond_indexed: jnp.ndarray
-    bond_cpi_series: jnp.ndarray
-    bond_index_base_month: jnp.ndarray
+    bond_indexed: Bool[Array, " bond"]
+    bond_cpi_series: Int64[Array, " bond"]
+    bond_index_base_month: Int64[Array, " bond"]
 
 
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
@@ -419,15 +430,15 @@ class _Operands(NamedTuple):
     """
 
     # Carry-init device constants.
-    ordinary0: jnp.ndarray
-    property_tax_ytd0: jnp.ndarray
-    cg_active0: jnp.ndarray
-    cg_ytd0: jnp.ndarray
-    tlh0: jnp.ndarray
-    property_rented_fraction_0: jnp.ndarray
-    property_building_basis_0: jnp.ndarray
-    prop0: jnp.ndarray
-    liab0: jnp.ndarray
+    ordinary0: Int64[Array, " income_bucket rollout"]
+    property_tax_ytd0: Int64[Array, " tax_profile rollout"]
+    cg_active0: Bool[Array, " capital_gain_profile gain_class rollout"]
+    cg_ytd0: Int64[Array, " capital_gain_profile gain_class rollout"]
+    tlh0: Int64[Array, " harvest_policy rollout"]
+    property_rented_fraction_0: Float64[Array, " property rollout"]
+    property_building_basis_0: Int64[Array, " property rollout"]
+    prop0: Bool[Array, " property rollout"]
+    liab0: Bool[Array, " liability rollout"]
     # Whole-horizon static tables sliced by the traced month.
     cashflows: CashflowExecution[jax.Array]
     bonds: BondExecution[jax.Array]
@@ -435,39 +446,39 @@ class _Operands(NamedTuple):
     obligations: ObligationExecution[jax.Array]
     purchases: _PurchaseInputs
     # Year-end / property tables.
-    property_is_primary_table: jnp.ndarray
-    tax_slot_table: jnp.ndarray
-    salt_cap_table: jnp.ndarray
+    property_is_primary_table: Bool[Array, " month property"]
+    tax_slot_table: Int64[Array, " month tax_link"]
+    salt_cap_table: Int64[Array, " tax_link month"]
     # Device arrays the bodies + de-`plan`-ed cores read directly.
-    capital_gain_agent_codes: jnp.ndarray
-    cg_rep_profile: jnp.ndarray
-    property_owner_profile_index: jnp.ndarray
-    liability_owner_profile_index: jnp.ndarray
-    salt_contributing_mask: jnp.ndarray
-    lot_asset_series_index: jnp.ndarray
-    lot_quantity_scale: jnp.ndarray
-    pe_owner_cash_mask: jnp.ndarray  # (pe_policy, cash)
+    capital_gain_agent_codes: Int64[Array, " capital_gain_profile"]
+    cg_rep_profile: Int64[Array, " capital_gain_profile"]
+    property_owner_profile_index: Int64[Array, " property"]
+    liability_owner_profile_index: Int64[Array, " liability"]
+    salt_contributing_mask: Int64[Array, " tax_link other_tax_link"]
+    lot_asset_series_index: Int64[Array, " lot"]
+    lot_quantity_scale: Int64[Array, " lot"]
+    pe_owner_cash_mask: Bool[Array, " policy cash"]
     # Series-axis row indices, traced (dynamic gather), in phase-loop order. See `_build_program`.
-    pe_floor_series: jnp.ndarray  # (n_folded_pe,)
-    harvest_series: jnp.ndarray  # (n_folded_harvest,)
-    lifecycle_sale_series: jnp.ndarray  # (n_folded_lifecycle,)
-    ta_floor_series: jnp.ndarray  # (n_folded_target_allocation,)
-    ta_ceiling_series: jnp.ndarray  # (n_folded_target_allocation,)
+    pe_floor_series: Int64[Array, " issuer"]
+    harvest_series: Int64[Array, " harvest_policy"]
+    lifecycle_sale_series: Int64[Array, " event"]
+    ta_floor_series: Int64[Array, " policy"]
+    ta_ceiling_series: Int64[Array, " policy"]
     # Per-policy, per-sleeve, per-pool price rows. Ragged twice over, so a list of lists.
     # Per policy, a `(sleeve,)` series row. Per SLEEVE, not per pool: every pool in a sleeve
     # holds the same asset, so a per-pool list was the same price repeated.
-    ta_sleeve_series: list[jnp.ndarray]
+    ta_sleeve_series: list[Int64[Array, " sleeve"]]
     # Per policy, a `(sleeve,)` weight row. TRACED, not folded into `_Static`: a sleeve weight is
     # swept numeric config, and baking it into the static key made every distinct weight vector a
     # separate XLA compile — so an allocation sweep paid one full compile PER ARM.
-    ta_sleeve_weights: list[jnp.ndarray]
+    ta_sleeve_weights: list[Int64[Array, " sleeve"]]
 
 
 class _ProgramDynamic(NamedTuple):
     """Traced components; registered children may carry their own static topology."""
 
-    external_values: jax.Array
-    external_money_values: jax.Array
+    external_values: Float64[Array, " series rollout snapshot"]
+    external_money_values: Int64[Array, " series rollout snapshot"]
     pe_channels: PEExecutionChannels[jax.Array]
     swept: _TracedConfig
     asset_sales: _AssetSaleProgram
@@ -653,23 +664,23 @@ def _check_purchase_slot_exhaustion(plan: CompiledSimulation, ta_buy_count: np.n
 class ProductMetricFanSummary:
     """Exact percentile reductions for one product metric."""
 
-    month_index: np.ndarray  # (H+1,)
+    month_index: Int64[np.ndarray, " snapshot"]
     failed_count: int
     currency_code: str
     currency_quantum: str
     percentiles: tuple[float, ...]
-    terminal_percentiles: np.ndarray  # (P,) exact integer currency quantum counts
-    monthly_percentiles: np.ndarray  # (H+1, P) exact integer currency quantum counts
+    terminal_percentiles: Int64[np.ndarray, " percentile"]
+    monthly_percentiles: Int64[np.ndarray, " snapshot percentile"]
 
 
 @dataclass(frozen=True)
 class ProductTerminalSummary:
     """Per-rollout terminal samples for one product metric."""
 
-    failed_month: np.ndarray  # (R,) int64; -1 = never failed
+    failed_month: Int64[np.ndarray, " rollout"]
     currency_code: str
     currency_quantum: str
-    terminal_samples: np.ndarray  # (R,) requested metric's int64 currency quantum count per rollout
+    terminal_samples: Int64[np.ndarray, " rollout"]
 
 
 @dataclass(frozen=True)
@@ -683,24 +694,24 @@ class ProductProjectionSummaries:
 class _ProductMetricFanDeviceSummary(NamedTuple):
     """Device-side order statistics needed to build one exact metric fan."""
 
-    failed_count: jax.Array
-    monthly_lower: jax.Array
-    monthly_upper: jax.Array
-    terminal_lower: jax.Array
-    terminal_upper: jax.Array
+    failed_count: Int64[Array, ""]
+    monthly_lower: Int64[Array, " snapshot percentile"]
+    monthly_upper: Int64[Array, " snapshot percentile"]
+    terminal_lower: Int64[Array, " percentile"]
+    terminal_upper: Int64[Array, " percentile"]
 
 
 @dataclass(frozen=True)
 class ProductMetricArrays:
     """Base product series emitted by JAX for selected-rollout detail."""
 
-    month_index: np.ndarray
-    failed_month: np.ndarray
+    month_index: Int64[np.ndarray, " snapshot"]
+    failed_month: Int64[np.ndarray, " rollout"]
     currency_code: str
     currency_quantum: str
-    base_series: tuple[np.ndarray, ...]
+    base_series: tuple[Int64[np.ndarray, " snapshot rollout"], ...]
 
-    def metric_arrays(self) -> dict[str, np.ndarray]:
+    def metric_arrays(self) -> dict[str, Int64[np.ndarray, " snapshot rollout"]]:
         base = dict(zip(_PRODUCT_BASE_METRICS, self.base_series, strict=True))
         return {
             "month_index": self.month_index,
@@ -718,15 +729,17 @@ _PRODUCT_BASE_INDEX = {name: index for index, name in enumerate(_PRODUCT_BASE_ME
 
 
 def _product_metric_series(
-    metric: str, initial_ys: tuple[jnp.ndarray, ...], monthly_ys: tuple[jnp.ndarray, ...]
-) -> jnp.ndarray:
+    metric: str,
+    initial_ys: tuple[Int64[Array, " rollout"], ...],
+    monthly_ys: tuple[Int64[Array, " month rollout"], ...],
+) -> Int64[Array, " snapshot rollout"]:
     """Full (H+1, R) device series for one product metric.
 
     `base` is passed as a callable so only the series the requested metric needs are
     assembled: a single-metric fan never materializes all of them.
     """
 
-    def base(name: str) -> jnp.ndarray:
+    def base(name: str) -> Int64[Array, " snapshot rollout"]:
         index = _PRODUCT_BASE_INDEX[name]
         return jnp.concatenate([jnp.asarray(initial_ys[index])[None, :], jnp.asarray(monthly_ys[index])], axis=0)
 
@@ -735,9 +748,9 @@ def _product_metric_series(
 
 def _product_metric_arrays_from_device(
     plan: CompiledSimulation,
-    initial_ys: tuple[jnp.ndarray, ...],
-    monthly_ys: tuple[jnp.ndarray, ...],
-    final_failed_month: jnp.ndarray,
+    initial_ys: tuple[Int64[Array, " rollout"], ...],
+    monthly_ys: tuple[Int64[Array, " month rollout"], ...],
+    final_failed_month: Int64[Array, " rollout"],
 ) -> ProductMetricArrays:
     """Copy JAX-emitted base series into the selected-rollout host read model."""
 
@@ -772,7 +785,7 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
 
 def _run_jax_product_series(
     plan: CompiledSimulation, *, primary_agent_id: str, metric: str
-) -> tuple[jnp.ndarray, _ProductTailOutput]:
+) -> tuple[Int64[Array, " snapshot rollout"], _ProductTailOutput]:
     """Execute the product reducer once and materialize the requested metric series."""
     validate_seed_dependent_inputs(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
@@ -782,7 +795,7 @@ def _run_jax_product_series(
     return _product_metric_series(metric, initial_ys, monthly_ys), product_tail
 
 
-def _product_terminal_series(metric: str, series: jnp.ndarray) -> jnp.ndarray:
+def _product_terminal_series(metric: str, series: Int64[Array, " snapshot rollout"]) -> Int64[Array, " rollout"]:
     """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
     return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
 
@@ -792,9 +805,9 @@ def _product_metric_fan_device_summary(
     *,
     metric: str,
     percentiles: tuple[float, ...],
-    series: jnp.ndarray,
-    terminal: jnp.ndarray,
-    failed_month: jnp.ndarray,
+    series: Int64[Array, " snapshot rollout"],
+    terminal: Int64[Array, " rollout"],
+    failed_month: Int64[Array, " rollout"],
 ) -> tuple[tuple[CurrencyQuantileInterpolation, ...], _ProductMetricFanDeviceSummary]:
     """Select exact quantile brackets on-device for one metric fan."""
     quantile_plan = currency_quantile_plan(plan.rollout_count, percentiles)
@@ -1331,7 +1344,7 @@ def _build_program(
     # non-deterministic series order can't trigger a recompile (see the determinism note in
     # `collect_level_series_keys`). Each array is in the SAME order its phase loop iterates the
     # matching folded tuple; `ta_pool_series` is a per-policy list of per-sleeve arrays (ragged).
-    def _series_ops(values: list[int]) -> jnp.ndarray:
+    def _series_ops(values: list[int]) -> Int64[Array, " item"]:
         return jnp.asarray(np.asarray(values, dtype=np.int64))
 
     pe_floor_series = _series_ops(
@@ -1559,8 +1572,12 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     folded_target_allocation = structure.folded_target_allocation
 
     def product_metrics(
-        s: _ScanState, *, snapshot_month: jnp.ndarray, obligation_shortfall: jnp.ndarray, obligation_mask: jnp.ndarray
-    ) -> tuple[jnp.ndarray, ...]:
+        s: _ScanState,
+        *,
+        snapshot_month: Int[Array, ""],
+        obligation_shortfall: Int64[Array, " obligation rollout"],
+        obligation_mask: Bool[Array, " obligation"],
+    ) -> tuple[Int64[Array, " rollout"], ...]:
         assert product_summary is not None
         assert product_inputs is not None
         cash_quanta = jnp.where(product_inputs.cash_mask[:, None], s.cash, 0).sum(axis=0)
@@ -1612,18 +1629,18 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         return (cash_quanta, holding_quanta, pe_quanta, property_quanta, mortgage_quanta, shortfall_quanta, bond_quanta)
 
     def december_tax(
-        ordinary: jnp.ndarray,
-        cg_ytd: jnp.ndarray,
-        carryforward: jnp.ndarray,
-        recapture: jnp.ndarray,
-        property_tax_ytd: jnp.ndarray,
-        liab_interest_ytd: jnp.ndarray,
-        liab_rental_ytd: jnp.ndarray,
-        property_dep_ytd: jnp.ndarray,
-        taxliab_active: jnp.ndarray,
-        taxliab_amount: jnp.ndarray,
-        active: jnp.ndarray,
-        month: jnp.ndarray,
+        ordinary: Int64[Array, " income_bucket rollout"],
+        cg_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+        carryforward: Int64[Array, " capital_gain_profile rollout"],
+        recapture: Int64[Array, " tax_profile rollout"],
+        property_tax_ytd: Int64[Array, " tax_profile rollout"],
+        liab_interest_ytd: Int64[Array, " liability rollout"],
+        liab_rental_ytd: Int64[Array, " liability rollout"],
+        property_dep_ytd: Int64[Array, " property rollout"],
+        taxliab_active: Bool[Array, " tax_liability rollout"],
+        taxliab_amount: Int64[Array, " tax_liability rollout"],
+        active: Bool[Array, " rollout"],
+        month: Int[Array, ""],
     ):
         """Branch-free December (`month % 12 == 11`) year-end tax pass, gated per-rollout by `dec`.
 
@@ -1668,7 +1685,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         zero_salt = _zeros_i64((r,))
         breakdown = [_zeros_i64((max(1, link_count), r)) for _ in range(11)]
 
-        def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
+        def run_link(
+            link: int, salt_deduction: Int64[Array, " rollout"], ann: Int64[Array, " rollout tax_link"]
+        ) -> Int64[Array, " rollout tax_link"]:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
                 link_tax_static[link],
                 cfg,
@@ -1743,7 +1762,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             tuple(breakdown),
         )
 
-    def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, Any]:
+    def step(s: _ScanState, month: Int[Array, ""]) -> tuple[_ScanState, Any]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
         cost_basis_per_unit = s.cost_basis_per_unit
         lot_purchase_month = s.lot_purchase_month
@@ -1773,8 +1792,8 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # its static month equals the traced month, masked per-rollout. is_primary is precomputed
         # per-month host-side; the SALE path uses the §121 owner-occupancy window for the exclusion.
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
-        le_fired: list[jnp.ndarray] = []
-        sale_traces: list[PropertySaleTraceOutput] = []
+        le_fired: list[Bool[Array, " event rollout"]] = []
+        sale_traces: list[PropertySaleTraceOutput[jax.Array]] = []
         for evi, ev in enumerate(folded_lifecycle):
             ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
             fires = month == ev_month
@@ -2059,7 +2078,9 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         ta_disp_proceeds = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         # Buy orders are DECIDED here and EXECUTED after settlement, so they wait in this list.
         # `(policy, sleeve, wanted quanta, unit price)`, one entry per sleeve that ordered.
-        ta_buy_orders: list[tuple[_FoldedTargetAllocation, _FoldedSleeve, jnp.ndarray, jnp.ndarray]] = []
+        ta_buy_orders: list[
+            tuple[_FoldedTargetAllocation, _FoldedSleeve, Int64[Array, " rollout"], Int64[Array, " rollout"]]
+        ] = []
         if folded_target_allocation:
             # Marks for every lot, once for the month rather than once per pool: the observation
             # needs a value for each of the policy's lots, and `_value_quanta_from_quantity` is the
@@ -2788,13 +2809,13 @@ def _amount_values(
     amount_kind: int,
     amount_fixed: int,
     amount_base: int,
-    amount_series: jnp.ndarray,
+    amount_series: Int[Array, ""],
     amount_base_month: int,
     amount_period: int,
-    external_values: jnp.ndarray,
-    month: int | jnp.ndarray,
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
     rollout_count: int,
-) -> jnp.ndarray:
+) -> Int64[Array, " rollout"]:
     """A fixed or series-indexed per-rollout amount. `amount_series` is
     a TRACED scalar row index (gathered dynamically), so its value never changes the compiled program —
     see the series-index determinism note in `collect_level_series_keys`. `amount_kind` stays static (a
@@ -2810,11 +2831,11 @@ def _amount_values(
 
 def _amount_values_tuple(
     spec: tuple[int, int, int, int, int],
-    series_op: jnp.ndarray,
-    external_values: jnp.ndarray,
-    month: int | jnp.ndarray,
+    series_op: Int[Array, ""],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
     r: int,
-) -> jnp.ndarray:
+) -> Int64[Array, " rollout"]:
     """`_amount_values` from a `(kind, fixed, base, base_month, period)` tuple plus a TRACED series row
     index (`series_op`, gathered dynamically — kept out of the static structure)."""
     kind, fixed, base, base_month, period = spec
@@ -2832,13 +2853,13 @@ def _amount_values_tuple(
 
 
 def _move_cash(
-    cash: jnp.ndarray,
+    cash: Int64[Array, " cash rollout"],
     *,
-    debit: jnp.ndarray | np.ndarray | int,
-    credit: jnp.ndarray | np.ndarray | int,
-    amount: jnp.ndarray,
+    debit: Int[Array, ""] | Int[Array, " flow"] | Int[np.ndarray, ""] | Int[np.ndarray, " flow"] | int,
+    credit: Int[Array, ""] | Int[Array, " flow"] | Int[np.ndarray, ""] | Int[np.ndarray, " flow"] | int,
+    amount: Int64[Array, " rollout"] | Int64[Array, " flow rollout"],
     row_of_world: int,
-) -> jnp.ndarray:
+) -> Int64[Array, " cash rollout"]:
     """Move `amount` from the `debit` rows to the `credit` rows. The only way cash moves.
 
     Every phase that used to write `cash.at[...]` twice and hope the two lines stayed adjacent
@@ -2859,14 +2880,18 @@ def _move_cash(
 
     flow = jnp.asarray(amount).reshape(-1, cash.shape[-1])
 
-    def rows(side: jnp.ndarray | np.ndarray | int) -> jnp.ndarray:
+    def rows(
+        side: Int[Array, ""] | Int[Array, " flow"] | Int[np.ndarray, ""] | Int[np.ndarray, " flow"] | int,
+    ) -> Int[Array, " flow"]:
         resolved = jnp.where(jnp.asarray(side).reshape(-1) < 0, row_of_world, jnp.asarray(side).reshape(-1))
         return jnp.broadcast_to(resolved, (flow.shape[0],))
 
     return cash.at[rows(debit)].add(-flow).at[rows(credit)].add(flow)
 
 
-def _scatter_rows(target: jnp.ndarray, indices: jnp.ndarray, values: jnp.ndarray) -> jnp.ndarray:
+def _scatter_rows(
+    target: Int64[Array, " row rollout"], indices: Int[Array, " source"], values: Int64[Array, " source rollout"]
+) -> Int64[Array, " row rollout"]:
     """Sentinel-aware segment scatter-add: add `values[s]` into `target[indices[s]]`, ignoring
     rows where `indices[s] < 0`. Duplicate indices accumulate. Branch-free (no per-row Python
     loop / `if idx >= 0`): a `-1` index is redirected to a padding row that is then sliced off."""
@@ -2884,7 +2909,7 @@ def _np_gather(arr: np.ndarray, idx: np.ndarray, fill: float) -> np.ndarray:
     return np.asarray(arr[idx])
 
 
-def _gather_rows(source: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
+def _gather_rows(source: jax.Array, idx: Int[Array, " source"]) -> jax.Array:
     """Gather `source[idx[s]]` into `(slots, rollouts)`, tolerating an empty source (`idx` is
     expected pre-clamped to valid rows; rows for inapplicable slots are masked off by the caller).
     A 0-row source (e.g. a scenario with no properties/liabilities) yields zeros."""
@@ -2894,16 +2919,16 @@ def _gather_rows(source: jnp.ndarray, idx: jnp.ndarray) -> jnp.ndarray:
 
 
 def _amount_values_vec(
-    amount_kind: jnp.ndarray,
-    amount_fixed: jnp.ndarray,
-    amount_base: jnp.ndarray,
-    amount_series: jnp.ndarray,
-    amount_base_month: jnp.ndarray,
-    amount_period: jnp.ndarray,
-    external_values: jnp.ndarray,
-    month: jnp.ndarray,
+    amount_kind: Int64[Array, " slot"],
+    amount_fixed: Int64[Array, " slot"],
+    amount_base: Int64[Array, " slot"],
+    amount_series: Int64[Array, " slot"],
+    amount_base_month: Int64[Array, " slot"],
+    amount_period: Int64[Array, " slot"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     rollout_count: int,
-) -> jnp.ndarray:
+) -> Int64[Array, " slot rollout"]:
     """`_amount_values` vectorized over slots (branch-free): returns `(slots, rollouts)`.
 
     The series path is computed for every slot and selected against the fixed amount by the
@@ -2927,14 +2952,19 @@ def _amount_values_vec(
 @partial(jax.jit, static_argnames=("row_of_world",))
 def _cashflows_jit(
     cashflows: CashflowExecution[jax.Array],
-    property_active: jnp.ndarray,
-    cash: jnp.ndarray,
-    ordinary_ytd: jnp.ndarray,
-    active: jnp.ndarray,
-    external_values: jnp.ndarray,
-    month: jnp.ndarray,
+    property_active: Bool[Array, " property rollout"],
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    active: Bool[Array, " rollout"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     row_of_world: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[
+    Int64[Array, " cash rollout"],
+    Int64[Array, " income_bucket rollout"],
+    Bool[Array, " cashflow rollout"],
+    Int64[Array, " cashflow rollout"],
+]:
     rollout_count = cash.shape[1]
     cashflow = jax.tree.map(lambda value: value[month], cashflows)
     property_gated = cashflow.property_slot >= 0
@@ -2964,14 +2994,14 @@ def _cashflows_jit(
 @partial(jax.jit, static_argnames=("row_of_world", "has_indexed"))
 def _bond_cashflows_jit(
     bonds: BondExecution[jax.Array],
-    cash: jnp.ndarray,
-    ordinary_ytd: jnp.ndarray,
-    active: jnp.ndarray,
-    external_values: jnp.ndarray,
-    month: jnp.ndarray,
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    active: Bool[Array, " rollout"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     row_of_world: int,
     has_indexed: bool,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[Int64[Array, " cash rollout"], Int64[Array, " income_bucket rollout"]]:
     """This month's bond cashflows. `coupon`/`redemption` are `(bond,)` slices of compile-time
     tables — at par and held to maturity nothing about a bond depends on a rollout, so there is
     no per-rollout arithmetic here and no bond state in the carry.
@@ -3035,14 +3065,14 @@ def _bond_cashflows_jit(
 
 def _distribution_payouts_jit(
     distributions: DistributionExecution[jax.Array],
-    lot_remaining: jnp.ndarray,
-    cash: jnp.ndarray,
-    ordinary_ytd: jnp.ndarray,
-    active: jnp.ndarray,
-    external_money_values: jnp.ndarray,
-    month: jnp.ndarray,
+    lot_remaining: Int64[Array, " lot rollout"],
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    active: Bool[Array, " rollout"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
     row_of_world: int,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[Int64[Array, " cash rollout"], Int64[Array, " income_bucket rollout"]]:
     """This month's fund distributions, one row per (pool, tax slice).
 
     `units * dollars_per_unit` — the same multiplication the engine performs to mark a
@@ -3069,8 +3099,10 @@ def _distribution_payouts_jit(
 
 
 def _sleeve_prices_quanta(
-    sleeve_series: jnp.ndarray, external_money_values: jnp.ndarray, month: int | jnp.ndarray
-) -> jnp.ndarray:
+    sleeve_series: Int64[Array, " sleeve"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
+) -> Int64[Array, " sleeve rollout"]:
     """This month's market price per sleeve, `(sleeve, R)`, in cents per unit.
 
     One read, shared by the observation the policy sizes against and the execution that
@@ -3086,13 +3118,13 @@ def _sleeve_prices_quanta(
 
 
 def _fifo_sell(
-    lot_remaining: jnp.ndarray,
+    lot_remaining: Int64[Array, " rollout lot"],
     ordered_lots: np.ndarray,
-    target: jnp.ndarray,
-    unit_price: jnp.ndarray,
-    cost_basis_per_unit: jnp.ndarray,
-    lot_quantity_scale: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    target: Int64[Array, " rollout"],
+    unit_price: Int64[Array, " rollout"],
+    cost_basis_per_unit: Int64[Array, " lot rollout"],
+    lot_quantity_scale: Int64[Array, " lot"],
+) -> tuple[Int64[Array, " rollout lot"], Int64[Array, " rollout lot"], Int64[Array, " rollout lot"]]:
     """FIFO-sell a quanta target down a pool's lots, returning sold quanta plus cent values.
 
     Quanta is the only denomination. A caller wanting to raise a dollar amount converts it
@@ -3124,11 +3156,11 @@ def _fifo_sell(
 
 def _apply_tlh_give_back(
     folded_harvest: tuple[_FoldedHarvest, ...],
-    tlh_cumulative_harvest: jnp.ndarray,
-    lot_remaining: jnp.ndarray,
-    sold_units: jnp.ndarray,
-    gains: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    tlh_cumulative_harvest: Int64[Array, " harvest_policy rollout"],
+    lot_remaining: Int64[Array, " lot rollout"],
+    sold_units: Int64[Array, " rollout lot"],
+    gains: Int64[Array, " rollout lot"],
+) -> tuple[Int64[Array, " rollout lot"], Int64[Array, " harvest_policy rollout"]]:
     """Repay deferred harvested loss as extra gain on sold
     harvest-policy lots. The fraction of the policy's pre-sale units sold here realizes that share
     of `tlh_cumulative_harvest`, distributed across the sold policy-lots by sold units (preserving
@@ -3153,16 +3185,20 @@ def _apply_tlh_give_back(
 
 def _record_capital_gains(
     folded_harvest: tuple[_FoldedHarvest, ...],
-    lot_purchase_month: jnp.ndarray,
+    lot_purchase_month: Int64[Array, " lot rollout"],
     cg_profiles: tuple[int, ...],
-    capital_gain_active: jnp.ndarray,
-    capital_gain_ytd: jnp.ndarray,
-    tlh_cumulative_harvest: jnp.ndarray,
-    lot_remaining: jnp.ndarray,
-    month: int | jnp.ndarray,
-    sold_units: jnp.ndarray,
-    gains: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"],
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    tlh_cumulative_harvest: Int64[Array, " harvest_policy rollout"],
+    lot_remaining: Int64[Array, " lot rollout"],
+    month: int | Int[Array, ""],
+    sold_units: Int64[Array, " rollout lot"],
+    gains: Int64[Array, " rollout lot"],
+) -> tuple[
+    Bool[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " harvest_policy rollout"],
+]:
     """TLH give-back, then classify each lot's gain
     long/short and accrue.
 
@@ -3192,21 +3228,25 @@ def _record_capital_gains(
 @jax.jit
 def _obligation_accruals_jit(
     inputs: ObligationExecution[jax.Array],
-    property_active: jnp.ndarray,
-    liab_principal: jnp.ndarray,
-    liab_monthly: jnp.ndarray,
-    liab_active: jnp.ndarray,
-    taxliab_active: jnp.ndarray,
-    taxliab_amount: jnp.ndarray,
-    active: jnp.ndarray,
-    external_values: jnp.ndarray,
-    month: jnp.ndarray,
+    property_active: Bool[Array, " property rollout"],
+    liab_principal: Int64[Array, " liability rollout"],
+    liab_monthly: Int64[Array, " liability rollout"],
+    liab_active: Bool[Array, " liability rollout"],
+    taxliab_active: Bool[Array, " tax_liability rollout"],
+    taxliab_amount: Int64[Array, " tax_liability rollout"],
+    active: Bool[Array, " rollout"],
+    external_values: Float64[Array, " series rollout snapshot"],
+    month: Int[Array, ""],
 ) -> _PaymentBatch:
     """Compute one typed payment batch per source, then merge the disjoint slot rows."""
 
     rollout_count = active.shape[0]
 
-    def batch(source_active: jnp.ndarray, due: jnp.ndarray, source_mask: jnp.ndarray) -> _PaymentBatch:
+    def batch(
+        source_active: Bool[Array, " obligation"],
+        due: Int64[Array, " obligation rollout"],
+        source_mask: Bool[Array, " obligation rollout"],
+    ) -> _PaymentBatch:
         payment_active = source_active[:, None] & active[None, :] & source_mask & (due > 0)
         return _PaymentBatch(active=payment_active, due=jnp.where(payment_active, due, 0), metadata=inputs.metadata)
 
@@ -3276,12 +3316,12 @@ def _obligation_accruals_jit(
 
 @jax.jit
 def _obligation_group_funded_jit(
-    group_matrix: jnp.ndarray,
-    from_slot: jnp.ndarray,
-    cash: jnp.ndarray,
-    payment_active: jnp.ndarray,
-    payment_amount: jnp.ndarray,
-) -> jnp.ndarray:
+    group_matrix: Int64[Array, " obligation other_obligation"],
+    from_slot: Int64[Array, " obligation"],
+    cash: Int64[Array, " cash rollout"],
+    payment_active: Bool[Array, " obligation rollout"],
+    payment_amount: Int64[Array, " obligation rollout"],
+) -> Bool[Array, " obligation rollout"]:
     """Branch-free funding check for one emitted Pay batch.
 
     Every same-agent/source-account group must have enough cash for its complete active batch;
@@ -3299,17 +3339,25 @@ def _obligation_group_funded_jit(
 def _settlement_core_jit(
     metadata: ObligationMetadataExecution[jax.Array],
     actions: PayActions,
-    funded: jnp.ndarray,
-    cash: jnp.ndarray,
-    ordinary_ytd: jnp.ndarray,
-    property_tax_ytd: jnp.ndarray,
-    property_rented_fraction: jnp.ndarray,
-    failed: jnp.ndarray,
-    failed_month: jnp.ndarray,
-    month: jnp.ndarray,
+    funded: Bool[Array, " obligation rollout"],
+    cash: Int64[Array, " cash rollout"],
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    property_tax_ytd: Int64[Array, " tax_profile rollout"],
+    property_rented_fraction: Float64[Array, " property rollout"],
+    failed: Bool[Array, " rollout"],
+    failed_month: Int64[Array, " rollout"],
+    month: Int[Array, ""],
     row_of_world: int,
 ) -> tuple[
-    jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+    Bool[Array, " obligation rollout"],
+    Int64[Array, " obligation rollout"],
+    Int64[Array, " cash rollout"],
+    Int64[Array, " income_bucket rollout"],
+    Int64[Array, " tax_profile rollout"],
+    Int64[Array, " obligation rollout"],
+    Bool[Array, " obligation rollout"],
+    Bool[Array, " rollout"],
+    Int64[Array, " rollout"],
 ]:
     """Branch-free settlement of an emitted Pay batch: per-slot pay/fail, the funded cash move,
     property-tax owner-share YTD accumulation, and Schedule-E/itemized deduction — all
@@ -3347,15 +3395,15 @@ def _settlement_core_jit(
 
 
 def _compute_liquid_net_worth(
-    owner_cash_mask: jnp.ndarray,
-    lot_asset_series_index: jnp.ndarray,
+    owner_cash_mask: Bool[Array, " cash"],
+    lot_asset_series_index: Int64[Array, " lot"],
     owner_non_pe_lot_indices: tuple[int, ...],
-    cash: jnp.ndarray,
-    lot_remaining: jnp.ndarray,
-    lot_quantity_scale: jnp.ndarray,
-    external_money_values: jnp.ndarray,
-    month: int | jnp.ndarray,
-) -> jnp.ndarray:
+    cash: Int64[Array, " cash rollout"],
+    lot_remaining: Int64[Array, " lot rollout"],
+    lot_quantity_scale: Int64[Array, " lot"],
+    external_money_values: Int64[Array, " series rollout snapshot"],
+    month: int | Int[Array, ""],
+) -> Int64[Array, " rollout"]:
     """Owner cash + non-PE lot value at current marks.
     `owner_cash_mask` (this policy's row, device) and `lot_asset_series_index` (device) come from
     `_Operands`; `owner_non_pe_lot_indices` is the resolved (host) non-PE lot list (no `plan` reference)."""
@@ -3386,16 +3434,16 @@ def _compute_liquid_net_worth(
     ),
 )
 def _tlh_harvest_policy_jit(
-    remaining_lots: jnp.ndarray,
-    cost_basis_lots: jnp.ndarray,
-    quantity_scale_lots: jnp.ndarray,
-    price_quanta: jnp.ndarray,
-    price_level: jnp.ndarray,
-    prior_price_level: jnp.ndarray,
-    cumulative: jnp.ndarray,
-    capital_gain_ytd: jnp.ndarray,
-    capital_gain_active: jnp.ndarray,
-    active: jnp.ndarray,
+    remaining_lots: Int64[Array, " policy_lot rollout"],
+    cost_basis_lots: Int64[Array, " policy_lot rollout"],
+    quantity_scale_lots: Int64[Array, " policy_lot"],
+    price_quanta: Int64[Array, " rollout"],
+    price_level: Float64[Array, " rollout"],
+    prior_price_level: Float64[Array, " rollout"],
+    cumulative: Int64[Array, " rollout"],
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    capital_gain_active: Bool[Array, " capital_gain_profile gain_class rollout"],
+    active: Bool[Array, " rollout"],
     *,
     gain_profile: int,
     has_prior: bool,
@@ -3404,7 +3452,11 @@ def _tlh_harvest_policy_jit(
     gamma: float,
     drawdown_sensitivity: float,
     short_term_fraction: float,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[
+    Int64[Array, " capital_gain_profile gain_class rollout"],
+    Bool[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " rollout"],
+]:
     """Apply one `HarvestPolicy`'s reduced-form monthly harvest, vectorized over rollouts:
     book a calibrated capital loss as a NEGATIVE in
     `capital_gain_ytd` and accumulate it into the give-back ledger `cumulative`. Per-policy params
@@ -3443,7 +3495,9 @@ def _tlh_harvest_policy_jit(
     return capital_gain_ytd, capital_gain_active, cumulative + gross
 
 
-def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarray, count: int) -> jnp.ndarray:
+def _apply_brackets(
+    amount: Int64[Array, " rollout"], *, upper: Int64[Array, " bracket"], rate: Float64[Array, " bracket"], count: int
+) -> Int64[Array, " rollout"]:
     """Progressive bracket tax on `amount`, in int64 cents rounded to the whole cent."""
     if count <= 0:
         return jnp.zeros_like(amount)
@@ -3456,8 +3510,13 @@ def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarra
 
 
 def _apply_ltcg_brackets(
-    ltcg_amount: jnp.ndarray, ordinary_taxable: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarray, count: int
-) -> jnp.ndarray:
+    ltcg_amount: Int64[Array, " rollout"],
+    ordinary_taxable: Int64[Array, " rollout"],
+    *,
+    upper: Int64[Array, " bracket"],
+    rate: Float64[Array, " bracket"],
+    count: int,
+) -> Int64[Array, " rollout"]:
     """LTCG bracket walk with the gain stacked on top of ordinary taxable income (§1(h)): each
     bracket taxes the slice of the combined stack that lies above the ordinary income."""
     if count <= 0:
@@ -3473,12 +3532,12 @@ def _apply_ltcg_brackets(
 
 
 def _net_capital_gains_jnp(
-    short_term: jnp.ndarray,
-    long_term: jnp.ndarray,
-    carryforward_in: jnp.ndarray,
+    short_term: Int64[Array, " rollout"],
+    long_term: Int64[Array, " rollout"],
+    carryforward_in: Int64[Array, " rollout"],
     *,
     max_ordinary_offset_quanta: int = 300_000,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"], Int64[Array, " rollout"]]:
     """Branch-free §1211/§1212 capital-loss netting for one tax year: cross-net ST against LT, consume
     the prior-year carryforward (short-term first, taxpayer-favorable), then split any residual loss
     into this year's ordinary-income offset and the balance carried forward."""
@@ -3501,15 +3560,22 @@ def _net_capital_gains_jnp(
 def _compute_tax_for_link(
     static: _LinkTaxStatic,
     tcfg: _TracedConfig,
-    ordinary_ytd: jnp.ndarray,
-    capital_gain_ytd: jnp.ndarray,
-    recapture_section_1250_ytd: jnp.ndarray,
-    liability_interest_ytd: jnp.ndarray,
-    liability_rental_interest_ytd: jnp.ndarray,
+    ordinary_ytd: Int64[Array, " income_bucket rollout"],
+    capital_gain_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    recapture_section_1250_ytd: Int64[Array, " tax_profile rollout"],
+    liability_interest_ytd: Int64[Array, " liability rollout"],
+    liability_rental_interest_ytd: Int64[Array, " liability rollout"],
     *,
-    salt_deduction: jnp.ndarray,
+    salt_deduction: Int64[Array, " rollout"],
     rollout_count: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+    Int64[Array, " rollout"],
+]:
     """One link's bracket math (MID + SALT + §1250 + LTCG).
     Bracket values / rates / deduction / MID ratio come from the traced `tcfg`; feature flags, counts
     and the §1250 style rate are read from the hashable `_LinkTaxStatic` (no `plan` reference)."""
@@ -3573,35 +3639,35 @@ def _compute_tax_for_link(
 
 def _scan_property_sale(
     ev: _FoldedLifecycleEvent,
-    home_value_series: jnp.ndarray,
-    external_values: jnp.ndarray,
+    home_value_series: Int[Array, ""],
+    external_values: Float64[Array, " series rollout snapshot"],
     *,
-    cash: jnp.ndarray,
-    property_active: jnp.ndarray,
-    property_rented_fraction: jnp.ndarray,
-    property_building_basis: jnp.ndarray,
-    property_cum_dep: jnp.ndarray,
-    oo_window: jnp.ndarray,
-    liab_active: jnp.ndarray,
-    liab_principal: jnp.ndarray,
-    recapture_ytd: jnp.ndarray,
-    cg_active: jnp.ndarray,
-    cg_ytd: jnp.ndarray,
-    month: jnp.ndarray,
-    active_property: jnp.ndarray,
+    cash: Int64[Array, " cash rollout"],
+    property_active: Bool[Array, " property rollout"],
+    property_rented_fraction: Float64[Array, " property rollout"],
+    property_building_basis: Int64[Array, " property rollout"],
+    property_cum_dep: Int64[Array, " property rollout"],
+    oo_window: Bool[Array, " lookback property rollout"],
+    liab_active: Bool[Array, " liability rollout"],
+    liab_principal: Int64[Array, " liability rollout"],
+    recapture_ytd: Int64[Array, " tax_profile rollout"],
+    cg_active: Bool[Array, " capital_gain_profile gain_class rollout"],
+    cg_ytd: Int64[Array, " capital_gain_profile gain_class rollout"],
+    month: Int[Array, ""],
+    active_property: Bool[Array, " rollout"],
     rollout_count: int,
     external_cash_slot: int,
 ) -> tuple[
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    jnp.ndarray,
-    PropertySaleTraceOutput,
+    Int64[Array, " cash rollout"],
+    Bool[Array, " property rollout"],
+    Float64[Array, " property rollout"],
+    Int64[Array, " property rollout"],
+    Bool[Array, " liability rollout"],
+    Int64[Array, " liability rollout"],
+    Int64[Array, " tax_profile rollout"],
+    Bool[Array, " capital_gain_profile gain_class rollout"],
+    Int64[Array, " capital_gain_profile gain_class rollout"],
+    PropertySaleTraceOutput[jax.Array],
 ]:
     """Branch-free `lax.scan` port of `_apply_property_sale`: §1250 recapture + §121 exclusion (via the
     owner-occupancy window) + mortgage payoff, returning the updated state and the 7-field sale trace.
@@ -3681,13 +3747,13 @@ def _scan_property_sale(
 
 @jax.jit
 def _apply_depreciation_accrual(
-    property_active: jnp.ndarray,
-    property_rented_fraction: jnp.ndarray,
-    property_building_basis: jnp.ndarray,
-    property_cumulative_depreciation: jnp.ndarray,
-    property_depreciation_ytd: jnp.ndarray,
-    failed: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
+    property_active: Bool[Array, " property rollout"],
+    property_rented_fraction: Float64[Array, " property rollout"],
+    property_building_basis: Int64[Array, " property rollout"],
+    property_cumulative_depreciation: Int64[Array, " property rollout"],
+    property_depreciation_ytd: Int64[Array, " property rollout"],
+    failed: Bool[Array, " rollout"],
+) -> tuple[Int64[Array, " property rollout"], Int64[Array, " property rollout"]]:
     """§168 straight-line monthly depreciation,
     branch-free over all properties (one masked elementwise accrual)."""
     monthly_dep = jnp.where(

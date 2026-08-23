@@ -4,11 +4,12 @@ liquid-net-worth floor governs whether (and how much) of the issuer's lots gets 
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Bool, Int64
 
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle
 from finance.augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
@@ -25,10 +26,10 @@ class PEIssuerCompileOutput:
     tenders within horizon); the engine skips it. `lot_mask[i, l]` flags which lots
     belong to issuer `i`."""
 
-    codes: NDArray[np.int64]
+    codes: Int64[np.ndarray, " issuer"]
     issuer_ids: tuple[str, ...]
-    policy_index: NDArray[np.int64]
-    lot_mask: NDArray[np.bool_]
+    policy_index: Int64[np.ndarray, " issuer"]
+    lot_mask: Bool[np.ndarray, " issuer lot"]
 
 
 class PEExecutionChannels[ArrayT](NamedTuple):
@@ -54,7 +55,7 @@ class PEChannels:
     """Engine channels plus the event-kind channel used only by host-side decoders."""
 
     execution: PEExecutionChannels[np.ndarray]
-    event_kind_codes: NDArray[np.int64]
+    event_kind_codes: Int64[np.ndarray, " issuer rollout snapshot"]
 
 
 @dataclass(frozen=True)
@@ -64,16 +65,16 @@ class PEPolicyCompileOutput:
     + `owner_non_pe_lot_mask` are (policy × slot) masks the engine uses to compute LNW
     from the owner's non-PE liquid assets."""
 
-    owner_agent: NDArray[np.int64]
-    proceeds_cash_slot: NDArray[np.int64]
-    floor_kind: NDArray[np.int64]
-    floor_fixed: NDArray[np.int64]
-    floor_base: NDArray[np.int64]
-    floor_series: NDArray[np.int64]
-    floor_base_month: NDArray[np.int64]
-    floor_period: NDArray[np.int64]
-    owner_cash_mask: NDArray[np.bool_]
-    owner_non_pe_lot_mask: NDArray[np.bool_]
+    owner_agent: Int64[np.ndarray, " policy"]
+    proceeds_cash_slot: Int64[np.ndarray, " policy"]
+    floor_kind: Int64[np.ndarray, " policy"]
+    floor_fixed: Int64[np.ndarray, " policy"]
+    floor_base: Int64[np.ndarray, " policy"]
+    floor_series: Int64[np.ndarray, " policy"]
+    floor_base_month: Int64[np.ndarray, " policy"]
+    floor_period: Int64[np.ndarray, " policy"]
+    owner_cash_mask: Bool[np.ndarray, " policy cash"]
+    owner_non_pe_lot_mask: Bool[np.ndarray, " policy lot"]
 
 
 def compile_private_equity_tenders(
@@ -82,9 +83,9 @@ def compile_private_equity_tenders(
     *,
     asset_table: AssetTable,
     series_index_by_id: dict[LevelSeriesKey, int],
-    lot_agent_codes: np.ndarray,
-    lot_asset_codes: np.ndarray,
-    cash_agent_codes: np.ndarray,
+    lot_agent_codes: Int64[np.ndarray, " lot"],
+    lot_asset_codes: Int64[np.ndarray, " lot"],
+    cash_agent_codes: Int64[np.ndarray, " cash"],
 ) -> tuple[PEIssuerCompileOutput, PEPolicyCompileOutput]:
     """Compile per-(issuer, policy) arrays driving the PE tender-sale path.
 

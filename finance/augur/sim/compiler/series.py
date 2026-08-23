@@ -8,9 +8,11 @@ fields."""
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from typing import Any, NamedTuple
 
 import numpy as np
+from jaxtyping import Bool, Float64, Int64
 
 from finance.augur.model.series import (
     HomeValueKey,
@@ -95,11 +97,11 @@ def scenario_level_series_keys(scenario: Scenario) -> tuple[LevelSeriesKey, ...]
 
 class MaterializedLevelRows(NamedTuple):
     key: LevelSeriesKey
-    rollout_index: np.ndarray
-    month_index: np.ndarray
-    values: np.ndarray
-    present: np.ndarray
-    in_bounds: np.ndarray
+    rollout_index: Int64[np.ndarray, " observation"]
+    month_index: Int64[np.ndarray, " observation"]
+    values: Float64[np.ndarray, " observation"]
+    present: Bool[np.ndarray, " observation"]
+    in_bounds: Bool[np.ndarray, " observation"]
 
 
 def materialize_level_rows(
@@ -177,7 +179,14 @@ def _add_amount_series_key(amount: Any, add: Any) -> None:
         add(amount.series)
 
 
-def _frame_values(frame: Any, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, ...]:
+def _frame_values(
+    frame: Any, rollout_count: int, horizon_months: int
+) -> tuple[
+    Int64[np.ndarray, " observation"],
+    Int64[np.ndarray, " observation"],
+    Float64[np.ndarray, " observation"],
+    Bool[np.ndarray, " observation"],
+]:
     rollout_index = frame.get_column("rollout_index").to_numpy()
     month_index = frame.get_column("month_index").to_numpy()
     raw_values = frame.get_column("value").to_numpy()
@@ -194,7 +203,7 @@ def external_series_cubes(
     rollout_count: int,
     horizon_months: int,
     currency_quantum: object,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[Float64[np.ndarray, " series rollout snapshot"], Int64[np.ndarray, " series rollout snapshot"]]:
     """Materialize heterogeneous and money values together.
 
     Each sampled series is split and indexed once. The float cube carries rates and index ratios;

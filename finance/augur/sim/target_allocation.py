@@ -47,13 +47,14 @@ policy's output shape to a boundary is exactly the mistake #3745 was closed for.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from functools import partial
 from typing import NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Array, Int64
 
 from finance.augur.sim.actor_view import ActorView
 from finance.augur.sim.allocation import deposit_by_sleeve, rebalance_by_sleeve, withdrawal_by_sleeve
@@ -74,7 +75,7 @@ class SleeveUniverse:
     would try to sell it every month forever.
     """
 
-    weights: NDArray[np.int64] | jnp.ndarray
+    weights: Int64[np.ndarray, " sleeve"] | Int64[Array, " sleeve"]
     lot_rows: tuple[tuple[int, ...], ...]
     funding_cash_row: int
 
@@ -106,13 +107,17 @@ class SleeveOrders(NamedTuple):
     same sleeve — see the module docstring.
     """
 
-    sell_quanta: jnp.ndarray
-    buy_quanta: jnp.ndarray
+    sell_quanta: Int64[Array, " sleeve rollout"]
+    buy_quanta: Int64[Array, " sleeve rollout"]
 
 
 def _quanta_for_quanta(
-    *, cents: jnp.ndarray, unit_price_quanta: jnp.ndarray, quantity_scale: jnp.ndarray, round_up: bool
-) -> jnp.ndarray:
+    *,
+    cents: Int64[Array, " sleeve rollout"],
+    unit_price_quanta: Int64[Array, " instrument rollout"],
+    quantity_scale: Int64[Array, " instrument rollout"],
+    round_up: bool,
+) -> Int64[Array, " sleeve rollout"]:
     """Whole quanta for a cent target, at this month's observed market price.
 
     `round_up` is where the two sides of the band differ, and it is not a formatting choice.
@@ -137,8 +142,8 @@ def decide(
     *,
     view: ActorView,
     universe: SleeveUniverse,
-    floor_quanta: jnp.ndarray,
-    ceiling_quanta: jnp.ndarray,
+    floor_quanta: Int64[Array, " rollout"],
+    ceiling_quanta: Int64[Array, " rollout"],
     rebalance_tolerance: float | None = None,
 ) -> SleeveOrders:
     """Choose this month's orders from this month's observation.

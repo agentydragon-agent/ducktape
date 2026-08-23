@@ -7,12 +7,13 @@ index maps, calls every per-domain `compile_*` helper, and assembles the
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import NamedTuple
 
 import numpy as np
-from numpy.typing import NDArray
+from jaxtyping import Float64, Int64
 
 from finance.augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
 from finance.augur.product.asset_key import AssetKey, asset_price_key_or_none
@@ -125,37 +126,37 @@ class CompiledSimulation:
     # `series_index_by_id[key]`. PE marks live in `pe_channels`, not here.
     series_keys: tuple[LevelSeriesKey, ...]
     # Heterogeneous model levels (CPI and other non-money ratios remain float-valued).
-    external_values: NDArray[np.float64]
+    external_values: Float64[np.ndarray, " series rollout snapshot"]
     # Price-like model levels quantized to integer scenario-currency quanta before sim.
-    external_money_values: NDArray[np.int64]
-    agent_codes: NDArray[np.int64]
-    cash_agent_codes: NDArray[np.int64]
-    cash_account_codes: NDArray[np.int64]
-    cash_initial_balance: NDArray[np.int64]
-    lot_id_codes: NDArray[np.int64]
-    lot_agent_codes: NDArray[np.int64]
-    lot_account_codes: NDArray[np.int64]
-    lot_asset_codes: NDArray[np.int64]
+    external_money_values: Int64[np.ndarray, " series rollout snapshot"]
+    agent_codes: Int64[np.ndarray, " agent"]
+    cash_agent_codes: Int64[np.ndarray, " cash"]
+    cash_account_codes: Int64[np.ndarray, " cash"]
+    cash_initial_balance: Int64[np.ndarray, " cash"]
+    lot_id_codes: Int64[np.ndarray, " lot"]
+    lot_agent_codes: Int64[np.ndarray, " lot"]
+    lot_account_codes: Int64[np.ndarray, " lot"]
+    lot_asset_codes: Int64[np.ndarray, " lot"]
     # Per-lot index into `external_values` for the lot's pricing series. NO_CODE for lots
     # whose asset_id has no registered sampled level (defensive: shouldn't normally happen
     # for holdings, but the sentinel keeps lookups safe).
-    lot_asset_series_index: NDArray[np.int64]
+    lot_asset_series_index: Int64[np.ndarray, " lot"]
     # Month-0 value of the engine's per-rollout purchase month. Static only until a lot is
     # bought: a policy-chosen purchase writes the month its rollout actually paid.
-    lot_purchase_month: NDArray[np.int64]
+    lot_purchase_month: Int64[np.ndarray, " lot"]
     # What FIFO sorts by. Separate from the month because a slot a policy will fill has no
     # compile-time month, yet its position in the sale order is fixed: slots fill
     # monotonically, so the rank is known even when the month is not.
-    lot_fifo_rank: NDArray[np.int64]
+    lot_fifo_rank: Int64[np.ndarray, " lot"]
     # `(policy, sleeve, slot)` lot indices a target-allocation policy may buy into, NO_CODE
     # where a policy has fewer sleeves or a smaller budget than the dense shape.
-    target_allocation_purchase_slots: NDArray[np.int64]
-    lot_cost_basis_per_unit: NDArray[np.int64]
-    lot_initial_quantity: NDArray[np.int64]
-    lot_quantity_scale: NDArray[np.int64]
+    target_allocation_purchase_slots: Int64[np.ndarray, " policy sleeve purchase_slot"]
+    lot_cost_basis_per_unit: Int64[np.ndarray, " lot"]
+    lot_initial_quantity: Int64[np.ndarray, " lot"]
+    lot_quantity_scale: Int64[np.ndarray, " lot"]
     tax: TaxCompileOutput
-    capital_gain_agent_codes: NDArray[np.int64]
-    tax_profile_capital_gain_index: NDArray[np.int64]
+    capital_gain_agent_codes: Int64[np.ndarray, " capital_gain_profile"]
+    tax_profile_capital_gain_index: Int64[np.ndarray, " tax_profile"]
     mid: MIDCompileOutput
     salt: SaltCompileOutput
     tax_liabilities: TaxLiabilityCompileOutput
@@ -168,26 +169,26 @@ class CompiledSimulation:
     properties: PropertyCompileOutput
     # Per-property rented_fraction (0..1). Primary-residence use is tracked separately per agent.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
-    property_rented_fraction: NDArray[np.float64]
+    property_rented_fraction: Float64[np.ndarray, " property"]
     # Per-property depreciable building basis = purchase_price × (1 - land_value_fraction) +
     # buyer_closing_cost. Land is non-depreciable; the 27.5-year SL clock applies only to the
     # building portion. Capitalized closing costs add to the depreciable basis.
-    property_building_basis: NDArray[np.int64]
+    property_building_basis: Int64[np.ndarray, " property"]
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
-    property_owner_profile_index: NDArray[np.int64]
+    property_owner_profile_index: Int64[np.ndarray, " property"]
     # Agent slot of each property's owner/buyer. Used to resolve the agent's current
     # primary-residence assignment for Section 121 qualifying-use accrual.
-    property_owner_agent_index: NDArray[np.int64]
+    property_owner_agent_index: Int64[np.ndarray, " property"]
     # Series index of each property's home_value series, used at sale time to compute market
     # value. NO_CODE only for properties without sale events whose series was not supplied.
-    property_home_value_series_index: NDArray[np.int64]
-    initial_primary_residence_property_index: NDArray[np.int64]
+    property_home_value_series_index: Int64[np.ndarray, " property"]
+    initial_primary_residence_property_index: Int64[np.ndarray, " agent"]
     primary_residence_events: PrimaryResidenceEventCompileOutput
     lifecycle_events: LifecycleEventCompileOutput
     liabilities: LiabilityCompileOutput
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
-    liability_owner_profile_index: NDArray[np.int64]
+    liability_owner_profile_index: Int64[np.ndarray, " liability"]
     sales: SaleCompileOutput
     obligations: ObligationCompileOutput
     # Per-PE-issuer arrays. Issuers are the distinct `private_equity:<issuer>` asset_ids
@@ -224,16 +225,16 @@ class _LotRow(NamedTuple):
 
 
 class _LotTable(NamedTuple):
-    lot_id_codes: NDArray[np.int64]
-    agent_codes: NDArray[np.int64]
-    account_codes: NDArray[np.int64]
-    asset_codes: NDArray[np.int64]
+    lot_id_codes: Int64[np.ndarray, " lot"]
+    agent_codes: Int64[np.ndarray, " lot"]
+    account_codes: Int64[np.ndarray, " lot"]
+    asset_codes: Int64[np.ndarray, " lot"]
     assets: tuple[AssetKey, ...]
-    purchase_month: NDArray[np.int64]
-    fifo_rank: NDArray[np.int64]
-    cost_basis_per_unit: NDArray[np.int64]
-    initial_quantity: NDArray[np.int64]
-    quantity_scale: NDArray[np.int64]
+    purchase_month: Int64[np.ndarray, " lot"]
+    fifo_rank: Int64[np.ndarray, " lot"]
+    cost_basis_per_unit: Int64[np.ndarray, " lot"]
+    initial_quantity: Int64[np.ndarray, " lot"]
+    quantity_scale: Int64[np.ndarray, " lot"]
 
 
 def _materialize_lots(rows: list[_LotRow]) -> _LotTable:
@@ -271,15 +272,15 @@ def _materialize_lots(rows: list[_LotRow]) -> _LotTable:
 
 def lot_order_for_pool(
     *,
-    lot_agent_codes: NDArray[np.int64],
-    lot_account_codes: NDArray[np.int64],
-    lot_asset_codes: NDArray[np.int64],
-    lot_fifo_rank: NDArray[np.int64],
-    lot_id_codes: NDArray[np.int64],
+    lot_agent_codes: Int64[np.ndarray, " lot"],
+    lot_account_codes: Int64[np.ndarray, " lot"],
+    lot_asset_codes: Int64[np.ndarray, " lot"],
+    lot_fifo_rank: Int64[np.ndarray, " lot"],
+    lot_id_codes: Int64[np.ndarray, " lot"],
     agent_code: int,
     account_code: int,
     asset_code: int,
-) -> NDArray[np.int64]:
+) -> Int64[np.ndarray, " lot"]:
     """Return FIFO-ordered lot indices for one `(agent, account, asset)` pool.
 
     Lot identity and FIFO rank are plan columns, so the order is static: the engine resolves

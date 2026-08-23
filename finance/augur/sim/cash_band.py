@@ -36,10 +36,12 @@ sell, rather than that the sale had not been attempted yet.
 
 from __future__ import annotations
 
+# ruff: noqa: F722 -- jaxtyping shape strings are not Python forward-reference expressions.
 from decimal import Decimal
 from typing import NamedTuple
 
 import jax.numpy as jnp
+from jaxtyping import Array, Int64
 
 
 class CashOrder(NamedTuple):
@@ -52,8 +54,8 @@ class CashOrder(NamedTuple):
     this from traced code, and a plain dataclass is not a valid jit output.
     """
 
-    raise_quanta: jnp.ndarray
-    invest_quanta: jnp.ndarray
+    raise_quanta: Int64[Array, " rollout"]
+    invest_quanta: Int64[Array, " rollout"]
 
 
 def validate_band_bounds(*, floor: Decimal | int, ceiling: Decimal | int) -> None:
@@ -77,10 +79,10 @@ def validate_band_bounds(*, floor: Decimal | int, ceiling: Decimal | int) -> Non
 
 def cash_order(
     *,
-    cash_quanta: jnp.ndarray,
-    scheduled_outflow_quanta: jnp.ndarray,
-    floor_quanta: jnp.ndarray,
-    ceiling_quanta: jnp.ndarray,
+    cash_quanta: Int64[Array, " rollout"],
+    scheduled_outflow_quanta: Int64[Array, " rollout"],
+    floor_quanta: Int64[Array, " rollout"],
+    ceiling_quanta: Int64[Array, " rollout"],
 ) -> CashOrder:
     """Size this month's raise or investment from the projected end-of-month balance.
 
