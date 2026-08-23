@@ -52,8 +52,9 @@ spec:
               value: 3s
             - name: HAKU_KUBE_REQUEST_TIMEOUT
               value: 30s
-            # Active exec streams fail closed within this interval plus the 3s
-            # Console authorization timeout after release or revocation.
+            # Active exec and port-forward streams fail closed within this
+            # interval plus the 3s Console authorization timeout after release
+            # or revocation.
             - name: HAKU_KUBE_STREAM_REVALIDATION_INTERVAL
               value: 5s
             - name: HAKU_KUBE_MAX_REQUEST_BYTES
@@ -124,8 +125,12 @@ spec:
         - name: haku-kube-api-proxy
           port: 8080
       timeouts:
-        request: 35s
-        backendRequest: 35s
+        # The proxy bounds ordinary requests to 30s itself and continuously
+        # reauthorizes streams. Keep the Gateway route alive long enough for
+        # practical exec and port-forward sessions instead of cutting them off
+        # at the ordinary-request ceiling.
+        request: 3600s
+        backendRequest: 3600s
 ---
 # Selecting the proxy makes both directions default-deny. The only ingress is the Cilium Gateway;
 # egress is DNS, kube-apiserver, and the public-TLS Console authorization endpoint. It receives no
