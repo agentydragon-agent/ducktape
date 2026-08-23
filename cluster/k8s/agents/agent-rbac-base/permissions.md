@@ -22,10 +22,11 @@ one of two data-classification labels:
 - `rbac.ducktape.io/agent-readable-logs: "true"` binds that metadata baseline plus the additive
   `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
 
-Both classifications grant the same subjects: Haku, its in-cluster ServiceAccounts,
-`kubectl-sandbox-users`, and the synthetic `haku:access-profile:public-coder` group. The Kyverno policy at
-`cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates the corresponding
-namespaced RoleBindings. Sensitive or identity-specific access remains explicit service RBAC.
+Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
+its in-cluster ServiceAccounts, `kubectl-sandbox-users`, and the synthetic public-coder group. The
+Kyverno policy at `cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates
+the corresponding namespaced RoleBindings. Sensitive or identity-specific access remains explicit
+service RBAC.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
 `gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an

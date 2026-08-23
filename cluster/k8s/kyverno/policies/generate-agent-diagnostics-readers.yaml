@@ -53,6 +53,9 @@ spec:
             - kind: Group
               name: oidc-ksbx-groups:haku
               apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: haku:access-profile:haku
+              apiGroup: rbac.authorization.k8s.io
             - kind: ServiceAccount
               name: haku
               namespace: haku-sandbox
@@ -94,6 +97,9 @@ spec:
           subjects:
             - kind: Group
               name: oidc-ksbx-groups:haku
+              apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: haku:access-profile:haku
               apiGroup: rbac.authorization.k8s.io
             - kind: ServiceAccount
               name: haku

@@ -2,9 +2,10 @@
 # Used by the sandbox exec-target pods, the managed-agent worker, and the Console-owned
 # Claude runner alike.
 #
-# TWO SUBJECTS, ONE GRANT. A ServiceAccount is namespaced, so Haku's identity exists once per
-# namespace it runs a pod in; its *permissions* do not. Both subjects sit on this binding rather
-# than parallel roles, so "what can Haku do to the cluster" has one answer and one place to change.
+# THREE SUBJECTS, ONE GRANT. A ServiceAccount is namespaced, so Haku's runtime identity exists once
+# per namespace it runs a pod in; its *permissions* do not. Both runtime subjects and Console's
+# deploy-owned access-profile group sit on this binding rather than parallel roles, so "what can
+# Haku do to the cluster" has one answer and one place to change.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -22,3 +23,6 @@ subjects:
   - kind: ServiceAccount
     name: haku-claude
     namespace: haku-claude-sandbox
+  - kind: Group
+    name: haku:access-profile:haku
+    apiGroup: rbac.authorization.k8s.io
