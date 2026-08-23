@@ -7,7 +7,6 @@ resources:
   - keeper.yaml
   - clickhouse.yaml
   - networkpolicy.yaml
-  - pdb.yaml
   - podmonitor.yaml
 
 configMapGenerator:

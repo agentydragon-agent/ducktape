@@ -4,7 +4,11 @@ metadata:
   name: analytics
   labels:
     goldilocks.fairwinds.com/enabled: "true"
-    goldilocks.fairwinds.com/vpa-update-mode: "initial"
+    # ClickHouse and Keeper have topology-aware, capacity-planned requests.
+    # VPA admission raised ClickHouse from 500m to 1554m, which made its
+    # local-PV-pinned replica unschedulable. Keep recommendations visible in
+    # Goldilocks without mutating operator-managed Pods.
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/audit: restricted

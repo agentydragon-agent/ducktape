@@ -29,6 +29,13 @@ spec:
           nodeSelector:
             topology.kubernetes.io/zone: hil-ovh
             storage.allegedly.works/tier: hdd
+          # hil-ovh has two HDD workers plus one HDD control-plane node. The
+          # three-member Keeper quorum requires distinct hosts, so permit only
+          # this lightweight infrastructure workload onto the third node.
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
           affinity:
             podAntiAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
