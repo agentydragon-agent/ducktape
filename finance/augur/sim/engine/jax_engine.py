@@ -137,6 +137,7 @@ from finance.augur.sim.tensor_types import (
     JaxCashRolloutI64,
     JaxCashflowRolloutBool,
     JaxCashflowRolloutI64,
+    JaxEventRolloutBool,
     JaxF64,
     JaxHarvestPolicyRolloutI64,
     JaxI64,
@@ -162,6 +163,7 @@ from finance.augur.sim.tensor_types import (
     JaxRolloutF64,
     JaxRolloutI64,
     JaxRolloutLotI64,
+    JaxRolloutTaxLinkI64,
     JaxSaleLotRolloutI64,
     JaxSeriesCubeF64,
     JaxSeriesCubeI64,
@@ -844,7 +846,7 @@ def run_jax_product_metric_arrays(plan: CompiledSimulation, *, primary_agent_id:
 
 def _run_jax_product_series(
     plan: CompiledSimulation, *, primary_agent_id: str, metric: str
-) -> tuple[jnp.ndarray, _ProductTailOutput]:
+) -> tuple[JaxSnapshotRolloutI64, _ProductTailOutput]:
     """Execute the product reducer once and materialize the requested metric series."""
     validate_seed_dependent_inputs(plan)
     product_static, product_inputs = _product_summary_inputs(plan, primary_agent_id=primary_agent_id)
@@ -854,7 +856,7 @@ def _run_jax_product_series(
     return _product_metric_series(metric, initial_ys, monthly_ys), product_tail
 
 
-def _product_terminal_series(metric: str, series: jnp.ndarray) -> jnp.ndarray:
+def _product_terminal_series(metric: str, series: JaxSnapshotRolloutI64) -> JaxRolloutI64:
     """Terminal samples: cumulative shortfall, final snapshot for every other metric."""
     return series.sum(axis=0) if metric == "shortfall_quanta" else series[-1]
 
@@ -864,9 +866,9 @@ def _product_metric_fan_device_summary(
     *,
     metric: str,
     percentiles: tuple[float, ...],
-    series: jnp.ndarray,
-    terminal: jnp.ndarray,
-    failed_month: jnp.ndarray,
+    series: JaxSnapshotRolloutI64,
+    terminal: JaxRolloutI64,
+    failed_month: JaxRolloutI64,
 ) -> tuple[tuple[CurrencyQuantileInterpolation, ...], _ProductMetricFanDeviceSummary]:
     """Select exact quantile brackets on-device for one metric fan."""
     quantile_plan = currency_quantile_plan(plan.rollout_count, percentiles)
@@ -1403,7 +1405,7 @@ def _build_program(
     # non-deterministic series order can't trigger a recompile (see the determinism note in
     # `collect_level_series_keys`). Each array is in the SAME order its phase loop iterates the
     # matching folded tuple; `ta_pool_series` is a per-policy list of per-sleeve arrays (ragged).
-    def _series_ops(values: list[int]) -> jnp.ndarray:
+    def _series_ops(values: list[int]) -> JaxI64:
         return jnp.asarray(np.asarray(values, dtype=np.int64))
 
     pe_floor_series = _series_ops(
@@ -1631,8 +1633,12 @@ def _program_impl(program: _SimulationProgram) -> tuple:
     folded_target_allocation = structure.folded_target_allocation
 
     def product_metrics(
-        s: _ScanState, *, snapshot_month: jnp.ndarray, obligation_shortfall: jnp.ndarray, obligation_mask: jnp.ndarray
-    ) -> tuple[jnp.ndarray, ...]:
+        s: _ScanState,
+        *,
+        snapshot_month: JaxIntScalar,
+        obligation_shortfall: JaxObligationRolloutI64,
+        obligation_mask: JaxObligationBool,
+    ) -> tuple[JaxRolloutI64, ...]:
         assert product_summary is not None
         assert product_inputs is not None
         cash_quanta = jnp.where(product_inputs.cash_mask[:, None], s.cash, 0).sum(axis=0)
@@ -1684,18 +1690,18 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         return (cash_quanta, holding_quanta, pe_quanta, property_quanta, mortgage_quanta, shortfall_quanta, bond_quanta)
 
     def december_tax(
-        ordinary: jnp.ndarray,
-        cg_ytd: jnp.ndarray,
-        carryforward: jnp.ndarray,
-        recapture: jnp.ndarray,
-        property_tax_ytd: jnp.ndarray,
-        liab_interest_ytd: jnp.ndarray,
-        liab_rental_ytd: jnp.ndarray,
-        property_dep_ytd: jnp.ndarray,
-        taxliab_active: jnp.ndarray,
-        taxliab_amount: jnp.ndarray,
-        active: jnp.ndarray,
-        month: jnp.ndarray,
+        ordinary: JaxIncomeBucketRolloutI64,
+        cg_ytd: JaxCapitalGainClassRolloutI64,
+        carryforward: JaxCapitalGainProfileRolloutI64,
+        recapture: JaxTaxProfileRolloutI64,
+        property_tax_ytd: JaxTaxProfileRolloutI64,
+        liab_interest_ytd: JaxLiabilityRolloutI64,
+        liab_rental_ytd: JaxLiabilityRolloutI64,
+        property_dep_ytd: JaxPropertyRolloutI64,
+        taxliab_active: JaxTaxLiabilityRolloutBool,
+        taxliab_amount: JaxTaxLiabilityRolloutI64,
+        active: JaxRolloutBool,
+        month: JaxIntScalar,
     ):
         """Branch-free December (`month % 12 == 11`) year-end tax pass, gated per-rollout by `dec`.
 
@@ -1740,7 +1746,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         zero_salt = _zeros_i64((r,))
         breakdown = [_zeros_i64((max(1, link_count), r)) for _ in range(11)]
 
-        def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
+        def run_link(link: int, salt_deduction: JaxRolloutI64, ann: JaxRolloutTaxLinkI64) -> JaxRolloutTaxLinkI64:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
                 link_tax_static[link],
                 cfg,
@@ -1815,7 +1821,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             tuple(breakdown),
         )
 
-    def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, Any]:
+    def step(s: _ScanState, month: JaxIntScalar) -> tuple[_ScanState, Any]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
         cost_basis_per_unit = s.cost_basis_per_unit
         lot_purchase_month = s.lot_purchase_month
@@ -1845,8 +1851,8 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         # its static month equals the traced month, masked per-rollout. is_primary is precomputed
         # per-month host-side; the SALE path uses the §121 owner-occupancy window for the exclusion.
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
-        le_fired: list[jnp.ndarray] = []
-        sale_traces: list[PropertySaleTraceOutput] = []
+        le_fired: list[JaxEventRolloutBool] = []
+        sale_traces: list[PropertySaleTraceOutput[jax.Array]] = []
         for evi, ev in enumerate(folded_lifecycle):
             ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
             fires = month == ev_month
@@ -2131,7 +2137,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         ta_disp_proceeds = _zeros_i64((ta_policy_count, ta_max_sleeves, lot_axis, r))
         # Buy orders are DECIDED here and EXECUTED after settlement, so they wait in this list.
         # `(policy, sleeve, wanted quanta, unit price)`, one entry per sleeve that ordered.
-        ta_buy_orders: list[tuple[_FoldedTargetAllocation, _FoldedSleeve, jnp.ndarray, jnp.ndarray]] = []
+        ta_buy_orders: list[tuple[_FoldedTargetAllocation, _FoldedSleeve, JaxRolloutI64, JaxRolloutI64]] = []
         if folded_target_allocation:
             # Marks for every lot, once for the month rather than once per pool: the observation
             # needs a value for each of the policy's lots, and `_value_quanta_from_quantity` is the
