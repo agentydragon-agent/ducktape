@@ -5,8 +5,7 @@ metadata:
   labels:
     goldilocks.fairwinds.com/enabled: "true"
     goldilocks.fairwinds.com/vpa-update-mode: "initial"
-    # Kyverno's default resourceFilters exclude kube-system, so neither
-    # label-driven generator can create a RoleBinding here. Keep the
-    # public-coder opt-in absent until we intentionally add an explicit binding
-    # or a narrowly scoped resource-filter exception.
-    rbac.ducktape.io/agent-namespace-diagnostics-reader: "true"
+    # Kyverno's default resourceFilters exclude kube-system, so label-driven
+    # diagnostics readers cannot create RoleBindings here. Keep both generic
+    # agent and public-coder opt-ins absent until we intentionally add an
+    # explicit binding or a narrowly scoped resource-filter exception.
