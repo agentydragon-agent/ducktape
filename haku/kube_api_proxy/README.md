@@ -40,13 +40,15 @@ choose the Kubernetes username or groups.
   the upstream credential.
 - Authority failures, malformed decisions and denials all fail closed.
 - Request bodies, authorization calls and ordinary Kubernetes requests are bounded.
-- Noninteractive pod `exec` upgrade requests are forwarded transparently. The
-  initial authorization expiry is a hard stream deadline, and Console is
+- Pod `exec` and `portforward` upgrade requests are forwarded transparently.
+  The initial authorization expiry is a hard stream deadline, and Console is
   rechecked every five seconds so release, revocation or authority failure
   closes the stream within the revalidation interval plus the authorization
-  timeout—eight seconds with the deployed defaults.
-- `watch`, log following, resource proxying, `attach`, `portforward` and
-  non-exec upgrades return `501` before authorization or forwarding.
+  timeout—eight seconds with the deployed defaults. Port-forward therefore
+  does not outlive its grant: after a grant is withdrawn, its connections close
+  within that bound.
+- `watch`, log following, resource proxying, `attach` and other upgrades return
+  `501` before authorization or forwarding.
 - Console exposes the typed endpoint contract at
   `POST /api/internal/kubernetes/authorize`. It remains unavailable (and thus
   fail-closed) until standing SAR subjects are explicitly mapped to Agent access
@@ -102,6 +104,11 @@ on every non-2xx or malformed response. Allowed decisions require a non-empty
 decision may include it, in which case the proxy terminates the upstream request
 at that instant.
 
+Port-forward authorization deliberately follows Kubernetes RBAC semantics: the
+decision covers `create` on `pods/portforward` for one named pod. The requested
+`ports` query parameter is forwarded unchanged, but it is not a Kubernetes RBAC
+attribute, so an Haku grant cannot constrain individual remote ports.
+
 ## Configuration
 
 | Environment                              |            Default | Meaning                                             |
@@ -155,18 +162,18 @@ request attributes. Console logs the same decision ID with the Agent and grant s
 ships both pods' stdout/stderr to Loki, whose current configuration has no finite age-based
 `retention_period`; the durable grant row completes the grant-to-source-ToolCall link.
 
-Exec intentionally uses Go's standard reverse-proxy upgrade path rather than
-implementing Kubernetes remote-command channel framing. The in-cluster upstream
-transport stays on HTTP/1.1 because Kubernetes streaming subresources use
-protocol upgrades that an HTTP/2 transport rejects. The first support and
-acceptance contract is noninteractive (`stdin=false`, `tty=false`); interactive
-behavior is not yet promised even where transparent forwarding happens to work.
+Exec and port-forward intentionally use Go's standard reverse-proxy upgrade
+path rather than implementing Kubernetes remote-command or port-forward channel
+framing. The in-cluster upstream transport stays on HTTP/1.1 because Kubernetes
+streaming subresources use protocol upgrades that an HTTP/2 transport rejects.
+The first exec support and acceptance contract is noninteractive
+(`stdin=false`, `tty=false`); interactive behavior is not yet promised even
+where transparent forwarding happens to work.
 
 Remaining work:
 
 - TODO(#4564): decide whether to implement Kubernetes `watch` and following
   logs. Any implementation must preserve the standing-policy fail-closed model.
-- TODO(#4565): implement `portforward` as a separate reviewed protocol increment.
 - TODO(#4562): revisit deeper metrics, alerts and failure hardening if operational experience
   justifies them.
 - TODO(#4428): consider discovery-response caching only if it preserves the

@@ -14,7 +14,10 @@ authorizes each request through standing SAR or an active Agent-owned grant. Thi
 the inline Haku authorization path the temporary-access policy boundary for this personal cluster;
 the Agent still has no standing cluster-admin authority or direct kube-apiserver credential.
 
-The proxy deliberately continues to reject long-running `watch`/log-follow and upgrade protocols.
+The proxy deliberately continues to reject long-running `watch`/log-follow and
+upgrades other than pod `exec` and `portforward`. The supported upgraded streams
+are reauthorized every five seconds and close within the revalidation interval
+plus the Console authorization timeout after a grant is released or revoked.
 The standing identity has `automountServiceAccountToken: false` and no token Secret; only Console may
 evaluate it through SubjectAccessReview.
 

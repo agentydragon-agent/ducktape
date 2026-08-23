@@ -90,9 +90,11 @@ The proxy's static execution ceiling is `cluster-admin`, but the standing SAR id
 same narrow read-only subject. The ceiling alone grants nothing: without standing SAR coverage or a
 matching active Agent-owned grant, the proxy denies the request. Exact grants may therefore include
 Secrets, RBAC, writes, and other cluster-admin capabilities when the Operator explicitly approves
-them. Long-running `watch`/log-follow and upgraded `exec`/port-forward protocols remain separately
-tracked and rejected until implemented. Do not invent a competing cluster-access mechanism in
-response to an approval stall.
+them. Long-running `watch`/log-follow and upgrades other than pod `exec`/port-forward remain
+rejected. Active exec and port-forward streams are reauthorized every five seconds; a release,
+revocation, or authorization failure closes them within that interval plus the Console
+authorization timeout (eight seconds with the deployed defaults). Do not invent a competing
+cluster-access mechanism in response to an approval stall.
 
 ### Haku Console availability and policy
 

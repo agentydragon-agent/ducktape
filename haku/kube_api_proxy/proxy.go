@@ -249,7 +249,7 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 
 	var ctx context.Context
 	var cancel context.CancelFunc
-	streaming := isExecRequest(attributes, request)
+	streaming := isStreamingRequest(attributes, request)
 	if streaming {
 		if decision.ValidUntil == nil {
 			ctx, cancel = context.WithCancel(request.Context())
@@ -409,17 +409,17 @@ func unsupportedAttributes(attributes RequestAttributes, request *http.Request) 
 	if attributes.Verb == "proxy" || attributes.Subresource == "proxy" {
 		return "Kubernetes resource proxy requests are not implemented"
 	}
-	if isUpgradeRequest(request) && !isExecRequest(attributes, request) {
-		return "upgraded connections other than pod exec are not implemented"
+	if isUpgradeRequest(request) && !isStreamingRequest(attributes, request) {
+		return "upgraded connections other than pod exec and port-forward are not implemented"
 	}
 	if attributes.Resource == "pods" {
 		switch attributes.Subresource {
-		case "exec":
+		case "exec", "portforward":
 			if !isUpgradeRequest(request) {
-				return "pod exec requires an upgraded connection"
+				return fmt.Sprintf("pod %s requires an upgraded connection", attributes.Subresource)
 			}
-		case "attach", "portforward":
-			return "pod attach and port-forward are not implemented"
+		case "attach":
+			return "pod attach is not implemented"
 		case "log":
 			if queryMayEnable(request.URL.Query()["follow"]) {
 				return "following pod logs is not implemented"
@@ -435,6 +435,14 @@ func isUpgradeRequest(request *http.Request) bool {
 
 func isExecRequest(attributes RequestAttributes, request *http.Request) bool {
 	return attributes.Resource == "pods" && attributes.Subresource == "exec" && isUpgradeRequest(request)
+}
+
+func isPortForwardRequest(attributes RequestAttributes, request *http.Request) bool {
+	return attributes.Resource == "pods" && attributes.Subresource == "portforward" && attributes.Verb == "create" && isUpgradeRequest(request)
+}
+
+func isStreamingRequest(attributes RequestAttributes, request *http.Request) bool {
+	return isExecRequest(attributes, request) || isPortForwardRequest(attributes, request)
 }
 
 var forwardedRequestHeaders = map[string]bool{
