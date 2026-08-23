@@ -132,10 +132,11 @@ The capability-neutral production cutover deploys this proxy at
 `haku-kubeapi.allegedly.works`. Public Coder reaches it only through its mandatory
 iron-proxy, which substitutes the Agent's Haku bearer for that exact hostname.
 The Agent has no Kubernetes credential and its NetworkPolicy has no direct
-kube-apiserver path. The proxy uses a rotating projected ServiceAccount token. Its baseline RBAC
-ceiling equals Public Coder's standing SAR subject; an additional cluster-wide ceiling for core
-`pods` `get` and `list` can be exercised only when Console authorizes the request through an active
-Agent-owned grant.
+kube-apiserver path. The proxy uses a rotating projected ServiceAccount token with a deliberately
+reviewed `cluster-admin` static ceiling. That ceiling creates no standing Agent authority: Console
+still authorizes every request through the fixed SAR subject or an active exact Agent-owned grant.
+For this personal cluster, the inline Haku decision is intentionally the effective temporary-access
+policy boundary so useful grants do not each require another GitOps RBAC expansion.
 
 Flux orders the cutover so the fixed SAR subject, Console configuration, proxy
 Deployment/route, and cross-namespace execution bindings exist before the Agent
@@ -143,13 +144,18 @@ proxy changes credential substitution. A partial rollout therefore leaves the
 old path intact or fails the new path closed; it never exposes the proxy's
 upstream credential to the Agent.
 
+The proxy emits each allow/deny decision to stdout with its decision ID and canonical Kubernetes
+request attributes. Console logs the same decision ID with the Agent and grant source. Promtail
+ships both pods' stdout/stderr to Loki, whose current configuration has no finite age-based
+`retention_period`; the durable grant row completes the grant-to-source-ToolCall link.
+
 Remaining work:
 
-- TODO(#4428): add per-agent/SAR/grant audit correlation and Prometheus metrics.
-- TODO(#4428): decide whether to implement Kubernetes `watch` and following
+- TODO(#4564): decide whether to implement Kubernetes `watch` and following
   logs. Any implementation must preserve the standing-policy fail-closed model.
-- TODO(#4428): treat `exec`, `attach`, `portforward`, upgrades and resource
-  proxying as separate, security-reviewed protocol increments rather than
-  silently passing them through the ordinary HTTP handler.
+- TODO(#4566): implement `exec` as a separate reviewed protocol increment.
+- TODO(#4565): implement `portforward` as a separate reviewed protocol increment.
+- TODO(#4562): revisit deeper metrics, alerts and failure hardening if operational experience
+  justifies them.
 - TODO(#4428): consider discovery-response caching only if it preserves the
   fail-closed authority model and never bypasses a SAR decision.

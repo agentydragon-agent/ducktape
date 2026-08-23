@@ -77,13 +77,18 @@ Node and cross-namespace projections may be available. Trust `kubectl auth can-i
 server's decision over this prose summary.
 
 The Haku-backed temporary-grant workflow is the escalation path when standing SAR denies a needed
-Kubernetes request. Use the `kubernetes` MCP server's `can_i` first, then submit the narrowest
-approval-gated `create_grant` scope and rules. The proxy's static maximum additionally includes core
-`pods` `get` and `list` across all namespaces, but the standing SAR identity does not. Cluster-wide
-pod listing therefore remains denied unless an operator approves a matching active `all_namespaces`
-grant; individual pod reads likewise require an active grant covering the pod's namespace. This
-ceiling does not include pod `watch`, logs, Secrets, or writes. Do not invent a competing
-cluster-access mechanism in response to an approval stall.
+Kubernetes request. Use the `kubernetes` MCP server's `can_i` first, then submit one approval-gated
+`create_grant` call containing every exact scope/rule item needed for the task. All items created by
+that call share one start and expiry; do not split a coherent debugging session into per-operation
+approval work.
+
+The proxy's static execution ceiling is `cluster-admin`, but the standing SAR identity remains the
+same narrow read-only subject. The ceiling alone grants nothing: without standing SAR coverage or a
+matching active Agent-owned grant, the proxy denies the request. Exact grants may therefore include
+Secrets, RBAC, writes, and other cluster-admin capabilities when the Operator explicitly approves
+them. Long-running `watch`/log-follow and upgraded `exec`/port-forward protocols remain separately
+tracked and rejected until implemented. Do not invent a competing cluster-access mechanism in
+response to an approval stall.
 
 ### Haku Console availability and policy
 

@@ -234,21 +234,17 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     route = one(obj for obj in proxy_objects if obj["kind"] == "HTTPRoute")
     assert route["spec"]["hostnames"] == ["haku-kubeapi.allegedly.works"]
 
-    ceiling_objects = list(yaml.safe_load_all((agent_dir / "k8s-reader" / "proxy-ceiling.yaml").read_text()))
-    actual_ceiling = {
-        (obj["kind"], obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"])
-        for obj in ceiling_objects
+    ceiling = yaml.safe_load((agent_dir / "k8s-reader" / "cluster-admin-ceiling.yaml").read_text())
+    assert ceiling["kind"] == "ClusterRoleBinding"
+    assert ceiling["metadata"]["name"] == "haku-kube-api-proxy-cluster-admin-ceiling"
+    assert ceiling["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "ClusterRole",
+        "name": "cluster-admin",
     }
-    assert actual_ceiling == {
-        ("RoleBinding", "public-coder-agent", "Role", "public-coder-agent-reader"),
-        ("ClusterRoleBinding", None, "ClusterRole", "public-coder-agent-node-reader"),
-        ("RoleBinding", "ducktape-flux", "Role", "ducktape-flux-reader"),
-        ("RoleBinding", "vm-images-publisher", "Role", "public-coder-agent-metadata-reader"),
-    }
-    for binding in ceiling_objects:
-        assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "haku-kube-api-proxy", "namespace": "haku-console"}
-        ]
+    assert ceiling["subjects"] == [
+        {"kind": "ServiceAccount", "name": "haku-kube-api-proxy", "namespace": "haku-console"}
+    ]
 
     standing_subject = {
         "kind": "ServiceAccount",
@@ -267,29 +263,18 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         for obj in yaml.safe_load_all(path.read_text())
         if obj["kind"] in {"RoleBinding", "ClusterRoleBinding"} and standing_subject in obj["subjects"]
     }
-    proxy_role_refs = {
-        (obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"]) for obj in ceiling_objects
+    assert standing_role_refs == {
+        ("public-coder-agent", "Role", "public-coder-agent-reader"),
+        (None, "ClusterRole", "public-coder-agent-node-reader"),
+        ("ducktape-flux", "Role", "ducktape-flux-reader"),
+        ("vm-images-publisher", "Role", "public-coder-agent-metadata-reader"),
     }
-    assert proxy_role_refs == standing_role_refs
-
-    temporary_ceiling_path = agent_dir / "k8s-reader" / "all-pods-read-ceiling.yaml"
-    temporary_ceiling_objects = list(yaml.safe_load_all(temporary_ceiling_path.read_text()))
-    assert [obj["kind"] for obj in temporary_ceiling_objects] == ["ClusterRole", "ClusterRoleBinding"]
-    temporary_ceiling_role, temporary_ceiling_binding = temporary_ceiling_objects
-    assert temporary_ceiling_role["metadata"]["name"] == "haku-kube-api-proxy-all-pods-read-ceiling"
-    assert temporary_ceiling_role["rules"] == [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]}]
-    assert temporary_ceiling_binding["roleRef"] == {
-        "apiGroup": "rbac.authorization.k8s.io",
-        "kind": "ClusterRole",
-        "name": temporary_ceiling_role["metadata"]["name"],
-    }
-    assert temporary_ceiling_binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "haku-kube-api-proxy", "namespace": "haku-console"}
-    ]
-    assert standing_subject not in temporary_ceiling_binding["subjects"]
+    assert standing_subject not in ceiling["subjects"]
 
     reader_kustomization = yaml.safe_load((agent_dir / "k8s-reader" / "kustomization.yaml").read_text())
-    assert "all-pods-read-ceiling.yaml" in reader_kustomization["resources"]
+    assert "cluster-admin-ceiling.yaml" in reader_kustomization["resources"]
+    assert "proxy-ceiling.yaml" not in reader_kustomization["resources"]
+    assert "all-pods-read-ceiling.yaml" not in reader_kustomization["resources"]
 
     reader_flux = yaml.safe_load((agent_dir / "k8s-reader" / "flux-kustomization.yaml").read_text())
     proxy_flux = yaml.safe_load((agent_dir / "proxy" / "flux-kustomization.yaml").read_text())

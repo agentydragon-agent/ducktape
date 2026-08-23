@@ -19,12 +19,7 @@ from haku.console.kubernetes_authorization import (
     required_rule,
     required_scope,
 )
-from haku.console.kubernetes_grant_models import (
-    KubernetesGrant,
-    KubernetesGrantScope,
-    KubernetesGrantScopeKind,
-    KubernetesRule,
-)
+from haku.console.kubernetes_grant_models import KubernetesGrant, KubernetesGrantScopeKind, KubernetesGrantSpec
 from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, require_mcp_execution_context
 
@@ -71,23 +66,17 @@ class KubernetesToolsService:
             raise PermissionError("Kubernetes grant operations require an Agent caller")
         return context.caller
 
-    async def create_grant(
-        self,
-        *,
-        context: McpExecutionContext,
-        scope: KubernetesGrantScope,
-        rules: list[KubernetesRule],
-        duration_seconds: int,
-    ) -> KubernetesGrant:
+    async def create_grants(
+        self, *, context: McpExecutionContext, grants: list[KubernetesGrantSpec], duration_seconds: int
+    ) -> tuple[KubernetesGrant, ...]:
         caller = self._caller(context)
         if context.tool_call_id is None:
             raise PermissionError("Kubernetes grant creation requires durable tool-call provenance")
         now = datetime.datetime.now(datetime.UTC)
-        return await self.grants.create_grant(
+        return await self.grants.create_grants(
             agent_id=caller.agent_id,
             source_tool_call_id=context.tool_call_id,
-            scope=scope,
-            rules=rules,
+            grants=grants,
             expires_at=now + datetime.timedelta(seconds=duration_seconds),
         )
 
@@ -136,8 +125,9 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
     mcp = FastMCP(
         name=KUBERNETES_SERVER_ID,
         instructions=(
-            "Inspect Kubernetes access with can_i, or request/release explicit Agent-owned temporary "
-            "RBAC-like grants. Agent identity and tool-call provenance are trusted request metadata, "
+            "Inspect Kubernetes access with can_i, or create/release explicit Agent-owned temporary "
+            "RBAC-like grants. One create_grant call may create multiple exact grants with a shared expiry. "
+            "Agent identity and tool-call provenance are trusted request metadata, "
             "never tool arguments. Kubernetes SAR is checked before temporary grants."
         ),
     )
@@ -154,12 +144,13 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
 
     @mcp.tool
     async def create_grant(
-        scope: Annotated[
-            KubernetesGrantScope,
-            Field(description="Explicit namespace, all-namespaces, cluster, or non-resource scope."),
-        ],
-        rules: Annotated[
-            list[KubernetesRule], Field(min_length=1, max_length=32, description="Exact RBAC-like rules to grant.")
+        grants: Annotated[
+            list[KubernetesGrantSpec],
+            Field(
+                min_length=1,
+                max_length=32,
+                description="Exact grants to create atomically with one shared start and expiry.",
+            ),
         ],
         duration_seconds: Annotated[
             int,
@@ -170,8 +161,8 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
             ),
         ],
         context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> KubernetesGrant:
-        return await service.create_grant(context=context, scope=scope, rules=rules, duration_seconds=duration_seconds)
+    ) -> list[KubernetesGrant]:
+        return list(await service.create_grants(context=context, grants=grants, duration_seconds=duration_seconds))
 
     @mcp.tool
     async def list_grants(context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> list[KubernetesGrant]:

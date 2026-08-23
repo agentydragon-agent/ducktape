@@ -17,6 +17,7 @@ from haku.console.kubernetes_authorization import (
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
     KubernetesGrantScopeKind,
+    KubernetesGrantSpec,
     KubernetesGrantStatus,
     KubernetesNamespacesGrantScope,
     KubernetesRule,
@@ -66,7 +67,7 @@ def _grant() -> KubernetesGrant:
 def _service() -> tuple[KubernetesToolsService, AsyncMock, AsyncMock]:
     grants = AsyncMock()
     authorization = AsyncMock()
-    grants.create_grant.return_value = _grant()
+    grants.create_grants.return_value = (_grant(),)
     grants.list_grants.return_value = (_grant(),)
     grants.get_grant.return_value = _grant()
     grants.release_grant.return_value = _grant()
@@ -84,24 +85,36 @@ async def test_server_exposes_exact_stable_tool_set_without_context_argument() -
     assert {tool.name for tool in tools} == {"can_i", "create_grant", "list_grants", "get_grant", "release_grant"}
     for tool in tools:
         assert "context" not in tool.inputSchema.get("properties", {})
+    create_grant = next(tool for tool in tools if tool.name == "create_grant")
+    assert set(create_grant.inputSchema["properties"]) == {"grants", "duration_seconds"}
+    assert create_grant.inputSchema["properties"]["grants"]["minItems"] == 1
+    assert create_grant.inputSchema["properties"]["grants"]["maxItems"] == 32
 
 
 @pytest.mark.asyncio
-async def test_create_uses_trusted_agent_current_tool_call_and_explicit_scope() -> None:
+async def test_create_uses_trusted_agent_current_tool_call_and_exact_grants() -> None:
     service, grants, _ = _service()
-    await service.create_grant(context=_agent_context(), scope=_SCOPE, rules=[_RULE], duration_seconds=60)
-    kwargs = grants.create_grant.await_args.kwargs
+    requested = [
+        KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
+        KubernetesGrantSpec(
+            scope=KubernetesNamespacesGrantScope(namespaces=("other",)),
+            rules=(KubernetesRule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)),),
+        ),
+    ]
+    await service.create_grants(context=_agent_context(), grants=requested, duration_seconds=60)
+    kwargs = grants.create_grants.await_args.kwargs
     assert kwargs["agent_id"] == _AGENT
     assert kwargs["source_tool_call_id"] == "tc_create_grant"
-    assert kwargs["scope"] == _SCOPE
-    assert kwargs["rules"] == [_RULE]
+    assert kwargs["grants"] == requested
 
 
 @pytest.mark.asyncio
 async def test_operator_cannot_mint_or_inspect_agent_grants() -> None:
     service, _, _ = _service()
     with pytest.raises(PermissionError):
-        await service.create_grant(context=_operator_context(), scope=_SCOPE, rules=[_RULE], duration_seconds=60)
+        await service.create_grants(
+            context=_operator_context(), grants=[KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,))], duration_seconds=60
+        )
     with pytest.raises(PermissionError):
         await service.list_grants(context=_operator_context())
     with pytest.raises(PermissionError):

@@ -183,6 +183,20 @@ class KubernetesGrant(BaseModel):
         return self
 
 
+class KubernetesGrantSpec(BaseModel):
+    """One exact scope/rule item requested by a grant-creation ToolCall."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scope: KubernetesGrantScope
+    rules: tuple[KubernetesRule, ...] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_scope_rules(self) -> KubernetesGrantSpec:
+        validate_grant_scope_rules(self.scope, self.rules)
+        return self
+
+
 class KubernetesGrantDecision(BaseModel):
     """Result of matching a request against one Agent's currently active grants."""
 

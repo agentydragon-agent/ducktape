@@ -10,6 +10,7 @@ import pytest_bazel
 
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
+    KubernetesGrantSpec,
     KubernetesGrantStatus,
     KubernetesNamespacesGrantScope,
     KubernetesRule,
@@ -33,18 +34,31 @@ class FakeRepository:
         self.expire_calls: list[tuple[UUID | None, datetime]] = []
 
     async def create(self, *, agent_id, source_tool_call_id, scope, rules, created_at, expires_at):
-        grant = KubernetesGrant(
-            grant_id=uuid4(),
+        created = await self.create_many(
             agent_id=agent_id,
             source_tool_call_id=source_tool_call_id,
-            scope=scope,
-            rules=tuple(rules),
-            status=KubernetesGrantStatus.ACTIVE,
+            grants=(KubernetesGrantSpec(scope=scope, rules=tuple(rules)),),
             created_at=created_at,
             expires_at=expires_at,
         )
-        self.grants[grant.grant_id] = grant
-        return grant
+        return created[0]
+
+    async def create_many(self, *, agent_id, source_tool_call_id, grants, created_at, expires_at):
+        created = tuple(
+            KubernetesGrant(
+                grant_id=uuid4(),
+                agent_id=agent_id,
+                source_tool_call_id=source_tool_call_id,
+                scope=grant.scope,
+                rules=grant.rules,
+                status=KubernetesGrantStatus.ACTIVE,
+                created_at=created_at,
+                expires_at=expires_at,
+            )
+            for grant in grants
+        )
+        self.grants.update((grant.grant_id, grant) for grant in created)
+        return created
 
     async def expire(self, *, agent_id=None, now):
         self.expire_calls.append((agent_id, now))
@@ -103,6 +117,48 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
         await service.match_request(agent_id=_OTHER_AGENT, required_scope=_DEFAULT_SCOPE, required_rules=(_rule(),))
     ).allowed
     assert repo.expire_calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
+    repo = FakeRepository()
+    clock_calls = 0
+
+    def clock() -> datetime:
+        nonlocal clock_calls
+        clock_calls += 1
+        return _NOW
+
+    service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
+    expires_at = _NOW + timedelta(minutes=5)
+    grants = await service.create_grants(
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        grants=(
+            KubernetesGrantSpec(scope=_SCOPE, rules=(_rule(),)),
+            KubernetesGrantSpec(scope=_DEFAULT_SCOPE, rules=(_rule("list"),)),
+        ),
+        expires_at=expires_at,
+    )
+
+    assert len(grants) == 2
+    assert {grant.source_tool_call_id for grant in grants} == {"tool-call-1"}
+    assert {grant.created_at for grant in grants} == {_NOW}
+    assert {grant.expires_at for grant in grants} == {expires_at}
+    assert clock_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> None:
+    service = KubernetesGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    with pytest.raises(ValueError, match="at most 32 grants"):
+        await service.create_grants(
+            agent_id=_AGENT,
+            source_tool_call_id="tool-call-1",
+            grants=tuple(KubernetesGrantSpec(scope=_SCOPE, rules=(_rule(),)) for _ in range(33)),
+            expires_at=_NOW + timedelta(minutes=5),
+        )
 
 
 @pytest.mark.asyncio

@@ -509,7 +509,6 @@ class KubernetesGrantRow(Base):
 
     __tablename__ = "kubernetes_grants"
     __table_args__ = (
-        UniqueConstraint("source_tool_call_id", name="uq_kubernetes_grants_source_tool_call"),
         CheckConstraint("btrim(source_tool_call_id) <> ''", name="ck_kubernetes_grants_source_tool_call_nonempty"),
         CheckConstraint(
             "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
@@ -533,6 +532,7 @@ class KubernetesGrantRow(Base):
             "AND end_reason IS NOT NULL AND btrim(end_reason) <> '')",
             name="ck_kubernetes_grants_status_shape",
         ),
+        Index("idx_kubernetes_grants_source_tool_call", "source_tool_call_id"),
         Index("idx_kubernetes_grants_agent_status_expiry", "agent_id", "status", "expires_at"),
     )
 

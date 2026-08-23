@@ -12,6 +12,7 @@ from haku.console.kubernetes_grant_models import (
     KubernetesGrantDecision,
     KubernetesGrantScope,
     KubernetesGrantScopeKind,
+    KubernetesGrantSpec,
     KubernetesGrantStatus,
     KubernetesNamespacesGrantScope,
     KubernetesRule,
@@ -30,6 +31,16 @@ class KubernetesGrantRepository(Protocol):
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
     ) -> KubernetesGrant: ...
+
+    async def create_many(
+        self,
+        *,
+        agent_id: UUID,
+        source_tool_call_id: str,
+        grants: Sequence[KubernetesGrantSpec],
+        created_at: datetime.datetime,
+        expires_at: datetime.datetime,
+    ) -> tuple[KubernetesGrant, ...]: ...
 
     async def list(self, *, agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]: ...
 
@@ -151,28 +162,51 @@ class KubernetesGrantService:
         rules: Sequence[KubernetesRule],
         expires_at: datetime.datetime,
     ) -> KubernetesGrant:
-        """Create a grant for exactly ``agent_id`` and retain source-call provenance."""
+        """Create one grant for exactly ``agent_id`` and retain source-call provenance."""
+
+        rules = tuple(rules)
+        if not rules:
+            raise ValueError("rules must not be empty")
+        grants = await self.create_grants(
+            agent_id=agent_id,
+            source_tool_call_id=source_tool_call_id,
+            grants=(KubernetesGrantSpec(scope=scope, rules=rules),),
+            expires_at=expires_at,
+        )
+        return grants[0]
+
+    async def create_grants(
+        self,
+        *,
+        agent_id: UUID,
+        source_tool_call_id: str,
+        grants: Sequence[KubernetesGrantSpec],
+        expires_at: datetime.datetime,
+    ) -> tuple[KubernetesGrant, ...]:
+        """Atomically create exact grants with one source call and shared timestamps."""
 
         now = self._clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("grant service clock must return a timezone-aware datetime")
         if not source_tool_call_id:
             raise ValueError("source_tool_call_id must not be empty")
-        rules = tuple(rules)
-        if not rules:
-            raise ValueError("rules must not be empty")
-        validate_grant_scope_rules(scope, rules)
+        grants = tuple(grants)
+        if not grants:
+            raise ValueError("grants must not be empty")
+        if len(grants) > 32:
+            raise ValueError("at most 32 grants may be created by one ToolCall")
+        for grant in grants:
+            validate_grant_scope_rules(grant.scope, grant.rules)
         if expires_at.tzinfo is None or expires_at.utcoffset() is None:
             raise ValueError("expires_at must be timezone-aware")
         if expires_at <= now:
             raise ValueError("expires_at must be in the future")
         if expires_at > now + self._max_lifetime:
             raise ValueError("expires_at exceeds the configured grant lifetime")
-        return await self._repository.create(
+        return await self._repository.create_many(
             agent_id=agent_id,
             source_tool_call_id=source_tool_call_id,
-            scope=scope,
-            rules=rules,
+            grants=grants,
             created_at=now,
             expires_at=expires_at,
         )

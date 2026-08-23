@@ -4,5 +4,4 @@ resources:
   - serviceaccount.yaml
   - role.yaml
   - node-reader.yaml
-  - proxy-ceiling.yaml
-  - all-pods-read-ceiling.yaml
+  - cluster-admin-ceiling.yaml

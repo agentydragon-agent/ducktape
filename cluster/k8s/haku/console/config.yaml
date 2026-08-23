@@ -373,8 +373,9 @@ kubernetes_authorization:
         - system:serviceaccounts
         - system:serviceaccounts:public-coder-agent
         - system:authenticated
-# Temporary grants begin only when an approved create_grant call executes. This deploy-owned bound
-# is authoritative even if a client constructs a wider duration than the tool schema recommends.
+# One or more temporary grants begin only when an approved create_grant call executes. Every item
+# in that call shares one start and expiry. This deploy-owned bound is authoritative even if a
+# client constructs a wider duration than the tool schema recommends.
 kubernetes_grant_max_lifetime_seconds: 3600
 #
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and

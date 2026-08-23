@@ -9,11 +9,10 @@ evaluates the deploy-owned `public-coder` standing SAR subject, strips all calle
 uses its own rotating projected ServiceAccount token upstream.
 
 The `public-coder-agent-reader` ServiceAccount is only the fixed standing-policy SAR identity.
-`haku-kube-api-proxy` has an independent execution ceiling: the same baseline diagnostic roles plus
-cluster-wide `get` and `list` on core `pods`, which are usable only when Console authorizes the
-request through an active Agent-owned grant. That additional ceiling can reveal workload metadata
-across namespaces after explicit operator approval, but it does not include pod `watch`, logs,
-Secrets, or writes.
+`haku-kube-api-proxy` has an independent `cluster-admin` execution ceiling, usable only when Console
+authorizes each request through standing SAR or an active Agent-owned grant. This deliberately makes
+the inline Haku authorization path the temporary-access policy boundary for this personal cluster;
+the Agent still has no standing cluster-admin authority or direct kube-apiserver credential.
 
 The proxy deliberately continues to reject long-running `watch`/log-follow and upgrade protocols.
 The standing identity has `automountServiceAccountToken: false` and no token Secret; only Console may
@@ -24,6 +23,12 @@ configuration, and authorization proxy Ready before credential-mediation changes
 proxy Kustomization additionally health-checks the iron-proxy Deployment and its root certificate.
 Rollback stays inside the Haku-mediated architecture by reverting the proxy/configuration change in
 Git; there is no direct reader-token path to restore.
+
+Promtail scrapes ordinary pod stdout/stderr from both the proxy and Console into Loki. The current
+Loki configuration enables compactor retention but sets no finite `retention_period`, so these
+records are not subject to age-based deletion. Proxy logs carry the decision ID plus canonical
+Kubernetes request attributes; Console logs map that decision to the Agent and grant, while the
+durable grant row maps the grant to its source ToolCall.
 
 A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate
 from the personal agent at `openclaw.allegedly.works`. Its job is opening pull
