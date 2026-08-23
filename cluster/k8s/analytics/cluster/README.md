@@ -16,7 +16,12 @@ The first tenant is `aiquota`:
   the typed table, so each collector snapshot is one atomic insert rather than
   two independently retried writes.
 
-The versioned `clickhouse-aiquota-schema-v1` Job applies the tenant schema with
+`replicasUseFQDN: "yes"` makes the operator generate per-replica host entries
+that resolve to each Pod's actual address. This is required for ClickHouse
+`ON CLUSTER` DDL: the operator's short aliases are loopback-only inside their
+respective Pods and are not accepted by ClickHouse's DDLWorker as local members.
+
+The versioned `clickhouse-aiquota-schema-v2` Job applies the tenant schema with
 `ON CLUSTER analytics`, so every replica receives the same database, tables,
 and materialized view without depending on ClickHouse startup configuration
 mount ordering. Schema Jobs are retained after completion as rollout evidence.

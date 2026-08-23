@@ -91,6 +91,11 @@ spec:
           shardsCount: 1
           replicasCount: 2
   defaults:
+    # The operator's short per-replica aliases are intentionally mapped to
+    # loopback inside each Pod. ClickHouse's DDLWorker does not consider that
+    # a local member of the distributed-DDL host list, so ON CLUSTER DDL waits
+    # forever. Stable Pod FQDNs resolve to the real Pod address instead.
+    replicasUseFQDN: "yes"
     templates:
       podTemplate: clickhouse
       dataVolumeClaimTemplate: data
