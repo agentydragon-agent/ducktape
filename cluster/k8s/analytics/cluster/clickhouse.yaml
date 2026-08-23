@@ -107,10 +107,11 @@ spec:
             app.kubernetes.io/name: clickhouse
             app.kubernetes.io/instance: analytics
           annotations:
-            # Force one operator-managed rollout after disabling Goldilocks
-            # admission mutation. The old Pending Pod retains its mutated
-            # 1737m CPU request; rematerialized Pods keep the declared 500m.
-            analytics.allegedly.works/scheduling-policy-generation: "2"
+            # Force one ordinary operator-managed rematerialization so the
+            # new FQDN remote-server and interserver identities take effect.
+            # The generation is deliberately bumped only for explicit config
+            # rollouts; it must not become a reconcile-time restart trigger.
+            analytics.allegedly.works/scheduling-policy-generation: "3"
         spec:
           nodeSelector:
             topology.kubernetes.io/zone: hil-ovh
