@@ -76,7 +76,12 @@ the proxy, via `NO_PROXY`.
 
 The GitHub credential stays in the proxy pod. The agent sees only
 `proxy-github-placeholder`; iron-proxy replaces it in the authentication header
-and only on scoped GitHub hosts.
+and only on scoped GitHub hosts. Brave Search follows the same mediation model:
+the real API key exists only in the proxy Pod and is swapped into
+`X-Subscription-Token` only for `api.search.brave.com`. That key is not this
+agent's: it lives in `../shared-secrets/brave-search-api-key.sops.yaml` and is
+reflected in, since an external search subscription is worth sharing across
+agents and workstations rather than binding to whichever one used it first.
 
 Haku Console privileged calls use the same mediated shape. Terraform generates a dedicated
 `public-coder-agent` static-Agent bearer and delivers it only to Haku Console and iron-proxy. The
