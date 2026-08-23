@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-aiquota-schema-v2
+  name: clickhouse-aiquota-schema-v3
   namespace: analytics
   labels:
     app.kubernetes.io/name: clickhouse-schema
     app.kubernetes.io/instance: analytics
     app.kubernetes.io/component: schema
   annotations:
-    description: Re-applies the first AIQuota schema revision after correcting distributed-DDL replica identities.
+    description: Re-applies the first AIQuota schema revision after ClickHouse Pods rematerialize with FQDN replica identities.
 spec:
   activeDeadlineSeconds: 1200
   backoffLimit: 60
