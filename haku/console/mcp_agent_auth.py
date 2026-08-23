@@ -183,11 +183,11 @@ class _AuthoritySessionTokenVerifier(TokenVerifier, StaticAgentActorResolver):
                 if row is None or row.agent_binding_id is None or row.agent_id is None or row.access_profile_id is None:
                     return None
                 active = await self._authority.launch_authorization(
+                    db,
                     operator_id=row.operator_id,
                     agent_id=row.agent_id,
                     access_profile_id=row.access_profile_id,
                     binding_id=row.agent_binding_id,
-                    db=db,
                 )
                 return _SessionAgentAuthorization(
                     session_id=row.session_id,

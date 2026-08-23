@@ -27,8 +27,8 @@ from haku.console.x.runtime import (
     TurnCompletion,
     TurnProjectionSeed,
 )
+from haku.runtime.x.bridge.claude_options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.client import FrameSink
-from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
 from haku.runtime.x.bridge.transport import ProgressSink
 
@@ -62,9 +62,9 @@ class ClaudeRuntimeAdapter:
         return build_claude_launch(session, resume_from=launch.resume_from)
 
     def client(
-        self, websocket: TextWebSocket, launch: HarnessLaunch, progress: ProgressSink | None, frames_to: FrameSink
+        self, websocket: TextWebSocket, launch: RuntimeLaunch, progress: ProgressSink | None, frames_to: FrameSink
     ) -> RuntimeClient:
-        return self.client_factory(websocket, launch, progress, frames_to)
+        return self.client_factory(websocket, self.build_launch(launch), progress, frames_to)
 
     def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler:
         return ClaudeTurnHandler(
@@ -77,6 +77,16 @@ class ClaudeRuntimeAdapter:
                         last_frame_seq=seed.open_message.last_frame_seq,
                         backend_item_id=None,
                         delivered=seed.open_message.text,
+                    )
+                ),
+                open_reasoning=(
+                    None
+                    if seed.open_reasoning is None
+                    else projection.OpenItem(
+                        opened_at_frame_seq=seed.open_reasoning.first_frame_seq,
+                        last_frame_seq=seed.open_reasoning.last_frame_seq,
+                        backend_item_id=None,
+                        delivered=seed.open_reasoning.text,
                     )
                 ),
                 seen_call_ids=seed.seen_call_ids,

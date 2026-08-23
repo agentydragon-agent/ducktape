@@ -40,12 +40,12 @@ class LaunchAuthorization(Protocol):
 class LaunchAuthority(Protocol):
     async def launch_authorization(
         self,
+        db: AsyncSession,
         *,
         operator_id: UUID,
         agent_id: UUID,
         access_profile_id: str | None = None,
         binding_id: UUID | None = None,
-        db: AsyncSession | None = None,
     ) -> LaunchAuthorization: ...
 
 
@@ -74,19 +74,19 @@ class ChatLaunchAuthorizer:
 
     async def __call__(
         self,
+        db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
         runtime_kind: RuntimeKind,
         *,
         expected_profile_id: str | None = None,
-        db: AsyncSession | None = None,
     ) -> LaunchIdentity:
         if agent_id not in self._launchable_agent_ids:
             raise LaunchAgentRejectedError("selected Agent is not launchable")
         if runtime_kind not in self._registered_runtime_kinds:
             raise LaunchAgentRejectedError("selected chat runtime is not registered")
         authorization = await self._authority.launch_authorization(
-            operator_id=operator_id, agent_id=agent_id, access_profile_id=expected_profile_id, db=db
+            db, operator_id=operator_id, agent_id=agent_id, access_profile_id=expected_profile_id
         )
         profile_id = authorization.access_profile_id
         if profile_id is None or profile_id not in self._profile_runtime_kinds:
@@ -104,10 +104,10 @@ class ChatLaunchAuthorizer:
 class LaunchAuthorizer(Protocol):
     async def __call__(
         self,
+        db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
         runtime_kind: RuntimeKind,
         *,
         expected_profile_id: str | None = None,
-        db: AsyncSession | None = None,
     ) -> LaunchIdentity: ...

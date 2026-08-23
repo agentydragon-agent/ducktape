@@ -1,4 +1,4 @@
-"""Dormant Codex app-server protocol adapter and capture tooling."""
+"""Codex app-server runtime adapter, protocol evidence and capture tooling."""
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -10,9 +10,28 @@ py_library(
 )
 
 py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":frames",
+        ":protocol",
+        "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:protocol",
+        "//haku/runtime/x/bridge:transport",
+    ],
+)
+
+py_library(
     name = "projection",
     srcs = ["projection.py"],
     deps = [
+        ":frames",
         ":protocol",
         "//haku/console:chat_models",
         "//haku/console/x:conversation_events",
@@ -20,10 +39,33 @@ py_library(
 )
 
 py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":client",
+        ":frames",
+        ":projection",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:codex_options",
+        "//haku/runtime/x/bridge:protocol",
+        "//haku/runtime/x/bridge:transport",
+    ],
+)
+
+py_library(
     name = "capture",
     srcs = ["capture.py"],
     visibility = ["//visibility:public"],
-    deps = [":protocol"],
+    deps = [
+        ":client",
+        ":frames",
+        ":protocol",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:protocol",
+    ],
 )
 
 py_binary(
@@ -40,6 +82,58 @@ py_test(
     deps = [
         ":protocol",
         "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        "//:conftest",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:protocol",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bridge",
+    srcs = ["test_bridge.py"],
+    data = ["//haku/console/x/codex_app_server/testing:stub_codex_bin"],
+    deps = [
+        ":runtime",
+        "//:conftest",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:client",
+        "//haku/runtime/x/bridge:codex_options",
+        "//haku/runtime/x/bridge:protocol",
+        "//haku/runtime/x/bridge:runner",
+        "//util/bazel:runfiles",
+        "@pypi//anyio",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        ":client",
+        ":projection",
+        ":runtime",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/x:conversation_events",
+        "//haku/console/x:runtime",
+        "//haku/runtime/x/bridge:protocol",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

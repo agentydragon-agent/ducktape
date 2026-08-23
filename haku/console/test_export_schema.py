@@ -37,7 +37,7 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
 def test_runtime_kind_is_a_read_only_closed_identity_field() -> None:
     published = schemas()
     runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
-    assert published["RuntimeKind"]["enum"] == ["claude_code"]
+    assert published["RuntimeKind"]["enum"] == ["claude_code", "codex_app_server"]
     for model in ("ConversationSummary", "ConversationView", "SessionFramePage", "SessionProvisioningView"):
         field = published[model]["properties"]["runtime_kind"]
         # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.

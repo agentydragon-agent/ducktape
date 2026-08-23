@@ -267,8 +267,8 @@ class TurnStart:
 
 
 @dataclass(frozen=True, slots=True)
-class OpenMessage:
-    """The message a departed holder was streaming into, as the adopting fold needs it back.
+class OpenItem:
+    """A prose item a departed holder was streaming into, as the adopting fold needs it back.
 
     Its prose rather than its id: the store finds the row again through the turn, so what the fold
     cannot re-derive is how much of it has already been said. The frame numbers are the span its rows
@@ -302,10 +302,12 @@ class ResumedTurn:
 
     turn_id: UUID
     replay: tuple[ReceivedFrame, ...]
-    streaming: OpenMessage | None = None
+    streaming: OpenItem | None = None
+    reasoning: OpenItem | None = None
     # Calls already materialised for this turn. A late completed backend block may repeat a call
     # the stream declared before a replica handover; deriving these ids keeps that replay idempotent.
     seen_call_ids: frozenset[str] = frozenset()
+    completed_call_ids: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,7 +468,7 @@ class SessionStore:
                     if agent_id is None:
                         raise LaunchAgentRejectedError
                     identity = await launch_authorizer(
-                        operator_id, agent_id, runtime_kind or RuntimeKind.CLAUDE_CODE, db=db
+                        db, operator_id, agent_id, runtime_kind or RuntimeKind.CLAUDE_CODE
                     )
                     agent_id = identity.agent_id
                     agent_binding_id = identity.binding_id
@@ -498,11 +500,11 @@ class SessionStore:
                     if conversation.agent_id is None or conversation.access_profile_id is None:
                         raise LaunchAgentRejectedError
                     identity = await launch_authorizer(
+                        db,
                         operator_id,
                         conversation.agent_id,
                         conversation.runtime_kind,
                         expected_profile_id=conversation.access_profile_id,
-                        db=db,
                     )
                     if (
                         identity.agent_id != conversation.agent_id
@@ -621,11 +623,11 @@ class SessionStore:
                 if conversation.agent_id is None or conversation.access_profile_id is None:
                     raise LaunchAgentRejectedError
                 identity = await launch_authorizer(
+                    db,
                     operator_id,
                     conversation.agent_id,
                     conversation.runtime_kind,
                     expected_profile_id=conversation.access_profile_id,
-                    db=db,
                 )
                 if (
                     identity.agent_id != conversation.agent_id
@@ -1175,8 +1177,10 @@ class SessionStore:
                     return ResumedTurn(
                         turn_id=turn_id,
                         replay=await _unprojected_frames(db, session_id, cursor),
-                        streaming=await _open_message(db, turn_id),
+                        streaming=await _open_item(db, turn_id, ItemType.MESSAGE),
+                        reasoning=await _open_item(db, turn_id, ItemType.REASONING),
                         seen_call_ids=await _seen_call_ids(db, turn_id),
+                        completed_call_ids=await _completed_call_ids(db, turn_id),
                     )
         # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
         # finish, and a turn whose cursor sits before it has no position to resume from — so
@@ -2199,12 +2203,12 @@ async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool 
     return prompt
 
 
-async def _open_message(db: AsyncSession, turn_id: UUID) -> OpenMessage | None:
-    """The message this turn is streaming into, with the frames its rows were read from."""
+async def _open_item(db: AsyncSession, turn_id: UUID, item_type: ItemType) -> OpenItem | None:
+    """The prose item this turn is streaming into, with the frames its rows were read from."""
     item = await db.scalar(
         select(ConversationItem).where(
             ConversationItem.turn_id == turn_id,
-            ConversationItem.item_type == ItemType.MESSAGE,
+            ConversationItem.item_type == item_type,
             ConversationItem.status == ItemStatus.OPEN,
         )
     )
@@ -2222,7 +2226,7 @@ async def _open_message(db: AsyncSession, turn_id: UUID) -> OpenMessage | None:
     # with no rows at all — a shape nothing writes, and one that would leave a completion pointing
     # at frames rather than fabricating a span.
     first, last = span if span[0] is not None else (0, 0)
-    return OpenMessage(text=item.item_text, first_frame_seq=first, last_frame_seq=last)
+    return OpenItem(text=item.item_text, first_frame_seq=first, last_frame_seq=last)
 
 
 async def _seen_call_ids(db: AsyncSession, turn_id: UUID) -> frozenset[str]:
@@ -2231,6 +2235,19 @@ async def _seen_call_ids(db: AsyncSession, turn_id: UUID) -> frozenset[str]:
         select(ConversationItem.call_id).where(
             ConversationItem.turn_id == turn_id,
             ConversationItem.item_type == ItemType.TOOL_CALL,
+            ConversationItem.call_id.is_not(None),
+        )
+    )
+    return frozenset(call_id for call_id in call_ids if call_id is not None)
+
+
+async def _completed_call_ids(db: AsyncSession, turn_id: UUID) -> frozenset[str]:
+    """Provider call ids whose materialized items have already completed."""
+    call_ids = await db.scalars(
+        select(ConversationItem.call_id).where(
+            ConversationItem.turn_id == turn_id,
+            ConversationItem.item_type == ItemType.TOOL_CALL,
+            ConversationItem.status == ItemStatus.COMPLETE,
             ConversationItem.call_id.is_not(None),
         )
     )

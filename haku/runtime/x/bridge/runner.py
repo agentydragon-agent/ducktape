@@ -179,8 +179,8 @@ async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteS
 async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr: anyio.abc.ByteReceiveStream) -> None:
     """Forward what the CLI wrote to stderr, to this log and to the console.
 
-    stderr is the one place a failure to start is explained; without it the console sees only
-    `Claude Code exited with status 1` for a rejected credential or a bad flag.
+    stderr is the one place a failure to start is explained; without it the console sees only the
+    selected harness exiting with status 1 for a rejected credential or a bad flag.
 
     Sent as `SetupOutput`, which is already "bytes the sandbox wrote", because a kind of its own
     would be a `PROTOCOL_VERSION` bump — and `SUPPORTED_VERSIONS` holds one element, so a bump
@@ -337,8 +337,8 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, narrate: SetupNarrati
     process's stdout so the pod log keeps the record the room gets. Decoding and line-splitting are
     the console's job — see `SetupOutput`.
 
-    **Fatal on failure.** Without the checkout the session has no manual, and a Claude Code that
-    starts anyway is silently a generic assistant.
+    **Fatal on failure.** Without the checkout the session has no manual, and a harness that starts
+    anyway is silently a generic assistant.
     """
     process = await anyio.open_process(
         [str(setup_path)], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
@@ -498,7 +498,7 @@ def parse_args(backends: Mapping[str, BackendFactory]) -> argparse.Namespace:
         help="immutable native harness to run (the deployment must provide this explicitly)",
     )
     # Unset leaves the executable to the backend, which reads the variable its own image sets
-    # (`options.EXECUTABLE_VARIABLE` for Claude); this is for a local run against a CLI elsewhere.
+    # (for example `claude_options.EXECUTABLE_VARIABLE`); this is for a local run against a CLI elsewhere.
     parser.add_argument("--cli-path", type=Path)
     # Unset means "no bootstrap", which is what tests and a bare local run want; the image sets it.
     # The bootstrap checks haku-state out and knows nothing about which CLI follows it.

@@ -1,7 +1,7 @@
 """A client for Claude Code's newline-delimited JSON protocol.
 
 The console's session runtime speaks the protocol itself: nothing here imports the Agent SDK, and
-`options.py` owns the launch arguments. The protocol is described in
+`claude_options.py` owns the launch arguments. The protocol is described in
 <../../../cli_protocol/README.md>.
 
 Two channels are multiplexed on one stream, distinguished by the top-level `type`:

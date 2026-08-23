@@ -12,6 +12,11 @@ The claims implemented here were checked against that tag, in these vendored/gen
   initialization handshake, and thread/turn/item lifecycle.
 - `codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts` and
   `ClientNotification.ts`: `initialize`, `thread/start`, `turn/start`, and `initialized` envelopes.
+- `codex-rs/app-server-protocol/src/rpc.rs`: request IDs may be strings, which lets each replacement
+  Console namespace its requests away from late responses addressed to its predecessor.
+- `schema/typescript/v2/ThreadLoadedListParams.ts`, `ThreadLoadedListResponse.ts`,
+  `ThreadReadParams.ts`, and `ThreadReadResponse.ts`: reconnect discovery and recovery of an active
+  turn ID for interruption after Console adoption.
 - `schema/typescript/v2/ThreadItem.ts`: the complete item union and terminal payload fields.
 - `AgentMessageDeltaNotification.ts`, `ReasoningSummaryTextDeltaNotification.ts`,
   `CommandExecutionOutputDeltaNotification.ts`, `ItemStartedNotification.ts`, and
@@ -19,6 +24,9 @@ The claims implemented here were checked against that tag, in these vendored/gen
 - `CommandExecutionStatus.ts`, `McpToolCallStatus.ts`, and `TurnStatus.ts`: the status enums mapped by
   the adapter.
 - `McpToolCallResult.ts`: MCP `content`, `structuredContent`, and `_meta` result payloads.
+- `codex-rs/cli/src/mcp_cmd.rs` and its tests: streamable-HTTP MCP configuration uses `url` and
+  `bearer_token_env_var`, so Codex can read the claim-owned exact-session bearer without placing its
+  value in argv or Console launch material.
 - `codex-rs/tui/src/thread_transcript.rs`: completed reasoning summary parts render joined with two
   newlines, matching `item/reasoning/summaryPartAdded` in the live TUI.
 
@@ -29,9 +37,9 @@ still describes 0.144.1.
 ## Projection boundary
 
 The adapter consumes server notifications and produces the existing types from
-`haku.console.x.conversation_events`. It does not define a new event vocabulary and is not
-registered in the production `runtime_catalog`; it remains dormant projection evidence rather than
-a launchable runtime.
+`haku.console.x.conversation_events`. It does not define a new event vocabulary. The implementation
+is linked for projection and implements the common runtime/client/runner seams, but has no
+production execution resources or conversation writer and is therefore not launchable.
 
 Supported now:
 

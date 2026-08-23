@@ -96,18 +96,17 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
     calls: list[tuple[UUID, str | None, bool]] = []
 
     async def authorize(
+        db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
         runtime_kind: RuntimeKind,
         *,
         expected_profile_id: str | None = None,
-        db: AsyncSession | None = None,
     ) -> LaunchIdentity:
-        assert db is not None
         assert db.in_transaction()
         assert agent_id == expected_agent_id
         calls.append((operator_id, expected_profile_id, db.in_transaction()))
-        return await production(operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id, db=db)
+        return await production(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
 
     runtimes = configured_runtimes(recording_claims)
     store = SessionStore(migrated_sessions, runtimes)

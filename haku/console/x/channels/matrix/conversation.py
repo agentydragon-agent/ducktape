@@ -141,7 +141,7 @@ class MatrixConversationStore:
                 if self._default_agent_id is None:
                     raise RuntimeError("Matrix launch identity is not configured")
                 identity = await self._launch_authorizer(
-                    operator_id, self._default_agent_id, RuntimeKind.CLAUDE_CODE, db=db
+                    db, operator_id, self._default_agent_id, RuntimeKind.CLAUDE_CODE
                 )
             conversation_id = uuid4()
             db.add(

@@ -13,7 +13,7 @@ import pytest_bazel
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 
-from haku.runtime.x.bridge.options import ClaudeSession, HttpMcpServer, build_claude_launch, claude_backend
+from haku.runtime.x.bridge.claude_options import ClaudeSession, HttpMcpServer, build_claude_launch, claude_backend
 from haku.runtime.x.bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     RUNNER_TO_CONSOLE,
@@ -71,8 +71,8 @@ def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
     """The sandbox side of the launch: the binary is the backend's to choose, everything after it
     is the console's.
 
-    The argv itself is pinned in `test_options.py`, and that the image carries an extracted `claude`
-    is a property of the `claude_executable` genrule the image build exercises.
+    The argv itself is pinned in `test_claude_options.py`, and that the image carries an extracted
+    `claude` is a property of the `claude_executable` genrule the image build exercises.
     """
     launch = build_claude_launch(
         ClaudeSession(

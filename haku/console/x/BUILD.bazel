@@ -36,6 +36,7 @@ py_library(
         "//haku/console:config",
         "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:runtime",
+        "//haku/console/x/codex_app_server:runtime",
         "@pypi//pydantic",
     ],
 )
@@ -49,6 +50,7 @@ py_test(
         "//:conftest",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code/testing:wire",
+        "//haku/console/x/codex_app_server:runtime",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

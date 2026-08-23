@@ -2,12 +2,10 @@
 
 Almost nothing below the envelope is Claude-specific: the console sends argv, a working directory
 and an environment, and the runner pumps the process's newline-delimited JSON across console rolls.
-What is CLI-specific sits at opposite ends of the wire — which flags mean "stream JSON and take
-prompts on stdin" (`options.build_claude_launch`, console side), and which binary in the sandbox
-image answers to them (`options.ClaudeBackend`, runner side).
-
-A backend names those once, so a second CLI is a second implementation rather than a branch inside
-the runner; what one would have to provide is <docs/second_backend.md>.
+What is harness-specific sits at opposite ends of the wire — the provider's Console adapter chooses
+its native launch and protocol, while a backend resolves the matching binary inside the sandbox.
+Claude and Codex each name those once, so adding either remains an implementation rather than a
+branch inside the runner; see <docs/second_backend.md>.
 """
 
 from __future__ import annotations

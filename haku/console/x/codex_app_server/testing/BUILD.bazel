@@ -1,0 +1,9 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//haku/console/x/codex_app_server:__pkg__"])
+
+py_binary(
+    name = "stub_codex_bin",
+    srcs = ["stub_codex.py"],
+    main = "stub_codex.py",
+)

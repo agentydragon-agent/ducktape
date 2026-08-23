@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest_bazel
 
 from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
-from haku.console.x.codex_app_server.projection import ProjectionState, RecordedFrame, project, project_log
+from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame, project, project_log
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.conversation_events import (
     CallRef,
@@ -145,6 +145,106 @@ def test_nonterminal_and_duplicate_tool_completions_fail_softly():
         "item/completed/commandExecution/status": 1,
         "item/completed/commandExecution/duplicate": 1,
     }
+
+
+def test_duplicate_tool_completion_stays_a_duplicate_across_batches():
+    item = {
+        "type": "commandExecution",
+        "id": "call-1",
+        "command": "printf ok",
+        "cwd": "<WORKSPACE>",
+        "status": "completed",
+        "exitCode": 0,
+    }
+    state, first = project(
+        ProjectionState(),
+        (
+            RecordedFrame(1, {"method": "item/started", "params": {"item": item}}),
+            RecordedFrame(2, {"method": "item/completed", "params": {"item": item}}),
+        ),
+    )
+    state, second = project(state, (RecordedFrame(3, {"method": "item/completed", "params": {"item": item}}),))
+
+    assert [type(event) for event in first.events] == [ToolCallStarted, ToolCallCompleted]
+    assert second.events == ()
+    assert second.unprojected == {"item/completed/commandExecution/duplicate": 1}
+    assert state.completed_call_ids == frozenset({"call-1"})
+
+
+def test_adopted_message_without_a_persisted_native_id_continues_the_existing_item():
+    state, projected = project(
+        ProjectionState(open_message=OpenItem(4, 6, None, "half")),
+        (
+            RecordedFrame(
+                7,
+                {
+                    "method": "item/completed",
+                    "params": {"item": {"type": "agentMessage", "id": "m1", "text": "half done"}},
+                },
+            ),
+        ),
+    )
+
+    assert projected.events == (
+        ItemSegment(item=_MESSAGE, text=" done", provenance=FrameRange(7, 7)),
+        MessageCompleted(backend_item_id="m1", provenance=FrameRange(4, 7)),
+    )
+    assert state.open_message is None
+
+
+def test_adopted_reasoning_without_a_persisted_native_id_continues_the_existing_item():
+    state, projected = project(
+        ProjectionState(open_reasoning=OpenItem(4, 6, None, "half")),
+        (
+            RecordedFrame(
+                7,
+                {
+                    "method": "item/completed",
+                    "params": {"item": {"type": "reasoning", "id": "r1", "summary": ["half done"]}},
+                },
+            ),
+        ),
+    )
+
+    assert projected.events == (
+        ItemSegment(item=_REASONING, text=" done", provenance=FrameRange(7, 7)),
+        ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=FrameRange(4, 7)),
+    )
+    assert state.open_reasoning is None
+
+
+def test_open_reasoning_state_carries_delivered_text_across_batches():
+    state, first = project(
+        ProjectionState(),
+        (
+            RecordedFrame(1, {"method": "item/started", "params": {"item": {"type": "reasoning", "id": "r1"}}}),
+            RecordedFrame(
+                2, {"method": "item/reasoning/summaryTextDelta", "params": {"itemId": "r1", "delta": "half"}}
+            ),
+        ),
+    )
+    state, second = project(
+        state,
+        (
+            RecordedFrame(
+                3,
+                {
+                    "method": "item/completed",
+                    "params": {"item": {"type": "reasoning", "id": "r1", "summary": ["half done"]}},
+                },
+            ),
+        ),
+    )
+
+    assert first.events == (
+        ReasoningStarted(provenance=FrameRange(1, 1)),
+        ItemSegment(item=_REASONING, text="half", provenance=FrameRange(2, 2)),
+    )
+    assert second.events == (
+        ItemSegment(item=_REASONING, text=" done", provenance=FrameRange(3, 3)),
+        ReasoningCompleted(disclosure=ReasoningDisclosure.SUMMARY, provenance=FrameRange(1, 3)),
+    )
+    assert state.open_reasoning is None
 
 
 if __name__ == "__main__":

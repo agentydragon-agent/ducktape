@@ -37,7 +37,7 @@ from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAutho
 from haku.console.x.runtime import (
     Checkpoint,
     ConfiguredRuntime,
-    OpenMessageSeed,
+    OpenItemSeed,
     RuntimeAdapter,
     RuntimeClient,
     RuntimeLaunch,
@@ -189,15 +189,29 @@ def _inherited(turn: TurnStart | ResumedTurn) -> TurnProjectionSeed:
     """
     if isinstance(turn, TurnStart):
         return TurnProjectionSeed()
-    if turn.streaming is None:
-        return TurnProjectionSeed(seen_call_ids=turn.seen_call_ids)
+    if turn.streaming is None and turn.reasoning is None:
+        return TurnProjectionSeed(seen_call_ids=turn.seen_call_ids, completed_call_ids=turn.completed_call_ids)
     return TurnProjectionSeed(
-        open_message=OpenMessageSeed(
-            first_frame_seq=turn.streaming.first_frame_seq,
-            last_frame_seq=turn.streaming.last_frame_seq,
-            text=turn.streaming.text,
+        open_message=(
+            None
+            if turn.streaming is None
+            else OpenItemSeed(
+                first_frame_seq=turn.streaming.first_frame_seq,
+                last_frame_seq=turn.streaming.last_frame_seq,
+                text=turn.streaming.text,
+            )
+        ),
+        open_reasoning=(
+            None
+            if turn.reasoning is None
+            else OpenItemSeed(
+                first_frame_seq=turn.reasoning.first_frame_seq,
+                last_frame_seq=turn.reasoning.last_frame_seq,
+                text=turn.reasoning.text,
+            )
         ),
         seen_call_ids=turn.seen_call_ids,
+        completed_call_ids=turn.completed_call_ids,
     )
 
 
@@ -515,17 +529,15 @@ class SessionService:
         # the runner, escape the lifecycle handler below, and leave the session leased until its
         # sweeper deadline.
         try:
-            launch = runtime.build_launch(
-                RuntimeLaunch(
-                    cwd=resources.cwd,
-                    environment=resources.environment,
-                    mcp_servers={
-                        name: RuntimeMcpServer(url=url, bearer_environment_variable=MCP_CREDENTIAL_VARIABLE)
-                        for name, url in resources.mcp_server_urls.items()
-                    },
-                    appended_system_prompt=appended,
-                    resume_from=await self._store.highest_runner_seq(session_id),
-                )
+            launch = RuntimeLaunch(
+                cwd=resources.cwd,
+                environment=resources.environment,
+                mcp_servers={
+                    name: RuntimeMcpServer(url=url, bearer_environment_variable=MCP_CREDENTIAL_VARIABLE)
+                    for name, url in resources.mcp_server_urls.items()
+                },
+                appended_system_prompt=appended,
+                resume_from=await self._store.highest_runner_seq(session_id),
             )
             client = runtime.client(
                 StarletteTextWebSocket(websocket),

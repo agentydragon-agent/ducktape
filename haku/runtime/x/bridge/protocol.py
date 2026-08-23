@@ -56,7 +56,7 @@ class _Frame(BaseModel):
 class HarnessLaunch(_Frame):
     """Console → runner, once, first: the selected harness process to run.
 
-    Built by the trusted process (`options.build_claude_launch`), never by the runner: the
+    Built by the trusted provider adapter, never by the runner: the
     argv decides the session's permissions and which MCP servers it reaches, so it is not the
     sandbox's to choose.
     """

@@ -86,17 +86,16 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
     calls: list[bool] = []
 
     async def authorize(
+        db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
         runtime_kind: RuntimeKind,
         *,
         expected_profile_id: str | None = None,
-        db: AsyncSession | None = None,
     ) -> LaunchIdentity:
-        assert db is not None
         assert db.in_transaction()
         calls.append(db.in_transaction())
-        return await production(operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id, db=db)
+        return await production(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
 
     conversations = MatrixConversationStore(migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id)
     bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
