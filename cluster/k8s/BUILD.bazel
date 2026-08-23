@@ -80,7 +80,6 @@ filegroup(
         "agents/public-coder-agent/k8s-reader/kustomization.yaml",
         "agents/public-coder-agent/k8s-reader/node-reader.yaml",
         "agents/public-coder-agent/k8s-reader/role.yaml",
-        "agents/public-coder-agent/k8s-reader/serviceaccount.yaml",
         "agents/public-coder-agent/namespace/namespace.yaml",
         "agents/public-coder-agent/proxy/cnp-ingress.yaml",
         "agents/public-coder-agent/proxy/deployment.yaml",

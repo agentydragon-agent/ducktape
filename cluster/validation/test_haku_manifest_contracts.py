@@ -200,7 +200,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
         ("ServiceAccount", "haku", "haku-sandbox"),
         ("ServiceAccount", "haku-claude", "haku-claude-sandbox"),
     }
-    public_coder_subject = ("ServiceAccount", "public-coder-agent-reader", "public-coder-agent")
+    public_coder_subject = ("Group", "haku:access-profile:public-coder", None)
 
     expected_roles = {
         "analytics/cluster/agent-diagnostics-rbac.yaml": {
@@ -284,7 +284,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
 
 
 def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
-    """Agent traffic, standing SAR identity, and proxy execution authority stay separate."""
+    """Agent traffic, standing SAR policy, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
     console_dir = k8s_dir / "haku" / "console"
 
@@ -371,16 +371,11 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         {"host": "aiquota.allegedly.works", "methods": ["CONNECT"]},
         {"host": "aiquota.allegedly.works", "methods": ["GET"], "paths": ["/v1/quotas", "/v1/providers/*/raw"]},
     ]
-    reader_objects = list(yaml.safe_load_all((agent_dir / "k8s-reader" / "serviceaccount.yaml").read_text()))
-    assert [obj["kind"] for obj in reader_objects] == ["ServiceAccount"]
-    assert reader_objects[0]["metadata"]["name"] == "public-coder-agent-reader"
-    assert reader_objects[0]["automountServiceAccountToken"] is False
-
     console_config = yaml.safe_load((console_dir / "config.yaml").read_text())
     subject = console_config["kubernetes_authorization"]["subjects_by_access_profile"]["public-coder"]
     assert subject == {
-        "username": "system:serviceaccount:public-coder-agent:public-coder-agent-reader",
-        "groups": ["system:serviceaccounts", "system:serviceaccounts:public-coder-agent", "system:authenticated"],
+        "username": "haku:access-profile:public-coder",
+        "groups": ["haku:access-profile:public-coder", "system:authenticated"],
     }
 
     authorization_objects = list(yaml.safe_load_all((console_dir / "kubernetes-authorization-rbac.yaml").read_text()))
@@ -413,9 +408,9 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     ]
 
     standing_subject = {
-        "kind": "ServiceAccount",
-        "name": "public-coder-agent-reader",
-        "namespace": "public-coder-agent",
+        "kind": "Group",
+        "name": "haku:access-profile:public-coder",
+        "apiGroup": "rbac.authorization.k8s.io",
     }
     haku_standing_subjects = {
         ("Group", "oidc-ksbx-groups:haku", None),
@@ -460,6 +455,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         assert haku_standing_subjects <= subjects_by_role_ref[role_ref], role_ref
 
     reader_kustomization = yaml.safe_load((agent_dir / "k8s-reader" / "kustomization.yaml").read_text())
+    assert "serviceaccount.yaml" not in reader_kustomization["resources"]
     assert "cluster-admin-ceiling.yaml" in reader_kustomization["resources"]
     assert "proxy-ceiling.yaml" not in reader_kustomization["resources"]
     assert "all-pods-read-ceiling.yaml" not in reader_kustomization["resources"]

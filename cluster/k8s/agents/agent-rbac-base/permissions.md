@@ -23,7 +23,7 @@ one of two data-classification labels:
   `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
 
 Both classifications grant the same subjects: Haku, its in-cluster ServiceAccounts,
-`kubectl-sandbox-users`, and `public-coder-agent-reader`. The Kyverno policy at
+`kubectl-sandbox-users`, and the synthetic `haku:access-profile:public-coder` group. The Kyverno policy at
 `cluster/k8s/kyverno/policies/generate-agent-diagnostics-readers.yaml` generates the corresponding
 namespaced RoleBindings. Sensitive or identity-specific access remains explicit service RBAC.
 

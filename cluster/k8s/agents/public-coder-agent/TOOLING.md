@@ -91,10 +91,12 @@ kubectl auth can-i get nodes
 kubectl auth can-i get secrets -n public-coder-agent
 ```
 
-The current repository sources are under `k8s-reader/`. The standing identity is intentionally
-read-only and excludes Secrets, Pod exec, live writes, and unbound namespaces/resources. Selected
-Node and cross-namespace projections may be available. Trust `kubectl auth can-i` and the API
-server's decision over this prose summary.
+The current repository sources are under `k8s-reader/`. The standing
+`haku:access-profile:public-coder` synthetic group is intentionally read-only and excludes Secrets,
+Pod exec, live writes, and unbound namespaces/resources. Console derives that group only from the
+deploy-owned access profile; it is not a caller credential. Selected Node and cross-namespace
+projections may be available. Trust `kubectl auth can-i` and the API server's decision over this
+prose summary.
 
 The Haku-backed temporary-grant workflow is the escalation path when standing SAR denies a needed
 Kubernetes request. Use the `kubernetes` MCP server's `can_i` first, then submit one approval-gated
@@ -106,7 +108,7 @@ earlier releases remain effective, so reconcile the result with `list_grants`; `
 remains available for one ID. The Operator UI
 groups rows by source ToolCall and can revoke every still-active row from one approval together.
 
-The proxy's static execution ceiling is `cluster-admin`, but the standing SAR identity remains the
+The proxy's static execution ceiling is `cluster-admin`, but the standing SAR group remains the
 same narrow read-only subject. The ceiling alone grants nothing: without standing SAR coverage or a
 matching active Agent-owned grant, the proxy denies the request. Exact grants may therefore include
 Secrets, RBAC, writes, and other cluster-admin capabilities when the Operator explicitly approves
