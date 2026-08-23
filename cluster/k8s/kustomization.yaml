@@ -159,6 +159,7 @@ resources:
   - analytics/namespace/flux-kustomization.yaml
   - analytics/operator/flux-kustomization.yaml
   - analytics/cluster/flux-kustomization.yaml
+  - analytics/schema/flux-kustomization.yaml
   - analytics/grafana/flux-kustomization.yaml
 
   # --- authelia ---
