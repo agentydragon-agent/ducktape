@@ -32,6 +32,8 @@ class FakeRepository:
     def __init__(self) -> None:
         self.grants: dict[UUID, KubernetesGrant] = {}
         self.expire_calls: list[tuple[UUID | None, datetime]] = []
+        self.release_calls: list[tuple[UUID, UUID, str, datetime]] = []
+        self.revoke_source_calls: list[tuple[UUID, str, str, datetime]] = []
 
     async def create(self, *, agent_id, source_tool_call_id, scope, rules, created_at, expires_at):
         created = await self.create_many(
@@ -90,11 +92,26 @@ class FakeRepository:
             if g.agent_id == agent_id and g.status is KubernetesGrantStatus.ACTIVE and g.expires_at > now
         )
 
-    async def release(self, **kwargs):
-        raise AssertionError("not used by this test")
+    async def release(self, *, agent_id, grant_id, reason, ended_at):
+        self.release_calls.append((agent_id, grant_id, reason, ended_at))
+        grant = self.grants[grant_id]
+        assert grant.agent_id == agent_id
+        released = grant.model_copy(
+            update={"status": KubernetesGrantStatus.RELEASED, "ended_at": ended_at, "end_reason": reason}
+        )
+        self.grants[grant_id] = released
+        return released
 
     async def revoke(self, **kwargs):
         raise AssertionError("not used by this test")
+
+    async def revoke_source(self, *, agent_id, source_tool_call_id, reason, ended_at):
+        self.revoke_source_calls.append((agent_id, source_tool_call_id, reason, ended_at))
+        return tuple(
+            grant
+            for grant in self.grants.values()
+            if grant.agent_id == agent_id and grant.source_tool_call_id == source_tool_call_id
+        )
 
 
 @pytest.mark.asyncio
@@ -159,6 +176,83 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
             grants=tuple(KubernetesGrantSpec(scope=_SCOPE, rules=(_rule(),)) for _ in range(33)),
             expires_at=_NOW + timedelta(minutes=5),
         )
+
+
+@pytest.mark.asyncio
+async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
+    repo = FakeRepository()
+    service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    grants = await service.create_grants(
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        grants=(
+            KubernetesGrantSpec(scope=_SCOPE, rules=(_rule(),)),
+            KubernetesGrantSpec(scope=_DEFAULT_SCOPE, rules=(_rule("list"),)),
+        ),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
+
+    released = await service.release_grants(
+        agent_id=_AGENT, grant_ids=[grants[1].grant_id, grants[0].grant_id], reason="probe complete"
+    )
+
+    assert [grant.grant_id for grant in released] == [grants[1].grant_id, grants[0].grant_id]
+    assert repo.release_calls == [
+        (_AGENT, grants[1].grant_id, "probe complete", _NOW),
+        (_AGENT, grants[0].grant_id, "probe complete", _NOW),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("grant_ids", "message"),
+    [
+        ((), "must not be empty"),
+        ((UUID(int=1),) * 2, "must not contain duplicates"),
+        (tuple(UUID(int=value) for value in range(1, 34)), "at most 32 grants"),
+    ],
+)
+async def test_release_many_rejects_invalid_lists(grant_ids, message) -> None:
+    service = KubernetesGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    with pytest.raises(ValueError, match=message):
+        await service.release_grants(agent_id=_AGENT, grant_ids=grant_ids)
+
+
+@pytest.mark.asyncio
+async def test_release_many_rejects_a_blank_reason_before_mutating() -> None:
+    service = KubernetesGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    with pytest.raises(ValueError, match="reason must not be empty"):
+        await service.release_grants(agent_id=_AGENT, grant_ids=[UUID(int=1)], reason="   ")
+
+
+@pytest.mark.asyncio
+async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> None:
+    repo = FakeRepository()
+    service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    grant = await service.create_grant(
+        agent_id=_AGENT,
+        source_tool_call_id="tool-call-1",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
+
+    with pytest.raises(KeyError):
+        await service.release_grants(agent_id=_AGENT, grant_ids=[grant.grant_id, UUID(int=9)])
+
+    assert repo.grants[grant.grant_id].status is KubernetesGrantStatus.RELEASED
+
+
+@pytest.mark.asyncio
+async def test_revoke_grant_set_uses_source_tool_call_as_lifecycle_unit() -> None:
+    repo = FakeRepository()
+    service = KubernetesGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    await service.revoke_grant_set(agent_id=_AGENT, source_tool_call_id="tool-call-1", reason="operator ended probe")
+
+    assert repo.revoke_source_calls == [(_AGENT, "tool-call-1", "operator ended probe", _NOW)]
 
 
 @pytest.mark.asyncio

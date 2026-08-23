@@ -74,6 +74,17 @@ class PostgresKubernetesGrantRepository:
                 "authenticated by the explicit Agent"
             )
 
+    async def _lock_owned_source(self, session: AsyncSession, *, agent_id: UUID, source_tool_call_id: str) -> None:
+        source = await session.scalar(
+            select(McpToolCall)
+            .join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
+            .join(CredentialBinding, CredentialBinding.binding_id == McpToolCallPrincipal.binding_id)
+            .where(McpToolCall.tool_call_id == source_tool_call_id, CredentialBinding.agent_id == agent_id)
+            .with_for_update(of=McpToolCall)
+        )
+        if source is None:
+            raise KubernetesGrantNotFoundError(source_tool_call_id)
+
     async def create(
         self,
         *,
@@ -210,6 +221,42 @@ class PostgresKubernetesGrantRepository:
         return await self._end(
             agent_id=agent_id, grant_id=grant_id, status=KubernetesGrantStatus.REVOKED, reason=reason, ended_at=ended_at
         )
+
+    async def revoke_source(
+        self, *, agent_id: UUID, source_tool_call_id: str, reason: str, ended_at: datetime.datetime
+    ) -> tuple[KubernetesGrant, ...]:
+        """Revoke every active grant created by one reviewed source ToolCall."""
+
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("grant end reason must not be empty")
+        async with self._sessions.begin() as session:
+            # Serialize source-set lifecycle with create_many(), which locks this same durable
+            # ToolCall before reading or inserting the immutable grant set.
+            await self._lock_owned_source(session, agent_id=agent_id, source_tool_call_id=source_tool_call_id)
+            rows = (
+                await session.scalars(
+                    select(KubernetesGrantRow)
+                    .where(
+                        KubernetesGrantRow.agent_id == agent_id,
+                        KubernetesGrantRow.source_tool_call_id == source_tool_call_id,
+                    )
+                    .order_by(KubernetesGrantRow.grant_id)
+                    .with_for_update()
+                )
+            ).all()
+            if not rows:
+                raise KubernetesGrantNotFoundError(source_tool_call_id)
+            for row in rows:
+                if row.status is not KubernetesGrantStatus.ACTIVE:
+                    continue
+                row.status = (
+                    KubernetesGrantStatus.EXPIRED if ended_at >= row.expires_at else KubernetesGrantStatus.REVOKED
+                )
+                row.ended_at = ended_at
+                row.end_reason = "expired" if row.status is KubernetesGrantStatus.EXPIRED else reason
+            await session.flush()
+            return tuple(self._row_to_model(row) for row in rows)
 
     async def expire(self, *, now: datetime.datetime, agent_id: UUID | None = None) -> int:
         where = [KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE, KubernetesGrantRow.expires_at <= now]

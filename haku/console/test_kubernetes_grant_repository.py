@@ -27,6 +27,7 @@ from haku.console.database_schema import (
 from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
+    KubernetesGrantNotFoundError,
     KubernetesGrantSourceError,
     KubernetesGrantSpec,
     KubernetesGrantStatus,
@@ -196,6 +197,45 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert tuple(grant.grant_id for grant in retried) == tuple(grant.grant_id for grant in grants)
             assert {grant.created_at for grant in retried} == {_NOW}
             assert {grant.expires_at for grant in retried} == {_NOW + timedelta(minutes=5)}
+
+            with pytest.raises(KubernetesGrantNotFoundError):
+                await repository.revoke_source(
+                    agent_id=uuid4(),
+                    source_tool_call_id=source_tool_call_id,
+                    reason="must not cross Agent ownership",
+                    ended_at=_NOW + timedelta(seconds=20),
+                )
+            assert len(await repository.active_for_agent(agent_id=agent_id, now=_NOW)) == 2
+
+            released_first = await repository.release(
+                agent_id=agent_id,
+                grant_id=grants[0].grant_id,
+                reason="first scope no longer needed",
+                ended_at=_NOW + timedelta(seconds=30),
+            )
+            assert released_first.status is KubernetesGrantStatus.RELEASED
+
+            revoked = await repository.revoke_source(
+                agent_id=agent_id,
+                source_tool_call_id=source_tool_call_id,
+                reason="operator ended probe",
+                ended_at=_NOW + timedelta(minutes=1),
+            )
+            assert {grant.grant_id for grant in revoked} == {grant.grant_id for grant in grants}
+            by_id = {grant.grant_id: grant for grant in revoked}
+            assert by_id[grants[0].grant_id].status is KubernetesGrantStatus.RELEASED
+            assert by_id[grants[0].grant_id].end_reason == "first scope no longer needed"
+            assert by_id[grants[1].grant_id].status is KubernetesGrantStatus.REVOKED
+            assert by_id[grants[1].grant_id].ended_at == _NOW + timedelta(minutes=1)
+            assert by_id[grants[1].grant_id].end_reason == "operator ended probe"
+
+            repeated = await repository.revoke_source(
+                agent_id=agent_id,
+                source_tool_call_id=source_tool_call_id,
+                reason="different retry reason",
+                ended_at=_NOW + timedelta(minutes=2),
+            )
+            assert repeated == revoked
 
             with pytest.raises(KubernetesGrantSourceError, match="already created a different"):
                 await repository.create_many(

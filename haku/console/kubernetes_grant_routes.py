@@ -101,3 +101,29 @@ async def revoke_kubernetes_grant(
     except (KubernetesGrantNotFoundError, KubernetesGrantOwnershipError) as error:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found") from error
     return OperatorKubernetesGrant(grant=grant, agent_display_name=display_name)
+
+
+@router.post("/{agent_id}/source/{source_tool_call_id}/revoke", response_model=KubernetesGrantListResponse)
+async def revoke_kubernetes_grant_set(
+    agent_id: UUID,
+    source_tool_call_id: str,
+    body: RevokeKubernetesGrantRequest,
+    actor: OperatorActorDep,
+    grants: GrantServiceDep,
+    agents: AgentServiceDep,
+) -> KubernetesGrantListResponse:
+    """Revoke one owned Agent's complete grant set from a reviewed source ToolCall."""
+
+    owned = await _owned_agents(actor=actor, agents=agents)
+    display_name = owned.get(agent_id)
+    if display_name is None:
+        raise HTTPException(status_code=404, detail="Kubernetes grant not found")
+    try:
+        revoked = await grants.revoke_grant_set(
+            agent_id=agent_id, source_tool_call_id=source_tool_call_id, reason=body.reason
+        )
+    except (KubernetesGrantNotFoundError, KubernetesGrantOwnershipError) as error:
+        raise HTTPException(status_code=404, detail="Kubernetes grant not found") from error
+    return KubernetesGrantListResponse(
+        grants=tuple(OperatorKubernetesGrant(grant=grant, agent_display_name=display_name) for grant in revoked)
+    )

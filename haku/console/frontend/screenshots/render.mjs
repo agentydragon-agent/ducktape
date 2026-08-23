@@ -78,7 +78,7 @@ const SCENES = [
     name: "settings-kubernetes-revoke",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    clicks: ['[role="tab"]::-p-text(Kubernetes grants)', "button::-p-text(Revoke…)"],
+    clicks: ['[role="tab"]::-p-text(Kubernetes grants)', "button::-p-text(Revoke active set…)"],
     expectVisible: "::-p-text(Revocation reason)",
     frame: true,
   },

@@ -71,6 +71,7 @@ def _service() -> tuple[KubernetesToolsService, AsyncMock, AsyncMock]:
     grants.list_grants.return_value = (_grant(),)
     grants.get_grant.return_value = _grant()
     grants.release_grant.return_value = _grant()
+    grants.release_grants.return_value = (_grant(),)
     authorization.authorize_agent.return_value = AuthorizationResponse(
         allowed=True, reason="standing", source=KubernetesAuthorizationSource.SAR, decision_id="sar:decision"
     )
@@ -82,13 +83,24 @@ async def test_server_exposes_exact_stable_tool_set_without_context_argument() -
     service, _, _ = _service()
     async with Client(build_mcp(service)) as client:
         tools = await client.list_tools()
-    assert {tool.name for tool in tools} == {"can_i", "create_grant", "list_grants", "get_grant", "release_grant"}
+    assert {tool.name for tool in tools} == {
+        "can_i",
+        "create_grant",
+        "list_grants",
+        "get_grant",
+        "release_grant",
+        "release_grants",
+    }
     for tool in tools:
         assert "context" not in tool.inputSchema.get("properties", {})
     create_grant = next(tool for tool in tools if tool.name == "create_grant")
     assert set(create_grant.inputSchema["properties"]) == {"grants", "duration_seconds"}
     assert create_grant.inputSchema["properties"]["grants"]["minItems"] == 1
     assert create_grant.inputSchema["properties"]["grants"]["maxItems"] == 32
+    release_grants = next(tool for tool in tools if tool.name == "release_grants")
+    assert set(release_grants.inputSchema["properties"]) == {"grant_ids", "reason"}
+    assert release_grants.inputSchema["properties"]["grant_ids"]["minItems"] == 1
+    assert release_grants.inputSchema["properties"]["grant_ids"]["maxItems"] == 32
 
 
 @pytest.mark.asyncio
@@ -121,6 +133,20 @@ async def test_operator_cannot_mint_or_inspect_agent_grants() -> None:
         await service.get_grant(context=_operator_context(), grant_id=_GRANT)
     with pytest.raises(PermissionError):
         await service.release_grant(context=_operator_context(), grant_id=_GRANT)
+    with pytest.raises(PermissionError):
+        await service.release_grants(context=_operator_context(), grant_ids=[_GRANT])
+
+
+@pytest.mark.asyncio
+async def test_release_uses_trusted_agent_and_supplied_grant_order() -> None:
+    service, grants, _ = _service()
+    other = UUID("20000000-0000-4000-8000-000000000003")
+    grants.release_grants.return_value = (_grant(), _grant().model_copy(update={"grant_id": other}))
+
+    result = await service.release_grants(context=_agent_context(), grant_ids=[_GRANT, other], reason="probe complete")
+
+    assert [grant.grant_id for grant in result] == [_GRANT, other]
+    grants.release_grants.assert_awaited_once_with(agent_id=_AGENT, grant_ids=[_GRANT, other], reason="probe complete")
 
 
 @pytest.mark.asyncio

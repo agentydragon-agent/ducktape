@@ -353,6 +353,29 @@ export const SAMPLE_KUBERNETES_GRANTS = {
     {
       agent_display_name: "Public Coder",
       grant: {
+        grant_id: "50000000-0000-4000-8000-000000000007",
+        agent_id: "30000000-0000-4000-8000-000000000003",
+        source_tool_call_id: "tc_0123456789abcdef01234567",
+        scope: { kind: "cluster" },
+        rules: [
+          {
+            api_groups: ["rbac.authorization.k8s.io"],
+            resources: ["clusterroles"],
+            verbs: ["get", "list"],
+            resource_names: [],
+            non_resource_urls: [],
+          },
+        ],
+        status: "active",
+        created_at: "2026-08-22T00:35:00Z",
+        expires_at: "2026-08-22T02:05:00Z",
+        ended_at: null,
+        end_reason: null,
+      },
+    },
+    {
+      agent_display_name: "Public Coder",
+      grant: {
         grant_id: "50000000-0000-4000-8000-000000000006",
         agent_id: "30000000-0000-4000-8000-000000000003",
         source_tool_call_id: "tc_1123456789abcdef01234567",
