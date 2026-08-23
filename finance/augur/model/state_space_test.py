@@ -168,8 +168,6 @@ def _artifact(
         latest_level_by_factor=latest,
         monthly_log_return_mu=mu,
         monthly_log_return_cov=tuple(tuple(float(value) for value in row) for row in cov),
-        filtered_log_state_mean={factor: float(np.log(latest[factor])) for factor in factors},
-        filtered_log_state_cov=tuple(tuple(float(value) for value in row) for row in cov),
         private_equity_event_priors={
             "private_company_a": StateSpacePrivateEquityEventPrior(
                 tender_interval_months_median=pe_tender_interval_months_median,

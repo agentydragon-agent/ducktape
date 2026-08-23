@@ -180,12 +180,6 @@ class Config(ApiModel):
             "so a fund declared only as a holding is modeled at price alone and loses its yield."
         ),
     )
-    # CLEANUP(added 2026-06-02): `default_rollout_samples` is no longer surfaced on the wire — the
-    #   frontend seeds its rollout count from a local constant clamped to `max_rollout_samples`,
-    #   so nothing reads this. Remove the field once gaffer-private's config YAML drops the key
-    #   (ApiModel's extra="forbid" rejects unknown keys, so it must outlive deployments still
-    #   setting it).
-    default_rollout_samples: PositiveInt
     max_rollout_samples: PositiveInt
     max_horizon_months: PositiveInt = Field(
         default=MAX_HORIZON_MONTHS,

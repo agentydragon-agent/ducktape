@@ -60,14 +60,12 @@ class StateSpacePrivateEquityEventPrior(FrozenModel):
 
 
 class StateSpaceModelArtifact(FrozenModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     factor_names: tuple[str, ...] = Field(min_length=1)
     trained_through_month: str = Field(min_length=7, max_length=7)
     latest_level_by_factor: dict[str, float] = Field(min_length=1)
     monthly_log_return_mu: dict[str, float] = Field(min_length=1)
     monthly_log_return_cov: tuple[tuple[float, ...], ...]
-    filtered_log_state_mean: dict[str, float] = Field(min_length=1)
-    filtered_log_state_cov: tuple[tuple[float, ...], ...]
     private_equity_event_priors: dict[str, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
     private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
@@ -78,16 +76,12 @@ class StateSpaceModelArtifact(FrozenModel):
         factors = set(self.factor_names)
         missing_levels = factors - set(self.latest_level_by_factor)
         missing_mu = factors - set(self.monthly_log_return_mu)
-        missing_state = factors - set(self.filtered_log_state_mean)
         if missing_levels:
             raise ValueError(f"latest_level_by_factor missing factors {sorted(missing_levels)}")
         if missing_mu:
             raise ValueError(f"monthly_log_return_mu missing factors {sorted(missing_mu)}")
-        if missing_state:
-            raise ValueError(f"filtered_log_state_mean missing factors {sorted(missing_state)}")
         n = len(self.factor_names)
         _require_square_matrix(self.monthly_log_return_cov, n, "monthly_log_return_cov")
-        _require_square_matrix(self.filtered_log_state_cov, n, "filtered_log_state_cov")
         if any(self.latest_level_by_factor[factor] <= 0 for factor in self.factor_names):
             raise ValueError("latest_level_by_factor values must be positive")
         private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
@@ -230,7 +224,6 @@ class StateSpaceModel:
                 scale_priors[extra.private_equity_issuer_id] = extra.private_equity_scale_prior
 
         covariance = _nearest_positive_semidefinite(covariance)
-        filtered_cov = np.diag(np.maximum(np.diag(covariance), _MIN_MONTHLY_VARIANCE))
         trained_through_month = historical.months[-1]
         merged_source_manifest = {
             **dict(source_manifest),
@@ -242,8 +235,6 @@ class StateSpaceModel:
             latest_level_by_factor=latest_levels,
             monthly_log_return_mu=mean_by_factor,
             monthly_log_return_cov=_matrix_to_tuple(covariance),
-            filtered_log_state_mean={factor: math.log(latest_levels[factor]) for factor in factor_names},
-            filtered_log_state_cov=_matrix_to_tuple(filtered_cov),
             private_equity_event_priors=event_priors,
             private_equity_scale_priors=scale_priors,
             source_manifest=merged_source_manifest,

@@ -46,19 +46,16 @@ from finance.augur.model.state_space import StateSpaceProviderConfig
 from finance.augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 
 
-def test_minimal_config_validates_with_explicit_sampling_config(minimal_config: MinimalConfig) -> None:
+def test_minimal_config_validates_with_explicit_sampling_limit(minimal_config: MinimalConfig) -> None:
     config = minimal_config()
 
     assert config.agents[0].actor_id == "owner"
     assert config.location_selection is None
-    assert config.default_rollout_samples == 128
     assert config.max_rollout_samples == 1_000_000
 
 
 def test_sampling_config_is_required(minimal_config: MinimalConfig) -> None:
     base = minimal_config().model_dump(mode="json")
-    with pytest.raises(ValidationError, match="default_rollout_samples"):
-        Config.model_validate({**base, "default_rollout_samples": None})
     with pytest.raises(ValidationError, match="max_rollout_samples"):
         Config.model_validate({**base, "max_rollout_samples": None})
 
@@ -196,7 +193,6 @@ def test_at_least_one_agent_required() -> None:
             portfolio_sources=PortfolioSourcesConfig(
                 fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
             ),
-            default_rollout_samples=128,
             max_rollout_samples=1_000_000,
             models={"current_model": IndependentProviderConfig()},
             default_model_id="current_model",

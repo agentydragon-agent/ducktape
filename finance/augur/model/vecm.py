@@ -356,7 +356,6 @@ class VecmModel:
             # On-disk factor identity is the wire-id string array, decoded back to typed
             # LevelSeriesKeys by `from_blob` at the single `parse_level_series_key` boundary.
             "factor_names": np.array([factor.wire_id for factor in self.factor_names], dtype=object),
-            "n_factors": np.array(self.n_factors),
             "train_log_levels": self.train_log_levels,
             **self.params,
         }
@@ -380,7 +379,7 @@ class VecmModel:
             params = {k: np.asarray(data[k]) for k in param_keys}
             factor_names = tuple(parse_level_series_key(str(name)) for name in data["factor_names"])
             train_log_levels = np.asarray(data["train_log_levels"])
-            n_factors = int(data["n_factors"])
+            n_factors = len(factor_names)
         model = cls(
             config=config or VecmConfig(),
             factor_names=factor_names,
