@@ -6,16 +6,19 @@ use thiserror::Error;
 use crate::{
     fixture::{
         AccountBalance, DistributionOutcome, FIXTURE_SCHEMA_VERSION, Fixture, InitialLotSpec,
-        LotDisposition, MonthOutput, ObligationOutcome, PopulationOutput, RolloutOutput,
-        RolloutSummary, SeriesSpec, SimulationOutput, TaxAccrual,
+        LotDisposition, MonthOutput, MortgageOriginationOutcome, MortgagePaymentOutcome,
+        MortgageState, ObligationOutcome, PopulationOutput, PropertyPurchaseOutcome, PropertyState,
+        RolloutOutput, RolloutSummary, SeriesSpec, SimulationOutput, TaxAccrual,
     },
     ledger::{AccountRef, JournalEntry, Ledger, LedgerError, Posting},
-    money::{ArithmeticError, Money, Quantity, mul_div_round_half_up},
+    money::{ArithmeticError, Money, Quantity, mul_div_i128_round_half_up, mul_div_round_half_up},
     tax::{TaxError, TaxFacts, assess, validate_rules},
 };
 
 const EXTERNAL_AGENT: &str = "__external__";
 const OPENING_EQUITY: &str = "equity:opening";
+const RATE_SCALE_PPB: i64 = 1_000_000_000;
+const CONTRACT_SCALE: i128 = 1_000_000_000_000_000_000;
 
 #[derive(Debug, Error)]
 pub enum SimulationError {
@@ -141,6 +144,25 @@ pub enum SimulationError {
         account_id: String,
         asset_id: String,
     },
+    #[error("duplicate location id {location_id:?}")]
+    DuplicateLocation { location_id: String },
+    #[error("property purchase {cause_id:?} references unknown location {location_id:?}")]
+    UnknownLocation {
+        cause_id: String,
+        location_id: String,
+    },
+    #[error("duplicate property id {property_id:?}")]
+    DuplicateProperty { property_id: String },
+    #[error("duplicate mortgage liability id {liability_id:?}")]
+    DuplicateMortgage { liability_id: String },
+    #[error("property purchase {cause_id:?} has invalid monetary terms")]
+    InvalidPropertyTerms { cause_id: String },
+    #[error("mortgage {liability_id:?} has invalid principal, rate, or term")]
+    InvalidMortgageTerms { liability_id: String },
+    #[error("property tax policy references unknown property {property_id:?}")]
+    UnknownPropertyTaxProperty { property_id: String },
+    #[error("property tax policy for {property_id:?} has invalid rate or range")]
+    InvalidPropertyTaxPolicy { property_id: String },
     #[error(transparent)]
     Ledger(#[from] LedgerError),
     #[error(transparent)]
@@ -165,13 +187,24 @@ struct PlannedDisposition {
     realized_gain: Money,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct ActiveObligation<'a> {
-    authored_id: &'a str,
-    obligation_type: &'a str,
-    from: &'a AccountRef,
-    to: &'a AccountRef,
+#[derive(Clone, Debug)]
+enum ObligationEffect {
+    None,
+    Mortgage {
+        mortgage_index: usize,
+        interest: Money,
+        principal: Money,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct ActiveObligation {
+    authored_id: String,
+    obligation_type: String,
+    from: AccountRef,
+    to: AccountRef,
     amount_due: Money,
+    effect: ObligationEffect,
 }
 
 #[derive(Debug)]
@@ -183,10 +216,15 @@ struct Recorder {
     obligations: Vec<ObligationOutcome>,
     tax_accruals: Vec<TaxAccrual>,
     distributions: Vec<DistributionOutcome>,
+    property_purchases: Vec<PropertyPurchaseOutcome>,
+    mortgage_originations: Vec<MortgageOriginationOutcome>,
+    mortgage_payments: Vec<MortgagePaymentOutcome>,
     journal_entry_count: u64,
     disposition_count: u64,
     tax_accrual_count: u64,
     distribution_count: u64,
+    property_purchase_count: u64,
+    mortgage_payment_count: u64,
 }
 
 impl Recorder {
@@ -199,10 +237,15 @@ impl Recorder {
             obligations: Vec::new(),
             tax_accruals: Vec::new(),
             distributions: Vec::new(),
+            property_purchases: Vec::new(),
+            mortgage_originations: Vec::new(),
+            mortgage_payments: Vec::new(),
             journal_entry_count: 0,
             disposition_count: 0,
             tax_accrual_count: 0,
             distribution_count: 0,
+            property_purchase_count: 0,
+            mortgage_payment_count: 0,
         }
     }
 
@@ -272,6 +315,42 @@ impl Recorder {
         Ok(())
     }
 
+    fn record_property_purchase(
+        &mut self,
+        purchase: PropertyPurchaseOutcome,
+        origination: Option<MortgageOriginationOutcome>,
+    ) -> Result<(), SimulationError> {
+        self.property_purchase_count =
+            self.property_purchase_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "property purchase count",
+                })?;
+        if self.capture_trace {
+            self.property_purchases.push(purchase);
+            if let Some(origination) = origination {
+                self.mortgage_originations.push(origination);
+            }
+        }
+        Ok(())
+    }
+
+    fn record_mortgage_payment(
+        &mut self,
+        payment: MortgagePaymentOutcome,
+    ) -> Result<(), SimulationError> {
+        self.mortgage_payment_count =
+            self.mortgage_payment_count
+                .checked_add(1)
+                .ok_or(ArithmeticError::Overflow {
+                    operation: "mortgage payment count",
+                })?;
+        if self.capture_trace {
+            self.mortgage_payments.push(payment);
+        }
+        Ok(())
+    }
+
     fn record_month(&mut self, month: MonthOutput) {
         if self.capture_trace {
             self.months.push(month);
@@ -283,6 +362,8 @@ impl Recorder {
 struct RolloutComputation {
     rollout_id: u32,
     ending_balances: Vec<AccountBalance>,
+    ending_properties: Vec<PropertyState>,
+    ending_mortgages: Vec<MortgageState>,
     recorder: Recorder,
     failed_month: Option<u32>,
 }
@@ -297,6 +378,9 @@ impl RolloutComputation {
             obligations: self.recorder.obligations,
             tax_accruals: self.recorder.tax_accruals,
             distributions: self.recorder.distributions,
+            property_purchases: self.recorder.property_purchases,
+            mortgage_originations: self.recorder.mortgage_originations,
+            mortgage_payments: self.recorder.mortgage_payments,
             failed_month: self.failed_month,
         }
     }
@@ -305,10 +389,14 @@ impl RolloutComputation {
         RolloutSummary {
             rollout_id: self.rollout_id,
             ending_balances: self.ending_balances,
+            ending_properties: self.ending_properties,
+            ending_mortgages: self.ending_mortgages,
             journal_entry_count: self.recorder.journal_entry_count,
             disposition_count: self.recorder.disposition_count,
             tax_accrual_count: self.recorder.tax_accrual_count,
             distribution_count: self.recorder.distribution_count,
+            property_purchase_count: self.recorder.property_purchase_count,
+            mortgage_payment_count: self.recorder.mortgage_payment_count,
             failed_month: self.failed_month,
         }
     }
@@ -676,6 +764,138 @@ fn validate_fixture(fixture: &Fixture) -> Result<(), SimulationError> {
             }
         }
     }
+    let mut locations = BTreeSet::new();
+    for location in &fixture.scenario.locations {
+        validate_identifier("location", &location.location_id)?;
+        if !locations.insert(location.location_id.clone()) {
+            return Err(SimulationError::DuplicateLocation {
+                location_id: location.location_id.clone(),
+            });
+        }
+        if location.annual_property_tax_rate_ppb < 0 || location.annual_special_assessment.0 < 0 {
+            return Err(SimulationError::InvalidPropertyTaxPolicy {
+                property_id: location.location_id.clone(),
+            });
+        }
+    }
+    let mut properties = BTreeMap::new();
+    let mut mortgages = BTreeSet::new();
+    for purchase in &fixture.scenario.scheduled_property_purchases {
+        validate_identifier("property purchase", &purchase.cause_id)?;
+        validate_identifier("property", &purchase.property_id)?;
+        validate_event_month(
+            "property purchase",
+            &purchase.cause_id,
+            purchase.month,
+            fixture.scenario.horizon_months,
+        )?;
+        if !locations.contains(&purchase.location_id) {
+            return Err(SimulationError::UnknownLocation {
+                cause_id: purchase.cause_id.clone(),
+                location_id: purchase.location_id.clone(),
+            });
+        }
+        if properties
+            .insert(purchase.property_id.clone(), purchase)
+            .is_some()
+        {
+            return Err(SimulationError::DuplicateProperty {
+                property_id: purchase.property_id.clone(),
+            });
+        }
+        validate_account(
+            &accounts,
+            &AccountRef::new(&purchase.buyer_agent_id, &purchase.buyer_account_id),
+            &purchase.cause_id,
+        )?;
+        validate_account(
+            &accounts,
+            &AccountRef::new(&purchase.seller_agent_id, &purchase.seller_account_id),
+            &purchase.cause_id,
+        )?;
+        let principal = purchase
+            .mortgage
+            .as_ref()
+            .map_or(Money(0), |mortgage| mortgage.principal);
+        if purchase.purchase_price.0 <= 0
+            || purchase.down_payment.0 < 0
+            || purchase.buyer_closing_cost.0 < 0
+            || purchase.down_payment.checked_add(principal)? != purchase.purchase_price
+        {
+            return Err(SimulationError::InvalidPropertyTerms {
+                cause_id: purchase.cause_id.clone(),
+            });
+        }
+        if let Some(mortgage) = &purchase.mortgage {
+            validate_identifier("mortgage", &mortgage.liability_id)?;
+            if !mortgages.insert(mortgage.liability_id.clone()) {
+                return Err(SimulationError::DuplicateMortgage {
+                    liability_id: mortgage.liability_id.clone(),
+                });
+            }
+            if mortgage.principal.0 <= 0
+                || mortgage.annual_interest_rate_ppb < 0
+                || mortgage.annual_interest_rate_ppb > RATE_SCALE_PPB
+                || mortgage.term_months == 0
+            {
+                return Err(SimulationError::InvalidMortgageTerms {
+                    liability_id: mortgage.liability_id.clone(),
+                });
+            }
+            validate_account(
+                &accounts,
+                &AccountRef::new(&mortgage.lender_agent_id, &mortgage.lender_account_id),
+                &mortgage.liability_id,
+            )?;
+            mortgage_monthly_payment(
+                mortgage.principal,
+                mortgage.annual_interest_rate_ppb,
+                mortgage.term_months,
+            )?;
+        }
+    }
+    let mut property_tax_months = BTreeSet::new();
+    for policy in &fixture.scenario.property_tax_policies {
+        let Some(purchase) = properties.get(&policy.property_id) else {
+            return Err(SimulationError::UnknownPropertyTaxProperty {
+                property_id: policy.property_id.clone(),
+            });
+        };
+        if purchase.buyer_agent_id != policy.owner_agent_id
+            || policy.annual_tax_rate_ppb.is_some_and(|rate| rate < 0)
+            || policy.start_month >= fixture.scenario.horizon_months
+            || policy.end_month.is_some_and(|end| {
+                end < policy.start_month || end >= fixture.scenario.horizon_months
+            })
+        {
+            return Err(SimulationError::InvalidPropertyTaxPolicy {
+                property_id: policy.property_id.clone(),
+            });
+        }
+        validate_account(
+            &accounts,
+            &AccountRef::new(&policy.owner_agent_id, &policy.from_account_id),
+            "property tax payer",
+        )?;
+        validate_account(
+            &accounts,
+            &AccountRef::new(
+                &policy.tax_authority_agent_id,
+                &policy.tax_authority_account_id,
+            ),
+            "property tax authority",
+        )?;
+        let end = policy
+            .end_month
+            .unwrap_or(fixture.scenario.horizon_months - 1);
+        for month in policy.start_month..=end {
+            if !property_tax_months.insert((policy.property_id.clone(), month)) {
+                return Err(SimulationError::InvalidPropertyTaxPolicy {
+                    property_id: policy.property_id.clone(),
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -797,6 +1017,38 @@ fn simulate_rollout(
             ));
         }
     }
+    for purchase in &fixture.scenario.scheduled_property_purchases {
+        accounts.push(property_asset_account(
+            &purchase.buyer_agent_id,
+            &purchase.property_id,
+        ));
+        accounts.push(property_sale_clearing_account(
+            &purchase.seller_agent_id,
+            &purchase.property_id,
+        ));
+        if let Some(mortgage) = &purchase.mortgage {
+            accounts.push(mortgage_liability_account(
+                &purchase.buyer_agent_id,
+                &mortgage.liability_id,
+            ));
+            accounts.push(mortgage_interest_expense_account(
+                &purchase.buyer_agent_id,
+                &mortgage.liability_id,
+            ));
+            accounts.push(mortgage_receivable_account(
+                &mortgage.lender_agent_id,
+                &mortgage.liability_id,
+            ));
+            accounts.push(mortgage_interest_income_account(
+                &mortgage.lender_agent_id,
+                &mortgage.liability_id,
+            ));
+            accounts.push(mortgage_funding_account(
+                &mortgage.lender_agent_id,
+                &mortgage.liability_id,
+            ));
+        }
+    }
     accounts.sort();
     accounts.dedup();
     let mut ledger = Ledger::with_accounts(accounts);
@@ -868,11 +1120,24 @@ fn simulate_rollout(
         });
     }
 
+    let mut properties = Vec::<PropertyState>::new();
+    let mut mortgages = Vec::<MortgageState>::new();
+
     let mut failed_month = None;
-    recorder.record_month(month_output(0, &ledger, false));
+    if recorder.capture_trace {
+        recorder.record_month(month_output(0, &ledger, &properties, &mortgages, false));
+    }
     for month in 0..fixture.scenario.horizon_months {
         if failed_month.is_some() {
-            recorder.record_month(month_output(month + 1, &ledger, true));
+            if recorder.capture_trace {
+                recorder.record_month(month_output(
+                    month + 1,
+                    &ledger,
+                    &properties,
+                    &mortgages,
+                    true,
+                ));
+            }
             continue;
         }
         for transfer in fixture
@@ -929,6 +1194,14 @@ fn simulate_rollout(
             &lots,
             month,
         )?;
+        execute_property_purchases(
+            fixture,
+            &mut ledger,
+            &mut recorder,
+            &mut properties,
+            &mut mortgages,
+            month,
+        )?;
         for sale in fixture
             .scenario
             .scheduled_sales
@@ -951,11 +1224,12 @@ fn simulate_rollout(
             .iter()
             .filter(|obligation| obligation.month == month)
             .map(|obligation| ActiveObligation {
-                authored_id: &obligation.obligation_id,
-                obligation_type: &obligation.obligation_type,
-                from: &obligation.from,
-                to: &obligation.to,
+                authored_id: obligation.obligation_id.clone(),
+                obligation_type: obligation.obligation_type.clone(),
+                from: obligation.from.clone(),
+                to: obligation.to.clone(),
                 amount_due: obligation.amount_due,
+                effect: ObligationEffect::None,
             })
             .chain(
                 fixture
@@ -967,26 +1241,49 @@ fn simulate_rollout(
                             && obligation.end_month.is_none_or(|end| month <= end)
                     })
                     .map(|obligation| ActiveObligation {
-                        authored_id: &obligation.obligation_id,
-                        obligation_type: &obligation.obligation_type,
-                        from: &obligation.from,
-                        to: &obligation.to,
+                        authored_id: obligation.obligation_id.clone(),
+                        obligation_type: obligation.obligation_type.clone(),
+                        from: obligation.from.clone(),
+                        to: obligation.to.clone(),
                         amount_due: obligation.amount_due,
+                        effect: ObligationEffect::None,
                     }),
             )
+            .chain(property_obligations(
+                fixture,
+                &properties,
+                &mortgages,
+                month,
+            )?)
             .collect();
-        if settle_obligations(&mut ledger, &mut recorder, month, &active_obligations)? {
+        if settle_obligations(
+            &mut ledger,
+            &mut recorder,
+            &mut mortgages,
+            month,
+            &active_obligations,
+        )? {
             failed_month = Some(month);
         }
         if failed_month.is_none() && (month + 1) % 12 == 0 {
             accrue_year_end_taxes(fixture, &mut ledger, &mut recorder, &mut tax_facts, month)?;
         }
-        recorder.record_month(month_output(month + 1, &ledger, failed_month.is_some()));
+        if recorder.capture_trace {
+            recorder.record_month(month_output(
+                month + 1,
+                &ledger,
+                &properties,
+                &mortgages,
+                failed_month.is_some(),
+            ));
+        }
     }
     debug_assert_eq!(ledger.trial_balance(), 0);
     Ok(RolloutComputation {
         rollout_id,
         ending_balances: account_balances(&ledger, failed_month.is_some()),
+        ending_properties: property_states(&properties, failed_month.is_some()),
+        ending_mortgages: mortgage_states(&mortgages, failed_month.is_some()),
         recorder,
         failed_month,
     })
@@ -1052,6 +1349,315 @@ fn execute_distributions(
         })?;
     }
     Ok(())
+}
+
+fn execute_property_purchases(
+    fixture: &Fixture,
+    ledger: &mut Ledger,
+    recorder: &mut Recorder,
+    properties: &mut Vec<PropertyState>,
+    mortgages: &mut Vec<MortgageState>,
+    month: u32,
+) -> Result<(), SimulationError> {
+    for purchase in fixture
+        .scenario
+        .scheduled_property_purchases
+        .iter()
+        .filter(|purchase| purchase.month == month)
+    {
+        let principal = purchase
+            .mortgage
+            .as_ref()
+            .map_or(Money(0), |mortgage| mortgage.principal);
+        let adjusted_basis = purchase
+            .purchase_price
+            .checked_add(purchase.buyer_closing_cost)?;
+        let stake = purchase
+            .down_payment
+            .checked_add(purchase.buyer_closing_cost)?;
+        let equity = purchase.purchase_price.checked_sub(principal)?;
+        let buyer_cash = AccountRef::new(&purchase.buyer_agent_id, &purchase.buyer_account_id);
+        let seller_cash = AccountRef::new(&purchase.seller_agent_id, &purchase.seller_account_id);
+        let mut postings = vec![
+            Posting {
+                account: buyer_cash,
+                amount: stake.checked_neg()?,
+            },
+            Posting {
+                account: seller_cash,
+                amount: stake,
+            },
+            Posting {
+                account: property_asset_account(&purchase.buyer_agent_id, &purchase.property_id),
+                amount: adjusted_basis,
+            },
+            Posting {
+                account: property_sale_clearing_account(
+                    &purchase.seller_agent_id,
+                    &purchase.property_id,
+                ),
+                amount: stake.checked_neg()?,
+            },
+        ];
+        let mut origination = None;
+        if let Some(mortgage) = &purchase.mortgage {
+            let monthly_payment = mortgage_monthly_payment(
+                mortgage.principal,
+                mortgage.annual_interest_rate_ppb,
+                mortgage.term_months,
+            )?;
+            postings.extend([
+                Posting {
+                    account: mortgage_liability_account(
+                        &purchase.buyer_agent_id,
+                        &mortgage.liability_id,
+                    ),
+                    amount: mortgage.principal.checked_neg()?,
+                },
+                Posting {
+                    account: mortgage_receivable_account(
+                        &mortgage.lender_agent_id,
+                        &mortgage.liability_id,
+                    ),
+                    amount: mortgage.principal,
+                },
+                Posting {
+                    account: mortgage_funding_account(
+                        &mortgage.lender_agent_id,
+                        &mortgage.liability_id,
+                    ),
+                    amount: mortgage.principal.checked_neg()?,
+                },
+            ]);
+            mortgages.push(MortgageState {
+                liability_id: mortgage.liability_id.clone(),
+                property_id: purchase.property_id.clone(),
+                agent_id: purchase.buyer_agent_id.clone(),
+                payment_account_id: purchase.buyer_account_id.clone(),
+                counterparty_agent_id: mortgage.lender_agent_id.clone(),
+                counterparty_account_id: mortgage.lender_account_id.clone(),
+                origination_month: month,
+                annual_interest_rate_ppb: mortgage.annual_interest_rate_ppb,
+                term_months: mortgage.term_months,
+                monthly_payment,
+                principal: mortgage.principal,
+                interest_paid_ytd: Money(0),
+                principal_paid_ytd: Money(0),
+                active: true,
+            });
+            origination = Some(MortgageOriginationOutcome {
+                month,
+                cause_id: purchase.cause_id.clone(),
+                liability_id: mortgage.liability_id.clone(),
+                agent_id: purchase.buyer_agent_id.clone(),
+                payment_account_id: purchase.buyer_account_id.clone(),
+                counterparty_agent_id: mortgage.lender_agent_id.clone(),
+                counterparty_account_id: mortgage.lender_account_id.clone(),
+                property_id: purchase.property_id.clone(),
+                principal: mortgage.principal,
+                annual_interest_rate_ppb: mortgage.annual_interest_rate_ppb,
+                term_months: mortgage.term_months,
+                monthly_payment,
+            });
+        } else {
+            postings.push(Posting {
+                account: property_sale_clearing_account(
+                    &purchase.seller_agent_id,
+                    &purchase.property_id,
+                ),
+                amount: principal,
+            });
+        }
+        recorder.apply_entry(
+            ledger,
+            JournalEntry {
+                month,
+                cause_id: purchase.cause_id.clone(),
+                postings,
+            },
+        )?;
+        properties.push(PropertyState {
+            property_id: purchase.property_id.clone(),
+            location_id: purchase.location_id.clone(),
+            owner_agent_id: purchase.buyer_agent_id.clone(),
+            purchase_month: month,
+            adjusted_basis,
+            contribution_used: stake,
+            equity_ledger: equity,
+            active: true,
+        });
+        recorder.record_property_purchase(
+            PropertyPurchaseOutcome {
+                month,
+                cause_id: purchase.cause_id.clone(),
+                property_id: purchase.property_id.clone(),
+                location_id: purchase.location_id.clone(),
+                buyer_agent_id: purchase.buyer_agent_id.clone(),
+                purchase_price: purchase.purchase_price,
+                closing_cost: purchase.buyer_closing_cost,
+                adjusted_basis,
+                stake_contribution: stake,
+                equity_ledger: equity,
+            },
+            origination,
+        )?;
+    }
+    Ok(())
+}
+
+fn property_obligations(
+    fixture: &Fixture,
+    properties: &[PropertyState],
+    mortgages: &[MortgageState],
+    month: u32,
+) -> Result<Vec<ActiveObligation>, SimulationError> {
+    let mut obligations = Vec::new();
+    for (index, mortgage) in mortgages.iter().enumerate() {
+        if !mortgage.active || mortgage.origination_month >= month || mortgage.principal.0 <= 0 {
+            continue;
+        }
+        let interest = Money(mul_div_round_half_up(
+            mortgage.principal.0,
+            mortgage.annual_interest_rate_ppb,
+            12 * RATE_SCALE_PPB,
+            "mortgage monthly interest",
+        )?);
+        let due = Money(
+            mortgage
+                .monthly_payment
+                .0
+                .min(mortgage.principal.checked_add(interest)?.0),
+        );
+        let principal = Money((due.0 - interest.0).max(0).min(mortgage.principal.0));
+        obligations.push(ActiveObligation {
+            authored_id: format!("{}_payment", mortgage.liability_id),
+            obligation_type: "mortgage_payment".into(),
+            from: AccountRef::new(&mortgage.agent_id, &mortgage.payment_account_id),
+            to: AccountRef::new(
+                &mortgage.counterparty_agent_id,
+                &mortgage.counterparty_account_id,
+            ),
+            amount_due: due,
+            effect: ObligationEffect::Mortgage {
+                mortgage_index: index,
+                interest,
+                principal,
+            },
+        });
+    }
+    for policy in &fixture.scenario.property_tax_policies {
+        let Some(property) = properties
+            .iter()
+            .find(|property| property.property_id == policy.property_id && property.active)
+        else {
+            continue;
+        };
+        if property.purchase_month >= month
+            || policy.start_month > month
+            || policy.end_month.is_some_and(|end| month > end)
+        {
+            continue;
+        }
+        let purchase = fixture
+            .scenario
+            .scheduled_property_purchases
+            .iter()
+            .find(|purchase| purchase.property_id == policy.property_id)
+            .expect("validated property has a purchase");
+        let location = fixture
+            .scenario
+            .locations
+            .iter()
+            .find(|location| location.location_id == property.location_id)
+            .expect("validated property has a location");
+        let rate = policy
+            .annual_tax_rate_ppb
+            .unwrap_or(location.annual_property_tax_rate_ppb);
+        let annual_tax_numerator = i128::from(purchase.purchase_price.0)
+            .checked_mul(i128::from(rate))
+            .and_then(|value| {
+                i128::from(location.annual_special_assessment.0)
+                    .checked_mul(i128::from(RATE_SCALE_PPB))
+                    .and_then(|special| value.checked_add(special))
+            })
+            .ok_or(ArithmeticError::Overflow {
+                operation: "property tax",
+            })?;
+        let amount_due = Money(
+            i64::try_from(mul_div_i128_round_half_up(
+                annual_tax_numerator,
+                1,
+                12 * i128::from(RATE_SCALE_PPB),
+                "property tax",
+            )?)
+            .map_err(|_| ArithmeticError::Overflow {
+                operation: "property tax",
+            })?,
+        );
+        obligations.push(ActiveObligation {
+            authored_id: format!("{}_property_tax", policy.property_id),
+            obligation_type: "property_tax".into(),
+            from: AccountRef::new(&policy.owner_agent_id, &policy.from_account_id),
+            to: AccountRef::new(
+                &policy.tax_authority_agent_id,
+                &policy.tax_authority_account_id,
+            ),
+            amount_due,
+            effect: ObligationEffect::None,
+        });
+    }
+    Ok(obligations)
+}
+
+fn mortgage_monthly_payment(
+    principal: Money,
+    annual_rate_ppb: i64,
+    term_months: u32,
+) -> Result<Money, SimulationError> {
+    if annual_rate_ppb == 0 {
+        return Ok(Money(mul_div_round_half_up(
+            principal.0,
+            1,
+            i64::from(term_months),
+            "zero-rate mortgage payment",
+        )?));
+    }
+    let monthly_rate = mul_div_i128_round_half_up(
+        i128::from(annual_rate_ppb),
+        CONTRACT_SCALE,
+        12 * i128::from(RATE_SCALE_PPB),
+        "mortgage monthly rate",
+    )?;
+    let factor = CONTRACT_SCALE
+        .checked_add(monthly_rate)
+        .ok_or(ArithmeticError::Overflow {
+            operation: "mortgage rate factor",
+        })?;
+    let mut discount = CONTRACT_SCALE;
+    for _ in 0..term_months {
+        discount = mul_div_i128_round_half_up(
+            discount,
+            CONTRACT_SCALE,
+            factor,
+            "mortgage discount factor",
+        )?;
+    }
+    let denominator = CONTRACT_SCALE
+        .checked_sub(discount)
+        .ok_or(ArithmeticError::Overflow {
+            operation: "mortgage annuity denominator",
+        })?;
+    let payment = mul_div_i128_round_half_up(
+        i128::from(principal.0),
+        monthly_rate,
+        denominator,
+        "mortgage payment",
+    )?;
+    Ok(Money(i64::try_from(payment).map_err(|_| {
+        ArithmeticError::Overflow {
+            operation: "mortgage payment",
+        }
+    })?))
 }
 
 fn record_transfer_income(
@@ -1161,13 +1767,14 @@ fn accrue_year_end_taxes(
 fn settle_obligations(
     ledger: &mut Ledger,
     recorder: &mut Recorder,
+    mortgages: &mut [MortgageState],
     month: u32,
-    obligations: &[ActiveObligation<'_>],
+    obligations: &[ActiveObligation],
 ) -> Result<bool, SimulationError> {
     let mut due_by_source = BTreeMap::<AccountRef, Money>::new();
     for obligation in obligations {
         let due = due_by_source
-            .get(obligation.from)
+            .get(&obligation.from)
             .copied()
             .unwrap_or_default()
             .checked_add(obligation.amount_due)?;
@@ -1185,18 +1792,93 @@ fn settle_obligations(
 
     let mut any_failure = false;
     for obligation in obligations {
-        let funded = funded_by_source[obligation.from];
+        let funded = funded_by_source[&obligation.from];
         let firing_id = format!("{}_m{month}", obligation.authored_id);
         let (amount_paid, shortfall) = if funded {
-            transfer_money(
-                ledger,
-                recorder,
-                month,
-                &firing_id,
-                obligation.from,
-                obligation.to,
-                obligation.amount_due,
-            )?;
+            match obligation.effect {
+                ObligationEffect::None => transfer_money(
+                    ledger,
+                    recorder,
+                    month,
+                    &firing_id,
+                    &obligation.from,
+                    &obligation.to,
+                    obligation.amount_due,
+                )?,
+                ObligationEffect::Mortgage {
+                    mortgage_index,
+                    interest,
+                    principal,
+                } => {
+                    let mortgage = &mut mortgages[mortgage_index];
+                    recorder.apply_entry(
+                        ledger,
+                        JournalEntry {
+                            month,
+                            cause_id: firing_id.clone(),
+                            postings: vec![
+                                Posting {
+                                    account: obligation.from.clone(),
+                                    amount: obligation.amount_due.checked_neg()?,
+                                },
+                                Posting {
+                                    account: obligation.to.clone(),
+                                    amount: obligation.amount_due,
+                                },
+                                Posting {
+                                    account: mortgage_liability_account(
+                                        &mortgage.agent_id,
+                                        &mortgage.liability_id,
+                                    ),
+                                    amount: principal,
+                                },
+                                Posting {
+                                    account: mortgage_interest_expense_account(
+                                        &mortgage.agent_id,
+                                        &mortgage.liability_id,
+                                    ),
+                                    amount: interest,
+                                },
+                                Posting {
+                                    account: mortgage_receivable_account(
+                                        &mortgage.counterparty_agent_id,
+                                        &mortgage.liability_id,
+                                    ),
+                                    amount: principal.checked_neg()?,
+                                },
+                                Posting {
+                                    account: mortgage_interest_income_account(
+                                        &mortgage.counterparty_agent_id,
+                                        &mortgage.liability_id,
+                                    ),
+                                    amount: interest.checked_neg()?,
+                                },
+                            ],
+                        },
+                    )?;
+                    mortgage.principal = mortgage.principal.checked_sub(principal)?;
+                    mortgage.interest_paid_ytd =
+                        mortgage.interest_paid_ytd.checked_add(interest)?;
+                    mortgage.principal_paid_ytd =
+                        mortgage.principal_paid_ytd.checked_add(principal)?;
+                    if mortgage.principal == Money(0) {
+                        mortgage.active = false;
+                    }
+                    recorder.record_mortgage_payment(MortgagePaymentOutcome {
+                        month,
+                        cause_id: firing_id.clone(),
+                        liability_id: mortgage.liability_id.clone(),
+                        agent_id: mortgage.agent_id.clone(),
+                        counterparty_agent_id: mortgage.counterparty_agent_id.clone(),
+                        property_id: mortgage.property_id.clone(),
+                        from_account_id: mortgage.payment_account_id.clone(),
+                        to_account_id: mortgage.counterparty_account_id.clone(),
+                        interest,
+                        principal,
+                        total_payment: obligation.amount_due,
+                    })?;
+                }
+            }
             (obligation.amount_due, Money(0))
         } else {
             any_failure = true;
@@ -1205,7 +1887,7 @@ fn settle_obligations(
         recorder.record_obligation(ObligationOutcome {
             month,
             obligation_id: firing_id,
-            obligation_type: obligation.obligation_type.into(),
+            obligation_type: obligation.obligation_type.clone(),
             from: obligation.from.clone(),
             to: obligation.to.clone(),
             amount_due: obligation.amount_due,
@@ -1415,12 +2097,85 @@ fn tax_liability_account(agent_id: &str, jurisdiction_id: &str) -> AccountRef {
     AccountRef::new(agent_id, format!("liability:tax:{jurisdiction_id}"))
 }
 
-fn month_output(month: u32, ledger: &Ledger, failed: bool) -> MonthOutput {
+fn property_asset_account(agent_id: &str, property_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("asset:property:{property_id}"))
+}
+
+fn property_sale_clearing_account(agent_id: &str, property_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("equity:property-sale:{property_id}"))
+}
+
+fn mortgage_liability_account(agent_id: &str, liability_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("liability:mortgage:{liability_id}"))
+}
+
+fn mortgage_interest_expense_account(agent_id: &str, liability_id: &str) -> AccountRef {
+    AccountRef::new(
+        agent_id,
+        format!("expense:mortgage-interest:{liability_id}"),
+    )
+}
+
+fn mortgage_receivable_account(agent_id: &str, liability_id: &str) -> AccountRef {
+    AccountRef::new(
+        agent_id,
+        format!("asset:mortgage-receivable:{liability_id}"),
+    )
+}
+
+fn mortgage_interest_income_account(agent_id: &str, liability_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("income:mortgage-interest:{liability_id}"))
+}
+
+fn mortgage_funding_account(agent_id: &str, liability_id: &str) -> AccountRef {
+    AccountRef::new(agent_id, format!("equity:mortgage-funding:{liability_id}"))
+}
+
+fn month_output(
+    month: u32,
+    ledger: &Ledger,
+    properties: &[PropertyState],
+    mortgages: &[MortgageState],
+    failed: bool,
+) -> MonthOutput {
     MonthOutput {
         month,
         balances: account_balances(ledger, failed),
+        properties: property_states(properties, failed),
+        mortgages: mortgage_states(mortgages, failed),
         failed,
     }
+}
+
+fn property_states(properties: &[PropertyState], failed: bool) -> Vec<PropertyState> {
+    properties
+        .iter()
+        .cloned()
+        .map(|mut property| {
+            if failed {
+                property.adjusted_basis = Money(0);
+                property.contribution_used = Money(0);
+                property.equity_ledger = Money(0);
+            }
+            property
+        })
+        .collect()
+}
+
+fn mortgage_states(mortgages: &[MortgageState], failed: bool) -> Vec<MortgageState> {
+    mortgages
+        .iter()
+        .cloned()
+        .map(|mut mortgage| {
+            if failed {
+                mortgage.monthly_payment = Money(0);
+                mortgage.principal = Money(0);
+                mortgage.interest_paid_ytd = Money(0);
+                mortgage.principal_paid_ytd = Money(0);
+            }
+            mortgage
+        })
+        .collect()
 }
 
 fn account_balances(ledger: &Ledger, failed: bool) -> Vec<AccountBalance> {
@@ -1437,8 +2192,9 @@ fn account_balances(ledger: &Ledger, failed: bool) -> Vec<AccountBalance> {
 #[cfg(test)]
 mod tests {
     use crate::fixture::{
-        AccountSpec, InitialLotSpec, ObligationSpec, RecurringObligationSpec, ScenarioSpec,
-        ScheduledSaleSpec, ScheduledTransferSpec, SeriesSpec,
+        AccountSpec, InitialLotSpec, LocationSpec, MortgageFinancingSpec, ObligationSpec,
+        PropertyTaxPolicySpec, RecurringObligationSpec, ScenarioSpec,
+        ScheduledPropertyPurchaseSpec, ScheduledSaleSpec, ScheduledTransferSpec, SeriesSpec,
     };
 
     use super::*;
@@ -1455,6 +2211,7 @@ mod tests {
                     account: AccountRef::new("alice", "checking"),
                     opening_balance: Money(0),
                 }],
+                locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
                 obligations: vec![],
@@ -1463,6 +2220,8 @@ mod tests {
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
+                scheduled_property_purchases: vec![],
+                property_tax_policies: vec![],
             },
             series: vec![],
         }
@@ -1516,6 +2275,46 @@ mod tests {
         assert!(matches!(
             simulate(&fixture),
             Err(SimulationError::UnknownAccountReference { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_property_contracts_before_rollout_execution() {
+        let mut fixture = minimal_fixture();
+        fixture.scenario.accounts.push(AccountSpec {
+            account: AccountRef::new("seller", "checking"),
+            opening_balance: Money(0),
+        });
+        fixture.scenario.scheduled_property_purchases = vec![ScheduledPropertyPurchaseSpec {
+            month: 0,
+            cause_id: "buy-home".into(),
+            property_id: "home".into(),
+            location_id: "missing".into(),
+            buyer_agent_id: "alice".into(),
+            buyer_account_id: "checking".into(),
+            seller_agent_id: "seller".into(),
+            seller_account_id: "checking".into(),
+            purchase_price: Money(10),
+            down_payment: Money(10),
+            buyer_closing_cost: Money(0),
+            mortgage: None,
+        }];
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::UnknownLocation { .. })
+        ));
+
+        fixture.scenario.locations.push(LocationSpec {
+            location_id: "missing".into(),
+            display_name: "Known now".into(),
+            jurisdiction_ids: vec![],
+            annual_property_tax_rate_ppb: 0,
+            annual_special_assessment: Money(0),
+        });
+        fixture.scenario.scheduled_property_purchases[0].down_payment = Money(9);
+        assert!(matches!(
+            simulate(&fixture),
+            Err(SimulationError::InvalidPropertyTerms { .. })
         ));
     }
 
@@ -1586,6 +2385,7 @@ mod tests {
                         opening_balance: Money(2_000),
                     },
                 ],
+                locations: vec![],
                 scheduled_transfers: vec![ScheduledTransferSpec {
                     month: 0,
                     cause_id: "gift".into(),
@@ -1618,6 +2418,8 @@ mod tests {
                 }],
                 tax_profiles: vec![],
                 distributions: vec![],
+                scheduled_property_purchases: vec![],
+                property_tax_policies: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -1637,12 +2439,28 @@ mod tests {
                 summary.ending_balances,
                 rollout.months.last().unwrap().balances
             );
+            assert_eq!(
+                summary.ending_properties,
+                rollout.months.last().unwrap().properties
+            );
+            assert_eq!(
+                summary.ending_mortgages,
+                rollout.months.last().unwrap().mortgages
+            );
             assert_eq!(summary.journal_entry_count, rollout.journal.len() as u64);
             assert_eq!(summary.disposition_count, rollout.dispositions.len() as u64);
             assert_eq!(summary.tax_accrual_count, rollout.tax_accruals.len() as u64);
             assert_eq!(
                 summary.distribution_count,
                 rollout.distributions.len() as u64
+            );
+            assert_eq!(
+                summary.property_purchase_count,
+                rollout.property_purchases.len() as u64
+            );
+            assert_eq!(
+                summary.mortgage_payment_count,
+                rollout.mortgage_payments.len() as u64
             );
             assert_eq!(summary.failed_month, rollout.failed_month);
         }
@@ -1661,6 +2479,105 @@ mod tests {
     }
 
     #[test]
+    fn financed_property_purchase_and_first_monthly_carry_match_contract() {
+        let mut fixture = minimal_fixture();
+        fixture.scenario.horizon_months = 2;
+        fixture.scenario.accounts = vec![
+            AccountSpec {
+                account: AccountRef::new("alice", "checking"),
+                opening_balance: Money(12_000_000),
+            },
+            AccountSpec {
+                account: AccountRef::new("seller", "checking"),
+                opening_balance: Money(0),
+            },
+            AccountSpec {
+                account: AccountRef::new("bank", "checking"),
+                opening_balance: Money(0),
+            },
+            AccountSpec {
+                account: AccountRef::new("county", "checking"),
+                opening_balance: Money(0),
+            },
+        ];
+        fixture.scenario.locations = vec![LocationSpec {
+            location_id: "sf".into(),
+            display_name: "San Francisco".into(),
+            jurisdiction_ids: vec![],
+            annual_property_tax_rate_ppb: 11_800_000,
+            annual_special_assessment: Money(0),
+        }];
+        fixture.scenario.scheduled_property_purchases = vec![ScheduledPropertyPurchaseSpec {
+            month: 0,
+            cause_id: "alice-buys-home".into(),
+            property_id: "home".into(),
+            location_id: "sf".into(),
+            buyer_agent_id: "alice".into(),
+            buyer_account_id: "checking".into(),
+            seller_agent_id: "seller".into(),
+            seller_account_id: "checking".into(),
+            purchase_price: Money(50_000_000),
+            down_payment: Money(10_000_000),
+            buyer_closing_cost: Money(1_000_000),
+            mortgage: Some(MortgageFinancingSpec {
+                liability_id: "home-mortgage".into(),
+                lender_agent_id: "bank".into(),
+                lender_account_id: "checking".into(),
+                principal: Money(40_000_000),
+                annual_interest_rate_ppb: 60_000_000,
+                term_months: 360,
+            }),
+        }];
+        fixture.scenario.property_tax_policies = vec![PropertyTaxPolicySpec {
+            property_id: "home".into(),
+            owner_agent_id: "alice".into(),
+            from_account_id: "checking".into(),
+            tax_authority_agent_id: "county".into(),
+            tax_authority_account_id: "checking".into(),
+            annual_tax_rate_ppb: Some(12_000_000),
+            start_month: 0,
+            end_month: None,
+        }];
+
+        let rollout = simulate(&fixture).unwrap().rollouts.remove(0);
+        let month_zero = &rollout.months[1];
+        assert_eq!(month_zero.properties[0].adjusted_basis, Money(51_000_000));
+        assert_eq!(
+            month_zero.properties[0].contribution_used,
+            Money(11_000_000)
+        );
+        assert_eq!(month_zero.properties[0].equity_ledger, Money(10_000_000));
+        assert_eq!(month_zero.mortgages[0].monthly_payment, Money(239_820));
+        assert_eq!(month_zero.mortgages[0].principal, Money(40_000_000));
+
+        let final_month = &rollout.months[2];
+        assert_eq!(final_month.mortgages[0].interest_paid_ytd, Money(200_000));
+        assert_eq!(final_month.mortgages[0].principal_paid_ytd, Money(39_820));
+        assert_eq!(final_month.mortgages[0].principal, Money(39_960_180));
+        let cash: BTreeMap<_, _> = final_month
+            .balances
+            .iter()
+            .filter(|balance| balance.account.account_id == "checking")
+            .map(|balance| (balance.account.agent_id.as_str(), balance.balance))
+            .collect();
+        assert_eq!(cash["alice"], Money(710_180));
+        assert_eq!(cash["seller"], Money(11_000_000));
+        assert_eq!(cash["bank"], Money(239_820));
+        assert_eq!(cash["county"], Money(50_000));
+        assert_eq!(rollout.property_purchases.len(), 1);
+        assert_eq!(rollout.mortgage_originations.len(), 1);
+        assert_eq!(rollout.mortgage_payments.len(), 1);
+        assert!(rollout.journal.iter().all(|entry| {
+            entry
+                .postings
+                .iter()
+                .map(|posting| i128::from(posting.amount.0))
+                .sum::<i128>()
+                == 0
+        }));
+    }
+
+    #[test]
     fn oversell_is_rejected_before_any_disposition() {
         let alice_cash = AccountRef::new("alice", "checking");
         let fixture = Fixture {
@@ -1674,6 +2591,7 @@ mod tests {
                     account: alice_cash,
                     opening_balance: Money(0),
                 }],
+                locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
                 obligations: vec![],
@@ -1699,6 +2617,8 @@ mod tests {
                 }],
                 tax_profiles: vec![],
                 distributions: vec![],
+                scheduled_property_purchases: vec![],
+                property_tax_policies: vec![],
             },
             series: vec![SeriesSpec {
                 series_id: "security:vti".into(),
@@ -1737,6 +2657,7 @@ mod tests {
                         opening_balance: Money(0),
                     },
                 ],
+                locations: vec![],
                 scheduled_transfers: vec![ScheduledTransferSpec {
                     month: 1,
                     cause_id: "must-not-run".into(),
@@ -1759,6 +2680,8 @@ mod tests {
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
+                scheduled_property_purchases: vec![],
+                property_tax_policies: vec![],
             },
             series: vec![],
         };
@@ -1807,6 +2730,7 @@ mod tests {
                         opening_balance: Money(0),
                     },
                 ],
+                locations: vec![],
                 scheduled_transfers: vec![],
                 recurring_transfers: vec![],
                 obligations: vec![],
@@ -1834,6 +2758,8 @@ mod tests {
                 scheduled_sales: vec![],
                 tax_profiles: vec![],
                 distributions: vec![],
+                scheduled_property_purchases: vec![],
+                property_tax_policies: vec![],
             },
             series: vec![],
         };

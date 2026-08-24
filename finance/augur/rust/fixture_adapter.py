@@ -9,17 +9,21 @@ import numpy as np
 
 from finance.augur.model.series import LevelSeriesKey, SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.locations import Location
 from finance.augur.sim.scenario import (
     ORDINARY_INCOME,
     Agent,
     DistributionTaxSlice,
     InitialAccountBalance,
     InitialLot,
+    MortgageFinancing,
+    PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
     ScheduledObligation,
+    ScheduledPropertyPurchase,
     ScheduledTransfer,
     SecurityDistribution,
     TaxProfile,
@@ -31,7 +35,7 @@ def _money(quanta: int, quantum: str) -> Decimal:
     return Decimal(quanta) * Decimal(quantum)
 
 
-def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSeriesContext]:
+def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSeriesContext, dict[str, Location]]:
     """Build existing-simulator inputs from one strict integer fixture.
 
     Conversion to legacy floats occurs only for the old quantity and external
@@ -183,6 +187,49 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
             )
             for spec in scenario_spec.get("distributions", [])
         ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=spec["month"],
+                cause_id=spec["cause_id"],
+                property_id=spec["property_id"],
+                location_id=spec["location_id"],
+                buyer_agent_id=spec["buyer_agent_id"],
+                buyer_account_id=spec["buyer_account_id"],
+                seller_agent_id=spec["seller_agent_id"],
+                seller_account_id=spec.get("seller_account_id", "checking"),
+                purchase_price=_money(spec["purchase_price"], quantum),
+                down_payment=_money(spec["down_payment"], quantum),
+                buyer_closing_cost=_money(spec.get("buyer_closing_cost", 0), quantum),
+                mortgage=(
+                    MortgageFinancing(
+                        liability_id=spec["mortgage"]["liability_id"],
+                        lender_agent_id=spec["mortgage"]["lender_agent_id"],
+                        lender_account_id=spec["mortgage"].get("lender_account_id", "checking"),
+                        principal=_money(spec["mortgage"]["principal"], quantum),
+                        annual_interest_rate=spec["mortgage"]["annual_interest_rate_ppb"] / 1_000_000_000,
+                        term_months=spec["mortgage"]["term_months"],
+                    )
+                    if spec.get("mortgage") is not None
+                    else None
+                ),
+            )
+            for spec in scenario_spec.get("scheduled_property_purchases", [])
+        ],
+        property_tax_policies=[
+            PropertyTaxPolicy(
+                property_id=spec["property_id"],
+                owner_agent_id=spec["owner_agent_id"],
+                from_account_id=spec.get("from_account_id", "checking"),
+                tax_authority_agent_id=spec["tax_authority_agent_id"],
+                tax_authority_account_id=spec.get("tax_authority_account_id", "checking"),
+                annual_tax_rate=(
+                    spec["annual_tax_rate_ppb"] / 1_000_000_000 if spec.get("annual_tax_rate_ppb") is not None else None
+                ),
+                start_month=spec.get("start_month", 0),
+                end_month=spec.get("end_month"),
+            )
+            for spec in scenario_spec.get("property_tax_policies", [])
+        ],
         tax_profiles=[
             TaxProfile(
                 agent_id=spec["agent_id"],
@@ -198,11 +245,21 @@ def build_legacy_fixture(fixture: dict[str, Any]) -> tuple[Scenario, ExternalSer
     external = ExternalSeriesContext.from_level_blocks(
         level_blocks, rollout_count=rollout_count, horizon_months=scenario_spec["horizon_months"]
     )
-    return scenario, external
+    locations = {
+        spec["location_id"]: Location(
+            location_id=spec["location_id"],
+            display_name=spec["display_name"],
+            jurisdiction_ids=spec.get("jurisdiction_ids", []),
+            annual_property_tax_rate=spec["annual_property_tax_rate_ppb"] / 1_000_000_000,
+            annual_special_assessment=_money(spec.get("annual_special_assessment", 0), quantum),
+        )
+        for spec in scenario_spec.get("locations", [])
+    }
+    return scenario, external, locations
 
 
 def run_legacy_fixture(fixture: dict[str, Any]):
-    scenario, external = build_legacy_fixture(fixture)
+    scenario, external, locations = build_legacy_fixture(fixture)
     return simulate_with_external_series(
-        scenario, rollout_count=cast(int, fixture["rollout_count"]), external_series=external, locations={}
+        scenario, rollout_count=cast(int, fixture["rollout_count"]), external_series=external, locations=locations
     )

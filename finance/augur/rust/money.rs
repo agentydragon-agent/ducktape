@@ -75,6 +75,36 @@ pub fn mul_div_round_half_up(
     i64::try_from(rounded).map_err(|_| ArithmeticError::Overflow { operation })
 }
 
+/// Multiply two `i128` values, divide by `denominator`, and round half away
+/// from zero. This is used for fixed-point contractual formulas whose scale is
+/// wider than the persisted `i64` money boundary.
+pub fn mul_div_i128_round_half_up(
+    lhs: i128,
+    rhs: i128,
+    denominator: i128,
+    operation: &'static str,
+) -> Result<i128, ArithmeticError> {
+    if denominator == 0 {
+        return Err(ArithmeticError::DivisionByZero { operation });
+    }
+    let product = lhs
+        .checked_mul(rhs)
+        .ok_or(ArithmeticError::Overflow { operation })?;
+    let quotient = product / denominator;
+    let remainder = product % denominator;
+    let twice_remainder = remainder
+        .abs()
+        .checked_mul(2)
+        .ok_or(ArithmeticError::Overflow { operation })?;
+    if twice_remainder >= denominator.abs() {
+        quotient
+            .checked_add(product.signum() * denominator.signum())
+            .ok_or(ArithmeticError::Overflow { operation })
+    } else {
+        Ok(quotient)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +114,11 @@ mod tests {
         assert_eq!(mul_div_round_half_up(5, 1, 2, "test"), Ok(3));
         assert_eq!(mul_div_round_half_up(-5, 1, 2, "test"), Ok(-3));
         assert_eq!(mul_div_round_half_up(4, 1, 2, "test"), Ok(2));
+    }
+
+    #[test]
+    fn wide_half_up_rounding_is_symmetric() {
+        assert_eq!(mul_div_i128_round_half_up(5, 1, 2, "test"), Ok(3));
+        assert_eq!(mul_div_i128_round_half_up(-5, 1, 2, "test"), Ok(-3));
     }
 }

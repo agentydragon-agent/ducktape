@@ -3,7 +3,9 @@
 This benchmark fixture covers opening balances, scheduled and recurring
 transfers, grouped recurring obligations, FIFO lots, and scheduled sales. It
 does not exercise the prototype's tax-accrual path, and the prototype does not
-yet implement mortgages, property, allocation, TLH, or private equity.
+exercise its basic financed-property path. Property lifecycle behavior beyond
+purchase, mortgage carrying cost, and property tax is not implemented;
+allocation, TLH, and private equity are also still absent.
 
 The canonical generated fixture uses exact integer money and quantity values:
 
@@ -34,18 +36,20 @@ bbr run -c opt //finance/augur/rust:benchmark_driver -- \
 
 Result:
 
-- median: **2.4451 s**;
-- runs: 2.4994, 2.4451, 2.6450, 2.4204, 2.4049 s;
-- throughput: **40,899 rollouts/s**;
-- throughput: **2,453,925 rollout-months/s**;
-- peak child RSS: **295,500 KiB**;
+- median: **2.0530 s**;
+- runs: 1.9930, 2.0530, 2.0604, 2.1628, 1.9760 s;
+- throughput: **48,709 rollouts/s**;
+- throughput: **2,922,559 rollout-months/s**;
+- peak child RSS: **316,580 KiB**;
 - counted journal entries: 12,500,000;
 - counted dispositions: 200,000;
 - counted tax accruals: 0;
 - counted security distributions: 0;
+- counted property purchases: 0;
+- counted mortgage payments: 0;
 - failed rollouts: 0;
-- checksum: `761150667387225061`;
-- BuildBuddy invocation: `1bed9b46-4086-4276-9b82-5b1918baf985`.
+- checksum: `13286037983044011749`;
+- BuildBuddy invocation: `27f6c83e-8449-400e-b6f8-29c81380578d`.
 
 This path retains fixed-size final summaries for every rollout and does not
 allocate monthly snapshots, journals, or event traces. The same state-machine
@@ -82,10 +86,11 @@ Result:
 
 ## Interpretation
 
-The measured Rust summary path is about 6.8× the rollout-month throughput of
+The measured Rust summary path is about 8.1× the rollout-month throughput of
 the batched JAX run on this narrow fixture. That is encouraging but not yet a
 full-simulator result: Rust retains compact final summaries, while the JAX path
 retains its complete dense monthly output for each 10,000-rollout batch. The
 differential tests establish exact agreement for the covered behavior; broader
-performance claims must wait until mortgages, property, tax, policies, and
-failure traces are implemented and compared under an equivalent output policy.
+performance claims must wait until the broader property lifecycle, tax payment,
+allocation/TLH, private-equity, and failure-trace behavior is implemented and
+compared under an equivalent output policy.

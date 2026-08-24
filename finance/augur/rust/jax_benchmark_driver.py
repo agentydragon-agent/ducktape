@@ -53,13 +53,13 @@ def main() -> None:
         write_fixture(fixture_path, rollout_count=batch_size, horizon_months=args.horizon_months)
         with fixture_path.open() as file:
             fixture: dict[str, Any] = json.load(file)
-        scenario, external = build_legacy_fixture(fixture)
+        scenario, external, locations = build_legacy_fixture(fixture)
         del fixture
         gc.collect()
 
         def run():
             result = simulate_with_external_series(
-                scenario, rollout_count=batch_size, external_series=external, locations={}
+                scenario, rollout_count=batch_size, external_series=external, locations=locations
             )
             jax.block_until_ready(result.output.state.cash)
             return result

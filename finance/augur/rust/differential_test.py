@@ -19,7 +19,14 @@ import pytest_bazel
 
 from finance.augur.rust.benchmark_fixture import write_fixture
 from finance.augur.rust.fixture_adapter import run_legacy_fixture
-from finance.augur.sim.test_state_helpers import asset_lots, cash_balances, rollout_status
+from finance.augur.sim.test_state_helpers import (
+    asset_lots,
+    cash_balances,
+    liabilities,
+    property_stakes,
+    property_state,
+    rollout_status,
+)
 
 
 def _binary() -> Path:
@@ -298,6 +305,71 @@ def _distribution_fixture() -> dict[str, Any]:
         {"series_id": "security:vti", "snapshots": 4, "values": [10_000] * 8},
         {"series_id": "security_distribution:vti", "snapshots": 4, "values": [100, 100, 100, 100, 200, 300, 400, 500]},
     ]
+    return fixture
+
+
+def _financed_property_fixture() -> dict[str, Any]:
+    fixture = _failure_fixture()
+    fixture["rollout_count"] = 1
+    scenario = fixture["scenario"]
+    scenario["horizon_months"] = 2
+    scenario["accounts"] = [
+        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 12_000_000},
+        {"account": {"agent_id": "seller", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "bank", "account_id": "checking"}, "opening_balance": 0},
+        {"account": {"agent_id": "county", "account_id": "checking"}, "opening_balance": 0},
+    ]
+    scenario["scheduled_transfers"] = []
+    scenario["recurring_transfers"] = []
+    scenario["obligations"] = []
+    scenario["recurring_obligations"] = []
+    scenario["initial_lots"] = []
+    scenario["scheduled_sales"] = []
+    scenario["locations"] = [
+        {
+            "location_id": "sf",
+            "display_name": "San Francisco",
+            "jurisdiction_ids": [],
+            "annual_property_tax_rate_ppb": 11_800_000,
+            "annual_special_assessment": 0,
+        }
+    ]
+    scenario["scheduled_property_purchases"] = [
+        {
+            "month": 0,
+            "cause_id": "alice-buys-home",
+            "property_id": "home",
+            "location_id": "sf",
+            "buyer_agent_id": "alice",
+            "buyer_account_id": "checking",
+            "seller_agent_id": "seller",
+            "seller_account_id": "checking",
+            "purchase_price": 50_000_000,
+            "down_payment": 10_000_000,
+            "buyer_closing_cost": 1_000_000,
+            "mortgage": {
+                "liability_id": "home-mortgage",
+                "lender_agent_id": "bank",
+                "lender_account_id": "checking",
+                "principal": 40_000_000,
+                "annual_interest_rate_ppb": 60_000_000,
+                "term_months": 360,
+            },
+        }
+    ]
+    scenario["property_tax_policies"] = [
+        {
+            "property_id": "home",
+            "owner_agent_id": "alice",
+            "from_account_id": "checking",
+            "tax_authority_agent_id": "county",
+            "tax_authority_account_id": "checking",
+            "annual_tax_rate_ppb": 12_000_000,
+            "start_month": 0,
+            "end_month": None,
+        }
+    ]
+    fixture["series"] = []
     return fixture
 
 
@@ -584,6 +656,42 @@ def test_rust_and_jax_match_monthly_security_distributions(tmp_path: Path) -> No
         [200, 200, 200],
         [400, 600, 800],
     ]
+
+
+def test_rust_and_jax_match_financed_property_purchase_and_first_carry_month(tmp_path: Path) -> None:
+    fixture = _financed_property_fixture()
+    legacy = run_legacy_fixture(fixture)
+    rust = _rust_run(fixture, tmp_path)
+
+    legacy_cash = (
+        cash_balances(legacy)
+        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
+        .sort("rollout_index", "month_index", "agent_id", "account_id")
+    )
+    assert _rust_cash(rust).to_dicts() == legacy_cash.to_dicts()
+
+    legacy_property = property_state(legacy).filter(pl.col("month_index") == 2).row(0, named=True)
+    legacy_stake = property_stakes(legacy).filter(pl.col("month_index") == 2).row(0, named=True)
+    legacy_mortgage = liabilities(legacy).filter(pl.col("month_index") == 2).row(0, named=True)
+    rust_property = rust["rollouts"][0]["months"][2]["properties"][0]
+    rust_mortgage = rust["rollouts"][0]["months"][2]["mortgages"][0]
+    assert rust_property["property_id"] == legacy_property["property_id"] == "home"
+    assert rust_property["location_id"] == legacy_property["location_id"] == "sf"
+    assert rust_property["adjusted_basis"] == legacy_property["adjusted_basis_quanta"] == 51_000_000
+    assert rust_property["contribution_used"] == legacy_stake["contribution_used_quanta"] == 11_000_000
+    assert rust_property["equity_ledger"] == legacy_stake["equity_ledger_quanta"] == 10_000_000
+    assert rust_mortgage["liability_id"] == legacy_mortgage["liability_id"] == "home-mortgage"
+    assert rust_mortgage["monthly_payment"] == legacy_mortgage["monthly_payment_quanta"] == 239_820
+    assert rust_mortgage["principal"] == legacy_mortgage["principal_quanta"] == 39_960_180
+    assert rust_mortgage["interest_paid_ytd"] == legacy_mortgage["interest_paid_ytd_quanta"] == 200_000
+    assert rust_mortgage["principal_paid_ytd"] == legacy_mortgage["principal_paid_ytd_quanta"] == 39_820
+
+    rust_payment = rust["rollouts"][0]["mortgage_payments"][0]
+    legacy_payment = legacy.events_log.mortgage_payments.row(0, named=True)
+    assert rust_payment["cause_id"] == legacy_payment["cause_id"] == "home-mortgage_payment_m1"
+    assert rust_payment["interest"] == legacy_payment["interest_quanta"] == 200_000
+    assert rust_payment["principal"] == legacy_payment["principal_quanta"] == 39_820
+    assert rust_payment["total_payment"] == legacy_payment["total_payment_quanta"] == 239_820
 
 
 @pytest.mark.parametrize("rollout_count", [1, 17])

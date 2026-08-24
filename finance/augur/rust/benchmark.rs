@@ -18,6 +18,8 @@ struct BenchmarkReport {
     disposition_count: u64,
     tax_accrual_count: u64,
     distribution_count: u64,
+    property_purchase_count: u64,
+    mortgage_payment_count: u64,
     failure_count: u64,
     checksum: u64,
 }
@@ -101,6 +103,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|rollout| rollout.distribution_count)
             .sum(),
+        property_purchase_count: output
+            .rollouts
+            .iter()
+            .map(|rollout| rollout.property_purchase_count)
+            .sum(),
+        mortgage_payment_count: output
+            .rollouts
+            .iter()
+            .map(|rollout| rollout.mortgage_payment_count)
+            .sum(),
         failure_count: output
             .rollouts
             .iter()
@@ -122,10 +134,24 @@ fn checksum(output: &PopulationOutput) -> u64 {
         hash_u64(&mut hash, rollout.disposition_count);
         hash_u64(&mut hash, rollout.tax_accrual_count);
         hash_u64(&mut hash, rollout.distribution_count);
+        hash_u64(&mut hash, rollout.property_purchase_count);
+        hash_u64(&mut hash, rollout.mortgage_payment_count);
         for balance in &rollout.ending_balances {
             hash_bytes(&mut hash, balance.account.agent_id.as_bytes());
             hash_bytes(&mut hash, balance.account.account_id.as_bytes());
             hash_u64(&mut hash, balance.balance.0 as u64);
+        }
+        for property in &rollout.ending_properties {
+            hash_bytes(&mut hash, property.property_id.as_bytes());
+            hash_u64(&mut hash, property.adjusted_basis.0 as u64);
+            hash_u64(&mut hash, property.contribution_used.0 as u64);
+            hash_u64(&mut hash, property.equity_ledger.0 as u64);
+        }
+        for mortgage in &rollout.ending_mortgages {
+            hash_bytes(&mut hash, mortgage.liability_id.as_bytes());
+            hash_u64(&mut hash, mortgage.principal.0 as u64);
+            hash_u64(&mut hash, mortgage.interest_paid_ytd.0 as u64);
+            hash_u64(&mut hash, mortgage.principal_paid_ytd.0 as u64);
         }
     }
     hash

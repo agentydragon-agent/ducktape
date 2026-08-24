@@ -26,6 +26,8 @@ pub struct ScenarioSpec {
     pub horizon_months: u32,
     pub accounts: Vec<AccountSpec>,
     #[serde(default)]
+    pub locations: Vec<LocationSpec>,
+    #[serde(default)]
     pub scheduled_transfers: Vec<ScheduledTransferSpec>,
     #[serde(default)]
     pub recurring_transfers: Vec<RecurringTransferSpec>,
@@ -41,6 +43,22 @@ pub struct ScenarioSpec {
     pub tax_profiles: Vec<TaxProfileSpec>,
     #[serde(default)]
     pub distributions: Vec<DistributionSpec>,
+    #[serde(default)]
+    pub scheduled_property_purchases: Vec<ScheduledPropertyPurchaseSpec>,
+    #[serde(default)]
+    pub property_tax_policies: Vec<PropertyTaxPolicySpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocationSpec {
+    pub location_id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub jurisdiction_ids: Vec<String>,
+    pub annual_property_tax_rate_ppb: i64,
+    #[serde(default)]
+    pub annual_special_assessment: Money,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -150,6 +168,56 @@ pub struct DistributionSpec {
     pub to_account_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MortgageFinancingSpec {
+    pub liability_id: String,
+    pub lender_agent_id: String,
+    #[serde(default = "default_account_id")]
+    pub lender_account_id: String,
+    pub principal: Money,
+    pub annual_interest_rate_ppb: i64,
+    pub term_months: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduledPropertyPurchaseSpec {
+    pub month: u32,
+    pub cause_id: String,
+    pub property_id: String,
+    pub location_id: String,
+    pub buyer_agent_id: String,
+    pub buyer_account_id: String,
+    pub seller_agent_id: String,
+    #[serde(default = "default_account_id")]
+    pub seller_account_id: String,
+    pub purchase_price: Money,
+    pub down_payment: Money,
+    #[serde(default)]
+    pub buyer_closing_cost: Money,
+    #[serde(default)]
+    pub mortgage: Option<MortgageFinancingSpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PropertyTaxPolicySpec {
+    pub property_id: String,
+    pub owner_agent_id: String,
+    #[serde(default = "default_account_id")]
+    pub from_account_id: String,
+    pub tax_authority_agent_id: String,
+    #[serde(default = "default_account_id")]
+    pub tax_authority_account_id: String,
+    #[serde(default)]
+    pub annual_tax_rate_ppb: Option<i64>,
+    #[serde(default)]
+    pub start_month: u32,
+    #[serde(default)]
+    pub end_month: Option<u32>,
+}
+
 fn default_account_id() -> String {
     "checking".into()
 }
@@ -185,7 +253,39 @@ pub struct AccountBalance {
 pub struct MonthOutput {
     pub month: u32,
     pub balances: Vec<AccountBalance>,
+    pub properties: Vec<PropertyState>,
+    pub mortgages: Vec<MortgageState>,
     pub failed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PropertyState {
+    pub property_id: String,
+    pub location_id: String,
+    pub owner_agent_id: String,
+    pub purchase_month: u32,
+    pub adjusted_basis: Money,
+    pub contribution_used: Money,
+    pub equity_ledger: Money,
+    pub active: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MortgageState {
+    pub liability_id: String,
+    pub property_id: String,
+    pub agent_id: String,
+    pub payment_account_id: String,
+    pub counterparty_agent_id: String,
+    pub counterparty_account_id: String,
+    pub origination_month: u32,
+    pub annual_interest_rate_ppb: i64,
+    pub term_months: u32,
+    pub monthly_payment: Money,
+    pub principal: Money,
+    pub interest_paid_ytd: Money,
+    pub principal_paid_ytd: Money,
+    pub active: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -239,6 +339,51 @@ pub struct DistributionOutcome {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PropertyPurchaseOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub property_id: String,
+    pub location_id: String,
+    pub buyer_agent_id: String,
+    pub purchase_price: Money,
+    pub closing_cost: Money,
+    pub adjusted_basis: Money,
+    pub stake_contribution: Money,
+    pub equity_ledger: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MortgageOriginationOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub liability_id: String,
+    pub agent_id: String,
+    pub payment_account_id: String,
+    pub counterparty_agent_id: String,
+    pub counterparty_account_id: String,
+    pub property_id: String,
+    pub principal: Money,
+    pub annual_interest_rate_ppb: i64,
+    pub term_months: u32,
+    pub monthly_payment: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MortgagePaymentOutcome {
+    pub month: u32,
+    pub cause_id: String,
+    pub liability_id: String,
+    pub agent_id: String,
+    pub counterparty_agent_id: String,
+    pub property_id: String,
+    pub from_account_id: String,
+    pub to_account_id: String,
+    pub interest: Money,
+    pub principal: Money,
+    pub total_payment: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RolloutOutput {
     pub rollout_id: u32,
     pub months: Vec<MonthOutput>,
@@ -247,6 +392,9 @@ pub struct RolloutOutput {
     pub obligations: Vec<ObligationOutcome>,
     pub tax_accruals: Vec<TaxAccrual>,
     pub distributions: Vec<DistributionOutcome>,
+    pub property_purchases: Vec<PropertyPurchaseOutcome>,
+    pub mortgage_originations: Vec<MortgageOriginationOutcome>,
+    pub mortgage_payments: Vec<MortgagePaymentOutcome>,
     pub failed_month: Option<u32>,
 }
 
@@ -260,10 +408,14 @@ pub struct SimulationOutput {
 pub struct RolloutSummary {
     pub rollout_id: u32,
     pub ending_balances: Vec<AccountBalance>,
+    pub ending_properties: Vec<PropertyState>,
+    pub ending_mortgages: Vec<MortgageState>,
     pub journal_entry_count: u64,
     pub disposition_count: u64,
     pub tax_accrual_count: u64,
     pub distribution_count: u64,
+    pub property_purchase_count: u64,
+    pub mortgage_payment_count: u64,
     pub failed_month: Option<u32>,
 }
 

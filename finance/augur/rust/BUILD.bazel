@@ -65,6 +65,7 @@ py_library(
     deps = [
         "//finance/augur/model:series",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:locations",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:simulate",
         "@pypi//numpy",
