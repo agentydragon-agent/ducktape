@@ -7,3 +7,5 @@ occurrences:
     files:
       ducktape_llm_common/hook_session_state.py:
         - [36, 104]
+    match_file_restriction:
+      - ducktape_llm_common/hook_session_state.py

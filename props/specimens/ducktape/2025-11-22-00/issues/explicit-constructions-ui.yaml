@@ -24,3 +24,5 @@ occurrences:
           - 121
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte

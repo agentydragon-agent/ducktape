@@ -26,6 +26,8 @@ occurrences:
       policy_context_checking, policy_const — no test uses any
     critic_scopes_expected_to_recall:
       - [agent_server/conftest.py]
+    match_file_restriction:
+      - agent_server/conftest.py
   - occurrence_id: occ-2
     files:
       agent_server/conftest.py:
@@ -39,6 +41,8 @@ occurrences:
       any; last two form a chain
     critic_scopes_expected_to_recall:
       - [agent_server/conftest.py]
+    match_file_restriction:
+      - agent_server/conftest.py
   - occurrence_id: occ-3
     files:
       mcp_infra/seatbelt/conftest.py:
@@ -75,6 +79,8 @@ occurrences:
     note: "`mock_context` — no test uses it"
     critic_scopes_expected_to_recall:
       - [claude/claude_hooks/conftest.py]
+    match_file_restriction:
+      - claude/claude_hooks/conftest.py
   - occurrence_id: occ-8
     files:
       git_commit_ai/conftest.py:
