@@ -441,7 +441,10 @@ def create_app(
         agent_authority=agent_authority,
         static_credentials=static_credential_registry,
         operator_identity_store=operator_identity_store,
-        session_tokens=db_sessions if session_service is not None else None,
+        # Bridge-token validation is a durable Postgres read. It does not require this
+        # replica to launch or supervise a chat runtime, so every Console composition
+        # can reject expired/revoked session bearers consistently.
+        session_tokens=db_sessions,
     )
     actor_resolver = HakuMcpActorResolver(agent_authority, static_actor_resolver=mcp_auth.static_actor_resolver)
     kubernetes_agent_resolver = mcp_agent_auth.McpBearerAgentResolver(provider=mcp_auth.provider, actors=actor_resolver)
