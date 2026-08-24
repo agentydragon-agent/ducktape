@@ -1,9 +1,9 @@
-# Deb packages for the haku-claude-runner image, on debian:trixie-slim.
-# `git` so the runner can check out haku-state into the sandbox workspace before launching Claude
-# Code. The Python interpreter, the app and the `claude` CLI come from the image's own layers.
+# Deb packages for the haku-harness-runner image, on debian:trixie-slim.
+# `git` lets the runner check out haku-state before launching a harness. The generated CA bundle,
+# Python interpreter, bridge, Claude CLI, Codex CLI and kubectl use separate layers.
 #
 # Regenerate the lock file after any change:
-#   bazel run @trixie_haku_claude_runner//:lock
+#   bazel run @trixie_haku_harness_runner//:lock
 version: 1
 
 sources:

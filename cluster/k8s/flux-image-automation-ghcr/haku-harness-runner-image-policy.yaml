@@ -1,11 +1,11 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImagePolicy
 metadata:
-  name: haku-claude-runner
+  name: haku-harness-runner
   namespace: flux-system
 spec:
   imageRepositoryRef:
-    name: haku-claude-runner
+    name: haku-harness-runner
   filterTags:
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
