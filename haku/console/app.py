@@ -77,7 +77,7 @@ from haku.console.mcp_config import (
     load_static_agents,
     validate_in_process_server_bindings,
 )
-from haku.console.models import ConfigResponse
+from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
@@ -215,6 +215,11 @@ def create_app(
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
+    static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
+    profile_runtime_kinds = {
+        profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
+    }
+    launchable_agent_ids = set(console_config.effective_launchable_agent_ids)
     session_notifications = SessionNotifications(database_url)
     # Session changes reach open tabs over the console socket the shell already holds, coalesced
     # per session. Constructed unconditionally: it listens on the session channel and sends on the
@@ -297,7 +302,6 @@ def create_app(
 
     runtime_registry: console_runtime.RuntimeRegistry
     if claude_runtime is not None:
-        static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
         try:
             claude_profile_id = static_by_id[claude_runtime.mcp_static_agent_id].access_profile_id
         except KeyError as error:
@@ -389,14 +393,13 @@ def create_app(
         )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
+    default_runtime_kind: RuntimeKind | None = None
     if claude_runtime is not None:
-        profiles = {profile.id: profile.allowed_chat_runtimes for profile in console_config.access_profiles}
-        launchable_agent_ids = console_config.effective_launchable_agent_ids
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
             launchable_agent_ids=launchable_agent_ids,
             registered_runtime_kinds=runtime_registry.configured_kinds,
-            profile_runtime_kinds=profiles,
+            profile_runtime_kinds=profile_runtime_kinds,
         )
 
         # `mcp_static_agent_id` is the old ConfigMap's durable Haku Agent selector. During the
@@ -405,7 +408,7 @@ def create_app(
         default_chat_agent_id = console_config.effective_default_chat_agent_id
         assert default_chat_agent_id is not None
         default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
-        default_candidates = runtime_registry.configured_kinds.intersection(profiles[default_profile_id])
+        default_candidates = runtime_registry.configured_kinds.intersection(profile_runtime_kinds[default_profile_id])
         if RuntimeKind.CLAUDE_CODE in default_candidates:
             default_runtime_kind = RuntimeKind.CLAUDE_CODE
         else:
@@ -782,9 +785,27 @@ def create_app(
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:
-        """Static config for the SPA: launch-routine URL and Haku UI URL."""
+        """Static config for the SPA, including deploy-authorized Web chat launch pairs."""
         launch = settings.launch_routine
-        return ConfigResponse(launch_routine_url=launch.page_url if launch else None, haku_ui_url=settings.haku_ui_url)
+        default_agent_id = console_config.effective_default_chat_agent_id
+        launch_options = [
+            ChatLaunchOption(
+                agent_id=agent_id,
+                agent_display_name=static_by_id[agent_id].display_name,
+                runtime=kind,
+                runtime_display_name=runtime_registry[kind].display_name,
+                is_default=agent_id == default_agent_id and kind is default_runtime_kind,
+            )
+            for agent_id in launchable_agent_ids
+            for kind in sorted(runtime_registry.configured_kinds, key=lambda value: value.value)
+            if kind in profile_runtime_kinds[static_by_id[agent_id].access_profile_id]
+        ]
+        launch_options.sort(key=lambda option: (not option.is_default, option.agent_display_name, option.runtime.value))
+        return ConfigResponse(
+            launch_routine_url=launch.page_url if launch else None,
+            haku_ui_url=settings.haku_ui_url,
+            chat_launch_options=launch_options,
+        )
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
     # router guards read; https_only follows the canonical public origin.

@@ -129,12 +129,12 @@ class SessionPromptRequest(BaseModel):
 
 
 class ConversationCreateRequest(BaseModel):
-    """Optional launch selectors; access profile is always derived server-side."""
+    """Explicit Web launch selectors; access profile is always derived server-side."""
 
     model_config = ConfigDict(extra="forbid")
 
-    agent_id: UUID | None = None
-    runtime: RuntimeKind | None = None
+    agent_id: UUID
+    runtime: RuntimeKind
 
 
 class PromptAccepted(BaseModel):
@@ -268,7 +268,9 @@ class SessionService:
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
         identity = await self._store.session_identity(session_id)
         if identity.agent_id is None:
-            # Legacy rows remain inspectable but cannot select Agent-owned launch resources.
+            # Nullable identity rows are retained during rolling migration.  They can still be
+            # inspected/projected by runtime kind, but execution uses the legacy registration only
+            # until the row is replaced by a pinned conversation.
             return self._runtimes.configured(identity.runtime_kind)
         return self._runtimes.configured(
             identity.agent_id, identity.runtime_kind, access_profile_id=identity.access_profile_id
@@ -991,18 +993,15 @@ async def list_conversations(
 
 @router.post("/api/conversations", status_code=201)
 async def create_conversation(
-    actor: OperatorActorDep, service: SessionServiceDep, body: ConversationCreateRequest | None = None
+    body: ConversationCreateRequest, actor: OperatorActorDep, service: SessionServiceDep
 ) -> ConversationView:
     """Open a new thread and the first session to run it.
 
-    One call, because a conversation with no session is a thread nothing can be said to.
+    One call, because a conversation with no session is a thread nothing can be said to. Agent and
+    runtime are an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(
-            actor.operator_id,
-            agent_id=None if body is None else body.agent_id,
-            runtime_kind=None if body is None else body.runtime,
-        )
+        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, runtime_kind=body.runtime)
     except LaunchAgentRejectedError:
         raise HTTPException(status_code=403, detail="chat launch is not authorized")
     except KeyError as error:
