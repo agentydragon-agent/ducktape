@@ -307,8 +307,8 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     model = get_model(
         "mockllm/model",
         custom_outputs=[
-            ModelOutput.for_tool_call("mockllm/model", "bash", {"cmd": fetch_cmd}),
-            ModelOutput.for_tool_call("mockllm/model", "bash", {"cmd": "head -3 /data/ramp_monthly.csv"}),
+            ModelOutput.for_tool_call("mockllm/model", "bash", {"command": fetch_cmd}),
+            ModelOutput.for_tool_call("mockllm/model", "bash", {"command": "head -3 /data/ramp_monthly.csv"}),
             # The submit tool now carries the strict answer schema, so its
             # arguments are the structured fields (p), not a free-form JSON string.
             ModelOutput.for_tool_call("mockllm/model", "submit", {"p": 0.8}),
